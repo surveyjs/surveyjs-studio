@@ -1,6 +1,6 @@
 # My Surveys: product idea
 
-Status: draft for discussion · Last updated: 2026-10-13
+Status: agreed, ready for the specification · Last updated: 2026-10-13
 
 ## 1. Summary
 
@@ -8,20 +8,23 @@ We will build a standalone web application, with a front-end and a back-end, tha
 
 Rollout happens in three steps:
 
-1. **Replace.** Ship the application at `my-surveys.surveyjs.io` with full feature parity, migrate the existing data, and retire the old section.
-2. **Improve.** Add the P1 features listed in §6.2.
-3. **Open up.** Publish the source code as open source. Customers can clone the repository and build on it; using the commercial SurveyJS components (Survey Creator, Dashboard, PDF Generator) still requires a licence. We also publish a free, prebuilt Docker image for simple self-hosting, with "Powered by SurveyJS" branding wherever it fits.
+1. **Replace (parity).** Ship the application at `my-surveys.surveyjs.io` and retire the old section. In this phase the app:
+   - looks exactly like surveyjs.io and reproduces the current UI 1:1;
+   - signs users in with surveyjs.io authorization;
+   - works directly on the databases and Azure storage that surveyjs.io already uses, so no data migration is needed.
+2. **Improve (P1).** Prepare the product for customers: login/password authentication and a choice of popular databases. Add the product improvements listed in §6.2.
+3. **Open up.** Publish the source code under the **MIT** licence. Customers can clone the repository and build on it; using the commercial SurveyJS components (Survey Creator, Dashboard, PDF Generator) requires a licence. We also publish a free, prebuilt Docker image that can be used with the commercial components included and carries "Powered by SurveyJS" branding wherever it fits.
 
-The back-end starts on **Node.js**, but it must be easy to port to other server platforms such as .NET or PHP. In practice that means the HTTP API contract, not the Node code, is the source of truth (see §7).
+The back-end starts on **Node.js**, but it must be easy to port to other server platforms such as .NET or PHP. In practice that means the HTTP API contract, not the Node code, is the source of truth (see §7). Detailed technical decisions belong to the next step, the specification.
 
 ## 2. Background: My Surveys today
 
-My Surveys is the private workspace of the SurveyJS "Free Survey Tool" / All-in-One Demo. The inventory below was collected from the live site on 2026-10-13 while logged in, plus the public product page.
+My Surveys is the private workspace of the SurveyJS "Free Survey Tool" / All-in-One Demo. The inventory below was collected from the live site on 2026-10-13 while logged in, plus the public product page. **Phase 1 reproduces this UI 1:1.**
 
 ### 2.1 Survey list (`/service/mysurveys`)
 
 - An **Active / Archived** switch.
-- A **project selector**: "Personal Surveys" plus each project the user owns or belongs to. The URL calls it an *organization* (`/Service/MySurveys/{orgId}`).
+- A **project selector**: "Personal Surveys" plus each project the user belongs to. The URL calls it an *organization* (`/Service/MySurveys/{orgId}`).
 - A **Create a Survey** button, which creates "New Survey N" and opens the editor.
 - Each row shows the name (click the pencil to rename inline; Enter saves, Esc cancels), the created date, the updated date and a "…" menu. Clicking a row opens the editor.
 - Each row carries `surveyId`, `postId`, `resultId`, `isPublished` and `canModifySurvey`.
@@ -75,20 +78,41 @@ The page shows a banner: *"the dashboard displays only the first 1,000 responses
 
 A list of timestamps when the survey was edited, titled "Survey editing history of '{name}'". It shows no content, no diff and has no restore.
 
-### 2.6 Projects and collaboration
+### 2.6 Projects (Settings → Manage MySurveys, `surveyjs.io/manage#manage-mysurveys`)
 
-Surveys can be grouped into projects, and other registered SurveyJS users can be added so they edit a project's surveys together. Permissions are a single "can modify" flag.
+Projects are managed in the surveyjs.io account settings, not in My Surveys itself. The section text reads: *"Create multiple projects to group the web forms you have built with the Free Survey Tool. Add registered users to share the forms with them and edit your forms together."*
 
-*To verify:* the screens for managing projects and members. They live in the account Settings area and could not be captured automatically.
+- Projects appear as a list of expandable cards, one per project, followed by a **Create a Project** card.
+- Expanding a card shows its members (display name, plus an "Admin" label where it applies).
+- Each project has two roles: **admin** and **user**.
+- Admin-only actions:
+
+  | Action | How it works |
+  |---|---|
+  | Rename project | Edit the name and press OK. |
+  | Delete project | Asks for confirmation. |
+  | Add member | By the email of an already registered surveyjs.io user; an error is shown otherwise. |
+  | Remove member | Asks for confirmation. |
+  | Change a member's role | Make admin / make user. |
+
+- Creating a project adds the creator as its first member, as admin.
+- Current endpoints (all on surveyjs.io):
+  - `/api/ManageUser/writeOrganization` (create and rename)
+  - `removeOrganization`
+  - `addUserToOrganization`
+  - `removeUserFromOrganization`
+  - `changeUserRoleInOrganization`
+
+Other Settings sections (License Manager, Details, Billing, Renewals, External Logins, Delete Account) belong to the surveyjs.io site and are **out of scope**. The exception is *Delete Account*, which must also delete the user's My Surveys data (§8).
 
 ### 2.7 Storage and limits
 
-- Survey definitions and results are stored in Azure storage. There is no limit on the number of submissions or the size of a survey JSON.
+- Survey definitions and results are stored in Azure storage accounts. Users and projects are stored in the surveyjs.io site database. There is no limit on the number of submissions or the size of a survey JSON.
 - Each **response is limited to 64 KB**. File-upload and signature answers are stored inside the response, so large uploads fail.
 - The dashboard shows at most 1,000 responses.
 - No service-level guarantee is offered for data in the free tool.
 
-### 2.8 API
+### 2.8 Current API (for reference)
 
 **Public API** (`https://api.surveyjs.io/public/v1/Survey`). These are the endpoints the Form Library v1.x `dxSurveyService` calls:
 
@@ -103,8 +127,6 @@ Surveys can be grouped into projects, and other registered SurveyJS users can be
 | GET | `/isCompleted?resultId=&clientId=` | Return completion status. |
 | GET | `getSurveyPublicResults/{id}` | Return results when Grant Access is on; used by the Dashboard examples. |
 
-Since **Form Library v2.0** the built-in service integration has been removed, and `loadSurveyFromService` and `sendResult` now only log a warning. Only v1.x clients and code that calls the REST endpoints directly still depend on this API. That includes our own docs and demos.
-
 **Private API** (`https://api.surveyjs.io/private/Surveys/`, authenticated by an `accessKey` query parameter):
 
 - `changeName`
@@ -113,7 +135,11 @@ Since **Form Library v2.0** the built-in service integration has been removed, a
 - `publish` and `unpublish`
 - `uploadFiles` and `files?name=`
 - `getSurveyDemoResults?id=`
-- Endpoints for listing active or archived surveys, creating, cloning, archiving, restoring, deleting and moving surveys. The site calls these as server routes: `/service/clonesurvey/{id}`, `archivesurvey`, `restoresurvey`, `deletesurvey` and `changeorganizationsurvey`.
+- The list, create, clone, archive, restore, delete and move actions, which the site calls as server routes: `/service/clonesurvey/{id}`, `archivesurvey`, `restoresurvey`, `deletesurvey` and `changeorganizationsurvey`.
+
+Since **Form Library v2.0** the built-in service integration has been removed. Only v1.x clients and code that calls these endpoints directly still depend on them.
+
+**Decision:** the new application gets a **new, more standard and convenient API**, described in full in the specification. It does not copy this one. Because the new app works on the same data stores during the parity phase, the existing `api.surveyjs.io` service keeps serving legacy clients unchanged (§9).
 
 ### 2.9 Known weaknesses of the current implementation
 
@@ -121,7 +147,7 @@ Since **Form Library v2.0** the built-in service integration has been removed, a
 2. **Publishing** is a single on/off switch. There is no schedule, response limit, password, single-use link, custom URL or QR code.
 3. **Files** are stored inside responses, which causes the 64 KB response limit and the 4 MB editor limit.
 4. **Analytics** stop at 1,000 responses, with no saved filters, crosstabs or text analysis, and nothing to share except the raw public-results toggle.
-5. **Permissions** are a single flag, and there is no audit log.
+5. **Permissions** are a single flag (admin/user at project level), and there is no audit log.
 6. **Integrations** do not exist: no webhooks, no email notifications and no Google Sheets or Slack.
 7. **Security:** the private `accessKey` is passed in query strings and embedded in page source. Several actions are state-changing GET routes.
 8. **Front-end:** the site is server-rendered and coupled to the surveyjs.io website, so it cannot be deployed or open-sourced separately.
@@ -130,36 +156,77 @@ Since **Form Library v2.0** the built-in service integration has been removed, a
 
 ### 3.1 Phase 1: parity and replacement
 
-- `my-surveys.surveyjs.io` provides everything in §2, migrated to the new architecture (§7).
-- Users sign in with their existing SurveyJS account through SSO with `auth.surveyjs.io`, and all of their surveys, results, projects and members are already there.
-- Existing integrations keep working: survey, post and result IDs are preserved and the legacy public API stays compatible (§9).
-- The links in the surveyjs.io header ("My Surveys", "All-in-One Demo") and the old `/service/*` URLs redirect to the new application.
-- The old section can be switched off.
+The goal is for `my-surveys.surveyjs.io` to replace the old section without users noticing anything except the new address and the lifted limits.
 
-**Done when:** every item in §6.1 is implemented, the data migration has been rehearsed and verified, and legacy API contract tests pass against the new back-end.
+**Requirements**
+- **Same look.**
+  - Styled exactly like surveyjs.io: the same design system (the `v2-class---*` styles), fonts and icons, and the site header and footer with the user and cart menus.
+  - Every screen in §2 is reproduced 1:1, including project management (§2.6).
+- **Same authorization.** Users sign in with surveyjs.io authorization: the `auth.surveyjs.io` OAuth/OIDC server, which the site already uses with authorization code + PKCE. The app is registered as one more client of that server. Sign-out and the account links lead back to surveyjs.io.
+- **Same data.**
+  - The app connects **directly** to the **Azure storage accounts used by surveyjs.io**, which hold surveys, themes, results, files and history, with no intermediate API (D12).
+  - Any related data held in the surveyjs.io site database, such as user profiles, projects and members, is accessed directly as well. The specification maps exactly which entity lives where.
+  - No data migration is needed, and IDs stay as they are.
+  - Old and new UIs can run side by side during the rollout.
+- **Legacy coexistence.**
+  - `api.surveyjs.io` (§2.8) keeps working against the same data.
+  - Anything the new app writes must stay readable by the legacy service and the reverse, unless a lifted limit (below) deliberately changes a format.
+- **Redirects.**
 
-### 3.2 Phase 2: P1 improvements
+  | Old URL | New URL |
+  |---|---|
+  | `surveyjs.io/service/mysurveys*` | `my-surveys.surveyjs.io/...` |
+  | `/Service/EditSurvey/{id}` | `/surveys/{id}/edit` |
+  | `/Service/SurveyResults/{id}` | `/surveys/{id}/results` |
+  | `/Service/History/{id}` | `/surveys/{id}/history` |
+  | `/published?id={id}` | `/s/{id}` (the old URL keeps working) |
 
-The features in §6.2 close the weaknesses listed in §2.9 and the most common gaps compared with competitors (§10).
+  The site's "My Surveys" and "All-in-One Demo" links point to the new app.
+
+**Limits lifted right away.** This is a proposal; the final list is confirmed in the specification.
+
+| Current limit | Phase 1 proposal | Notes |
+|---|---|---|
+| Dashboard shows the first 1,000 responses | Remove: load results with paging and aggregate on the server where needed | The UI changes only by dropping the banner. |
+| 4,000 KB of editor uploads per survey | Raise and make configurable | Files go to Azure Blob storage. |
+| 64 KB per response (inline files and signatures) | Lift by storing respondent files in Azure Blob storage; the response keeps only a reference | The specification checks how the legacy `getResult` and export endpoints handle references (D11). |
+
+**Done when:**
+- every item in §6.1 is implemented;
+- the UI is checked 1:1 against the current site;
+- the app runs on the production data stores in parallel with the old section;
+- the old section is switched off.
+
+### 3.2 Phase 2: P1, customer readiness and improvements
+
+- **Customer readiness**, needed before the code reaches customers:
+  - **login/password ("basic") authentication**;
+  - **several popular databases** to choose from;
+  - pluggable file storage (§6.2 A).
+- **Product improvements:** the features in §6.2 B, which close the weaknesses listed in §2.9 and the most common gaps compared with competitors (§10).
 
 ### 3.3 Phase 3: open source and self-hosting
 
-- **A public repository** that customers can clone and extend. Using it commercially requires licences for Survey Creator, Dashboard and PDF Generator; the Form Library is MIT.
+- **A public repository** whose own code is under the **MIT** licence. Customers can clone and extend it, and connect it to the database they already use. Survey Creator, Dashboard and PDF Generator remain commercial: building on them in a customer's own product requires a licence. The Form Library is MIT.
 - **A free prebuilt Docker image**:
-  - `docker run` gives a working single-organization survey service with local accounts and an embedded or bundled database.
+  - It includes the commercial SurveyJS components and may be used free of charge.
+  - `docker run` gives a working single-organization survey service with login/password accounts and a bundled database by default, or a connection to the user's own database.
   - "Powered by SurveyJS" branding appears wherever it fits.
 - **Developer documentation** covering:
   - architecture;
   - the API reference (OpenAPI);
+  - how to add a database provider;
   - how to port the back-end to another platform;
-  - how to customize and white-label (white-labelling requires a licence).
+  - how to customize the app.
 
 ### 3.4 Non-goals (for now)
 
-- A visual redesign of the Creator or Dashboard: we use the products as they ship.
-- Payments, e-signatures, workflow automation or approval chains (these are Jotform and form.io territory).
-- Respondent panels or recruitment (SurveyMonkey Audience style).
+- A visual redesign: Phase 1 is deliberately 1:1.
+- The surveyjs.io account features (licences, billing, renewals, external logins).
+- Payments, e-signatures, workflow automation or approval chains.
+- Respondent panels or recruitment.
 - Native mobile or offline data collection apps.
+- Analytics and telemetry on the subdomain and in the Docker image. This is discussed after P1.
 
 ## 4. Users and roles
 
@@ -168,12 +235,15 @@ The features in §6.2 close the weaknesses listed in §2.9 and the most common g
 | **Evaluator / prospect** | A SurveyJS user trying the products: build a survey quickly, publish it, see results, copy IDs and embed code into a prototype. This is the biggest group today. |
 | **Small-team survey owner** | Runs real surveys (feedback, HR, events, education) without writing code; wants sharing, results and exports. |
 | **Developer / integrator** | Uses the service as a back-end for surveys embedded in their own app through the API; later self-hosts or forks the project. |
-| **Collaborator** | Edits or analyses surveys inside a shared project. |
+| **Project admin / member** | Manages a shared project and its members, or edits and analyses the project's surveys. |
 | **Respondent** | Fills in a survey anonymously or through a link; expects speed, accessibility and progress saving. |
-| **Self-hosting admin** (Phase 3) | Deploys the Docker image; manages users, storage, backups and SMTP. |
+| **Customer developer** (Phase 3) | Clones the repository, connects their own database and identity, and extends the app. |
+| **Self-hosting admin** (Phase 3) | Deploys the Docker image; manages users, the database, storage, backups and SMTP. |
 | **SurveyJS operator** | Our team: monitoring, abuse handling, support look-ups, limits. |
 
-Roles inside a project: **Owner** and **Editor** in Phase 1, which matches today's single "can modify" flag; **Analyst** and **Viewer** are added in Phase 2.
+Roles in a project:
+- **Phase 1:** admin and user, exactly as today.
+- **Phase 2:** extended to Owner, Editor, Analyst and Viewer.
 
 ## 5. Use cases
 
@@ -189,7 +259,7 @@ Roles inside a project: **Owner** and **Editor** in Phase 1, which matches today
 
 **UC-3 Embed in an own application.**
 1. The developer copies the Survey, Post or Result ID, or the generated embed code.
-2. Their application loads the survey and posts results through the public API.
+2. Their application loads the survey and posts results through the API.
 
 **UC-4 Analyse results.**
 1. The user opens Results.
@@ -205,90 +275,101 @@ Roles inside a project: **Owner** and **Editor** in Phase 1, which matches today
 - Toggle storing respondent IP addresses.
 
 **UC-7 Organise with projects.**
-1. The user creates a project and invites registered users.
-2. They move surveys between Personal and projects.
-3. Members edit the project's surveys together.
+1. A user creates a project and becomes its admin.
+2. The admin adds registered users by email and makes them admins or users.
+3. Surveys are moved between Personal and projects, and members edit the project's surveys together.
 
 **UC-8 Review history.**
 - See when the survey was edited.
 - Phase 2: see what changed, compare versions and restore one.
 
-**UC-9 Migrate seamlessly.**
-1. An existing My Surveys user signs in at the new URL.
-2. They find all their data, and their existing embeds keep working.
+**UC-9 Seamless switch.**
+1. An existing My Surveys user follows the old link or bookmark and lands on `my-surveys.surveyjs.io`.
+2. They are signed in through surveyjs.io.
+3. They see the same data and the same UI, and their existing embeds keep working.
 
 **UC-10 Self-host.**
-1. An admin runs the Docker image and configures SMTP, storage and authentication.
-2. The team uses it as an internal survey service.
+1. An admin runs the Docker image, connected to a bundled database or to their own, and configures SMTP and storage.
+2. Users sign in with a login and password.
+3. The team uses it as an internal survey service.
 
 **UC-11 Extend.**
-1. A customer clones the repository, adds custom question types or integrations, and swaps in their own database or identity provider.
-2. They optionally re-implement the back-end on their own platform against the API contract.
+1. A customer clones the repository and connects their own database and identity provider.
+2. They add custom question types or integrations.
+3. They optionally re-implement the back-end on their own platform against the API contract.
 
 ## 6. Functionality
 
 ### 6.1 Phase 1: parity (MVP)
 
-**F1 Authentication and account**
-- OIDC sign-in through `auth.surveyjs.io`, sign-out, and a session.
-- Show the user's name and avatar, and link to the surveyjs.io account settings and billing.
-- Show the licence expiry notice as the current site does (hosted edition only).
-- Behind an authentication abstraction, so that local accounts are possible for the self-hosted edition (§7).
+**F1 Authorization**
+- Sign in through surveyjs.io authorization (`auth.surveyjs.io`), sign out, and keep a session.
+- Show the user's name and avatar, and link to the surveyjs.io Settings, Help Desk and Billing.
+- Show the licence-expiry notice exactly as the current site does.
+- Implemented behind an authentication-provider interface, so that login/password and other providers can be added in P1 (§7).
 
-**F2 Survey list**
-- An Active / Archived switch and a project selector: Personal plus projects.
-- Create a survey with the default name "New Survey N", then open the editor.
-- Rows show the name, created and updated dates, and the "…" menu with exactly the items in §2.1.
-- Inline rename.
-- Confirmation dialogs for delete and move.
-- Clipboard actions for the Survey, Post and Result IDs.
+**F2 Site look and feel**
+- The surveyjs.io design system: the shared site header (navigation, GitHub stars, cart and account menus, the My Surveys button), the footer and the cookie-consent banner.
+- The header, footer and styles are **copied** from surveyjs.io (D14).
+- The shell is a **configuration option**: the default is the "surveyjs.io" shell, and a different one can be selected, such as the neutral "Powered by SurveyJS" shell for the open-source edition and Docker image, or a customer's own.
 
-**F3 Editor**
-- Survey Creator with the Designer, Preview, Themes, Logic, Translation, JSON and Embed tabs.
-- Auto-save of the survey JSON and the theme JSON, with the save state shown.
-- File and image uploads from the editor go to file storage. The current 4 MB limit stays configurable.
-- The toolbar adds Clear Survey and Help.
-- Rename from the editor.
+**F3 Survey list**
+- Exactly as described in §2.1: the Active / Archived switch, the project selector, Create a Survey, rows, inline rename, the "…" menu, confirmations and the ID clipboard actions.
+
+**F4 Editor**
+- Exactly as described in §2.2: Survey Creator with all its tabs, auto-save of the survey and theme JSON, uploads, Clear Survey, Help, and rename from the footer.
 - The Embed tab generates code for the new service URLs.
 
-**F4 Run page**
-- A public URL `/s/{surveyId}`, with `/published?id=` kept as an alias that renders the published survey and theme.
-- Posts complete results.
-- Supports the Creator settings that need the server: one response per client through `clientId`/cookie, and the "completed" state.
+**F5 Run page**
+- `/s/{surveyId}`, with `/published?id=` kept as an alias.
+- Applies the survey's theme and posts complete results.
+- Supports the survey settings that need the server ("Limit to one response", the completed state).
 - Shows a not-available page when the survey is unpublished or deleted.
-- Includes a "Powered by SurveyJS" footer.
+- Keeps today's footer.
 
-**F5 Results**
-- **Summary:** Dashboard with per-question visualizers, a question filter and drag/hide; the state is saved per user and survey.
-- **Table:** Table view with columns, export to CSV, Excel or PDF, and pagination; the state is saved.
-- **Details:** response count, first and last response dates, download all as JSON or CSV, the Grant Access public-results toggle, the Save IP toggle, Delete Results, and reset of the table and summary state.
-- Show the 1,000-response dashboard limit notice; we keep the limit for parity and raise it in Phase 2.
+**F6 Results**
+- Exactly as described in §2.4: Summary, Table and Details, with the saved and resettable layout state, Grant Access, Save IP, Delete Results, and the JSON/CSV/Excel/PDF exports.
+- No 1,000-response limit (§3.1).
 
-**F6 History**
-- Record a timestamp and the editing user whenever the survey is saved, and list them.
-- Store full JSON snapshots from the start, so that Phase 2 diff and restore need no data migration.
+**F7 History**
+- Exactly as described in §2.5.
+- Snapshots of the survey JSON are stored from now on, so that diff and restore in P1 work for new edits.
 
-**F7 Projects**
-- Create, rename and delete projects.
-- Add and remove members by SurveyJS account email.
-- Move surveys between projects.
-- Phase 1 has the Owner and Editor permission levels only.
+**F8 Projects**
+- Exactly as described in §2.6: create, rename and delete projects; add members by registered email; remove members; switch members between admin and user; move surveys between projects.
+- Built in the new app with the surveyjs.io look.
+- Settings → Manage MySurveys on surveyjs.io also stays. Both work on the same data, so a change made in one is visible in the other (D13).
 
-**F8 API**
-- A new versioned REST API (`/api/v1`) that the SPA uses. It is described in OpenAPI.
-- A **legacy compatibility layer** reproducing the public endpoints in §2.8 and the private endpoints in use, so existing clients keep working (§9).
+**F9 Data access to surveyjs.io stores**
+- Repository implementations that connect **directly** to the surveyjs.io **Azure storage accounts** (surveys, themes, results, history, files) and to any related site-database data (users, projects, members), with no intermediate API.
+- Data formats stay compatible with the legacy service and `api.surveyjs.io`.
 
-**F9 Data migration**
-- Import from the current Azure store: users' surveys with their IDs, results, themes, history timestamps, projects and members, and the archived, published, public-results and IP flags.
-- Built as a repeatable script with verification reports.
+**F10 New API**
+- A new REST API (`/api/v1`) used by the front-end.
+- Resource-oriented and documented in full in OpenAPI as part of the specification.
+- Sessions for the front-end; tokens for programmatic access.
+- No secrets in URLs, and no state-changing GET requests.
 
-**F10 Operations**
-- Health endpoint, structured logs, configuration through environment variables, and database migrations.
-- Basic rate limiting and abuse protection on public endpoints.
-- Backups.
+**F11 Operations**
+- Health endpoint, structured logs and configuration through environment variables.
+- Rate limiting and abuse protection on public endpoints.
+- Deployment to the surveyjs.io hosting environment.
 
-### 6.2 Phase 2: P1 improvements
+### 6.2 Phase 2: P1
 
+**A. Customer readiness**
+1. **Login/password ("basic") authentication.**
+   - Sign-up and sign-in.
+   - Password hashing with a modern algorithm, password reset by email, email verification and an admin-created users mode.
+   - Lockout and rate limiting.
+2. **Several popular databases**, each through a documented provider interface:
+   - **PostgreSQL**, **MySQL/MariaDB**, **Microsoft SQL Server**, **MongoDB**, and **SQLite** for the single-container image.
+   - Customers point the app at the database they already use.
+3. **Pluggable file storage**: Azure Blob, S3-compatible or local disk.
+4. **Schema setup and migrations** for every supported database.
+5. **Survey-data migration between providers**, for example from the Azure-storage format to SQL. This depends on the decision about moving away from Azure (§9).
+
+**B. Product improvements**
 1. **Real versioning.**
    - A snapshot on every publish, a visual diff between versions, and one-click restore.
    - Each result is stamped with the survey version it was collected on, and the dashboard can filter by version.
@@ -298,24 +379,23 @@ Roles inside a project: **Owner** and **Editor** in Phase 1, which matches today
    - Single-use and personal invitation links.
    - Custom slug, QR code, and embed snippets (script tag and iframe).
    - "One response per person" enforced by cookie, login or token.
-3. **Partial responses and resume later.** Store progress server-side (`isPartialCompleted`, last page) and let respondents continue through a link or on their device. On by default.
-4. **File storage** in local disk, S3-compatible or Azure Blob, through an interface. Responses hold references instead of base64 data, which removes the 64 KB limit.
-5. **Analytics without the 1,000 limit.**
-   - Server-side aggregation and paging for large datasets.
+3. **Partial responses and resume later.** Store progress server-side and let respondents continue through a link or on their device.
+4. **Analytics.**
    - Saved filters, crosstabs, NPS, and a completion and drop-off funnel.
    - **Shareable read-only reports**: a link with an optional password, replacing the raw Grant Access toggle.
-6. **Roles and audit.**
+5. **Roles and audit.**
    - Owner, Editor, Analyst (results only) and Viewer.
    - Invitations by email to people who don't have an account yet.
    - An audit log of survey, result and membership changes.
-7. **Notifications and integrations.**
+6. **Notifications and integrations.**
    - Email to owners on each response or as a digest.
    - Webhooks signed with HMAC, with retries.
    - Google Sheets and Slack integrations.
-8. **API tokens**, scoped per project, sent in a header and never in the URL. OpenAPI documentation and a "try it" page.
-9. **Templates gallery.** Start from SurveyJS demo templates by industry: healthcare, HR, education, market research.
+7. **API tokens**, scoped per project, sent in a header. Interactive API documentation.
+8. **Templates gallery.** Start from SurveyJS demo templates by industry.
+9. **Privacy tools** (§8): account-level data export, plus retention settings for results.
 
-### 6.3 Backlog (P2 and later, for discussion)
+### 6.3 Backlog (after P1, for discussion)
 
 - **AI:**
   - Generate a survey from a prompt.
@@ -323,70 +403,90 @@ Roles inside a project: **Owner** and **Editor** in Phase 1, which matches today
   - Translate a survey.
   - The model provider is pluggable, so a self-hosted install can use a local LLM.
 - **An MCP server** so AI agents can create surveys and query results. OpenForm, Formbricks and form.io already offer this.
-- **Data protection:**
-  - Retention policies and automatic deletion.
-  - Respondent data export and erasure for GDPR.
-  - CAPTCHA and spam protection.
-- **Enterprise:**
-  - SSO through any OIDC or SAML provider in the self-hosted edition.
-  - Multiple organizations and tenants with white-labelling.
+- **Security and identity:** generic OIDC and SAML SSO for self-hosted installs, CAPTCHA and spam protection, and 2FA for login/password accounts.
+- **Multi-organization / tenant mode** with white-labelling.
 - **Research features:** quotas, contact lists with invitations and reminders, and SPSS/R export.
-- **PDF:** export a filled response to PDF with the SurveyJS PDF Generator, and print forms.
+- **PDF:** export a filled response to PDF with the SurveyJS PDF Generator.
 - **Collaboration:** comments on questions and a review/approval step before publishing.
+- **Analytics and telemetry** for the hosted site and the image.
 
 ## 7. Architecture and portability principles
 
-The aim is a back-end that any team can re-implement in .NET, PHP, Python or another platform without touching the front-end.
+The aim is a back-end that any team can re-implement in .NET, PHP, Python or another platform without touching the front-end. Concrete technology choices are made in the next step, the specification.
 
 1. **The API comes first, and the contract is the product.**
-   - An OpenAPI 3.1 specification is the single source of truth.
+   - An OpenAPI specification is the single source of truth.
    - The front-end talks only to this API: no server-rendered pages and no back-end-specific calls.
-2. **The front-end is a static single-page application.** It uses React, because Survey Creator, Form Library and Dashboard all ship React packages. It is built once and served from any web server or CDN, and reads runtime settings from `/config.json` (API URL, edition, branding, auth mode).
+2. **The front-end is a static React single-page application.** Survey Creator, Form Library and Dashboard all ship React packages. It is built once and served from any web server or CDN, and reads runtime settings from a config file (API URL, edition, branding, auth mode).
 3. **The back-end is deliberately thin.**
-   - Layers: HTTP handlers → services → repository and storage interfaces.
-   - No back-end-specific features leak into the contract: plain JSON over HTTPS, and Server-Sent Events if live updates are needed rather than socket.io.
-   - Long-running work, such as big exports, goes through a simple jobs table that any platform can poll.
-4. **Portable data model.**
-   - A relational schema that is documented, with migrations written as plain SQL so other platforms can reuse them.
-   - Survey and theme JSON, results, and the saved dashboard and table state are stored as JSON columns.
-   - PostgreSQL is the default; SQLite is used for the single-container Docker image. Repository interfaces leave the door open to MongoDB, SQL Server or MySQL.
-5. **Pluggable infrastructure.** File storage (disk, S3 or Azure Blob), email (SMTP or provider) and authentication (SurveyJS OIDC, generic OIDC or local accounts) each sit behind an interface.
-6. **Language-agnostic contract tests.**
-   - An HTTP-level test suite for the new API and the legacy layer that can run against any back-end implementation.
-   - This suite is what makes "port to .NET/PHP" a well-defined task.
-7. **The reference implementation is Node.js.**
-   - TypeScript, with a mainstream framework such as Fastify or Express (to decide).
-   - Validation is generated from the OpenAPI schema.
-8. **Security.**
-   - Cookie session with CSRF protection for the SPA; bearer tokens for the API.
-   - No secrets in URLs, and no state-changing GET requests.
-   - Survey JSON and HTML content is sanitized when rendered: the current account has an "XSS in question name" test survey, so this is a real concern.
+   - Layers: HTTP handlers → services → provider interfaces.
+   - Plain JSON over HTTPS, with nothing specific to one back-end platform in the contract.
+   - Long-running work, such as big exports, goes through a simple, portable jobs mechanism.
+4. **Everything external sits behind a provider interface.**
 
-## 8. Editions, licensing and branding
+   | Area | Phase 1 | P1 and later |
+   |---|---|---|
+   | Data | **SurveyJS legacy provider**: the surveyjs.io site database plus Azure storage | PostgreSQL, MySQL/MariaDB, SQL Server, MongoDB, SQLite |
+   | Files | Azure Blob | S3-compatible, local disk |
+   | Authentication | surveyjs.io OIDC | Login/password, generic OIDC/SAML |
+   | Email | — | SMTP, provider APIs |
+   | Look and feel (shell) | The surveyjs.io shell, copied from the site; selected through configuration | A neutral "Powered by SurveyJS" shell, or a custom one |
+
+5. **A portable data model.**
+   - A documented logical schema: users, projects, members, surveys, versions, results, files and UI state.
+   - Survey and theme JSON, results, and the saved dashboard and table state are kept as JSON documents in every provider.
+   - SQL migrations are kept as plain SQL so other platforms can reuse them.
+6. **Language-agnostic contract tests.**
+   - An HTTP-level test suite for the API that runs against any back-end implementation.
+   - A provider test suite that runs against every database adapter.
+   - Together these make "port to .NET/PHP" or "add a database" a well-defined task.
+7. **Security by default.**
+   - Cookie session with CSRF protection for the SPA; bearer tokens for the API.
+   - No secrets in URLs.
+   - Survey JSON and HTML content is sanitized when rendered.
+   - Least-privilege credentials for the surveyjs.io databases.
+
+## 8. Editions, licensing, branding and data protection
 
 | | Hosted (`my-surveys.surveyjs.io`) | Open-source repository | Free Docker image |
 |---|---|---|---|
-| Audience | SurveyJS users and prospects | Customers and developers who extend it | Teams wanting a simple self-hosted service |
-| Authentication | SurveyJS account (OIDC) | Pluggable | Local accounts, with OIDC optional |
-| Creator, Dashboard, PDF | Licensed by SurveyJS | Customer needs a commercial licence for commercial use | Bundled; terms to be defined (§11) |
-| Branding | SurveyJS | Customizable; white-label needs a licence | "Powered by SurveyJS" on the run page, editor, results, emails and login |
+| Audience | SurveyJS users and prospects | Customers who extend it | Teams wanting a simple self-hosted service |
+| Code licence | — | **MIT** | Free to use |
+| Creator, Dashboard, PDF | Licensed by SurveyJS | Commercial licence required to build on them | **Included; free use allowed** |
+| Authentication | surveyjs.io | Pluggable (login/password, OIDC, …) | Login/password; OIDC later |
+| Database | surveyjs.io site database plus Azure storage | Any supported provider | Bundled SQLite/PostgreSQL or the user's own |
+| Branding | surveyjs.io look (1:1) | Customizable | "Powered by SurveyJS" on the run page, editor, results, login and emails |
 
-## 9. Migration and legacy compatibility
+**Data protection (GDPR).** This is our proposal.
+- **Roles.** For the hosted service, SurveyJS is the controller of account data and a processor of survey responses on behalf of the survey owner. For self-hosted installs, the operator is the controller, and the product supplies the tools they need.
+- **Data minimization.**
+  - Respondent IP addresses are stored only when the owner enables "Save Respondent IP"; it is off by default.
+  - Respondent data never appears in application logs.
+  - IPs in access logs are truncated, or kept for a limited time.
+- **Erasure.**
+  - Deleting results, a survey or a project removes the data and its files permanently. Backups age out within a stated period (proposed: 30 days).
+  - **Deleting a surveyjs.io account** deletes the user's personal surveys, results and files, and removes them from projects. A project whose last admin is deleted passes to its next member, or is deleted if no members are left.
+- **Access and portability.** Owners can already export results (JSON/CSV). P1 adds an account-level export of all surveys and results.
+- **Retention.** P1 adds an optional per-survey policy that automatically deletes results after N days.
+- **Transparency.** The run page links to the Terms of Use and Privacy Statement, which a self-hosted install can configure. Survey owners are responsible for informing their respondents.
+- **Data location.** The hosted data stays in our current Azure regions. A self-hosted install keeps all data in the operator's environment and makes no outbound calls by default.
 
-- **Keep the IDs.** Survey, post and result IDs (GUIDs) are migrated unchanged.
-- **Legacy public API.** Either point `api.surveyjs.io/public/v1/Survey` at the new back-end's compatibility layer, or keep the old service running in read/write sync until traffic falls to zero. This is to decide; see §11. Contract tests cover every endpoint in §2.8.
-- **Legacy private API.** Support the `accessKey` endpoints for a deprecation period, then retire them in favour of API tokens.
-- **URL redirects.**
+## 9. Rollout, legacy compatibility and storage roadmap
 
-  | Old URL | New URL |
-  |---|---|
-  | `surveyjs.io/service/mysurveys*` | `my-surveys.surveyjs.io/...` |
-  | `/Service/EditSurvey/{id}` | `/surveys/{id}/edit` |
-  | `/Service/SurveyResults/{id}` | `/surveys/{id}/results` |
-  | `/Service/History/{id}` | `/surveys/{id}/history` |
-  | `/published?id={id}` | `/s/{id}` |
-
-- **Cut-over.** Run the migration in a dry run, verify counts and checksums, run a final delta migration, switch the redirects, and keep the old section read-only for a grace period.
+- **Phase 1 needs no data migration.**
+  - The new app reads and writes the existing stores.
+  - The old section and `api.surveyjs.io` keep working on the same data.
+  - We switch traffic with redirects and can roll back by removing them.
+- **Rollout steps:**
+  1. Internal testing on production data, read-only first.
+  2. Beta: an opt-in link from the old section.
+  3. Default: redirects switched on.
+  4. The old UI is removed.
+- **Legacy API.** `api.surveyjs.io` remains the legacy service for v1.x and REST clients. The new app does not re-implement it. Its retirement is a separate decision.
+- **Storage roadmap (decided after P1, D10).** Whether and when to move hosted data from Azure storage accounts to another store with compatible functionality, for example PostgreSQL with JSON columns plus Blob/S3 for files.
+  - **Reasons to move:** querying and aggregating results (crosstabs, filters, version filtering), transactions, using the same provider as customers, and less format coupling with the legacy service.
+  - **Reasons to wait:** the legacy `api.surveyjs.io` reads the same storage, so moving means either migrating the legacy service too or keeping the two in sync.
+  - **Decision:** decide after P1, once the provider layer and the SQL providers exist. The migration then becomes "copy from the legacy provider to the SQL provider" plus switching the legacy API over.
 
 ## 10. Competitive landscape (summary)
 
@@ -414,17 +514,32 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 **Where we can stand out:**
 - The most capable open form engine on the market (SurveyJS).
 - No response caps.
+- An MIT-licensed app with a free image that includes the commercial components.
 - Roles, audit and versioning in the core product.
-- One-command self-hosting.
+- A choice of databases.
 - A portable back-end contract.
 
-## 11. Open questions
+## 11. Decisions and open questions
 
-1. **Legacy API.** Should the new back-end take over `api.surveyjs.io` through the compatibility layer, or do we run both systems during the transition? How many active v1.x and REST clients are there? We need traffic data.
-2. **Docker image licence terms.** May the free image be used commercially with Creator and Dashboard included, as long as it stays unmodified and branded? Which licence covers the repository's own code (MIT or another)?
-3. **Hosted limits.** Do we keep the 64 KB, 4 MB and 1,000 limits in Phase 1 for exact parity, or lift some right away?
-4. **Front-end framework.** React is assumed, as above; the alternatives are Angular, Vue or vanilla JS.
-5. **Database.** PostgreSQL in hosted, or stay on Azure storage or Cosmos? The answer affects the migration effort.
-6. **Account deletion and data retention policy** for the hosted service, for GDPR.
-7. **Project management screens.** Capture the current UI from surveyjs.io Settings to confirm Phase 1 scope.
-8. **Analytics and telemetry.** The current site runs GTM and ad pixels. What do we want on the new subdomain, and what is allowed in the self-hosted image (probably nothing)?
+**Decisions (2026-10-13)**
+
+| # | Topic | Decision |
+|---|---|---|
+| D1 | Legacy API | The new API differs from `api.surveyjs.io`: more standard and convenient, and specified in detail in the specification. |
+| D2 | Licensing | The repository's own code is MIT. The free Docker image may be used with the SurveyJS commercial products included. |
+| D3 | Limits | Some limits are lifted right away in Phase 1 (proposal in §3.1). |
+| D4 | Front-end | React. Exact technical choices are made in the next step, the specification. |
+| D5 | Database | Parity phase: stay on the surveyjs.io databases and Azure storage. Afterwards, support several popular databases. |
+| D6 | GDPR | Handled per the proposal in §8. |
+| D7 | UI | Phase 1 reproduces the current UI 1:1, including projects (§2.6), with surveyjs.io styling. |
+| D8 | Analytics and telemetry | Discussed after P1. |
+| D9 | Authentication | surveyjs.io authorization on our site; login/password for customers in P1. |
+| D10 | Storage roadmap | Whether and when to move off Azure storage is decided after P1 (§9). |
+| D11 | Limits | The Phase 1 proposal in §3.1 stands as written. The check of how legacy endpoints handle file references is done during the specification. |
+| D12 | Access to stores | The app connects directly to Azure storage. There is no intermediate surveyjs.io API. |
+| D13 | Project management | Both exist: the Projects screen in the new app, and Settings → Manage MySurveys on surveyjs.io. They work on the same data. |
+| D14 | Site shell | Copy the header, footer and design-system styles from surveyjs.io. The shell is a configuration option, so a different shell can be used. |
+
+**Open questions**
+
+None at the moment. New questions will come up during the specification.
