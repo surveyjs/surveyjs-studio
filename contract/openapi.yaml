@@ -1,0 +1,1605 @@
+openapi: 3.1.0
+info:
+  title: My Surveys API
+  version: 1.0.0-draft
+  summary: HTTP contract of the My Surveys application (my-surveys.surveyjs.io).
+  license:
+    name: MIT
+    identifier: MIT
+  description: |
+    This document is the **source of truth** for the My Surveys back-end. Every
+    server implementation (the Node.js reference implementation, or a port to .NET,
+    PHP and others) must pass the HTTP conformance suite that is generated from
+    and checked against this file. See `idea.md` §7.
+
+    ## Conventions
+
+    - **Versioning.** Every path is relative to `/api/v1`.
+    - **JSON.** Property names are camelCase. Timestamps are RFC 3339 in UTC.
+      IDs are opaque strings; existing surveyjs.io GUIDs are kept unchanged.
+    - **Errors.** Every error uses RFC 9457 Problem Details
+      (`application/problem+json`). The `code` member is a stable,
+      machine-readable identifier; `errors[]` lists validation failures, each
+      with a JSON Pointer to the invalid field.
+    - **Partial updates.** `PATCH` takes a JSON Merge Patch (RFC 7396) document.
+      Requests may send `application/merge-patch+json` or `application/json`.
+    - **Concurrent edits.** Large documents (survey definition, theme) return an
+      `ETag`. A write must send `If-Match`; a stale value fails with `412`, and a
+      missing one with `428`.
+    - **Paging.** Lists use opaque cursors: `?limit=&cursor=` returns
+      `{ items, nextCursor }`. `nextCursor` is `null` on the last page.
+    - **Creation.** `201 Created` carries a `Location` header and the created
+      resource.
+    - **Downloads.** The format is chosen with the `Accept` header. Because a
+      browser download link cannot set headers, a `format` query parameter is
+      accepted as an alias.
+    - **Authentication.**
+      - The web app uses the session cookie `msid`. Requests that change data
+        (POST, PUT, PATCH, DELETE) must also send `X-CSRF-Token`, which echoes the
+        value of the readable `msid_csrf` cookie (double-submit pattern).
+      - Bearer API tokens (`bearerAuth`) arrive in P1.
+      - `/public/*` endpoints need no authentication.
+    - **Idempotent submissions.** A respondent submission may carry an
+      `Idempotency-Key` header. A repeated key returns the original result instead
+      of storing a duplicate.
+    - **Phasing.** Operations and properties marked `x-phase: P1` are part of the
+      contract but are implemented in Phase 2 (P1). Until then a server answers
+      them with `501 Not Implemented`, or ignores the marked properties.
+servers:
+  - url: https://my-surveys.surveyjs.io/api/v1
+    description: Hosted (production)
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+tags:
+  - name: Session
+    description: Sign-in, sign-out and the current user.
+  - name: Config
+    description: Runtime settings the front-end needs before it renders.
+  - name: Projects
+    description: Projects group surveys and are shared with members.
+  - name: Members
+    description: Membership and roles inside a project.
+  - name: Surveys
+    description: Survey records (metadata) and their lifecycle.
+  - name: Survey content
+    description: The survey definition (SurveyJS JSON) and the theme, edited by Survey Creator.
+  - name: Files
+    description: Files uploaded from the editor (assets) or by respondents.
+  - name: History
+    description: Edit history of a survey.
+  - name: Results
+    description: Collected responses, statistics and exports.
+  - name: Views
+    description: Saved per-user layout of the results dashboard and table.
+  - name: Public
+    description: Endpoints for respondents and public results. No authentication.
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------- Session
+  /auth/login:
+    get:
+      tags: [Session]
+      operationId: login
+      summary: Start sign-in
+      description: |
+        Redirects the browser to the configured identity provider. On the hosted
+        edition this is `auth.surveyjs.io`, using the OAuth 2.0 authorization code
+        flow with PKCE.
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          description: A same-origin path to open after sign-in.
+          schema: { type: string, default: /, pattern: '^/' }
+      responses:
+        '302':
+          description: Redirect to the identity provider.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/callback:
+    get:
+      tags: [Session]
+      operationId: loginCallback
+      summary: Finish sign-in
+      description: |
+        The identity provider redirects here. The server exchanges the code, sets
+        the `msid` and `msid_csrf` cookies, and redirects to `returnTo`.
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302':
+          description: Signed in; redirect back into the application.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+            Set-Cookie: { $ref: '#/components/headers/SetCookie' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/logout:
+    post:
+      tags: [Session]
+      operationId: logout
+      summary: Sign out
+      description: |
+        Ends the local session. The response carries the identity provider's
+        end-session URL; the client navigates there to sign out everywhere.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '200':
+          description: Signed out.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirectUrl]
+                properties:
+                  redirectUrl: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/password/login:
+    post:
+      tags: [Session]
+      operationId: passwordLogin
+      summary: Sign in with email and password
+      x-phase: P1
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 1 }
+      responses:
+        '204':
+          description: Signed in; session cookies are set.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetCookie' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /me:
+    get:
+      tags: [Session]
+      operationId: getCurrentUser
+      summary: Current user
+      responses:
+        '200':
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ----------------------------------------------------------------- Config
+  /config:
+    get:
+      tags: [Config]
+      operationId: getConfig
+      summary: Runtime configuration
+      description: Edition, shell, sign-in methods and limits. Safe to cache briefly.
+      security: []
+      responses:
+        '200':
+          description: Configuration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppConfig' }
+
+  # --------------------------------------------------------------- Projects
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List the projects the user belongs to
+      description: Personal surveys are not a project; see `GET /surveys?project=personal`.
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of projects.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project
+      description: The creator becomes the project's first member, as `admin`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /projects/{projectId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Get a project
+      responses:
+        '200':
+          description: The project.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Rename a project
+      description: Admins only.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/ProjectPatch' }
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Delete a project
+      description: |
+        Admins only. The project's surveys, with their results, files and history,
+        are not deleted. They move to the project owner (`ownerId`) as personal
+        surveys (`projectId: null`) and keep their IDs, published state and
+        settings. If the owner is no longer a member, they move to the admin who
+        deletes the project.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Members
+  /projects/{projectId}/members:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+    get:
+      tags: [Members]
+      operationId: listMembers
+      summary: List project members
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of members.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Members]
+      operationId: addMember
+      summary: Add a member
+      description: |
+        Admins only. The email must belong to a registered user; otherwise the
+        server returns `404` with code `user-not-found`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberCreate' }
+      responses:
+        '201':
+          description: Added.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /projects/{projectId}/members/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - { $ref: '#/components/parameters/UserId' }
+    patch:
+      tags: [Members]
+      operationId: updateMember
+      summary: Change a member's role
+      description: Admins only. Demoting the last admin fails with `409 last-admin`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/MemberPatch' }
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Members]
+      operationId: removeMember
+      summary: Remove a member
+      description: |
+        Admins may remove anyone; any member may remove themselves (leave the
+        project). Removing the last admin fails with `409 last-admin`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---------------------------------------------------------------- Surveys
+  /surveys:
+    get:
+      tags: [Surveys]
+      operationId: listSurveys
+      summary: List surveys
+      description: Sorted by `updatedAt`, newest first, as on the current site.
+      parameters:
+        - name: project
+          in: query
+          description: '`personal`, or the ID of a project the user belongs to.'
+          schema: { type: string, default: personal }
+        - name: archived
+          in: query
+          description: '`false` lists active surveys; `true` lists archived ones.'
+          schema: { type: boolean, default: false }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of surveys.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Surveys]
+      operationId: createSurvey
+      summary: Create a survey
+      description: |
+        Without a `name`, the server picks the next free "New Survey N". Without a
+        `definition`, the survey starts from the default template.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyCreate' }
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Survey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /surveys/{surveyId}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Surveys]
+      operationId: getSurvey
+      summary: Get a survey record
+      responses:
+        '200':
+          description: The survey record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Survey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Surveys]
+      operationId: updateSurvey
+      summary: Update a survey record
+      description: |
+        A single call covers rename, move to a project (`projectId`; `null` means
+        Personal), archive and restore (`archived`), publish and unpublish
+        (`published`), and settings. Requires modify permission; moving also
+        requires membership of the target project.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/SurveyPatch' }
+            examples:
+              rename: { value: { name: Customer feedback 2026 } }
+              publish: { value: { published: true } }
+              archive: { value: { archived: true } }
+              moveToPersonal: { value: { projectId: null } }
+              publicResults: { value: { settings: { publicResults: true } } }
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Survey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Surveys]
+      operationId: deleteSurvey
+      summary: Delete a survey permanently
+      description: |
+        Only archived surveys can be deleted; otherwise `409 survey-not-archived`.
+        Deletes the definition, theme, results, files and history.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /surveys/{surveyId}/clones:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    post:
+      tags: [Surveys]
+      operationId: cloneSurvey
+      summary: Clone a survey
+      description: |
+        Copies the definition and theme into a new, unpublished survey in the same
+        project, unless `projectId` is given. Results and history are not copied.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { $ref: '#/components/schemas/SurveyName' }
+                projectId: { $ref: '#/components/schemas/NullableProjectId' }
+      responses:
+        '201':
+          description: The new survey.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Survey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------- Survey content
+  /surveys/{surveyId}/definition:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Survey content]
+      operationId: getSurveyDefinition
+      summary: Get the survey definition
+      responses:
+        '200':
+          description: The SurveyJS survey JSON.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyDefinition' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Survey content]
+      operationId: saveSurveyDefinition
+      summary: Save the survey definition
+      description: |
+        Used by Survey Creator auto-save. Also updates `updatedAt` and adds a
+        history entry.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyDefinition' }
+      responses:
+        '204':
+          description: Saved.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+  /surveys/{surveyId}/theme:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Survey content]
+      operationId: getSurveyTheme
+      summary: Get the survey theme
+      responses:
+        '200':
+          description: The SurveyJS theme JSON; `{}` when the survey uses the default theme.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyTheme' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Survey content]
+      operationId: saveSurveyTheme
+      summary: Save the survey theme
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyTheme' }
+      responses:
+        '204':
+          description: Saved.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
+  # ------------------------------------------------------------------ Files
+  /surveys/{surveyId}/assets:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    post:
+      tags: [Files]
+      operationId: uploadSurveyAsset
+      summary: Upload a file from the editor
+      description: |
+        Images and other files placed into the survey from Survey Creator. Each
+        survey has a total quota (see `AppConfig.limits`); exceeding it returns
+        `413 quota-exceeded`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/FileUpload' }
+      responses:
+        '201':
+          description: Stored.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredFile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  # ---------------------------------------------------------------- History
+  /surveys/{surveyId}/history:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [History]
+      operationId: listSurveyHistory
+      summary: List edits of a survey
+      description: Newest first.
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of history entries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HistoryPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Results
+  /surveys/{surveyId}/results:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Results]
+      operationId: listResults
+      summary: List responses
+      description: |
+        Oldest first. The dashboard loads every page; there is no 1,000-response
+        cap. For whole-dataset downloads use `GET /surveys/{surveyId}/results/export`.
+      parameters:
+        - name: limit
+          in: query
+          description: Page size.
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of responses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResponsePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Results]
+      operationId: deleteResults
+      summary: Delete all responses
+      description: Also deletes files uploaded by respondents. Cannot be undone.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /surveys/{surveyId}/results/stats:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Results]
+      operationId: getResultStats
+      summary: Response statistics
+      responses:
+        '200':
+          description: Totals for the Details tab.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultStats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /surveys/{surveyId}/results/export:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Results]
+      operationId: exportResults
+      summary: Download all responses
+      description: |
+        Streams the whole dataset as an attachment. The format comes from `Accept`,
+        or from `format`, which takes precedence. The table's own CSV, Excel and
+        PDF export runs in the browser and does not use this endpoint.
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, csv] }
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SurveyResponse' }
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+
+  # ------------------------------------------------------------------ Views
+  /surveys/{surveyId}/views/{view}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - name: view
+        in: path
+        required: true
+        description: '`summary` (charts) or `table`.'
+        schema: { type: string, enum: [summary, table] }
+    get:
+      tags: [Views]
+      operationId: getResultsView
+      summary: Get the saved layout
+      description: '`404 view-not-found` means the default layout is used.'
+      responses:
+        '200':
+          description: The saved SurveyJS Dashboard or Table state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ViewState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Views]
+      operationId: saveResultsView
+      summary: Save the layout
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ViewState' }
+      responses:
+        '204': { description: Saved. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+    delete:
+      tags: [Views]
+      operationId: resetResultsView
+      summary: Reset the layout to the default
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Reset. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------------- Public
+  /public/surveys/{surveyId}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Public]
+      operationId: getPublishedSurvey
+      summary: Load a published survey
+      description: |
+        Used by the run page and by embeds. An unknown or unpublished survey
+        returns `404 survey-not-available`; the two cases are not distinguished.
+      security: []
+      parameters:
+        - name: clientId
+          in: query
+          description: |
+            The respondent's client ID. When given, `completed` tells whether this
+            client has already submitted a response (for "Limit to one response").
+          schema: { $ref: '#/components/schemas/ClientId' }
+      responses:
+        '200':
+          description: The survey to render.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublishedSurvey' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/surveys/{surveyId}/responses:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    post:
+      tags: [Public]
+      operationId: submitResponse
+      summary: Submit a response
+      description: |
+        Stores a response to a published survey. When the survey allows one
+        response per client and `clientId` has already completed it, the server
+        returns `409 already-completed`. The respondent's IP address is stored
+        only when the survey's `storeRespondentIp` setting is on.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResponseSubmission' }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/surveys/{surveyId}/files:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    post:
+      tags: [Public]
+      operationId: uploadResponseFile
+      summary: Upload a respondent file
+      description: |
+        Files from File Upload and Signature questions are stored as blobs, and the
+        response keeps only the returned URL. This lifts the 64 KB response limit.
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/FileUpload' }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredFile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/files/{fileId}:
+    parameters:
+      - name: fileId
+        in: path
+        required: true
+        description: |
+          An unguessable ID with at least 128 bits of randomness; the URL itself
+          grants access. Signed, expiring URLs are a possible P1 hardening.
+        schema: { type: string }
+    get:
+      tags: [Public]
+      operationId: downloadFile
+      summary: Download a stored file
+      security: []
+      responses:
+        '200':
+          description: The file content.
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, contentMediaType: application/octet-stream }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /public/surveys/{surveyId}/results:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Public]
+      operationId: getPublicResults
+      summary: Public results
+      description: |
+        Available only while the survey's `publicResults` setting is on
+        ("Grant Access"); otherwise `404`. Each page includes the survey
+        definition so a Dashboard can render it. In P1 this is complemented by
+        token-based shareable reports.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of responses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicResultPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: msid
+      description: Session cookie (HttpOnly, Secure, SameSite=Lax), set on sign-in.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Must equal the value of the readable `msid_csrf` cookie. Required with `cookieAuth` on requests that change data.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Per-project API token, sent as `Authorization Bearer <token>`.
+      x-phase: P1
+
+  parameters:
+    SurveyId:
+      name: surveyId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    Limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      description: The `nextCursor` value from the previous page.
+      schema: { type: string }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The `ETag` from the last read or write of this document.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: A client-generated unique key (UUID recommended). Keys are remembered for 24 hours.
+      schema: { type: string, maxLength: 128 }
+
+  headers:
+    Location:
+      description: URL of the created resource or redirect target.
+      schema: { type: string }
+    ETag:
+      description: Version tag of the document; send it back in `If-Match`.
+      schema: { type: string }
+    SetCookie:
+      description: Session cookies `msid` (HttpOnly) and `msid_csrf` (readable).
+      schema: { type: string }
+    ContentDisposition:
+      description: '`attachment; filename="…"`'
+      schema: { type: string }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Not signed in, or the credentials are invalid (`unauthenticated`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/unauthenticated
+            title: Sign-in required
+            status: 401
+            code: unauthenticated
+    Forbidden:
+      description: Signed in but not allowed (`forbidden`, `csrf-token-invalid`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/forbidden
+            title: You cannot modify this survey
+            status: 403
+            code: forbidden
+    NotFound:
+      description: |
+        The resource does not exist or is not visible to the caller. Codes:
+        `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/survey-not-available
+            title: This survey is not available
+            status: 404
+            code: survey-not-available
+    Conflict:
+      description: |
+        The request conflicts with the current state. Codes:
+        `survey-not-archived`, `already-member`, `last-admin`, `already-completed`.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/survey-not-archived
+            title: Archive the survey before deleting it
+            status: 409
+            code: survey-not-archived
+    PreconditionFailed:
+      description: The document changed since it was read (`edit-conflict`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/edit-conflict
+            title: The survey was changed by someone else
+            status: 412
+            code: edit-conflict
+            detail: Reload the survey to see the latest version.
+    PreconditionRequired:
+      description: The write did not send `If-Match` (`if-match-required`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: The body or file is too large, or a quota is used up (`payload-too-large`, `quota-exceeded`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/quota-exceeded
+            title: File quota exceeded
+            status: 413
+            code: quota-exceeded
+            detail: This survey can store up to 50 MB of files.
+    UnsupportedMediaType:
+      description: The file type is not allowed (`unsupported-media-type`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotAcceptable:
+      description: The requested download format is not supported (`not-acceptable`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationFailed:
+      description: The body is well-formed but invalid (`validation-failed`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/validation-failed
+            title: The request is invalid
+            status: 422
+            code: validation-failed
+            errors:
+              - pointer: /name
+                detail: Must not be empty.
+    TooManyRequests:
+      description: Rate limit reached (`rate-limited`).
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotImplemented:
+      description: The operation belongs to a later phase (`not-implemented`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ------------------------------------------------------------- Basics
+    Id:
+      type: string
+      description: Opaque identifier. Existing surveyjs.io IDs are GUIDs.
+      minLength: 1
+      maxLength: 64
+      examples: [f6f1c966-8d49-46d0-94d3-975c53b6577d]
+    NullableProjectId:
+      description: A project ID, or `null` for Personal.
+      oneOf:
+        - { $ref: '#/components/schemas/Id' }
+        - { type: 'null' }
+    Timestamp:
+      type: string
+      format: date-time
+      examples: ['2026-10-05T06:48:39.795Z']
+    ClientId:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: Identifies a respondent's device or account, for one-response limits.
+    Cursor:
+      type: [string, 'null']
+      description: Pass as `cursor` to fetch the next page; `null` on the last page.
+
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details.
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          enum:
+            - bad-request
+            - unauthenticated
+            - forbidden
+            - csrf-token-invalid
+            - not-found
+            - survey-not-available
+            - user-not-found
+            - view-not-found
+            - survey-not-archived
+            - already-member
+            - last-admin
+            - already-completed
+            - edit-conflict
+            - if-match-required
+            - payload-too-large
+            - quota-exceeded
+            - unsupported-media-type
+            - not-acceptable
+            - validation-failed
+            - rate-limited
+            - not-implemented
+        errors:
+          type: array
+          description: Present for `validation-failed`.
+          items:
+            type: object
+            required: [pointer, detail]
+            properties:
+              pointer: { type: string, description: JSON Pointer to the invalid field. }
+              detail: { type: string }
+
+    # ------------------------------------------------------------ Session
+    CurrentUser:
+      type: object
+      required: [id, displayName, email]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        avatarUrl: { type: [string, 'null'], format: uri }
+        notices:
+          type: array
+          description: Account notices shown by the shell, such as licence expiry on the hosted edition.
+          items: { $ref: '#/components/schemas/Notice' }
+      examples:
+        - id: 3c4a7fdf-94a1-41ec-96d0-41749c260100
+          displayName: Alex
+          email: alex@example.com
+          avatarUrl: null
+          notices: []
+    Notice:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, examples: [license-expired, license-expires-soon] }
+        message: { type: string }
+        actionUrl: { type: string, format: uri }
+        actionLabel: { type: string }
+
+    AppConfig:
+      type: object
+      required: [edition, shell, authMethods, limits]
+      properties:
+        edition:
+          type: string
+          enum: [hosted, self-hosted]
+        shell:
+          type: string
+          description: The look-and-feel shell; `surveyjs-site` reproduces surveyjs.io.
+          examples: [surveyjs-site, powered-by-surveyjs]
+        authMethods:
+          type: array
+          items: { type: string, enum: [surveyjs, password, oidc] }
+        surveyjsLicenseKey:
+          type: [string, 'null']
+          description: |
+            Licence key for the commercial SurveyJS components (Creator,
+            Dashboard, PDF), applied by the front-end at start-up. It is public by
+            nature, like any licence key shipped in a front-end bundle.
+        limits:
+          type: object
+          required: [maxAssetBytesPerSurvey, maxFileBytes, maxResponseBytes]
+          properties:
+            maxAssetBytesPerSurvey: { type: integer }
+            maxFileBytes: { type: integer }
+            maxResponseBytes: { type: integer }
+        links:
+          type: object
+          description: Shell links, such as account settings and help desk.
+          additionalProperties: { type: string, format: uri }
+
+    # ----------------------------------------------------------- Projects
+    ProjectRole:
+      type: string
+      enum: [admin, user]
+    Project:
+      type: object
+      required: [id, name, ownerId, role, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { $ref: '#/components/schemas/ProjectName' }
+        ownerId:
+          $ref: '#/components/schemas/Id'
+          description: The user who created the project. Receives its surveys when the project is deleted.
+        role:
+          $ref: '#/components/schemas/ProjectRole'
+          description: The current user's role in this project.
+        memberCount: { type: integer, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+      examples:
+        - id: 56ddd87e-e091-47cd-8edb-4843ee17829c
+          name: JaneOrg.com
+          ownerId: 112454ae-dedf-4c74-be5c-4b4d4f92dabe
+          role: user
+          memberCount: 2
+          createdAt: '2023-11-21T10:00:00Z'
+    ProjectName:
+      type: string
+      minLength: 1
+      maxLength: 128
+    ProjectCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { $ref: '#/components/schemas/ProjectName' }
+    ProjectPatch:
+      type: object
+      minProperties: 1
+      properties:
+        name: { $ref: '#/components/schemas/ProjectName' }
+    ProjectPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Project' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+
+    Member:
+      type: object
+      required: [userId, displayName, email, role]
+      properties:
+        userId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/ProjectRole' }
+    MemberCreate:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        role:
+          $ref: '#/components/schemas/ProjectRole'
+          default: user
+    MemberPatch:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/ProjectRole' }
+    MemberPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Member' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+
+    # ------------------------------------------------------------ Surveys
+    SurveyName:
+      type: string
+      minLength: 1
+      maxLength: 256
+    SurveySettings:
+      type: object
+      properties:
+        publicResults:
+          type: boolean
+          description: '"Grant Access": results are readable at `/public/surveys/{surveyId}/results`.'
+        storeRespondentIp:
+          type: boolean
+          description: '"Save Respondent IP in Results".'
+    Survey:
+      type: object
+      required:
+        - id
+        - name
+        - projectId
+        - published
+        - archived
+        - createdAt
+        - updatedAt
+        - postId
+        - resultId
+        - permissions
+        - settings
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { $ref: '#/components/schemas/SurveyName' }
+        projectId: { $ref: '#/components/schemas/NullableProjectId' }
+        published: { type: boolean }
+        archived: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        postId:
+          $ref: '#/components/schemas/Id'
+          description: Legacy ID shown by "Copy Post ID"; used by api.surveyjs.io clients.
+        resultId:
+          $ref: '#/components/schemas/Id'
+          description: Legacy ID shown by "Copy Result ID"; used by api.surveyjs.io clients.
+        permissions:
+          type: object
+          required: [canModify]
+          properties:
+            canModify: { type: boolean }
+        settings:
+          allOf:
+            - { $ref: '#/components/schemas/SurveySettings' }
+            - required: [publicResults, storeRespondentIp]
+      examples:
+        - id: f6f1c966-8d49-46d0-94d3-975c53b6577d
+          name: Customer feedback
+          projectId: null
+          published: true
+          archived: false
+          createdAt: '2023-03-13T09:12:00Z'
+          updatedAt: '2026-04-14T15:30:00Z'
+          postId: 13f2e886-9c38-42f2-b814-d0900cf06a19
+          resultId: 929d229c-9f78-40ec-aa47-0eea718a53b2
+          permissions: { canModify: true }
+          settings: { publicResults: false, storeRespondentIp: false }
+    SurveyCreate:
+      type: object
+      properties:
+        name: { $ref: '#/components/schemas/SurveyName' }
+        projectId: { $ref: '#/components/schemas/NullableProjectId' }
+        definition: { $ref: '#/components/schemas/SurveyDefinition' }
+    SurveyPatch:
+      type: object
+      minProperties: 1
+      properties:
+        name: { $ref: '#/components/schemas/SurveyName' }
+        projectId: { $ref: '#/components/schemas/NullableProjectId' }
+        archived: { type: boolean }
+        published: { type: boolean }
+        settings: { $ref: '#/components/schemas/SurveySettings' }
+    SurveyPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Survey' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+
+    SurveyDefinition:
+      type: object
+      description: |
+        A SurveyJS survey JSON schema, stored as the client sends it. See
+        https://surveyjs.io/form-library/documentation/design-survey/create-a-simple-survey
+      additionalProperties: true
+      examples:
+        - title: Customer feedback
+          pages:
+            - name: page1
+              elements:
+                - { type: rating, name: satisfaction, title: How satisfied are you? }
+    SurveyTheme:
+      type: object
+      description: A SurveyJS theme JSON (`themeName`, `colorPalette`, `cssVariables`, …).
+      additionalProperties: true
+
+    # -------------------------------------------------------------- Files
+    FileUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+    StoredFile:
+      type: object
+      required: [id, url, name, contentType, size]
+      properties:
+        id: { type: string }
+        url:
+          type: string
+          description: Absolute URL of `GET /public/files/{fileId}`; this is what goes into the survey JSON or response.
+        name: { type: string }
+        contentType: { type: string }
+        size: { type: integer, minimum: 0 }
+
+    # ------------------------------------------------------------ History
+    HistoryEntry:
+      type: object
+      required: [at, user]
+      properties:
+        at: { $ref: '#/components/schemas/Timestamp' }
+        user:
+          description: Who saved. `null` for legacy entries recorded without a user.
+          oneOf:
+            - type: object
+              required: [id, displayName]
+              properties:
+                id: { $ref: '#/components/schemas/Id' }
+                displayName: { type: string }
+            - { type: 'null' }
+    HistoryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/HistoryEntry' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+
+    # ------------------------------------------------------------ Results
+    SurveyResponse:
+      type: object
+      required: [id, submittedAt, data]
+      properties:
+        id: { type: string, description: 'Legacy `InstanceId`.' }
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+        data:
+          type: object
+          description: The respondent's answers keyed by question name, as produced by the Form Library.
+          additionalProperties: true
+        clientId: { $ref: '#/components/schemas/ClientId' }
+        respondentIp:
+          type: string
+          description: Present only when `storeRespondentIp` was on at submission time.
+        partial:
+          type: boolean
+          x-phase: P1
+      examples:
+        - id: eb2ed53e-f1ee-4343-a7d4-371d1d689dca
+          submittedAt: '2026-10-05T06:48:57.517Z'
+          data: { satisfaction: 4, comment: Great service }
+    ResponsePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SurveyResponse' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+    ResultStats:
+      type: object
+      required: [count, firstSubmittedAt, lastSubmittedAt]
+      properties:
+        count: { type: integer, minimum: 0 }
+        firstSubmittedAt: { type: [string, 'null'], format: date-time }
+        lastSubmittedAt: { type: [string, 'null'], format: date-time }
+    ViewState:
+      type: object
+      description: Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`).
+      additionalProperties: true
+
+    # ------------------------------------------------------------- Public
+    PublishedSurvey:
+      type: object
+      required: [id, name, definition, theme]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { $ref: '#/components/schemas/SurveyName' }
+        definition: { $ref: '#/components/schemas/SurveyDefinition' }
+        theme: { $ref: '#/components/schemas/SurveyTheme' }
+        completed:
+          type: boolean
+          description: Present when `clientId` was given.
+    ResponseSubmission:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        clientId: { $ref: '#/components/schemas/ClientId' }
+        partial:
+          type: boolean
+          default: false
+          description: Save progress without completing.
+          x-phase: P1
+        lastPageIndex:
+          type: integer
+          minimum: 0
+          description: Page to resume on.
+          x-phase: P1
+    PublicResultPage:
+      type: object
+      required: [survey, items, nextCursor]
+      properties:
+        survey:
+          type: object
+          required: [id, name, definition]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            name: { $ref: '#/components/schemas/SurveyName' }
+            definition: { $ref: '#/components/schemas/SurveyDefinition' }
+        items:
+          type: array
+          items:
+            type: object
+            required: [submittedAt, data]
+            properties:
+              submittedAt: { $ref: '#/components/schemas/Timestamp' }
+              data: { type: object, additionalProperties: true }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
