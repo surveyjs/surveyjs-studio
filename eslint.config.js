@@ -13,6 +13,7 @@ export default tseslint.config(
       "**/playwright-report/**",
       "**/blob-report/**",
       "**/generated/**",
+      "web/src/routeTree.gen.ts",
       ".superpowers/**",
       ".claude/**",
       ".agents/**",
