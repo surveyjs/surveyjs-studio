@@ -1,0 +1,20 @@
+[
+  {
+    "PartitionKey": "*",
+    "RowKey": "77777777-0000-4000-8000-a00000000020",
+    "id@odata.type": "Edm.Guid",
+    "id": "77777777-0000-4000-8000-a00000000020",
+    "type": "SURVEY_DELETEPOSTRESUTL",
+    "happendat@odata.type": "Edm.DateTime",
+    "happendat": "2026-04-05T08:00:00Z",
+    "surveyid@odata.type": "Edm.Guid",
+    "surveyid": "77777777-0000-4000-8000-a00000000021",
+    "postid@odata.type": "Edm.Guid",
+    "postid": "33333333-0000-4000-8000-a00000000001",
+    "instanceid@odata.type": "Edm.Guid",
+    "instanceid": "66666666-0000-4000-8000-a00000000099",
+    "result": "{\"satisfaction\":1}",
+    "clientid": "client-0003",
+    "ispartialcompleted": false
+  }
+]

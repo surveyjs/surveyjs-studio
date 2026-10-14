@@ -1,0 +1,57 @@
+[
+  {
+    "id": "55555555-0000-4000-8000-a00000000001",
+    "organizationid": "55555555-0000-4000-8000-a00000000001",
+    "userid": "11111111-0000-4000-8000-a00000000001",
+    "role": "admin",
+    "type": "ORGANIZATION_CREATE",
+    "name": "Marketing",
+    "happendat": "2025-11-21T10:00:00Z",
+    "timestamp": "2025-11-21T10:00:00Z",
+    "ipaddress": null
+  },
+  {
+    "id": "aaaaaaaa-0000-4000-8000-a00000000001",
+    "organizationid": "55555555-0000-4000-8000-a00000000001",
+    "userid": "11111111-0000-4000-8000-a00000000002",
+    "role": "Admin",
+    "type": "ORGANIZATION_LEAVE",
+    "name": null,
+    "happendat": "2025-11-23T14:00:00Z",
+    "timestamp": "2025-11-23T14:00:00Z",
+    "ipaddress": null
+  },
+  {
+    "id": "aaaaaaaa-0000-4000-8000-a00000000002",
+    "organizationid": "55555555-0000-4000-8000-a00000000001",
+    "userid": "11111111-0000-4000-8000-a00000000003",
+    "role": "user",
+    "type": "ORGANIZATION_JOIN",
+    "name": null,
+    "happendat": "2025-11-22T08:00:00Z",
+    "timestamp": "2025-11-22T08:00:00Z",
+    "ipaddress": null
+  },
+  {
+    "id": "55555555-0000-4000-8000-a00000000002",
+    "organizationid": "55555555-0000-4000-8000-a00000000002",
+    "userid": "11111111-0000-4000-8000-a00000000002",
+    "role": "admin",
+    "type": "ORGANIZATION_CREATE",
+    "name": "Engineering",
+    "happendat": "2025-12-01T09:00:00Z",
+    "timestamp": "2025-12-01T09:00:00Z",
+    "ipaddress": null
+  },
+  {
+    "id": "aaaaaaaa-0000-4000-8000-a00000000003",
+    "organizationid": "55555555-0000-4000-8000-a00000000002",
+    "userid": "11111111-0000-4000-8000-a00000000001",
+    "role": "user",
+    "type": "ORGANIZATION_JOIN",
+    "name": null,
+    "happendat": "2025-12-02T11:15:00Z",
+    "timestamp": "2025-12-02T11:15:00Z",
+    "ipaddress": null
+  }
+]

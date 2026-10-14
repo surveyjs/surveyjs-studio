@@ -1,0 +1,18 @@
+{
+  "locale": "",
+  "elements": [
+    {
+      "name": "satisfaction",
+      "displayName": "How satisfied are you?",
+      "isVisible": true,
+      "isPublic": true
+    },
+    {
+      "name": "receipt",
+      "displayName": "Upload your receipt",
+      "isVisible": true,
+      "isPublic": false
+    }
+  ],
+  "pageSize": 10
+}
