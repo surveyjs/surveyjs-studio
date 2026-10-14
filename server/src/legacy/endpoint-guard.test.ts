@@ -107,6 +107,36 @@ describe("legacy loader endpoint guard", () => {
     expect(findNonLocalVariables(env)).toEqual([]);
   });
 
+  it.each([
+    ["Server local, Data Source remote", "Server=localhost;Data Source=remote.example.com"],
+    ["Data Source local, Server remote", "Data Source=127.0.0.1;Server=remote.example.com"],
+    ["Server local, Address remote", "Server=127.0.0.1,1433;Address=remote.example.com"],
+    ["Server local, Addr remote", "Server=127.0.0.1;Addr=tcp:remote.example.com,1433"],
+    ["Server local, Network Address remote", "Server=::1;Network Address=remote.example.com"],
+    ["the same key twice, remote first", "Server=remote.example.com;Server=localhost"],
+    [
+      "a quoted value hiding a second Server key",
+      "Server=remote.example.com;Password='a;Server=localhost;'",
+    ],
+  ])("refuses a SQL string with conflicting server keys: %s", (_name, value) => {
+    const env = { ...local, LEGACY_SQL_CONNECTION_STRING: `${value};Database=d` };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_SQL_CONNECTION_STRING"]);
+  });
+
+  it("accepts a SQL string whose server keys are all local", () => {
+    const env = {
+      ...local,
+      LEGACY_SQL_CONNECTION_STRING:
+        "Server=localhost,14333;Data Source=127.0.0.1,14333;Address=[::1];Database=d",
+    };
+    expect(findNonLocalVariables(env)).toEqual([]);
+  });
+
+  it("refuses a SQL string without any server key", () => {
+    const env = { ...local, LEGACY_SQL_CONNECTION_STRING: "Database=d;User Id=sa" };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_SQL_CONNECTION_STRING"]);
+  });
+
   it("refuses a non-local Data Source SQL string", () => {
     const env = {
       ...local,

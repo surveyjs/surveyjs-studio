@@ -1,4 +1,4 @@
-import { parseConnectionString } from "./connection-string.js";
+import { connectionStringEntries, parseConnectionString } from "./connection-string.js";
 
 /** Environment variables the legacy loader (and, later, the azure-legacy provider) reads. */
 export const LEGACY_VARIABLES = [
@@ -28,10 +28,15 @@ function sqlHost(server: string): string {
   return host.split("\\")[0] ?? "";
 }
 
+/**
+ * Drivers pick one of several alias keys (and the last of duplicates) in their own order, so every
+ * occurrence of every server key must be local, and at least one must be present.
+ */
 function isLocalSqlString(value: string): boolean {
-  const pairs = parseConnectionString(value);
-  const server = SQL_SERVER_KEYS.map((key) => pairs.get(key)).find((v) => v !== undefined);
-  return server !== undefined && isLocalHost(sqlHost(server));
+  const servers = connectionStringEntries(value)
+    .filter(([key]) => SQL_SERVER_KEYS.includes(key))
+    .map(([, server]) => server);
+  return servers.length > 0 && servers.every((server) => isLocalHost(sqlHost(server)));
 }
 
 function isLocalStorageString(value: string): boolean {
