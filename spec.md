@@ -1,7 +1,7 @@
 # Spec: My Surveys, Phase 1 (parity and replacement)
 
-Status: ready for implementation · 2026-10-13
-Inputs: `idea.md` (product brief and decisions D1–D14), `contract/openapi.yaml` (HTTP contract).
+Status: ready for implementation · 2026-10-14
+Inputs: `idea.md` (product brief and decisions D1–D15), `contract/openapi.yaml` (HTTP contract).
 
 ## Problem Statement
 
@@ -34,7 +34,7 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 
 **How it is built**
 - A static React front-end and a Node.js back-end. The back-end follows a published OpenAPI contract with a portable conformance suite, so it can be re-implemented on another platform.
-- Every external dependency sits behind a provider interface: storage, user directory, sign-in, look-and-feel shell. Phase 2 adds login/password sign-in and SQL/MongoDB databases without changing the front-end or the contract.
+- Every external dependency sits behind a provider interface: storage, user directory, sign-in, look-and-feel shell. Phase 2 adds login/password sign-in and SQL databases (SQLite by default, PostgreSQL for production) without changing the front-end or the contract.
 
 ## User Stories
 
@@ -157,7 +157,7 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 | Server state | **TanStack Query** | Caching, autosave mutations, retries and cache refreshes. |
 | API client | **openapi-typescript** (types), **openapi-fetch** (calls), **openapi-react-query** (query options and hooks) | Only types are generated; calls read like the contract; the same generated types also type the server. Orval was considered and rejected: much more generated code, and no help on the server. |
 | Look and feel | The **surveyjs.io design-system CSS, copied** into a "surveyjs-site" shell; **CSS Modules** for app components; **CSS custom properties** for shared values. No utility framework. | 1:1 parity with the site's class-based CSS (D7, D14); SurveyJS themes also use CSS variables. |
-| SurveyJS | Form Library, Survey Creator, Dashboard (summary panel and table, with Excel and PDF export), all on the current major version | The products the current section uses. |
+| SurveyJS | Form Library, Survey Creator, Dashboard (summary panel and table, with Excel and PDF export), all pinned to one exact version (see [Dependencies and upgrades](#dependencies-and-upgrades)) | The products the current section uses. |
 | Back-end | **Node.js LTS + TypeScript + Fastify** | Fastify validates with JSON Schema, which is language-neutral and comes straight from the contract. Its plugin model fits the providers. |
 | Contract wiring | Routes and validation are generated from the OpenAPI document by `operationId` (for example with fastify-openapi-glue and Ajv). | The server cannot drift from the contract. |
 | Sign-in | **openid-client** against `auth.surveyjs.io` (authorization code flow with PKCE) | The site already uses this provider (D9). |
@@ -166,6 +166,17 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 | End-to-end tests | **Playwright** (Chromium, Firefox, WebKit), including screenshot comparisons | |
 | Test infrastructure | **Azurite** (Azure Storage emulator) and a **mock OIDC server** container that issues codes without a login form, run in Docker Compose | |
 | Repository | **pnpm workspaces**: `contract`, `server`, `web`, `conformance-tests`, `e2e` | |
+
+### Dependencies and upgrades
+
+People will fork the repository, so it must always build from a known set of versions, and the SurveyJS packages must stay in step with each other.
+
+- **Exact versions.** The core stack is pinned to exact versions in `package.json`, with no `^` or `~`: React, Vite, TanStack Router and Query, Fastify, the openapi-* tooling, and SurveyJS. The pnpm lockfile is committed.
+- **SurveyJS moves as one.** All `survey-*` packages (Form Library, Creator, Dashboard and their export add-ons) use the same version and are upgraded together in one pull request.
+- **Runtime.** One Node.js LTS major, pinned in `engines`, `.nvmrc` and the Docker base image. The `packageManager` field pins pnpm.
+- **Routine updates.** Renovate opens grouped pull requests for patch and minor updates. They merge when CI is green.
+- **Major upgrades are deliberate.** A major upgrade of a core dependency or of Node.js gets its own pull request, never mixed with feature work, and an ADR that records what changed and how it was verified.
+- **Enforced in CI.** A repository check fails the build if a core dependency uses a version range or if the SurveyJS packages have different versions.
 
 ### The contract
 
@@ -252,6 +263,13 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
    | `/results/$surveyId` | | Public results view |
 
    Unauthenticated access to a private route redirects to the server's sign-in with `returnTo`.
+
+   **Code splitting.** Each screen is a lazy-loaded route (TanStack Router lazy routes), so each SurveyJS package is downloaded only on the screens that use it:
+   - Survey Creator only on the editor;
+   - the Dashboard only on the results pages, private and public;
+   - the Form Library on the run page.
+
+   The public run page never downloads Creator or Dashboard code.
 3. **Query layer.**
    - One hand-written module per resource (surveys, projects and members, content, results, views, files) built on openapi-react-query.
    - It owns query keys and **cache refresh rules**. For example, a survey PATCH refreshes that survey's record and the list it is in; deleting a project refreshes the project list and the personal survey list.
@@ -322,11 +340,12 @@ The highest seams were chosen, so there are only three:
 2. **The browser (front-end).** The `e2e` package is a Playwright suite running the built front-end against the real server, Azurite and the mock OIDC server.
    - It follows the user stories above: sign-in and redirect back, list and project switching, the menu actions, editor autosave and the conflict message, theme save, uploads, run and submit, file questions, results tabs, saved and reset views, downloads, project management and the legacy redirects.
    - **Visual parity tests** compare each screen with baseline screenshots of the current surveyjs.io pages, captured once from the live site in fixed states with dynamic content masked. This is how the 1:1 requirement is checked.
+   - **Bundle checks** confirm the code splitting: the run page and the survey list load no Creator or Dashboard code.
    - It runs on Chromium, Firefox and WebKit.
 3. **The storage provider interface.** A provider test suite, shared by every implementation and run against each one: in-memory, and Azure legacy on Azurite.
    - It covers ordering, paging and cursor stability, version tokens and conflicts, idempotency keys, statistics, cascading deletes, the project-deletion move, and file usage accounting.
    - For the Azure legacy provider it adds **legacy-format tests**: golden fixtures copied from the current storage, which must read correctly, and records written by the new provider must match the legacy format the old service reads.
-   - The SQL and MongoDB providers in P1 must pass the same suite.
+   - Every later provider must pass the same suite: SQLite and PostgreSQL in P1, and MySQL/MariaDB, SQL Server and MongoDB after it (D15).
 
 ### Unit tests
 
@@ -342,13 +361,13 @@ On the front-end, the query layer's cache refresh rules are tested with React Te
 
 ### CI and prior art
 
-- **CI order:** contract lint → type-check → unit tests → conformance tests (in-memory) → provider suite → conformance and e2e tests against Azurite and the mock OIDC server.
+- **CI order:** dependency check → contract lint → type-check → unit tests → conformance tests (in-memory) → provider suite → conformance and e2e tests against Azurite and the mock OIDC server.
 - **Prior art:** none. The repository is new, so these three suites become the pattern for everything that follows. The surveyjs.io pages captured during discovery are the reference for the visual baselines.
 
 ## Out of Scope
 
 - **P1 work.** These items need their own spec:
-  - Customer readiness: login/password sign-in; PostgreSQL, MySQL/MariaDB, SQL Server, MongoDB and SQLite providers; S3 and local-disk file storage.
+  - Customer readiness: login/password sign-in; the SQLite (default) and PostgreSQL providers (D15); S3 and local-disk file storage.
   - Product features: version diff and restore, distribution controls (schedule, limits, passwords, single-use links, QR codes), partial responses and resume, server-side analytics, roles beyond admin/user, audit log, notifications, webhooks, API tokens, templates.
 
   The contract and interfaces leave room for all of them.
@@ -378,4 +397,4 @@ On the front-end, the query layer's cache refresh rules are tested with React Te
   This confirms that storing file URLs in place of inline content is safe for `api.surveyjs.io` readers (D11). If it isn't, respondent files stay inline until the storage roadmap is decided, and only the dashboard cap and editor quota are lifted.
 - **The contract** (`contract/openapi.yaml`) is versioned with the code. Breaking changes after release need a new major path (`/api/v2`).
 - **Licensing.** The repository's own code is MIT (D2). The SurveyJS licence key is supplied at runtime through `/config` and is never hard-coded.
-- **Decisions this spec relies on:** `idea.md` §11, D1–D14. The rule for deleting a project, where the owner receives the surveys and the deleting admin receives them if the owner has left, was decided after `idea.md` and is recorded in the contract.
+- **Decisions this spec relies on:** `idea.md` §11, D1–D15. The rule for deleting a project, where the owner receives the surveys and the deleting admin receives them if the owner has left, was decided after `idea.md` and is recorded in the contract.

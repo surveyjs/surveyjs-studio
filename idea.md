@@ -1,6 +1,6 @@
 # My Surveys: product idea
 
-Status: agreed, ready for the specification · Last updated: 2026-10-13
+Status: agreed, ready for the specification · Last updated: 2026-10-14
 
 ## 1. Summary
 
@@ -201,7 +201,7 @@ The goal is for `my-surveys.surveyjs.io` to replace the old section without user
 
 - **Customer readiness**, needed before the code reaches customers:
   - **login/password ("basic") authentication**;
-  - **several popular databases** to choose from;
+  - a choice of databases: **SQLite** by default and **PostgreSQL** for production (D15);
   - pluggable file storage (§6.2 A).
 - **Product improvements:** the features in §6.2 B, which close the weaknesses listed in §2.9 and the most common gaps compared with competitors (§10).
 
@@ -210,7 +210,7 @@ The goal is for `my-surveys.surveyjs.io` to replace the old section without user
 - **A public repository** whose own code is under the **MIT** licence. Customers can clone and extend it, and connect it to the database they already use. Survey Creator, Dashboard and PDF Generator remain commercial: building on them in a customer's own product requires a licence. The Form Library is MIT.
 - **A free prebuilt Docker image**:
   - It includes the commercial SurveyJS components and may be used free of charge.
-  - `docker run` gives a working single-organization survey service with login/password accounts and a bundled database by default, or a connection to the user's own database.
+  - `docker run` gives a working single-organization survey service with login/password accounts and a bundled **SQLite** database by default, or a connection to the user's own database (**PostgreSQL** is recommended for production).
   - "Powered by SurveyJS" branding appears wherever it fits.
 - **Developer documentation** covering:
   - architecture;
@@ -362,9 +362,10 @@ Roles in a project:
    - Sign-up and sign-in.
    - Password hashing with a modern algorithm, password reset by email, email verification and an admin-created users mode.
    - Lockout and rate limiting.
-2. **Several popular databases**, each through a documented provider interface:
-   - **PostgreSQL**, **MySQL/MariaDB**, **Microsoft SQL Server**, **MongoDB**, and **SQLite** for the single-container image.
-   - Customers point the app at the database they already use.
+2. **A choice of databases**, through a thin, documented provider interface (D15):
+   - **SQLite**, the default, bundled in the single-container image.
+   - **PostgreSQL**, the recommended production database. Customers can point the app at a PostgreSQL server they already run.
+   - More databases come after P1 (§6.3) and use the same interface and provider test suite.
 3. **Pluggable file storage**: Azure Blob, S3-compatible or local disk.
 4. **Schema setup and migrations** for every supported database.
 5. **Survey-data migration between providers**, for example from the Azure-storage format to SQL. This depends on the decision about moving away from Azure (§9).
@@ -402,6 +403,7 @@ Roles in a project:
   - Summarise and group themes in open-text answers.
   - Translate a survey.
   - The model provider is pluggable, so a self-hosted install can use a local LLM.
+- **More databases:** MySQL/MariaDB, Microsoft SQL Server and MongoDB providers, through the same provider interface and test suite as SQLite and PostgreSQL (D15).
 - **An MCP server** so AI agents can create surveys and query results. OpenForm, Formbricks and form.io already offer this.
 - **Security and identity:** generic OIDC and SAML SSO for self-hosted installs, CAPTCHA and spam protection, and 2FA for login/password accounts.
 - **Multi-organization / tenant mode** with white-labelling.
@@ -426,7 +428,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 
    | Area | Phase 1 | P1 and later |
    |---|---|---|
-   | Data | **SurveyJS legacy provider**: the surveyjs.io site database plus Azure storage | PostgreSQL, MySQL/MariaDB, SQL Server, MongoDB, SQLite |
+   | Data | **SurveyJS legacy provider**: the surveyjs.io site database plus Azure storage | P1: SQLite (default), PostgreSQL. Later: MySQL/MariaDB, SQL Server, MongoDB |
    | Files | Azure Blob | S3-compatible, local disk |
    | Authentication | surveyjs.io OIDC | Login/password, generic OIDC/SAML |
    | Email | — | SMTP, provider APIs |
@@ -454,7 +456,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 | Code licence | — | **MIT** | Free to use |
 | Creator, Dashboard, PDF | Licensed by SurveyJS | Commercial licence required to build on them | **Included; free use allowed** |
 | Authentication | surveyjs.io | Pluggable (login/password, OIDC, …) | Login/password; OIDC later |
-| Database | surveyjs.io site database plus Azure storage | Any supported provider | Bundled SQLite/PostgreSQL or the user's own |
+| Database | surveyjs.io site database plus Azure storage | Any supported provider | Bundled SQLite by default, or the user's own PostgreSQL |
 | Branding | surveyjs.io look (1:1) | Customizable | "Powered by SurveyJS" on the run page, editor, results, login and emails |
 
 **Data protection (GDPR).** This is our proposal.
@@ -521,7 +523,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 
 ## 11. Decisions and open questions
 
-**Decisions (2026-10-13)**
+**Decisions (2026-10-13; D15 added 2026-10-14)**
 
 | # | Topic | Decision |
 |---|---|---|
@@ -529,7 +531,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 | D2 | Licensing | The repository's own code is MIT. The free Docker image may be used with the SurveyJS commercial products included. |
 | D3 | Limits | Some limits are lifted right away in Phase 1 (proposal in §3.1). |
 | D4 | Front-end | React. Exact technical choices are made in the next step, the specification. |
-| D5 | Database | Parity phase: stay on the surveyjs.io databases and Azure storage. Afterwards, support several popular databases. |
+| D5 | Database | Parity phase: stay on the surveyjs.io databases and Azure storage. Afterwards, support several popular databases (order and default in D15). |
 | D6 | GDPR | Handled per the proposal in §8. |
 | D7 | UI | Phase 1 reproduces the current UI 1:1, including projects (§2.6), with surveyjs.io styling. |
 | D8 | Analytics and telemetry | Discussed after P1. |
@@ -539,6 +541,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 | D12 | Access to stores | The app connects directly to Azure storage. There is no intermediate surveyjs.io API. |
 | D13 | Project management | Both exist: the Projects screen in the new app, and Settings → Manage MySurveys on surveyjs.io. They work on the same data. |
 | D14 | Site shell | Copy the header, footer and design-system styles from surveyjs.io. The shell is a configuration option, so a different shell can be used. |
+| D15 | Databases after Phase 1 | Storage stays behind a thin provider interface. SQLite is the default and is bundled in the Docker image; PostgreSQL is the recommended production database. P1 ships these two. MySQL/MariaDB, SQL Server and MongoDB come after P1 through the same interface. |
 
 **Open questions**
 

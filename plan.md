@@ -94,12 +94,17 @@ The documentation is created in Step 1 and grown by every step:
 
 **References**
 - idea §7 items 1–7 (architecture principles); idea §6.1 F10 (new API) and F11 (operations); idea §8 (licensing: MIT); D1, D2, D4.
-- spec › Implementation Decisions › Technology; › The contract; › Back-end modules 1 (HTTP layer) and 6 (configuration); › Front-end modules 1 (shell, placeholder only) and 2 (routes, skeleton).
+- spec › Implementation Decisions › Technology; › Dependencies and upgrades; › The contract; › Back-end modules 1 (HTTP layer) and 6 (configuration); › Front-end modules 1 (shell, placeholder only) and 2 (routes skeleton and code splitting).
 - spec › Testing Decisions › Seams 1–2 (scaffolding only); › CI and prior art.
 - US 73, 74, 75, 77, 78, 80.
 
 **Build**
 - **pnpm workspace** with the packages `contract`, `server`, `web`, `conformance-tests` and `e2e`; TypeScript, ESLint, Prettier and an MIT `LICENSE`.
+- **Dependency policy** (spec › Dependencies and upgrades):
+  - exact versions for the core stack and a committed lockfile;
+  - Node.js LTS pinned in `engines` and `.nvmrc`, and pnpm pinned in `packageManager`;
+  - a Renovate configuration that groups patch and minor updates and keeps all `survey-*` packages in one group;
+  - a `pnpm check:deps` script, run in CI, that fails on version ranges in core dependencies or on mismatched SurveyJS versions.
 - **`contract`:** the existing `openapi.yaml`, the Redocly lint configuration, type generation with openapi-typescript, and a bundled reference build.
 - **`server`:** Fastify.
   - Routes are wired from the contract by `operationId`, with Ajv validation.
@@ -111,17 +116,18 @@ The documentation is created in Step 1 and grown by every step:
   - `/api/docs` serves the reference in development.
 - **`web`:** Vite, React, TanStack Router and TanStack Query, plus an openapi-fetch client and openapi-react-query.
   - A placeholder shell and a home route that loads `/config` and shows the edition and shell names.
+  - Routes are lazy-loaded from the start (TanStack Router lazy routes), so later steps add each screen as its own chunk.
   - The SurveyJS licence key is applied from `/config`.
 - **Provider registry skeleton:** a configuration-selected provider set, with an empty in-memory provider. The memory demo mode command exists.
-- **CI (GitHub Actions):** contract lint → type-check → unit tests → conformance tests (in-memory) → e2e.
+- **CI (GitHub Actions):** dependency check → contract lint → type-check → unit tests → conformance tests (in-memory) → e2e.
 
 **Tests**
-- **Back-end unit:** configuration validation (missing or invalid variables fail start-up); the error mapper.
+- **Back-end unit:** configuration validation (missing or invalid variables fail start-up); the error mapper; the dependency check (a range or a mismatched SurveyJS version fails it).
 - **Back-end e2e (conformance):** the harness (base URL, response validation against the contract); `getConfig` matches its schema; an unimplemented operation answers `501` with a valid Problem; an unknown route answers `404` with a Problem.
 - **Front-end unit:** the API client sends the base URL and credentials; the config loader.
 - **Front-end e2e:** the app opens, shows the config values, and has no console errors.
 
-**Documentation:** `README.md`, `docs/architecture.md` (skeleton with modules and request flow), `docs/development.md`, `docs/testing.md`, the `docs/api/` reference plus a conventions guide, `docs/adr/0001-record-architecture-decisions.md`, and `docs/demo/step-01.md`.
+**Documentation:** `README.md`, `docs/architecture.md` (skeleton with modules and request flow), `docs/development.md` (including "Dependencies and upgrades": how Renovate pull requests are handled and how a major upgrade is done, with its ADR), `docs/testing.md`, the `docs/api/` reference plus a conventions guide, `docs/adr/0001-record-architecture-decisions.md`, and `docs/demo/step-01.md`.
 
 **Demo checklist**
 1. `pnpm install && pnpm demo` starts the server and the web app.
@@ -129,6 +135,7 @@ The documentation is created in Step 1 and grown by every step:
 3. `/api/docs` shows the API reference with every operation.
 4. `curl /api/v1/surveys` returns `501` with a Problem Details body.
 5. `pnpm test` (unit and conformance) and `pnpm e2e` are green.
+6. `pnpm check:deps` passes. Change a core dependency to a `^` range, and it fails.
 
 ---
 
@@ -338,7 +345,7 @@ The documentation is created in Step 1 and grown by every step:
   - saving updates `updatedAt`;
   - the payload limit.
 - **Front-end:**
-  - Survey Creator configured exactly as on surveyjs.io today (tabs, the Clear Survey and Help toolbar items, obfuscated JSON export, the footer name editor);
+  - Survey Creator configured exactly as on surveyjs.io today (tabs, the Clear Survey and Help toolbar items, obfuscated JSON export, the footer name editor), loaded only by the lazy editor route;
   - autosave through the query layer with a visible save state;
   - on `412`, a notification with "Reload latest";
   - read-only mode without modify rights;
@@ -359,7 +366,8 @@ The documentation is created in Step 1 and grown by every step:
   - rename in the footer;
   - the Embed tab shows the new URLs;
   - the History page lists the saves;
-  - the editor is read-only for a member without modify rights.
+  - the editor is read-only for a member without modify rights;
+  - the survey list loads no Creator code; it is fetched only when the editor opens.
 
 **Documentation:** user guide "Designing a survey" and "Survey history"; the API guide "Concurrent editing with ETags"; `docs/demo/step-06.md`.
 
@@ -429,7 +437,7 @@ The documentation is created in Step 1 and grown by every step:
   - stored as blobs, and the response holds the URL;
   - **if Step 2 found this breaks legacy readers, keep files inline**, as allowed by D11, and record that in an ADR.
 - **The run page:**
-  - the Form Library with the survey's theme;
+  - the Form Library with the survey's theme, in a lazy route that loads no Creator or Dashboard code;
   - an idempotency key generated per completion attempt;
   - file questions upload through the endpoint;
   - a "not available" page;
@@ -453,7 +461,8 @@ The documentation is created in Step 1 and grown by every step:
   - a double click on Complete stores one response;
   - a file question upload works;
   - an unpublished survey shows "not available";
-  - the old `/published?id=` link redirects.
+  - the old `/published?id=` link redirects;
+  - the run page's network log contains no Creator or Dashboard chunks.
 
 **Documentation:** user guide "Publishing and collecting responses"; the API guide "Public endpoints, rate limits and idempotency"; `docs/demo/step-08.md`.
 
@@ -479,7 +488,7 @@ The documentation is created in Step 1 and grown by every step:
 **Build**
 - **ResultStore paging** in submission order, with a stable cursor.
 - **ViewStore** per user and survey.
-- **The results page** at `/surveys/$surveyId/results?tab=`. The SurveyJS Dashboard summary panel and table are fed by loading every page. The table has a column chooser, paging, and exports to CSV, Excel and PDF in the browser.
+- **The results page** at `/surveys/$surveyId/results?tab=`, a lazy route; the Dashboard is loaded only here. The SurveyJS Dashboard summary panel and table are fed by loading every page. The table has a column chooser, paging, and exports to CSV, Excel and PDF in the browser.
 - **Saving views:** state is saved with a debounce through the views endpoints; Reset deletes it.
 
 **Tests**
@@ -668,7 +677,7 @@ The documentation is created in Step 1 and grown by every step:
 - US 77, 78, 70.
 
 **Build**
-- **A production container image:** the server serves the built front-end. Non-root, with health checks.
+- **A production container image:** the server serves the built front-end. Non-root, with health checks. The base image uses the same pinned Node.js LTS version as `.nvmrc`, and `pnpm check:deps` covers it.
 - **The complete configuration reference** with start-up validation.
 - **Structured logs** with request IDs, and readiness that checks storage reachability.
 - **A staging profile:** read-only first (the inspector and a read-only flag that refuses writes), then read-write against a staging copy.
@@ -724,12 +733,14 @@ The documentation is created in Step 1 and grown by every step:
   | F6 | 9, 10 | | |
 
 - **Contract operations:** all 39 are assigned. `passwordLogin` and the `x-phase: P1` properties stay `501` or ignored, as the contract requires.
-- **Decisions D1–D14:**
+- **Decisions D1–D15:**
   - D1 is honoured: `api.surveyjs.io` is not re-implemented, and the Step 14 smoke test protects it.
   - D11 is handled with the Step 2 verdict and the Step 8 fallback.
   - D13: Step 11 writes to the legacy location.
   - D14: Steps 3 and 13.
-  - D10, D8 and the P1 items are not planned, which matches spec › Out of Scope.
+  - D10, D8, D15 (the SQLite and PostgreSQL providers) and the P1 items are not planned, which matches spec › Out of Scope. Phase 1 keeps the storage seam that D15 builds on: the provider interfaces and the shared provider suite (Step 2).
+- **spec › Dependencies and upgrades:** set up in Step 1 and enforced in CI from then on.
+- **Code splitting (spec › Front-end modules 2):** the lazy-route pattern comes in Step 1. Steps 6, 8 and 9 add the editor, run and results routes as separate chunks, and Steps 6 and 8 test this.
 
 ### Additions the plan makes beyond spec.md (please confirm)
 
