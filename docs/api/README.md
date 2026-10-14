@@ -8,6 +8,8 @@ This directory holds guides. The reference itself is generated from the contract
 committed.
 
 - [Conventions](conventions.md): errors, paging, concurrency, CSRF, idempotency and more.
+- [Authentication, sessions and CSRF](authentication.md): the sign-in flow, `returnTo`, the cookies,
+  the CSRF header, sign-out and rate limiting.
 
 ## View the API reference
 
@@ -52,7 +54,13 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | `/readyz`   | Providers are ready: `200 {"status":"ok"}` or `503 {"status":"unavailable"}` |
 | `/api/docs` | The API reference (not in production by default)                             |
 
-## Implemented in Step 1
+## What is implemented
 
-Only `GET /api/v1/config` is implemented. Every other operation answers `501` with a Problem
-Details body (`code: not-implemented`).
+| Since  | Operations                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------ |
+| Step 1 | `getConfig`                                                                                |
+| Step 3 | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md)) |
+
+Every other operation answers `501` with a Problem Details body (`code: not-implemented`), after
+authentication: a private operation called without a session answers `401`. `passwordLogin` stays
+`501` until P1.

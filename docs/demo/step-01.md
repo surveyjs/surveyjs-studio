@@ -45,13 +45,15 @@ Expected: `{"status":"ok"}`.
 
 ## 2. The home page
 
-Open <http://localhost:5173>.
+Open <http://localhost:5173>. Since Step 3 the home page is private: the browser first goes to the
+"Sign in as…" page. Choose **Olivia Owner** (see [the Step 3 demo](step-03.md#1-sign-in-memory-mode)).
 
 Expected, on the page:
 
 - the heading **My Surveys**;
+- `signed in as: Olivia Owner`;
 - `edition: self-hosted`;
-- `shell: surveyjs-site`.
+- `shell: surveyjs-site`, shown inside the surveyjs.io header and footer.
 
 Those two values come from the server's configuration. To see them change, stop `pnpm demo`
 (Ctrl+C) and start it again with other values.
@@ -68,8 +70,8 @@ PowerShell:
 $env:APP_SHELL = "demo"; pnpm demo
 ```
 
-Expected: after a reload the page shows `shell: demo`. Stop the demo again
-and start it with plain `pnpm demo` for the next steps. (In PowerShell first run
+Expected: after a reload the page shows `shell: demo`, inside the plain shell (an unknown shell name
+falls back to it). Stop the demo again and start it with plain `pnpm demo` for the next steps. (In PowerShell first run
 `Remove-Item Env:APP_SHELL`.)
 
 The configuration itself is plain JSON:
@@ -78,8 +80,23 @@ The configuration itself is plain JSON:
 curl http://localhost:3000/api/v1/config
 ```
 
-Expected (defaults): `{"edition":"self-hosted","shell":"surveyjs-site","authMethods":["surveyjs"],"surveyjsLicenseKey":null,"limits":{"maxAssetBytesPerSurvey":52428800,"maxFileBytes":10485760,"maxResponseBytes":1048576}}`.
+Expected (defaults): `{"edition":"self-hosted","shell":"surveyjs-site","authMethods":["surveyjs"],"surveyjsLicenseKey":null,"limits":{"maxAssetBytesPerSurvey":52428800,"maxFileBytes":10485760,"maxResponseBytes":1048576},"links":{...}}`
+(`links` holds the account links of the shell, added in Step 3).
 The same answer comes through the web app's proxy at `http://localhost:5173/api/v1/config`.
+
+Optional, with Docker (the hosted edition): `APP_EDITION=hosted pnpm demo` does **not** start, because
+the dev sign-in is refused on the hosted edition (`IDENTITY_PROVIDER: dev is not allowed when
+APP_EDITION=hosted`). Hosted runs with the mock OIDC server of Azurite mode:
+
+```sh
+pnpm demo:azurite:up
+APP_EDITION=hosted pnpm demo:azurite
+curl http://localhost:5173/api/v1/config
+```
+
+Expected: `"edition":"hosted"` at the start of the answer. Stop the demo (Ctrl+C), then
+`pnpm demo:azurite:down`. (PowerShell: `$env:APP_EDITION = "hosted"; pnpm demo:azurite`, then
+`Remove-Item Env:APP_EDITION`.)
 
 ## 3. API reference
 
@@ -91,11 +108,21 @@ operation listed in the left menu, including ones not implemented yet. It works 
 
 ## 4. Not-yet-implemented operations answer 501
 
+Since Step 3, private operations check the session first. Without one the answer is `401`:
+
 ```sh
 curl -i http://localhost:3000/api/v1/surveys
 ```
 
 PowerShell: `curl.exe -i http://localhost:3000/api/v1/surveys`.
+
+Expected: `HTTP/1.1 401 Unauthorized`, with `"code":"unauthenticated"`. To see the `501`, call it
+**signed in**: make the cookie jar of [the Step 3 demo](step-03.md#3-sign-out) (the block that signs
+in with `curl`) and add `-b "$JAR"`:
+
+```sh
+curl -i -b "$JAR" http://localhost:5173/api/v1/surveys
+```
 
 Expected:
 
@@ -135,7 +162,7 @@ pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit
 pnpm e2e
 ```
 
-Expected: `3 passed`, one run each for chromium, firefox and webkit. The e2e run starts its own
+Expected: all pass on chromium, firefox and webkit (Step 1 had `3 passed`; the count grows with each step). The e2e run starts its own
 server and web app, and stops them. It needs ports 3000 and 5173 free (or it reuses servers
 you left running).
 
@@ -196,7 +223,7 @@ or `pnpm-lock.yaml`.
 | 1   | `pnpm install && pnpm demo` starts the server and the web app           |        |
 | 2   | Home page shows `edition: self-hosted` and `shell: surveyjs-site`       |        |
 | 3   | `/api/docs` shows the reference with every operation                    |        |
-| 4   | `GET /api/v1/surveys` returns `501` with a Problem Details body         |        |
+| 4   | `GET /api/v1/surveys` returns `401` signed out and `501` signed in      |        |
 | 5   | `pnpm test` and `pnpm e2e` are green                                    |        |
 | 6   | `pnpm check:deps` passes, fails after a `^` range, passes after restore |        |
 

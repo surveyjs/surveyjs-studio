@@ -42,9 +42,15 @@ Run with Vitest from the root. Scope:
 - `contract/`: the package exports.
 - `server/`: configuration (`loadConfig`), the error mapper, the contract loader, the app
   through Fastify's `inject` (HTTP in, HTTP out), the legacy mapping and fixture reading, the loader
-  guards, the inspector CLI, and the provider suite on the in-memory provider.
+  guards, the inspector CLI, and the provider suite on the in-memory provider. For sign-in:
+  sealing and session expiry (with an injected clock), CSRF comparison, `returnTo` validation, the
+  cookies, the sign-in flow and the authentication order through `inject` with the dev provider, the
+  OIDC provider against an in-process fake identity server, the licence-expiry rule, and the refusal
+  of the dev provider in production and hosted.
 - `web/`: the API client and config loader (with `msw` and `openapi-msw` mocks typed by the
-  contract), the licence loader, and the app rendered with React Testing Library.
+  contract), the licence loader, the CSRF middleware, the route guard and sign-out, shell selection,
+  the surveyjs.io shell (account menu, notice dialogs, cookie banner), and the app rendered with React
+  Testing Library.
 
 `pnpm test:unit` leaves out the `providers-azurite` project, which needs Docker.
 
@@ -81,7 +87,46 @@ $env:CONFORMANCE_BASE_URL = "http://127.0.0.1:3000"; pnpm test:conformance
 Remove-Item Env:CONFORMANCE_BASE_URL
 ```
 
-A port is accepted when this suite passes against it. The suite also tests its own validator
+A port is accepted when this suite passes against it.
+
+### Signing in from the conformance suite
+
+Private operations need a session, so the suite signs in over HTTP only, the way a browser does
+(`conformance-tests/src/sign-in.ts`). `signIn(baseUrl, userId, returnTo)` calls `/auth/login`, keeps
+the cookies in a small cookie jar, follows the redirect to the identity provider, completes it, and
+calls the callback. It knows two providers:
+
+| `/auth/login` leads to                     | The driver                                                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/__dev/sign-in` (the dev provider)        | Reads the page, finds the link of the user (its `code` is the user id) and opens it                                             |
+| A form with a `username` field (mock OIDC) | Posts the user id as `username` to the form's action. The mock (`docker/mock-oidc.json`) signs in that user with email and name |
+
+The user is one of the legacy fixtures (`fixtureUsers`: the owner, and the blocked user). With any
+other login page the driver throws `SignInUnsupportedError`, and the tests that need a session are
+**skipped**, with the redirect target in the skip note. The tests that need none still run.
+
+**To make another server pass the suite**, give it a sign-in that the driver can complete. The
+simplest way is the mock OIDC server of Azurite mode (`pnpm demo:azurite:up` starts it):
+
+- Configure the port as an OAuth 2.0 client of the issuer `http://127.0.0.1:18080/surveyjs`: any
+  client id and secret (the mock accepts all), the redirect URI `<its origin>/api/v1/auth/callback`,
+  the scopes `openid profile email`, the code flow with PKCE (S256) and `state`, and the identity
+  from UserInfo (`sub`, `email`, `name`). The mock's metadata is at
+  `/surveyjs/.well-known/oauth-authorization-server`.
+- Its directory must hold the fixture users (the ids in `fixtureUsers` and
+  `server/fixtures/legacy/sql/Users.json`), so that `sub` finds the user, and the blocked user gets `403`.
+- Start the port and run the suite with `CONFORMANCE_BASE_URL` set. The driver completes the mock's
+  login form on its own.
+
+The port's session cookies may be sealed in its own way. Their names, attributes and the CSRF rule
+must follow [the API guide](api/authentication.md).
+
+What the suite checks about sign-in: `login` redirects with an `msid_auth` cookie; a bad `returnTo`
+is `400`; the callback sets `msid` and `msid_csrf` and redirects to `returnTo`; a wrong `state` or a
+missing `msid_auth` is `400`; a blocked user is `403` with no session; `passwordLogin` is `501`;
+`getCurrentUser` is `401` signed out and the user signed in; `logout` clears the cookies and returns
+the end-session URL, and is `403` without the CSRF token; an anonymous call to a private operation
+is `401` even when it is not built, and a change without the CSRF token is `403`. The suite also tests its own validator
 against a small fixture contract (`conformance-tests/src/fixtures/things.yaml`), so a broken
 validator cannot give false passes.
 
@@ -99,7 +144,8 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
 (3001 and 5174) whose server shows the expired-licence notice. Rules:
 
 - The config strips the developer's app variables (`APP_*`, `PORT`, `VITE_*`, and the other
-  server variables) from the environment before starting the servers. Results do not depend on
+  server variables) from the environment before starting the servers and the previews. The list is
+  in `e2e/app-variables.mjs`, shared by the config and the runner script. Results do not depend on
   what you have exported.
 - Locally it reuses servers already running on 3000 and 5173 (for example `pnpm demo`). Those servers must use the default configuration, or the home page spec fails. With `CI` set it does not
   reuse them, and fails if the ports are busy.
@@ -110,9 +156,21 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
 
 Run one browser: `pnpm e2e --project=chromium`.
 
+The specs (`e2e/tests/`):
+
+| Spec              | Checks                                                                                                                        | Modes           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `home.spec.ts`    | After sign-in the home page shows the configured edition and shell, with no console errors                                    | memory          |
+| `sign-in.spec.ts` | An anonymous visit goes to sign-in; signing in shows the user's name; a deep link survives sign-in; Sign Out ends the session | memory, Azurite |
+| `shell.spec.ts`   | A keyboard user opens the Account menu and signs out; Escape closes a menu and keeps focus (not on WebKit)                    | memory          |
+| `notices.spec.ts` | With `ACCOUNT_NOTICES=license-expired` (the second server pair) the renewal dialog opens, and Later closes it                 | memory          |
+
+`e2e/tests/support/sign-in.ts` signs in through the browser: on the dev page it clicks the user, on the
+mock OIDC form it types the user id.
+
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in spec on Chromium
 against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
-memory-mode servers first).
+memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
 
@@ -159,4 +217,5 @@ sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.
 reference server has no operations that use the stores yet, so for now the run proves that the
 server starts on the legacy provider and still answers as the contract says.
 
-The end-to-end tests still run on the memory provider.
+The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in spec, on the
+`azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`).

@@ -882,8 +882,9 @@ the style of GitHub or Slack. It is not a full OpenID provider. **[C]**
 
 My Surveys therefore signs in with `OIDC_DISCOVERY=oauth-authorization-server` (the default):
 authorization code with PKCE S256 and `state`, then the identity from UserInfo. The
-`openid-configuration` mode exists for a real OpenID provider; there, an ID token is also required
-and checked.
+`openid-configuration` mode exists for a real OpenID provider. There, an ID token is required and
+checked (with a `nonce`) only when the scopes also include `openid`; without `openid` no nonce is sent
+and no ID token is expected.
 
 ## 7. How `api.surveyjs.io` reads results and inline files
 

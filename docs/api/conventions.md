@@ -86,12 +86,15 @@ The file format comes from the `Accept` header. A browser download link cannot s
 
 ## Authentication, sessions and CSRF
 
-- The web app uses the session cookie `msid` (HttpOnly, Secure, SameSite=Lax), set on sign-in.
+Full description: [Authentication, sessions and CSRF](authentication.md).
+
+- The web app uses the session cookie `msid` (HttpOnly, SameSite=Lax, and Secure on https), set on
+  sign-in. It lasts 12 hours and does not renew.
 - Requests that change data (`POST`, `PUT`, `PATCH`, `DELETE`) must also send `X-CSRF-Token`
   with the value of the readable `msid_csrf` cookie (double-submit). Otherwise: `403 csrf-token-invalid`.
+- Order of checks: authentication (`401`), CSRF (`403`), request validation, then the handler.
 - Bearer API tokens (`Authorization: Bearer <token>`) arrive in phase 2 (P1).
 - `/public/*` operations need no authentication.
-- Sign-in, sessions and CSRF checks are not implemented in Step 1.
 
 ## Idempotent submissions
 
@@ -105,8 +108,8 @@ Operations and properties marked `x-phase: P1` belong to phase 2 (API tokens, pa
 partial responses). They are part of the contract now. Until they are implemented, a server
 answers those operations with `501 not-implemented` and ignores the marked properties.
 
-Any operation that no handler exists for also answers `501`. This is the case for every operation
-except `getConfig` in Step 1, and the conformance suite accepts it.
+Any operation that no handler exists for also answers `501`, after authentication. This is the case
+for every operation that a step has not built yet, and the conformance suite accepts it.
 
 ## Limits
 

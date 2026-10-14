@@ -13,3 +13,4 @@ and add each one to this index.
 | [0004](0004-body-limit.md)                    | Request body limit equals the response size limit      | Accepted |
 | [0005](0005-respondent-files-as-urls.md)      | Respondent files are stored as URLs (D11)              | Accepted |
 | [0006](0006-legacy-replica.md)                | SQL Server 2022 next to Azurite for the legacy replica | Accepted |
+| [0007](0007-dev-identity-provider.md)         | A development identity provider, outside the contract  | Accepted |

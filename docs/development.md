@@ -26,6 +26,23 @@ the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on 
 <http://localhost:5173> (Vite dev server, proxies `/api`, `/healthz` and `/readyz` to port 3000).
 Stop both with Ctrl+C. Ports are fixed; if 5173 is taken, Vite stops instead of choosing another.
 
+### Signing in
+
+Every page except the sign-in itself needs a session, so the first thing you see is a sign-in page.
+
+| Mode    | Where `/api/v1/auth/login` leads                                                                                                     | Identity provider                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| memory  | `/__dev/sign-in`, a server page with the seed users, no password ([ADR 0007](adr/0007-dev-identity-provider.md))                     | `dev` (set in `server/demo.env`) |
+| Azurite | The mock OIDC server's login form at `http://127.0.0.1:18080/surveyjs/authorize` ([below](#signing-in-through-the-mock-oidc-server)) | `surveyjs-oidc`                  |
+
+`pnpm demo` seeds the memory store with `MEMORY_SEED=legacy-fixtures`, so the page lists the five
+[seed accounts](#golden-fixtures): Olivia Owner, Adam Admin, Mia Member, Oscar Outsider, and the blocked user
+(shown by email, marked "blocked"; choosing it gives `403 forbidden`). The session lasts 12 hours and does
+not renew; Sign Out in the account menu ends it. Restarting the server does not end it: the cookie is
+sealed with `SESSION_SECRET`, or the fixed development constant when it is unset (the server logs a warning
+at start-up). Walkthrough: [Step 3 demo](demo/step-03.md). How sign-in works:
+[Authentication](api/authentication.md).
+
 To run one part alone: `pnpm --filter @my-surveys/server dev:demo` (watch mode, reads `server/demo.env`),
 `IDENTITY_PROVIDER=dev pnpm --filter @my-surveys/server start` (no watching; the server needs an
 identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @my-surveys/web dev`, or
@@ -84,9 +101,13 @@ surveyjs.io Account menu's links; `SHELL_LINKS` replaces them by name or adds mo
 For example, `SHELL_LINKS={"settings":"https://account.example.com/"}` moves both the Settings item
 and the Renew button.
 
+`SIGN_IN_RATE_LIMIT` counts per operation and per socket IP address. The server does not read
+`X-Forwarded-For` yet, so behind a reverse proxy all users share one counter: raise the limit until
+trusted-proxy support arrives (Step 14).
+
 `pnpm demo` reads `server/demo.env` (dev sign-in, the legacy fixture users, `PUBLIC_BASE_URL=http://localhost:5173`).
 Variables set in the shell win over that file. To see a licence dialog of the surveyjs.io shell, run
-`ACCOUNT_NOTICES=license-expired pnpm demo` (Git Bash). After "Later" or "Renew" the dialog stays
+`ACCOUNT_NOTICES=license-expired pnpm demo` (Git Bash; PowerShell: `$env:ACCOUNT_NOTICES = "license-expired"; pnpm demo`). After "Later" or "Renew" the dialog stays
 hidden in that browser, as on surveyjs.io; remove the `expiredNotificationDateTime` (or
 `expiresSoonNotificationDateTime`) key from the site's local storage to see it again.
 The three `LEGACY_*` values, `SESSION_SECRET` and `OIDC_CLIENT_SECRET` are secrets. Never commit one, and never put a real one in a file in
@@ -137,6 +158,9 @@ node --env-file=docker/azurite.env --import tsx server/src/main.ts
 
 (`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
 the command above.) The hosted edition runs too: `APP_EDITION=hosted pnpm demo:azurite` (Git Bash).
+`ACCOUNT_NOTICES=surveyjs-licenses pnpm demo:azurite` reads the licence notices from the replica's
+licence tables ([layout, 3.15](architecture/legacy-data-layout.md#315-licences-and-the-licence-expiry-dialogs)).
+The fixtures have fixed expiry dates, so what each user sees depends on today's date.
 
 The loader refuses to write to an endpoint that is not local: it checks the
 connection strings, then the URL of every storage client the SDK builds, before any call. Azure Files is
@@ -184,8 +208,8 @@ file content (`files/`). Its [README](../server/fixtures/legacy/README.md) lists
 each fixture covers. Three things read them: `MEMORY_SEED=legacy-fixtures`, the provider suite,
 and `pnpm legacy:load`.
 
-Seed accounts (all synthetic, in `sql/Users.json`). Use them with the inspector, or as the user
-of a demo once sign-in exists:
+Seed accounts (all synthetic, in `sql/Users.json`). Use them with the inspector, and to sign in to
+a demo ([Signing in](#signing-in) above):
 
 | Email                  | Name           | Roles                                            | Covers                                                 |
 | ---------------------- | -------------- | ------------------------------------------------ | ------------------------------------------------------ |
@@ -310,7 +334,8 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 3. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
 4. `test:providers:azurite` and `test:conformance:azurite`;
-5. the browser install and `e2e` (still on the memory provider);
+5. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
+   `azure-legacy` server and the mock OIDC server, Chromium);
 6. on failure, it uploads the Playwright report;
 7. `pnpm demo:azurite:down`, which always runs (`if: always()`).
 
