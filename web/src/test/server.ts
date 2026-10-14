@@ -26,3 +26,29 @@ export function problemHandler(status: number, code: string, title: string) {
     ),
   );
 }
+
+export const currentUser: components["schemas"]["CurrentUser"] = {
+  id: "00000000-0000-4000-8000-000000000001",
+  displayName: "Olivia Owner",
+  email: "owner@example.test",
+  avatarUrl: null,
+  notices: [],
+};
+
+export function meHandler(user = currentUser) {
+  return http.get("/me", ({ response }) => response(200).json(user));
+}
+
+export function unauthenticatedHandler() {
+  return mswHttp.get("*/api/v1/me", () =>
+    HttpResponse.json(
+      {
+        type: "https://my-surveys.surveyjs.io/problems/unauthenticated",
+        title: "Sign in required",
+        status: 401,
+        code: "unauthenticated",
+      },
+      { status: 401, headers: { "Content-Type": "application/problem+json" } },
+    ),
+  );
+}

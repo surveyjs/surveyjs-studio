@@ -69,6 +69,8 @@ export default defineConfig({
         MEMORY_SEED: "legacy-fixtures",
         HOST: "127.0.0.1",
         PORT: "3000",
+        // Sign-in redirects must come back to the browser-visible (Vite) origin.
+        PUBLIC_BASE_URL: "http://localhost:5173",
         APP_EDITION: "self-hosted",
         APP_SHELL: "surveyjs-site",
         LOG_LEVEL: "warn",

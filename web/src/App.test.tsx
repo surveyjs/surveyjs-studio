@@ -3,7 +3,7 @@ import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createAppRouter } from "./router";
-import { appConfig, configHandler, problemHandler, server } from "./test/server";
+import { appConfig, configHandler, meHandler, problemHandler, server } from "./test/server";
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -17,17 +17,18 @@ function renderApp() {
 
 describe("home page", () => {
   it("shows the edition and shell from /config inside the shell", async () => {
-    server.use(configHandler());
+    server.use(configHandler(), meHandler());
 
     renderApp();
 
     expect(await screen.findByText("edition: self-hosted")).toBeTruthy();
     expect(screen.getByText("shell: surveyjs-site")).toBeTruthy();
+    expect(screen.getByText("Olivia Owner")).toBeTruthy();
     expect(screen.getByRole("banner").textContent).toContain("My Surveys");
   });
 
   it("shows an error with a retry button when config fails to load, and recovers on retry", async () => {
-    server.use(problemHandler(500, "internal-error", "Internal error"));
+    server.use(meHandler(), problemHandler(500, "internal-error", "Internal error"));
     renderApp();
     expect(await screen.findByRole("alert")).toBeTruthy();
 
