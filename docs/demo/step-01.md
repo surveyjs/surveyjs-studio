@@ -59,18 +59,18 @@ Those two values come from the server's configuration. To see them change, stop 
 Git Bash:
 
 ```sh
-APP_EDITION=hosted APP_SHELL=demo pnpm demo
+APP_SHELL=demo pnpm demo
 ```
 
 PowerShell:
 
 ```powershell
-$env:APP_EDITION = "hosted"; $env:APP_SHELL = "demo"; pnpm demo
+$env:APP_SHELL = "demo"; pnpm demo
 ```
 
-Expected: after a reload the page shows `edition: hosted` and `shell: demo`. Stop the demo again
+Expected: after a reload the page shows `shell: demo`. Stop the demo again
 and start it with plain `pnpm demo` for the next steps. (In PowerShell first run
-`Remove-Item Env:APP_EDITION, Env:APP_SHELL`.)
+`Remove-Item Env:APP_SHELL`.)
 
 The configuration itself is plain JSON:
 

@@ -36,7 +36,9 @@ describe("session", () => {
       SECRET,
       createSession(user, "c", 60, () => NOW_MS),
     );
-    expect(decodeSession(SECRET, `${value}A`, () => NOW_MS)).toBeNull();
+    const [version, iv, body] = value.split(".") as [string, string, string];
+    const flipped = (body[0] === "A" ? "B" : "A") + body.slice(1);
+    expect(decodeSession(SECRET, [version, iv, flipped].join("."), () => NOW_MS)).toBeNull();
     expect(decodeSession(`${SECRET}x`, value, () => NOW_MS)).toBeNull();
     expect(decodeSession(SECRET, undefined, () => NOW_MS)).toBeNull();
     expect(decodeSession(SECRET, "", () => NOW_MS)).toBeNull();

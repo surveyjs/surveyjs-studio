@@ -31,11 +31,19 @@ export function seal(purpose: SealPurpose, secret: string, plaintext: string): s
   return `${VERSION}.${iv.toString("base64url")}.${body.toString("base64url")}`;
 }
 
+/** Strict base64url: Node's decoder skips junk and padding, so only the canonical form passes. */
+function decodeBase64Url(text: string): Buffer | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(text)) return null;
+  const bytes = Buffer.from(text, "base64url");
+  return bytes.toString("base64url") === text ? bytes : null;
+}
+
 export function unseal(purpose: SealPurpose, secret: string, value: string): string | null {
   const parts = value.split(".");
   if (parts.length !== 3 || parts[0] !== VERSION) return null;
-  const iv = Buffer.from(parts[1] ?? "", "base64url");
-  const body = Buffer.from(parts[2] ?? "", "base64url");
+  const iv = decodeBase64Url(parts[1] ?? "");
+  const body = decodeBase64Url(parts[2] ?? "");
+  if (iv === null || body === null) return null;
   if (iv.length !== IV_BYTES || body.length < TAG_BYTES) return null;
   try {
     const decipher = createDecipheriv("aes-256-gcm", deriveKey(purpose, secret), iv);

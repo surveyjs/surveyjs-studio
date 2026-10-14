@@ -39,6 +39,40 @@ describe("seal", () => {
     expect(unseal("msid-session-v1", SECRET, "v1..")).toBeNull();
   });
 
+  it("rejects non-canonical base64url that Node would still decode", () => {
+    const [version, iv, body] = seal("msid-session-v1", SECRET, "hello").split(".") as [
+      string,
+      string,
+      string,
+    ];
+    // A body whose length is a multiple of 4 takes a stray trailing group.
+    const aligned = seal("msid-session-v1", SECRET, "abcdefghijk").split(".") as [
+      string,
+      string,
+      string,
+    ];
+    const cases = [
+      [version, iv, `${body}=`],
+      [version, `${iv}=`, body],
+      [version, iv, `${body}!`],
+      [version, iv, `${body.slice(0, 5)} ${body.slice(5)}`],
+      [
+        version,
+        iv,
+        `${body.slice(0, 5)}
+${body.slice(5)}`,
+      ],
+    ];
+    for (const parts of cases) {
+      expect(unseal("msid-session-v1", SECRET, parts.join("."))).toBeNull();
+    }
+    expect(unseal("msid-session-v1", SECRET, aligned.join("."))).toBe("abcdefghijk");
+    const [v, i, b] = aligned;
+    const pad = (4 - (b.length % 4)) % 4;
+    expect(pad).toBe(0);
+    expect(unseal("msid-session-v1", SECRET, [v, i, `${b}A`].join("."))).toBeNull();
+  });
+
   it("rejects a value sealed for another purpose", () => {
     const sealed = seal("msid-auth-v1", SECRET, "hello");
     expect(unseal("msid-session-v1", SECRET, sealed)).toBeNull();

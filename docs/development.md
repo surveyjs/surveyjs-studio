@@ -26,8 +26,9 @@ the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on 
 <http://localhost:5173> (Vite dev server, proxies `/api`, `/healthz` and `/readyz` to port 3000).
 Stop both with Ctrl+C. Ports are fixed; if 5173 is taken, Vite stops instead of choosing another.
 
-To run one part alone: `pnpm --filter @my-surveys/server dev` (watch mode),
-`pnpm --filter @my-surveys/server start` (no watching), `pnpm --filter @my-surveys/web dev`, or
+To run one part alone: `pnpm --filter @my-surveys/server dev:demo` (watch mode, reads `server/demo.env`),
+`IDENTITY_PROVIDER=dev pnpm --filter @my-surveys/server start` (no watching; the server needs an
+identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @my-surveys/web dev`, or
 `pnpm --filter @my-surveys/web preview` (serves the production build; run
 `pnpm --filter @my-surveys/web build` first).
 
@@ -79,13 +80,13 @@ Set them in the shell that starts the server.
 Git Bash:
 
 ```sh
-APP_EDITION=hosted APP_SHELL=demo pnpm --filter @my-surveys/server start
+IDENTITY_PROVIDER=dev APP_SHELL=demo pnpm --filter @my-surveys/server start
 ```
 
-PowerShell (the variables stay set for the whole session; remove one with `Remove-Item Env:APP_EDITION`):
+PowerShell (the variables stay set for the whole session; remove one with `Remove-Item Env:APP_SHELL`):
 
 ```powershell
-$env:APP_EDITION = "hosted"; $env:APP_SHELL = "demo"; pnpm --filter @my-surveys/server start
+$env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @my-surveys/server start
 ```
 
 The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `/api/v1`).
@@ -108,8 +109,11 @@ Microsoft's public Azurite development key, not a secret. Explicit environment v
 the file. To start the server on the replica:
 
 ```sh
-node --env-file=docker/azurite.env --import tsx server/src/main.ts
+node --env-file=docker/azurite.env --env-file=conformance-tests/azure-legacy.env --import tsx server/src/main.ts
 ```
+
+(`azure-legacy.env` adds placeholder OIDC settings, which the `azure-legacy` provider needs until the mock
+OIDC server arrives with the sign-in task; discovery is lazy, so nothing contacts them.)
 
 (`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
 the command above.) The loader refuses to write to an endpoint that is not local: it checks the
