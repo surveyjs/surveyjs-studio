@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { TableClient, type Edm, type EdmTypes, type TableEntity } from "@azure/data-tables";
-import { BlobServiceClient } from "@azure/storage-blob";
+import type { Edm, EdmTypes, TableEntity } from "@azure/data-tables";
 import sql from "mssql";
 import {
   DEFAULT_FIXTURE_DIR,
@@ -13,12 +12,14 @@ import {
 } from "../providers/azure-legacy/fixtures.js";
 import { parseConnectionString } from "./connection-string.js";
 import { assertLocalEndpoints } from "./endpoint-guard.js";
+import { localBlobServiceClient, localTableClient } from "./local-clients.js";
 import { validateFixtureTables } from "./table-validation.js";
 
 /**
  * Loads the golden fixtures (server/fixtures/legacy) into a local replica of the legacy stores:
  * Azure SQL tables, Azure Tables with their Edm types and append blobs. It only ever talks to
- * local endpoints (see endpoint-guard.ts). Running it twice leaves the same state.
+ * local endpoints: endpoint-guard.ts checks the connection strings, and local-clients.ts checks
+ * every storage client by the URL the SDK resolved. Running it twice leaves the same state.
  */
 
 export type LegacyEnv = Readonly<Record<string, string | undefined>>;
@@ -181,10 +182,14 @@ async function loadSql(
 
 // --- Tables ------------------------------------------------------------------------------------
 
-async function loadTable(connectionString: string, table: LegacyTable): Promise<number> {
-  const client = TableClient.fromConnectionString(connectionString, table.name, {
-    allowInsecureConnection: true,
-  });
+/** A storage account of the fixtures: the variable that names it and its connection string. */
+interface StorageAccount {
+  variable: string;
+  connectionString: string;
+}
+
+async function loadTable(account: StorageAccount, table: LegacyTable): Promise<number> {
+  const client = localTableClient(account.connectionString, table.name, account.variable);
   await client.createTable();
   const existing: { partitionKey: string; rowKey: string }[] = [];
   for await (const entity of client.listEntities({
@@ -200,19 +205,20 @@ async function loadTable(connectionString: string, table: LegacyTable): Promise<
 // --- Blobs -------------------------------------------------------------------------------------
 
 async function loadBlobs(
-  connectionStrings: Record<string, string>,
+  accounts: Record<string, StorageAccount>,
   blobs: LegacyBlob[],
 ): Promise<{ containers: number; blobs: number }> {
   const seen = new Set<string>();
   for (const blob of blobs) {
-    const connectionString = connectionStrings[blob.account];
-    if (!connectionString) {
+    const account = accounts[blob.account];
+    if (!account) {
       throw new Error(`No connection string for blob account "${blob.account}"`);
     }
     const key = `${blob.account}/${blob.container}`;
-    const container = BlobServiceClient.fromConnectionString(connectionString).getContainerClient(
-      blob.container,
-    );
+    const container = localBlobServiceClient(
+      account.connectionString,
+      account.variable,
+    ).getContainerClient(blob.container);
     if (!seen.has(key)) {
       seen.add(key);
       await container.createIfNotExists();
@@ -244,9 +250,13 @@ export async function loadLegacyFixtures(
   const problems = validateFixtureTables(fixtures.tables);
   if (problems.length > 0) throw new Error(`Invalid fixture tables:\n${problems.join("\n")}`);
 
-  const accounts: Record<string, string> = {
-    surveys: required(env, "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING"),
-    results: required(env, "LEGACY_RESULTS_STORAGE_CONNECTION_STRING"),
+  const account = (variable: string): StorageAccount => ({
+    variable,
+    connectionString: required(env, variable),
+  });
+  const accounts: Record<string, StorageAccount> = {
+    surveys: account("LEGACY_SURVEYS_STORAGE_CONNECTION_STRING"),
+    results: account("LEGACY_RESULTS_STORAGE_CONNECTION_STRING"),
   };
 
   const schemaSql = await readFile(join(dir, "sql", "schema.sql"), "utf8");
@@ -263,11 +273,11 @@ export async function loadLegacyFixtures(
 
   const tableEntities: Record<string, number> = {};
   for (const table of fixtures.tables) {
-    const connectionString = accounts[table.account];
-    if (!connectionString) {
+    const tableAccount = accounts[table.account];
+    if (!tableAccount) {
       throw new Error(`No connection string for table account "${table.account}"`);
     }
-    tableEntities[table.name] = await loadTable(connectionString, table);
+    tableEntities[table.name] = await loadTable(tableAccount, table);
   }
   const tableTotal = Object.values(tableEntities).reduce((a, b) => a + b, 0);
   log(`Tables: ${fixtures.tables.length} tables, ${tableTotal} entities`);

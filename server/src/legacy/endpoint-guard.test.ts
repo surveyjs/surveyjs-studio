@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assertLocalEndpoints, findNonLocalVariables } from "./endpoint-guard.js";
+import {
+  assertLocalClientUrl,
+  assertLocalEndpoints,
+  findNonLocalVariables,
+} from "./endpoint-guard.js";
 
 const AZURITE =
   "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=a2V5;" +
@@ -143,5 +147,93 @@ describe("legacy loader endpoint guard", () => {
       LEGACY_SQL_CONNECTION_STRING: "Data Source=db.example.net,1433;Database=d",
     };
     expect(findNonLocalVariables(env)).toEqual(["LEGACY_SQL_CONNECTION_STRING"]);
+  });
+});
+
+// Inputs that the storage SDKs read differently from a naive parser. Each one sends at least one
+// SDK client to a real Azure account (local-clients.test.ts shows the URLs the SDKs resolve).
+const PROD = "DefaultEndpointsProtocol=https;AccountName=prodacct;AccountKey=a2V5";
+const LOCAL_BLOB = "http://127.0.0.1:10000/devstoreaccount1";
+const LOCAL_TABLE = "http://127.0.0.1:10002/devstoreaccount1";
+
+const STORAGE_BYPASS_INPUTS: [name: string, value: string][] = [
+  [
+    "remote endpoints first, local duplicates after",
+    `${PROD};BlobEndpoint=https://prodacct.blob.core.windows.net/;` +
+      `TableEndpoint=https://prodacct.table.core.windows.net;` +
+      `BlobEndpoint=${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`,
+  ],
+  [
+    "lower-case endpoint keys next to a real account",
+    `${PROD};EndpointSuffix=core.windows.net;blobendpoint=${LOCAL_BLOB};tableendpoint=${LOCAL_TABLE}`,
+  ],
+  [
+    "a real account string with UseDevelopmentStorage=true appended",
+    `${PROD};EndpointSuffix=core.windows.net;UseDevelopmentStorage=true`,
+  ],
+];
+
+describe("storage endpoint guard reads the string the way the SDKs do", () => {
+  it.each(STORAGE_BYPASS_INPUTS)("refuses %s", (_name, value) => {
+    const env = { ...local, LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: value };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_SURVEYS_STORAGE_CONNECTION_STRING"]);
+    expect(() => assertLocalEndpoints(env)).toThrow(/LEGACY_SURVEYS_STORAGE_CONNECTION_STRING/);
+    expect(() => assertLocalEndpoints(env)).not.toThrow(/prodacct/);
+  });
+
+  it.each([
+    [
+      "duplicated local endpoint keys",
+      `BlobEndpoint=${LOCAL_BLOB};BlobEndpoint=${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`,
+    ],
+    ["an upper-case endpoint key", `BLOBENDPOINT=${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`],
+    [
+      "a key that only starts with an endpoint name",
+      `BlobEndpointX=a;BlobEndpoint=${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`,
+    ],
+    ["a space before the equals sign", `BlobEndpoint =${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`],
+    [
+      "UseDevelopmentStorage=true next to local endpoints",
+      `UseDevelopmentStorage=true;BlobEndpoint=${LOCAL_BLOB};TableEndpoint=${LOCAL_TABLE}`,
+    ],
+    [
+      "UseDevelopmentStorage=true with a proxy",
+      "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://proxy.example.com",
+    ],
+    ["a lower-case emulator flag", "usedevelopmentstorage=true"],
+  ])("refuses %s", (_name, value) => {
+    const env = { ...local, LEGACY_RESULTS_STORAGE_CONNECTION_STRING: value };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_RESULTS_STORAGE_CONNECTION_STRING"]);
+  });
+
+  it.each(["UseDevelopmentStorage=true", " UseDevelopmentStorage=true; "])(
+    "accepts the emulator flag alone: %j",
+    (value) => {
+      const env = { ...local, LEGACY_RESULTS_STORAGE_CONNECTION_STRING: value };
+      expect(findNonLocalVariables(env)).toEqual([]);
+    },
+  );
+});
+
+describe("assertLocalClientUrl", () => {
+  it.each([
+    "http://127.0.0.1:10000/devstoreaccount1",
+    "http://localhost:10002/devstoreaccount1",
+    "http://[::1]:10002/devstoreaccount1",
+  ])("accepts %s", (url) => {
+    expect(() =>
+      assertLocalClientUrl(url, "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING"),
+    ).not.toThrow();
+  });
+
+  it.each([
+    "https://prodacct.blob.core.windows.net/",
+    "https://prodacct.table.core.windows.net?sv=2020&sig=secret",
+    "http://localhost@prodacct.blob.core.windows.net/",
+    "not a url",
+  ])("refuses %s and names the variable, not the value", (url) => {
+    const run = () => assertLocalClientUrl(url, "LEGACY_RESULTS_STORAGE_CONNECTION_STRING");
+    expect(run).toThrow(/LEGACY_RESULTS_STORAGE_CONNECTION_STRING/);
+    expect(run).not.toThrow(/prodacct|secret|not a url/);
   });
 });

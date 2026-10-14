@@ -1,12 +1,11 @@
 import { LEGACY_VARIABLES } from "../config.js";
-import { connectionStringEntries, parseConnectionString } from "./connection-string.js";
+import { connectionStringEntries } from "./connection-string.js";
 
 /** Environment variables the legacy loader and the azure-legacy provider read. */
 export { LEGACY_VARIABLES };
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 const SQL_SERVER_KEYS = ["server", "data source", "address", "addr", "network address"];
-const STORAGE_ENDPOINT_KEYS = ["blobendpoint", "tableendpoint", "queueendpoint", "fileendpoint"];
 
 function isLocalHost(host: string): boolean {
   return LOCAL_HOSTS.has(
@@ -36,22 +35,63 @@ function isLocalSqlString(value: string): boolean {
   return servers.length > 0 && servers.every((server) => isLocalHost(sqlHost(server)));
 }
 
-/** True when every endpoint the storage SDKs would use is on this machine (Azurite). */
+/** Endpoint keys in the exact case the Azure Storage SDKs look for. */
+const STORAGE_ENDPOINT_KEYS = ["BlobEndpoint", "TableEndpoint", "QueueEndpoint", "FileEndpoint"];
+const EMULATOR_FLAG = "UseDevelopmentStorage=true";
+
+function isLocalUrl(value: string): boolean {
+  try {
+    return isLocalHost(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when every endpoint the storage SDKs could use is on this machine (Azurite).
+ *
+ * The SDKs read a connection string their own way: they take the first match, the blob SDK
+ * matches keys case-sensitively by prefix, and the table SDK honours the emulator flag anywhere
+ * in the string. So this check accepts only strings that every reading resolves the same way:
+ * - the emulator flag alone (`UseDevelopmentStorage=true`, optional trailing `;`), or
+ * - `BlobEndpoint` and `TableEndpoint` once each, in that exact case, with local URLs, plus
+ *   local URLs for any other endpoint key, and no emulator setting.
+ */
 export function isLocalStorageString(value: string): boolean {
-  const pairs = parseConnectionString(value);
-  if (pairs.get("usedevelopmentstorage")?.toLowerCase() === "true") return true;
+  if (value.trim().replace(/;$/, "").trim() === EMULATOR_FLAG) return true;
+  const parts = value
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.some((part) => part.toLowerCase().includes("developmentstorage"))) return false;
+  const found = new Set<string>();
+  for (const part of parts) {
+    const key = STORAGE_ENDPOINT_KEYS.find((name) =>
+      part.toLowerCase().startsWith(name.toLowerCase()),
+    );
+    if (key === undefined) continue;
+    // Refuse other cases, longer keys, spaces before "=" and duplicates: an SDK may read them.
+    if (!part.startsWith(`${key}=`) || found.has(key)) return false;
+    found.add(key);
+    if (!isLocalUrl(part.slice(key.length + 1))) return false;
+  }
   // Both services the loader uses must be pinned locally; otherwise the SDK derives the missing
   // endpoint from AccountName and EndpointSuffix, which would be a real Azure account.
-  if (!pairs.get("blobendpoint") || !pairs.get("tableendpoint")) return false;
-  return STORAGE_ENDPOINT_KEYS.every((key) => {
-    const endpoint = pairs.get(key);
-    if (endpoint === undefined || endpoint === "") return true;
-    try {
-      return isLocalHost(new URL(endpoint).hostname);
-    } catch {
-      return false;
-    }
-  });
+  return found.has("BlobEndpoint") && found.has("TableEndpoint");
+}
+
+/**
+ * Throws unless a storage client the SDK built points at this machine. The loader obtains its
+ * storage clients only through this check, so a string the guard misread still cannot reach Azure.
+ * The message names the variable, never the URL.
+ */
+export function assertLocalClientUrl(url: string, variableName: string): void {
+  if (!isLocalUrl(url)) {
+    throw new Error(
+      `Refusing to use ${variableName}: the storage client it builds does not point at a local ` +
+        "endpoint (127.0.0.1, localhost or ::1).",
+    );
+  }
 }
 
 /** Names of the variables that are missing, blank or point at a non-local endpoint. */
