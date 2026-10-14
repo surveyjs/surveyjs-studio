@@ -20,6 +20,7 @@ export interface AppConfig {
   readonly authMethods: readonly AuthMethod[];
   readonly surveyjsLicenseKey: string | null;
   readonly storageProvider: "memory";
+  readonly memorySeed: "empty" | "legacy-fixtures";
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -59,6 +60,7 @@ const envSchema = z.object({
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["memory"]).default("memory"),
+  MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
   PUBLIC_BASE_URL: httpUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
@@ -103,6 +105,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfi
     authMethods: Object.freeze([...e.AUTH_METHODS]),
     surveyjsLicenseKey: e.SURVEYJS_LICENSE_KEY ?? null,
     storageProvider: e.STORAGE_PROVIDER,
+    memorySeed: e.MEMORY_SEED,
     publicBaseUrl: e.PUBLIC_BASE_URL ?? "http://localhost:3000",
     limits: Object.freeze({
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,

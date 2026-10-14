@@ -9,8 +9,8 @@ import { createMemoryProviders } from "./providers/memory.js";
 const config = loadConfig({ NODE_ENV: "test", LIMIT_MAX_RESPONSE_BYTES: "64" });
 let app: FastifyInstance | undefined;
 
-async function start(providers: ProviderSet = createProviders(config)): Promise<FastifyInstance> {
-  app = await buildApp(config, providers);
+async function start(providers?: ProviderSet): Promise<FastifyInstance> {
+  app = await buildApp(config, providers ?? (await createProviders(config)));
   return app;
 }
 

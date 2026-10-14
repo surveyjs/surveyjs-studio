@@ -13,7 +13,7 @@ try {
   throw error;
 }
 
-const providers = createProviders(config);
+const providers = await createProviders(config);
 const app = await buildApp(config, providers);
 
 let shuttingDown = false;

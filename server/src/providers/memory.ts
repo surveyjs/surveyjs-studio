@@ -9,10 +9,14 @@ export interface MemorySeed {
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-function sameOwner(a: SurveyOwner, b: SurveyOwner): boolean {
-  return a.kind === "personal"
-    ? b.kind === "personal" && a.userId === b.userId
-    : b.kind === "project" && a.projectId === b.projectId;
+/** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
+const lower = (id: string): string => id.toLowerCase();
+
+/** `stored` holds lower-case ids; `wanted` comes from the caller. */
+function sameOwner(stored: SurveyOwner, wanted: SurveyOwner): boolean {
+  return stored.kind === "personal"
+    ? wanted.kind === "personal" && stored.userId === lower(wanted.userId)
+    : wanted.kind === "project" && stored.projectId === lower(wanted.projectId);
 }
 
 const copySurvey = (s: SurveyRecord): SurveyRecord => structuredClone(s);
@@ -35,7 +39,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
     name: "memory",
     surveys: {
       getSurvey: (id) => {
-        const found = surveys.find((s) => s.id === id);
+        const found = surveys.find((s) => s.id === lower(id));
         return Promise.resolve(found ? copySurvey(found) : null);
       },
       listSurveys: (owner) =>
@@ -48,7 +52,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
     },
     directory: {
       getUser: (id) => {
-        const found = users.find((u) => u.id === id);
+        const found = users.find((u) => u.id === lower(id));
         return Promise.resolve(found ? copyUser(found) : null);
       },
       findUserByEmail: (email) => {
@@ -59,7 +63,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
       listUserProjects: (userId) =>
         Promise.resolve(
           memberships
-            .filter((m) => m.userId === userId)
+            .filter((m) => m.userId === lower(userId))
             .map((m) => copyMembership(m.membership))
             .sort(
               (a, b) =>
