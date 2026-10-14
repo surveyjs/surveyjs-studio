@@ -23,6 +23,12 @@ export interface RouteSchema {
   body?: { content: Record<string, { schema: SchemaObject }> };
 }
 
+/**
+ * Security requirements: the operation needs any one of them, and a requirement needs all of its
+ * schemes (e.g. `[["cookieAuth", "csrfToken"], ["bearerAuth"]]`). Empty means public.
+ */
+export type Security = readonly (readonly string[])[];
+
 export interface ContractOperation {
   readonly operationId: string;
   readonly method: HttpMethod;
@@ -31,6 +37,8 @@ export interface ContractOperation {
   readonly schema: RouteSchema;
   /** Media types the operation accepts as a body, or `undefined` if it takes none. */
   readonly requestBody?: { readonly required: boolean; readonly mediaTypes: readonly string[] };
+  /** Effective security: the operation's own `security`, else the document's top-level one. */
+  readonly security: Security;
 }
 
 export interface Contract {
@@ -132,6 +140,14 @@ function objectSchema(params: readonly Json[], enforceRequired: boolean): Schema
   return { type: "object", properties, ...(required.length > 0 && { required }) };
 }
 
+/** Scheme names of each Security Requirement Object (scopes are not used). */
+function readSecurity(value: unknown, where: string): Security {
+  if (!Array.isArray(value)) fail(`${where}: security must be an array`);
+  return value.map((requirement) =>
+    isObject(requirement) ? Object.keys(requirement) : fail(`${where}: invalid security`),
+  );
+}
+
 function buildOperation(
   doc: Json,
   path: string,
@@ -182,12 +198,20 @@ function buildOperation(
     requestBody = { required: body.required === true, mediaTypes: Object.keys(content) };
   }
 
+  const security =
+    op.security !== undefined
+      ? readSecurity(op.security, operationId)
+      : doc.security !== undefined
+        ? readSecurity(doc.security, "document")
+        : [];
+
   return {
     operationId,
     method: method.toUpperCase() as HttpMethod,
     url: path.replace(/\{([^}]+)\}/g, ":$1"),
     schema,
     ...(requestBody && { requestBody }),
+    security,
   };
 }
 

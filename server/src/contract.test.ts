@@ -35,6 +35,27 @@ describe("loadContract", () => {
     expect(view).toMatchObject({ method: "GET", url: "/surveys/:surveyId/views/:view" });
   });
 
+  it("gives each operation its effective security: its own, else the document's", async () => {
+    const contract = await loadContract(openapiPath);
+    const security = (id: string) =>
+      contract.operations.find((op) => op.operationId === id)?.security;
+    expect(security("getConfig")).toEqual([]);
+    expect(security("logout")).toEqual([["cookieAuth", "csrfToken"]]);
+    expect(security("createSurvey")).toEqual([["cookieAuth", "csrfToken"], ["bearerAuth"]]);
+    expect(security("getCurrentUser")).toEqual([["cookieAuth"], ["bearerAuth"]]);
+  });
+
+  it("reads a missing top-level security as public", async () => {
+    const source = await readFile(openapiPath, "utf8");
+    const withoutTopLevel = source.replace(/^security:\r?\n( {2}- .*\r?\n)+/m, "");
+    expect(withoutTopLevel).not.toBe(source);
+    const file = join(dir, "no-security.yaml");
+    await writeFile(file, withoutTopLevel);
+    const contract = await loadContract(file);
+    const me = contract.operations.find((op) => op.operationId === "getCurrentUser");
+    expect(me?.security).toEqual([]);
+  });
+
   it("rejects a contract whose schemas use an unknown keyword", async () => {
     const source = await readFile(openapiPath, "utf8");
     const broken = source.replace(

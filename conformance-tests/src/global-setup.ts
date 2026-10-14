@@ -92,6 +92,10 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     HOST: "127.0.0.1",
     PORT: String(port),
     LOG_LEVEL: "warn",
+    // Sign-in redirects (and the OIDC redirect_uri) point at the server under test.
+    PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+    // The suite signs in many times from one IP; the limit itself is tested in the server tests.
+    SIGN_IN_RATE_LIMIT: "100000",
     ...providerEnv(),
   };
 }

@@ -11,6 +11,8 @@ function hasControlCharacter(text: string): boolean {
  * The `returnTo` path when it is a same-origin path, `/` when absent, else null.
  * Only a single leading `/` is accepted (not `//`, not `/\`), so the browser never reads it as
  * another origin; the URL check below repeats that against the configured public origin.
+ * The result is the URL parser's normalised path, query and fragment: percent-encoded, so it is
+ * always safe in a `Location` header (a raw `/€` would make Node reject the header).
  */
 export function validateReturnTo(value: string | undefined, publicBaseUrl: string): string | null {
   if (value === undefined) return "/";
@@ -19,5 +21,9 @@ export function validateReturnTo(value: string | undefined, publicBaseUrl: strin
   if (hasControlCharacter(value)) return null;
   const base = new URL(publicBaseUrl);
   if (!URL.canParse(value, base.href)) return null;
-  return new URL(value, base.href).origin === base.origin ? value : null;
+  const url = new URL(value, base.href);
+  if (url.origin !== base.origin) return null;
+  const path = url.pathname + url.search + url.hash;
+  // Dot segments can normalise to `//host` (e.g. `/.//evil.com`): never hand that out.
+  return path.startsWith("//") ? null : path;
 }

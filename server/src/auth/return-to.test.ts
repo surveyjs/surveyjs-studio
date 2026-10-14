@@ -32,6 +32,7 @@ describe("validateReturnTo", () => {
     ["C1 control", "/a\u0085b"],
     ["leading space", " /a"],
     ["over-long", `/${"a".repeat(2048)}`],
+    ["dot segment to a protocol-relative path", "/.//evil.com"],
   ])("rejects %s", (_name, value) => {
     expect(validateReturnTo(value, BASE)).toBeNull();
   });
@@ -39,6 +40,16 @@ describe("validateReturnTo", () => {
   it("accepts a path of exactly 2048 characters", () => {
     const value = `/${"a".repeat(2047)}`;
     expect(validateReturnTo(value, BASE)).toBe(value);
+  });
+
+  it("returns the normalised, percent-encoded path", () => {
+    expect(validateReturnTo("/€", BASE)).toBe("/%E2%82%AC");
+    expect(validateReturnTo("/a b?q=x y#h z", BASE)).toBe("/a%20b?q=x%20y#h%20z");
+    expect(validateReturnTo("/a/../b", BASE)).toBe("/b");
+  });
+
+  it("accepts percent-encoded control characters: they stay inert in the path", () => {
+    expect(validateReturnTo("/%0d%0a", BASE)).toBe("/%0d%0a");
   });
 
   it("resolves against a base URL with a port or a path", () => {

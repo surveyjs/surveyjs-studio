@@ -28,7 +28,17 @@ pnpm test:conformance
 
 With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @my-surveys/server start`
 on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=dev`, `MEMORY_SEED=legacy-fixtures`), waits up to 30 s for
-`/readyz`, and stops it (and its process tree) afterwards.
+`/readyz`, and stops it (and its process tree) afterwards. `PUBLIC_BASE_URL` is the server's own
+origin, and `SIGN_IN_RATE_LIMIT` is high enough that the suite never reaches it.
+
+## Signing in
+
+`src/sign-in.ts` signs in over HTTP only, like a browser: it calls `/auth/login`, follows the
+redirect to the identity provider, and completes it. Today it completes the dev provider's
+"Sign in as…" page (`/__dev/sign-in`) as a user of the legacy fixtures. When `/auth/login` redirects
+anywhere else, the tests that need a signed-in user are **skipped**, and the skip note names the
+redirect target. The tests that need no sign-in (`login`, the callback's `400`s, anonymous `401`s,
+`passwordLogin`) run on every provider.
 
 ## Run against the Azure legacy provider
 

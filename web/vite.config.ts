@@ -5,6 +5,8 @@ import { defineConfig } from "vite";
 const backend = "http://127.0.0.1:3000";
 const proxy = {
   "/api": backend,
+  // The dev identity provider's "Sign in as…" page (IDENTITY_PROVIDER=dev only).
+  "/__dev": backend,
   "/healthz": backend,
   "/readyz": backend,
 };

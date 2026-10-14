@@ -7,10 +7,12 @@ import type { FastifyInstance } from "fastify";
 import { parse } from "yaml";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildApp, type BuildOptions } from "./app.js";
+import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { createProviders } from "./providers/index.js";
+import { ownerUser } from "./providers/suite/expected.js";
 
-const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev" };
+const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
 
 async function start(
@@ -26,6 +28,16 @@ afterEach(async () => {
   await app?.close();
   app = undefined;
 });
+
+/** A signed-in app and the request headers of the owner's browser (cookies and CSRF token). */
+async function startSignedIn(): Promise<{
+  server: FastifyInstance;
+  headers: Record<string, string>;
+}> {
+  const instance = await start();
+  const { headers } = await signIn(instance, ownerUser.id);
+  return { server: instance, headers };
+}
 
 describe("getConfig", () => {
   it("returns the defaults, with surveyjsLicenseKey null when unset", async () => {
@@ -74,9 +86,13 @@ describe("getConfig", () => {
 
 describe("request validation", () => {
   it("a JSON body that violates the schema answers 422 validation-failed with pointers", async () => {
-    const res = await (
-      await start()
-    ).inject({ method: "POST", url: "/api/v1/surveys", payload: { name: 5 } });
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/v1/surveys",
+      headers,
+      payload: { name: 5 },
+    });
     expect(res.statusCode).toBe(422);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toMatchObject({
@@ -88,20 +104,23 @@ describe("request validation", () => {
   });
 
   it("does not coerce body values to the schema type", async () => {
-    const res = await (
-      await start()
-    ).inject({ method: "PATCH", url: "/api/v1/surveys/s1", payload: { archived: "true" } });
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/api/v1/surveys/s1",
+      headers,
+      payload: { archived: "true" },
+    });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ errors: [{ pointer: "/archived" }] });
   });
 
   it("validates application/merge-patch+json bodies", async () => {
-    const res = await (
-      await start()
-    ).inject({
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
       method: "PATCH",
       url: "/api/v1/surveys/s1",
-      headers: { "content-type": "application/merge-patch+json" },
+      headers: { ...headers, "content-type": "application/merge-patch+json" },
       payload: JSON.stringify({ name: "" }),
     });
     expect(res.statusCode).toBe(422);
@@ -109,32 +128,33 @@ describe("request validation", () => {
   });
 
   it("a valid merge-patch body reaches the operation", async () => {
-    const res = await (
-      await start()
-    ).inject({
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
       method: "PATCH",
       url: "/api/v1/surveys/s1",
-      headers: { "content-type": "application/merge-patch+json; charset=utf-8" },
+      headers: { ...headers, "content-type": "application/merge-patch+json; charset=utf-8" },
       payload: JSON.stringify({ name: "Renamed" }),
     });
     expect(res.statusCode).toBe(501);
   });
 
   it("a missing required body answers 422 validation-failed", async () => {
-    const res = await (
-      await start()
-    ).inject({ method: "PUT", url: "/api/v1/surveys/s1/definition" });
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
+      method: "PUT",
+      url: "/api/v1/surveys/s1/definition",
+      headers,
+    });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ code: "validation-failed", errors: [{ pointer: "" }] });
   });
 
   it("a body in a media type the operation does not declare answers 415", async () => {
-    const res = await (
-      await start()
-    ).inject({
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
       method: "POST",
       url: "/api/v1/surveys",
-      headers: { "content-type": "text/plain" },
+      headers: { ...headers, "content-type": "text/plain" },
       payload: "hello",
     });
     expect(res.statusCode).toBe(415);
@@ -142,20 +162,23 @@ describe("request validation", () => {
   });
 
   it("an invalid query parameter answers 400 bad-request", async () => {
-    const res = await (await start()).inject("/api/v1/surveys?limit=0");
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({ url: "/api/v1/surveys?limit=0", headers });
     expect(res.statusCode).toBe(400);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toMatchObject({ code: "bad-request", errors: [{ pointer: "/limit" }] });
   });
 
   it("a query parameter of the wrong type answers 400 bad-request", async () => {
-    const res = await (await start()).inject("/api/v1/surveys?archived=maybe");
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({ url: "/api/v1/surveys?archived=maybe", headers });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: "bad-request", errors: [{ pointer: "/archived" }] });
   });
 
   it("an invalid path parameter answers 400 bad-request", async () => {
-    const res = await (await start()).inject(`/api/v1/surveys/${"x".repeat(65)}`);
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({ url: `/api/v1/surveys/${"x".repeat(65)}`, headers });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: "bad-request", errors: [{ pointer: "/surveyId" }] });
   });
@@ -163,7 +186,8 @@ describe("request validation", () => {
 
 describe("operations without a handler", () => {
   it("answer 501 not-implemented naming the operationId", async () => {
-    const res = await (await start()).inject("/api/v1/surveys");
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({ url: "/api/v1/surveys", headers });
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
@@ -177,12 +201,11 @@ describe("operations without a handler", () => {
 
   it("multipart uploads reach the operation instead of answering 415", async () => {
     const boundary = "----test";
-    const res = await (
-      await start()
-    ).inject({
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
       method: "POST",
       url: "/api/v1/surveys/s1/assets",
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      headers: { ...headers, "content-type": `multipart/form-data; boundary=${boundary}` },
       payload: [
         `--${boundary}`,
         'Content-Disposition: form-data; name="file"; filename="a.txt"',
@@ -249,11 +272,14 @@ describe("contract coverage", () => {
   it.each(operations.map((op) => [op.operationId, op] as const))(
     "%s is routed under /api/v1",
     async (_id, op) => {
-      const res = await (
-        await start()
-      ).inject({ method: op.method as "GET", url: `/api/v1${op.url}` });
+      const { server, headers } = await startSignedIn();
+      const res = await server.inject({
+        method: op.method as "GET",
+        url: `/api/v1${op.url}`,
+        headers,
+      });
       expect(res.statusCode).not.toBe(404);
-      expect([200, 400, 422, 501]).toContain(res.statusCode);
+      expect([200, 302, 400, 422, 501]).toContain(res.statusCode);
     },
   );
 });
