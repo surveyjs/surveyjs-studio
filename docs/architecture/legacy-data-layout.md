@@ -771,6 +771,26 @@ Legacy permission rules the new app must reproduce or consciously change:
 - Deleting an account deletes the user's personal surveys and their results, but leaves their
   `OrganizationUsers` rows. **[C]** `the site's code` (`site code`)
 
+### 6.1 Sign-in server: `auth.surveyjs.io`
+
+The legacy sign-in server is a plain **OAuth 2.0** authorization server with a UserInfo endpoint, in
+the style of GitHub or Slack. It is not a full OpenID provider. **[C]**
+`the site's code` (`site code`)
+
+| Item      | What it does                                                                                                                                                                                               |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metadata  | RFC 8414 at `/.well-known/oauth-authorization-server` only. No `openid-configuration`, no `jwks_uri`. Advertised scopes: `profile`, `email`                                                                |
+| Authorize | `/OAuth/Authorize`: `response_type=code` only; `state` required; PKCE optional, but only `S256`. `scope` is stored as sent, not checked; `nonce` is stored but never returned                              |
+| Token     | `/OAuth/Token`: `authorization_code` only; client secret by form post or HTTP Basic; checks the client, the redirect URI and the PKCE verifier. Answers an **opaque** access token, with **no `id_token`** |
+| UserInfo  | `/OAuth/UserInfo` (bearer token): `sub` and `id` (both the `Users.id` GUID), `email`, `name` (the display name, else the email), `scope`                                                                   |
+| Logout    | `/OAuth/Logout` (the `end_session_endpoint`): signs out of the auth server, then returns to `post_logout_redirect_uri` if it is registered for `client_id`                                                 |
+| Revoke    | `/OAuth/Revoke` (RFC 7009), client-authenticated                                                                                                                                                           |
+
+My Surveys therefore signs in with `OIDC_DISCOVERY=oauth-authorization-server` (the default):
+authorization code with PKCE S256 and `state`, then the identity from UserInfo. The
+`openid-configuration` mode exists for a real OpenID provider; there, an ID token is also required
+and checked.
+
 ## 7. How `api.surveyjs.io` reads results and inline files
 
 The public controller is mounted at both `public/Survey` and `public/v1/Survey`; the private one at

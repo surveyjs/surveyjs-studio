@@ -317,16 +317,35 @@ describe("loadConfig", () => {
       }
     });
 
-    it("reads the OIDC settings, with the default scopes", () => {
+    it("reads the OIDC settings: RFC 8414 discovery and OAuth 2.0 scopes by default", () => {
       const config = load({ ...oidc });
       expect(config.identityProvider).toBe("surveyjs-oidc");
       expect(config.oidc).toEqual({
         issuerUrl: oidc.OIDC_ISSUER_URL,
         clientId: oidc.OIDC_CLIENT_ID,
         clientSecret: oidc.OIDC_CLIENT_SECRET,
-        scopes: "openid profile email",
+        discovery: "oauth-authorization-server",
+        scopes: "profile email",
       });
       expect(load({ ...oidc, OIDC_SCOPES: "openid" }).oidc?.scopes).toBe("openid");
+    });
+
+    it("OIDC_DISCOVERY=openid-configuration adds openid to the default scopes", () => {
+      const config = load({ ...oidc, OIDC_DISCOVERY: "openid-configuration" });
+      expect(config.oidc).toMatchObject({
+        discovery: "openid-configuration",
+        scopes: "openid profile email",
+      });
+      expect(
+        load({ ...oidc, OIDC_DISCOVERY: "openid-configuration", OIDC_SCOPES: "openid" }).oidc
+          ?.scopes,
+      ).toBe("openid");
+    });
+
+    it("rejects an unknown OIDC_DISCOVERY", () => {
+      expect(messageOf(() => load({ ...oidc, OIDC_DISCOVERY: "oidc" }))).toContain(
+        "OIDC_DISCOVERY",
+      );
     });
 
     it("does not need the OIDC settings for the dev provider", () => {

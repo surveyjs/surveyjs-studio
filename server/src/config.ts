@@ -52,11 +52,18 @@ export const ACCOUNT_NOTICES = [
 ] as const;
 export type AccountNotices = (typeof ACCOUNT_NOTICES)[number];
 
+export const OIDC_DISCOVERY = ["oauth-authorization-server", "openid-configuration"] as const;
+
 export interface OidcConfig {
   readonly issuerUrl: string;
   readonly clientId: string;
   /** Secret: never log or echo. */
   readonly clientSecret: string;
+  /**
+   * Which metadata the issuer publishes: RFC 8414 `oauth-authorization-server` (auth.surveyjs.io:
+   * OAuth 2.0 with UserInfo, no ID token) or OpenID Connect `openid-configuration`.
+   */
+  readonly discovery: (typeof OIDC_DISCOVERY)[number];
   readonly scopes: string;
 }
 
@@ -160,7 +167,9 @@ const envSchema = z.object({
   OIDC_ISSUER_URL: httpUrl.optional(),
   OIDC_CLIENT_ID: z.string().optional(),
   OIDC_CLIENT_SECRET: z.string().optional(),
-  OIDC_SCOPES: z.string().min(1).default("openid profile email"),
+  OIDC_DISCOVERY: z.enum(OIDC_DISCOVERY).default("oauth-authorization-server"),
+  // Default by OIDC_DISCOVERY: auth.surveyjs.io advertises only profile and email.
+  OIDC_SCOPES: z.string().min(1).optional(),
   SIGN_IN_RATE_LIMIT: positiveInt.default(30),
   ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
   SHELL_LINKS: shellLinks.optional(),
@@ -289,7 +298,12 @@ export function loadConfig(
             issuerUrl: e.OIDC_ISSUER_URL,
             clientId: e.OIDC_CLIENT_ID,
             clientSecret: e.OIDC_CLIENT_SECRET,
-            scopes: e.OIDC_SCOPES,
+            discovery: e.OIDC_DISCOVERY,
+            scopes:
+              e.OIDC_SCOPES ??
+              (e.OIDC_DISCOVERY === "openid-configuration"
+                ? "openid profile email"
+                : "profile email"),
           })
         : null,
     signInRateLimitPerMinute: e.SIGN_IN_RATE_LIMIT,

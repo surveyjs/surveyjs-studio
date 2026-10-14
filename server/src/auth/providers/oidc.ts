@@ -24,12 +24,12 @@ function unavailable(cause: unknown): AppError {
   });
 }
 
-/** Failures of the token response that mean "this sign-in is not valid", not "the server is broken". */
+/** Failures of the token or UserInfo response that mean "this sign-in is not valid", not "the server is broken". */
 const INVALID_SIGN_IN_CODES = new Set([
   "OAUTH_INVALID_RESPONSE", // includes a bad ID token signature
   "OAUTH_JWT_CLAIM_COMPARISON_FAILED", // iss, aud, nonce
   "OAUTH_JWT_TIMESTAMP_CHECK_FAILED", // exp, iat
-  "OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED",
+  "OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED", // UserInfo sub differs from the ID token sub
   "OAUTH_KEY_SELECTION_FAILED",
 ]);
 
@@ -56,35 +56,72 @@ const optionalString = (value: unknown) =>
   typeof value === "string" && value !== "" ? value : undefined;
 
 /**
- * The `surveyjs-oidc` identity provider (auth.surveyjs.io, or the mock OIDC server in Azurite
- * mode): authorization code flow with PKCE (S256), `state` and `nonce`, and a validated ID token.
- * The client authenticates with its secret (`client_secret_post`).
+ * The `surveyjs-oidc` identity provider: auth.surveyjs.io (OAuth 2.0 with RFC 8414 metadata, an
+ * opaque access token and a UserInfo endpoint, no ID token), the mock OIDC server in Azurite mode,
+ * or, with `OIDC_DISCOVERY=openid-configuration`, an OpenID provider.
  *
- * Discovery is lazy: done on the first sign-in, cached, and retried after a failure, so start-up
- * and `/readyz` never depend on the issuer. Provider tokens are discarded after the callback; only
- * the ID token's claims are returned.
+ * - Authorization code flow with PKCE (S256) and `state`; the client authenticates with its secret
+ *   (`client_secret_post`).
+ * - The identity always comes from UserInfo. An ID token in the token response is validated
+ *   (issuer, audience, expiry, signature, and the nonce in OpenID mode) and its `sub` must equal
+ *   the UserInfo `sub`; no ID token is not an error, except in OpenID mode, which sends a nonce
+ *   and so requires one.
+ * - Discovery is lazy: done on the first sign-in, cached, and retried after a failure, so start-up
+ *   and `/readyz` never depend on the issuer. Tokens are discarded after the callback.
  */
 export function createOidcIdentityProvider(options: OidcIdentityOptions): IdentityProvider {
   const { oidc, publicBaseUrl } = options;
   const redirectUri = publicUrl(publicBaseUrl, CALLBACK_PATH);
   const postLogoutRedirectUri = publicUrl(publicBaseUrl, "/");
   const issuerUrl = new URL(oidc.issuerUrl);
+  // OpenID mode: an OpenID provider asked for an ID token. Only then is a nonce sent.
+  const openId =
+    oidc.discovery === "openid-configuration" && oidc.scopes.split(/\s+/).includes("openid");
+
+  const discoveryOptions: client.DiscoveryRequestOptions = {
+    ...(oidc.discovery === "oauth-authorization-server" && { algorithm: "oauth2" }),
+    execute: [
+      // An ID token's signature is checked against the issuer's JWKS (not only TLS).
+      client.enableNonRepudiationChecks,
+      // Plain http only when the issuer is configured so (the local mock OIDC server).
+      ...(issuerUrl.protocol === "http:" ? [client.allowInsecureRequests] : []),
+    ],
+  };
+  const discover = (url: URL) =>
+    client.discovery(
+      url,
+      oidc.clientId,
+      undefined,
+      client.ClientSecretPost(oidc.clientSecret),
+      discoveryOptions,
+    );
+
+  /**
+   * RFC 8414 places the metadata at `/.well-known/oauth-authorization-server{issuer path}`. Some
+   * servers, mock-oauth2-server among them, serve it under the issuer path instead: for an issuer
+   * with a path, that location is tried second, and its `issuer` must still match.
+   */
+  async function discoverAny(): Promise<client.Configuration> {
+    try {
+      return await discover(issuerUrl);
+    } catch (error) {
+      if (oidc.discovery !== "oauth-authorization-server" || issuerUrl.pathname === "/") {
+        throw error;
+      }
+      const config = await discover(
+        new URL(`${issuerUrl.href.replace(/\/$/, "")}/.well-known/oauth-authorization-server`),
+      ).catch(() => Promise.reject(error));
+      if (new URL(config.serverMetadata().issuer).href !== issuerUrl.href) throw error;
+      return config;
+    }
+  }
 
   let discovered: Promise<client.Configuration> | undefined;
   const configuration = (): Promise<client.Configuration> => {
-    discovered ??= client
-      .discovery(issuerUrl, oidc.clientId, undefined, client.ClientSecretPost(oidc.clientSecret), {
-        execute: [
-          // Also check the ID token's signature against the issuer's JWKS (not only TLS).
-          client.enableNonRepudiationChecks,
-          // Plain http only when the issuer is configured so (the local mock OIDC server).
-          ...(issuerUrl.protocol === "http:" ? [client.allowInsecureRequests] : []),
-        ],
-      })
-      .catch((error: unknown) => {
-        discovered = undefined;
-        throw unavailable(error);
-      });
+    discovered ??= discoverAny().catch((error: unknown) => {
+      discovered = undefined;
+      throw unavailable(error);
+    });
     return discovered;
   };
 
@@ -94,31 +131,34 @@ export function createOidcIdentityProvider(options: OidcIdentityOptions): Identi
         redirect_uri: redirectUri,
         scope: oidc.scopes,
         state,
-        nonce,
+        ...(openId && { nonce }),
         code_challenge: await client.calculatePKCECodeChallenge(codeVerifier),
         code_challenge_method: "S256",
       }),
 
     finishSignIn: async (callback, { state, nonce, codeVerifier }): Promise<IdentityClaims> => {
       const config = await configuration();
-      let claims: client.IDToken | undefined;
+      let userInfo: client.UserInfoResponse;
       try {
         const tokens = await client.authorizationCodeGrant(config, callback, {
           pkceCodeVerifier: codeVerifier,
           expectedState: state,
-          expectedNonce: nonce,
-          idTokenExpected: true,
+          ...(openId && { expectedNonce: nonce, idTokenExpected: true }),
         });
-        claims = tokens.claims();
+        const idTokenSub = tokens.claims()?.sub;
+        userInfo = await client.fetchUserInfo(
+          config,
+          tokens.access_token,
+          idTokenSub ?? client.skipSubjectCheck,
+        );
       } catch (error) {
         throw signInError(error);
       }
-      if (!claims) throw unavailable(new Error("the token response has no ID token"));
-      const email = optionalString(claims.email);
-      const name = optionalString(claims.name);
-      const picture = optionalString(claims.picture);
+      const email = optionalString(userInfo.email);
+      const name = optionalString(userInfo.name);
+      const picture = optionalString(userInfo.picture);
       return {
-        sub: claims.sub,
+        sub: userInfo.sub,
         ...(email && { email }),
         ...(name && { name }),
         ...(picture && { picture }),

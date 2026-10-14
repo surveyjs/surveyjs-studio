@@ -36,36 +36,37 @@ identity provider, and `dev` signs in as a user of the memory seed), `pnpm --fil
 
 Read at start-up. Every problem is reported at once and the process exits with code 1.
 
-| Variable                                   | Values                                                                 | Default                                                                                        |
-| ------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                                 | `development`, `test`, `production`                                    | `development`                                                                                  |
-| `HOST`                                     | host name or address                                                   | `127.0.0.1`                                                                                    |
-| `PORT`                                     | integer 0-65535 (0 = any free port)                                    | `3000`                                                                                         |
-| `LOG_LEVEL`                                | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`           | `info`                                                                                         |
-| `APP_EDITION`                              | `hosted`, `self-hosted`                                                | `self-hosted`                                                                                  |
-| `APP_SHELL`                                | non-empty string                                                       | `surveyjs-site`                                                                                |
-| `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `oidc` (at least one)            | `surveyjs`                                                                                     |
-| `SURVEYJS_LICENSE_KEY`                     | string                                                                 | unset (`null` in `/config`)                                                                    |
-| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`                                               | `memory`                                                                                       |
-| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`)                          | `empty`                                                                                        |
-| `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                               | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
-| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
-| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
-| `PUBLIC_BASE_URL`                          | absolute http(s) origin, no path (a base path is not supported)        | `http://localhost:3000`; **required in production**                                            |
-| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                                       | `52428800` (50 MB)                                                                             |
-| `LIMIT_MAX_FILE_BYTES`                     | positive integer                                                       | `10485760` (10 MB)                                                                             |
-| `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                       | `1048576` (1 MB); also the request body limit                                                  |
-| `API_DOCS`                                 | `true`, `false`                                                        | `true`, but `false` when `NODE_ENV=production`                                                 |
-| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                 | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory` and is refused in production and hosted |
-| `SESSION_SECRET`                           | string, at least 32 characters; **secret**                             | unset; required in production (a fixed dev constant is used, with a warning, elsewhere)        |
-| `SESSION_MAX_AGE_SECONDS`                  | positive integer                                                       | `43200` (12 h); absolute expiry                                                                |
-| `OIDC_ISSUER_URL`                          | absolute http(s) URL                                                   | unset; required for `surveyjs-oidc`                                                            |
-| `OIDC_CLIENT_ID`                           | string                                                                 | unset; required for `surveyjs-oidc`                                                            |
-| `OIDC_CLIENT_SECRET`                       | string; **secret**                                                     | unset; required for `surveyjs-oidc`                                                            |
-| `OIDC_SCOPES`                              | space-separated scopes                                                 | `openid profile email`                                                                         |
-| `SIGN_IN_RATE_LIMIT`                       | positive integer (requests per minute per IP)                          | `30`                                                                                           |
-| `ACCOUNT_NOTICES`                          | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | `none`; `surveyjs-licenses` needs `azure-legacy`                                               |
-| `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                            | unset                                                                                          |
+| Variable                                   | Values                                                                            | Default                                                                                                                  |
+| ------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `NODE_ENV`                                 | `development`, `test`, `production`                                               | `development`                                                                                                            |
+| `HOST`                                     | host name or address                                                              | `127.0.0.1`                                                                                                              |
+| `PORT`                                     | integer 0-65535 (0 = any free port)                                               | `3000`                                                                                                                   |
+| `LOG_LEVEL`                                | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`                      | `info`                                                                                                                   |
+| `APP_EDITION`                              | `hosted`, `self-hosted`                                                           | `self-hosted`                                                                                                            |
+| `APP_SHELL`                                | non-empty string                                                                  | `surveyjs-site`                                                                                                          |
+| `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `oidc` (at least one)                       | `surveyjs`                                                                                                               |
+| `SURVEYJS_LICENSE_KEY`                     | string                                                                            | unset (`null` in `/config`)                                                                                              |
+| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`                                                          | `memory`                                                                                                                 |
+| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`)                                     | `empty`                                                                                                                  |
+| `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                                          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                     |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**                     | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                     |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**                     | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                     |
+| `PUBLIC_BASE_URL`                          | absolute http(s) origin, no path (a base path is not supported)                   | `http://localhost:3000`; **required in production**                                                                      |
+| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                                                  | `52428800` (50 MB)                                                                                                       |
+| `LIMIT_MAX_FILE_BYTES`                     | positive integer                                                                  | `10485760` (10 MB)                                                                                                       |
+| `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                                  | `1048576` (1 MB); also the request body limit                                                                            |
+| `API_DOCS`                                 | `true`, `false`                                                                   | `true`, but `false` when `NODE_ENV=production`                                                                           |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                            | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory` and is refused in production and hosted                           |
+| `SESSION_SECRET`                           | string, at least 32 characters; **secret**                                        | unset; required in production (a fixed dev constant is used, with a warning, elsewhere)                                  |
+| `SESSION_MAX_AGE_SECONDS`                  | positive integer                                                                  | `43200` (12 h); absolute expiry                                                                                          |
+| `OIDC_ISSUER_URL`                          | absolute http(s) URL                                                              | unset; required for `surveyjs-oidc`                                                                                      |
+| `OIDC_CLIENT_ID`                           | string                                                                            | unset; required for `surveyjs-oidc`                                                                                      |
+| `OIDC_CLIENT_SECRET`                       | string; **secret**                                                                | unset; required for `surveyjs-oidc`                                                                                      |
+| `OIDC_DISCOVERY`                           | `oauth-authorization-server` (RFC 8414; auth.surveyjs.io), `openid-configuration` | `oauth-authorization-server`; `openid-configuration` with the `openid` scope also sends a nonce and requires an ID token |
+| `OIDC_SCOPES`                              | space-separated scopes                                                            | `profile email`; `openid profile email` with `openid-configuration`                                                      |
+| `SIGN_IN_RATE_LIMIT`                       | positive integer (requests per minute per IP)                                     | `30`                                                                                                                     |
+| `ACCOUNT_NOTICES`                          | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`            | `none`; `surveyjs-licenses` needs `azure-legacy`                                                                         |
+| `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                                       | unset                                                                                                                    |
 
 "Required in production" means `NODE_ENV=production`. An empty or whitespace-only value counts as unset
 (the default applies). Integer variables accept decimal digits only (`1e3`, `0x10`, `-1` and `1.5` are rejected). The values for edition, shell, auth
@@ -132,8 +133,17 @@ The provider suite and the Azure legacy conformance run use the replica too; see
 
 The mock is [mock-oauth2-server](https://github.com/navikt/mock-oauth2-server) (MIT), configured by
 [`docker/mock-oidc.json`](../docker/mock-oidc.json). Its issuer is `http://127.0.0.1:18080/surveyjs`.
-The server uses the same `surveyjs-oidc` code as for `auth.surveyjs.io`: code flow with PKCE, a
-checked ID token, and the mock's `end_session_endpoint` on sign-out.
+The server uses the same `surveyjs-oidc` code and mode as for `auth.surveyjs.io`
+([what it serves](architecture/legacy-data-layout.md#61-sign-in-server-authsurveyjsio)):
+`OIDC_DISCOVERY=oauth-authorization-server`, code flow with PKCE and `state`, the identity from
+UserInfo, and the mock's `end_session_endpoint` on sign-out. Two differences from the real server:
+
+- the mock serves its RFC 8414 metadata under the issuer path
+  (`/surveyjs/.well-known/oauth-authorization-server`), not at
+  `/.well-known/oauth-authorization-server/surveyjs`; the server tries that location second;
+- the mock refuses an authorization request without the `openid` scope, so `docker/azurite.env` sets
+  `OIDC_SCOPES="openid profile email"`. The mock then also returns an ID token, which the server
+  checks (signature, issuer, audience, expiry) and whose `sub` must match UserInfo.
 
 `/auth/login` opens the mock's sign-in page. Type a fixture user in the first field, leave the
 claims box empty, and press **Sign-in**:

@@ -41,6 +41,7 @@ const appVariables = [
   "OIDC_ISSUER_URL",
   "OIDC_CLIENT_ID",
   "OIDC_CLIENT_SECRET",
+  "OIDC_DISCOVERY",
   "OIDC_SCOPES",
   "SIGN_IN_RATE_LIMIT",
   "ACCOUNT_NOTICES",
@@ -55,6 +56,8 @@ const legacyVariables = [
 
 // The mock OIDC server of docker/compose.azurite.yaml (settings in docker/azurite.env).
 const oidcVariables = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
+// Forwarded when set (the mock needs the openid scope).
+const optionalOidcVariables = ["OIDC_DISCOVERY", "OIDC_SCOPES"] as const;
 
 /**
  * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
@@ -80,6 +83,10 @@ function providerEnv(): Record<string, string> {
   }
   if (missing.length > 0) {
     throw new Error(`CONFORMANCE_PROVIDER=azure-legacy needs ${missing.join(", ")}`);
+  }
+  for (const name of optionalOidcVariables) {
+    const value = process.env[name];
+    if (value?.trim()) env[name] = value;
   }
   return env;
 }
