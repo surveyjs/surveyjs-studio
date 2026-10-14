@@ -12,6 +12,7 @@ import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
+import { serializeRequest } from "./logging.js";
 import type { ProviderSet } from "./providers/index.js";
 
 export interface BuildOptions {
@@ -21,6 +22,8 @@ export interface BuildOptions {
   readonly identity?: IdentityProvider;
   /** Clock for session and sign-in expiry (tests). */
   readonly now?: Clock;
+  /** Receives the JSON log lines, even when `NODE_ENV=test` (tests). */
+  readonly logStream?: { write(line: string): void };
 }
 
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
@@ -37,7 +40,15 @@ export async function buildApp(
 ): Promise<FastifyInstance> {
   const contract = await loadContract(openapiPath);
   const app = Fastify({
-    logger: config.nodeEnv === "test" ? false : { level: config.logLevel },
+    // The request serializer keeps the sign-in callback's `code` and `state` out of the logs.
+    logger:
+      config.nodeEnv === "test" && !options.logStream
+        ? false
+        : {
+            level: config.logLevel,
+            serializers: { req: serializeRequest },
+            ...(options.logStream && { stream: options.logStream }),
+          },
     genReqId: (req) => {
       const incoming = req.headers["x-request-id"];
       return typeof incoming === "string" && incoming !== "" && incoming.length <= 128

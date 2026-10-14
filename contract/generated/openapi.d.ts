@@ -60,6 +60,9 @@ export interface paths {
          * Sign out
          * @description Ends the local session. The response carries the identity provider's
          *     end-session URL; the client navigates there to sign out everywhere.
+         *     Works without a session too (for example after it expired), so the
+         *     client can still end the provider's session. With a valid session,
+         *     the CSRF token is required.
          */
         post: operations["logout"];
         delete?: never;
@@ -1244,7 +1247,6 @@ export interface operations {
                     };
                 };
             };
-            401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
     };

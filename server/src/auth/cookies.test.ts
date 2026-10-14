@@ -5,6 +5,8 @@ import {
   parseCookies,
   sessionCookies,
   transactionCookie,
+  transactionCookieName,
+  transactionCookieNames,
 } from "./cookies.js";
 
 describe("parseCookies", () => {
@@ -29,9 +31,40 @@ describe("parseCookies", () => {
   });
 });
 
+describe("transaction cookie names", () => {
+  it("names the cookie after the first 16 characters of the state", () => {
+    expect(transactionCookieName("abcdefghij-_1234rest-of-state")).toBe(
+      "msid_auth_abcdefghij-_1234",
+    );
+  });
+
+  it("names none for a short or non-base64url state", () => {
+    for (const state of [
+      "",
+      "short",
+      "abcdefghij;=1234x",
+      "abcdefghij\r\n1234x",
+      "abc defghij123456",
+    ]) {
+      expect(transactionCookieName(state)).toBeNull();
+    }
+  });
+
+  it("finds only well-formed transaction cookies", () => {
+    const cookies = parseCookies(
+      "msid=s; msid_auth_abcdefghijklmnop=t; msid_auth=old; msid_auth_short=x; msid_auth_ABCDEFGHIJKLMNOP=u",
+    );
+    expect(transactionCookieNames(cookies)).toEqual([
+      "msid_auth_abcdefghijklmnop",
+      "msid_auth_ABCDEFGHIJKLMNOP",
+    ]);
+  });
+});
+
 describe("cookie attributes", () => {
   const http = { publicBaseUrl: "http://localhost:5173", sessionMaxAgeSeconds: 43200 };
   const https = { ...http, publicBaseUrl: "https://surveys.example.com" };
+  const name = "msid_auth_abcdefghijklmnop";
 
   it("sets msid HttpOnly and msid_csrf readable, for the whole site", () => {
     expect(sessionCookies(http, { session: "S", csrf: "C" })).toEqual([
@@ -44,26 +77,26 @@ describe("cookie attributes", () => {
     for (const cookie of sessionCookies(https, { session: "S", csrf: "C" })) {
       expect(cookie).toMatch(/; Secure$/);
     }
-    expect(transactionCookie(https, "T")).toMatch(/; Secure$/);
+    expect(transactionCookie(https, name, "T")).toMatch(/; Secure$/);
   });
 
-  it("scopes msid_auth to the sign-in endpoints for ten minutes", () => {
-    expect(transactionCookie(http, "T")).toBe(
-      "msid_auth=T; Path=/api/v1/auth; Max-Age=600; SameSite=Lax; HttpOnly",
+  it("scopes the transaction cookie to the sign-in endpoints for ten minutes", () => {
+    expect(transactionCookie(http, name, "T")).toBe(
+      "msid_auth_abcdefghijklmnop=T; Path=/api/v1/auth; Max-Age=600; SameSite=Lax; HttpOnly",
     );
   });
 
-  it("clears msid_auth on its own path", () => {
-    expect(clearTransactionCookie(http)).toBe(
-      "msid_auth=; Path=/api/v1/auth; Max-Age=0; SameSite=Lax; HttpOnly",
+  it("clears a transaction cookie on its own path", () => {
+    expect(clearTransactionCookie(http, name)).toBe(
+      "msid_auth_abcdefghijklmnop=; Path=/api/v1/auth; Max-Age=0; SameSite=Lax; HttpOnly",
     );
   });
 
   it("clears every sign-in cookie with Max-Age=0 on its own path", () => {
-    expect(clearAllCookies(http)).toEqual([
+    expect(clearAllCookies(http, [name])).toEqual([
       "msid=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly",
       "msid_csrf=; Path=/; Max-Age=0; SameSite=Lax",
-      "msid_auth=; Path=/api/v1/auth; Max-Age=0; SameSite=Lax; HttpOnly",
+      "msid_auth_abcdefghijklmnop=; Path=/api/v1/auth; Max-Age=0; SameSite=Lax; HttpOnly",
     ]);
   });
 });

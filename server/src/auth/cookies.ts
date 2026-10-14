@@ -4,10 +4,31 @@ import type { AppConfig } from "../config.js";
 export const SESSION_COOKIE = "msid";
 /** Readable copy of the session's CSRF token (double-submit). */
 export const CSRF_COOKIE = "msid_csrf";
-/** Sealed sign-in transaction (`msid-auth-v1`), sent only to the sign-in endpoints. */
-export const TRANSACTION_COOKIE = "msid_auth";
+/**
+ * Prefix of the sealed sign-in transaction cookies (`msid-auth-v1`), sent only to the sign-in
+ * endpoints. Each sign-in has its own cookie, `msid_auth_<first 16 characters of state>`, so
+ * sign-ins started in several tabs do not overwrite each other.
+ */
+export const TRANSACTION_COOKIE_PREFIX = "msid_auth_";
 export const TRANSACTION_COOKIE_PATH = "/api/v1/auth";
 export const TRANSACTION_MAX_AGE_SECONDS = 600;
+
+const STATE_KEY = /^[A-Za-z0-9_-]{16}/;
+const TRANSACTION_COOKIE_NAME = /^msid_auth_[A-Za-z0-9_-]{16}$/;
+
+/**
+ * The transaction cookie name for a sign-in's `state`, or null when the state cannot name one
+ * (shorter than 16 characters, or not base64url). Safe to call with any query value.
+ */
+export function transactionCookieName(state: string): string | null {
+  const key = STATE_KEY.exec(state)?.[0];
+  return key === undefined ? null : TRANSACTION_COOKIE_PREFIX + key;
+}
+
+/** The names of the well-formed transaction cookies among a request's cookies. */
+export function transactionCookieNames(cookies: Record<string, string>): string[] {
+  return Object.keys(cookies).filter((name) => TRANSACTION_COOKIE_NAME.test(name));
+}
 
 type CookieConfig = Pick<AppConfig, "publicBaseUrl" | "sessionMaxAgeSeconds">;
 
@@ -54,26 +75,32 @@ export function sessionCookies(
   ];
 }
 
-export function transactionCookie(config: CookieConfig, sealed: string): string {
-  return serialize(config, TRANSACTION_COOKIE, sealed, {
+/** `name` comes from `transactionCookieName`. */
+export function transactionCookie(config: CookieConfig, name: string, sealed: string): string {
+  return serialize(config, name, sealed, {
     path: TRANSACTION_COOKIE_PATH,
     maxAge: TRANSACTION_MAX_AGE_SECONDS,
     httpOnly: true,
   });
 }
 
-export function clearTransactionCookie(config: CookieConfig): string {
-  return serialize(config, TRANSACTION_COOKIE, "", {
+/** `name` comes from `transactionCookieName` or `transactionCookieNames`. */
+export function clearTransactionCookie(config: CookieConfig, name: string): string {
+  return serialize(config, name, "", {
     path: TRANSACTION_COOKIE_PATH,
     maxAge: 0,
     httpOnly: true,
   });
 }
 
-export function clearAllCookies(config: CookieConfig): string[] {
+/** Clears the session cookies and the given transaction cookies. */
+export function clearAllCookies(
+  config: CookieConfig,
+  transactionNames: readonly string[] = [],
+): string[] {
   return [
     serialize(config, SESSION_COOKIE, "", { path: "/", maxAge: 0, httpOnly: true }),
     serialize(config, CSRF_COOKIE, "", { path: "/", maxAge: 0, httpOnly: false }),
-    clearTransactionCookie(config),
+    ...transactionNames.map((name) => clearTransactionCookie(config, name)),
   ];
 }

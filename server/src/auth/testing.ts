@@ -11,20 +11,25 @@ export function cookieValue(response: LightMyRequestResponse, name: string): str
   return response.cookies.find((cookie) => cookie.name === name)?.value;
 }
 
+/** The `login` response's transaction cookie (`msid_auth_<state key>`) as a `Cookie` pair, and its state. */
+export function transactionOf(login: LightMyRequestResponse): { cookie: string; state: string } {
+  const cookie = login.cookies.find((c) => c.name.startsWith("msid_auth_"));
+  const state = new URL(String(login.headers.location)).searchParams.get("state");
+  if (login.statusCode !== 302 || !cookie || !state) {
+    throw new Error(`login answered ${login.statusCode}`);
+  }
+  return { cookie: `${cookie.name}=${cookie.value}`, state };
+}
+
 /**
  * Signs in over HTTP with the dev identity provider (`login`, then the callback the
  * "Sign in as…" page links to). Test helper; the app must run with `IDENTITY_PROVIDER=dev`.
  */
 export async function signIn(app: FastifyInstance, userId: string): Promise<SignedIn> {
-  const login = await app.inject("/api/v1/auth/login");
-  const transaction = cookieValue(login, "msid_auth");
-  const state = new URL(String(login.headers.location)).searchParams.get("state");
-  if (login.statusCode !== 302 || !transaction || !state) {
-    throw new Error(`login answered ${login.statusCode}`);
-  }
+  const { cookie, state } = transactionOf(await app.inject("/api/v1/auth/login"));
   const callback = await app.inject({
     url: `/api/v1/auth/callback?${new URLSearchParams({ code: userId, state }).toString()}`,
-    headers: { cookie: `msid_auth=${transaction}` },
+    headers: { cookie },
   });
   const session = cookieValue(callback, "msid");
   const csrf = cookieValue(callback, "msid_csrf");

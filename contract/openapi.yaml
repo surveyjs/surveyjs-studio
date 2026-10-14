@@ -136,9 +136,13 @@ paths:
       description: |
         Ends the local session. The response carries the identity provider's
         end-session URL; the client navigates there to sign out everywhere.
+        Works without a session too (for example after it expired), so the
+        client can still end the provider's session. With a valid session,
+        the CSRF token is required.
       security:
         - cookieAuth: []
           csrfToken: []
+        - {}
       responses:
         '200':
           description: Signed out.
@@ -149,7 +153,6 @@ paths:
                 required: [redirectUrl]
                 properties:
                   redirectUrl: { type: string, format: uri }
-        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /auth/password/login:
     post:

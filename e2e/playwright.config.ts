@@ -6,8 +6,9 @@ type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 
 // Playwright merges webServer.env onto process.env and cannot unset keys, so
 // strip every app variable (server env table and Vite's) from this process
-// first; the servers then see only the explicit values below. Keep the list in sync with
-// server/src/config.ts and conformance-tests/src/global-setup.ts (same approach there).
+// first; the servers then see only the explicit values below. The list lives in
+// e2e/app-variables.mjs; keep it in sync with server/src/config.ts and
+// conformance-tests/src/global-setup.ts (same approach there).
 stripAppVariables(process.env);
 
 // With reuseExistingServer off (CI), Playwright fails with "... is already used"
@@ -28,6 +29,8 @@ const serverEnv = {
   APP_EDITION: "self-hosted",
   APP_SHELL: "surveyjs-site",
   LOG_LEVEL: "warn",
+  // All browsers and workers sign in from one IP; the limit itself is covered by server tests.
+  SIGN_IN_RATE_LIMIT: "100000",
 };
 
 const memoryServerEnv = {

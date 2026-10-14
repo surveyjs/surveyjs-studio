@@ -6,7 +6,7 @@ import { createProviders } from "../providers/index.js";
 import { blockedUser, ownerUser } from "../providers/suite/expected.js";
 import type { IdentityClaims, IdentityProvider } from "./identity.js";
 import { createDevIdentityProvider } from "./providers/dev.js";
-import { cookieValue, signIn } from "./testing.js";
+import { cookieValue, signIn, transactionOf } from "./testing.js";
 
 const devEnv = {
   NODE_ENV: "test",
@@ -116,28 +116,104 @@ describe("dev sign-in page", () => {
 describe("login and callback", () => {
   it("redirects back to the normalised returnTo on the public origin", async () => {
     const server = await start();
-    const login = await server.inject(
-      `/api/v1/auth/login?returnTo=${encodeURIComponent("/€?a=b")}`,
+    const { cookie, state } = transactionOf(
+      await server.inject(`/api/v1/auth/login?returnTo=${encodeURIComponent("/€?a=b")}`),
     );
-    const state = new URL(String(login.headers.location)).searchParams.get("state") ?? "";
     const callback = await server.inject({
       url: `/api/v1/auth/callback?code=${ownerUser.id}&state=${state}`,
-      headers: { cookie: `msid_auth=${cookieValue(login, "msid_auth") ?? ""}` },
+      headers: { cookie },
     });
     expect(callback.statusCode).toBe(302);
     expect(callback.headers.location).toBe("http://localhost:5173/%E2%82%AC?a=b");
   });
 
-  it("a rejected callback clears msid_auth and sets no session", async () => {
+  it("names the transaction cookie after the state and scopes it to the sign-in endpoints", async () => {
+    const login = await (await start()).inject("/api/v1/auth/login");
+    const { state } = transactionOf(login);
+    expect(login.cookies).toEqual([
+      expect.objectContaining({
+        name: `msid_auth_${state.slice(0, 16)}`,
+        path: "/api/v1/auth",
+        maxAge: 600,
+        httpOnly: true,
+        sameSite: "Lax",
+      }),
+    ]);
+  });
+
+  it("a rejected callback clears its transaction cookie and sets no session", async () => {
     const server = await start();
-    const login = await server.inject("/api/v1/auth/login");
+    const { cookie, state } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const name = cookie.slice(0, cookie.indexOf("="));
+    // The same cookie name, but not the full state the transaction holds.
+    const wrong = `${state.slice(0, 16)}wrong`;
     const res = await server.inject({
-      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=wrong`,
-      headers: { cookie: `msid_auth=${cookieValue(login, "msid_auth") ?? ""}` },
+      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=${wrong}`,
+      headers: { cookie },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: "bad-request" });
-    expect(res.cookies).toEqual([expect.objectContaining({ name: "msid_auth", value: "" })]);
+    expect(res.cookies).toEqual([expect.objectContaining({ name, value: "", maxAge: 0 })]);
+  });
+
+  it("a callback with a state that names no cookie is rejected and clears nothing", async () => {
+    const server = await start();
+    const { cookie } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const res = await server.inject({
+      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=wrong`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.cookies).toEqual([]);
+  });
+
+  it.each([
+    ["first tab first", [0, 1]],
+    ["second tab first", [1, 0]],
+  ])("sign-ins started in two tabs both finish (%s)", async (_label, order) => {
+    const server = await start();
+    const tabs = [
+      transactionOf(await server.inject("/api/v1/auth/login?returnTo=/first")),
+      transactionOf(await server.inject("/api/v1/auth/login?returnTo=/second")),
+    ];
+    // The browser sends every transaction cookie it holds to each callback.
+    const cookie = tabs.map((tab) => tab.cookie).join("; ");
+    for (const index of order) {
+      const tab = tabs[index];
+      if (!tab) throw new Error("no such tab");
+      const callback = await server.inject({
+        url: `/api/v1/auth/callback?code=${ownerUser.id}&state=${tab.state}`,
+        headers: { cookie },
+      });
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe(
+        `http://localhost:5173${index === 0 ? "/first" : "/second"}`,
+      );
+      expect(cookieValue(callback, "msid")).toBeTruthy();
+      const cleared = callback.cookies.filter((c) => c.name.startsWith("msid_auth_"));
+      expect(cleared.map((c) => [c.name, c.value])).toEqual([
+        [tab.cookie.slice(0, tab.cookie.indexOf("=")), ""],
+      ]);
+    }
+  });
+
+  it("a failed callback of a signed-in browser goes to the start page instead of 400", async () => {
+    const server = await start();
+    const { headers } = await signIn(server, ownerUser.id);
+    const { cookie, state } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const missing = await server.inject({
+      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=${state}`,
+      headers: { cookie: headers.cookie },
+    });
+    expect(missing.statusCode).toBe(302);
+    expect(missing.headers.location).toBe("http://localhost:5173/");
+    expect(cookieValue(missing, "msid")).toBeUndefined();
+    const wrongState = await server.inject({
+      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=wrong`,
+      headers: { cookie: `${headers.cookie}; ${cookie}` },
+    });
+    expect(wrongState.statusCode).toBe(302);
+    expect(wrongState.headers.location).toBe("http://localhost:5173/");
   });
 
   it("a blocked user gets 403 forbidden and no session", async () => {
@@ -160,6 +236,33 @@ describe("login and callback", () => {
       avatarUrl: null,
       notices: [],
     });
+  });
+
+  it.each(["not a url", "javascript:alert(1)", "/relative.png"])(
+    "drops a picture claim that is not an absolute http(s) URL (%s)",
+    async (picture) => {
+      const identity = fixedClaims({ sub: "new-user", email: "new@example.com", picture });
+      const server = await start(devEnv, { identity });
+      const { headers } = await signIn(server, "ignored");
+      const me = await server.inject({ url: "/api/v1/me", headers });
+      expect(me.json()).toMatchObject({ avatarUrl: null });
+    },
+  );
+
+  it.each([
+    ["no email claim", {}],
+    ["an empty email claim", { email: "" }],
+  ])("refuses an identity with %s with 400 and no session", async (_label, extra) => {
+    const identity = fixedClaims({ sub: "new-user", name: "No Mail", ...extra });
+    const server = await start(devEnv, { identity });
+    const { cookie, state } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const callback = await server.inject({
+      url: `/api/v1/auth/callback?code=x&state=${state}`,
+      headers: { cookie },
+    });
+    expect(callback.statusCode).toBe(400);
+    expect(callback.json()).toMatchObject({ code: "bad-request" });
+    expect(cookieValue(callback, "msid")).toBeUndefined();
   });
 
   it("uses the claims for a user the directory does not know", async () => {
@@ -286,14 +389,62 @@ describe("request rules", () => {
   it("logout clears the cookies and returns the public start page for the dev provider", async () => {
     const server = await start();
     const { headers } = await signIn(server, ownerUser.id);
-    const res = await server.inject({ method: "POST", url: "/api/v1/auth/logout", headers });
+    const { cookie: transaction } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { ...headers, cookie: `${headers.cookie}; ${transaction}; msid_auth_bad=1` },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ redirectUrl: "http://localhost:5173/" });
     const cleared = res.cookies.map((cookie) => [cookie.name, cookie.value, cookie.maxAge]);
     expect(cleared).toEqual([
       ["msid", "", 0],
       ["msid_csrf", "", 0],
-      ["msid_auth", "", 0],
+      [transaction.slice(0, transaction.indexOf("=")), "", 0],
     ]);
+  });
+
+  it("logout without a session answers where to go next and clears the cookies", async () => {
+    const res = await (await start()).inject({ method: "POST", url: "/api/v1/auth/logout" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ redirectUrl: "http://localhost:5173/" });
+    expect(res.cookies.map((cookie) => [cookie.name, cookie.maxAge])).toEqual([
+      ["msid", 0],
+      ["msid_csrf", 0],
+    ]);
+  });
+
+  it("logout with an expired or tampered session counts as no session, even without CSRF", async () => {
+    let now = Date.parse("2026-10-01T00:00:00Z");
+    const server = await start({ ...devEnv, SESSION_MAX_AGE_SECONDS: "60" }, { now: () => now });
+    const { headers } = await signIn(server, ownerUser.id);
+    const tampered = await server.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { cookie: "msid=v1.AAAA.BBBB" },
+    });
+    expect(tampered.statusCode).toBe(200);
+    now += 60_000;
+    const expired = await server.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { cookie: headers.cookie },
+    });
+    expect(expired.statusCode).toBe(200);
+    expect(expired.json()).toEqual({ redirectUrl: "http://localhost:5173/" });
+  });
+
+  it("logout with a valid session still needs the CSRF token", async () => {
+    const server = await start();
+    const { headers } = await signIn(server, ownerUser.id);
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { cookie: headers.cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: "csrf-token-invalid" });
+    expect(res.cookies).toEqual([]);
   });
 });

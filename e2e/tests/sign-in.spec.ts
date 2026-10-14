@@ -33,3 +33,23 @@ test("Sign Out ends the session and the next visit asks to sign in again", async
   await page.goto("/");
   await expectSignInPage(page);
 });
+
+test("Sign Out after the session expired still ends the provider's session", async ({
+  page,
+  context,
+}) => {
+  await signInAt(page);
+  // The browser drops msid and msid_csrf when they expire; the header still shows the user.
+  await context.clearCookies();
+  await accountTrigger(page).hover();
+  const signOut = page.locator("header.v2-class---top-bar").first().getByRole("button", {
+    name: "Sign Out",
+  });
+  await expect(signOut).toBeVisible();
+  const logout = page.waitForResponse("**/api/v1/auth/logout");
+  await signOut.click();
+
+  // The server still answers with the provider's end-session URL, and the browser goes there.
+  expect((await logout).status()).toBe(200);
+  await expectSignInPage(page);
+});

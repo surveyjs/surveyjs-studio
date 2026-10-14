@@ -40,7 +40,7 @@ describe("loadContract", () => {
     const security = (id: string) =>
       contract.operations.find((op) => op.operationId === id)?.security;
     expect(security("getConfig")).toEqual([]);
-    expect(security("logout")).toEqual([["cookieAuth", "csrfToken"]]);
+    expect(security("logout")).toEqual([["cookieAuth", "csrfToken"], []]);
     expect(security("createSurvey")).toEqual([["cookieAuth", "csrfToken"], ["bearerAuth"]]);
     expect(security("getCurrentUser")).toEqual([["cookieAuth"], ["bearerAuth"]]);
   });

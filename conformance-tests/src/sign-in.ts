@@ -64,9 +64,15 @@ export interface SignInStart {
   readonly location: URL;
 }
 
-/** Calls `login` and keeps its cookies (`msid_auth`). */
-export async function startSignIn(baseUrl: string, returnTo = "/"): Promise<SignInStart> {
-  const jar = new CookieJar();
+/**
+ * Calls `login` and keeps its cookies (the sign-in's `msid_auth_<state key>`) in `jar` (a new one
+ * by default; pass one to start several sign-ins in the same browser).
+ */
+export async function startSignIn(
+  baseUrl: string,
+  returnTo = "/",
+  jar = new CookieJar(),
+): Promise<SignInStart> {
   const query = new URLSearchParams({ returnTo }).toString();
   const login = await fetch(`${baseUrl}/api/v1/auth/login?${query}`, { redirect: "manual" });
   jar.store(login);
@@ -130,7 +136,11 @@ export async function signIn(
   userId: string,
   returnTo = "/",
 ): Promise<SignInResult> {
-  const start = await startSignIn(baseUrl, returnTo);
+  return finishSignIn(await startSignIn(baseUrl, returnTo), userId);
+}
+
+/** Completes a started sign-in as `userId`: the provider's page, then the callback. */
+export async function finishSignIn(start: SignInStart, userId: string): Promise<SignInResult> {
   const { jar, location } = start;
   const callbackUrl =
     location.pathname === DEV_SIGN_IN_PATH

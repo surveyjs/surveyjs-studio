@@ -1,6 +1,8 @@
 import { openapiPath } from "@my-surveys/contract";
 import { beforeAll, describe, expect, inject, it, type TestContext } from "vitest";
 import {
+  CookieJar,
+  finishSignIn,
   fixtureUsers,
   signIn,
   SignInUnsupportedError,
@@ -51,10 +53,15 @@ describe(`server at ${baseUrl}`, () => {
    * Signs in through the login redirects and checks both API responses. Skips the test when the
    * sign-in driver cannot complete the server's identity provider.
    */
-  async function signedIn(ctx: TestContext, userId: string = owner.id, returnTo = "/") {
+  async function signedIn(
+    ctx: TestContext,
+    userId: string = owner.id,
+    returnTo = "/",
+    complete: () => Promise<SignInResult> = () => signIn(baseUrl, userId, returnTo),
+  ) {
     let result: SignInResult;
     try {
-      result = await signIn(baseUrl, userId, returnTo);
+      result = await complete();
     } catch (error) {
       if (error instanceof SignInUnsupportedError) ctx.skip(error.message);
       throw error;
@@ -80,7 +87,13 @@ describe(`server at ${baseUrl}`, () => {
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toBeTruthy();
       const cookies = response.headers.getSetCookie();
-      expect(cookies).toEqual([expect.stringMatching(/^msid_auth=[^;]+;.*HttpOnly/)]);
+      // One cookie per sign-in, named after the first 16 characters of its state.
+      const state = new URL(response.headers.get("location") ?? "").searchParams.get("state");
+      expect(cookies).toEqual([
+        expect.stringMatching(
+          new RegExp(`^msid_auth_${state?.slice(0, 16) ?? ""}=[^;]+;.*HttpOnly`),
+        ),
+      ]);
     });
 
     it("login rejects a returnTo outside the site with 400", async () => {
@@ -103,7 +116,23 @@ describe(`server at ${baseUrl}`, () => {
       expect(named("msid")).toMatch(/;\s*SameSite=Lax/i);
       expect(named("msid_csrf")).toMatch(/^msid_csrf=[^;]+;/);
       expect(named("msid_csrf")).not.toMatch(/HttpOnly/i);
-      expect(named("msid_auth")).toMatch(/Max-Age=0/i);
+      expect(cookies.find((cookie) => cookie.startsWith("msid_auth_"))).toMatch(/Max-Age=0/i);
+    });
+
+    it("sign-ins started in two tabs of one browser both finish", async (ctx) => {
+      const jar = new CookieJar();
+      const first = await startSignIn(baseUrl, "/first", jar);
+      const second = await startSignIn(baseUrl, "/second", jar);
+      for (const [start, path] of [
+        [second, "/second"],
+        [first, "/first"],
+      ] as const) {
+        const { callback } = await signedIn(ctx, owner.id, path, () =>
+          finishSignIn(start, owner.id),
+        );
+        expect(callback.status).toBe(302);
+        expect(new URL(callback.headers.get("location") ?? "", baseUrl).pathname).toBe(path);
+      }
     });
 
     it("the callback rejects a wrong state with 400", async () => {
@@ -116,7 +145,7 @@ describe(`server at ${baseUrl}`, () => {
       expect(await codeOf(response)).toBe("bad-request");
     });
 
-    it("the callback rejects a sign-in without its msid_auth cookie with 400", async () => {
+    it("the callback rejects a sign-in without its transaction cookie with 400", async () => {
       const { location } = await startSignIn(baseUrl);
       const state = location.searchParams.get("state") ?? "any";
       const response = await call("GET", "/auth/callback", {
@@ -186,6 +215,17 @@ describe(`server at ${baseUrl}`, () => {
       expect(session.jar.get("msid_csrf")).toBeUndefined();
       const me = await call("GET", "/me", { headers: { cookie: session.jar.header() } });
       expect(me.status).toBe(401);
+    });
+
+    it("logout without a session answers where to go next and clears the cookies", async () => {
+      const response = await call("POST", "/auth/logout");
+      expect(response.status).toBe(200);
+      const { redirectUrl } = (await response.clone().json()) as { redirectUrl: string };
+      expect(URL.canParse(redirectUrl)).toBe(true);
+      const cookies = response.headers.getSetCookie();
+      for (const name of ["msid", "msid_csrf"]) {
+        expect(cookies.find((cookie) => cookie.startsWith(`${name}=`))).toMatch(/Max-Age=0/i);
+      }
     });
 
     it("logout without the CSRF token, or with a wrong one, answers 403", async (ctx) => {

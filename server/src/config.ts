@@ -196,6 +196,23 @@ export interface LoadConfigOptions {
   readonly skipIdentityRules?: boolean;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** True for an absolute URL whose host is `localhost`, `127.0.0.1` or `[::1]`. */
+function isLoopback(url: string): boolean {
+  return URL.canParse(url) && LOOPBACK_HOSTS.has(new URL(url).hostname);
+}
+
+/**
+ * True when `PUBLIC_BASE_URL` is https or not on a loopback host: other people may reach the
+ * server, so the public development session secret is refused even if `NODE_ENV` was forgotten.
+ */
+function isServedToOthers(env: Record<string, string | undefined>): boolean {
+  const base = env.PUBLIC_BASE_URL;
+  if (base === undefined || !URL.canParse(base)) return false; // default, or reported elsewhere
+  return new URL(base).protocol === "https:" || !isLoopback(base);
+}
+
 function identityProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const provider = env.IDENTITY_PROVIDER ?? "surveyjs-oidc";
@@ -215,9 +232,24 @@ function identityProblems(env: Record<string, string | undefined>): string[] {
         problems.push(`${name}: required when IDENTITY_PROVIDER=surveyjs-oidc`);
       }
     }
+    // Plain http only to an issuer on this machine (the mock OIDC server); never in transit.
+    const issuer = env.OIDC_ISSUER_URL;
+    if (issuer !== undefined && URL.canParse(issuer) && new URL(issuer).protocol === "http:") {
+      if (!isLoopback(issuer)) {
+        problems.push(
+          "OIDC_ISSUER_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+        );
+      }
+    }
   }
-  if (env.NODE_ENV === "production" && env.SESSION_SECRET === undefined) {
-    problems.push("SESSION_SECRET: required when NODE_ENV=production");
+  if (env.SESSION_SECRET === undefined) {
+    if (env.NODE_ENV === "production") {
+      problems.push("SESSION_SECRET: required when NODE_ENV=production");
+    } else if (isServedToOthers(env)) {
+      problems.push(
+        "SESSION_SECRET: required when PUBLIC_BASE_URL is https or not on localhost, 127.0.0.1 or [::1]",
+      );
+    }
   }
   return problems;
 }

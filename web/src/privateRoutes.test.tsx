@@ -118,17 +118,26 @@ describe("shell in the private layout", () => {
     document.cookie = "msid_csrf=; Max-Age=0";
   });
 
-  it("treats a 401 from logout as already signed out", async () => {
+  it("after the session expired, still signs out at the identity provider", async () => {
+    // The browser dropped msid and msid_csrf, but /me is still cached: no CSRF token is sent,
+    // and the server answers with the provider's end-session URL anyway.
+    let csrf: string | null = "unset";
     server.use(
       configHandler(),
       meHandler(),
-      logoutHandler(401, "unauthenticated", "Sign in required"),
+      mswHttp.post("*/api/v1/auth/logout", ({ request }) => {
+        csrf = request.headers.get("X-CSRF-Token");
+        return HttpResponse.json({ redirectUrl: "https://auth.example.test/logout" });
+      }),
     );
     renderAt("/");
 
     (await screen.findByRole("button", { name: "Sign Out" })).click();
 
-    await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/"));
+    await waitFor(() =>
+      expect(navigateTo).toHaveBeenCalledExactlyOnceWith("https://auth.example.test/logout"),
+    );
+    expect(csrf).toBeNull();
   });
 
   it("shows an error and stays put when logout fails", async () => {

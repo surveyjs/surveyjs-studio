@@ -46,7 +46,9 @@ describe("contract package", () => {
       const expectStatus = (status: string) => {
         if (!statuses.includes(status)) missing.push(`${op.operationId ?? "?"} ${status}`);
       };
-      if (security.length > 0) expectStatus("401");
+      // An empty requirement among others (logout) makes the session optional: never 401.
+      const sessionOptional = security.some((requirement) => Object.keys(requirement).length === 0);
+      if (security.length > 0 && !sessionOptional) expectStatus("401");
       if (security.some((requirement) => "csrfToken" in requirement)) expectStatus("403");
       if (["login", "loginCallback", "passwordLogin"].includes(op.operationId ?? "")) {
         expectStatus("429");

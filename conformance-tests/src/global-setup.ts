@@ -14,7 +14,7 @@ const READY_TIMEOUT_MS = 30_000;
 
 // Every variable of the server's environment table (server/src/config.ts). The reference
 // server must see only the explicit values set below, never the developer's shell.
-// Keep in sync with server/src/config.ts and with e2e/playwright.config.ts (each package
+// Keep in sync with server/src/config.ts and with e2e/app-variables.mjs (each package
 // keeps its own copy so none depends on another).
 const appVariables = [
   "NODE_ENV",

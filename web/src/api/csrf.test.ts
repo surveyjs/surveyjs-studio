@@ -33,6 +33,15 @@ describe("CSRF middleware", () => {
     expect(seen["POST"]).toBe("abc_DEF-123");
   });
 
+  it("sends a malformed cookie value as it is instead of failing", async () => {
+    document.cookie = "msid_csrf=abc%E0%A4%A";
+    const seen = captureHeaders();
+
+    await client.POST("/auth/logout");
+
+    expect(seen["POST"]).toBe("abc%E0%A4%A");
+  });
+
   it("sends no token on GET", async () => {
     document.cookie = "msid_csrf=abc";
     const seen = captureHeaders();

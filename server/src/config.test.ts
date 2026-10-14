@@ -143,9 +143,9 @@ describe("loadConfig", () => {
   );
 
   it("keeps PUBLIC_BASE_URL as an origin, without a trailing slash", () => {
-    expect(loadConfig({ PUBLIC_BASE_URL: "https://a.example/" }).publicBaseUrl).toBe(
-      "https://a.example",
-    );
+    expect(
+      loadConfig({ PUBLIC_BASE_URL: "https://a.example/", SESSION_SECRET }).publicBaseUrl,
+    ).toBe("https://a.example");
     expect(loadConfig({ PUBLIC_BASE_URL: "HTTP://LOCALHOST:5173" }).publicBaseUrl).toBe(
       "http://localhost:5173",
     );
@@ -375,6 +375,44 @@ describe("loadConfig", () => {
       expect(() => load(env)).toThrow(/SESSION_SECRET: required when NODE_ENV=production/);
       expect(load({ ...env, SESSION_SECRET }).sessionSecret).toBe(SESSION_SECRET);
     });
+
+    it.each([
+      ["an https public origin", "https://localhost:5173"],
+      ["a public host", "http://surveys.example.com"],
+      ["a LAN address", "http://192.168.1.20:3000"],
+    ])("requires SESSION_SECRET outside production for %s", (_label, url) => {
+      const env = { PUBLIC_BASE_URL: url };
+      expect(() => loadConfig(env)).toThrow(
+        /SESSION_SECRET: required when PUBLIC_BASE_URL is https or not on localhost/,
+      );
+      expect(loadConfig({ ...env, SESSION_SECRET }).sessionSecret).toBe(SESSION_SECRET);
+    });
+
+    it.each(["http://localhost:5173", "http://127.0.0.1:3000", "http://[::1]:3000"])(
+      "allows the development constant on the loopback origin %s",
+      (url) => {
+        const config = load({ PUBLIC_BASE_URL: url, APP_EDITION: "hosted", ...oidc });
+        expect(config.sessionSecretIsDevDefault).toBe(true);
+      },
+    );
+
+    it("refuses a plain-http OIDC issuer on a non-loopback host", () => {
+      for (const env of [{}, { PUBLIC_BASE_URL: "https://surveys.example.com", SESSION_SECRET }]) {
+        const message = messageOf(() =>
+          load({ ...oidc, ...env, OIDC_ISSUER_URL: "http://auth.example.com" }),
+        );
+        expect(message).toContain("OIDC_ISSUER_URL: must be https unless its host is localhost");
+      }
+    });
+
+    it.each(["http://localhost:18080/surveyjs", "http://127.0.0.1:18080", "http://[::1]:8080"])(
+      "allows a plain-http OIDC issuer on the loopback host %s",
+      (issuer) => {
+        const https = { PUBLIC_BASE_URL: "https://surveys.example.com", SESSION_SECRET };
+        expect(load({ ...oidc, OIDC_ISSUER_URL: issuer }).oidc?.issuerUrl).toBe(issuer);
+        expect(load({ ...oidc, ...https, OIDC_ISSUER_URL: issuer }).oidc?.issuerUrl).toBe(issuer);
+      },
+    );
 
     it("uses the development constant outside production and says so", () => {
       const config = loadConfig({});

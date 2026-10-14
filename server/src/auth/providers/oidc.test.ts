@@ -7,7 +7,7 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createProviders } from "../../providers/index.js";
 import { blockedUser, ownerUser } from "../../providers/suite/expected.js";
-import { cookieValue } from "../testing.js";
+import { cookieValue, transactionOf } from "../testing.js";
 import { createOidcIdentityProvider } from "./oidc.js";
 
 const CLIENT_ID = "my-surveys-test";
@@ -272,7 +272,7 @@ async function signInThroughIssuer(server: FastifyInstance, returnTo = "/") {
   expect(callbackUrl.origin + callbackUrl.pathname).toBe(REDIRECT_URI);
   return server.inject({
     url: callbackUrl.pathname + callbackUrl.search,
-    headers: { cookie: `msid_auth=${cookieValue(login, "msid_auth") ?? ""}` },
+    headers: { cookie: transactionOf(login).cookie },
   });
 }
 
@@ -361,11 +361,10 @@ describe("surveyjs-oidc provider against an auth.surveyjs.io-like server (OAuth 
 
   it("rejects an unknown code with 400 bad-request", async () => {
     const { server } = await startWithIssuer();
-    const login = await server.inject("/api/v1/auth/login");
-    const state = new URL(String(login.headers.location)).searchParams.get("state") ?? "";
+    const { cookie, state } = transactionOf(await server.inject("/api/v1/auth/login"));
     const callback = await server.inject({
       url: `/api/v1/auth/callback?code=unknown&state=${encodeURIComponent(state)}`,
-      headers: { cookie: `msid_auth=${cookieValue(login, "msid_auth") ?? ""}` },
+      headers: { cookie },
     });
     expect(callback.statusCode).toBe(400);
     expect(callback.json()).toMatchObject({ code: "bad-request" });

@@ -15,7 +15,7 @@ export interface RequestUser {
 
 declare module "fastify" {
   interface FastifyRequest {
-    /** Set by the authentication hook on operations that need a session; null elsewhere. */
+    /** Set by the authentication hook when the operation can use a session and has one; null elsewhere. */
     user: RequestUser | null;
   }
 }
@@ -26,28 +26,30 @@ export interface AuthenticationOptions {
   readonly now?: Clock;
 }
 
-/** How an operation's security requirements are met in Phase 1 (`bearerAuth` is P1: never). */
+/**
+ * How an operation's security requirements are met in Phase 1 (`bearerAuth` is P1: never).
+ * `optional`: a session requirement next to the empty one (`logout`). Without a valid session the
+ * call is anonymous; with one, the session's rules (CSRF) apply.
+ */
 export type AccessRule =
   | { readonly kind: "public" }
   | { readonly kind: "session"; readonly csrf: boolean }
+  | { readonly kind: "optional"; readonly csrf: boolean }
   | { readonly kind: "never" };
 
 const SESSION_SCHEMES = new Set(["cookieAuth", "csrfToken"]);
 
 export function accessRule(security: Security): AccessRule {
-  if (security.length === 0 || security.some((requirement) => requirement.length === 0)) {
-    return { kind: "public" };
-  }
+  if (security.length === 0) return { kind: "public" };
+  const anonymous = security.some((requirement) => requirement.length === 0);
   const usable = security.filter(
     (requirement) =>
       requirement.includes("cookieAuth") && requirement.every((name) => SESSION_SCHEMES.has(name)),
   );
-  if (usable.length === 0) return { kind: "never" };
+  if (usable.length === 0) return { kind: anonymous ? "public" : "never" };
   // CSRF is needed only when every requirement the session can meet asks for it.
-  return {
-    kind: "session",
-    csrf: usable.every((requirement) => requirement.includes("csrfToken")),
-  };
+  const csrf = usable.every((requirement) => requirement.includes("csrfToken"));
+  return { kind: anonymous ? "optional" : "session", csrf };
 }
 
 function unauthenticated(): AppError {
@@ -68,8 +70,12 @@ export function authenticationHook(
   return async (request) => {
     if (rule.kind === "never") throw unauthenticated();
     const cookies = parseCookies(request.headers.cookie);
+    // A missing, tampered or expired `msid` is no session.
     const session = decodeSession(options.sessionSecret, cookies[SESSION_COOKIE], options.now);
-    if (!session) throw unauthenticated();
+    if (!session) {
+      if (rule.kind === "optional") return;
+      throw unauthenticated();
+    }
     if (rule.csrf) {
       const header = request.headers["x-csrf-token"];
       const token = typeof header === "string" ? header : undefined;
