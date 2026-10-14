@@ -1,0 +1,114 @@
+# API conventions
+
+A summary of the conventions in the header of
+[`contract/openapi.yaml`](../../contract/openapi.yaml). If this page and the contract disagree,
+the contract wins.
+
+## Basics
+
+- **Base path** `/api/v1`. Versioning is in the path.
+- **JSON** with camelCase property names. Timestamps are RFC 3339 in UTC. IDs are opaque strings;
+  existing surveyjs.io GUIDs are kept.
+- **Request ID.** Every response has an `x-request-id` header. Send your own to correlate logs.
+
+## Errors
+
+Every error is [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details with the media
+type `application/problem+json`:
+
+```json
+{
+  "type": "https://my-surveys.surveyjs.io/problems/not-implemented",
+  "title": "Not implemented",
+  "status": 501,
+  "code": "not-implemented",
+  "detail": "Operation listSurveys is not implemented yet."
+}
+```
+
+| Member   | Meaning                                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `type`   | `https://my-surveys.surveyjs.io/problems/<code>`                                                                           |
+| `title`  | Short, human-readable                                                                                                      |
+| `status` | The HTTP status                                                                                                            |
+| `code`   | Stable machine-readable identifier. Clients should switch on this                                                          |
+| `detail` | Optional explanation                                                                                                       |
+| `errors` | Optional, for validation failures: a list of `{ pointer, detail }`, where `pointer` is a JSON Pointer to the invalid field |
+
+Problem codes by status:
+
+| Status | Codes                                                                      |
+| ------ | -------------------------------------------------------------------------- |
+| 400    | `bad-request` (malformed request, or invalid path, query or header)        |
+| 401    | `unauthenticated`                                                          |
+| 403    | `forbidden`, `csrf-token-invalid`                                          |
+| 404    | `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`    |
+| 406    | `not-acceptable`                                                           |
+| 409    | `survey-not-archived`, `already-member`, `last-admin`, `already-completed` |
+| 412    | `edit-conflict`                                                            |
+| 413    | `payload-too-large`, `quota-exceeded`                                      |
+| 415    | `unsupported-media-type`                                                   |
+| 422    | `validation-failed` (valid JSON, wrong content; see `errors`)              |
+| 428    | `if-match-required`                                                        |
+| 429    | `rate-limited` (with `Retry-After`)                                        |
+| 500    | `internal-error` (no internal detail in the body)                          |
+| 501    | `not-implemented`                                                          |
+
+The `Problem` schema in the contract holds the full list of codes.
+
+## Paging
+
+List endpoints use opaque cursors: `?limit=&cursor=` (`limit` 1-200, default 50). The response is
+`{ "items": [...], "nextCursor": "..." }`. `nextCursor` is `null` on the last page. Pass it back
+as `cursor` to get the next page. Do not parse it.
+
+## Partial updates (Merge Patch)
+
+`PATCH` takes a JSON Merge Patch document ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)).
+Send `Content-Type: application/merge-patch+json` or `application/json`. Members you omit stay as
+they are; `null` removes a member.
+
+## Concurrent edits (ETag)
+
+Large documents (the survey definition and the theme) return an `ETag`. A write must send the
+value back in `If-Match`. A stale value fails with `412 edit-conflict`; a missing header with
+`428 if-match-required`.
+
+## Creation
+
+`201 Created` with a `Location` header and the created resource in the body.
+
+## Downloads
+
+The file format comes from the `Accept` header. A browser download link cannot set headers, so a
+`format` query parameter is accepted as an alias and takes precedence. Responses carry
+`Content-Disposition`. An unsupported format gives `406 not-acceptable`.
+
+## Authentication, sessions and CSRF
+
+- The web app uses the session cookie `msid` (HttpOnly, Secure, SameSite=Lax), set on sign-in.
+- Requests that change data (`POST`, `PUT`, `PATCH`, `DELETE`) must also send `X-CSRF-Token`
+  with the value of the readable `msid_csrf` cookie (double-submit). Otherwise: `403 csrf-token-invalid`.
+- Bearer API tokens (`Authorization: Bearer <token>`) arrive in phase 2 (P1).
+- `/public/*` operations need no authentication.
+- Sign-in, sessions and CSRF checks are not implemented in Step 1.
+
+## Idempotent submissions
+
+A respondent submission may carry an `Idempotency-Key` header (up to 128 characters; a UUID is
+recommended). A repeated key returns the original result instead of storing a second response.
+Keys are remembered for 24 hours.
+
+## Phasing
+
+Operations and properties marked `x-phase: P1` belong to phase 2 (API tokens, password login,
+partial responses). They are part of the contract now. Until they are implemented, a server
+answers those operations with `501 not-implemented` and ignores the marked properties.
+
+Any operation that no handler exists for also answers `501`. This is the case for every operation
+except `getConfig` in Step 1, and the conformance suite accepts it.
+
+## Limits
+
+Configured on the server and returned by `GET /api/v1/config` as `limits`:
+`maxAssetBytesPerSurvey` (50 MB), `maxFileBytes` (10 MB) and `maxResponseBytes` (1 MB).
