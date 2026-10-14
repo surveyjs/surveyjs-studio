@@ -131,6 +131,11 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       it("returns null for an unknown email", async () => {
         expect(await providers.directory.findUserByEmail("nobody@example.com")).toBeNull();
       });
+
+      it("returns null for a blank email", async () => {
+        expect(await providers.directory.findUserByEmail("")).toBeNull();
+        expect(await providers.directory.findUserByEmail("  ")).toBeNull();
+      });
     });
 
     describe("directory.listUserProjects", () => {

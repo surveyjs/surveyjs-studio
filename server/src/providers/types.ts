@@ -9,7 +9,7 @@ export interface SurveyStore {
 
 export interface Directory {
   getUser(id: string): Promise<User | null>;
-  /** Case-insensitive match on email. */
+  /** Case-insensitive match on email. A blank email matches no user (a NULL legacy email is ""). */
   findUserByEmail(email: string): Promise<User | null>;
   /**
    * Projects the user is a member of, ordered by project name ignoring case (lower-cased, code

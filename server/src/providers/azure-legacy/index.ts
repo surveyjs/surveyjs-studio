@@ -226,7 +226,7 @@ export function createAzureLegacyProviders(
         // SQL only narrows the candidates; the exact case-insensitive match is checked here
         // (SQL Server would also ignore trailing spaces).
         const wanted = email.toLowerCase();
-        if (wanted === "" || wanted.length > MAX_EMAIL_LENGTH) return null;
+        if (wanted.trim() === "" || wanted.length > MAX_EMAIL_LENGTH) return null;
         const rows = await select<LegacyUserRow>(
           "user lookup by email",
           "SELECT id, email, displayname, blocked FROM Users WHERE email = @email",

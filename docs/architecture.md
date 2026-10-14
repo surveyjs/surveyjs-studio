@@ -127,7 +127,8 @@ Rules decided in Step 2:
 
 - **NULL columns map with defaults.** A NULL name becomes `""`. A NULL `createdat` takes the
   `timestamp` value and the other way round; if both are NULL, both become
-  `1970-01-01T00:00:00.000Z`. A NULL email becomes `""`. A NULL project name becomes `""`.
+  `1970-01-01T00:00:00.000Z`. A NULL email becomes `""`, and `findUserByEmail` with a blank email
+  finds no user. A NULL project name becomes `""`.
 - **Rows the domain cannot represent are skipped and reported.** A survey with a NULL `postid`,
   `resultid` or `userid`, and a membership with a NULL or unknown role, are left out. Each one is
   reported as a warning that carries ids only.

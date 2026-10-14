@@ -56,6 +56,8 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
       },
       findUserByEmail: (email) => {
         const wanted = email.toLowerCase();
+        // A NULL legacy email maps to ""; a blank lookup finds no one (as in azure-legacy).
+        if (wanted.trim() === "") return Promise.resolve(null);
         const found = users.find((u) => u.email.toLowerCase() === wanted);
         return Promise.resolve(found ? copyUser(found) : null);
       },
