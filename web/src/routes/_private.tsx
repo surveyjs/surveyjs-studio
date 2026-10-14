@@ -28,12 +28,14 @@ const rootRoute = getRouteApi("__root__");
 function PrivateLayout() {
   const { user } = Route.useRouteContext();
   const config = rootRoute.useLoaderData();
-  const onSignOut = useSignOut();
+  const { signOut, pending, error } = useSignOut();
   return renderShell(config.shell, {
     user,
     notices: user.notices ?? [],
     links: config.links ?? {},
-    onSignOut,
+    onSignOut: signOut,
+    signingOut: pending,
+    signOutError: error,
     children: <Outlet />,
   });
 }

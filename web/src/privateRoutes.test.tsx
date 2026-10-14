@@ -117,4 +117,58 @@ describe("shell in the private layout", () => {
     expect(csrf).toBe("csrf-value");
     document.cookie = "msid_csrf=; Max-Age=0";
   });
+
+  it("treats a 401 from logout as already signed out", async () => {
+    server.use(
+      configHandler(),
+      meHandler(),
+      logoutHandler(401, "unauthenticated", "Sign in required"),
+    );
+    renderAt("/");
+
+    (await screen.findByRole("button", { name: "Sign Out" })).click();
+
+    await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/"));
+  });
+
+  it("shows an error and stays put when logout fails", async () => {
+    server.use(configHandler(), meHandler(), logoutHandler(500, "internal-error", "Boom"));
+    renderAt("/");
+
+    (await screen.findByRole("button", { name: "Sign Out" })).click();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not sign out");
+    expect(navigateTo).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Sign Out" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("sends one logout request when Sign Out is clicked twice", async () => {
+    let requests = 0;
+    server.use(
+      configHandler(),
+      meHandler(),
+      mswHttp.post("*/api/v1/auth/logout", async () => {
+        requests += 1;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return HttpResponse.json({ redirectUrl: "https://auth.example.test/logout" });
+      }),
+    );
+    renderAt("/");
+
+    const button = await screen.findByRole("button", { name: "Sign Out" });
+    button.click();
+    button.click();
+
+    await waitFor(() => expect(navigateTo).toHaveBeenCalledTimes(1));
+    expect(requests).toBe(1);
+  });
 });
+
+function logoutHandler(status: number, code: string, title: string) {
+  return mswHttp.post("*/api/v1/auth/logout", () =>
+    HttpResponse.json(
+      { type: `https://my-surveys.surveyjs.io/problems/${code}`, title, status, code },
+      { status, headers: { "Content-Type": "application/problem+json" } },
+    ),
+  );
+}

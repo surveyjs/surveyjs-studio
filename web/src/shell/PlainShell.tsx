@@ -2,7 +2,15 @@ import type { ReactNode } from "react";
 import type { ShellProps } from "./types";
 
 /** Minimal shell: app name, links, the user with a Sign Out button, notices, main, footer. */
-export function PlainShell({ user, notices, links, onSignOut, children }: ShellProps) {
+export function PlainShell({
+  user,
+  notices,
+  links,
+  onSignOut,
+  signingOut,
+  signOutError,
+  children,
+}: ShellProps) {
   return (
     <ShellFrame>
       <header>
@@ -17,10 +25,11 @@ export function PlainShell({ user, notices, links, onSignOut, children }: ShellP
           </nav>
         )}
         <span>{user.displayName}</span>
-        <button type="button" onClick={onSignOut}>
+        <button type="button" onClick={onSignOut} disabled={signingOut}>
           Sign Out
         </button>
       </header>
+      {signOutError && <div role="alert">{signOutError}</div>}
       {notices.map((notice) => (
         <div key={notice.code} role="status">
           {notice.message}

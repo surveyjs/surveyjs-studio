@@ -10,5 +10,9 @@ export interface ShellProps {
   notices: ShellNotice[];
   links: Record<string, string>;
   onSignOut: () => void;
+  /** True while signing out; the Sign Out control should be disabled. */
+  signingOut?: boolean;
+  /** A message to show when signing out failed. */
+  signOutError?: string | null;
   children: ReactNode;
 }
