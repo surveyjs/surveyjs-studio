@@ -3,7 +3,10 @@
   "extends": ["config:recommended"],
   "rangeStrategy": "pin",
   "minimumReleaseAge": "14 days",
-  "lockFileMaintenance": { "enabled": true, "schedule": ["before 5am on monday"] },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"]
+  },
   "packageRules": [
     {
       "description": "SurveyJS packages always move together",
@@ -17,11 +20,10 @@
       "matchPackageNames": ["*", "!survey-*"]
     },
     {
-      "description": "Node.js stays on the pinned LTS major",
-      "matchPackageNames": ["node"],
-      "matchManagers": ["nvm", "npm"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
+      "description": "Node.js stays on the pinned LTS major (.nvmrc and engines.node)",
+      "matchDatasources": ["node-version"],
+      "matchDepNames": ["node"],
+      "allowedVersions": "<25"
     }
   ]
 }

@@ -102,4 +102,38 @@ describe("checkDependencies", () => {
     ]);
     expect(result).toEqual([]);
   });
+
+  it("accepts a prerelease for survey-* packages", () => {
+    const result = checkDependencies([
+      manifest({
+        dependencies: { "survey-core": "2.0.1-beta.3", "survey-react-ui": "2.0.1-beta.3" },
+      }),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it("fails overall for ranged survey-* packages", () => {
+    const result = checkDependencies([
+      manifest({ dependencies: { "survey-core": "^2.0.0", "survey-react-ui": "^2.0.0" } }),
+    ]);
+    expect(result.map((v) => [v.dependency, v.rule])).toEqual([
+      ["survey-core", "core-dependency-must-be-exact"],
+      ["survey-react-ui", "core-dependency-must-be-exact"],
+    ]);
+  });
+
+  it.each([
+    "v1.2.3",
+    "1.2",
+    "npm:react@18.0.0",
+    "file:../x",
+    "link:../x",
+    "git+https://github.com/a/b.git",
+    "github:a/b",
+    "workspace:^",
+    "workspace:~",
+  ])("rejects bypass version %s on a core dependency", (version) => {
+    const result = checkDependencies([manifest({ dependencies: { react: version } })]);
+    expect(result.map((v) => v.rule)).toEqual(["core-dependency-must-be-exact"]);
+  });
 });
