@@ -10,7 +10,7 @@ import { buildApp, type BuildOptions } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createProviders } from "./providers/index.js";
 
-const testEnv = { NODE_ENV: "test" };
+const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev" };
 let app: FastifyInstance | undefined;
 
 async function start(
@@ -49,6 +49,10 @@ describe("getConfig", () => {
     const res = await (
       await start({
         APP_EDITION: "hosted",
+        IDENTITY_PROVIDER: "surveyjs-oidc",
+        OIDC_ISSUER_URL: "https://auth.example.com",
+        OIDC_CLIENT_ID: "client",
+        OIDC_CLIENT_SECRET: "secret",
         APP_SHELL: "powered-by-surveyjs",
         AUTH_METHODS: "surveyjs,password",
         SURVEYJS_LICENSE_KEY: "key-123",

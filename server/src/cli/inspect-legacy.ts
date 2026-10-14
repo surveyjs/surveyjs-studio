@@ -159,7 +159,7 @@ export async function run(
   }
   let providers: ProviderSet | null = null;
   try {
-    const config = loadConfig(process.env);
+    const config = loadConfig(process.env, { skipIdentityRules: true });
     providers = await makeProviders(config, {
       logger: {
         warn: (details, message) => io.err(`warning: ${message} ${JSON.stringify(details)}\n`),

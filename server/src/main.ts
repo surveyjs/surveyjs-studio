@@ -21,6 +21,9 @@ const providers = await createProviders(config, {
 });
 const app = await buildApp(config, providers);
 appLog = app.log;
+if (config.sessionSecretIsDevDefault) {
+  app.log.warn("SESSION_SECRET is not set: using the development-only session secret");
+}
 
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

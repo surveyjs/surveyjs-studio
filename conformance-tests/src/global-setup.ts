@@ -35,6 +35,16 @@ const appVariables = [
   "LEGACY_SQL_CONNECTION_STRING",
   "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+  "IDENTITY_PROVIDER",
+  "SESSION_SECRET",
+  "SESSION_MAX_AGE_SECONDS",
+  "OIDC_ISSUER_URL",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
+  "OIDC_SCOPES",
+  "SIGN_IN_RATE_LIMIT",
+  "ACCOUNT_NOTICES",
+  "SHELL_LINKS",
 ];
 
 const legacyVariables = [
@@ -43,20 +53,26 @@ const legacyVariables = [
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
 ] as const;
 
+// Read from azure-legacy.env: the OIDC provider is discovered lazily, so placeholders are harmless.
+const oidcVariables = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
+
 /**
  * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores: the three
- * `LEGACY_*` connection strings are forwarded from this process (`pnpm test:conformance:azurite`
+ * `LEGACY_*` connection strings and the `OIDC_*` settings are forwarded from this process (`pnpm test:conformance:azurite`
  * reads them from docker/azurite.env). Default: memory, with every app variable stripped.
  */
 function providerEnv(): Record<string, string> {
   const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";
-  if (provider === "memory") return { STORAGE_PROVIDER: "memory" };
+  if (provider === "memory") {
+    // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
+    return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
+  }
   if (provider !== "azure-legacy") {
     throw new Error(`CONFORMANCE_PROVIDER must be memory or azure-legacy, got "${provider}"`);
   }
   const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
   const missing: string[] = [];
-  for (const name of legacyVariables) {
+  for (const name of [...legacyVariables, ...oidcVariables]) {
     const value = process.env[name];
     if (value?.trim()) env[name] = value;
     else missing.push(name);

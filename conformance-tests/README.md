@@ -27,17 +27,17 @@ pnpm test:conformance
 ```
 
 With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @my-surveys/server start`
-on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`), waits up to 30 s for
+on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=dev`, `MEMORY_SEED=legacy-fixtures`), waits up to 30 s for
 `/readyz`, and stops it (and its process tree) afterwards.
 
 ## Run against the Azure legacy provider
 
 `CONFORMANCE_PROVIDER` picks the storage provider of the reference server:
 
-| Value              | Reference server                                                                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory` (default) | `STORAGE_PROVIDER=memory`; every app variable of the developer's shell is stripped.                                                                       |
-| `azure-legacy`     | `STORAGE_PROVIDER=azure-legacy`; the three `LEGACY_*` connection strings are forwarded from the environment (every other app variable is still stripped). |
+| Value              | Reference server                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory` (default) | `STORAGE_PROVIDER=memory`; every app variable of the developer's shell is stripped.                                                                                                                           |
+| `azure-legacy`     | `STORAGE_PROVIDER=azure-legacy`; the three `LEGACY_*` connection strings and the `OIDC_*` placeholders of `azure-legacy.env` are forwarded from the environment (every other app variable is still stripped). |
 
 Against the local replica of the legacy stores (Azurite and SQL Server in Docker):
 

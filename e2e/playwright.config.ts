@@ -23,6 +23,16 @@ const appVariables = [
   "LEGACY_SQL_CONNECTION_STRING",
   "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+  "IDENTITY_PROVIDER",
+  "SESSION_SECRET",
+  "SESSION_MAX_AGE_SECONDS",
+  "OIDC_ISSUER_URL",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
+  "OIDC_SCOPES",
+  "SIGN_IN_RATE_LIMIT",
+  "ACCOUNT_NOTICES",
+  "SHELL_LINKS",
 ];
 for (const name of Object.keys(process.env)) {
   if (appVariables.includes(name) || name.startsWith("VITE_")) {
@@ -54,6 +64,8 @@ export default defineConfig({
       env: {
         NODE_ENV: "test",
         STORAGE_PROVIDER: "memory",
+        IDENTITY_PROVIDER: "dev",
+        MEMORY_SEED: "legacy-fixtures",
         HOST: "127.0.0.1",
         PORT: "3000",
         APP_EDITION: "self-hosted",

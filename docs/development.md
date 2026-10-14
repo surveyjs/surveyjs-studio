@@ -35,32 +35,43 @@ To run one part alone: `pnpm --filter @my-surveys/server dev` (watch mode),
 
 Read at start-up. Every problem is reported at once and the process exits with code 1.
 
-| Variable                                   | Values                                                        | Default                                              |
-| ------------------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------- |
-| `NODE_ENV`                                 | `development`, `test`, `production`                           | `development`                                        |
-| `HOST`                                     | host name or address                                          | `127.0.0.1`                                          |
-| `PORT`                                     | integer 0-65535 (0 = any free port)                           | `3000`                                               |
-| `LOG_LEVEL`                                | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`  | `info`                                               |
-| `APP_EDITION`                              | `hosted`, `self-hosted`                                       | `self-hosted`                                        |
-| `APP_SHELL`                                | non-empty string                                              | `surveyjs-site`                                      |
-| `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `oidc` (at least one)   | `surveyjs`                                           |
-| `SURVEYJS_LICENSE_KEY`                     | string                                                        | unset (`null` in `/config`)                          |
-| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`                                      | `memory`                                             |
-| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`)                 | `empty`                                              |
-| `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                      | unset; required when `STORAGE_PROVIDER=azure-legacy` |
-| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret** | unset; required when `STORAGE_PROVIDER=azure-legacy` |
-| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret** | unset; required when `STORAGE_PROVIDER=azure-legacy` |
-| `PUBLIC_BASE_URL`                          | absolute http(s) URL                                          | `http://localhost:3000`; **required in production**  |
-| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                              | `52428800` (50 MB)                                   |
-| `LIMIT_MAX_FILE_BYTES`                     | positive integer                                              | `10485760` (10 MB)                                   |
-| `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                              | `1048576` (1 MB); also the request body limit        |
-| `API_DOCS`                                 | `true`, `false`                                               | `true`, but `false` when `NODE_ENV=production`       |
+| Variable                                   | Values                                                                 | Default                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                 | `development`, `test`, `production`                                    | `development`                                                                                  |
+| `HOST`                                     | host name or address                                                   | `127.0.0.1`                                                                                    |
+| `PORT`                                     | integer 0-65535 (0 = any free port)                                    | `3000`                                                                                         |
+| `LOG_LEVEL`                                | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`           | `info`                                                                                         |
+| `APP_EDITION`                              | `hosted`, `self-hosted`                                                | `self-hosted`                                                                                  |
+| `APP_SHELL`                                | non-empty string                                                       | `surveyjs-site`                                                                                |
+| `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `oidc` (at least one)            | `surveyjs`                                                                                     |
+| `SURVEYJS_LICENSE_KEY`                     | string                                                                 | unset (`null` in `/config`)                                                                    |
+| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`                                               | `memory`                                                                                       |
+| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`)                          | `empty`                                                                                        |
+| `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                               | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
+| `PUBLIC_BASE_URL`                          | absolute http(s) URL                                                   | `http://localhost:3000`; **required in production**                                            |
+| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                                       | `52428800` (50 MB)                                                                             |
+| `LIMIT_MAX_FILE_BYTES`                     | positive integer                                                       | `10485760` (10 MB)                                                                             |
+| `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                       | `1048576` (1 MB); also the request body limit                                                  |
+| `API_DOCS`                                 | `true`, `false`                                                        | `true`, but `false` when `NODE_ENV=production`                                                 |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                 | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory` and is refused in production and hosted |
+| `SESSION_SECRET`                           | string, at least 32 characters; **secret**                             | unset; required in production (a fixed dev constant is used, with a warning, elsewhere)        |
+| `SESSION_MAX_AGE_SECONDS`                  | positive integer                                                       | `43200` (12 h); absolute expiry                                                                |
+| `OIDC_ISSUER_URL`                          | absolute http(s) URL                                                   | unset; required for `surveyjs-oidc`                                                            |
+| `OIDC_CLIENT_ID`                           | string                                                                 | unset; required for `surveyjs-oidc`                                                            |
+| `OIDC_CLIENT_SECRET`                       | string; **secret**                                                     | unset; required for `surveyjs-oidc`                                                            |
+| `OIDC_SCOPES`                              | space-separated scopes                                                 | `openid profile email`                                                                         |
+| `SIGN_IN_RATE_LIMIT`                       | positive integer (requests per minute per IP)                          | `30`                                                                                           |
+| `ACCOUNT_NOTICES`                          | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | `none`; `surveyjs-licenses` needs `azure-legacy`                                               |
+| `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                            | unset                                                                                          |
 
 "Required in production" means `NODE_ENV=production`. An empty or whitespace-only value counts as unset
 (the default applies). Integer variables accept decimal digits only (`1e3`, `0x10`, `-1` and `1.5` are rejected). The values for edition, shell, auth
 methods, licence key and limits are returned by `GET /api/v1/config`.
 
-The three `LEGACY_*` values are secrets. Never commit one, and never put a real one in a file in
+`pnpm demo` reads `server/demo.env` (dev sign-in, the legacy fixture users, `PUBLIC_BASE_URL=http://localhost:5173`).
+The three `LEGACY_*` values, `SESSION_SECRET` and `OIDC_CLIENT_SECRET` are secrets. Never commit one, and never put a real one in a file in
 this repository; the errors and logs of the server do not print them.
 
 Set them in the shell that starts the server.
