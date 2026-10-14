@@ -97,7 +97,11 @@ export interface CliIo {
 }
 
 /** Runs the inspector. Returns the exit code; never throws. Calls only read methods. */
-export async function run(argv: readonly string[], io: CliIo): Promise<number> {
+export async function run(
+  argv: readonly string[],
+  io: CliIo,
+  makeProviders: typeof createProviders = createProviders,
+): Promise<number> {
   const args = parseArgs(argv);
   if (args.kind === "help") {
     io.out(USAGE + "\n");
@@ -118,7 +122,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   let providers: ProviderSet | null = null;
   try {
     const config = loadConfig(process.env);
-    providers = await createProviders(config, {
+    providers = await makeProviders(config, {
       logger: {
         warn: (details, message) => io.err(`warning: ${message} ${JSON.stringify(details)}\n`),
       },
