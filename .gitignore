@@ -11,4 +11,3 @@ blob-report/
 .env.*
 !.env.example
 *.tsbuildinfo
-docs/api/reference.html

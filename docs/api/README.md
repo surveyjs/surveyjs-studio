@@ -35,6 +35,10 @@ The page is read from disk on every request, so after you rebuild it, a refresh 
 
 ## Check and regenerate
 
+Lint runs with Redocly telemetry off (`telemetry: off` in `contract/redocly.yaml`) and its update check
+suppressed. The three operations that legitimately lack a 2xx or 4xx response (`GET /auth/login`,
+`GET /auth/callback`, `GET /config`) are listed in `contract/.redocly.lint-ignore.yaml`.
+
 | Command                                       | Purpose                                                     |
 | --------------------------------------------- | ----------------------------------------------------------- |
 | `pnpm lint:contract`                          | Redocly lint, and fail if `generated/openapi.d.ts` is stale |

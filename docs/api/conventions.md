@@ -26,14 +26,14 @@ type `application/problem+json`:
 }
 ```
 
-| Member   | Meaning                                                                                                                    |
-| -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `type`   | `https://my-surveys.surveyjs.io/problems/<code>`                                                                           |
-| `title`  | Short, human-readable                                                                                                      |
-| `status` | The HTTP status                                                                                                            |
-| `code`   | Stable machine-readable identifier. Clients should switch on this                                                          |
-| `detail` | Optional explanation                                                                                                       |
-| `errors` | Optional, for validation failures: a list of `{ pointer, detail }`, where `pointer` is a JSON Pointer to the invalid field |
+| Member   | Meaning                                                                                                                                                                                 |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`   | `https://my-surveys.surveyjs.io/problems/<code>`                                                                                                                                        |
+| `title`  | Short, human-readable                                                                                                                                                                   |
+| `status` | The HTTP status                                                                                                                                                                         |
+| `code`   | Stable machine-readable identifier. Clients should switch on this                                                                                                                       |
+| `detail` | Optional explanation                                                                                                                                                                    |
+| `errors` | Optional, for validation failures: a list of `{ pointer, detail }`, where `pointer` is a JSON Pointer to the invalid field; at most 50 entries, and `detail` says when the list was cut |
 
 Problem codes by status:
 

@@ -1,10 +1,9 @@
 extends:
   - recommended
 
+# Never send usage telemetry (key read by @redocly/cli: resolvedConfig.telemetry).
+telemetry: off
+
 rules:
   # The second server is the documented local-development URL (localhost:3000).
   no-server-example.com: off
-  # /auth/login and /auth/callback are browser redirects: they legitimately answer 302 only.
-  operation-2xx-response: off
-  # GET /config is public and static; it has no client-error outcome to document.
-  operation-4xx-response: off

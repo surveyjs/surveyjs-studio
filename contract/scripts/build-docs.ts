@@ -1,20 +1,15 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { redocly } from "./redocly.js";
 
 // Builds contract/dist/reference.html with Redocly, then replaces the CDN <script src>
 // with the inlined Redoc standalone bundle (same pinned `redoc` version) so the page
 // is fully self-contained and works offline.
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = join(root, "dist", "reference.html");
-const cli = join(root, "node_modules", "@redocly", "cli", "bin", "cli.js");
 
-execFileSync(
-  process.execPath,
-  [cli, "build-docs", "openapi.yaml", "--disableGoogleFont", "-o", output],
-  { cwd: root, stdio: "inherit" },
-);
+redocly(["build-docs", "openapi.yaml", "--disableGoogleFont", "-o", output]);
 
 const bundle = readFileSync(
   join(root, "node_modules", "redoc", "bundles", "redoc.standalone.js"),
