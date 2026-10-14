@@ -1,0 +1,82 @@
+﻿.v2-class---banner {
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    z-index: 1999;
+    display: none;
+    padding: size(2);
+}
+
+.v2-class---banner__content {
+    background: $General--Backcolor;
+    border: 1px solid $General--Line-10-proc;
+    -webkit-background-clip: padding-box; /* for Safari */ /* see https://stackoverflow.com/questions/4062001/can-you-set-a-border-opacity-in-css*/
+    background-clip: padding-box; /* for IE9+, Firefox 4+, Opera, Chrome */
+    @include Shadows--Large;
+    max-width: size(81);
+    border-radius: size(1);
+    padding: size(3) size(4) size(4) size(4);
+
+    @include media(Mobile) {
+        padding: size(2);
+    }
+}
+
+.v2-class---banner__title-container {
+    display: flex;
+    align-items: center;
+    gap: size(2);
+
+    .v2-class---banner__title {
+        margin-bottom: 0;
+    }
+
+    margin-bottom: size(2);
+}
+
+.v2-class---banner__title-icon {
+    display: flex;
+
+    svg {
+        width: size(6);
+        height: size(6);
+    }
+}
+
+.v2-class---banner__title {
+    @include Article--Titles--Small;
+    color: $General--Forecolor;
+    margin-bottom: size(2);
+
+    @include media(Mobile) {
+        @include No-Spacing--Small-Bold;
+        margin-bottom: size(1.5);
+    }
+}
+
+.v2-class---banner__paragraph {
+    @include Article--Paragraphs--X-Small-Bold;
+    color: $General--Forecolor-75;
+    margin-bottom: size(0.5);
+
+    &:last-of-type {
+        margin-bottom: size(3);
+
+        @include media(Mobile) {
+            margin-bottom: size(1.5);
+        }
+    }
+}
+
+.v2-class---banner-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: size(4);
+}
+
+.v2-class---banner__button-container {
+    display: flex;
+}

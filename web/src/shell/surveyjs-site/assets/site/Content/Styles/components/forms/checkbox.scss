@@ -1,0 +1,74 @@
+﻿.v2-class---checkbox {
+    cursor: pointer;
+    display: flex;
+    gap: size(2);
+    row-gap: size(1);
+    flex-wrap: wrap;
+    padding-top: size(1);
+}
+
+.v2-class---checkbox--no-padding {
+    padding-top: 0;
+}
+
+.v2-class---checkbox__checkmark {
+    height: size(3);
+    width: size(3);
+    display: flex;
+    background-color: $General--Backcolor-Gray;
+    border: 1px solid $General--Line;
+    border-radius: size(0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-grow: 0;
+    flex-shrink: 0;
+    box-sizing: border-box;
+
+    svg {
+        display: none;
+
+        fill: $General--Backcolor;
+    }
+}
+
+.v2-class---checkbox__checkmark--error {
+    background-color: $Special--Red-15;
+    border-color: $Special--Red;
+}
+
+.v2-class---checkbox__input {
+    display: none;
+
+    &:checked {
+        ~ .v2-class---checkbox__checkmark {
+            background-color: $Primary--Primary;
+            border-color: $Primary--Primary;
+            padding: 3px;
+
+            svg {
+                display: block;
+            }
+        }
+    }
+
+    &:disabled {
+        ~ .v2-class---checkbox__checkmark {
+            background-color: $General--Forecolor-50;
+            border-color: $General--Forecolor-50;
+        }
+    }
+}
+
+.v2-class---checkbox__label {
+    color: $General--Forecolor-75;
+    @include No-Spacing--Small;
+    flex: 1;
+}
+
+.v2-class---checkbox__note {
+    color: $Special--Red;
+    @include No-Spacing--X-Small-Bold;
+    padding: 0 size(5);
+    width: 100%;
+}

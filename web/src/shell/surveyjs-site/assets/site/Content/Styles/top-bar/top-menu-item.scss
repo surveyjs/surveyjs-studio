@@ -1,0 +1,291 @@
+﻿.v2-class---top-menu-item {
+    cursor: pointer;
+    padding: size(1) size(2);
+    @include No-Spacing--X-Small-Bold;
+    color: $General--Forecolor;
+    white-space: nowrap
+}
+
+.v2-class---top-menu-item__link {
+    color: $General--Forecolor;
+}
+
+.v2-class---top-menu-item--text,
+.v2-class---top-menu-item--icon-with-text {
+    position: relative;
+
+    &:after {
+        content: "";
+        position: absolute;
+        background-color: $Secondary--Secondary;
+        width: 100%;
+        height: size(0.25);
+        bottom: 0;
+        left: 0;
+        opacity: 0;
+        transition: 100ms;
+        transition-timing-function: linear;
+    }
+
+    &:hover:after {
+        opacity: 1;
+    }
+}
+
+.v2-class---top-menu-item--icon-with-text__content {
+    display: flex;
+    align-items: center;
+    gap: size(1);
+}
+
+.v2-class---top-menu-item__icon {
+    display: flex;
+}
+
+.v2-class---top-menu-item__icon--twinkling {
+    animation-name: trin;
+    animation-duration: 1.5s;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+}
+
+@keyframes trin {
+
+    from {
+        transform: rotate3d(0, 0, 1, 0deg);
+    }
+
+    20%, 32%, 44%, 56%, 68% {
+        transform: rotate3d(0, 0, 1, 0deg);
+    }
+
+    23%, 35%, 47%, 59%, 71% {
+        transform: rotate3d(0,0,1,15deg);
+    }
+
+    26%, 38%, 50%, 62%, 74% {
+        transform: rotate3d(0,0,1,0deg);
+    }
+
+    29%, 41%, 53%, 65%, 77% {
+        transform: rotate3d(0,0,1,-15deg);
+    }
+
+    80% {
+        transform: rotate3d(0, 0, 1, 0deg);
+    }
+}
+
+.v2-class---top-menu-item__text {
+    display: flex;
+}
+
+.v2-class---top-menu-item--cart {
+    @include media(Mobile) {
+        .v2-class---top-menu-item__cart-count-container {
+            width: 1px;
+            height: 1px;
+            position: absolute;
+            visibility: hidden;
+            opacity: 0;
+        }
+
+        &.v2-class---top-menu-item--cart-with-items {
+            .v2-class---top-menu-item__icon svg path {
+                fill: $Primary--Primary;
+            }
+        }
+    }
+}
+
+.v2-class---top-menu-item__cart-count-container {
+    line-height: initial;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    background-color: $Primary--Primary;
+    border-radius: size(12);
+    width: size(3);
+    height: size(3);
+}
+
+.v2-class---top-menu-item__cart-count {
+    color: $Primary--Forecolor;
+    @include No-Spacing--X-Small-Bold;
+    display: flex;
+}
+
+.v2-class---top-menu-item__icon--drop-down {
+    padding-top: 3px; //by design
+}
+
+.v2-class---top-menu-item--separator {
+    cursor: initial;
+    padding: size(0) size(2);
+}
+.v2-class---top-menu-item__separator {
+    width: 1px;
+    height: size(4);
+    background-color: $General--Line;
+}
+
+.v2-class---top-menu-item--drop-down {
+    position: relative;
+
+    .v2-class---drop-down-menu--popup-menu {
+        height: initial;
+        width: initial;
+        z-index: -2000;
+        opacity: 0;
+        pointer-events: none;
+        max-height: 0;
+        display: none;
+        border: 1px solid transparent;
+        box-shadow: 0px size(4) size(8) transparent;
+
+        .v2-class---drop-down-menu__list {
+            pointer-events: initial;
+        }
+    }
+
+    &:hover {
+        color: $General--Forecolor-50;
+
+        .v2-class---top-menu-item__icon path {
+            transition: 50ms;
+            fill: $General--Forecolor-50;
+            opacity: 0.75;
+        }
+
+        .v2-class---drop-down-menu--popup-menu {
+            z-index: 2000;
+            opacity: 1;
+            max-height: initial;
+            display: block;
+            border: 1px solid $General--Line-10-proc;
+            @include Shadows--Large;
+        }
+
+        &:after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            right: size(-1);
+            bottom: size(-1);
+            left: size(-0.5);
+            background: transparent;
+        }
+    }
+
+    &.v2-class---drop-down-selectin {
+        animation: v2-class---drop-down-selectin 100ms;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+    }
+
+
+    &.v2-class---drop-down-selectout {
+        animation: v2-class---drop-down-selectout 100ms;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+    }
+}
+
+.v2-class---top-menu-item--drop-down-hovered {
+    color: $General--Forecolor-50;
+
+    .v2-class---top-menu-item__icon path {
+        transition: 50ms;
+        fill: $General--Forecolor-50;
+        opacity: 0.75;
+    }
+}
+
+@keyframes v2-class---drop-down-selectin {
+    from {
+        color: $General--Forecolor;
+    }
+
+    to {
+        color: $General--Forecolor-50;
+    }
+}
+
+@keyframes v2-class---drop-down-selectout {
+    from {
+        color: $General--Forecolor-50;
+    }
+
+    to {
+        color: $General--Forecolor;
+    }
+}
+
+.v2-class---top-menu-item--drop-down__content {
+    display: flex;
+    gap: size(0.5);
+}
+
+.v2-class---top-menu-item--button {
+    padding: 0 size(2);
+}
+
+.v2-class---top-menu-item {
+    @include media(Large-Desktop, Desktop) {
+        &.v2-class---top-menu-item--menu {
+            display: none;
+        }
+    }
+
+    @include media(Tablet, Vertical-Tablet, Mobile) {
+        display: none;
+
+        &.v2-class---top-menu-item--icon-with-text,
+        &.v2-class---top-menu-item--mobile-account,
+        &.v2-class---top-menu-item--menu {
+            display: flex;
+
+            &.v2-class---top-menu-item--features {
+                display: none;
+            }
+        }
+    }
+
+    @include media(Large-Desktop, Desktop, Tablet) {
+        &.v2-class---top-menu-item--menu-documentation {
+            display: none;
+        }
+    }
+
+    @include media(Large-Desktop, Desktop, Tablet) {
+        &.v2-class---top-menu-item--menu-documentation {
+            display: none;
+        }
+    }
+
+    @include media(Mobile) {
+        .v2-class---top-menu-item__text {
+            display: none;
+        }
+
+        .v2-class---top-menu-item__icon svg path {
+            fill: $General--Forecolor;
+        }
+    }
+}
+
+.v2-class---top-menu-item--mobile-account {
+    @include media(Mobile) {
+        .v2-class---top-menu-item__icon--drop-down {
+            display: none;
+        }
+    }
+}
+
+.v2-class---top-menu-item--cart, .v2-class---top-menu-item--drop-down-account {
+    .v2-class---top-menu-item__text, .v2-class---top-menu-item__icon--drop-down {
+        @include media(Desktop-2) {
+            display: none;
+        }
+    }
+}

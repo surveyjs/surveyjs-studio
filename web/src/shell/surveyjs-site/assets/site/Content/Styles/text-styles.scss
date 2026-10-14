@@ -1,0 +1,316 @@
+﻿$Font-Family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif, inter, roboto, sf, verdana;
+
+/*#region Article*/
+@mixin Article--Titles--XX-Large {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 64px;
+    line-height: 72px;
+    /* identical to box height, or 100% */
+}
+@mixin Article--Titles--X-Large {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 48px;
+    line-height: 56px;
+    /* identical to box height, or 117% */
+}
+@mixin Article--Titles--Large {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 40px;
+    /* identical to box height, or 125% */
+}
+@mixin Article--Titles--Medium {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 36px;
+    /* identical to box height, or 133% */
+}
+@mixin Article--Titles--Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 28px;
+    /* identical to box height, or 120% */
+}
+@mixin Article--Titles--X-Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 28px;
+    /* identical to box height, or 100% */
+}
+
+@mixin Article--Paragraphs--Large {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 24px;
+    line-height: 36px;
+    /* identical to box height, or 133% */
+}
+
+@mixin Article--Paragraphs--Large-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 36px;
+    /* identical to box height, or 133% */
+}
+
+@mixin Article--Paragraphs--Medium {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 28px;
+    /* identical to box height, or 140% */
+}
+
+@mixin Article--Paragraphs--Medium-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 28px;
+    /* identical to box height, or 140% */
+}
+@mixin Article--Paragraphs--Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 28px;
+    /* identical to box height, or 175% */
+}
+
+@mixin Article--Paragraphs--X-Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 24px;
+    /* identical to box height, or 171% */
+}
+
+@mixin Article--Paragraphs--X-Small-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 24px;
+    /* identical to box height, or 167% */
+}
+
+@mixin Article--Paragraphs--Large-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 32px;
+    /* identical to box height, or 133% */
+    text-decoration-line: underline;
+}
+@mixin Article--Paragraphs--Small-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 28px;
+    /* identical to box height, or 175% */
+    text-decoration-line: underline;
+}
+
+@mixin Article--Paragraphs--X-Small-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 24px;
+    /* identical to box height, or 171% */
+    text-decoration-line: underline;
+}
+
+@mixin Article--Paragraphs--X-Small-Bold-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 24px;
+    /* identical to box height, or 171% */
+    text-decoration-line: underline;
+}
+
+@mixin Article--Paragraphs--Small-Bold-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 28px;
+    /* identical to box height, or 175% */
+    text-decoration-line: underline;
+}
+@mixin Article--Paragraphs--Small-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 28px;
+    /* identical to box height, or 175% */
+}
+@mixin Article--Paragraphs--Emoji {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 24px;
+    line-height: 16px;
+    /* identical to box height, or 100% */
+}
+@mixin Article--Paragraphs--Code {
+    font-family: 'DM Mono', monospace;
+    font-style: normal;
+    font-weight: 400;
+    text-shadow: none;
+}
+@mixin Article--Paragraphs--Code-Small {
+    font-family: 'DM Mono', monospace;
+    font-style: normal;
+    font-weight: 500;
+    text-shadow: none;
+    line-height: 24px;
+    font-size: 14px;
+}
+
+/*#endregion Article*/
+
+/*#region No-Spacing*/
+@mixin No-Spacing--Large {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 24px;
+    /* identical to box height, or 100% */
+}
+
+@mixin No-Spacing--Large-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 24px;
+    line-height: 24px;
+}
+
+@mixin No-Spacing--Medium-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 20px;
+    line-height: 24px;
+}
+
+@mixin No-Spacing--Medium {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 24px;
+    /* identical to box height, or 120% */
+}
+
+@mixin No-Spacing--Medium-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 24px;
+    text-decoration: underline;
+    /* identical to box height, or 120% */
+}
+
+@mixin No-Spacing--Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 24px;
+    /* identical to box height, or 114% */
+}
+
+@mixin No-Spacing--Small-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 16px;
+    line-height: 24px;
+    /* identical to box height, or 114% */
+}
+
+@mixin No-Spacing--Small-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 24px;
+    /* identical to box height, or 114% */
+    text-decoration-line: underline;
+}
+
+@mixin No-Spacing--X-Small {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 16px;
+    /* identical to box height, or 114% */
+}
+
+@mixin No-Spacing--X-Small-Bold {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 16px;
+    /* identical to box height, or 114% */
+}
+
+@mixin No-Spacing--X-Small-Underline {
+    font-family: 'Lato';
+    font-style: normal;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 24px;
+    /* identical to box height, or 171% */
+    text-decoration-line: underline;
+}
+
+@mixin No-Spacing--X-Small-Bold-Underline {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 16px;
+    text-decoration-line: underline;
+}
+
+@mixin No-Spacing--XX-Small-UC {
+    font-family: $Font-Family;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 16px;
+    /* identical to box height, or 133% */
+    text-transform: uppercase;
+}
+/*#endregion No-Spacing*/
+

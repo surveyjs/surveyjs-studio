@@ -1,0 +1,34 @@
+﻿/*#region Button-Colors*/
+@mixin Button-Colors($backcolor, $backcolor-hover, $forecolor) {
+    background-color: $backcolor;
+    color: $forecolor;
+    transition: background-color 150ms, transform 150ms;
+
+    &:hover:not([disabled]) {
+        background-color: $backcolor-hover;
+    }
+
+    &:active:not([disabled]) {
+        transform: scale(0.96);
+    }
+}
+
+@mixin Button-Tertiary-Colors($forecolor) {
+    @include Button-Colors($General--Backcolor, $General--Backcolor-Dim, $forecolor);
+    box-shadow: inset 0 0 0 1px $General--Border-Effect;
+}
+/*#endregion Button-Colors*/
+
+/*#region Shadows*/
+@mixin Shadows--Large {
+    box-shadow: 0px size(4) size(8) rgba(0, 0, 0, 0.07);
+}
+
+@mixin Shadows--Medium {
+    box-shadow: 0px size(2) size(4) rgba(0, 0, 0, 0.1);
+}
+
+@mixin Shadows--Small {
+    box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.15);
+}
+/*#endregion Shadows*/

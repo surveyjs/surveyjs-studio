@@ -22,7 +22,7 @@ describe("home page", () => {
     renderApp();
 
     expect(await screen.findByText("edition: self-hosted")).toBeTruthy();
-    expect(screen.getByText("shell: surveyjs-site")).toBeTruthy();
+    expect(screen.getByText("shell: plain")).toBeTruthy();
     expect(screen.getByText("Olivia Owner")).toBeTruthy();
     expect(screen.getByRole("banner").textContent).toContain("My Surveys");
   });

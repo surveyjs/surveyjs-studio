@@ -1,0 +1,37 @@
+﻿.v2-class---footer__link-group-item {
+    @include No-Spacing--X-Small-Bold;
+    white-space: nowrap;
+}
+
+.v2-class---footer__link-group-item-content-wrapper {
+    cursor: pointer;
+    border-bottom: 1px solid transparent;
+    transition: border-bottom-color 100ms linear;
+    transition-timing-function: linear;
+
+    &:hover {
+        border-bottom-color: $Dark--Forecolor-50;
+    }
+}
+
+.v2-class---footer__link-group-item-content {
+    display: inline-flex;
+    gap: size(0.5);
+}
+
+.v2-class---footer__link-group-item__link {
+    color: $Dark--Forecolor;
+}
+
+.v2-class---footer__link-group-item__link-text {}
+
+.v2-class---footer__link-group-item__icon-external {
+    display: flex;
+    padding-top: 3px;
+}
+
+
+.v2-class---footer__link-group-item-group-title {
+    color: $Dark--Forecolor-50;
+    @include No-Spacing--X-Small-Bold;
+}

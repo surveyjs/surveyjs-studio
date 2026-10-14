@@ -1,0 +1,191 @@
+﻿.v2-class---drop-down-menu.v2-class---drop-down-menu--context {
+    min-width: size(24);
+    white-space: nowrap;
+    overflow: visible;
+    display: none;
+
+    .v2-class---drop-down-menu__list {
+        padding: size(1);
+
+        .v2-class---drop-down-menu-item {
+            min-height: initial;
+        }
+
+        .v2-class---drop-down-menu-item__link {
+            padding: size(1.5) size(2);
+
+            .v2-class---drop-down-menu-item__text {
+                padding-top: 0;
+                padding-bottom: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                display: initial;
+            }
+        }
+    }
+}
+
+.v2-class---drop-down-menu-item__icon-expand {
+    display: block;
+    height: size(2);
+}
+.v2-class---drop-down-menu-item__icon-collapse {
+    display: none;
+    height: size(2);
+}
+.v2-class---drop-down-menu-item__link--expanded {
+    .v2-class---drop-down-menu-item__icon-expand {
+        display: none;
+    }
+    .v2-class---drop-down-menu-item__icon-collapse {
+        display: block;
+    }
+}
+
+.v2-class---drop-down-menu-item--group-title {
+    cursor: default;
+
+    &:hover {
+        background-color: initial;
+    }
+}
+
+.v2-class---drop-down-menu-item {
+    min-height: size(5);
+}
+
+.v2-class---drop-down-menu-item--hidden {
+    display: none;
+}
+
+
+.v2-class---drop-down-menu-item__link {
+    display: flex;
+    gap: size(2);
+    align-items: center;
+    cursor: pointer;
+    padding: size(1) size(2) size(1) size(1);
+    @include No-Spacing--X-Small-Bold;
+    color: $General--Forecolor;
+    border-radius: 8px;
+    transition: 100ms;
+    transition-timing-function: linear;
+
+    &:hover:not(.v2-class---drop-down-menu-item__link--selected) {
+        background-color: $General--Backcolor-Gray;
+    }
+}
+
+.v2-class---drop-down-menu-item__link--small {
+    padding: size(0.5) size(1);
+}
+
+.v2-class---drop-down-menu-item__link--no-wrap {
+    white-space: nowrap;
+}
+
+.v2-class---drop-down-menu-item__link--selected {
+    background-color: $Primary--Primary-10;
+}
+
+.v2-class---drop-down-menu-item__link--level-2 {
+    padding-left: size(7);
+}
+.v2-class---drop-down-menu-item__link--level-3 {
+    padding-left: size(9);
+}
+.v2-class---drop-down-menu-item__link--level-4 {
+    padding-left: size(11);
+}
+
+.v2-class---drop-down-menu-item__link--level-2,
+.v2-class---drop-down-menu-item__link--level-3,
+.v2-class---drop-down-menu-item__link--level-4
+{
+    color: $General--Forecolor-75;
+}
+
+.v2-class---drop-down-menu-item__icon {
+    display: flex;
+}
+
+.v2-class---drop-down-menu-item__text {
+    display: flex;
+    gap: size(1);
+    flex-grow: 1;
+    padding: size(0.5) 0;
+}
+
+.v2-class---drop-down-menu-item__icon-external {
+    display: flex;
+    padding-top: 3px; //by design
+}
+
+.v2-class---drop-down-menu-item__badge-gap {
+    flex-grow: 1;
+}
+
+.v2-class---drop-down-menu-item__badge {
+    display: flex;
+    padding: 1px 4px 3px 4px;
+    justify-content: center;
+    align-items: center;
+    border-radius: 3px;
+    @include No-Spacing--X-Small-Bold;
+    text-transform: none;
+    margin: -2px 0;
+    align-self: flex-start;
+}
+
+.v2-class---drop-down-menu-item__badge--new {
+    background: $Primary--Primary-15;
+    color: $Primary--Primary;
+}
+
+.v2-class---drop-down-menu-item__badge--upd {
+    background: $Secondary--Secondary-15;
+    color: $Secondary--Secondary;
+}
+
+.v2-class---drop-down-menu-item__group-title {
+    color: $General--Forecolor-50;
+    @include No-Spacing--XX-Small-UC;
+    padding: size(2) size(1);
+}
+
+.v2-class---drop-down-menu-item--separator {
+    cursor: initial;
+}
+
+.v2-class---drop-down-menu-item__separator {
+    height: 1px;
+    width: 100%;
+    background-color: $General--Line;
+    margin: size(1.5) 0;
+}
+
+.v2-class---drop-down-menu-item--manage__warning-icon {
+    display: none;
+}
+
+.v2-class---drop-down-menu-item--manage-warning {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: $Secondary--Secondary-10;
+    border-radius: size(1);
+   // margin-bottom: size(1);
+
+    @include media(Large-Desktop, Desktop-1) {
+        min-width: size(26);
+    }
+
+    &:hover {
+        background-color: $General--Backcolor-Gray;
+    }
+
+    .v2-class---drop-down-menu-item--manage__warning-icon {
+        display: flex;
+        margin-right: size(2);
+    }
+}

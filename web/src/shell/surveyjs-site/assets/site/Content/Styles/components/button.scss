@@ -1,0 +1,192 @@
+﻿.v2-class---button {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    width: fit-content;
+    border: none;
+    border-radius: size(1);
+
+    &[disabled] {
+        cursor: default;
+        opacity: 0.5;
+
+        span {
+            opacity: 0.75;
+        }
+    }
+
+    @include media(Mobile) {
+        width: 100%;
+        box-sizing: border-box;
+        justify-content: center;
+    }
+}
+
+.v2-class---button--brand-primary {
+    @include Button-Colors($Primary--Primary, $Primary--Primary-Dim, $Primary--Forecolor);
+}
+
+.v2-class---button--brand-secondary {
+    @include Button-Colors($Primary--Primary-15, $Primary--Primary-15-Dim, $General--Forecolor);
+}
+
+.v2-class---button--brand-tertiary {
+    @include Button-Tertiary-Colors($Primary--Primary);
+}
+
+.v2-class---button--accent-primary {
+    @include Button-Colors($Secondary--Secondary, $Secondary--Secondary-Dim, $Secondary--Forecolor);
+}
+
+.v2-class---button--accent-secondary {
+    @include Button-Colors($Secondary--Secondary-15, $Secondary--Secondary-15-Dim, $General--Forecolor);
+}
+
+.v2-class---button--accent-tertiary {
+    @include Button-Tertiary-Colors($Secondary--Secondary);
+}
+
+.v2-class---button--note-primary {
+    @include Button-Colors($Special--Blue, $Special--Blue-Dim, $Special--Forecolor);
+}
+
+.v2-class---button--note-secondary {
+    @include Button-Colors($Special--Blue-15, $Special--Blue-15-Dim, $General--Forecolor);
+}
+
+.v2-class---button--note-tertiary {
+    @include Button-Tertiary-Colors($Special--Blue);
+}
+
+.v2-class---button--alert-primary {
+    @include Button-Colors($Special--Red, $Special--Red-Dim, $Special--Forecolor);
+}
+
+.v2-class---button--alert-secondary {
+    @include Button-Colors($Special--Red-15, $Special--Red-15-Dim, $General--Forecolor);
+}
+
+.v2-class---button--alert-tertiary {
+    @include Button-Tertiary-Colors($Special--Red);
+}
+
+.v2-class---button--neutral-primary {
+    @include Button-Colors($Neutral--Neutral, $Neutral--Neutral, $Neutral--Forecolor);
+}
+
+.v2-class---button--neutral-secondary {
+    @include Button-Colors($General--Backcolor-Gray-3, $General--Backcolor-Gray-3-Dim, $General--Forecolor);
+}
+
+.v2-class---button--neutral-tertiary {
+    @include Button-Tertiary-Colors($General--Forecolor);
+}
+
+.v2-class---button--x-large {
+    padding: size(2.5) size(6);
+    gap: size(1.5);
+
+    @include media(Mobile) {
+        padding: size(2.5) size(3);
+    }
+}
+
+.v2-class---button--large {
+    padding: size(2) size(4);
+    gap: size(1.5);
+
+    @include media(Mobile) {
+        padding: size(2) size(3);
+    }
+}
+
+.v2-class---button--medium {
+    padding: size(1.5) size(3);
+    gap: size(1);
+}
+
+.v2-class---button--small {
+    padding: size(1.5) size(2);
+    gap: size(1);
+}
+
+.v2-class---button--x-small {
+    padding: size(1) size(1.5);
+    gap: size(1);
+}
+
+.v2-class---button--medium-adaptive {
+    padding: size(1.5) size(3);
+    gap: size(1);
+
+    @include media(Mobile) {
+        padding: size(1.5) size(2);
+    }
+}
+
+.v2-class---button__text--x-large {
+    @include No-Spacing--Large-Bold;
+}
+
+.v2-class---button__text--large {
+    @include No-Spacing--Medium-Bold;
+}
+
+.v2-class---button__text--medium {
+    @include No-Spacing--Small-Bold;
+}
+
+.v2-class---button__text--small {
+    @include No-Spacing--X-Small-Bold;
+}
+
+.v2-class---button__text--x-small {
+    @include No-Spacing--X-Small-Bold;
+}
+
+.v2-class---button__text--medium-adaptive {
+    @include No-Spacing--Small-Bold;
+
+    @include media(Mobile) {
+        @include No-Spacing--X-Small-Bold;
+    }
+}
+
+
+.v2-class---code-line-button {
+    background-color: $Dark--Backcolor;
+    border-radius: size(0.5);
+    padding: size(2) size(6);
+    width: 467px;
+
+    @include Article--Paragraphs--Code;
+    font-size: 16px;
+    line-height: 24px;
+
+    .v2-class---code-line-button__caption {
+        color: $Dark--Forecolor-150;
+        margin: auto;
+        cursor: pointer;
+
+        &:hover {
+            color: $Secondary--Secondary;
+        }
+    }
+
+    .v2-class---code-line-button__copied {
+        color: $Primary--Primary;
+        margin: auto;
+        display: none;
+    }
+}
+
+.v2-class---code-line-button--copied {
+    .v2-class---code-line-button__caption {
+        display: none;
+    }
+
+    .v2-class---code-line-button__copied {
+        display: block;
+    }
+}

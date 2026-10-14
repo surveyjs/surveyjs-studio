@@ -1,0 +1,47 @@
+﻿@mixin Logo--Large {
+    padding: 20px 0px 2px;
+    width: 160px;
+    height: 66px;
+}
+
+@mixin Logo--Medium {
+    padding: 14px 0px 0px;
+    width: 121px;
+    height: 50px;
+}
+
+@mixin Logo--Small {
+    padding: 12px 0px 4px;
+    width: 78px;
+    height: 32px;
+}
+
+.v2-class---logo {
+    cursor: pointer;
+}
+
+.v2-class---logo {
+    @include media(Large-Desktop, Desktop) {
+        @include Logo--Large;
+    }
+
+    @include media(Tablet, Vertical-Tablet) {
+        @include Logo--Medium;
+    }
+
+    @include media(Mobile) {
+        @include Logo--Small;
+    }
+}
+
+.v2-class---logo--large {
+    @include Logo--Large;
+}
+
+.v2-class---logo--medium {
+    @include Logo--Medium;
+}
+
+.v2-class---logo--small {
+    @include Logo--Small;
+}

@@ -1,0 +1,112 @@
+﻿.v2-class---paragraph {
+    @include Article--Paragraphs--Small;
+    color: $General--Forecolor-75;
+    padding: 0 0 size(2);
+
+    small {
+        @include Article--Paragraphs--Small;
+        color: $General--Forecolor-50;
+
+        a {
+            color: $General--Forecolor-50;
+            text-decoration: underline;
+        }
+    }
+
+    mark {
+        background: $Special--Blue-15;
+    }
+}
+
+.v2-class---paragraph--large {
+    @include Article--Paragraphs--Large;
+    color: $General--Forecolor-50;
+}
+
+.v2-class---paragraph-container--two-columns {
+    display: flex;
+    gap: size(6);
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+    }
+
+    .v2-class---paragraph {
+        flex: 1;
+    }
+}
+
+.v2-class---paragraph--last {
+    padding-bottom: size(0);
+}
+
+.v2-class---paragraph--link {
+    padding: size(2) 0 size(4) 0;
+}
+
+.v2-class---paragraph--center {
+    text-align: center;
+}
+
+.v2-class---paragraph-link,
+.v2-class---paragraph a:not(.v2-class---paragraph-link):not(.v2-class---button-doc):not(.v2-class---link-button) {
+    cursor: pointer;
+    color: $General--Forecolor-75;
+    @include Article--Paragraphs--Small-Underline;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+}
+
+.v2-class---paragraph-link--small {
+    @include Article--Paragraphs--X-Small-Bold-Underline;
+}
+
+.v2-class---paragraph-link--large {
+    color: $Primary--Primary;
+    @include Article--Paragraphs--Large-Underline;
+}
+
+.v2-class---paragraph-link--large-inherit-color {
+    color: inherit;
+    @include Article--Paragraphs--Large-Underline;
+}
+
+.v2-class---paragraph--without-bottom-padding {
+    padding-bottom: 0;
+}
+
+.v2-class---paragraph-image {
+    padding: size(2) 0px size(4);
+    width: 100%;
+}
+
+.v2-class---paragraph--last-with-padding {
+    &:last-of-type {
+        padding-bottom: size(2);
+    }
+}
+
+.v2-class---link {
+    display: flex;
+    flex-direction: row;
+    grid-gap: size(1);
+}
+
+.v2-class---link__image {
+    margin-top: -3px;
+    height: size(4);
+}
+
+.v2-class---link__text {
+
+}
+
+.v2-class---paragraph--bold {
+    @include Article--Paragraphs--Small-Bold;
+
+    a:not(.v2-class---paragraph-link):not(.v2-class---button-doc) {
+        @include Article--Paragraphs--Small-Bold-Underline;
+    }
+}

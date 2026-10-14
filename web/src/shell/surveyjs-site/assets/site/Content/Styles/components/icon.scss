@@ -1,0 +1,73 @@
+﻿.v2-class---icon {
+    position: relative;
+}
+
+.v2-class---icon--x-large {
+    width: size(8);
+    height: size(8);
+}
+
+.v2-class---icon--large {
+    width: size(6);
+    height: size(6);
+}
+
+.v2-class---icon--medium {
+    width: size(5);
+    height: size(5);
+}
+
+.v2-class---icon--smedium {
+    width: size(3);
+    height: size(3);
+}
+
+.v2-class---icon--ssmedium {
+    width: size(2.5);
+    height: size(2.5);
+}
+
+.v2-class---icon--small {
+    width: size(2);
+    height: size(2);
+}
+
+.v2-class---icon--primary {
+    svg {
+        fill: $Primary--Primary;
+    }
+}
+.v2-class---icon--secondary {
+    svg {
+        fill: $Secondary--Secondary;
+    }
+}
+.v2-class---icon--simple {
+    svg {
+        fill: $General--Backcolor;
+    }
+}
+
+.v2-class---icon--primary-light {
+    svg {
+        fill: $Primary--Primary;
+    }
+}
+
+.v2-class---icon--secondary-light {
+    svg {
+        fill: $Secondary--Secondary;
+    }
+}
+
+.v2-class---icon--blue-light {
+    svg {
+        fill: $Special--Blue;
+    }
+}
+
+.v2-class---icon--red-light {
+    svg {
+        fill: $Special--Red;
+    }
+}

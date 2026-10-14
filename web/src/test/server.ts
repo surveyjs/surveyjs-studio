@@ -8,7 +8,9 @@ export const server = setupServer();
 
 export const appConfig: components["schemas"]["AppConfig"] = {
   edition: "self-hosted",
-  shell: "surveyjs-site",
+  // The plain shell: the routing tests check the shell interface, not the surveyjs.io look
+  // (src/shell/surveyjs-site has its own tests).
+  shell: "plain",
   authMethods: ["surveyjs"],
   surveyjsLicenseKey: null,
   limits: { maxAssetBytesPerSurvey: 52428800, maxFileBytes: 10485760, maxResponseBytes: 1048576 },

@@ -1,0 +1,30 @@
+/* Glue for what the copied surveyjs.io styles do not cover. Colours are the site's palette
+   (color-styles.scss). */
+
+/* The user's avatar fills the site's 16 px account icon box. */
+.avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* A failed sign-out, under the top bar (the site has no such message). */
+.signOutError {
+  margin: 0;
+  padding: 12px 32px;
+  background-color: #fbdae2; /* $Special--Red-15 */
+  color: #161616; /* $General--Forecolor */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* The cookie settings popup's close control is a <button>; drop the browser's button look. */
+.closeButton {
+  border: none;
+  padding: 0;
+  background-color: transparent;
+}

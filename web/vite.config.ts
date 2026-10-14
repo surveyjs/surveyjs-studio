@@ -17,5 +17,7 @@ export default defineConfig({
   server: { port: 5173, strictPort: true, proxy },
   // survey-core is intentionally one big lazy chunk (see src/surveyjs/license.ts).
   build: { chunkSizeWarningLimit: 1600 },
+  // The surveyjs-site shell compiles the site's own SCSS partials, which use @import.
+  css: { preprocessorOptions: { scss: { silenceDeprecations: ["import"] } } },
   preview: { port: 5173, strictPort: true, proxy },
 });

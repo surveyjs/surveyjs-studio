@@ -1,0 +1,14 @@
+﻿.v2-class---expand-collapse-button {
+    width: size(4);
+    height: size(4);
+    border-radius: size(12);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: 150ms;
+    cursor: pointer;
+
+    &:hover {
+        background-color: $General--Backcolor-Gray;
+    }
+}
