@@ -15,7 +15,7 @@ concurrency:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +52,15 @@ jobs:
       - name: Conformance tests (in-memory)
         run: pnpm test:conformance
 
+      - name: Start the legacy replica (Azurite and SQL Server)
+        run: pnpm demo:azurite:up
+
+      - name: Provider suite (Azurite)
+        run: pnpm test:providers:azurite
+
+      - name: Conformance tests (Azure legacy on Azurite)
+        run: pnpm test:conformance:azurite
+
       - name: Install Playwright browsers
         run: pnpm --filter @my-surveys/e2e exec playwright install --with-deps chromium firefox webkit
 
@@ -66,3 +75,7 @@ jobs:
           path: e2e/playwright-report/
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Stop the legacy replica
+        if: always()
+        run: pnpm demo:azurite:down
