@@ -90,7 +90,21 @@ pnpm inspect:legacy --env-file docker/azurite.env --user member@example.com
 pnpm inspect:legacy --env-file docker/azurite.env --user nobody@example.com
 ```
 
-Expected for the second: `User not found: nobody@example.com` on standard error.
+Expected for the second: `User not found in the azure-legacy store: nobody@example.com` on standard
+error.
+
+Without `--env-file` (and without `STORAGE_PROVIDER` in the environment) the inspector refuses
+with exit code `2` instead of reading an empty in-memory store:
+
+```sh
+pnpm inspect:legacy --user owner@example.com
+```
+
+Expected on standard error:
+
+```text
+No store to inspect: STORAGE_PROVIDER is not set. Pass --env-file docker/azurite.env for the local replica, or set STORAGE_PROVIDER and the variables of that store.
+```
 
 ## 3. The same list from memory
 

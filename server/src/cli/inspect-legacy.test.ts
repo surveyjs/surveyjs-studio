@@ -76,11 +76,12 @@ describe("run (provider seam)", () => {
   const READ = ["getUser", "findUserByEmail", "listSurveys", "listUserProjects", "close"];
 
   /** Fake ProviderSet that records calls and throws on any method outside the read set. */
-  function fake(options: { found?: boolean; failOn?: string } = {}) {
+  function fake(options: { found?: boolean; failOn?: string; error?: unknown } = {}) {
     const calls: string[] = [];
+    let made = 0;
     const call = (name: string, result: unknown) => async () => {
       calls.push(name);
-      if (options.failOn === name) throw new Error("boom");
+      if (options.failOn === name) throw options.error ?? new Error("boom");
       return result;
     };
     const guard = <T extends object>(target: T, label: string): T =>
@@ -111,7 +112,14 @@ describe("run (provider seam)", () => {
       },
       "providers",
     );
-    return { calls, make: async () => providers as never };
+    return {
+      calls,
+      made: () => made,
+      make: async () => {
+        made++;
+        return providers as never;
+      },
+    };
   }
 
   function io() {
@@ -119,15 +127,21 @@ describe("run (provider seam)", () => {
     const err: string[] = [];
     return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } };
   }
-  const env = { STORAGE_PROVIDER: "memory" };
-  async function runWith(f: ReturnType<typeof fake>, user: string) {
+  const seeded = { STORAGE_PROVIDER: "memory", MEMORY_SEED: "legacy-fixtures" };
+  const STORE_VARIABLES = ["STORAGE_PROVIDER", "MEMORY_SEED"] as const;
+  async function runWith(
+    f: ReturnType<typeof fake>,
+    user: string,
+    env: Partial<Record<(typeof STORE_VARIABLES)[number], string>> = seeded,
+  ) {
     const sink = io();
     const saved = { ...process.env };
+    for (const k of STORE_VARIABLES) delete process.env[k];
     Object.assign(process.env, env);
     try {
       return { code: await run(["--user", user], sink.io, f.make), ...sink };
     } finally {
-      for (const k of Object.keys(env)) {
+      for (const k of STORE_VARIABLES) {
         if (saved[k] === undefined) delete process.env[k];
         else process.env[k] = saved[k];
       }
@@ -161,11 +175,39 @@ describe("run (provider seam)", () => {
     expect(f.calls.every((c) => READ.includes(c))).toBe(true);
   });
 
-  it("closes when the user is not found", async () => {
+  it("closes when the user is not found and names the provider", async () => {
     const f = fake({ found: false });
     const r = await runWith(f, "o@x.y");
     expect(r.code).toBe(1);
     expect(f.calls).toEqual(["findUserByEmail", "close"]);
+    expect(r.err.join("")).toBe("User not found in the fake store: o@x.y\n");
+  });
+
+  it.each([
+    ["STORAGE_PROVIDER is not set", {}],
+    ["STORAGE_PROVIDER is blank", { STORAGE_PROVIDER: " " }],
+    ["the memory store has no seed", { STORAGE_PROVIDER: "memory" }],
+    ["the memory store is seeded empty", { STORAGE_PROVIDER: "memory", MEMORY_SEED: "empty" }],
+  ])("refuses with exit 2 when %s", async (_name, env) => {
+    const f = fake();
+    const r = await runWith(f, "o@x.y", env);
+    expect(r.code).toBe(2);
+    expect(f.made()).toBe(0);
+    expect(r.out).toEqual([]);
+    expect(r.err.join("")).toContain("--env-file docker/azurite.env");
+  });
+
+  it("prints the name and a safe code of an unexpected error, never its message", async () => {
+    const error = Object.assign(new TypeError("Server=prod;Password=boom"), { code: "ESOCKET" });
+    const r = await runWith(fake({ failOn: "listSurveys", error }), "o@x.y");
+    expect(r.code).toBe(1);
+    expect(r.err.join("")).toBe("Error: unexpected failure (TypeError, code ESOCKET)\n");
+  });
+
+  it("leaves out a code that is not a plain identifier", async () => {
+    const error = Object.assign(new Error("x"), { code: "Password=boom" });
+    const r = await runWith(fake({ failOn: "listSurveys", error }), "o@x.y");
+    expect(r.err.join("")).toBe("Error: unexpected failure (Error)\n");
   });
 
   it("closes and exits 1 when a store method throws", async () => {

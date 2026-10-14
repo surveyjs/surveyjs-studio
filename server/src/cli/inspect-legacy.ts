@@ -12,7 +12,8 @@ export type ParsedArgs =
 export const USAGE = `Usage: pnpm inspect:legacy --user <id|email> [--env-file <path>]
 
 Lists the surveys of one user (personal and per project) from the configured store.
-Read-only: it never writes.
+Read-only: it never writes. STORAGE_PROVIDER must be set (for the local replica pass
+--env-file docker/azurite.env); a memory store needs MEMORY_SEED=legacy-fixtures.
 
 Options:
   --user <id|email>   User GUID or email address (required)
@@ -20,7 +21,7 @@ Options:
                       variables already set in the environment win
   --help              Show this text
 
-Exit codes: 0 success, 1 user not found or store error, 2 usage error`;
+Exit codes: 0 success, 1 user not found or store error, 2 usage error or no store to inspect`;
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   let user: string | null = null;
@@ -89,6 +90,38 @@ export function formatReport(
   return parts.join("\n\n") + "\n";
 }
 
+const SET_THE_STORE =
+  "Pass --env-file docker/azurite.env for the local replica, or set STORAGE_PROVIDER and the " +
+  "variables of that store.";
+
+/**
+ * Why the environment names nothing to inspect, or null. Without this check the config defaults
+ * to an empty memory store and every user looks missing.
+ */
+export function storeProblem(env: Readonly<Record<string, string | undefined>>): string | null {
+  const provider = env.STORAGE_PROVIDER?.trim();
+  if (!provider) return `No store to inspect: STORAGE_PROVIDER is not set. ${SET_THE_STORE}`;
+  const seed = env.MEMORY_SEED?.trim();
+  if (provider === "memory" && (!seed || seed === "empty")) {
+    return (
+      "No store to inspect: STORAGE_PROVIDER=memory without MEMORY_SEED=legacy-fixtures is " +
+      `empty. ${SET_THE_STORE}`
+    );
+  }
+  return null;
+}
+
+/** `unexpected failure (TypeError, code ESOCKET)`: the error name and a plain-identifier code. */
+function describeUnexpected(error: unknown): string {
+  const details: string[] = [];
+  if (error instanceof Error && /^[A-Za-z][A-Za-z0-9_]*$/.test(error.name)) {
+    details.push(error.name);
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && /^[A-Z][A-Z0-9_]*$/.test(code)) details.push(`code ${code}`);
+  return details.length > 0 ? `unexpected failure (${details.join(", ")})` : "unexpected failure";
+}
+
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface CliIo {
@@ -119,6 +152,11 @@ export async function run(
       return 2;
     }
   }
+  const problem = storeProblem(process.env);
+  if (problem !== null) {
+    io.err(`${problem}\n`);
+    return 2;
+  }
   let providers: ProviderSet | null = null;
   try {
     const config = loadConfig(process.env);
@@ -131,7 +169,7 @@ export async function run(
       ? await providers.directory.getUser(args.user)
       : await providers.directory.findUserByEmail(args.user);
     if (user === null) {
-      io.err(`User not found: ${args.user}\n`);
+      io.err(`User not found in the ${providers.name} store: ${args.user}\n`);
       return 1;
     }
     const personal = await providers.surveys.listSurveys({ kind: "personal", userId: user.id });
@@ -147,9 +185,10 @@ export async function run(
     io.out(formatReport(user, providers.name, personal, projects));
     return 0;
   } catch (error) {
-    // Only these two error types are known to be free of connection-string values.
+    // Only these two error types are known to be free of connection-string values. Any other
+    // message or stack may hold one, so only the error's name and a safe code are printed.
     const safe = error instanceof ConfigError || error instanceof LegacyStoreError;
-    io.err(`Error: ${safe ? error.message : "unexpected failure"}\n`);
+    io.err(`Error: ${safe ? error.message : describeUnexpected(error)}\n`);
     return 1;
   } finally {
     if (providers) await providers.close().catch(() => undefined);

@@ -141,7 +141,13 @@ pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com
 Output: a user line, the personal surveys, then one table per project the user belongs to, with
 id, name, published, archived, created and updated. Warnings about skipped legacy rows go to
 standard error (ids only). Exit codes: `0` success, `1` user not found or a store or configuration
-error, `2` usage error (also an unreadable env file).
+error, `2` usage error, an unreadable env file, or no store to inspect.
+
+It refuses (exit `2`) rather than read an empty store: `STORAGE_PROVIDER` must be set after the env
+file is loaded, and the memory provider needs `MEMORY_SEED=legacy-fixtures`. The message says to
+pass `--env-file docker/azurite.env` or set the variables. "User not found" names the provider
+(`User not found in the azure-legacy store: …`). An unexpected error prints only its name and a
+plain code, such as `Error: unexpected failure (ConnectionError, code ESOCKET)`.
 
 Safety: it calls only read methods, and its errors never print connection strings. Put the flag
 after the script name as shown; the script ends with `--` because Node 24 itself would otherwise

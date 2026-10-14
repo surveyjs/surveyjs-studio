@@ -62,11 +62,20 @@ describe("inspect-legacy CLI (memory provider)", { timeout: 30_000 }, () => {
     expect(out).toContain("Customer feedback");
   });
 
-  it("exits 1 for an unknown user", () => {
+  it("exits 1 for an unknown user and names the store", () => {
     const { code, err, out } = inspect(["--user", "nobody@example.com"], memory);
     expect(code).toBe(1);
     expect(out).toBe("");
     expect(err).toContain("nobody@example.com");
+    expect(err).toContain("memory store");
+  });
+
+  it("exits 2 when no store is configured, instead of reading an empty memory store", () => {
+    const { code, err, out } = inspect(["--user", "owner@example.com"]);
+    expect(code).toBe(2);
+    expect(out).toBe("");
+    expect(err).toContain("STORAGE_PROVIDER is not set");
+    expect(err).toContain("--env-file docker/azurite.env");
   });
 
   it("exits 2 without arguments", () => {
