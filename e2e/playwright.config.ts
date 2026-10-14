@@ -1,5 +1,30 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Playwright merges webServer.env onto process.env and cannot unset keys, so
+// strip every app variable (server env table and Vite's) from this process
+// first; the servers then see only the explicit values below.
+const appVariables = [
+  "NODE_ENV",
+  "HOST",
+  "PORT",
+  "LOG_LEVEL",
+  "APP_EDITION",
+  "APP_SHELL",
+  "AUTH_METHODS",
+  "SURVEYJS_LICENSE_KEY",
+  "STORAGE_PROVIDER",
+  "PUBLIC_BASE_URL",
+  "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
+  "LIMIT_MAX_FILE_BYTES",
+  "LIMIT_MAX_RESPONSE_BYTES",
+  "API_DOCS",
+];
+for (const name of Object.keys(process.env)) {
+  if (appVariables.includes(name) || name.startsWith("VITE_")) {
+    delete process.env[name];
+  }
+}
+
 // With reuseExistingServer off (CI), Playwright fails with "... is already used"
 // when something else already holds port 3000 or 5173.
 const reuseExistingServer = !process.env["CI"];
