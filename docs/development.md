@@ -203,10 +203,19 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pushes to `master` and `step/**` and on pull requests. It runs,
-in this order: `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`,
-`lint`, `format:check`, `test:unit`, `test:conformance`, the browser install, and `e2e`. On
-failure it uploads the Playwright report. Run the same commands locally before you push.
+`.github/workflows/ci.yml` runs on pushes to `master` and `step/**` and on pull requests, on
+`ubuntu-latest` (Docker is available there), with a timeout of 40 minutes. It runs, in this order:
+
+1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
+   `format:check`;
+2. `test:unit` and `test:conformance` (in-memory);
+3. `pnpm demo:azurite:up`, which starts the legacy replica and loads the fixtures;
+4. `test:providers:azurite` and `test:conformance:azurite`;
+5. the browser install and `e2e` (still on the memory provider);
+6. on failure, it uploads the Playwright report;
+7. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+
+Run the same commands locally before you push. Steps 3, 4 and 7 need Docker.
 
 ## Conventions
 

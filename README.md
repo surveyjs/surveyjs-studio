@@ -94,7 +94,7 @@ Run from the repository root.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): packages, server and web modules, request flow.
+- [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow.
 - [Development](docs/development.md): setup, environment variables, scripts, dependency upgrades.
 - [Testing](docs/testing.md): the test seams and how to run each suite.
 - [API](docs/api/README.md) and [API conventions](docs/api/conventions.md).

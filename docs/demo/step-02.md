@@ -152,6 +152,35 @@ pnpm demo:azurite:down
 Expected: both containers, the volumes and the network are removed. The replica's data is gone;
 the next `pnpm demo:azurite:up` starts clean.
 
+## Checklist
+
+| #   | Check                                                                                                                                 | Result |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | `pnpm demo:azurite:up` starts Azurite and SQL Server and loads the fixtures (summary above)                                           |        |
+| 2   | `pnpm inspect:legacy ... --user owner@example.com` prints the owner's surveys, with created and updated dates that match the fixtures |        |
+| 3   | The same command on `memory` with `MEMORY_SEED=legacy-fixtures` prints the same list                                                  |        |
+| 4   | `pnpm test:unit`, `pnpm test:providers:azurite` and `pnpm test:conformance:azurite` are green                                         |        |
+| 5   | Reviewers read the layout document and agree with the D11 verdict ([ADR 0005](../adr/0005-respondent-files-as-urls.md))               |        |
+| 6   | `pnpm demo:azurite:down` removes the containers and volumes                                                                           |        |
+
+## Troubleshooting
+
+- `docker: command not found`, or "Cannot connect to the Docker daemon": install and start Docker
+  (Docker Desktop on Windows), then run `pnpm demo:azurite:up` again.
+- A port is already in use (10000, 10002 or 14333): stop what holds it. The ports are fixed and
+  bound to 127.0.0.1 only. A replica left over from an earlier run can be removed with
+  `pnpm demo:azurite:down`.
+- The first start is slow, or `up` waits a long time: Docker pulls two images (SQL Server is
+  large), and SQL Server needs up to a minute to become healthy. Wait; the command returns when
+  both are healthy.
+- The loader prints a refusal and writes nothing: it only writes to local endpoints (127.0.0.1 or
+  localhost). Check that the `LEGACY_*` variables in your shell do not point elsewhere; explicit
+  variables win over `docker/azurite.env`.
+- `Unsupported engine` or odd syntax errors: wrong Node version (20 instead of 24). Run
+  `nvm use` and check `node -v`.
+- The inspector cannot connect right after `up`: run `docker ps` and check that both containers
+  are `healthy`.
+
 ## What is not in Step 2
 
 - End-to-end tests on Azurite wait for Step 3 (they need the mock OIDC server).
