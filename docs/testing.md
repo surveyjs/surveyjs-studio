@@ -119,7 +119,7 @@ It covers:
 - `listSurveys`: personal and project scopes, the order (`updatedAt` descending, then id), an owner
   with no surveys, no mixing of scopes, and case-insensitive ids;
 - `getUser` and `findUserByEmail`: found, unknown, email in any case;
-- `listUserProjects`: roles, order (project name, then id), unknown user;
+- `listUserProjects`: roles, order (project name ignoring case, then id), unknown user;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
 
 Where it runs:

@@ -72,7 +72,7 @@ Storage sits behind three interfaces in `server/src/providers/types.ts`. Nothing
 | Interface     | Methods                                                             | Rules                                                                                               |
 | ------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `SurveyStore` | `getSurvey(id)`, `listSurveys(owner)`                               | `null` when not found. Lists include archived surveys, ordered by `updatedAt` descending, then `id` |
-| `Directory`   | `getUser(id)`, `findUserByEmail(email)`, `listUserProjects(userId)` | Email match ignores case. Projects are ordered by project name, then project id                     |
+| `Directory`   | `getUser(id)`, `findUserByEmail(email)`, `listUserProjects(userId)` | Email match ignores case. Projects are ordered by project name ignoring case, then project id       |
 | `ProviderSet` | `name`, `surveys`, `directory`, `ready()`, `close()`                | What the server holds. `ready()` feeds `/readyz`                                                    |
 
 Ids are GUIDs. Stores match them case-insensitively and return them in lower case. The list orders

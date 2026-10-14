@@ -11,7 +11,10 @@ export interface Directory {
   getUser(id: string): Promise<User | null>;
   /** Case-insensitive match on email. */
   findUserByEmail(email: string): Promise<User | null>;
-  /** Projects the user is a member of, ordered by project name, then project id. */
+  /**
+   * Projects the user is a member of, ordered by project name ignoring case (lower-cased, code
+   * point order), then project id.
+   */
   listUserProjects(userId: string): Promise<ProjectMembership[]>;
 }
 

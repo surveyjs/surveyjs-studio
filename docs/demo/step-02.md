@@ -71,7 +71,7 @@ Check:
 - the surveys of each list are ordered by **Updated**, newest first;
 - the dates are the ones in the fixtures (`server/fixtures/legacy/sql/Surveys.json`, columns
   `createdat` and `timestamp`);
-- the projects are ordered by name; the owner is `admin` in Marketing and `user` in Engineering.
+- the projects are ordered by name, ignoring case; the owner is `admin` in Marketing and `user` in Engineering.
 
 The seed accounts (all in `server/fixtures/legacy/sql/Users.json`, all synthetic):
 
