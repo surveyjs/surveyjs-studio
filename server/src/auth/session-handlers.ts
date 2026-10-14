@@ -2,6 +2,7 @@ import type { components } from "@my-surveys/contract";
 import type { Handlers } from "../api.js";
 import type { AppConfig } from "../config.js";
 import { AppError } from "../errors.js";
+import type { AccountNotices } from "../notices/account-notices.js";
 import type { Directory } from "../providers/types.js";
 import { requireUser } from "./authenticate.js";
 import {
@@ -24,6 +25,7 @@ export interface SessionHandlerOptions {
   readonly config: AppConfig;
   readonly identity: IdentityProvider;
   readonly directory: Directory;
+  readonly notices: AccountNotices;
   readonly now?: Clock;
 }
 
@@ -55,7 +57,7 @@ async function sessionUser(directory: Directory, claims: IdentityClaims): Promis
 
 /** `login`, `loginCallback`, `logout` and `getCurrentUser`. */
 export function createSessionHandlers(options: SessionHandlerOptions): Handlers {
-  const { config, identity, directory, now } = options;
+  const { config, identity, directory, notices, now } = options;
   const secret = config.sessionSecret;
 
   return {
@@ -101,10 +103,17 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       return { redirectUrl: await identity.endSessionUrl() };
     },
 
-    getCurrentUser: (request): CurrentUser => {
+    getCurrentUser: async (request): Promise<CurrentUser> => {
       const user = requireUser(request);
-      // Account notices (licence expiry) arrive with the shell.
-      return { ...user, notices: [] };
+      // Notices are secondary: when their store fails, the user still gets the app (as on
+      // surveyjs.io, where a failed licence check shows no dialog), and the failure is logged.
+      let current: CurrentUser["notices"] = [];
+      try {
+        current = await notices.noticesFor(user.id);
+      } catch (error) {
+        request.log.error({ err: error }, "account notices are unavailable");
+      }
+      return { ...user, notices: current };
     },
   };
 }

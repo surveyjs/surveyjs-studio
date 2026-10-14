@@ -1,4 +1,5 @@
 import type { ProjectMembership, SurveyOwner, SurveyRecord, User } from "../domain/types.js";
+import type { AccountNotices } from "../notices/account-notices.js";
 
 export interface SurveyStore {
   /** null when no survey has this id. */
@@ -22,6 +23,8 @@ export interface ProviderSet {
   readonly name: string;
   readonly surveys: SurveyStore;
   readonly directory: Directory;
+  /** Selected by `ACCOUNT_NOTICES`. */
+  readonly notices: AccountNotices;
   ready(): Promise<boolean>;
   close(): Promise<void>;
 }

@@ -42,6 +42,20 @@ export interface LegacyOrganizationUserRow {
   role: string | null;
 }
 
+/**
+ * One licence of a user (layout section 3.15): a `UserLicenses` row the user owns, joined to its
+ * parent licence for a developer seat, or the `UserLicenses` row a `LicenseTransfers` row gives
+ * the user (then `id` is the transfer id and the parent columns are NULL).
+ */
+export interface LegacyLicenceRow {
+  id: string;
+  expirationdate: Date | null;
+  parentlicenseid: string | null;
+  /** The parent licence's id when that row exists. */
+  parentid: string | null;
+  parentexpirationdate: Date | null;
+}
+
 /** Azure table `post{postId}` entity (layout section 3.6). */
 export interface LegacyResultEntity {
   id: string;

@@ -154,11 +154,15 @@ describe(`server at ${baseUrl}`, () => {
       const session = await signedIn(ctx);
       const response = await call("GET", "/me", { headers: { cookie: session.jar.header() } });
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({
+      const body = (await response.json()) as { notices?: unknown };
+      expect(body).toMatchObject({
         id: owner.id,
         displayName: owner.displayName,
         email: owner.email,
       });
+      // Each notice matches the contract's Notice schema (checked by `call`); which notices a user
+      // gets depends on the server's ACCOUNT_NOTICES (server tests cover the settings).
+      expect(Array.isArray(body.notices)).toBe(true);
     });
 
     it("logout clears the cookies and returns where to go next", async (ctx) => {

@@ -5,6 +5,8 @@ import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "./azure-legacy/index.js";
 import {
+  BLOCKED_ID,
+  LICENCE_CLOCK,
   MEMBER_ID,
   OWNER_ID,
   PROJECT_B_ID,
@@ -20,6 +22,8 @@ const NULL_NAME_SURVEY = "eeeeeeee-0000-4000-8000-0000000000a1";
 const NULL_POSTID_SURVEY = "eeeeeeee-0000-4000-8000-0000000000a2";
 const NULL_ROLE_MEMBERSHIP = "eeeeeeee-0000-4000-8000-0000000000b1";
 const NULL_EMAIL_USER = "eeeeeeee-0000-4000-8000-0000000000e1";
+const EXPIRED_LICENCE = "eeeeeeee-0000-4000-8000-0000000000f1";
+const ORPHAN_SEAT = "eeeeeeee-0000-4000-8000-0000000000f2";
 const OLDEST = "2020-01-01T00:00:00.000Z";
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -58,6 +62,20 @@ async function insertRows(connectionString: string): Promise<void> {
       .request()
       .input("id", sql.UniqueIdentifier, NULL_EMAIL_USER)
       .query("INSERT INTO Users (id, email, displayname, blocked) VALUES (@id, NULL, NULL, NULL)");
+    // The blocked user gets an expired licence and a developer seat whose parent row is missing.
+    const licence = (id: string, parent: string | null) =>
+      pool
+        .request()
+        .input("id", sql.UniqueIdentifier, id)
+        .input("userid", sql.UniqueIdentifier, BLOCKED_ID)
+        .input("parent", sql.UniqueIdentifier, parent)
+        .input("expires", sql.DateTime, new Date(OLDEST))
+        .query(
+          "INSERT INTO UserLicenses (id, userid, parentlicenseid, expirationdate) " +
+            "VALUES (@id, @userid, @parent, @expires)",
+        );
+    await licence(EXPIRED_LICENCE, null);
+    await licence(ORPHAN_SEAT, "eeeeeeee-0000-4000-8000-0000000000f9");
   } finally {
     await pool.close();
   }
@@ -72,6 +90,8 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     await insertRows(config.sqlConnectionString);
     providers = createAzureLegacyProviders(config, {
       logger: { warn: (details, message) => warnings.push({ details, message }) },
+      accountNotices: "surveyjs-licenses",
+      now: () => LICENCE_CLOCK,
     });
   });
 
@@ -135,6 +155,15 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     expect(await store().directory.listUserProjects(MEMBER_ID)).toEqual(memberProjects);
     expect(warnings.map((w) => w.details)).toEqual([
       { membershipId: NULL_ROLE_MEMBERSHIP, organizationId: PROJECT_B_ID },
+    ]);
+  });
+
+  it("gives no licence notice when a developer seat's parent licence is missing, and warns", async () => {
+    // The legacy site fails the whole check on such a seat, so even the expired licence shows nothing.
+    warnings.length = 0;
+    expect(await store().notices.noticesFor(BLOCKED_ID)).toEqual([]);
+    expect(warnings).toEqual([
+      { details: { licenceId: ORPHAN_SEAT }, message: expect.any(String) as string },
     ]);
   });
 

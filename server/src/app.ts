@@ -105,6 +105,7 @@ export async function buildApp(
         config,
         identity,
         directory: providers.directory,
+        notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),
     },

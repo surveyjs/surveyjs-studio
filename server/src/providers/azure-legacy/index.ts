@@ -1,23 +1,28 @@
 import { TableServiceClient } from "@azure/data-tables";
 import { BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
-import type { LegacyConfig } from "../../config.js";
+import type { Clock } from "../../auth/session.js";
+import type { AccountNoticesSetting, LegacyConfig } from "../../config.js";
 import type { SurveyOwner } from "../../domain/types.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
+import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
+import { licenceNotices } from "../../notices/licence-rule.js";
 import { projectListOrder, surveyListOrder } from "../ordering.js";
 import type { ProviderSet } from "../types.js";
 import {
   UnmappableLegacyRowError,
+  licenceExpiriesFromLegacy,
   membershipFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
-import type { LegacySurveyRow, LegacyUserRow } from "./rows.js";
+import type { LegacyLicenceRow, LegacySurveyRow, LegacyUserRow } from "./rows.js";
 
 /**
  * Provider over the legacy surveyjs.io stores (layout: docs/architecture/legacy-data-layout.md).
  * Step 2 serves the read path only: survey records and the Directory from SQL. The storage
- * accounts are only probed by `ready()`.
+ * accounts are only probed by `ready()`. With `ACCOUNT_NOTICES=surveyjs-licenses` the account
+ * notices come from the site's licence tables in the same database.
  *
  * Read-only by construction: SELECT statements and read-only SDK calls only (ESLint enforces it
  * for this folder). Connection strings are secrets: no error or log line built here holds one.
@@ -36,6 +41,10 @@ export interface AzureLegacyOptions {
    * details hold row ids only. Default: no-op.
    */
   readonly logger?: LegacyWarningLogger;
+  /** `ACCOUNT_NOTICES`; default `none`. `surveyjs-licenses` reads the legacy licence tables. */
+  readonly accountNotices?: AccountNoticesSetting;
+  /** Clock for the licence-expiry rule; default `Date.now`. */
+  readonly now?: Clock;
 }
 
 /** Error from a legacy store operation. The message names the operation and the driver's error code only. */
@@ -68,6 +77,20 @@ const SURVEY_SELECT =
   "CASE WHEN EXISTS (SELECT 1 FROM Organizations o WHERE o.id = s.userid) THEN 1 ELSE 0 END " +
   "AS isproject FROM Surveys s";
 const IS_PROJECT_SURVEY = "EXISTS (SELECT 1 FROM Organizations o WHERE o.id = s.userid)";
+
+/**
+ * Every licence of a user (layout section 3.15): owned rows, each joined to its parent licence
+ * (developer seats), then the licences transferred to the user.
+ */
+const LICENCE_SELECT =
+  "SELECT l.id, l.expirationdate, l.parentlicenseid, p.id AS parentid, " +
+  "p.expirationdate AS parentexpirationdate " +
+  "FROM UserLicenses l LEFT JOIN UserLicenses p ON p.id = l.parentlicenseid " +
+  "WHERE l.userid = @user " +
+  "UNION ALL " +
+  "SELECT t.id, l.expirationdate, NULL, NULL, NULL " +
+  "FROM LicenseTransfers t LEFT JOIN UserLicenses l ON l.id = t.licenseid " +
+  "WHERE t.userid = @user";
 
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
 interface MembershipQueryRow {
@@ -114,6 +137,7 @@ export function createAzureLegacyProviders(
 ): ProviderSet {
   const readyTimeoutMs = options.readyTimeoutMs ?? 5_000;
   const logger = options.logger ?? { warn: () => undefined };
+  const now = options.now ?? Date.now;
 
   /** Maps each row; a row the domain cannot represent is skipped and reported by its ids. */
   function mapRows<R, T>(rows: readonly R[], map: (row: R) => T): T[] {
@@ -170,6 +194,29 @@ export function createAzureLegacyProviders(
       throw new LegacyStoreError(operation, error);
     }
   }
+
+  /** The surveyjs.io licence-expiry notices of a user, from the legacy licence tables. */
+  const licenceNoticesFromSql: AccountNotices = {
+    async noticesFor(userId) {
+      if (!isGuid(userId)) return [];
+      const rows = await select<LegacyLicenceRow>("licence list", LICENCE_SELECT, (request) =>
+        request.input("user", sql.UniqueIdentifier, userId),
+      );
+      try {
+        return licenceNotices(licenceExpiriesFromLegacy(rows), now());
+      } catch (error) {
+        // The legacy site fails the whole check on such a row and shows no dialog.
+        if (!(error instanceof UnmappableLegacyRowError)) throw error;
+        logger.warn({ ...error.ids }, `Skipped the licence notices. ${error.message}`);
+        return [];
+      }
+    },
+  };
+  const accountNotices = options.accountNotices ?? "none";
+  const notices =
+    accountNotices === "surveyjs-licenses"
+      ? licenceNoticesFromSql
+      : demoAccountNotices(accountNotices);
 
   async function sqlReady(): Promise<void> {
     await select("readiness check", "SELECT 1 AS ok");
@@ -262,6 +309,8 @@ export function createAzureLegacyProviders(
         ).sort(projectListOrder);
       },
     },
+
+    notices,
 
     async ready() {
       const signal = AbortSignal.timeout(readyTimeoutMs);

@@ -1,5 +1,6 @@
 import type { ProjectMembership, SurveyRecord, SurveyResponse, User } from "../../domain/types.js";
 import type {
+  LegacyLicenceRow,
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
   LegacyResultEntity,
@@ -98,4 +99,24 @@ export function membershipFromLegacy(
     );
   }
   return { project: { id: guid(org.id), name: org.name ?? "" }, role: normalised };
+}
+
+/**
+ * The expiry of each licence of a user, as the legacy licence list resolves it (layout section
+ * 3.15): a developer seat (non-empty `parentlicenseid`) takes its parent's expiry; any other
+ * licence keeps its own. NULL stays null. A seat whose parent row is missing throws, because the
+ * legacy site then fails the whole check and shows no dialog.
+ */
+export function licenceExpiriesFromLegacy(rows: readonly LegacyLicenceRow[]): (Date | null)[] {
+  return rows.map((row) => {
+    const parent = row.parentlicenseid === null ? ZERO_GUID : guid(row.parentlicenseid);
+    if (parent === ZERO_GUID) return row.expirationdate;
+    if (row.parentid === null) {
+      throw new UnmappableLegacyRowError(
+        { licenceId: guid(row.id) },
+        "developer seat without its parent licence",
+      );
+    }
+    return row.parentexpirationdate;
+  });
 }

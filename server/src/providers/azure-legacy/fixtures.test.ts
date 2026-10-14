@@ -14,6 +14,8 @@ const SQL_GUID_COLUMNS = [
   "resultid",
   "publishid",
   "organizationid",
+  "parentlicenseid",
+  "licenseid",
 ];
 
 function walk(dir: string): string[] {

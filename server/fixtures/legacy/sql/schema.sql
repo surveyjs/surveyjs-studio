@@ -79,3 +79,31 @@ CREATE TABLE OrganizationUsers (
 );
 CREATE INDEX organizationusers_userid_idx ON OrganizationUsers (userid);
 CREATE INDEX organizationusers_organizationid_idx ON OrganizationUsers (organizationid);
+
+-- Licence tables (layout section 3.15): only the columns that decide the licence-expiry
+-- notice, plus product and count to make the rows readable. Production has many more
+-- (billing, invoice and company fields); My Surveys does not read them.
+CREATE TABLE UserLicenses (
+  id              uniqueidentifier NOT NULL,
+  userid          uniqueidentifier NULL,
+  parentlicenseid uniqueidentifier NULL,
+  expirationdate  datetime         NULL,
+  product         int              NULL,
+  count           int              NULL,
+  timestamp       datetime         NULL,
+  CONSTRAINT userlicenses_pk PRIMARY KEY (id)
+);
+-- Our addition for the replica: the licence list is "where userid = @p".
+CREATE INDEX userlicenses_userid_idx ON UserLicenses (userid);
+
+CREATE TABLE LicenseTransfers (
+  id        uniqueidentifier NOT NULL,
+  licenseid uniqueidentifier NULL,
+  userid    uniqueidentifier NULL,
+  count     int              NULL,
+  happendat datetime         NULL,
+  timestamp datetime         NULL,
+  CONSTRAINT licensetransfers_pk PRIMARY KEY (id)
+);
+-- Our addition for the replica: transfers are listed "where userid = @p".
+CREATE INDEX licensetransfers_userid_idx ON LicenseTransfers (userid);

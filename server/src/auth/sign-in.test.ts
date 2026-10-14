@@ -181,6 +181,39 @@ describe("login and callback", () => {
   });
 });
 
+describe("account notices", () => {
+  it("getCurrentUser includes the demo notice that ACCOUNT_NOTICES selects", async () => {
+    const server = await start({ ...devEnv, ACCOUNT_NOTICES: "license-expired" });
+    const { headers } = await signIn(server, ownerUser.id);
+    const me = await server.inject({ url: "/api/v1/me", headers });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({
+      id: ownerUser.id,
+      notices: [
+        {
+          code: "license-expired",
+          message: "Your renewal subscription has expired.",
+          actionUrl: "https://surveyjs.io/manage",
+          actionLabel: "Renew",
+        },
+      ],
+    });
+  });
+  it("getCurrentUser answers without notices when the notice store fails", async () => {
+    const config = loadConfig(devEnv);
+    const providers = await createProviders(config);
+    const failing = {
+      ...providers,
+      notices: { noticesFor: () => Promise.reject(new Error("Legacy SQL licence list failed")) },
+    };
+    app = await buildApp(config, failing);
+    const { headers } = await signIn(app, ownerUser.id);
+    const me = await app.inject({ url: "/api/v1/me", headers });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ id: ownerUser.id, notices: [] });
+  });
+});
+
 describe("request rules", () => {
   it("checks authentication before validation", async () => {
     const res = await (

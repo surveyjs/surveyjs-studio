@@ -1,4 +1,5 @@
 import type { ProjectMembership, SurveyRecord, User } from "../../domain/types.js";
+import type { Notice } from "../../notices/account-notices.js";
 
 /**
  * Expected domain objects for the golden fixtures in server/fixtures/legacy.
@@ -224,3 +225,58 @@ export const adminProjects: readonly ProjectMembership[] = [
   { project: projectA, role: "admin" }, // stored as "Admin" after a role change
 ];
 export const memberProjects: readonly ProjectMembership[] = [{ project: projectA, role: "user" }];
+
+// ---- Licence notices (ACCOUNT_NOTICES=surveyjs-licenses), fixtures sql/UserLicenses.json and
+// sql/LicenseTransfers.json ----
+
+/** The surveyjs.io "expired" dialog as a notice. */
+export const expiredNotice: Notice = {
+  code: "license-expired",
+  message: "Your renewal subscription has expired.",
+  actionUrl: "https://surveyjs.io/manage",
+  actionLabel: "Renew",
+};
+
+/** The surveyjs.io "expires soon" dialog as a notice. */
+export const expiresSoonNotice: Notice = {
+  code: "license-expires-soon",
+  message: "Your renewal subscription expires soon.",
+  actionUrl: "https://surveyjs.io/manage",
+  actionLabel: "Renew",
+};
+
+/** The fixed clock of the licence cases. */
+export const LICENCE_CLOCK = Date.parse("2026-09-01T12:00:00.000Z");
+
+/**
+ * Notices at LICENCE_CLOCK. Owner: one licence expired 2026-08-01, one valid till 2027-06-01.
+ * Admin: one licence that expires 2026-09-10 (8.5 days left). Member: a developer seat of the
+ * owner's 2027 licence whose own (stale) date is 2020-01-01; the parent's date counts. Outsider:
+ * a licence without an expiry date and a transfer of the owner's 2027 licence. Blocked: none.
+ */
+export const licenceNoticesAtClock: readonly (readonly [string, string, Notice[]])[] = [
+  ["the owner (expired)", OWNER_ID, [expiredNotice]],
+  ["the admin (expires soon)", ADMIN_ID, [expiresSoonNotice]],
+  ["the member (seat of a valid licence)", MEMBER_ID, []],
+  ["the outsider (no date, valid transfer)", OUTSIDER_ID, []],
+  ["the blocked user (no licences)", BLOCKED_ID, []],
+];
+
+/** 7 days before the owner's 2027-06-01 licence expires: the seat and the transfer follow it. */
+export const LATER_LICENCE_CLOCK = Date.parse("2027-05-25T00:00:00.000Z");
+
+export const licenceNoticesAtLaterClock: readonly (readonly [string, string, Notice[]])[] = [
+  ["the owner", OWNER_ID, [expiredNotice]],
+  ["the admin", ADMIN_ID, [expiredNotice]],
+  ["the member (seat)", MEMBER_ID, [expiresSoonNotice]],
+  ["the outsider (transfer)", OUTSIDER_ID, [expiresSoonNotice]],
+  ["the blocked user", BLOCKED_ID, []],
+];
+
+/** The admin's licence expires at 2026-09-10T00:00:00Z; "soon" starts exactly 15 days earlier. */
+export const adminLicenceBoundary: readonly (readonly [string, string, Notice[]])[] = [
+  ["2026-08-26T00:00:00.000Z", "no notice", []],
+  ["2026-08-26T00:00:00.001Z", "expires soon", [expiresSoonNotice]],
+  ["2026-09-10T00:00:00.000Z", "expires soon", [expiresSoonNotice]],
+  ["2026-09-10T00:00:00.001Z", "expired", [expiredNotice]],
+];

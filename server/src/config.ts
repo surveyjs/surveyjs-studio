@@ -39,7 +39,7 @@ export interface AppConfig {
   /** Set only when `identityProvider` is `surveyjs-oidc` (and identity is not skipped). */
   readonly oidc: OidcConfig | null;
   readonly signInRateLimitPerMinute: number;
-  readonly accountNotices: AccountNotices;
+  readonly accountNotices: AccountNoticesSetting;
   /** Optional account links merged over the shell's built-in ones. */
   readonly shellLinks: Readonly<Record<string, string>>;
 }
@@ -50,7 +50,7 @@ export const ACCOUNT_NOTICES = [
   "license-expires-soon",
   "surveyjs-licenses",
 ] as const;
-export type AccountNotices = (typeof ACCOUNT_NOTICES)[number];
+export type AccountNoticesSetting = (typeof ACCOUNT_NOTICES)[number];
 
 export const OIDC_DISCOVERY = ["oauth-authorization-server", "openid-configuration"] as const;
 
