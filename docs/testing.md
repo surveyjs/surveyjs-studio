@@ -6,11 +6,11 @@ warnings.
 
 ## The three seams
 
-| Seam               | Question it answers                             | Where                         | Status                   |
-| ------------------ | ----------------------------------------------- | ----------------------------- | ------------------------ |
-| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/`          | Built (Step 1)           |
-| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`                        | Built (Step 1), one spec |
-| Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2)           |
+| Seam               | Question it answers                             | Where                         | Status         |
+| ------------------ | ----------------------------------------------- | ----------------------------- | -------------- |
+| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/`          | Built (Step 1) |
+| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`                        | Built (Step 3) |
+| Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2) |
 
 Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
@@ -22,6 +22,7 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 | `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web` |
 | `pnpm test:conformance` | The conformance suite against a server it starts itself |
 | `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit              |
+| `pnpm e2e:azurite`      | Playwright sign-in spec in Azurite mode (needs Docker)  |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
@@ -92,18 +93,26 @@ Install the browsers once (see [Development](development.md#setup)), then:
 pnpm e2e
 ```
 
-Playwright starts both servers itself (server on 3000 with `NODE_ENV=test`; the production web
-build served by `vite preview` on 5173) and opens the app in three browsers. Rules:
+`pnpm e2e` builds the web app, then Playwright starts the servers itself and opens the app in three
+browsers. The server runs with the dev identity provider and the legacy-fixtures seed, so specs sign
+in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, plus a second pair
+(3001 and 5174) whose server shows the expired-licence notice. Rules:
 
 - The config strips the developer's app variables (`APP_*`, `PORT`, `VITE_*`, and the other
   server variables) from the environment before starting the servers. Results do not depend on
   what you have exported.
 - Locally it reuses servers already running on 3000 and 5173 (for example `pnpm demo`). Those servers must use the default configuration, or the home page spec fails. With `CI` set it does not
   reuse them, and fails if the ports are busy.
-- Each spec fails on any browser console error or page error.
+- Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
+  page error, except the console errors of an observed signed-out `/api/v1/me` 401 and Firefox's
+  favicon CSP message.
 - Traces are kept for failures; CI uploads `e2e/playwright-report/`.
 
 Run one browser: `pnpm e2e --project=chromium`.
+
+Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in spec on Chromium
+against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+memory-mode servers first).
 
 ## Provider suite
 

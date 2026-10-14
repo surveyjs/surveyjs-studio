@@ -18,6 +18,7 @@
     "test:conformance:azurite": "pnpm --filter @my-surveys/conformance-tests test:azurite",
     "test": "pnpm test:unit && pnpm test:conformance",
     "e2e": "pnpm --filter @my-surveys/e2e test",
+    "e2e:azurite": "pnpm --filter @my-surveys/e2e test:azurite",
     "lint:contract": "pnpm --filter @my-surveys/contract lint && pnpm --filter @my-surveys/contract check:generated",
     "build": "pnpm --filter @my-surveys/contract build:docs && pnpm --filter @my-surveys/web build",
     "demo:azurite:up": "docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait && pnpm legacy:load",
