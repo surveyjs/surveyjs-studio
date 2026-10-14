@@ -111,7 +111,8 @@ export function assertLocalEndpoints(env: Readonly<Record<string, string | undef
   if (offenders.length > 0) {
     throw new Error(
       `Refusing to load legacy fixtures: ${offenders.join(", ")} must be set and point at a local ` +
-        "endpoint (127.0.0.1, localhost, ::1 or UseDevelopmentStorage=true).",
+        "endpoint (127.0.0.1, localhost or ::1). A storage string needs BlobEndpoint and TableEndpoint " +
+        "once each, in that case, or is exactly UseDevelopmentStorage=true.",
     );
   }
 }
