@@ -28,3 +28,20 @@
   padding: 0;
   background-color: transparent;
 }
+
+/* A drop-down opened from the keyboard (DropDownTopMenuItem) gets the site's :hover styles
+   (top-bar/top-menu-item.scss, `.v2-class---top-menu-item--drop-down:hover`), so mouse users see
+   no change. The extra class outranks the site's closed state (0,2,0). */
+:global(.v2-class---top-menu-item--drop-down).dropDownOpen {
+  color: #8a8a8a; /* $General--Forecolor-50 */
+}
+
+:global(.v2-class---top-menu-item--drop-down).dropDownOpen
+  :global(.v2-class---drop-down-menu--popup-menu) {
+  z-index: 2000;
+  opacity: 1;
+  max-height: initial;
+  display: block;
+  border: 1px solid rgba(0, 0, 0, 0.1); /* $General--Line-10-proc */
+  box-shadow: 0px 32px 64px rgba(0, 0, 0, 0.07); /* Shadows--Large */
+}

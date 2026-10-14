@@ -1,5 +1,6 @@
 import type { ShellProps, ShellUser } from "../types";
 import { DropDownMenuItem, DropDownMenuSeparator } from "./DropDownMenuItem";
+import { DropDownTopMenuItem } from "./DropDownTopMenuItem";
 import { iconHtml } from "./icons";
 import { Icon } from "./SiteIcon";
 import styles from "./SurveyjsSiteShell.module.css";
@@ -68,32 +69,29 @@ export type AccountMenuProps = Pick<ShellProps, "user" | "onSignOut" | "signingO
 /**
  * The top bar's Account drop-down (`the site's page markup`, type `Drop-Down`, with the
  * `v2-class---top-menu-item--drop-down-account` modifier). It shows the user's avatar and name where
- * the site shows its account icon and the word "Account"; the menu opens on hover (site CSS).
+ * the site shows its account icon and the word "Account".
  */
 export function AccountMenu({ user, twinkling, ...items }: AccountMenuProps) {
   const iconClass = twinkling
     ? "v2-class---top-menu-item__icon v2-class---top-menu-item__icon--twinkling"
     : "v2-class---top-menu-item__icon";
   return (
-    <li
-      className="v2-class---top-menu-item v2-class---top-menu-item--drop-down-account v2-class---top-menu-item--drop-down"
-      aria-label="Account"
+    <DropDownTopMenuItem
+      label="Account"
+      modifier="v2-class---top-menu-item--drop-down-account"
+      menuModifier="v2-class---drop-down-menu--account"
+      trigger={
+        <>
+          <span className={iconClass}>
+            <AccountIcon user={user} />
+          </span>
+          <span className="v2-class---top-menu-item__text">{user.displayName}</span>
+        </>
+      }
     >
-      <span className="v2-class---top-menu-item--drop-down__content">
-        <span className={iconClass}>
-          <AccountIcon user={user} />
-        </span>
-        <span className="v2-class---top-menu-item__text">{user.displayName}</span>
-        <span
-          className="v2-class---top-menu-item__icon v2-class---top-menu-item__icon--drop-down"
-          dangerouslySetInnerHTML={iconHtml("top-bar/Drop-Down-Arrow")}
-        />
-      </span>
-      <nav className="v2-class---drop-down-menu v2-class---drop-down-menu--popup-menu v2-class---drop-down-menu--account">
-        <ul className="v2-class---drop-down-menu__list">
-          <AccountMenuItems {...items} />
-        </ul>
-      </nav>
-    </li>
+      <ul className="v2-class---drop-down-menu__list">
+        <AccountMenuItems {...items} />
+      </ul>
+    </DropDownTopMenuItem>
   );
 }

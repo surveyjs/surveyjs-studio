@@ -31,7 +31,8 @@ describe("renderShell", () => {
   it("renders the surveyjs.io shell for surveyjs-site", async () => {
     render(shellFor("surveyjs-site"));
 
-    expect(await screen.findByText("page")).toBeTruthy();
+    // The shell is a lazy chunk; on a busy test run its first import can take over a second.
+    expect(await screen.findByText("page", undefined, { timeout: 5000 })).toBeTruthy();
     const header = screen.getByRole("banner");
     expect(header.classList.contains("v2-class---top-bar")).toBe(true);
     expect(within(header).getByRole("button", { name: "Sign Out" })).toBeTruthy();

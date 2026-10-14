@@ -102,4 +102,57 @@ describe("AccountMenu", () => {
       container.querySelector(".v2-class---drop-down-menu-item--manage-warning"),
     ).not.toBeNull();
   });
+
+  describe("keyboard", () => {
+    const trigger = () => screen.getByRole("button", { name: "Olivia Owner" });
+
+    it("has a focusable trigger that announces a closed menu", () => {
+      renderMenu();
+
+      expect(trigger().tabIndex).toBe(0);
+      expect(trigger().getAttribute("aria-haspopup")).toBe("menu");
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+      const menu = document.getElementById(trigger().getAttribute("aria-controls") ?? "");
+      expect(menu?.querySelector("a")?.textContent).toBe("Settings");
+    });
+
+    it("opens with Enter and closes with Escape, back on the trigger", () => {
+      const { container } = renderMenu();
+      trigger().focus();
+
+      fireEvent.keyDown(trigger(), { key: "Enter" });
+      expect(trigger().getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByRole("listitem", { name: "Account" }).className).toMatch(/dropDownOpen/);
+
+      const signOut = screen.getByRole("button", { name: "Sign Out" });
+      signOut.focus();
+      fireEvent.keyDown(signOut, { key: "Escape" });
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(trigger());
+      expect(container.querySelector("[class*=dropDownOpen]")).toBeNull();
+    });
+
+    it("opens with Space or ArrowDown, and closes when focus leaves the item", () => {
+      render(
+        <>
+          <ul>
+            <AccountMenu user={currentUser} links={links} onSignOut={() => {}} />
+          </ul>
+          <button type="button">elsewhere</button>
+        </>,
+      );
+      fireEvent.keyDown(trigger(), { key: " " });
+      expect(trigger().getAttribute("aria-expanded")).toBe("true");
+      fireEvent.keyDown(trigger(), { key: " " });
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+      fireEvent.keyDown(trigger(), { key: "ArrowDown" });
+      expect(trigger().getAttribute("aria-expanded")).toBe("true");
+
+      fireEvent.blur(trigger(), {
+        relatedTarget: screen.getByRole("button", { name: "elsewhere" }),
+      });
+
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+    });
+  });
 });

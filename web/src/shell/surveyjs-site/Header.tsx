@@ -5,6 +5,7 @@ import {
   DropDownMenuItem,
   DropDownMenuSeparator,
 } from "./DropDownMenuItem";
+import { DropDownTopMenuItem } from "./DropDownTopMenuItem";
 import { iconHtml } from "./icons";
 import {
   demosMenu,
@@ -136,13 +137,13 @@ function TopBarMenu(props: HeaderProps) {
     <nav className="v2-class---top-bar-menu">
       <nav className="v2-class---top-bar-menu">
         <ul className="v2-class---top-bar-menu">
-          <DropDownTopMenuItem text="Products">
+          <DropDownMenu text="Products">
             <ul className="v2-class---drop-down-menu__list">
               <MenuEntries entries={productsMenu.entries} />
             </ul>
-          </DropDownTopMenuItem>
+          </DropDownMenu>
 
-          <DropDownTopMenuItem text="Demos">
+          <DropDownMenu text="Demos">
             <div className="v2-class---drop-down-menu__list v2-class---drop-down-menu__list--columns">
               <ul className="v2-class---drop-down-menu__column">
                 <MenuEntries entries={demosMenu.entries} />
@@ -151,25 +152,25 @@ function TopBarMenu(props: HeaderProps) {
                 <MenuGroupEntries group={newDemosMenu} />
               </ul>
             </div>
-          </DropDownTopMenuItem>
+          </DropDownMenu>
 
-          <DropDownTopMenuItem text="Developers">
+          <DropDownMenu text="Developers">
             <ul className="v2-class---drop-down-menu__list">
               <MenuEntries entries={guidesMenu.entries} />
             </ul>
-          </DropDownTopMenuItem>
+          </DropDownMenu>
 
-          <DropDownTopMenuItem text="Industries">
+          <DropDownMenu text="Industries">
             <ul className="v2-class---drop-down-menu__list">
               <MenuEntries entries={industriesMenu.entries} />
             </ul>
-          </DropDownTopMenuItem>
+          </DropDownMenu>
 
-          <DropDownTopMenuItem text="Stay Updated">
+          <DropDownMenu text="Stay Updated">
             <ul className="v2-class---drop-down-menu__list">
               <MenuEntries entries={stayUpdatedMenu.entries} />
             </ul>
-          </DropDownTopMenuItem>
+          </DropDownMenu>
 
           <li className="v2-class---top-menu-item v2-class---top-menu-item--text">
             <a href={siteUrl("/pricing")} className="v2-class---top-menu-item__link">
@@ -257,21 +258,15 @@ function activateOnKey(action: () => void) {
   };
 }
 
-/** A top-bar item with a drop-down menu that opens on hover (`Top-Menu-Item`, type `Drop-Down`). */
-function DropDownTopMenuItem({ text, children }: { text: string; children: ReactNode }) {
+/** A text item of the top bar with a drop-down menu. */
+function DropDownMenu({ text, children }: { text: string; children: ReactNode }) {
   return (
-    <li className="v2-class---top-menu-item v2-class---top-menu-item--drop-down" aria-label={text}>
-      <span className="v2-class---top-menu-item--drop-down__content">
-        <span className="v2-class---top-menu-item__text">{text}</span>
-        <span
-          className="v2-class---top-menu-item__icon v2-class---top-menu-item__icon--drop-down"
-          dangerouslySetInnerHTML={iconHtml("top-bar/Drop-Down-Arrow")}
-        />
-      </span>
-      <nav className="v2-class---drop-down-menu v2-class---drop-down-menu--popup-menu">
-        {children}
-      </nav>
-    </li>
+    <DropDownTopMenuItem
+      label={text}
+      trigger={<span className="v2-class---top-menu-item__text">{text}</span>}
+    >
+      {children}
+    </DropDownTopMenuItem>
   );
 }
 

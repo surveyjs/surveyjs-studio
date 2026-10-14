@@ -59,6 +59,22 @@ describe("SurveyjsSiteShell", () => {
     expect(screen.getByRole("contentinfo").textContent).toContain("Devsoft Baltic OÜ");
   });
 
+  it("makes every drop-down of the top bar a focusable menu button", () => {
+    renderShell([]);
+
+    const triggers = within(screen.getByRole("banner")).getAllByRole("button", { expanded: false });
+    const menus = triggers.filter((trigger) => trigger.getAttribute("aria-haspopup") === "menu");
+    expect(menus.map((trigger) => trigger.textContent?.trim())).toEqual([
+      "Products",
+      "Demos",
+      "Developers",
+      "Industries",
+      "Stay Updated",
+      "Olivia Owner",
+    ]);
+    for (const trigger of menus) expect(trigger.tabIndex).toBe(0);
+  });
+
   it("shows no licence dialog without a notice", () => {
     renderShell([]);
 
