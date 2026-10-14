@@ -82,4 +82,28 @@ describe("validateFixtureTables", () => {
     const row = { PartitionKey: "*", RowKey: "client-0001", ispartialcompleted: true };
     expect(validateFixtureTables([table("SurveyCompletion3333", [row])])).toEqual([]);
   });
+
+  it.each([
+    ["Edm.Boolean", "ispartialcompleted", "false"],
+    ["Edm.Guid", "id", "not-a-guid"],
+    ["Edm.Guid", "id", 5],
+    ["Edm.DateTime", "happendat", "yesterday"],
+    ["Edm.Int64", "count", 5],
+  ])("rejects a value that does not fit %s (%s = %j)", (type, property, value) => {
+    const entity = { ...goodPost, [`${property}@odata.type`]: type, [property]: value };
+    const problems = validateFixtureTables([table("post3333", [entity])]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain(`property "${property}"`);
+  });
+
+  it("accepts a real boolean and an Int64 string", () => {
+    const entity = {
+      ...goodPost,
+      "ispartialcompleted@odata.type": "Edm.Boolean",
+      ispartialcompleted: false,
+      "count@odata.type": "Edm.Int64",
+      count: "12",
+    };
+    expect(validateFixtureTables([table("post3333", [entity])])).toEqual([]);
+  });
 });

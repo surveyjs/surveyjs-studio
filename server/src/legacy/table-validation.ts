@@ -31,6 +31,31 @@ const REQUIRED: { test: RegExp; guids: string[]; dates: string[]; optionalGuids:
   },
 ];
 
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Why a value does not fit its Edm type, or null when it does. */
+function valueProblem(type: SupportedEdmType, value: unknown): string | null {
+  switch (type) {
+    case "Edm.Boolean":
+      return typeof value === "boolean" ? null : "must be a JSON boolean";
+    case "Edm.Guid":
+      return typeof value === "string" && GUID_PATTERN.test(value) ? null : "must be a GUID string";
+    case "Edm.DateTime":
+      return typeof value === "string" && !Number.isNaN(Date.parse(value))
+        ? null
+        : "must be an ISO date string";
+    case "Edm.Int64":
+      return typeof value === "string" && /^-?\d+$/.test(value)
+        ? null
+        : "must be a string of digits";
+    case "Edm.Int32":
+    case "Edm.Double":
+      return typeof value === "number" ? null : "must be a JSON number";
+    case "Edm.String":
+      return typeof value === "string" ? null : "must be a string";
+  }
+}
+
 export function isSupportedEdmType(value: unknown): value is SupportedEdmType {
   return typeof value === "string" && (SUPPORTED_EDM_TYPES as readonly string[]).includes(value);
 }
@@ -49,6 +74,14 @@ export function validateFixtureTables(tables: readonly LegacyTable[]): string[] 
           problems.push(
             `${where}, property "${key.slice(0, -ANNOTATION.length)}": unsupported ${ANNOTATION} ` +
               `${JSON.stringify(entity[key])}`,
+          );
+          continue;
+        }
+        const property = key.slice(0, -ANNOTATION.length);
+        const problem = valueProblem(entity[key] as SupportedEdmType, entity[property]);
+        if (problem) {
+          problems.push(
+            `${where}, property "${property}": value ${problem} for ${String(entity[key])}`,
           );
         }
       }

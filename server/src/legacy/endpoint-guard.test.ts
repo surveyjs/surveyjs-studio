@@ -73,4 +73,45 @@ describe("legacy loader endpoint guard", () => {
       "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
     ]);
   });
+
+  it.each([
+    [
+      "only BlobEndpoint local",
+      "AccountName=real;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:10000/x",
+    ],
+    [
+      "only TableEndpoint local",
+      "AccountName=real;AccountKey=a2V5;TableEndpoint=http://127.0.0.1:10002/x",
+    ],
+    [
+      "a remote QueueEndpoint next to local ones",
+      "BlobEndpoint=http://127.0.0.1:1/x;TableEndpoint=http://127.0.0.1:2/x;QueueEndpoint=https://a.queue.core.windows.net",
+    ],
+    [
+      "a look-alike host",
+      "BlobEndpoint=http://localhost.evil.com:1/x;TableEndpoint=http://127.0.0.1:2/x",
+    ],
+    [
+      "a userinfo spoof",
+      "BlobEndpoint=http://localhost@evil.com/x;TableEndpoint=http://127.0.0.1:2/x",
+    ],
+  ])("refuses a storage string with %s", (_name, value) => {
+    const env = { ...local, LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: value };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_SURVEYS_STORAGE_CONNECTION_STRING"]);
+  });
+
+  it("accepts a storage string with both endpoints local", () => {
+    const value =
+      "AccountName=a;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:1/a;TableEndpoint=http://[::1]:2/a";
+    const env = { ...local, LEGACY_RESULTS_STORAGE_CONNECTION_STRING: value };
+    expect(findNonLocalVariables(env)).toEqual([]);
+  });
+
+  it("refuses a non-local Data Source SQL string", () => {
+    const env = {
+      ...local,
+      LEGACY_SQL_CONNECTION_STRING: "Data Source=db.example.net,1433;Database=d",
+    };
+    expect(findNonLocalVariables(env)).toEqual(["LEGACY_SQL_CONNECTION_STRING"]);
+  });
 });

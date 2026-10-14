@@ -37,11 +37,12 @@ function isLocalSqlString(value: string): boolean {
 function isLocalStorageString(value: string): boolean {
   const pairs = parseConnectionString(value);
   if (pairs.get("usedevelopmentstorage")?.toLowerCase() === "true") return true;
-  const endpoints = STORAGE_ENDPOINT_KEYS.map((key) => pairs.get(key)).filter(
-    (endpoint): endpoint is string => endpoint !== undefined && endpoint !== "",
-  );
-  if (endpoints.length === 0) return false; // account name only means a real Azure account
-  return endpoints.every((endpoint) => {
+  // Both services the loader uses must be pinned locally; otherwise the SDK derives the missing
+  // endpoint from AccountName and EndpointSuffix, which would be a real Azure account.
+  if (!pairs.get("blobendpoint") || !pairs.get("tableendpoint")) return false;
+  return STORAGE_ENDPOINT_KEYS.every((key) => {
+    const endpoint = pairs.get(key);
+    if (endpoint === undefined || endpoint === "") return true;
     try {
       return isLocalHost(new URL(endpoint).hostname);
     } catch {

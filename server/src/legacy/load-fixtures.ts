@@ -51,7 +51,7 @@ function required(env: LegacyEnv, name: string): string {
 /** Edm annotation of a table-file property to the SDK's typed-value wrapper. */
 function typedValue(annotation: string, value: string | number | boolean): Edm<EdmTypes> {
   const type = annotation.slice("Edm.".length) as EdmTypes;
-  if (type === "Boolean") return { type, value: Boolean(value) } as Edm<"Boolean">;
+  if (type === "Boolean") return { type, value: value === true } as Edm<"Boolean">;
   if (type === "Double" || type === "Int32") return { type, value: Number(value) } as Edm<"Int32">;
   return { type, value: String(value) } as Edm<"String">;
 }
