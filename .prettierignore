@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+test-results
+playwright-report
+blob-report
+pnpm-lock.yaml
+contract/openapi.yaml
+**/generated
+docs/api/reference.html
+.superpowers
+.claude
+.agents
+skills-lock.json
+idea.md
+plan.md
+spec.md

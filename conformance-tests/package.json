@@ -1,0 +1,8 @@
+{
+  "name": "@my-surveys/conformance-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

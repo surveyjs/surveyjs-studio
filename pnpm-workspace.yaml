@@ -1,0 +1,9 @@
+packages:
+  - contract
+  - server
+  - web
+  - conformance-tests
+  - e2e
+
+allowBuilds:
+  esbuild: true
