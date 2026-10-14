@@ -45,6 +45,8 @@ CREATE TABLE Surveys (
   legacytheme       varchar(max)     NULL,
   CONSTRAINT surveys_pk PRIMARY KEY (id)
 );
+-- The surveys_*_idx indexes below are our additions for the replica. Layout section 10 does not
+-- list them and production may not have them (layout section 11, question 4).
 -- Lists are "where userid = @p"; lookups by postid, resultid and publishid.
 CREATE INDEX surveys_userid_idx ON Surveys (userid);
 CREATE INDEX surveys_postid_idx ON Surveys (postid);

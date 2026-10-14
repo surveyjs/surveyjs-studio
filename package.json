@@ -18,6 +18,9 @@
     "e2e": "pnpm --filter @my-surveys/e2e test",
     "lint:contract": "pnpm --filter @my-surveys/contract lint && pnpm --filter @my-surveys/contract check:generated",
     "build": "pnpm --filter @my-surveys/contract build:docs && pnpm --filter @my-surveys/web build",
+    "demo:azurite:up": "docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait && pnpm legacy:load",
+    "demo:azurite:down": "docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml down -v",
+    "legacy:load": "node --env-file=docker/azurite.env --import tsx server/src/legacy/load-fixtures.ts",
     "demo": "pnpm --filter @my-surveys/contract build:docs && concurrently -n server,web -c blue,green \"pnpm --filter @my-surveys/server dev\" \"pnpm --filter @my-surveys/web dev\""
   },
   "devDependencies": {
