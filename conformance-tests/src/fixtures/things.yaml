@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info: { title: Fixture, version: "1" }
+paths:
+  /things/{id}:
+    get:
+      operationId: getThing
+      responses:
+        "200":
+          description: A thing.
+          headers:
+            ETag: { required: true, schema: { type: string } }
+            X-Rate: { schema: { type: integer } }
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Thing" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default:
+          description: Anything else.
+          content:
+            text/plain:
+              schema: { type: string }
+    delete:
+      operationId: deleteThing
+      responses:
+        "204": { description: Deleted. }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+  /files:
+    get:
+      operationId: getFile
+      responses:
+        "200":
+          description: A file.
+          content:
+            text/csv: {}
+  /empty:
+    get:
+      operationId: getEmpty
+      responses:
+        "200": { description: No body. }
+components:
+  headers:
+    RetryAfter:
+      required: true
+      schema: { type: integer, minimum: 0 }
+  responses:
+    NotFound:
+      description: Missing.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotImplemented:
+      description: Later.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Thing:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, enum: [not-found, not-implemented] }

@@ -1,11 +1,22 @@
 # Conformance tests
 
 A Vitest suite that talks to a My Surveys server **only over HTTP** and checks every
-response against the OpenAPI 3.1 contract (`contract/openapi.yaml`): the status is
-documented, the `Content-Type` matches, and the body validates against the schema
-(Ajv, JSON Schema 2020-12). `application/problem+json` bodies must also carry a `code`
-from the Problem enum and a `status` equal to the HTTP status. A `501` is accepted from
-any operation as a Problem, because every operation may be unimplemented in Phase 1.
+response against the OpenAPI 3.1 contract (`contract/openapi.yaml`). For the operation
+called, it checks that:
+
+- the status is documented (or covered by `default`);
+- the `Content-Type` is one of the documented media types;
+- every header declared `required: true` on that response is present, and every declared
+  header that is present matches its schema (header values are strings; numbers and
+  booleans are read from them before validation);
+- the body validates against the documented schema (Ajv, JSON Schema 2020-12), and a
+  response documented without content has an empty body;
+- an `application/problem+json` body also has a `code` from the Problem enum and a
+  `status` equal to the HTTP status.
+
+A `501` is accepted from any operation as a Problem, because every operation may be
+unimplemented in Phase 1. Request headers, cookies and response headers the contract does not
+declare are not checked.
 
 A port in another language (.NET, PHP, ...) is accepted when this suite passes against it.
 

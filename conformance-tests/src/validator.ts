@@ -69,6 +69,18 @@ function collectExtensionKeywords(value: unknown, found: Set<string>): Set<strin
   return found;
 }
 
+/** Header values are strings; reads one as the number or boolean its schema asks for. */
+function coerceHeader(value: string, schema: unknown): unknown {
+  const type = isObject(schema) ? schema.type : undefined;
+  const types = Array.isArray(type) ? type : [type];
+  if (types.includes("string")) return value;
+  if ((types.includes("integer") || types.includes("number")) && value.trim() !== "") {
+    return Number(value);
+  }
+  if (types.includes("boolean") && (value === "true" || value === "false")) return value === "true";
+  return value;
+}
+
 const mediaTypeOf = (header: string | null): string =>
   (header ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
 
@@ -144,6 +156,30 @@ export async function createValidator(openapiPath: string): Promise<Validator> {
     return checkBody(response, contentType, problemValidate);
   };
 
+  /** Checks the headers a response object declares: required ones present, present ones valid. */
+  const checkHeaders = (documented: unknown, response: Response): string[] => {
+    const declared = isObject(documented) && isObject(documented.headers) ? documented.headers : {};
+    const problems: string[] = [];
+    for (const [name, raw] of Object.entries(declared)) {
+      // OpenAPI: a "Content-Type" entry is ignored (the media type is checked separately).
+      if (name.toLowerCase() === "content-type") continue;
+      const header = deref(doc, raw);
+      if (!isObject(header)) continue;
+      const value = response.headers.get(name);
+      if (value === null) {
+        if (header.required === true) problems.push(`header ${name} is required but missing`);
+        continue;
+      }
+      if (header.schema === undefined) continue;
+      const validate = compile(header.schema);
+      if (!validate(coerceHeader(value, header.schema))) {
+        const reason = validate.errors?.map((e) => e.message).join("; ") ?? "is invalid";
+        problems.push(`header ${name} "${value}" ${reason}`);
+      }
+    }
+    return problems;
+  };
+
   return {
     checkProblem,
     async check(method, pathTemplate, response) {
@@ -161,19 +197,24 @@ export async function createValidator(openapiPath: string): Promise<Validator> {
       }
 
       const content = deref(doc, documented);
+      const headerProblems = checkHeaders(content, response);
       const media = isObject(content) && isObject(content.content) ? content.content : {};
       const mediaTypes = Object.keys(media);
       const contentType = mediaTypeOf(response.headers.get("content-type"));
       if (mediaTypes.length === 0) {
-        return (await response.clone().text()) === "" ? [] : [`status ${status} documents no body`];
+        const hasBody = (await response.clone().text()) !== "";
+        return [...headerProblems, ...(hasBody ? [`status ${status} documents no body`] : [])];
       }
       if (!mediaTypes.includes(contentType)) {
-        return [`content type "${contentType}" is not one of: ${mediaTypes.join(", ")}`];
+        return [
+          ...headerProblems,
+          `content type "${contentType}" is not one of: ${mediaTypes.join(", ")}`,
+        ];
       }
       const entry = media[contentType];
       const schema = isObject(entry) ? entry.schema : undefined;
-      if (schema === undefined) return [];
-      return checkBody(response, contentType, compile(schema));
+      if (schema === undefined) return headerProblems;
+      return [...headerProblems, ...(await checkBody(response, contentType, compile(schema)))];
     },
   };
 }
