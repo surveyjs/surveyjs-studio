@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "pnpm --filter @my-surveys/web build && playwright test",
-    "test:azurite": "pnpm --filter @my-surveys/web build && playwright test --config playwright.azurite.config.ts",
+    "test": "node scripts/run.mjs",
+    "test:azurite": "node scripts/run.mjs --config playwright.azurite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

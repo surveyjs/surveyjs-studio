@@ -1,47 +1,14 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/test";
 
+import { stripAppVariables } from "./app-variables.mjs";
+
 type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 
 // Playwright merges webServer.env onto process.env and cannot unset keys, so
 // strip every app variable (server env table and Vite's) from this process
 // first; the servers then see only the explicit values below. Keep the list in sync with
 // server/src/config.ts and conformance-tests/src/global-setup.ts (same approach there).
-const appVariables = [
-  "NODE_ENV",
-  "HOST",
-  "PORT",
-  "LOG_LEVEL",
-  "APP_EDITION",
-  "APP_SHELL",
-  "AUTH_METHODS",
-  "SURVEYJS_LICENSE_KEY",
-  "STORAGE_PROVIDER",
-  "MEMORY_SEED",
-  "PUBLIC_BASE_URL",
-  "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
-  "LIMIT_MAX_FILE_BYTES",
-  "LIMIT_MAX_RESPONSE_BYTES",
-  "API_DOCS",
-  "LEGACY_SQL_CONNECTION_STRING",
-  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
-  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
-  "IDENTITY_PROVIDER",
-  "SESSION_SECRET",
-  "SESSION_MAX_AGE_SECONDS",
-  "OIDC_ISSUER_URL",
-  "OIDC_CLIENT_ID",
-  "OIDC_CLIENT_SECRET",
-  "OIDC_DISCOVERY",
-  "OIDC_SCOPES",
-  "SIGN_IN_RATE_LIMIT",
-  "ACCOUNT_NOTICES",
-  "SHELL_LINKS",
-];
-for (const name of Object.keys(process.env)) {
-  if (appVariables.includes(name) || name.startsWith("VITE_")) {
-    delete process.env[name];
-  }
-}
+stripAppVariables(process.env);
 
 // With reuseExistingServer off (CI), Playwright fails with "... is already used"
 // when something else already holds one of the ports below.
@@ -84,7 +51,13 @@ const memoryWebServers: WebServers = [
     timeout: 60_000,
     env: { ...memoryServerEnv, PORT: "3000" },
   },
-  { command: preview(5173), url: "http://localhost:5173/", reuseExistingServer, timeout: 60_000 },
+  {
+    command: preview(5173),
+    url: "http://localhost:5173/",
+    reuseExistingServer,
+    timeout: 60_000,
+    env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3000" },
+  },
   // The licence-notice spec: a second server that always shows the expired-licence dialog, behind
   // its own preview whose proxy points at it (E2E_API_PROXY_TARGET, see web/vite.config.ts).
   {
@@ -118,7 +91,13 @@ const azuriteWebServers: WebServers = [
     timeout: 120_000,
     env: { ...serverEnv, PORT: "3000" },
   },
-  { command: preview(5173), url: "http://localhost:5173/", reuseExistingServer, timeout: 60_000 },
+  {
+    command: preview(5173),
+    url: "http://localhost:5173/",
+    reuseExistingServer,
+    timeout: 60_000,
+    env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3000" },
+  },
 ];
 
 // The surveyjs-site header shows the account name only from this width up.
