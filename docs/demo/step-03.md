@@ -105,13 +105,16 @@ curl -s -b "$JAR" http://localhost:5173/api/v1/me; echo
 curl -s -b "$JAR" -X POST http://localhost:5173/api/v1/auth/logout; echo
 CSRF=$(awk '$6=="msid_csrf"{print $7}' "$JAR")
 curl -s -b "$JAR" -X POST -H "X-CSRF-Token: $CSRF" http://localhost:5173/api/v1/auth/logout; echo
+curl -s -X POST http://localhost:5173/api/v1/auth/logout; echo
 ```
 
 Expected, in order:
 
 1. `/me`: `{"id":"11111111-0000-4000-8000-a00000000001","displayName":"Olivia Owner","email":"owner@example.com","avatarUrl":null,"notices":[]}`
 2. logout without the header: `403` with `"code":"csrf-token-invalid"`;
-3. logout with the header: `{"redirectUrl":"http://localhost:5173/"}`.
+3. logout with the header: `{"redirectUrl":"http://localhost:5173/"}`;
+4. logout with no session at all (as after the session expired): the same `redirectUrl`, so the
+   provider's session still ends.
 
 Stop the demo with Ctrl+C in the terminal that runs `pnpm demo`. Check that nothing is left listening
 (`netstat -ano | findstr ":3000 :5173"` on Windows shows no `LISTENING` lines).

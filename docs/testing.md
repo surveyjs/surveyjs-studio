@@ -121,11 +121,12 @@ simplest way is the mock OIDC server of Azurite mode (`pnpm demo:azurite:up` sta
 The port's session cookies may be sealed in its own way. Their names, attributes and the CSRF rule
 must follow [the API guide](api/authentication.md).
 
-What the suite checks about sign-in: `login` redirects with an `msid_auth` cookie; a bad `returnTo`
-is `400`; the callback sets `msid` and `msid_csrf` and redirects to `returnTo`; a wrong `state` or a
-missing `msid_auth` is `400`; a blocked user is `403` with no session; `passwordLogin` is `501`;
-`getCurrentUser` is `401` signed out and the user signed in; `logout` clears the cookies and returns
-the end-session URL, and is `403` without the CSRF token; an anonymous call to a private operation
+What the suite checks about sign-in: `login` redirects with an `msid_auth_<state key>` cookie; a bad
+`returnTo` is `400`; the callback sets `msid` and `msid_csrf` and redirects to `returnTo`; two sign-ins
+started in one browser both finish; a wrong `state` or a missing transaction cookie is `400`; a blocked
+user is `403` with no session; `passwordLogin` is `501`; `getCurrentUser` is `401` signed out and the
+user signed in; `logout` clears the cookies and returns the end-session URL, also without a session,
+and is `403` with a session but without the CSRF token; an anonymous call to a private operation
 is `401` even when it is not built, and a change without the CSRF token is `403`. The suite also tests its own validator
 against a small fixture contract (`conformance-tests/src/fixtures/things.yaml`), so a broken
 validator cannot give false passes.

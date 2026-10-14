@@ -20,8 +20,12 @@ After 12 hours the next page asks you to sign in again. Your work is not lost, b
 the time runs out.
 
 If the sign-in does not finish (for example you waited more than ten minutes on the sign-in
-page), you see a short error message from the server, as plain text in the browser. Open the page
-again and sign in again.
+page), the browser shows the server's error as a short JSON text: its `detail` line says what went
+wrong. Open the page again and sign in again. You can start a sign-in in several tabs at once; each
+one finishes on its own.
+
+If your surveyjs.io account has no email address, the sign-in stops with an error and no session
+starts.
 
 If your account is blocked, the message is "This account is blocked" and no session starts.
 Contact SurveyJS support.
@@ -54,6 +58,9 @@ Choose **Sign Out** in the account menu.
 2. The browser goes to surveyjs.io, which ends your surveyjs.io session too, and then returns to
    the start page of My Surveys.
 3. The start page asks you to sign in again.
+
+Sign Out also works when your session has already ended (for example the page stayed open for more
+than 12 hours): the browser still goes to surveyjs.io, so you are not signed straight back in.
 
 If sign-out fails (for example the network is down), a message "Could not sign out. Please try
 again." appears above the page. You are still signed in; try again.

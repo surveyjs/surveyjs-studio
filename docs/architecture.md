@@ -65,6 +65,8 @@ Rules that hold everywhere:
 - Every error body is `application/problem+json` with `type`, `title`, `status` and a stable
   `code`. Unknown URLs give `404 not-found`.
 - Every response carries `x-request-id`. An incoming `x-request-id` (up to 128 characters) is reused.
+- Request logs never show the values of the `code` and `state` query parameters (the sign-in
+  callback): they are written as `[redacted]` (`server/src/logging.ts`).
 - The request body limit is `LIMIT_MAX_RESPONSE_BYTES` ([ADR 0004](adr/0004-body-limit.md)).
 - `/readyz` returns `503` when the provider's `ready()` is false.
 
@@ -200,8 +202,8 @@ Step 3 adds sign-in. The client-facing description (flow, cookies, errors, CSRF 
 ### `IdentityProvider`
 
 `server/src/auth/identity.ts`. The caller (the `login` and `loginCallback` handlers) makes the random
-sign-in parameters and keeps them in the sealed `msid_auth` cookie. A provider only talks to the
-identity service.
+sign-in parameters and keeps them in a sealed transaction cookie, `msid_auth_<state key>`. A
+provider only talks to the identity service.
 
 | Member                              | Does                                                                                              |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -212,10 +214,10 @@ identity service.
 
 `IDENTITY_PROVIDER` selects the implementation (`auth/providers/index.ts`).
 
-| Provider                              | What it does                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dev` (`providers/dev.ts`)            | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`                                                 |
-| `surveyjs-oidc` (`providers/oidc.ts`) | Authorization code flow with PKCE (S256) and `state`, through `openid-client`, with `client_secret_post`. The identity always comes from the UserInfo endpoint. Discovery is **lazy**: done at the first sign-in, cached, and retried after a failure, so start-up and `/readyz` never depend on the issuer. Tokens are dropped after the callback |
+| Provider                              | What it does                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev` (`providers/dev.ts`)            | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`                                                                                                         |
+| `surveyjs-oidc` (`providers/oidc.ts`) | Authorization code flow with PKCE (S256) and `state`, through `openid-client`, with `client_secret_post`. The identity always comes from the UserInfo endpoint ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)). Discovery is **lazy**: done at the first sign-in, cached, and retried after a failure, so start-up and `/readyz` never depend on the issuer. Tokens are dropped after the callback |
 
 `surveyjs-oidc` has two modes (`OIDC_DISCOVERY`):
 
@@ -232,6 +234,8 @@ Other rules:
 - `endSessionUrl` is the provider's `end_session_endpoint` with `client_id` and
   `post_logout_redirect_uri=PUBLIC_BASE_URL/`. If that cannot be built (unreachable, or no
   end-session endpoint), it is `PUBLIC_BASE_URL/`.
+- `OIDC_ISSUER_URL` must be https unless its host is `localhost`, `127.0.0.1` or `[::1]` (the mock
+  OIDC server): the server refuses to start otherwise.
 - The redirect URI is `PUBLIC_BASE_URL + /api/v1/auth/callback`. `PUBLIC_BASE_URL` must be an
   **origin** (no path, query or fragment): the server refuses to start otherwise. In local
   development it is the Vite origin (`http://localhost:5173`), so the browser stays on one origin and
@@ -239,7 +243,7 @@ Other rules:
 
 ### The sealed cookie format
 
-`msid` and `msid_auth` hold **sealed** values (`auth/seal.ts`). The format is fixed so that a server
+`msid` and the `msid_auth_*` cookies hold **sealed** values (`auth/seal.ts`). The format is fixed so that a server
 in another language can read the cookies of this one (and so that a sign-in can move between them).
 
 ```text
@@ -250,7 +254,7 @@ v1.<iv>.<ciphertext+tag>
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Algorithm        | AES-256-GCM                                                                                                                                                                         |
 | Key              | HKDF-SHA256 with the secret (`SESSION_SECRET`, UTF-8 bytes) as input key material, **no salt** (RFC 5869 zero-length salt), `info` = the purpose string (UTF-8), 32 bytes of output |
-| Purpose          | `msid-session-v1` for `msid`; `msid-auth-v1` for `msid_auth`. It is the `info` of the key **and** the GCM additional authenticated data, so one cookie never opens as the other     |
+| Purpose          | `msid-session-v1` for `msid`; `msid-auth-v1` for `msid_auth_*`. It is the `info` of the key **and** the GCM additional authenticated data, so one cookie never opens as the other   |
 | `iv`             | 12 random bytes per value                                                                                                                                                           |
 | `ciphertext+tag` | The ciphertext, then the 16-byte GCM tag                                                                                                                                            |
 | Encoding         | `iv` and `ciphertext+tag` in base64url **without padding**. Only the canonical form is accepted: a value that does not re-encode to itself is rejected                              |
@@ -273,8 +277,10 @@ a payload with a wrong field type, or an expired `exp`. The reader never tells w
 ```
 
 `exp` is epoch **seconds**; the session is expired when `now >= exp`. `csrf` equals the `msid_csrf` cookie
-issued with it. `msid_auth` holds `{ state, nonce, codeVerifier, returnTo, exp }` with `exp` ten minutes
-ahead. `Secure` is set on the cookies when `PUBLIC_BASE_URL` is https; the other attributes are in
+issued with it. A transaction cookie holds `{ state, nonce, codeVerifier, returnTo, exp }` with `exp`
+ten minutes ahead. Its name is `msid_auth_` plus the first 16 characters of `state` (base64url), so
+each sign-in has its own cookie and sign-ins in several tabs do not overwrite each other. The callback
+reads the cookie named by its `state` query parameter and still compares the full `state`. `Secure` is set on the cookies when `PUBLIC_BASE_URL` is https; the other attributes are in
 [the API guide](api/authentication.md#cookies). When a `Cookie` header repeats a name, the first
 value wins.
 
@@ -282,8 +288,11 @@ What this means, honestly:
 
 - The session is **stateless**. Nothing is stored on the server, so a session **cannot be revoked**
   before its 12 hours end (absolute; it does not slide). Changing `SESSION_SECRET` ends all of them.
-- The secret must be shared by every instance behind a load balancer. Without `SESSION_SECRET`
-  outside production, a fixed development constant is used and a warning is logged at start-up.
+- The secret must be shared by every instance behind a load balancer. `SESSION_SECRET` is required
+  when `NODE_ENV=production`, and also when `PUBLIC_BASE_URL` is https or its host is not
+  `localhost`, `127.0.0.1` or `[::1]`, so a deployment that forgets `NODE_ENV` cannot run with the
+  public development constant. Otherwise, when it is unset, that constant is used and a warning is
+  logged at start-up.
 - A user's name or email changes only at the next sign-in.
 
 ### The authentication hook
@@ -291,12 +300,13 @@ What this means, honestly:
 `auth/authenticate.ts`. For each contract operation, `api.ts` turns its effective `security`
 (operation-level, else the document's top level) into an access rule:
 
-| `security`                                                 | Rule                   |
-| ---------------------------------------------------------- | ---------------------- |
-| `[]`, or any requirement that is empty                     | Public: no hook        |
-| Only `bearerAuth` (P1)                                     | Never satisfied: `401` |
-| `cookieAuth`, with `csrfToken` in every usable requirement | Session and CSRF       |
-| `cookieAuth` alone                                         | Session                |
+| `security`                                                 | Rule                                                                                    |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `[]`, or an empty requirement and no session one           | Public: no hook                                                                         |
+| A session requirement and an empty one (`logout`)          | Optional session: without a valid `msid` the call is anonymous; with one, CSRF as below |
+| Only `bearerAuth` (P1)                                     | Never satisfied: `401`                                                                  |
+| `cookieAuth`, with `csrfToken` in every usable requirement | Session and CSRF                                                                        |
+| `cookieAuth` alone                                         | Session                                                                                 |
 
 The hook runs in `onRequest`, before body parsing and validation. The order is therefore
 authentication (`401`), CSRF (`403`), validation (`400`/`422`), handler (or `501`). On success it sets
@@ -309,12 +319,12 @@ operation, keyed by the socket IP. A limited request answers `429 rate-limited` 
 
 ### Handlers (`auth/session-handlers.ts`)
 
-| Operation        | Does                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `login`          | Validates `returnTo` (`auth/return-to.ts`), creates the transaction, sets `msid_auth`, redirects to `authorizationUrl`                                                                                                                                                                                                                                                                                           |
-| `loginCallback`  | Clears `msid_auth` whatever happens. Opens it, compares `state`, calls `finishSignIn`, then `Directory.getUser(sub)`: when found, its `displayName` and `email` win over the claims; otherwise the claims are used (`name`, else `email`, else `sub`). A blocked user is `403 forbidden`. Sets `msid` and `msid_csrf`, redirects to `PUBLIC_BASE_URL + returnTo`. The avatar is the `picture` claim, else `null` |
-| `logout`         | Clears the three cookies, returns `{ redirectUrl }` from `endSessionUrl()`                                                                                                                                                                                                                                                                                                                                       |
-| `getCurrentUser` | `request.user` plus `notices`. If the notice store fails, `notices` is `[]`, the error is logged, and the answer is still `200`                                                                                                                                                                                                                                                                                  |
+| Operation        | Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login`          | Validates `returnTo` (`auth/return-to.ts`), creates the transaction, sets its `msid_auth_<state key>` cookie, redirects to `authorizationUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `loginCallback`  | Clears the transaction cookie named by `state` whatever happens (other sign-ins' cookies stay). Opens it, compares the full `state`; when that fails but the request has a valid `msid`, redirects to `PUBLIC_BASE_URL/` instead of `400`. Calls `finishSignIn`, then `Directory.getUser(sub)`: when found, its `displayName` and `email` win over the claims; otherwise the claims are used (`name`, else `email`). A blocked user is `403 forbidden`; no email at all is `400 bad-request`. Sets `msid` and `msid_csrf`, redirects to `PUBLIC_BASE_URL + returnTo`. The avatar is the `picture` claim when it is an absolute http(s) URL, else `null` |
+| `logout`         | With or without a session: clears `msid`, `msid_csrf` and every `msid_auth_*` cookie received, returns `{ redirectUrl }` from `endSessionUrl()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `getCurrentUser` | `request.user` plus `notices`. If the notice store fails, `notices` is `[]`, the error is logged, and the answer is still `200`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ### Account notices
 
@@ -348,7 +358,8 @@ The private routes sit under the pathless layout route `routes/_private.tsx`. It
 `GET /me`; on `401` it navigates (a full page load) to `/api/v1/auth/login?returnTo=<path, query and
 hash>`. The route never settles while the browser leaves, so no private page flashes. `/` is private.
 `api/csrf.ts` adds `X-CSRF-Token` (from `msid_csrf`) to every unsafe request. Sign-out posts to
-`logout`, clears the query cache, and navigates to `redirectUrl`; a `401` there counts as signed out.
+`logout`, clears the query cache, and navigates to `redirectUrl`. `logout` answers also without a
+session, so an expired session still leaves the provider's session.
 
 ## Web modules (`web/src`)
 
