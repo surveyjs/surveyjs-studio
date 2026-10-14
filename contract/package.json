@@ -11,12 +11,13 @@
     "generate": "openapi-typescript openapi.yaml -o generated/openapi.d.ts",
     "lint": "redocly lint openapi.yaml",
     "check:generated": "tsx scripts/check-generated.ts",
-    "build:docs": "redocly build-docs openapi.yaml --disableGoogleFont -o dist/reference.html",
+    "build:docs": "tsx scripts/build-docs.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@redocly/cli": "2.56.0",
     "openapi-typescript": "7.13.0",
+    "redoc": "2.5.4",
     "tsx": "4.23.15",
     "yaml": "2.9.1"
   }

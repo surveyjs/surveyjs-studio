@@ -7,3 +7,10 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # core-js only prints a donation banner in its postinstall; not needed.
+  core-js: false
+
+peerDependencyRules:
+  allowedVersions:
+    # openapi-typescript declares typescript ^5 but works with 6 (it only uses the TS compiler API).
+    "openapi-typescript>typescript": "6"
