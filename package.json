@@ -13,6 +13,8 @@
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck && tsc -p tsconfig.json --noEmit",
     "check:deps": "tsx scripts/check-deps/cli.ts",
     "test:unit": "vitest run",
+    "test:conformance": "pnpm --filter @my-surveys/conformance-tests test",
+    "test": "pnpm test:unit && pnpm test:conformance",
     "lint:contract": "pnpm --filter @my-surveys/contract lint && pnpm --filter @my-surveys/contract check:generated",
     "build": "pnpm --filter @my-surveys/contract build:docs"
   },
