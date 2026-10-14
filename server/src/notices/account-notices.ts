@@ -1,5 +1,6 @@
 import type { components } from "@my-surveys/contract";
 import type { AccountNoticesSetting } from "../config.js";
+import { DEFAULT_SHELL_LINKS } from "../shell-links.js";
 
 export type Notice = components["schemas"]["Notice"];
 
@@ -12,8 +13,11 @@ export interface AccountNotices {
   noticesFor(userId: string): Promise<Notice[]>;
 }
 
-/** Where the surveyjs.io licence dialogs send the "Renew" button: the account's licence page. */
-const RENEW_URL = "https://surveyjs.io/manage";
+/**
+ * Where the surveyjs.io licence dialogs send the "Renew" button: the account's licence page, which
+ * is the Account menu's Settings link. `linkNotices` repoints it to the configured `settings` link.
+ */
+const RENEW_URL = DEFAULT_SHELL_LINKS.settings;
 
 /** The surveyjs.io "renewal subscription has expired" dialog (layout document, section 3.15). */
 export const LICENCE_EXPIRED: Readonly<Notice> = Object.freeze({
@@ -30,6 +34,28 @@ export const LICENCE_EXPIRES_SOON: Readonly<Notice> = Object.freeze({
   actionUrl: RENEW_URL,
   actionLabel: "Renew",
 });
+
+/** The shell link each notice's action opens, by notice code. */
+const ACTION_LINKS: Readonly<Record<string, string>> = {
+  [LICENCE_EXPIRED.code]: "settings",
+  [LICENCE_EXPIRES_SOON.code]: "settings",
+};
+
+/**
+ * Points each notice's action at its shell link (`/config.links`, so `SHELL_LINKS` repoints the
+ * Settings menu item and the Renew button in one place). A notice whose link is missing keeps its
+ * own `actionUrl`.
+ */
+export function linkNotices(
+  notices: readonly Notice[],
+  links: Readonly<Record<string, string>>,
+): Notice[] {
+  return notices.map((notice): Notice => {
+    const name = Object.hasOwn(ACTION_LINKS, notice.code) ? ACTION_LINKS[notice.code] : undefined;
+    const url = name !== undefined && Object.hasOwn(links, name) ? links[name] : undefined;
+    return url === undefined ? notice : { ...notice, actionUrl: url };
+  });
+}
 
 export type DemoNoticesSetting = Exclude<AccountNoticesSetting, "surveyjs-licenses">;
 

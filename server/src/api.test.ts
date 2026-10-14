@@ -54,6 +54,11 @@ describe("getConfig", () => {
         maxFileBytes: 10485760,
         maxResponseBytes: 1048576,
       },
+      links: {
+        settings: "https://surveyjs.io/manage",
+        helpDesk: "https://surveyjs.answerdesk.io/ticket/list?preset=mytickets",
+        billing: "https://surveyjs.io/manage#billing",
+      },
     });
   });
 
@@ -71,6 +76,10 @@ describe("getConfig", () => {
         LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "300",
         LIMIT_MAX_FILE_BYTES: "200",
         LIMIT_MAX_RESPONSE_BYTES: "100",
+        SHELL_LINKS: JSON.stringify({
+          billing: "https://billing.example.com/",
+          status: "https://status.example.com/",
+        }),
       })
     ).inject("/api/v1/config");
     expect(res.statusCode).toBe(200);
@@ -80,6 +89,13 @@ describe("getConfig", () => {
       authMethods: ["surveyjs", "password"],
       surveyjsLicenseKey: "key-123",
       limits: { maxAssetBytesPerSurvey: 300, maxFileBytes: 200, maxResponseBytes: 100 },
+      // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
+      links: {
+        settings: "https://surveyjs.io/manage",
+        helpDesk: "https://surveyjs.answerdesk.io/ticket/list?preset=mytickets",
+        billing: "https://billing.example.com/",
+        status: "https://status.example.com/",
+      },
     });
   });
 });

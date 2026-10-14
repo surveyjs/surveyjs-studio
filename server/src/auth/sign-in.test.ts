@@ -199,6 +199,21 @@ describe("account notices", () => {
       ],
     });
   });
+  it("points the licence notice's Renew link at the settings shell link", async () => {
+    const server = await start({
+      ...devEnv,
+      ACCOUNT_NOTICES: "license-expires-soon",
+      SHELL_LINKS: JSON.stringify({ settings: "https://account.example.com/licences" }),
+    });
+    const { headers } = await signIn(server, ownerUser.id);
+    const me = await server.inject({ url: "/api/v1/me", headers });
+    expect(me.json()).toMatchObject({
+      notices: [
+        { code: "license-expires-soon", actionUrl: "https://account.example.com/licences" },
+      ],
+    });
+  });
+
   it("getCurrentUser answers without notices when the notice store fails", async () => {
     const config = loadConfig(devEnv);
     const providers = await createProviders(config);

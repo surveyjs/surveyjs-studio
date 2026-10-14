@@ -1,6 +1,7 @@
 import type { components } from "@my-surveys/contract";
 import type { Handlers } from "./api.js";
 import type { AppConfig } from "./config.js";
+import { shellLinks } from "./shell-links.js";
 
 type ConfigBody = components["schemas"]["AppConfig"];
 
@@ -16,6 +17,7 @@ export function createHandlers(config: AppConfig): Handlers {
       maxFileBytes: config.limits.maxFileBytes,
       maxResponseBytes: config.limits.maxResponseBytes,
     },
+    links: shellLinks(config.shellLinks),
   };
 
   return {

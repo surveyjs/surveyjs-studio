@@ -2,8 +2,9 @@ import type { components } from "@my-surveys/contract";
 import type { Handlers } from "../api.js";
 import type { AppConfig } from "../config.js";
 import { AppError } from "../errors.js";
-import type { AccountNotices } from "../notices/account-notices.js";
+import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
 import type { Directory } from "../providers/types.js";
+import { shellLinks } from "../shell-links.js";
 import { requireUser } from "./authenticate.js";
 import {
   clearAllCookies,
@@ -59,6 +60,7 @@ async function sessionUser(directory: Directory, claims: IdentityClaims): Promis
 export function createSessionHandlers(options: SessionHandlerOptions): Handlers {
   const { config, identity, directory, notices, now } = options;
   const secret = config.sessionSecret;
+  const links = shellLinks(config.shellLinks);
 
   return {
     login: async (request, reply) => {
@@ -109,7 +111,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       // surveyjs.io, where a failed licence check shows no dialog), and the failure is logged.
       let current: CurrentUser["notices"] = [];
       try {
-        current = await notices.noticesFor(user.id);
+        current = linkNotices(await notices.noticesFor(user.id), links);
       } catch (error) {
         request.log.error({ err: error }, "account notices are unavailable");
       }

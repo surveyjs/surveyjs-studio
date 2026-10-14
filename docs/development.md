@@ -66,13 +66,29 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `OIDC_SCOPES`                              | space-separated scopes                                                            | `profile email`; `openid profile email` with `openid-configuration`                                                      |
 | `SIGN_IN_RATE_LIMIT`                       | positive integer (requests per minute per IP)                                     | `30`                                                                                                                     |
 | `ACCOUNT_NOTICES`                          | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`            | `none`; `surveyjs-licenses` needs `azure-legacy`                                                                         |
-| `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                                       | unset                                                                                                                    |
+| `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                                       | unset; merged over the built-in account links (below)                                                                    |
 
 "Required in production" means `NODE_ENV=production`. An empty or whitespace-only value counts as unset
 (the default applies). Integer variables accept decimal digits only (`1e3`, `0x10`, `-1` and `1.5` are rejected). The values for edition, shell, auth
 methods, licence key and limits are returned by `GET /api/v1/config`.
 
+`GET /api/v1/config` also returns `links`, the account links of the shell. The built-in ones are the
+surveyjs.io Account menu's links; `SHELL_LINKS` replaces them by name or adds more:
+
+| Name       | Built-in URL                                                  | Used for                                                     |
+| ---------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
+| `settings` | `https://surveyjs.io/manage`                                  | Account menu "Settings", and the licence notices' "Renew"    |
+| `helpDesk` | `https://surveyjs.answerdesk.io/ticket/list?preset=mytickets` | Account menu "Help Desk", and the licence dialogs' Help Desk |
+| `billing`  | `https://surveyjs.io/manage#billing`                          | Account menu "Billing"                                       |
+
+For example, `SHELL_LINKS={"settings":"https://account.example.com/"}` moves both the Settings item
+and the Renew button.
+
 `pnpm demo` reads `server/demo.env` (dev sign-in, the legacy fixture users, `PUBLIC_BASE_URL=http://localhost:5173`).
+Variables set in the shell win over that file. To see a licence dialog of the surveyjs.io shell, run
+`ACCOUNT_NOTICES=license-expired pnpm demo` (Git Bash). After "Later" or "Renew" the dialog stays
+hidden in that browser, as on surveyjs.io; remove the `expiredNotificationDateTime` (or
+`expiresSoonNotificationDateTime`) key from the site's local storage to see it again.
 The three `LEGACY_*` values, `SESSION_SECRET` and `OIDC_CLIENT_SECRET` are secrets. Never commit one, and never put a real one in a file in
 this repository; the errors and logs of the server do not print them.
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { demoAccountNotices, LICENCE_EXPIRED, LICENCE_EXPIRES_SOON } from "./account-notices.js";
+import {
+  demoAccountNotices,
+  LICENCE_EXPIRED,
+  LICENCE_EXPIRES_SOON,
+  linkNotices,
+} from "./account-notices.js";
 
 const userId = "11111111-0000-4000-8000-a00000000001";
 
@@ -42,5 +47,22 @@ describe("demoAccountNotices", () => {
     const [first] = await notices.noticesFor(userId);
     first!.message = "changed";
     expect(await notices.noticesFor(userId)).toEqual([LICENCE_EXPIRED]);
+  });
+});
+
+describe("linkNotices", () => {
+  const other = { code: "something-else", message: "Other", actionUrl: "https://a.example/" };
+
+  it("points the licence notices' Renew link at the settings link", () => {
+    const links = { settings: "https://account.example.com/", billing: "https://b.example/" };
+    expect(linkNotices([LICENCE_EXPIRED, LICENCE_EXPIRES_SOON], links)).toEqual([
+      { ...LICENCE_EXPIRED, actionUrl: "https://account.example.com/" },
+      { ...LICENCE_EXPIRES_SOON, actionUrl: "https://account.example.com/" },
+    ]);
+  });
+
+  it("keeps a notice's own link when it has no shell link or the link is missing", () => {
+    expect(linkNotices([other], { settings: "https://account.example.com/" })).toEqual([other]);
+    expect(linkNotices([LICENCE_EXPIRED], {})).toEqual([LICENCE_EXPIRED]);
   });
 });
