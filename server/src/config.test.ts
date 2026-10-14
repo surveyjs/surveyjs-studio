@@ -95,6 +95,12 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ NODE_ENV: "production" })).toThrow(/PUBLIC_BASE_URL/);
   });
 
+  it("reports the production PUBLIC_BASE_URL requirement together with other problems", () => {
+    const run = () => loadConfig({ NODE_ENV: "production", PORT: "99999" });
+    expect(run).toThrow(/PORT/);
+    expect(run).toThrow(/PUBLIC_BASE_URL/);
+  });
+
   it("reports all problems in one error", () => {
     let error: unknown;
     try {

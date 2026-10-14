@@ -84,6 +84,7 @@ describe("toProblem", () => {
   );
 
   it.each([
+    "FST_ERR_BAD_URL",
     "FST_ERR_CTP_INVALID_JSON_BODY",
     "FST_ERR_CTP_EMPTY_JSON_BODY",
     "FST_ERR_CTP_INVALID_CONTENT_LENGTH",

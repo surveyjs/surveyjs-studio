@@ -71,11 +71,16 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     for (const issue of parsed.error.issues) {
       problems.push(`${String(issue.path[0] ?? "environment")}: ${issue.message}`);
     }
-  } else if (parsed.data.NODE_ENV === "production" && parsed.data.PUBLIC_BASE_URL === undefined) {
+  }
+  const productionWithoutUrl =
+    env.NODE_ENV === "production" &&
+    (env.PUBLIC_BASE_URL === undefined || env.PUBLIC_BASE_URL === "");
+  if (productionWithoutUrl && !problems.some((p) => p.startsWith("PUBLIC_BASE_URL:"))) {
     problems.push("PUBLIC_BASE_URL: required when NODE_ENV=production");
   }
   if (!parsed.success || problems.length > 0) {
-    throw new ConfigError(`Invalid configuration:\n${problems.map((p) => `  - ${p}`).join("\n")}`);
+    const lines = problems.map((p) => `  - ${p}`).join("\n");
+    throw new ConfigError(`Invalid configuration:\n${lines}`);
   }
   const e = parsed.data;
   return Object.freeze({

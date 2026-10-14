@@ -5,7 +5,7 @@ import { loadConfig } from "./config.js";
 import { AppError } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 
-const config = loadConfig({ NODE_ENV: "test", LIMIT_MAX_FILE_BYTES: "64" });
+const config = loadConfig({ NODE_ENV: "test", LIMIT_MAX_RESPONSE_BYTES: "64" });
 let app: FastifyInstance | undefined;
 
 async function start(providers: ProviderSet = createProviders(config)): Promise<FastifyInstance> {
@@ -66,6 +66,20 @@ describe("health", () => {
 });
 
 describe("Problem responses", () => {
+  it("malformed URLs answer 400 bad-request problem+json", async () => {
+    const res = await (await start()).inject("/%zz");
+    expect(res.statusCode).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.json()).toMatchObject({ code: "bad-request", status: 400 });
+  });
+
+  it("small JSON bodies are accepted", async () => {
+    const instance = await start();
+    instance.post("/t/ok", () => ({ ok: true }));
+    const res = await instance.inject({ method: "POST", url: "/t/ok", payload: { a: 1 } });
+    expect(res.statusCode).toBe(200);
+  });
+
   it("unknown routes answer 404 problem+json", async () => {
     const res = await (await start()).inject("/nope");
     expect(res.statusCode).toBe(404);

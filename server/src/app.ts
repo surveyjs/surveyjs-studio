@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { AppConfig } from "./config.js";
-import { PROBLEM_CONTENT_TYPE, problem, toProblem } from "./errors.js";
+import { PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import type { ProviderSet } from "./providers/index.js";
+
+function sendProblem(reply: FastifyReply, body: Problem): FastifyReply {
+  return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
+}
 
 export async function buildApp(
   config: AppConfig,
@@ -16,7 +20,12 @@ export async function buildApp(
         ? incoming
         : randomUUID();
     },
-    bodyLimit: config.limits.maxFileBytes,
+    frameworkErrors: (error, request, reply) => {
+      const body = toProblem(error);
+      if (body.status >= 500) request.log.error({ err: error }, "framework error");
+      return sendProblem(reply, body);
+    },
+    bodyLimit: config.limits.maxResponseBytes,
   });
 
   app.addHook("onSend", (request, reply, payload, done) => {
@@ -27,7 +36,7 @@ export async function buildApp(
   app.setErrorHandler((error, request, reply) => {
     const body = toProblem(error);
     if (body.status >= 500) request.log.error({ err: error }, "unhandled error");
-    return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
+    return sendProblem(reply, body);
   });
 
   app.setNotFoundHandler((_request, reply) =>

@@ -88,6 +88,7 @@ export function toProblem(error: unknown): Problem {
       });
     }
     if (
+      code === "FST_ERR_BAD_URL" ||
       (typeof code === "string" && code.startsWith("FST_ERR_CTP_")) ||
       (error instanceof SyntaxError && (error as { statusCode?: unknown }).statusCode === 400)
     ) {
