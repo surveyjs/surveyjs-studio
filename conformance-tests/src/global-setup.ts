@@ -11,6 +11,40 @@ declare module "vitest" {
 }
 
 const READY_TIMEOUT_MS = 30_000;
+
+// Every variable of the server's environment table (server/src/config.ts). The reference
+// server must see only the explicit values set below, never the developer's shell.
+// Keep in sync with server/src/config.ts and with e2e/playwright.config.ts (each package
+// keeps its own copy so none depends on another).
+const appVariables = [
+  "NODE_ENV",
+  "HOST",
+  "PORT",
+  "LOG_LEVEL",
+  "APP_EDITION",
+  "APP_SHELL",
+  "AUTH_METHODS",
+  "SURVEYJS_LICENSE_KEY",
+  "STORAGE_PROVIDER",
+  "PUBLIC_BASE_URL",
+  "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
+  "LIMIT_MAX_FILE_BYTES",
+  "LIMIT_MAX_RESPONSE_BYTES",
+  "API_DOCS",
+];
+
+function serverEnv(port: number): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of appVariables) delete env[name];
+  return {
+    ...env,
+    NODE_ENV: "test",
+    HOST: "127.0.0.1",
+    PORT: String(port),
+    STORAGE_PROVIDER: "memory",
+    LOG_LEVEL: "warn",
+  };
+}
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 function freePort(): Promise<number> {
@@ -49,14 +83,7 @@ async function startReferenceServer(): Promise<{ baseUrl: string; stop: () => vo
     shell: true,
     detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      NODE_ENV: "test",
-      HOST: "127.0.0.1",
-      PORT: String(port),
-      STORAGE_PROVIDER: "memory",
-      LOG_LEVEL: "warn",
-    },
+    env: serverEnv(port),
   });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));

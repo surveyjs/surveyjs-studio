@@ -2,7 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Playwright merges webServer.env onto process.env and cannot unset keys, so
 // strip every app variable (server env table and Vite's) from this process
-// first; the servers then see only the explicit values below.
+// first; the servers then see only the explicit values below. Keep the list in sync with
+// server/src/config.ts and conformance-tests/src/global-setup.ts (same approach there).
 const appVariables = [
   "NODE_ENV",
   "HOST",
