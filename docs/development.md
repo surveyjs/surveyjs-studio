@@ -101,7 +101,8 @@ node --env-file=docker/azurite.env --import tsx server/src/main.ts
 ```
 
 (`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
-the command above.) The loader refuses to write to an endpoint that is not local. Azure Files is
+the command above.) The loader refuses to write to an endpoint that is not local: it checks the
+connection strings, then the URL of every storage client the SDK builds, before any call. Azure Files is
 not emulated: the legacy file fixtures are not loaded. Why SQL Server: [ADR 0006](adr/0006-legacy-replica.md).
 
 The provider suite and the Azure legacy conformance run use the replica too; see
@@ -114,6 +115,17 @@ The provider suite and the Azure legacy conformance run use the replica too; see
 file content (`files/`). Its [README](../server/fixtures/legacy/README.md) lists the layout and what
 each fixture covers. Three things read them: `MEMORY_SEED=legacy-fixtures`, the provider suite,
 and `pnpm legacy:load`.
+
+Seed accounts (all synthetic, in `sql/Users.json`). Use them with the inspector, or as the user
+of a demo once sign-in exists:
+
+| Email                  | Name           | Roles                                            | Covers                                                 |
+| ---------------------- | -------------- | ------------------------------------------------ | ------------------------------------------------------ |
+| `owner@example.com`    | Olivia Owner   | Admin of Marketing, user of Engineering          | Personal surveys (published, draft, archived)          |
+| `admin@example.com`    | Adam Admin     | Admin of Engineering (its creator) and Marketing | A project creator; a role stored as `Admin`            |
+| `member@example.com`   | Mia Member     | User of Marketing                                | A plain member                                         |
+| `outsider@example.com` | Oscar Outsider | None                                             | One personal survey, in no project                     |
+| `blocked@example.com`  | (none)         | None                                             | Blocked user; the display name falls back to the email |
 
 To change them:
 
@@ -154,6 +166,18 @@ after the script name as shown; the script ends with `--` because Node 24 itself
 take a `--env-file` placed after the script path. For the memory provider on the fixtures:
 `STORAGE_PROVIDER=memory MEMORY_SEED=legacy-fixtures pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com`
 (the explicit variables win over the file).
+
+Against a real store (a read-only copy, or production for a support question), give the inspector
+the least privilege it needs, since it only reads:
+
+- SQL: a login with only `db_datareader` on the database, and `ApplicationIntent=readonly` in the
+  connection string, in lower case: `mssql` 12.7 ignores `ReadOnly`. It routes to a readable
+  secondary where there is one;
+- storage: SAS connection strings with read and list permissions only (`sp=rl`), for the Blob and
+  Table services, with a short expiry;
+- keep the env file **outside the repository**, or name it `.env.<something>`: only `.env` and
+  `.env.*` are git-ignored (except `.env.example`). Never commit it, and delete it when you are
+  done.
 
 ## Scripts
 

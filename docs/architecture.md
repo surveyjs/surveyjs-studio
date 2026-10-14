@@ -139,14 +139,16 @@ conditions": [ADR 0005](adr/0005-respondent-files-as-urls.md).
 
 ### Open for later steps
 
-The legacy system and the contract differ in these points. Step 2 does not settle them.
+Step 2 leaves these points open: mostly differences between the legacy system and the contract.
 
-| Difference                                                                                                    | To settle in |
+| Point                                                                                                         | To settle in |
 | ------------------------------------------------------------------------------------------------------------- | ------------ |
 | `canModify`: legacy allows a project admin or the survey's creator; the spec allows any member                | Step 4 or 5  |
 | Survey name length: 200 in SQL, 256 in the contract                                                           | Step 4 or 5  |
 | Results layouts: legacy keeps them per survey, the contract per user                                          | Step 9 or 10 |
 | Project `ownerId` and `createdAt`: legacy has no columns; they are inferred from the creator's membership row | Step 11      |
+| Fixtures are synthetic; the spec wants them copied from storage. Check them on a read-only copy (site team)   | Step 14      |
+| `azure-legacy` readiness makes account-level calls; a container SAS keeps `/readyz` at 503. Narrow the probe  | Step 14      |
 
 ## Request flow
 

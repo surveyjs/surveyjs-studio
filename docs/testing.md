@@ -26,10 +26,10 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
 
-| Command                         | Runs                                                                  |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `pnpm test:providers:azurite`   | The provider suite and the NULL-row tests against Azurite and SQL     |
-| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider |
+| Command                         | Runs                                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:azurite`   | Three files against Azurite and SQL: the provider suite, the NULL-row tests and the fixture loader tests |
+| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                    |
 
 CI runs all of them (see [Development](development.md#ci)).
 

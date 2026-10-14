@@ -137,9 +137,9 @@ pnpm test:conformance:azurite
 
 Expected:
 
-- `pnpm test:unit`: all pass (`Test Files 22 passed`, `Tests 339 passed`). It includes the
+- `pnpm test:unit`: all pass (`Test Files 24 passed`, `Tests 375 passed`). It includes the
   provider suite on the in-memory provider and does not need Docker.
-- `pnpm test:providers:azurite`: `Test Files 3 passed`, `Tests 42 passed`. The provider suite,
+- `pnpm test:providers:azurite`: `Test Files 3 passed`, `Tests 44 passed`. The provider suite,
   the NULL-row tests and the fixture loader tests run against the replica. Needs the replica from step 1.
 - `pnpm test:conformance:azurite`: `Test Files 2 passed`, `Tests 20 passed`. The conformance
   suite runs against a server that uses the `azure-legacy` provider.

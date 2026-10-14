@@ -4,6 +4,10 @@ Synthetic, anonymised data in the **legacy storage formats** of surveyjs.io My S
 is made up: GUIDs follow the scheme in `docs/architecture/legacy-data-layout.md` ("Examples are
 synthetic"; the last group starts with `a`, so that upper-casing an id changes it and the case tests mean something), emails use `example.com`, and the PNG is one pixel.
 
+The spec asks for fixtures copied from the current storage. No storage copy was available in
+Step 2, so these are written by hand from the layout document; confirming or extending them against
+a read-only storage copy is open (see [Open for later steps](../../../docs/architecture.md#open-for-later-steps)).
+
 They serve three jobs:
 
 - the memory provider can start from them (`MEMORY_SEED=legacy-fixtures`);
