@@ -53,13 +53,14 @@ const legacyVariables = [
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
 ] as const;
 
-// Read from azure-legacy.env: the OIDC provider is discovered lazily, so placeholders are harmless.
+// The mock OIDC server of docker/compose.azurite.yaml (settings in docker/azurite.env).
 const oidcVariables = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
 
 /**
- * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores: the three
- * `LEGACY_*` connection strings and the `OIDC_*` settings are forwarded from this process (`pnpm test:conformance:azurite`
- * reads them from docker/azurite.env). Default: memory, with every app variable stripped.
+ * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
+ * through the mock OIDC server: the three `LEGACY_*` connection strings and the `OIDC_*` settings are
+ * forwarded from this process (`pnpm test:conformance:azurite` reads them from docker/azurite.env).
+ * Default: memory, with every app variable stripped.
  */
 function providerEnv(): Record<string, string> {
   const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";

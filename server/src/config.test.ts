@@ -133,6 +133,24 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ [name]: value })).toThrow(name);
   });
 
+  it.each(["https://a.example/my-surveys", "https://a.example/?x=1", "https://a.example/#top"])(
+    "rejects PUBLIC_BASE_URL=%s: a base path is not supported",
+    (value) => {
+      expect(messageOf(() => loadConfig({ PUBLIC_BASE_URL: value }))).toContain(
+        "PUBLIC_BASE_URL: must be an origin only",
+      );
+    },
+  );
+
+  it("keeps PUBLIC_BASE_URL as an origin, without a trailing slash", () => {
+    expect(loadConfig({ PUBLIC_BASE_URL: "https://a.example/" }).publicBaseUrl).toBe(
+      "https://a.example",
+    );
+    expect(loadConfig({ PUBLIC_BASE_URL: "HTTP://LOCALHOST:5173" }).publicBaseUrl).toBe(
+      "http://localhost:5173",
+    );
+  });
+
   it("requires PUBLIC_BASE_URL in production", () => {
     expect(() => loadConfig({ NODE_ENV: "production" })).toThrow(/PUBLIC_BASE_URL/);
   });

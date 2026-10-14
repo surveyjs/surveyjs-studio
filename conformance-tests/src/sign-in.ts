@@ -1,7 +1,8 @@
 /**
  * Sign-in driver: signs in over HTTP only, the way a browser would, by following the redirects
  * of `/auth/login`. It completes the dev identity provider's "Sign in as…" page
- * (`IDENTITY_PROVIDER=dev`); other providers are reported as unsupported.
+ * (`IDENTITY_PROVIDER=dev`) and the login form of the mock OIDC server (mock-oauth2-server, used
+ * in Azurite mode); other identity providers are reported as unsupported.
  */
 
 /** Users of the legacy fixtures (server/fixtures/legacy) the reference server is seeded with. */
@@ -81,6 +82,45 @@ export interface SignInResult extends SignInStart {
   readonly callback: Response;
 }
 
+/** The dev provider's "Sign in as…" page: the link of the chosen user is the callback URL. */
+async function completeDevPage(location: URL, userId: string): Promise<URL> {
+  const page = await fetch(location, { redirect: "manual" });
+  if (page.status !== 200) throw new Error(`${DEV_SIGN_IN_PATH} answered ${page.status}`);
+  const links = [...(await page.text()).matchAll(/href="([^"]*)"/g)].map(
+    (match) => new URL(decodeEntities(match[1] ?? ""), location),
+  );
+  const choice = links.find(
+    (link) => link.searchParams.get("code")?.toLowerCase() === userId.toLowerCase(),
+  );
+  if (!choice) throw new Error(`${DEV_SIGN_IN_PATH} does not list user ${userId}`);
+  return choice;
+}
+
+/**
+ * The mock OIDC server's login page: a form that posts `username` (the subject) to the
+ * authorization URL, which then redirects to the callback. Its configuration
+ * (docker/mock-oidc.json) gives each fixture user's id its email and name claims.
+ */
+async function completeMockOidcLogin(location: URL, userId: string): Promise<URL | null> {
+  const page = await fetch(location, { redirect: "manual" });
+  const html = page.status === 200 ? await page.text() : "";
+  const form = /<form\b[^>]*\bmethod="post"[^>]*>/i.exec(html)?.[0];
+  if (!form || !/<input\b[^>]*\bname="username"/i.test(html)) return null;
+  const action = /\baction="([^"]*)"/i.exec(form)?.[1];
+  const target = action ? new URL(decodeEntities(action), location) : location;
+  const login = await fetch(target, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username: userId }).toString(),
+  });
+  const callback = login.headers.get("location");
+  if (login.status !== 302 || callback === null) {
+    throw new Error(`the mock OIDC login form answered ${login.status}, not a redirect`);
+  }
+  return new URL(callback, target);
+}
+
 /**
  * Signs in as `userId` and returns the browser state. Throws SignInUnsupportedError when the
  * server's identity provider is not one the driver can complete.
@@ -92,21 +132,19 @@ export async function signIn(
 ): Promise<SignInResult> {
   const start = await startSignIn(baseUrl, returnTo);
   const { jar, location } = start;
-  if (location.pathname !== DEV_SIGN_IN_PATH) {
+  const callbackUrl =
+    location.pathname === DEV_SIGN_IN_PATH
+      ? await completeDevPage(location, userId)
+      : await completeMockOidcLogin(location, userId);
+  if (!callbackUrl) {
     throw new SignInUnsupportedError(
-      `login redirects to ${location.origin}${location.pathname}; the sign-in driver only completes the dev provider's ${DEV_SIGN_IN_PATH} page`,
+      `login redirects to ${location.origin}${location.pathname}; the sign-in driver completes only the dev provider's ${DEV_SIGN_IN_PATH} page and the mock OIDC server's login form`,
     );
   }
-  const page = await fetch(location, { redirect: "manual" });
-  if (page.status !== 200) throw new Error(`${DEV_SIGN_IN_PATH} answered ${page.status}`);
-  const links = [...(await page.text()).matchAll(/href="([^"]*)"/g)].map(
-    (match) => new URL(decodeEntities(match[1] ?? ""), location),
-  );
-  const choice = links.find(
-    (link) => link.searchParams.get("code")?.toLowerCase() === userId.toLowerCase(),
-  );
-  if (!choice) throw new Error(`${DEV_SIGN_IN_PATH} does not list user ${userId}`);
-  const callback = await fetch(choice, { redirect: "manual", headers: { cookie: jar.header() } });
+  const callback = await fetch(callbackUrl, {
+    redirect: "manual",
+    headers: { cookie: jar.header() },
+  });
   jar.store(callback);
   return { ...start, callback };
 }

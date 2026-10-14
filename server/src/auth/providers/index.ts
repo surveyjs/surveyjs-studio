@@ -10,5 +10,8 @@ export async function createIdentityProvider(config: AppConfig): Promise<Identit
     const users = config.memorySeed === "legacy-fixtures" ? (await legacyFixtureSeed()).users : [];
     return createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users });
   }
-  return createOidcIdentityProvider(config.oidc);
+  // loadConfig requires the OIDC settings for surveyjs-oidc unless identity rules are skipped
+  // (tools that never serve HTTP).
+  if (!config.oidc) throw new Error("IDENTITY_PROVIDER=surveyjs-oidc needs the OIDC_* settings");
+  return createOidcIdentityProvider({ oidc: config.oidc, publicBaseUrl: config.publicBaseUrl });
 }

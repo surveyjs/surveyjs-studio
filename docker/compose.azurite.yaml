@@ -38,6 +38,23 @@ services:
       retries: 30
       start_period: 20s
 
+  # Local OpenID provider standing in for auth.surveyjs.io. Issuer: http://127.0.0.1:18080/surveyjs.
+  # Its login page signs in whoever is typed; mock-oidc.json maps the fixture users (owner, admin,
+  # member, outsider, blocked, or their ids) to their legacy ids, emails and names.
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.3
+    environment:
+      JSON_CONFIG_PATH: /config/mock-oidc.json
+    volumes:
+      - ./mock-oidc.json:/config/mock-oidc.json:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/isalive"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
 volumes:
   azurite-data:
   legacy-sql-data:

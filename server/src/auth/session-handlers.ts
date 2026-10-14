@@ -79,8 +79,10 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       if (!tx || !sameInConstantTime(state, tx.state)) {
         throw badRequest("The sign-in expired or was not started in this browser. Sign in again.");
       }
+      // The URL the browser opened: the public origin (PUBLIC_BASE_URL has no path) with this
+      // request's path and query.
       const claims = await identity.finishSignIn(
-        new URL(publicUrl(config.publicBaseUrl, request.url)),
+        new URL(new URL(config.publicBaseUrl).origin + request.url),
         tx,
       );
       const user = await sessionUser(directory, claims);

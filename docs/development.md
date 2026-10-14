@@ -16,10 +16,10 @@
 
 ## Demo modes
 
-| Mode    | Command                                             | Storage                                                         |
-| ------- | --------------------------------------------------- | --------------------------------------------------------------- |
-| memory  | `pnpm demo`                                         | In memory; data is lost on restart                              |
-| Azurite | `pnpm demo:azurite:up` (see [below](#azurite-mode)) | Local replica of the legacy stores, read through `azure-legacy` |
+| Mode    | Command                                                                       | Storage                                                                                               |
+| ------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| memory  | `pnpm demo`                                                                   | In memory; data is lost on restart                                                                    |
+| Azurite | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode)) | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
 the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
@@ -51,7 +51,7 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                               | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
 | `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
 | `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**          | unset; required when `STORAGE_PROVIDER=azure-legacy`                                           |
-| `PUBLIC_BASE_URL`                          | absolute http(s) URL                                                   | `http://localhost:3000`; **required in production**                                            |
+| `PUBLIC_BASE_URL`                          | absolute http(s) origin, no path (a base path is not supported)        | `http://localhost:3000`; **required in production**                                            |
 | `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                                       | `52428800` (50 MB)                                                                             |
 | `LIMIT_MAX_FILE_BYTES`                     | positive integer                                                       | `10485760` (10 MB)                                                                             |
 | `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                       | `1048576` (1 MB); also the request body limit                                                  |
@@ -93,35 +93,62 @@ The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `
 
 ## Azurite mode
 
-Azurite mode runs the server and the tools against a local replica of the legacy stores. Nothing
-real is touched. It needs **Docker** (with Compose) and free ports 10000 and 10002 (Azurite Blob
-and Table) and 14333 (SQL Server), all on 127.0.0.1.
+Azurite mode runs the server and the tools against a local replica of the legacy stores, and signs
+in through a local mock OIDC server instead of `auth.surveyjs.io`. Nothing real is touched. It needs
+**Docker** (with Compose) and free ports 10000 and 10002 (Azurite Blob and Table), 14333 (SQL Server)
+and 18080 (mock OIDC server), all on 127.0.0.1.
 
-| Command                  | Does                                                                                                                                |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm demo:azurite:up`   | Starts Azurite and SQL Server, waits until both are healthy, then loads the golden fixtures (`pnpm legacy:load`). Safe to run again |
-| `pnpm demo:azurite:down` | Stops both containers and **deletes their volumes**. The next `up` starts empty                                                     |
-| `pnpm legacy:load`       | Loads the fixtures into a running replica                                                                                           |
+| Command                  | Does                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm demo:azurite:up`   | Starts Azurite, SQL Server and the mock OIDC server, waits until all are healthy, then loads the golden fixtures (`pnpm legacy:load`). Safe to run again |
+| `pnpm demo:azurite`      | Like `pnpm demo`, but the server uses the `azure-legacy` provider on the replica and signs in through the mock OIDC server. Needs `demo:azurite:up`      |
+| `pnpm demo:azurite:down` | Stops the containers and **deletes their volumes**. The next `up` starts empty                                                                           |
+| `pnpm legacy:load`       | Loads the fixtures into a running replica                                                                                                                |
 
 [`docker/azurite.env`](../docker/azurite.env) holds the local-only values: `STORAGE_PROVIDER=azure-legacy`,
-the three `LEGACY_*` connection strings, and the SQL Server password. The storage key in it is
-Microsoft's public Azurite development key, not a secret. Explicit environment variables win over
-the file. To start the server on the replica:
+the three `LEGACY_*` connection strings, the SQL Server password, and the `OIDC_*` settings of the
+mock OIDC server. The storage key in it is Microsoft's public Azurite development key, not a secret;
+the mock accepts any client id and secret. Explicit environment variables win over the file.
+
+`pnpm demo:azurite` reads it, then `server/demo-azurite.env` (`PUBLIC_BASE_URL=http://localhost:5173`,
+the Vite origin). To start the server alone on the replica (it then redirects to its own origin,
+port 3000):
 
 ```sh
-node --env-file=docker/azurite.env --env-file=conformance-tests/azure-legacy.env --import tsx server/src/main.ts
+node --env-file=docker/azurite.env --import tsx server/src/main.ts
 ```
 
-(`azure-legacy.env` adds placeholder OIDC settings, which the `azure-legacy` provider needs until the mock
-OIDC server arrives with the sign-in task; discovery is lazy, so nothing contacts them.)
-
 (`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
-the command above.) The loader refuses to write to an endpoint that is not local: it checks the
+the command above.) The hosted edition runs too: `APP_EDITION=hosted pnpm demo:azurite` (Git Bash).
+
+The loader refuses to write to an endpoint that is not local: it checks the
 connection strings, then the URL of every storage client the SDK builds, before any call. Azure Files is
 not emulated: the legacy file fixtures are not loaded. Why SQL Server: [ADR 0006](adr/0006-legacy-replica.md).
 
 The provider suite and the Azure legacy conformance run use the replica too; see
 [testing](testing.md#provider-suite).
+
+### Signing in through the mock OIDC server
+
+The mock is [mock-oauth2-server](https://github.com/navikt/mock-oauth2-server) (MIT), configured by
+[`docker/mock-oidc.json`](../docker/mock-oidc.json). Its issuer is `http://127.0.0.1:18080/surveyjs`.
+The server uses the same `surveyjs-oidc` code as for `auth.surveyjs.io`: code flow with PKCE, a
+checked ID token, and the mock's `end_session_endpoint` on sign-out.
+
+`/auth/login` opens the mock's sign-in page. Type a fixture user in the first field, leave the
+claims box empty, and press **Sign-in**:
+
+| Type       | Signs in as                            |
+| ---------- | -------------------------------------- |
+| `owner`    | Olivia Owner, `owner@example.com`      |
+| `admin`    | Adam Admin, `admin@example.com`        |
+| `member`   | Mia Member, `member@example.com`       |
+| `outsider` | Oscar Outsider, `outsider@example.com` |
+| `blocked`  | the blocked user: `403 forbidden`      |
+
+The user's id (`11111111-0000-4000-8000-a00000000001` for the owner) works too. The mock gives
+these names their legacy `Users.id` as the subject, with their email and name claims. Any other
+text signs in a user the directory does not know, with that text as the subject.
 
 ## Golden fixtures
 
@@ -254,7 +281,8 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
 2. `test:unit` and `test:conformance` (in-memory);
-3. `pnpm demo:azurite:up`, which starts the legacy replica and loads the fixtures;
+3. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
+   fixtures;
 4. `test:providers:azurite` and `test:conformance:azurite`;
 5. the browser install and `e2e` (still on the memory provider);
 6. on failure, it uploads the Playwright report;

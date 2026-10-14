@@ -1,0 +1,55 @@
+{
+  "interactiveLogin": true,
+  "tokenCallbacks": [
+    {
+      "issuerId": "surveyjs",
+      "tokenExpiry": 300,
+      "requestMappings": [
+        {
+          "requestParam": "subject",
+          "match": "owner|11111111-0000-4000-8000-a00000000001",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000001",
+            "email": "owner@example.com",
+            "name": "Olivia Owner"
+          }
+        },
+        {
+          "requestParam": "subject",
+          "match": "admin|11111111-0000-4000-8000-a00000000002",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000002",
+            "email": "admin@example.com",
+            "name": "Adam Admin"
+          }
+        },
+        {
+          "requestParam": "subject",
+          "match": "member|11111111-0000-4000-8000-a00000000003",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000003",
+            "email": "member@example.com",
+            "name": "Mia Member"
+          }
+        },
+        {
+          "requestParam": "subject",
+          "match": "outsider|11111111-0000-4000-8000-a00000000004",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000004",
+            "email": "outsider@example.com",
+            "name": "Oscar Outsider"
+          }
+        },
+        {
+          "requestParam": "subject",
+          "match": "blocked|11111111-0000-4000-8000-a00000000005",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000005",
+            "email": "blocked@example.com"
+          }
+        }
+      ]
+    }
+  ]
+}

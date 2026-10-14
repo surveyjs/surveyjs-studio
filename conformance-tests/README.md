@@ -34,22 +34,29 @@ origin, and `SIGN_IN_RATE_LIMIT` is high enough that the suite never reaches it.
 ## Signing in
 
 `src/sign-in.ts` signs in over HTTP only, like a browser: it calls `/auth/login`, follows the
-redirect to the identity provider, and completes it. Today it completes the dev provider's
-"Sign in as…" page (`/__dev/sign-in`) as a user of the legacy fixtures. When `/auth/login` redirects
-anywhere else, the tests that need a signed-in user are **skipped**, and the skip note names the
-redirect target. The tests that need no sign-in (`login`, the callback's `400`s, anonymous `401`s,
-`passwordLogin`) run on every provider.
+redirect to the identity provider, and completes it as a user of the legacy fixtures. It completes
+
+- the dev provider's "Sign in as…" page (`/__dev/sign-in`, `IDENTITY_PROVIDER=dev`): it follows the
+  link of the user;
+- the login form of the mock OIDC server (Azurite mode): it posts the user id as `username`, and the
+  mock (`docker/mock-oidc.json`) signs in that user with its email and name claims.
+
+When `/auth/login` leads anywhere else, the tests that need a signed-in user are **skipped**, and the
+skip note names the redirect target. The tests that need no sign-in (`login`, the callback's `400`s,
+anonymous `401`s, `passwordLogin`) run on every provider. Both reference runs (`test:conformance` and
+`test:conformance:azurite`) skip nothing.
 
 ## Run against the Azure legacy provider
 
 `CONFORMANCE_PROVIDER` picks the storage provider of the reference server:
 
-| Value              | Reference server                                                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory` (default) | `STORAGE_PROVIDER=memory`; every app variable of the developer's shell is stripped.                                                                                                                           |
-| `azure-legacy`     | `STORAGE_PROVIDER=azure-legacy`; the three `LEGACY_*` connection strings and the `OIDC_*` placeholders of `azure-legacy.env` are forwarded from the environment (every other app variable is still stripped). |
+| Value              | Reference server                                                                                                                                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory` (default) | `STORAGE_PROVIDER=memory`; every app variable of the developer's shell is stripped.                                                                                                                                                     |
+| `azure-legacy`     | `STORAGE_PROVIDER=azure-legacy`; the three `LEGACY_*` connection strings and the `OIDC_*` settings of the mock OIDC server (from `docker/azurite.env`) are forwarded from the environment (every other app variable is still stripped). |
 
-Against the local replica of the legacy stores (Azurite and SQL Server in Docker):
+Against the local replica of the legacy stores (Azurite and SQL Server in Docker) and the mock OIDC
+server:
 
 ```sh
 pnpm demo:azurite:up            # start the replica and load the golden fixtures
@@ -57,7 +64,7 @@ pnpm test:conformance:azurite   # reads docker/azurite.env and azure-legacy.env
 pnpm demo:azurite:down          # stop and wipe the replica
 ```
 
-A missing `LEGACY_*` variable stops the run with an error that names it.
+A missing `LEGACY_*` or `OIDC_*` variable stops the run with an error that names it.
 
 ## Run against another server
 

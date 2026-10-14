@@ -52,7 +52,7 @@ jobs:
       - name: Conformance tests (in-memory)
         run: pnpm test:conformance
 
-      - name: Start the legacy replica (Azurite and SQL Server)
+      - name: Start the legacy replica and the mock OIDC server (Azurite, SQL Server, mock-oauth2-server)
         run: pnpm demo:azurite:up
 
       - name: Provider suite (Azurite)

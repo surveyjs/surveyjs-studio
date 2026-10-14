@@ -143,11 +143,11 @@ that holds the golden fixtures>)`. If it needs a service, put it in its own Vite
 ### Conformance on a provider
 
 `CONFORMANCE_PROVIDER` selects the provider for the server that the conformance suite starts:
-`memory` (default; every app variable is removed) or `azure-legacy` (the three `LEGACY_*`
-variables are passed through, and the run fails if one is missing). `pnpm test:conformance:azurite`
+`memory` (default; every app variable is removed; the dev identity provider) or `azure-legacy` (the
+three `LEGACY_*` variables and the `OIDC_*` settings of the mock OIDC server are passed through, and
+the run fails if one is missing; sign-in goes through the mock). `pnpm test:conformance:azurite`
 sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The
 reference server has no operations that use the stores yet, so for now the run proves that the
 server starts on the legacy provider and still answers as the contract says.
 
-The end-to-end tests still run on the memory provider. Running them on Azurite waits for Step 3,
-which brings the mock OIDC server they need.
+The end-to-end tests still run on the memory provider.

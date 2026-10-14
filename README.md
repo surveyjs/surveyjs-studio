@@ -48,7 +48,8 @@ If `corepack enable` is not possible (on Windows it may need an administrator sh
 To run against a local replica of the legacy stores you also need Docker:
 
 ```sh
-pnpm demo:azurite:up     # starts Azurite and SQL Server, loads the fixtures
+pnpm demo:azurite:up     # starts Azurite, SQL Server and the mock OIDC server, loads the fixtures
+pnpm demo:azurite        # the app on the replica; sign in as owner on the mock's page
 pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com
 pnpm demo:azurite:down   # stops them and deletes their data
 ```
@@ -71,26 +72,27 @@ See [Development](docs/development.md#azurite-mode) and the [Step 2 demo](docs/d
 
 Run from the repository root.
 
-| Script                          | What it does                                                                                          |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `pnpm demo`                     | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage |
-| `pnpm build`                    | Builds the API reference and the production web bundle                                                |
-| `pnpm test`                     | `test:unit`, then `test:conformance`                                                                  |
-| `pnpm test:unit`                | Vitest across contract, server, web and repository scripts                                            |
-| `pnpm test:conformance`         | Conformance suite against a server it starts itself                                                   |
-| `pnpm demo:azurite:up`          | Starts the legacy replica (Azurite and SQL Server, needs Docker) and loads the golden fixtures        |
-| `pnpm demo:azurite:down`        | Stops the replica and deletes its data                                                                |
-| `pnpm legacy:load`              | Loads the golden fixtures into a running replica                                                      |
-| `pnpm inspect:legacy`           | Read-only inspector: lists one user's surveys from the configured store                               |
-| `pnpm test:providers:azurite`   | Provider suite on the replica (needs `demo:azurite:up`)                                               |
-| `pnpm test:conformance:azurite` | Conformance suite on the `azure-legacy` provider and the replica                                      |
-| `pnpm e2e`                      | Playwright tests in three browsers (starts server and web app)                                        |
-| `pnpm lint`                     | ESLint                                                                                                |
-| `pnpm typecheck`                | `tsc` in every package                                                                                |
-| `pnpm format`                   | Prettier, write                                                                                       |
-| `pnpm format:check`             | Prettier, check only                                                                                  |
-| `pnpm lint:contract`            | Redocly lint of the contract, and a check that generated types are current                            |
-| `pnpm check:deps`               | Dependency rules (exact versions, SurveyJS versions equal)                                            |
+| Script                          | What it does                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm demo`                     | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage                     |
+| `pnpm build`                    | Builds the API reference and the production web bundle                                                                    |
+| `pnpm test`                     | `test:unit`, then `test:conformance`                                                                                      |
+| `pnpm test:unit`                | Vitest across contract, server, web and repository scripts                                                                |
+| `pnpm test:conformance`         | Conformance suite against a server it starts itself                                                                       |
+| `pnpm demo:azurite:up`          | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
+| `pnpm demo:azurite`             | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
+| `pnpm demo:azurite:down`        | Stops the replica and deletes its data                                                                                    |
+| `pnpm legacy:load`              | Loads the golden fixtures into a running replica                                                                          |
+| `pnpm inspect:legacy`           | Read-only inspector: lists one user's surveys from the configured store                                                   |
+| `pnpm test:providers:azurite`   | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
+| `pnpm test:conformance:azurite` | Conformance suite on the `azure-legacy` provider and the replica                                                          |
+| `pnpm e2e`                      | Playwright tests in three browsers (starts server and web app)                                                            |
+| `pnpm lint`                     | ESLint                                                                                                                    |
+| `pnpm typecheck`                | `tsc` in every package                                                                                                    |
+| `pnpm format`                   | Prettier, write                                                                                                           |
+| `pnpm format:check`             | Prettier, check only                                                                                                      |
+| `pnpm lint:contract`            | Redocly lint of the contract, and a check that generated types are current                                                |
+| `pnpm check:deps`               | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
 
 ## Documentation
 

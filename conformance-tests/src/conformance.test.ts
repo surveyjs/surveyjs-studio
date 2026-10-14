@@ -165,7 +165,18 @@ describe(`server at ${baseUrl}`, () => {
       const session = await signedIn(ctx);
       const response = await call("POST", "/auth/logout", { headers: sessionHeaders(session) });
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ redirectUrl: expect.any(String) as string });
+      const { redirectUrl } = (await response.clone().json()) as { redirectUrl: string };
+      const next = new URL(redirectUrl);
+      if (session.location.pathname === "/__dev/sign-in") {
+        // The dev provider has no session of its own: back to the site's start page.
+        expect(next.pathname).toBe("/");
+      } else {
+        // OIDC: the identity provider's end_session_endpoint, which returns to the start page.
+        expect(next.origin).toBe(session.location.origin);
+        expect(next.searchParams.get("client_id")).toBeTruthy();
+        const back = new URL(next.searchParams.get("post_logout_redirect_uri") ?? "");
+        expect(back.pathname).toBe("/");
+      }
       session.jar.store(response);
       expect(session.jar.get("msid")).toBeUndefined();
       expect(session.jar.get("msid_csrf")).toBeUndefined();

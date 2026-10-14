@@ -96,6 +96,22 @@ const httpUrl = z
     message: "must be an absolute http(s) URL",
   });
 
+/**
+ * The browser-visible origin. A base path is not supported in Phase 1 (the OIDC `redirect_uri`
+ * and every redirect are built on the origin), so a path, query, hash or user info is refused.
+ * Normalised to the origin, without a trailing slash.
+ */
+const publicBaseUrl = httpUrl
+  .refine(
+    (value) => {
+      if (!URL.canParse(value)) return true; // reported by httpUrl
+      const url = new URL(value);
+      return url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+    },
+    { message: "must be an origin only, such as https://surveys.example.com (no path)" },
+  )
+  .transform((value) => new URL(value).origin);
+
 /** Parsed with a plain string so a bad value never appears in a message. */
 const shellLinks = z.string().transform((value, ctx): Record<string, string> => {
   let parsed: unknown;
@@ -132,7 +148,7 @@ const envSchema = z.object({
   SURVEYJS_LICENSE_KEY: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["memory", "azure-legacy"]).default("memory"),
   MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
-  PUBLIC_BASE_URL: httpUrl.optional(),
+  PUBLIC_BASE_URL: publicBaseUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
