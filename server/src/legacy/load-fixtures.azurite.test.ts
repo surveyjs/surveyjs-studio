@@ -4,25 +4,10 @@ import sql from "mssql";
 import { beforeAll, describe, expect, it } from "vitest";
 import { readLegacyFixtures } from "../providers/azure-legacy/fixtures.js";
 import { loadLegacyFixtures, type LegacyEnv, type LoadSummary } from "./load-fixtures.js";
+import { replicaEnv } from "./replica-env.js";
 
-/**
- * Needs the local replica: `pnpm demo:azurite:up` (or at least the containers), then
- * `pnpm vitest run --root . server/src/legacy/load-fixtures.azurite.test.ts`.
- * Reads docker/azurite.env unless the variables are already set.
- */
-async function replicaEnv(): Promise<LegacyEnv> {
-  const { parseEnv } = await import("node:util");
-  const { readFile } = await import("node:fs/promises");
-  const file = parseEnv(
-    await readFile(new URL("../../../docker/azurite.env", import.meta.url), "utf8"),
-  );
-  const names = [
-    "LEGACY_SQL_CONNECTION_STRING",
-    "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
-    "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
-  ];
-  return Object.fromEntries(names.map((name) => [name, process.env[name] ?? file[name]]));
-}
+// Runs in the `providers-azurite` Vitest project against the local replica:
+// `pnpm demo:azurite:up`, then `pnpm test:providers:azurite` (reads docker/azurite.env).
 
 describe("legacy fixture loader against the local replica", () => {
   let env: LegacyEnv;
@@ -30,7 +15,7 @@ describe("legacy fixture loader against the local replica", () => {
   let second: LoadSummary;
 
   beforeAll(async () => {
-    env = await replicaEnv();
+    env = replicaEnv();
     const quiet = { log: () => undefined };
     first = await loadLegacyFixtures(env, quiet);
     second = await loadLegacyFixtures(env, quiet);

@@ -1,4 +1,5 @@
 import type { ProjectMembership, SurveyOwner, SurveyRecord, User } from "../domain/types.js";
+import { projectListOrder, surveyListOrder } from "./ordering.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -6,8 +7,6 @@ export interface MemorySeed {
   surveys: SurveyRecord[];
   memberships: { userId: string; membership: ProjectMembership }[];
 }
-
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
 const lower = (id: string): string => id.toLowerCase();
@@ -46,7 +45,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
         Promise.resolve(
           surveys
             .filter((s) => sameOwner(s.owner, owner))
-            .sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id))
+            .sort(surveyListOrder)
             .map(copySurvey),
         ),
     },
@@ -65,10 +64,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
           memberships
             .filter((m) => m.userId === lower(userId))
             .map((m) => copyMembership(m.membership))
-            .sort(
-              (a, b) =>
-                compare(a.project.name, b.project.name) || compare(a.project.id, b.project.id),
-            ),
+            .sort(projectListOrder),
         ),
     },
     ready: () => Promise.resolve(true),

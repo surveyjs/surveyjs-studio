@@ -15,6 +15,7 @@ describe("loadConfig", () => {
       surveyjsLicenseKey: null,
       storageProvider: "memory",
       memorySeed: "empty",
+      legacy: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -123,6 +124,72 @@ describe("loadConfig", () => {
     }
   });
 
+  describe("azure-legacy storage provider", () => {
+    const SECRET = "Password=Very-Secret-Value-42";
+    const legacyEnv = {
+      STORAGE_PROVIDER: "azure-legacy",
+      LEGACY_SQL_CONNECTION_STRING: `Server=sql.example.net;${SECRET}`,
+      LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: `AccountName=surveys;AccountKey=${SECRET}`,
+      LEGACY_RESULTS_STORAGE_CONNECTION_STRING: `AccountName=results;AccountKey=${SECRET}`,
+    };
+
+    function messageOf(run: () => unknown): string {
+      try {
+        run();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        return (error as ConfigError).message;
+      }
+      throw new Error("expected a ConfigError");
+    }
+
+    it("reads the three connection strings", () => {
+      const config = loadConfig(legacyEnv);
+      expect(config.storageProvider).toBe("azure-legacy");
+      expect(config.legacy).toEqual({
+        sqlConnectionString: legacyEnv.LEGACY_SQL_CONNECTION_STRING,
+        surveysStorageConnectionString: legacyEnv.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING,
+        resultsStorageConnectionString: legacyEnv.LEGACY_RESULTS_STORAGE_CONNECTION_STRING,
+      });
+      expect(Object.isFrozen(config.legacy)).toBe(true);
+    });
+
+    it.each([
+      "LEGACY_SQL_CONNECTION_STRING",
+      "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    ])("reports a missing or blank %s without echoing any value", (name) => {
+      for (const value of [undefined, "", "   "]) {
+        const message = messageOf(() => loadConfig({ ...legacyEnv, [name]: value }));
+        expect(message).toContain(`${name}: required when STORAGE_PROVIDER=azure-legacy`);
+        expect(message).not.toContain("Very-Secret-Value-42");
+        expect(message).not.toContain("example.net");
+      }
+    });
+
+    it("reports every missing connection string in one error", () => {
+      const message = messageOf(() => loadConfig({ STORAGE_PROVIDER: "azure-legacy" }));
+      for (const name of [
+        "LEGACY_SQL_CONNECTION_STRING",
+        "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+        "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+      ]) {
+        expect(message).toContain(name);
+      }
+    });
+
+    it("never echoes connection strings next to other problems", () => {
+      const message = messageOf(() => loadConfig({ ...legacyEnv, PORT: "99999" }));
+      expect(message).toContain("PORT");
+      expect(message).not.toContain("Very-Secret-Value-42");
+    });
+
+    it("leaves legacy null for the memory provider, even when the variables are set", () => {
+      expect(loadConfig({ ...legacyEnv, STORAGE_PROVIDER: "memory" }).legacy).toBeNull();
+      expect(loadConfig({ ...legacyEnv, STORAGE_PROVIDER: undefined }).legacy).toBeNull();
+    });
+  });
+
   describe("empty and blank values", () => {
     it("treat every variable as unset", () => {
       const config = loadConfig({
@@ -141,6 +208,9 @@ describe("loadConfig", () => {
         LIMIT_MAX_FILE_BYTES: "",
         LIMIT_MAX_RESPONSE_BYTES: "",
         API_DOCS: "",
+        LEGACY_SQL_CONNECTION_STRING: "",
+        LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: " ",
+        LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "",
       });
       expect(config).toEqual(loadConfig({}));
     });

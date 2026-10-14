@@ -1,11 +1,8 @@
+import { LEGACY_VARIABLES } from "../config.js";
 import { connectionStringEntries, parseConnectionString } from "./connection-string.js";
 
-/** Environment variables the legacy loader (and, later, the azure-legacy provider) reads. */
-export const LEGACY_VARIABLES = [
-  "LEGACY_SQL_CONNECTION_STRING",
-  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
-  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
-] as const;
+/** Environment variables the legacy loader and the azure-legacy provider read. */
+export { LEGACY_VARIABLES };
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 const SQL_SERVER_KEYS = ["server", "data source", "address", "addr", "network address"];
@@ -39,7 +36,8 @@ function isLocalSqlString(value: string): boolean {
   return servers.length > 0 && servers.every((server) => isLocalHost(sqlHost(server)));
 }
 
-function isLocalStorageString(value: string): boolean {
+/** True when every endpoint the storage SDKs would use is on this machine (Azurite). */
+export function isLocalStorageString(value: string): boolean {
   const pairs = parseConnectionString(value);
   if (pairs.get("usedevelopmentstorage")?.toLowerCase() === "true") return true;
   // Both services the loader uses must be pinned locally; otherwise the SDK derives the missing

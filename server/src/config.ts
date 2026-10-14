@@ -19,8 +19,10 @@ export interface AppConfig {
   readonly shell: string;
   readonly authMethods: readonly AuthMethod[];
   readonly surveyjsLicenseKey: string | null;
-  readonly storageProvider: "memory";
+  readonly storageProvider: "memory" | "azure-legacy";
   readonly memorySeed: "empty" | "legacy-fixtures";
+  /** Set only when storageProvider is `azure-legacy`. Secrets: never log or echo these values. */
+  readonly legacy: LegacyConfig | null;
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -29,6 +31,19 @@ export interface AppConfig {
   };
   readonly apiDocs: boolean;
 }
+
+export interface LegacyConfig {
+  readonly sqlConnectionString: string;
+  readonly surveysStorageConnectionString: string;
+  readonly resultsStorageConnectionString: string;
+}
+
+/** Connection strings of the legacy surveyjs.io stores, required by the azure-legacy provider. */
+export const LEGACY_VARIABLES = [
+  "LEGACY_SQL_CONNECTION_STRING",
+  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+] as const;
 
 // Decimal digits only: rejects "1e3", "0x10", "-1", "1.5" which Number() would accept.
 const decimalInt = z.string().regex(/^[0-9]+$/, "must be a decimal integer");
@@ -59,13 +74,17 @@ const envSchema = z.object({
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
-  STORAGE_PROVIDER: z.enum(["memory"]).default("memory"),
+  STORAGE_PROVIDER: z.enum(["memory", "azure-legacy"]).default("memory"),
   MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
   PUBLIC_BASE_URL: httpUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
   API_DOCS: z.enum(["true", "false"]).optional(),
+  // Plain strings: a schema check here could echo a value in its message.
+  LEGACY_SQL_CONNECTION_STRING: z.string().optional(),
+  LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: z.string().optional(),
+  LEGACY_RESULTS_STORAGE_CONNECTION_STRING: z.string().optional(),
 });
 
 /** Empty and whitespace-only values count as unset (e.g. `PORT=` in a .env file or compose file). */
@@ -90,6 +109,13 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfi
   if (productionWithoutUrl && !problems.some((p) => p.startsWith("PUBLIC_BASE_URL:"))) {
     problems.push("PUBLIC_BASE_URL: required when NODE_ENV=production");
   }
+  if (env.STORAGE_PROVIDER === "azure-legacy") {
+    for (const name of LEGACY_VARIABLES) {
+      if (env[name] === undefined) {
+        problems.push(`${name}: required when STORAGE_PROVIDER=azure-legacy`);
+      }
+    }
+  }
   if (!parsed.success || problems.length > 0) {
     const lines = problems.map((p) => `  - ${p}`).join("\n");
     throw new ConfigError(`Invalid configuration:\n${lines}`);
@@ -106,6 +132,14 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfi
     surveyjsLicenseKey: e.SURVEYJS_LICENSE_KEY ?? null,
     storageProvider: e.STORAGE_PROVIDER,
     memorySeed: e.MEMORY_SEED,
+    legacy:
+      e.STORAGE_PROVIDER === "azure-legacy"
+        ? Object.freeze({
+            sqlConnectionString: e.LEGACY_SQL_CONNECTION_STRING ?? "",
+            surveysStorageConnectionString: e.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING ?? "",
+            resultsStorageConnectionString: e.LEGACY_RESULTS_STORAGE_CONNECTION_STRING ?? "",
+          })
+        : null,
     publicBaseUrl: e.PUBLIC_BASE_URL ?? "http://localhost:3000",
     limits: Object.freeze({
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,
