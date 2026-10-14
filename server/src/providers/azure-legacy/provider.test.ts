@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LegacyConfig } from "../../config.js";
 import { createAzureLegacyProviders } from "./index.js";
 
@@ -59,4 +60,54 @@ describe("azure-legacy provider without a reachable store", () => {
     expect(create).toThrow(/LEGACY_RESULTS_STORAGE_CONNECTION_STRING/);
     expect(create).not.toThrow(new RegExp(SECRET));
   });
+});
+
+describe("azure-legacy provider closing while SQL is connecting", () => {
+  // Accepts TCP connections and never answers, so a SQL connect stays pending until the
+  // driver's connect timeout.
+  let silent: Server;
+  let port: number;
+  let accepted = 0;
+  const sockets = new Set<Socket>();
+
+  beforeAll(async () => {
+    silent = createServer((socket) => {
+      accepted += 1;
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+    });
+    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+    port = (silent.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => silent.close(resolve));
+  });
+
+  it("close resolves after a timed-out ready(), and nothing connects afterwards", async () => {
+    const providers = createAzureLegacyProviders(
+      {
+        ...unreachable,
+        sqlConnectionString: `Server=127.0.0.1,${port};Database=d;User Id=sa;Password=${SECRET};Connect Timeout=2`,
+      },
+      { readyTimeoutMs: 200 },
+    );
+    expect(await providers.ready()).toBe(false); // the SQL connect is still pending
+    const pending = providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001").then(
+      () => "resolved",
+      (e: unknown) => (e as Error).message,
+    );
+    await expect(providers.close()).resolves.toBeUndefined();
+    await expect(providers.close()).resolves.toBeUndefined();
+    expect(await pending).toMatch(/^Legacy SQL survey lookup failed/);
+
+    const before = accepted;
+    await expect(
+      providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001"),
+    ).rejects.toThrow(/^Legacy SQL survey lookup failed/);
+    expect(await providers.ready()).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(accepted).toBe(before);
+  }, 15_000);
 });

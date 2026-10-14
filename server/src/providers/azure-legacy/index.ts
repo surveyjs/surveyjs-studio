@@ -143,14 +143,18 @@ export function createAzureLegacyProviders(
   // The pool connects on first use, so the server starts (and /readyz answers 503) while the
   // database is down, and recovers when it comes back.
   let connecting: Promise<sql.ConnectionPool> | null = null;
-  let closed = false;
-  function connected(): Promise<sql.ConnectionPool> {
-    if (closed) return Promise.reject(new Error("The azure-legacy provider is closed"));
+  let closing: Promise<void> | null = null;
+  const closedError = () => new Error("The azure-legacy provider is closed");
+  /** The connected pool; refuses once close() has started, also for a connect already in flight. */
+  async function connected(): Promise<sql.ConnectionPool> {
+    if (closing) throw closedError();
     connecting ??= pool.connect().catch((error: unknown) => {
       connecting = null;
       throw error;
     });
-    return connecting;
+    const ready = await connecting;
+    if (closing) throw closedError();
+    return ready;
   }
 
   /** Runs one parameterised SELECT; driver errors become LegacyStoreError. */
@@ -276,9 +280,14 @@ export function createAzureLegacyProviders(
       }
     },
 
-    async close() {
-      closed = true;
-      await pool.close();
+    close() {
+      // mssql refuses to close a pool that is still connecting, so wait for an in-flight connect
+      // (it may fail; that is fine here). Idempotent, and never rejects because of that connect.
+      closing ??= (async () => {
+        await connecting?.catch(() => undefined);
+        await pool.close();
+      })();
+      return closing;
     },
   };
 }
