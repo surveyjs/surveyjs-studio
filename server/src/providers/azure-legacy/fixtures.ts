@@ -228,6 +228,7 @@ export async function readLegacyFixtures(
     })),
     organizationUsers: (rawSqlRows.OrganizationUsers ?? []).map(
       (row): LegacyOrganizationUserRow => ({
+        id: str(row, "id"),
         organizationid: str(row, "organizationid"),
         userid: str(row, "userid"),
         role: str(row, "role"),
@@ -251,7 +252,7 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
   return {
     users: fixtures.users.map(userFromLegacy),
     surveys: fixtures.surveys.map((row) =>
-      surveyFromLegacy(row, orgs.has(row.userid.toLowerCase()) ? "project" : "personal"),
+      surveyFromLegacy(row, orgs.has((row.userid ?? "").toLowerCase()) ? "project" : "personal"),
     ),
     memberships: fixtures.organizationUsers.map((member) => {
       const org = orgs.get(member.organizationid.toLowerCase());

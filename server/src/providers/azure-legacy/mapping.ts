@@ -1,10 +1,4 @@
-import type {
-  ProjectMembership,
-  ProjectRole,
-  SurveyRecord,
-  SurveyResponse,
-  User,
-} from "../../domain/types.js";
+import type { ProjectMembership, SurveyRecord, SurveyResponse, User } from "../../domain/types.js";
 import type {
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
@@ -13,9 +7,25 @@ import type {
   LegacyUserRow,
 } from "./rows.js";
 
-/** Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9. */
+/**
+ * Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9.
+ * NULL columns get defaults where the domain can still represent the row; otherwise the mapping
+ * throws UnmappableLegacyRowError, which carries only row ids, so a caller can skip the row.
+ */
 
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
+const EPOCH = new Date(0);
+
+/** A legacy row the domain cannot represent. `ids` holds lower-case row ids only, never content. */
+export class UnmappableLegacyRowError extends Error {
+  constructor(
+    readonly ids: Readonly<Record<string, string>>,
+    reason: string,
+  ) {
+    super(`Legacy row cannot be mapped: ${reason}`);
+    this.name = "UnmappableLegacyRowError";
+  }
+}
 
 const guid = (value: string): string => value.toLowerCase();
 const flag = (value: number | null): boolean => value === 1;
@@ -24,22 +34,32 @@ export function surveyFromLegacy(
   row: LegacySurveyRow,
   ownerKind: "personal" | "project",
 ): SurveyRecord {
-  const ownerId = guid(row.userid);
-  const creatorId = guid(row.creatorid);
+  const id = guid(row.id);
+  const required = (column: "userid" | "postid" | "resultid"): string => {
+    const value = row[column];
+    if (value === null) throw new UnmappableLegacyRowError({ surveyId: id }, `NULL ${column}`);
+    return guid(value);
+  };
+  const ownerId = required("userid");
+  const postId = required("postid");
+  const resultId = required("resultid");
+  const creatorId = row.creatorid === null ? ZERO_GUID : guid(row.creatorid);
+  const createdAt = row.createdat ?? row.timestamp ?? EPOCH;
+  const updatedAt = row.timestamp ?? row.createdat ?? EPOCH;
   return {
-    id: guid(row.id),
-    name: row.name,
+    id,
+    name: row.name ?? "",
     owner:
       ownerKind === "personal"
         ? { kind: "personal", userId: ownerId }
         : { kind: "project", projectId: ownerId },
     creatorId: creatorId === ZERO_GUID ? null : creatorId,
-    postId: guid(row.postid),
-    resultId: guid(row.resultid),
+    postId,
+    resultId,
     published: flag(row.ispublished),
     archived: flag(row.isarchived),
-    createdAt: row.createdat.toISOString(),
-    updatedAt: row.timestamp.toISOString(),
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
     settings: {
       publicResults: flag(row.allowaccessresult),
       // The legacy reader parses this varchar column with GetValue<bool>: only "1" is true.
@@ -61,19 +81,21 @@ export function responseFromLegacy(entity: LegacyResultEntity): SurveyResponse {
 }
 
 export function userFromLegacy(row: LegacyUserRow): User {
-  const displayName = row.displayname?.trim() ? row.displayname : row.email;
-  return { id: guid(row.id), email: row.email, displayName, blocked: flag(row.blocked) };
+  const email = row.email ?? "";
+  const displayName = row.displayname?.trim() ? row.displayname : email;
+  return { id: guid(row.id), email, displayName, blocked: flag(row.blocked) };
 }
 
 export function membershipFromLegacy(
   org: LegacyOrganizationRow,
   member: LegacyOrganizationUserRow,
 ): ProjectMembership {
-  return { project: { id: guid(org.id), name: org.name }, role: roleFromLegacy(member.role) };
-}
-
-function roleFromLegacy(role: string): ProjectRole {
-  const normalised = role.toLowerCase();
-  if (normalised === "admin" || normalised === "user") return normalised;
-  throw new Error(`Unknown project role in legacy data: "${role}"`);
+  const normalised = member.role?.toLowerCase();
+  if (normalised !== "admin" && normalised !== "user") {
+    throw new UnmappableLegacyRowError(
+      { membershipId: guid(member.id), organizationId: guid(member.organizationid) },
+      member.role === null ? "NULL project role" : "unknown project role",
+    );
+  }
+  return { project: { id: guid(org.id), name: org.name ?? "" }, role: normalised };
 }

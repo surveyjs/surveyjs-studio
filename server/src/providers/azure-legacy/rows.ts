@@ -1,15 +1,18 @@
-/** Legacy rows as a typed reader returns them. Property names are the lower-case legacy names. */
+/**
+ * Legacy rows as a typed reader returns them. Property names are the lower-case legacy names.
+ * Nullable SQL columns are typed nullable: production rows may hold NULL in any of them.
+ */
 
 /** SQL `Surveys` (layout section 3.1). */
 export interface LegacySurveyRow {
   id: string;
-  name: string;
-  userid: string;
-  creatorid: string;
-  postid: string;
-  resultid: string;
-  createdat: Date;
-  timestamp: Date;
+  name: string | null;
+  userid: string | null;
+  creatorid: string | null;
+  postid: string | null;
+  resultid: string | null;
+  createdat: Date | null;
+  timestamp: Date | null;
   ispublished: number | null;
   isarchived: number | null;
   allowaccessresult: number | null;
@@ -20,7 +23,7 @@ export interface LegacySurveyRow {
 /** SQL `Users` (layout section 3.11), only the columns My Surveys needs. */
 export interface LegacyUserRow {
   id: string;
-  email: string;
+  email: string | null;
   displayname: string | null;
   blocked: number | null;
 }
@@ -28,14 +31,15 @@ export interface LegacyUserRow {
 /** SQL `Organizations` (layout section 3.12). */
 export interface LegacyOrganizationRow {
   id: string;
-  name: string;
+  name: string | null;
 }
 
 /** SQL `OrganizationUsers` (layout section 3.13). */
 export interface LegacyOrganizationUserRow {
+  id: string;
   organizationid: string;
   userid: string;
-  role: string;
+  role: string | null;
 }
 
 /** Azure table `post{postId}` entity (layout section 3.6). */

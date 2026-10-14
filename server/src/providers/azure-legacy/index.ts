@@ -6,13 +6,13 @@ import type { SurveyOwner } from "../../domain/types.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { projectListOrder, surveyListOrder } from "../ordering.js";
 import type { ProviderSet } from "../types.js";
-import { membershipFromLegacy, surveyFromLegacy, userFromLegacy } from "./mapping.js";
-import type {
-  LegacyOrganizationRow,
-  LegacyOrganizationUserRow,
-  LegacySurveyRow,
-  LegacyUserRow,
-} from "./rows.js";
+import {
+  UnmappableLegacyRowError,
+  membershipFromLegacy,
+  surveyFromLegacy,
+  userFromLegacy,
+} from "./mapping.js";
+import type { LegacySurveyRow, LegacyUserRow } from "./rows.js";
 
 /**
  * Provider over the legacy surveyjs.io stores (layout: docs/architecture/legacy-data-layout.md).
@@ -23,9 +23,19 @@ import type {
  * for this folder). Connection strings are secrets: no error or log line built here holds one.
  */
 
+/** Pino-compatible warning sink (Fastify's `app.log` fits). */
+export interface LegacyWarningLogger {
+  warn(details: Readonly<Record<string, string>>, message: string): void;
+}
+
 export interface AzureLegacyOptions {
   /** Upper bound for `ready()`; default 5 s. */
   readonly readyTimeoutMs?: number;
+  /**
+   * Told about each legacy row that is skipped because the domain cannot represent it. The
+   * details hold row ids only. Default: no-op.
+   */
+  readonly logger?: LegacyWarningLogger;
 }
 
 /** Error from a legacy store operation. The message names the operation and the driver's error code only. */
@@ -60,7 +70,13 @@ const SURVEY_SELECT =
 const IS_PROJECT_SURVEY = "EXISTS (SELECT 1 FROM Organizations o WHERE o.id = s.userid)";
 
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
-type MembershipQueryRow = LegacyOrganizationRow & LegacyOrganizationUserRow;
+interface MembershipQueryRow {
+  membershipid: string;
+  organizationid: string;
+  userid: string;
+  role: string | null;
+  name: string | null;
+}
 
 function sqlPool(connectionString: string): sql.ConnectionPool {
   let pool: sql.ConnectionPool;
@@ -97,6 +113,21 @@ export function createAzureLegacyProviders(
   options: AzureLegacyOptions = {},
 ): ProviderSet {
   const readyTimeoutMs = options.readyTimeoutMs ?? 5_000;
+  const logger = options.logger ?? { warn: () => undefined };
+
+  /** Maps each row; a row the domain cannot represent is skipped and reported by its ids. */
+  function mapRows<R, T>(rows: readonly R[], map: (row: R) => T): T[] {
+    const mapped: T[] = [];
+    for (const row of rows) {
+      try {
+        mapped.push(map(row));
+      } catch (error) {
+        if (!(error instanceof UnmappableLegacyRowError)) throw error;
+        logger.warn({ ...error.ids }, `Skipped a legacy row. ${error.message}`);
+      }
+    }
+    return mapped;
+  }
   const pool = sqlPool(legacy.sqlConnectionString);
   const accounts = [
     storageClients(
@@ -155,8 +186,10 @@ export function createAzureLegacyProviders(
           `${SURVEY_SELECT} WHERE s.id = @id`,
           (request) => request.input("id", sql.UniqueIdentifier, id),
         );
-        const row = rows[0];
-        return row ? surveyFromLegacy(row, row.isproject === 1 ? "project" : "personal") : null;
+        const [survey] = mapRows(rows, (row) =>
+          surveyFromLegacy(row, row.isproject === 1 ? "project" : "personal"),
+        );
+        return survey ?? null;
       },
 
       async listSurveys(owner: SurveyOwner) {
@@ -168,7 +201,7 @@ export function createAzureLegacyProviders(
           `${SURVEY_SELECT} WHERE s.userid = @owner AND ${scope}`,
           (request) => request.input("owner", sql.UniqueIdentifier, ownerId),
         );
-        return rows.map((row) => surveyFromLegacy(row, owner.kind)).sort(surveyListOrder);
+        return mapRows(rows, (row) => surveyFromLegacy(row, owner.kind)).sort(surveyListOrder);
       },
     },
 
@@ -204,11 +237,22 @@ export function createAzureLegacyProviders(
         if (!isGuid(userId)) return [];
         const rows = await select<MembershipQueryRow>(
           "project list",
-          "SELECT o.id, o.name, m.organizationid, m.userid, m.role FROM OrganizationUsers m " +
-            "JOIN Organizations o ON o.id = m.organizationid WHERE m.userid = @user",
+          "SELECT m.id AS membershipid, m.organizationid, m.userid, m.role, o.name " +
+            "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid " +
+            "WHERE m.userid = @user",
           (request) => request.input("user", sql.UniqueIdentifier, userId),
         );
-        return rows.map((row) => membershipFromLegacy(row, row)).sort(projectListOrder);
+        return mapRows(rows, (row) =>
+          membershipFromLegacy(
+            { id: row.organizationid, name: row.name },
+            {
+              id: row.membershipid,
+              organizationid: row.organizationid,
+              userid: row.userid,
+              role: row.role,
+            },
+          ),
+        ).sort(projectListOrder);
       },
     },
 
