@@ -54,7 +54,8 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `LIMIT_MAX_RESPONSE_BYTES`         | positive integer                                             | `1048576` (1 MB); also the request body limit       |
 | `API_DOCS`                         | `true`, `false`                                              | `true`, but `false` when `NODE_ENV=production`      |
 
-"Required in production" means `NODE_ENV=production`. The values for edition, shell, auth
+"Required in production" means `NODE_ENV=production`. An empty or whitespace-only value counts as unset
+(the default applies). Integer variables accept decimal digits only (`1e3`, `0x10`, `-1` and `1.5` are rejected). The values for edition, shell, auth
 methods, licence key and limits are returned by `GET /api/v1/config`.
 
 Set them in the shell that starts the server.
@@ -77,15 +78,15 @@ The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 
-| Package             | Script                                         | Purpose                                                          |
-| ------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
-| `server`            | `dev`, `start`, `typecheck`                    | Watch mode, plain start, type check                              |
-| `web`               | `dev`, `build`, `preview`, `test`, `typecheck` | Vite dev server, build (type check first), preview, unit tests   |
-| `contract`          | `generate`                                     | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml` |
-| `contract`          | `lint`, `check:generated`                      | Redocly lint; fail if the committed types are stale              |
-| `contract`          | `build:docs`                                   | Write the self-contained `contract/dist/reference.html`          |
-| `conformance-tests` | `test`                                         | See [testing](testing.md)                                        |
-| `e2e`               | `test`                                         | Playwright                                                       |
+| Package             | Script                                         | Purpose                                                                                                                                                 |
+| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`            | `dev`, `start`, `typecheck`                    | Watch mode, plain start, type check                                                                                                                     |
+| `web`               | `dev`, `build`, `preview`, `test`, `typecheck` | Vite dev server, build (type check first), preview, unit tests                                                                                          |
+| `contract`          | `generate`                                     | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
+| `contract`          | `lint`, `check:generated`                      | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
+| `contract`          | `build:docs`                                   | Write the self-contained `contract/dist/reference.html`                                                                                                 |
+| `conformance-tests` | `test`                                         | See [testing](testing.md)                                                                                                                               |
+| `e2e`               | `test`                                         | Playwright                                                                                                                                              |
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
 `pnpm --filter @my-surveys/contract generate`.

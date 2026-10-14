@@ -76,9 +76,8 @@ describe("loadConfig", () => {
     ["PORT", "abc"],
     ["LOG_LEVEL", "loud"],
     ["APP_EDITION", "cloud"],
-    ["APP_SHELL", ""],
     ["AUTH_METHODS", "magic"],
-    ["AUTH_METHODS", ""],
+    ["AUTH_METHODS", ","],
     ["STORAGE_PROVIDER", "postgres"],
     ["PUBLIC_BASE_URL", "not a url"],
     ["PUBLIC_BASE_URL", "ftp://example.com"],
@@ -118,5 +117,55 @@ describe("loadConfig", () => {
     for (const name of ["PORT", "APP_EDITION", "LIMIT_MAX_FILE_BYTES", "AUTH_METHODS"]) {
       expect(message).toContain(name);
     }
+  });
+
+  describe("empty and blank values", () => {
+    it("treat every variable as unset", () => {
+      const config = loadConfig({
+        NODE_ENV: "",
+        HOST: "",
+        PORT: "",
+        LOG_LEVEL: " ",
+        APP_EDITION: "",
+        APP_SHELL: "  ",
+        AUTH_METHODS: "",
+        SURVEYJS_LICENSE_KEY: "",
+        STORAGE_PROVIDER: "",
+        PUBLIC_BASE_URL: "",
+        LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "",
+        LIMIT_MAX_FILE_BYTES: "",
+        LIMIT_MAX_RESPONSE_BYTES: "",
+        API_DOCS: "",
+      });
+      expect(config).toEqual(loadConfig({}));
+    });
+
+    it('PORT="" is the default 3000, not 0', () => {
+      expect(loadConfig({ PORT: "" }).port).toBe(3000);
+    });
+
+    it("whitespace-only SURVEYJS_LICENSE_KEY is null", () => {
+      expect(loadConfig({ SURVEYJS_LICENSE_KEY: "   " }).surveyjsLicenseKey).toBeNull();
+    });
+
+    it("an empty PUBLIC_BASE_URL is still required in production", () => {
+      expect(() => loadConfig({ NODE_ENV: "production", PUBLIC_BASE_URL: "" })).toThrow(
+        /PUBLIC_BASE_URL: required/,
+      );
+    });
+  });
+
+  describe("integer variables", () => {
+    it.each(["1e3", "0x10", "-1", "1.5", "+5", "12px", "٣"])("reject %s", (value) => {
+      expect(() => loadConfig({ PORT: value })).toThrow(ConfigError);
+      expect(() => loadConfig({ LIMIT_MAX_FILE_BYTES: value })).toThrow(ConfigError);
+    });
+
+    it("accept decimal digits", () => {
+      expect(loadConfig({ PORT: "8080", LIMIT_MAX_FILE_BYTES: "007" })).toMatchObject({
+        port: 8080,
+        limits: { maxFileBytes: 7 },
+      });
+    });
   });
 });

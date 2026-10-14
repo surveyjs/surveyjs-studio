@@ -45,7 +45,8 @@ The suite calls a server **only over HTTP** and validates each response against
 errors a `code` from the Problem enum with a `status` equal to the HTTP status. A `501` Problem is
 accepted from any operation. Details: [`conformance-tests/README.md`](../conformance-tests/README.md).
 
-Against the reference server (it starts the server on a free port with `NODE_ENV=test`, waits for
+Against the reference server (it starts the server on a free port with `NODE_ENV=test`, with every app
+variable from your shell removed so only explicit values reach it, waits for
 `/readyz`, and stops it afterwards):
 
 ```sh

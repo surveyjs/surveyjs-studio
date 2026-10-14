@@ -36,4 +36,11 @@ describe("applySurveyJSLicense", () => {
 
     expect(setLicenseKey).toHaveBeenCalledTimes(1);
   });
+
+  it("shares one in-flight application between concurrent calls", async () => {
+    const apply = await load();
+    await Promise.all([apply("my-key"), apply("my-key")]);
+
+    expect(setLicenseKey).toHaveBeenCalledTimes(1);
+  });
 });

@@ -124,7 +124,7 @@ ports 3000 and 5173 should be free (`netstat -ano | findstr ":3000 :5173"` on Wi
 pnpm test
 ```
 
-Expected: the unit tests pass (`Test Files 12 passed`, `Tests 162 passed`), then the conformance
+Expected: the unit tests pass (`Test Files 14 passed`, `Tests 178 passed`), then the conformance
 suite passes (`Test Files 2 passed`, `Tests 20 passed`). The numbers grow in later steps; what
 matters is that all pass and nothing prints warnings.
 

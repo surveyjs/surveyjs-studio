@@ -108,6 +108,9 @@ function createAjv(
     strictRequired: false,
     allowUnionTypes: true,
     allErrors: true,
+    // Must not inject defaults into application/merge-patch+json bodies (a default would
+    // overwrite stored values on every patch). No patch schema declares one today; revisit
+    // (separate Ajv instance without it) before adding any.
     useDefaults: true,
     ...options,
   });

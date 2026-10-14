@@ -50,8 +50,11 @@ interface AjvIssue {
   params?: { missingProperty?: string };
 }
 
+/** Largest `errors[]` a validation Problem carries (the validator runs with allErrors). */
+const MAX_FIELD_ERRORS = 50;
+
 function fieldErrors(issues: readonly AjvIssue[]): ProblemFieldError[] {
-  return issues.map((issue) => {
+  return issues.slice(0, MAX_FIELD_ERRORS).map((issue) => {
     const missing = issue.params?.missingProperty;
     const base = issue.instancePath ?? "";
     const pointer =
@@ -72,10 +75,27 @@ export function toProblem(error: unknown): Problem {
       validationContext?: unknown;
     };
     if (Array.isArray(validation)) {
-      const errors = fieldErrors(validation as AjvIssue[]);
+      const issues = validation as AjvIssue[];
+      const errors = fieldErrors(issues);
+      const detail =
+        issues.length > errors.length
+          ? `Showing the first ${errors.length} of ${issues.length} errors.`
+          : undefined;
       return validationContext === "body"
-        ? problem({ code: "validation-failed", status: 422, title: "Validation failed", errors })
-        : problem({ code: "bad-request", status: 400, title: "Bad request", errors });
+        ? problem({
+            code: "validation-failed",
+            status: 422,
+            title: "Validation failed",
+            errors,
+            ...(detail !== undefined && { detail }),
+          })
+        : problem({
+            code: "bad-request",
+            status: 400,
+            title: "Bad request",
+            errors,
+            ...(detail !== undefined && { detail }),
+          });
     }
     if (code === "FST_ERR_CTP_BODY_TOO_LARGE") {
       return problem({ code: "payload-too-large", status: 413, title: "Payload too large" });

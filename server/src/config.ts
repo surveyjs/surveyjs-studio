@@ -29,7 +29,9 @@ export interface AppConfig {
   readonly apiDocs: boolean;
 }
 
-const positiveInt = z.coerce.number().int().positive();
+// Decimal digits only: rejects "1e3", "0x10", "-1", "1.5" which Number() would accept.
+const decimalInt = z.string().regex(/^[0-9]+$/, "must be a decimal integer");
+const positiveInt = decimalInt.transform(Number).pipe(z.number().int().positive());
 
 const authMethods = z
   .string()
@@ -50,7 +52,7 @@ const httpUrl = z
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().min(1).default("127.0.0.1"),
-  PORT: z.coerce.number().int().min(0).max(65535).default(3000),
+  PORT: decimalInt.transform(Number).pipe(z.number().int().min(0).max(65535)).default(3000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   APP_EDITION: z.enum(["hosted", "self-hosted"]).default("self-hosted"),
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
@@ -64,7 +66,17 @@ const envSchema = z.object({
   API_DOCS: z.enum(["true", "false"]).optional(),
 });
 
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+/** Empty and whitespace-only values count as unset (e.g. `PORT=` in a .env file or compose file). */
+function withoutBlanks(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).map(([name, value]) => [name, value?.trim() === "" ? undefined : value]),
+  );
+}
+
+export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfig {
+  const env = withoutBlanks(rawEnv);
   const parsed = envSchema.safeParse(env);
   const problems: string[] = [];
   if (!parsed.success) {
@@ -72,9 +84,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       problems.push(`${String(issue.path[0] ?? "environment")}: ${issue.message}`);
     }
   }
-  const productionWithoutUrl =
-    env.NODE_ENV === "production" &&
-    (env.PUBLIC_BASE_URL === undefined || env.PUBLIC_BASE_URL === "");
+  const productionWithoutUrl = env.NODE_ENV === "production" && env.PUBLIC_BASE_URL === undefined;
   if (productionWithoutUrl && !problems.some((p) => p.startsWith("PUBLIC_BASE_URL:"))) {
     problems.push("PUBLIC_BASE_URL: required when NODE_ENV=production");
   }

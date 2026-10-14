@@ -127,4 +127,29 @@ describe("toProblem", () => {
   it("maps non-Error throwables to 500", () => {
     expect(toProblem("oops")).toMatchObject({ status: 500, code: "internal-error" });
   });
+
+  it("caps validation errors[] at 50 entries and says so in detail", () => {
+    const validation = Array.from({ length: 120 }, (_, i) => ({
+      instancePath: `/items/${i}`,
+      message: "must be string",
+    }));
+    const problem = toProblem(
+      fastifyError("FST_ERR_VALIDATION", "invalid", { validation, validationContext: "body" }),
+    );
+    expect(problem.errors).toHaveLength(50);
+    expect(problem.errors?.[0]).toEqual({ pointer: "/items/0", detail: "must be string" });
+    expect(problem.detail).toContain("50");
+    expect(problem.detail).toContain("120");
+  });
+
+  it("does not add a truncation note when errors[] fits", () => {
+    const problem = toProblem(
+      fastifyError("FST_ERR_VALIDATION", "invalid", {
+        validation: [{ instancePath: "/name", message: "must be string" }],
+        validationContext: "body",
+      }),
+    );
+    expect(problem.errors).toHaveLength(1);
+    expect(problem.detail).toBeUndefined();
+  });
 });

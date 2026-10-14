@@ -76,6 +76,9 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, { contract, handl
       );
     } else {
       // Not parsed yet (e.g. multipart/form-data): the handler receives the raw stream.
+      // TODO: replace with @fastify/multipart and per-route limits (maxFileBytes, the asset
+      // limits) in Step 7 (editor uploads) and Step 8 (respondent files). This pass-through
+      // bypasses Fastify's bodyLimit for these media types, but never buffers the body.
       api.addContentTypeParser(mediaType, (_request, payload, done) => {
         done(null, payload);
       });
