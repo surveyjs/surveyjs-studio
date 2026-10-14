@@ -195,7 +195,7 @@ The licence key travels: `SURVEYJS_LICENSE_KEY` (server) -> `GET /api/v1/config`
 
 - `server` runs TypeScript directly with `tsx`; there is no server build.
 - `web` is built by Vite (`pnpm build`). `survey-core` is one large lazy chunk.
-- `pnpm demo` builds the API reference once, then runs `tsx watch` (server) and `vite` (web) together.
+- `pnpm demo` builds the API reference once, then runs the server with `node --watch --import tsx` and `vite` (web) together. (`tsx watch` hangs on Windows under `concurrently`, so it is not used.)
 
 ## What later steps add
 

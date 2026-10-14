@@ -22,7 +22,7 @@
 | Azurite | `pnpm demo:azurite:up` (see [below](#azurite-mode)) | Local replica of the legacy stores, read through `azure-legacy` |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
-the server on <http://127.0.0.1:3000> (`tsx watch`, restarts on change) and the web app on
+the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
 <http://localhost:5173> (Vite dev server, proxies `/api`, `/healthz` and `/readyz` to port 3000).
 Stop both with Ctrl+C. Ports are fixed; if 5173 is taken, Vite stops instead of choosing another.
 
