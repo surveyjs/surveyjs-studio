@@ -10,10 +10,13 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck && tsc -p tsconfig.json --noEmit"
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck && tsc -p tsconfig.json --noEmit",
+    "check:deps": "tsx scripts/check-deps/cli.ts",
+    "test:unit": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@types/node": "24.19.0",
     "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.12.0",
