@@ -13,6 +13,7 @@ import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
 import { serializeRequest } from "./logging.js";
+import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 
@@ -120,6 +121,7 @@ export async function buildApp(
         notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),
+      ...createProjectHandlers({ directory: providers.directory }),
       ...createSurveyHandlers({
         surveys: providers.surveys,
         directory: providers.directory,

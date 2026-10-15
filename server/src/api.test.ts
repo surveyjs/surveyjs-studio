@@ -10,7 +10,7 @@ import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { createProviders } from "./providers/index.js";
-import { ownerUser, surveyFeedback } from "./providers/suite/expected.js";
+import { ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
@@ -262,7 +262,10 @@ function contractOperations(): ContractOperation[] {
       ? p
       : (doc.components.parameters[p.$ref.replace("#/components/parameters/", "")] ?? {});
   // Ids of the owner's fixture records, so implemented reads find them (a 404 here means "not routed").
-  const pathValues: Record<string, string> = { surveyId: surveyFeedback.id };
+  const pathValues: Record<string, string> = {
+    surveyId: surveyFeedback.id,
+    projectId: PROJECT_A_ID,
+  };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
   for (const [path, item] of Object.entries(doc.paths)) {
