@@ -12,6 +12,7 @@ import {
   meHandler,
   problemHandler,
   server,
+  surveyListPageHandlers,
   unauthenticatedHandler,
 } from "./test/server";
 
@@ -27,7 +28,11 @@ function renderAt(path: string) {
   );
 }
 
-beforeEach(() => vi.mocked(navigateTo).mockClear());
+beforeEach(() => {
+  vi.mocked(navigateTo).mockClear();
+  // Every signed-in test lands on My Surveys, which loads surveys and projects.
+  server.use(...surveyListPageHandlers());
+});
 
 describe("private route guard", () => {
   it("sends a signed-out visitor to sign-in with the current location as returnTo", async () => {
@@ -48,7 +53,8 @@ describe("private route guard", () => {
 
     renderAt("/");
 
-    expect(await screen.findByText("signed in as: Olivia Owner")).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "My Surveys" })).toBeTruthy();
+    expect(screen.getByText("Olivia Owner")).toBeTruthy();
     expect(navigateTo).not.toHaveBeenCalled();
   });
 

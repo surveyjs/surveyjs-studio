@@ -133,3 +133,14 @@ export function projectsHandler(pagesByCursor: Record<string, ProjectPage>) {
     return page === undefined ? badRequest() : HttpResponse.json(page);
   });
 }
+
+/**
+ * What the My Surveys page (`/`) loads besides `/config` and `/me`: one page of personal surveys
+ * (also answering the archived check) and no projects.
+ */
+export function surveyListPageHandlers(surveys: Survey[] = [sampleSurvey]) {
+  return [
+    surveysHandler({ "": { items: surveys, nextCursor: null } }),
+    projectsHandler({ "": { items: [], nextCursor: null } }),
+  ];
+}

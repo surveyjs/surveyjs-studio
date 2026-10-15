@@ -1,0 +1,44 @@
+/* Glue for what the copied surveyjs.io styles do not cover (the site has no paging, no create
+   error message and no keyboard access to the switch). Colours and type are the site's
+   (color-styles.scss, text-styles.scss). */
+
+/* An inline icon in a flex row, without the line box of an inline <svg>. */
+.icon {
+  display: flex;
+}
+
+/* The project drop-down's button above the site's transparent `:after` area of its container
+   (my-surveys.scss), so the button itself takes the clicks and the pointer. */
+.trigger {
+  position: relative;
+  z-index: 1;
+}
+
+/* The site's switch hides its checkbox with display: none, which also takes it out of the tab
+   order. Visible again here, it is still hidden by the site's own
+   `[data-switcher] [type="checkbox"]` rule (absolute, transparent), but can take focus. */
+:global(.v2-class---switcher).switcher input {
+  display: block;
+}
+
+:global(.v2-class---switcher).switcher:has(input:focus-visible) {
+  outline: 2px solid #19b394; /* $Primary--Primary */
+  outline-offset: 2px;
+}
+
+/* A failed create, under the actions. */
+.createError {
+  margin: 0 0 16px;
+  color: #e60a3e; /* $Special--Red */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* "Load more" under the list. */
+.loadMore {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}

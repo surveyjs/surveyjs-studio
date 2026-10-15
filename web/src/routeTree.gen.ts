@@ -8,42 +8,54 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { createFileRoute } from '@tanstack/react-router'
-
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PrivateRouteImport } from './routes/_private'
-
-const PrivateIndexLazyRouteImport = createFileRoute('/_private/')()
+import { Route as PrivateIndexRouteImport } from './routes/_private/index'
+import { Route as PrivateSurveysSurveyIdEditRouteImport } from './routes/_private/surveys/$surveyId/edit'
 
 const PrivateRoute = PrivateRouteImport.update({
   id: '/_private',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PrivateIndexLazyRoute = PrivateIndexLazyRouteImport.update({
+const PrivateIndexRoute = PrivateIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PrivateRoute,
 } as any).lazy(() =>
   import('./routes/_private/index.lazy').then((d) => d.Route),
 )
+const PrivateSurveysSurveyIdEditRoute =
+  PrivateSurveysSurveyIdEditRouteImport.update({
+    id: '/surveys/$surveyId/edit',
+    path: '/surveys/$surveyId/edit',
+    getParentRoute: () => PrivateRoute,
+  } as any).lazy(() =>
+    import('./routes/_private/surveys/$surveyId/edit.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 
 export interface FileRoutesByFullPath {
-  '/': typeof PrivateIndexLazyRoute
+  '/': typeof PrivateIndexRoute
+  '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof PrivateIndexLazyRoute
+  '/': typeof PrivateIndexRoute
+  '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_private': typeof PrivateRouteWithChildren
-  '/_private/': typeof PrivateIndexLazyRoute
+  '/_private/': typeof PrivateIndexRoute
+  '/_private/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/surveys/$surveyId/edit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/_private' | '/_private/'
+  to: '/' | '/surveys/$surveyId/edit'
+  id:
+    '__root__' | '/_private' | '/_private/' | '/_private/surveys/$surveyId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -63,18 +75,27 @@ declare module '@tanstack/react-router' {
       id: '/_private/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof PrivateIndexLazyRouteImport
+      preLoaderRoute: typeof PrivateIndexRouteImport
+      parentRoute: typeof PrivateRoute
+    }
+    '/_private/surveys/$surveyId/edit': {
+      id: '/_private/surveys/$surveyId/edit'
+      path: '/surveys/$surveyId/edit'
+      fullPath: '/surveys/$surveyId/edit'
+      preLoaderRoute: typeof PrivateSurveysSurveyIdEditRouteImport
       parentRoute: typeof PrivateRoute
     }
   }
 }
 
 interface PrivateRouteChildren {
-  PrivateIndexLazyRoute: typeof PrivateIndexLazyRoute
+  PrivateIndexRoute: typeof PrivateIndexRoute
+  PrivateSurveysSurveyIdEditRoute: typeof PrivateSurveysSurveyIdEditRoute
 }
 
 const PrivateRouteChildren: PrivateRouteChildren = {
-  PrivateIndexLazyRoute: PrivateIndexLazyRoute,
+  PrivateIndexRoute: PrivateIndexRoute,
+  PrivateSurveysSurveyIdEditRoute: PrivateSurveysSurveyIdEditRoute,
 }
 
 const PrivateRouteWithChildren =

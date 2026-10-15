@@ -1,6 +1,6 @@
 import { HttpResponse, http as mswHttp } from "msw";
 import { describe, expect, it } from "vitest";
-import { client } from "./client";
+import { ApiError, client, shouldRetryQuery } from "./client";
 import { appConfig, configHandler, server } from "../test/server";
 
 describe("API client", () => {
@@ -25,5 +25,25 @@ describe("API client", () => {
     const { data } = await client.GET("/config");
 
     expect(data?.edition).toBe("hosted");
+  });
+});
+
+function apiError(status: number): ApiError {
+  return new ApiError({ type: "about:blank", title: "Problem", status, code: "internal-error" });
+}
+
+describe("query retry policy", () => {
+  it.each([400, 401, 403, 404, 409, 422])("fails fast on %i", (status) => {
+    expect(shouldRetryQuery(0, apiError(status))).toBe(false);
+  });
+
+  it.each([408, 429, 500, 503])("retries %i up to 3 times", (status) => {
+    expect(shouldRetryQuery(2, apiError(status))).toBe(true);
+    expect(shouldRetryQuery(3, apiError(status))).toBe(false);
+  });
+
+  it("retries a network error up to 3 times", () => {
+    expect(shouldRetryQuery(2, new TypeError("Failed to fetch"))).toBe(true);
+    expect(shouldRetryQuery(3, new TypeError("Failed to fetch"))).toBe(false);
   });
 });

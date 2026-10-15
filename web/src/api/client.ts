@@ -44,9 +44,16 @@ export const client = createClient<paths>({
 
 client.use(csrfMiddleware);
 
-/** Query retry policy: a 401 is an answer, not a glitch, so it fails fast; anything else retries up to 3 times. */
+/**
+ * Query retry policy: a client error (401, 404, …) is an answer, not a glitch, so it fails fast —
+ * the page reacts at once, for example by redirecting from an unknown project. Server and network
+ * errors, 408 and 429 retry up to 3 times.
+ */
 export function shouldRetryQuery(failureCount: number, error: Error): boolean {
-  if (error instanceof ApiError && error.problem.status === 401) return false;
+  if (error instanceof ApiError) {
+    const { status } = error.problem;
+    if (status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+  }
   return failureCount < 3;
 }
 
