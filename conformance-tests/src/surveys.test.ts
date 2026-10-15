@@ -332,8 +332,17 @@ describe("createSurvey", () => {
     expect(read.status).toBe(200);
     expect(await read.json()).toEqual(survey);
 
-    const first = (await page(headers)).items[0];
-    expect(first?.id).toBe(survey.id);
+    // Newest first, but survey-actions.test.ts may patch surveys of this scope concurrently, so
+    // only surveys last updated before this one are required to come after it.
+    const items = await walk(headers);
+    const position = items.findIndex((item) => item.id === survey.id);
+    expect(position, `survey ${survey.id} is listed`).toBeGreaterThanOrEqual(0);
+    for (const [index, item] of items.entries()) {
+      if (Date.parse(item.updatedAt) < Date.parse(survey.updatedAt)) {
+        expect(index, `${item.id} is older, so after the new survey`).toBeGreaterThan(position);
+      }
+    }
+    expect(position).toBeLessThan(items.findIndex((item) => item.id === fixture.outsiderQuiz));
   });
 
   it("names a survey one past the highest New Survey N of the scope", async (ctx) => {
