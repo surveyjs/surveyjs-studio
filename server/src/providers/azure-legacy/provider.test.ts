@@ -33,6 +33,11 @@ describe("azure-legacy provider without a reachable store", () => {
         ).toEqual({ items: [], next: null });
       }
       expect(await providers.surveys.getDefinition(id)).toBeNull();
+      expect(await providers.surveys.getTheme(id)).toBeNull();
+      expect(
+        await providers.surveys.updateSurvey(id, { updatedAt: new Date(0).toISOString() }),
+      ).toBeNull();
+      expect(await providers.surveys.deleteSurvey(id)).toBe(false);
       expect(await providers.directory.getUser(id)).toBeNull();
       expect(await providers.directory.listUserProjects(id)).toEqual([]);
       const user = "11111111-0000-4000-8000-a00000000001";
@@ -130,6 +135,66 @@ describe("azure-legacy provider without a reachable store", () => {
       expect(message).not.toContain(SECRET);
       expect((error as Error).cause).toBeUndefined();
     });
+  });
+
+  describe("updateSurvey, cloneSurvey and deleteSurvey", () => {
+    const ID = "22222222-0000-4000-8000-0000000000f2";
+    const UPDATED_AT = "2026-08-01T10:00:00.000Z";
+    const copy = {
+      id: "22222222-0000-4000-8000-0000000000f3",
+      name: "Copy of New Survey",
+      owner: { kind: "personal", userId: "11111111-0000-4000-8000-a00000000001" },
+      creatorId: "11111111-0000-4000-8000-a00000000001",
+      postId: "33333333-0000-4000-8000-0000000000f3",
+      resultId: "44444444-0000-4000-8000-0000000000f3",
+      createdAt: UPDATED_AT,
+      updatedAt: UPDATED_AT,
+    } as const;
+
+    // A store call would fail with a LegacyStoreError; the refusal comes first.
+    it.each([
+      [
+        "a non-GUID move target",
+        { move: { owner: { kind: "project", projectId: "x" }, creatorId: ID } },
+      ],
+      [
+        "a non-GUID mover",
+        { move: { owner: { kind: "personal", userId: ID }, creatorId: "' OR 1=1 --" } },
+      ],
+      ["a name over 200 characters", { name: "x".repeat(201) }],
+    ] as const)("refuses an update with %s before any write", async (_name, changes) => {
+      await expect(
+        providers.surveys.updateSurvey(ID, { ...changes, updatedAt: UPDATED_AT }),
+      ).rejects.toThrow(/^Survey update refused/);
+    });
+
+    it("answers a clone of a non-GUID source without a query", async () => {
+      expect(await providers.surveys.cloneSurvey("../surveyjson/other", copy)).toBeNull();
+    });
+
+    it("refuses a clone with a non-GUID copy id before any read", async () => {
+      await expect(
+        providers.surveys.cloneSurvey(ID, { ...copy, postId: "not-a-guid" }),
+      ).rejects.toThrow(/^Survey create refused/);
+    });
+
+    it.each([
+      ["update", () => providers.surveys.updateSurvey(ID, { name: "n", updatedAt: UPDATED_AT })],
+      ["clone", () => providers.surveys.cloneSurvey(ID, copy)],
+    ] as const)(
+      "reports a failed %s without any connection-string value",
+      async (operation, call) => {
+        const error = await call().then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(LegacyStoreError);
+        const message = (error as Error).message;
+        expect(message).toMatch(new RegExp(`^Legacy store survey ${operation} failed`));
+        expect(message).not.toContain("127.0.0.1");
+        expect(message).not.toContain(SECRET);
+      },
+    );
   });
 
   it("names the variable, not the value, for an invalid storage connection string", () => {

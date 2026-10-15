@@ -34,7 +34,7 @@ export default tseslint.config(
     files: ["server/src/providers/azure-legacy/**/*.ts"],
     ignores: [
       "**/*.test.ts",
-      // the only file allowed to write to the legacy stores; Step 4: survey creation
+      // the only file allowed to write to the legacy stores; Step 4: survey creation; Step 5: update, clone and delete
       "server/src/providers/azure-legacy/writes.ts",
     ],
     rules: {
