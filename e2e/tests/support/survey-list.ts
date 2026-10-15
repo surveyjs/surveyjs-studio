@@ -162,7 +162,7 @@ export async function getSurveyViaApi(page: Page, id: string): Promise<ApiSurvey
   return response.status() === 200 ? ((await response.json()) as ApiSurvey) : null;
 }
 
-/** The surveys of a scope (the newest 200, active and archived) whose name equals `name`. */
+/** The surveys of a scope (every page, active and archived) whose name equals `name`. */
 export async function findSurveysViaApi(
   page: Page,
   name: string,
@@ -171,12 +171,17 @@ export async function findSurveysViaApi(
   const scope = projectId ?? "personal";
   const found: ApiSurvey[] = [];
   for (const archived of [false, true]) {
-    const response = await page.request.get(
-      `/api/v1/surveys?project=${scope}&archived=${archived}&limit=200`,
-    );
-    expect(response.status()).toBe(200);
-    const body = (await response.json()) as { items: ApiSurvey[] };
-    found.push(...body.items.filter((survey) => survey.name === name));
+    let cursor: string | null = null;
+    do {
+      const next = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+      const response = await page.request.get(
+        `/api/v1/surveys?project=${scope}&archived=${archived}&limit=200${next}`,
+      );
+      expect(response.status()).toBe(200);
+      const body = (await response.json()) as { items: ApiSurvey[]; nextCursor: string | null };
+      found.push(...body.items.filter((survey) => survey.name === name));
+      cursor = body.nextCursor;
+    } while (cursor !== null);
   }
   return found;
 }
