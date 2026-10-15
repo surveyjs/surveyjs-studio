@@ -6,6 +6,9 @@
  * size of those scopes: they check membership, relative order and computed expectations, walking
  * every page. The owner's personal scope and the Marketing project are never written. Since Step 5
  * `survey-actions.test.ts` also writes to the admin's personal scope; the same rules apply there.
+ *
+ * Never leave or create an archived survey in the outsider's Personal scope: e2e asserts it has none.
+ * (This file archives nothing; `survey-actions.test.ts` archives only in the admin's scope.)
  */
 import { describe, expect, it, type TestContext } from "vitest";
 import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";

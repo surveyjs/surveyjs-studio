@@ -5,10 +5,14 @@
  * runs), so every test creates its own surveys and changes only those. Writes go only to the
  * outsider's personal scope, the Engineering project and the admin's personal scope. The owner's
  * personal scope and the Marketing project are never written, and no fixture survey is changed:
- * the checks on fixtures are refusals, which write nothing. What a test creates it archives and
- * deletes at the end where it can.
+ * the checks on fixtures are refusals, which write nothing.
+ *
+ * Never leave or create an archived survey in the outsider's Personal scope: e2e asserts it has
+ * none (the replica is shared between this suite and e2e). Tests that archive (or whose cleanup
+ * archives) therefore work in the admin's Personal scope or in Engineering. Cleanup is registered
+ * with `onTestFinished` right after a survey is created, so it also runs when a test fails.
  */
-import { describe, expect, it, type TestContext } from "vitest";
+import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
 import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
 import { fixtureUsers, type SignInResult } from "./sign-in.js";
 
@@ -64,10 +68,21 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 2
 
 type Headers = Record<string, string>;
 
-async function created(headers: Headers, body: unknown = {}): Promise<Survey> {
+/**
+ * Creates a survey and registers its cleanup (archive, then delete) as `cleanupHeaders`, which
+ * defaults to `headers`; `null` registers none (the outsider's Personal scope must never hold an
+ * archived survey, so surveys made there stay active).
+ */
+async function created(
+  headers: Headers,
+  body: unknown = {},
+  cleanupHeaders: Headers | null = headers,
+): Promise<Survey> {
   const response = await call("POST", "/surveys", { headers, body });
   expect(response.status).toBe(201);
-  return (await response.json()) as Survey;
+  const survey = (await response.json()) as Survey;
+  if (cleanupHeaders) cleanUpAfterTest(cleanupHeaders, survey.id);
+  return survey;
 }
 
 function get(headers: Headers, id: string): Promise<Response> {
@@ -112,18 +127,31 @@ function clone(headers: Headers, id: string, body?: unknown): Promise<Response> 
   });
 }
 
-async function cloned(headers: Headers, id: string, body?: unknown): Promise<Survey> {
+async function cloned(
+  headers: Headers,
+  id: string,
+  body?: unknown,
+  cleanupHeaders: Headers = headers,
+): Promise<Survey> {
   const response = await clone(headers, id, body);
   expect(response.status).toBe(201);
   const copy = (await response.json()) as Survey;
+  cleanUpAfterTest(cleanupHeaders, copy.id);
   expect(response.headers.get("location")).toBe(`/api/v1/surveys/${copy.id}`);
   return copy;
 }
 
-/** Archives and deletes a survey the test created. */
+/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
 async function cleanUp(headers: Headers, id: string): Promise<void> {
-  await patched(headers, id, { archived: true });
-  expect((await remove(headers, id)).status).toBe(204);
+  const archived = await patch(headers, id, { archived: true });
+  if (archived.status === 404) return;
+  expect(archived.status).toBe(200);
+  const deleted = await remove(headers, id);
+  expect([204, 404]).toContain(deleted.status);
+}
+
+function cleanUpAfterTest(headers: Headers, id: string): void {
+  onTestFinished(() => cleanUp(headers, id));
 }
 
 async function listed(headers: Headers, query: string): Promise<Survey[]> {
@@ -142,7 +170,7 @@ async function listed(headers: Headers, query: string): Promise<Survey[]> {
 
 describe("updateSurvey", () => {
   it("renames, publishes, unpublishes, archives and restores", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: states" });
     let before = survey;
 
@@ -163,11 +191,10 @@ describe("updateSurvey", () => {
       expect(await read(headers, survey.id)).toEqual(after);
       before = after;
     }
-    await cleanUp(headers, survey.id);
   });
 
   it("changes one setting and keeps the other", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: settings" });
     await tick();
     const first = await patched(headers, survey.id, { settings: { publicResults: true } });
@@ -179,11 +206,10 @@ describe("updateSurvey", () => {
     const third = await patched(headers, survey.id, { settings: { publicResults: false } });
     expect(third.settings).toEqual({ publicResults: false, storeRespondentIp: true });
     expect(Date.parse(third.updatedAt)).toBeGreaterThan(Date.parse(first.updatedAt));
-    await cleanUp(headers, survey.id);
   });
 
   it("applies a combined patch at once, sent as application/json", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: combined" });
     await tick();
     const after = await patched(
@@ -199,7 +225,6 @@ describe("updateSurvey", () => {
       settings: { publicResults: true, storeRespondentIp: false },
     });
     expect(Date.parse(after.updatedAt)).toBeGreaterThan(Date.parse(survey.updatedAt));
-    await cleanUp(headers, survey.id);
   });
 
   it("moves a survey to the caller's Personal surveys and back", async (ctx) => {
@@ -220,13 +245,16 @@ describe("updateSurvey", () => {
     expect((await listed(headers, `project=${ENGINEERING}&limit=200`)).map((s) => s.id)).toContain(
       survey.id,
     );
-    await cleanUp(headers, survey.id);
   });
 
   it("makes the mover the creator", async (ctx) => {
     const olivia = await as(ctx, owner);
     const adam = await as(ctx, admin);
-    const survey = await created(olivia, { name: "Actions: creator", projectId: ENGINEERING });
+    const survey = await created(
+      olivia,
+      { name: "Actions: creator", projectId: ENGINEERING },
+      adam,
+    );
     expect(survey.permissions.canModify).toBe(true);
     await patched(adam, survey.id, { projectId: null });
     await tick();
@@ -234,21 +262,19 @@ describe("updateSurvey", () => {
     // Adam is now its creator; Olivia is a plain member of Engineering.
     expect((await read(olivia, survey.id)).permissions.canModify).toBe(false);
     expect((await read(adam, survey.id)).permissions.canModify).toBe(true);
-    await cleanUp(adam, survey.id);
   });
 
   it("changes nothing but updatedAt when moved to the current scope", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: same scope" });
     await tick();
     const after = await patched(headers, survey.id, { projectId: null });
     expect(after).toEqual({ ...survey, updatedAt: after.updatedAt });
     expect(Date.parse(after.updatedAt)).toBeGreaterThan(Date.parse(survey.updatedAt));
-    await cleanUp(headers, survey.id);
   });
 
   it("answers 422 for an empty patch and for invalid values", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: invalid" });
     const invalid: unknown[] = [
       {},
@@ -264,7 +290,6 @@ describe("updateSurvey", () => {
       expect(await codeOf(response)).toBe("validation-failed");
     }
     expect(await read(headers, survey.id)).toEqual(survey);
-    await cleanUp(headers, survey.id);
   });
 
   it("answers 403 forbidden for a survey the user can see but not modify", async (ctx) => {
@@ -275,12 +300,12 @@ describe("updateSurvey", () => {
 
   it("answers 403 for a move to a project the user is not a member of", async (ctx) => {
     const headers = await as(ctx, outsider);
-    const survey = await created(headers, { name: "Actions: no membership" });
+    // Stays active: an archived survey must not be left in the outsider's Personal scope.
+    const survey = await created(headers, { name: "Actions: no membership" }, null);
     const response = await patch(headers, survey.id, { projectId: MARKETING });
     expect(response.status).toBe(403);
     expect(await codeOf(response)).toBe("forbidden");
     expect((await read(headers, survey.id)).projectId).toBeNull();
-    await cleanUp(headers, survey.id);
   });
 
   it("answers 404 for another user's survey and for an unknown id", async (ctx) => {
@@ -313,7 +338,7 @@ describe("updateSurvey", () => {
 
 describe("deleteSurvey", () => {
   it("deletes an archived survey and answers 204 with an empty body", async (ctx) => {
-    const headers = await as(ctx, outsider);
+    const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: delete" });
 
     const active = await remove(headers, survey.id);
@@ -361,13 +386,19 @@ describe("deleteSurvey", () => {
 });
 
 describe("cloneSurvey", () => {
+  /** A survey of the admin's own to clone; the copy is archived in the admin's scope on cleanup. */
+  async function source(headers: Headers): Promise<Survey> {
+    return created(headers, { name: "Actions: clone source" });
+  }
+
   it("copies a survey into the caller's scope as an unpublished, active survey", async (ctx) => {
-    const headers = await as(ctx, outsider);
-    const source = await read(headers, fixture.outsiderQuiz);
-    const copy = await cloned(headers, fixture.outsiderQuiz);
+    const headers = await as(ctx, admin);
+    const original = await source(headers);
+    await tick();
+    const copy = await cloned(headers, original.id);
 
     expect(copy).toMatchObject({
-      name: "Copy of Outsider quiz",
+      name: "Copy of Actions: clone source",
       projectId: null,
       published: false,
       archived: false,
@@ -375,9 +406,9 @@ describe("cloneSurvey", () => {
       permissions: { canModify: true },
     });
     for (const id of [copy.id, copy.postId, copy.resultId]) expect(id).toMatch(GUID);
-    expect(copy.id).not.toBe(source.id);
-    expect(copy.postId).not.toBe(source.postId);
-    expect(copy.resultId).not.toBe(source.resultId);
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.postId).not.toBe(original.postId);
+    expect(copy.resultId).not.toBe(original.resultId);
     expect(copy.createdAt).toBe(copy.updatedAt);
     expect(await read(headers, copy.id)).toEqual(copy);
 
@@ -385,30 +416,28 @@ describe("cloneSurvey", () => {
     const active = await listed(headers, "project=personal&limit=200");
     const ids = active.map((s) => s.id);
     expect(ids).toContain(copy.id);
-    expect(ids.indexOf(copy.id)).toBeLessThan(ids.indexOf(source.id));
+    expect(ids.indexOf(copy.id)).toBeLessThan(ids.indexOf(original.id));
 
-    expect(await read(headers, fixture.outsiderQuiz)).toEqual(source);
-    await cleanUp(headers, copy.id);
+    expect(await read(headers, original.id)).toEqual(original);
   });
 
   it("keeps a given name", async (ctx) => {
-    const headers = await as(ctx, outsider);
-    const copy = await cloned(headers, fixture.outsiderQuiz, { name: "Actions: given name" });
+    const headers = await as(ctx, admin);
+    const copy = await cloned(headers, (await source(headers)).id, { name: "Actions: given name" });
     expect(copy.name).toBe("Actions: given name");
-    await cleanUp(headers, copy.id);
   });
 
   it("puts a copy of a project survey in that project, with the caller as creator", async (ctx) => {
     const headers = await as(ctx, owner);
     // Olivia cannot modify the original, but she made the copy.
     expect((await read(headers, fixture.engineeringRetro)).permissions.canModify).toBe(false);
-    const copy = await cloned(headers, fixture.engineeringRetro);
+    // The copy is Olivia's own; the project admin archives and deletes it on cleanup.
+    const copy = await cloned(headers, fixture.engineeringRetro, undefined, await as(ctx, admin));
     expect(copy).toMatchObject({
       name: "Copy of Engineering retro",
       projectId: ENGINEERING,
       permissions: { canModify: true },
     });
-    await cleanUp(headers, copy.id);
   });
 
   it("puts a copy in the caller's Personal surveys for projectId null", async (ctx) => {
@@ -418,7 +447,6 @@ describe("cloneSurvey", () => {
     expect((await listed(headers, "project=personal&limit=200")).map((s) => s.id)).toContain(
       copy.id,
     );
-    await cleanUp(headers, copy.id);
   });
 
   it("answers 403 for a target project the user is not a member of", async (ctx) => {
