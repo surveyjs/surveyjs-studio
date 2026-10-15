@@ -3,7 +3,7 @@ import { BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
 import type { Clock } from "../../auth/session.js";
 import type { AccountNoticesSetting, LegacyConfig } from "../../config.js";
-import type { SurveyOwner } from "../../domain/types.js";
+import type { ProjectMembership, SurveyOwner } from "../../domain/types.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
 import { licenceNotices } from "../../notices/licence-rule.js";
@@ -13,10 +13,16 @@ import {
   UnmappableLegacyRowError,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
+  projectFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
-import type { LegacyLicenceRow, LegacySurveyRow, LegacyUserRow } from "./rows.js";
+import type {
+  LegacyLicenceRow,
+  LegacyOrganizationUserRow,
+  LegacySurveyRow,
+  LegacyUserRow,
+} from "./rows.js";
 
 /**
  * Provider over the legacy surveyjs.io stores (layout: docs/architecture/legacy-data-layout.md).
@@ -92,14 +98,24 @@ const LICENCE_SELECT =
   "FROM LicenseTransfers t LEFT JOIN UserLicenses l ON l.id = t.licenseid " +
   "WHERE t.userid = @user";
 
+/**
+ * Every membership row of every project the user belongs to, with its project's columns, so
+ * projectFromLegacy can infer owner, creation time and member count (layout section 9.3).
+ */
+const PROJECT_MEMBERS_SELECT =
+  "SELECT m.id, m.organizationid, m.userid, m.role, m.happendat, o.name, " +
+  "o.happendat AS orghappendat " +
+  "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid " +
+  "WHERE m.organizationid IN (SELECT organizationid FROM OrganizationUsers WHERE userid = @user)";
+
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
-interface MembershipQueryRow {
-  membershipid: string;
-  organizationid: string;
-  userid: string;
-  role: string | null;
+type ProjectMemberQueryRow = LegacyOrganizationUserRow & {
   name: string | null;
-}
+  orghappendat: Date | null;
+};
+
+/** Not yet implemented for this provider; Task 2 of Step 4 replaces these. */
+const notImplemented = () => Promise.reject(new Error("not implemented until Task 2"));
 
 function sqlPool(connectionString: string): sql.ConnectionPool {
   let pool: sql.ConnectionPool;
@@ -218,6 +234,27 @@ export function createAzureLegacyProviders(
       ? licenceNoticesFromSql
       : demoAccountNotices(accountNotices);
 
+  /** The user's memberships among the rows of PROJECT_MEMBERS_SELECT. */
+  function membershipsFromRows(
+    rows: readonly ProjectMemberQueryRow[],
+    userId: string,
+  ): ProjectMembership[] {
+    const projectOf = (row: ProjectMemberQueryRow) => row.organizationid.toLowerCase();
+    const user = userId.toLowerCase();
+    const memberships: ProjectMembership[] = [];
+    for (const projectId of new Set(rows.map(projectOf))) {
+      const members = rows.filter((row) => projectOf(row) === projectId);
+      const [first] = members as [ProjectMemberQueryRow]; // never empty: projectId comes from rows
+      const project = projectFromLegacy(
+        { id: first.organizationid, name: first.name, happendat: first.orghappendat },
+        members,
+      );
+      const own = members.filter((row) => row.userid.toLowerCase() === user);
+      memberships.push(...mapRows(own, (row) => membershipFromLegacy(project, row)));
+    }
+    return memberships.sort(projectListOrder);
+  }
+
   async function sqlReady(): Promise<void> {
     await select("readiness check", "SELECT 1 AS ok");
   }
@@ -257,6 +294,10 @@ export function createAzureLegacyProviders(
         );
         return mapRows(rows, (row) => surveyFromLegacy(row, owner.kind)).sort(surveyListOrder);
       },
+
+      listSurveyPage: notImplemented,
+      createSurvey: notImplemented,
+      getDefinition: notImplemented,
     },
 
     directory: {
@@ -289,24 +330,25 @@ export function createAzureLegacyProviders(
 
       async listUserProjects(userId) {
         if (!isGuid(userId)) return [];
-        const rows = await select<MembershipQueryRow>(
+        const rows = await select<ProjectMemberQueryRow>(
           "project list",
-          "SELECT m.id AS membershipid, m.organizationid, m.userid, m.role, o.name " +
-            "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid " +
-            "WHERE m.userid = @user",
+          PROJECT_MEMBERS_SELECT,
           (request) => request.input("user", sql.UniqueIdentifier, userId),
         );
-        return mapRows(rows, (row) =>
-          membershipFromLegacy(
-            { id: row.organizationid, name: row.name },
-            {
-              id: row.membershipid,
-              organizationid: row.organizationid,
-              userid: row.userid,
-              role: row.role,
-            },
-          ),
-        ).sort(projectListOrder);
+        return membershipsFromRows(rows, userId);
+      },
+
+      async getUserProject(userId, projectId) {
+        if (!isGuid(userId) || !isGuid(projectId)) return null;
+        const rows = await select<ProjectMemberQueryRow>(
+          "project lookup",
+          `${PROJECT_MEMBERS_SELECT} AND m.organizationid = @project`,
+          (request) =>
+            request
+              .input("user", sql.UniqueIdentifier, userId)
+              .input("project", sql.UniqueIdentifier, projectId),
+        );
+        return membershipsFromRows(rows, userId)[0] ?? null;
       },
     },
 

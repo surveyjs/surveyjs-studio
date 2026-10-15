@@ -84,6 +84,14 @@ describe("readLegacyFixtures", () => {
     expect(old?.storeipaddress).toBe("0");
   });
 
+  it("reads happendat of projects and memberships as Dates", async () => {
+    const { organizations, organizationUsers } = await readLegacyFixtures();
+    const engineering = organizations.find((o) => o.name === "Engineering");
+    expect(engineering?.happendat).toEqual(new Date("2025-12-05T09:30:00Z"));
+    const creatorRow = organizationUsers.find((m) => m.id === engineering?.id);
+    expect(creatorRow?.happendat).toEqual(new Date("2025-12-01T09:00:00Z"));
+  });
+
   it("keeps NULL columns as null", async () => {
     const { surveys, users } = await readLegacyFixtures();
     const draft = surveys.find((s) => s.name === "Draft idea");
@@ -199,7 +207,29 @@ describe("legacyFixtureSeed", () => {
   it("holds one membership per legacy OrganizationUsers row", async () => {
     const seed = await legacyFixtureSeed();
     expect(seed.memberships).toHaveLength(5);
+    expect(seed.projects).toHaveLength(2);
     expect(seed.users).toHaveLength(5);
     expect(seed.surveys).toHaveLength(8);
+  });
+
+  it("gives memberships lower-case ids and the role in lower case", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(seed.memberships).toContainEqual({
+      userId: "11111111-0000-4000-8000-a00000000002",
+      projectId: "55555555-0000-4000-8000-a00000000001",
+      role: "admin", // stored as "Admin"
+    });
+  });
+
+  it("holds the parsed surveyjson blobs as definitions, by survey id", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(Object.keys(seed.definitions ?? {}).sort()).toEqual([
+      "22222222-0000-4000-8000-a00000000001",
+      "22222222-0000-4000-8000-a00000000004",
+      "22222222-0000-4000-8000-a00000000006",
+    ]);
+    expect(seed.definitions?.["22222222-0000-4000-8000-a00000000006"]).toMatchObject({
+      title: "Engineering retro",
+    });
   });
 });

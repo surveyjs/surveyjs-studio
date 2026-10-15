@@ -26,6 +26,9 @@ describe("azure-legacy provider without a reachable store", () => {
       expect(await providers.surveys.listSurveys({ kind: "project", projectId: id })).toEqual([]);
       expect(await providers.directory.getUser(id)).toBeNull();
       expect(await providers.directory.listUserProjects(id)).toEqual([]);
+      const user = "11111111-0000-4000-8000-a00000000001";
+      expect(await providers.directory.getUserProject(id, user)).toBeNull();
+      expect(await providers.directory.getUserProject(user, id)).toBeNull();
     },
   );
 

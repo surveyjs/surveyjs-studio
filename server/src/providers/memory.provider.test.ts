@@ -16,12 +16,61 @@ describe("memory provider with a user whose legacy email is NULL", () => {
     displayName: "",
     blocked: false,
   };
-  const providers = createMemoryProviders({ users: [user], surveys: [], memberships: [] });
+  const providers = createMemoryProviders({
+    users: [user],
+    surveys: [],
+    projects: [],
+    memberships: [],
+  });
 
   it("finds the user by id but not by a blank email", async () => {
     expect(await providers.directory.getUser(user.id)).toEqual(user);
     expect(await providers.directory.findUserByEmail("")).toBeNull();
     expect(await providers.directory.findUserByEmail(" ")).toBeNull();
+  });
+});
+
+describe("memory provider isolation", () => {
+  const owner = { kind: "personal", userId: "eeeeeeee-0000-4000-8000-0000000000e2" } as const;
+  const newSurvey = {
+    id: "eeeeeeee-0000-4000-8000-0000000000a1",
+    name: "Copy check",
+    owner,
+    creatorId: owner.userId,
+    postId: "eeeeeeee-0000-4000-8000-0000000000b1",
+    resultId: "eeeeeeee-0000-4000-8000-0000000000c1",
+    createdAt: "2026-08-01T10:00:00.000Z",
+    updatedAt: "2026-08-01T10:00:00.000Z",
+  };
+
+  it("keeps its own copy of a definition, before and after it is read", async () => {
+    const providers = createMemoryProviders();
+    const definition: Record<string, unknown> = { title: "Original" };
+    await providers.surveys.createSurvey(newSurvey, definition);
+    definition.title = "Changed by the caller";
+    const read = await providers.surveys.getDefinition(newSurvey.id);
+    expect(read).toEqual({ title: "Original" });
+    (read as Record<string, unknown>).title = "Changed again";
+    expect(await providers.surveys.getDefinition(newSurvey.id)).toEqual({ title: "Original" });
+  });
+
+  it("names the id when it refuses a duplicate", async () => {
+    const providers = createMemoryProviders();
+    await providers.surveys.createSurvey(newSurvey);
+    await expect(
+      providers.surveys.createSurvey({ ...newSurvey, id: newSurvey.id.toUpperCase() }),
+    ).rejects.toThrow(`survey ${newSurvey.id} already exists`);
+  });
+
+  it("refuses a seed whose membership names an unknown project", () => {
+    expect(() =>
+      createMemoryProviders({
+        users: [],
+        surveys: [],
+        projects: [],
+        memberships: [{ userId: owner.userId, projectId: newSurvey.id, role: "user" }],
+      }),
+    ).toThrow(/unknown project/);
   });
 });
 

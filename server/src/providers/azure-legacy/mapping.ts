@@ -1,4 +1,10 @@
-import type { ProjectMembership, SurveyRecord, SurveyResponse, User } from "../../domain/types.js";
+import type {
+  ProjectMembership,
+  ProjectRecord,
+  SurveyRecord,
+  SurveyResponse,
+  User,
+} from "../../domain/types.js";
 import type {
   LegacyLicenceRow,
   LegacyOrganizationRow,
@@ -87,8 +93,52 @@ export function userFromLegacy(row: LegacyUserRow): User {
   return { id: guid(row.id), email, displayName, blocked: flag(row.blocked) };
 }
 
-export function membershipFromLegacy(
+/** Code-point order, as in ordering.ts. */
+const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Earliest `happendat` first (NULL last), then the smaller user id, then the smaller row id. */
+function earliest(
+  rows: readonly LegacyOrganizationUserRow[],
+): LegacyOrganizationUserRow | undefined {
+  const time = (row: LegacyOrganizationUserRow) => row.happendat?.getTime() ?? Infinity;
+  return [...rows].sort(
+    (a, b) =>
+      time(a) - time(b) ||
+      compareText(guid(a.userid), guid(b.userid)) ||
+      compareText(guid(a.id), guid(b.id)),
+  )[0];
+}
+
+/**
+ * A project from its `Organizations` row and every `OrganizationUsers` row of it. Legacy has no
+ * owner or creation column (layout 3.12, 9.3), so both are inferred: the creator's membership row
+ * (its id equals the project id) decides; without it the earliest admin owns the project, else the
+ * earliest member. The creation time is the creator row's `happendat`, else the project's
+ * `happendat` (which moves on rename), else the epoch.
+ */
+export function projectFromLegacy(
   org: LegacyOrganizationRow,
+  members: readonly LegacyOrganizationUserRow[],
+): ProjectRecord {
+  const id = guid(org.id);
+  const creator = members.find((row) => guid(row.id) === id);
+  const owner =
+    creator ??
+    earliest(members.filter((row) => row.role?.toLowerCase() === "admin")) ??
+    earliest(members);
+  if (!owner) throw new UnmappableLegacyRowError({ organizationId: id }, "project without members");
+  return {
+    id,
+    name: org.name ?? "",
+    ownerId: guid(owner.userid),
+    createdAt: (creator?.happendat ?? org.happendat ?? EPOCH).toISOString(),
+    memberCount: members.length,
+  };
+}
+
+/** The membership of one `OrganizationUsers` row in a project built by projectFromLegacy. */
+export function membershipFromLegacy(
+  project: ProjectRecord,
   member: LegacyOrganizationUserRow,
 ): ProjectMembership {
   const normalised = member.role?.toLowerCase();
@@ -98,7 +148,7 @@ export function membershipFromLegacy(
       member.role === null ? "NULL project role" : "unknown project role",
     );
   }
-  return { project: { id: guid(org.id), name: org.name ?? "" }, role: normalised };
+  return { project, role: normalised };
 }
 
 /**

@@ -3,10 +3,12 @@ import {
   UnmappableLegacyRowError,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
+  projectFromLegacy,
   responseFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
+import type { ProjectRecord } from "../../domain/types.js";
 import type {
   LegacyLicenceRow,
   LegacyOrganizationRow,
@@ -218,32 +220,152 @@ describe("userFromLegacy", () => {
   });
 });
 
-describe("membershipFromLegacy", () => {
-  const org: LegacyOrganizationRow = {
-    id: "55555555-0000-4000-8000-00000000AAAA",
+describe("projectFromLegacy", () => {
+  const ORG_ID = "55555555-0000-4000-8000-00000000AAAA";
+  const org = (over: Partial<LegacyOrganizationRow> = {}): LegacyOrganizationRow => ({
+    id: ORG_ID,
     name: "Example project",
-  };
-  const member = (role: string | null): LegacyOrganizationUserRow => ({
-    id: "AAAAAAAA-0000-4000-8000-0000000000CC",
-    organizationid: org.id,
-    userid: "11111111-0000-4000-8000-000000000001",
-    role,
+    happendat: new Date("2025-06-01T12:00:00.000Z"),
+    ...over,
   });
+  const row = (
+    id: string,
+    userid: string,
+    role: string | null,
+    happendat: string | null,
+  ): LegacyOrganizationUserRow => ({
+    id,
+    organizationid: ORG_ID,
+    userid,
+    role,
+    happendat: happendat === null ? null : new Date(happendat),
+  });
+  const USER_1 = "11111111-0000-4000-8000-0000000000A1";
+  const USER_2 = "11111111-0000-4000-8000-0000000000A2";
+  const USER_3 = "11111111-0000-4000-8000-0000000000A3";
+  /** The creator's row: its id equals the organization id. */
+  const creator = (role: string, happendat: string | null) => row(ORG_ID, USER_3, role, happendat);
+  const admin = (userid: string, happendat: string | null) =>
+    row(`AAAAAAAA-0000-4000-8000-0000000000${userid.slice(-2)}`, userid, "Admin", happendat);
+  const member = (userid: string, happendat: string | null) =>
+    row(`BBBBBBBB-0000-4000-8000-0000000000${userid.slice(-2)}`, userid, "user", happendat);
 
-  it("maps the project and lower-cases its id", () => {
-    expect(membershipFromLegacy(org, member("user"))).toEqual({
-      project: { id: "55555555-0000-4000-8000-00000000aaaa", name: "Example project" },
-      role: "user",
+  it("takes owner and creation time from the creator's row, lower-casing ids", () => {
+    const rows = [
+      admin(USER_1, "2025-01-01T00:00:00.000Z"),
+      creator("user", "2025-03-01T00:00:00.000Z"),
+      member(USER_2, "2024-12-01T00:00:00.000Z"),
+    ];
+    expect(projectFromLegacy(org(), rows)).toEqual<ProjectRecord>({
+      id: "55555555-0000-4000-8000-00000000aaaa",
+      name: "Example project",
+      ownerId: "11111111-0000-4000-8000-0000000000a3",
+      createdAt: "2025-03-01T00:00:00.000Z",
+      memberCount: 3,
     });
   });
 
+  it("finds the creator's row whatever the case of its id", () => {
+    const rows = [row(ORG_ID.toLowerCase(), USER_3, "admin", "2025-03-01T00:00:00.000Z")];
+    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a3");
+  });
+
+  it("falls back to the earliest admin, any role case, when the creator's row is missing", () => {
+    const rows = [
+      member(USER_3, "2024-01-01T00:00:00.000Z"),
+      admin(USER_2, "2025-02-01T00:00:00.000Z"),
+      row("CCCCCCCC-0000-4000-8000-000000000001", USER_1, "ADMIN", "2025-01-01T00:00:00.000Z"),
+    ];
+    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a1");
+  });
+
+  it("breaks a tie between admins by the smaller user id", () => {
+    const at = "2025-01-01T00:00:00.000Z";
+    const rows = [admin(USER_2, at), admin(USER_1, at)];
+    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a1");
+  });
+
+  it("puts admins with a NULL happendat after dated ones", () => {
+    const rows = [admin(USER_1, null), admin(USER_2, "2025-05-01T00:00:00.000Z")];
+    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a2");
+  });
+
+  it("falls back to the earliest member of any role when there is no admin", () => {
+    const rows = [
+      member(USER_1, "2025-02-01T00:00:00.000Z"),
+      row("CCCCCCCC-0000-4000-8000-000000000001", USER_2, null, "2025-01-01T00:00:00.000Z"),
+    ];
+    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a2");
+  });
+
+  it("uses Organizations.happendat when there is no creator's row", () => {
+    const rows = [admin(USER_1, "2025-01-01T00:00:00.000Z")];
+    expect(projectFromLegacy(org(), rows).createdAt).toBe("2025-06-01T12:00:00.000Z");
+  });
+
+  it("uses Organizations.happendat when the creator's row has a NULL happendat", () => {
+    expect(projectFromLegacy(org(), [creator("admin", null)]).createdAt).toBe(
+      "2025-06-01T12:00:00.000Z",
+    );
+  });
+
+  it("uses the epoch when both times are NULL", () => {
+    expect(projectFromLegacy(org({ happendat: null }), [creator("admin", null)]).createdAt).toBe(
+      "1970-01-01T00:00:00.000Z",
+    );
+  });
+
+  it("counts every membership row, whatever its role", () => {
+    const rows = [
+      creator("admin", null),
+      member(USER_1, null),
+      row("CCCCCCCC-0000-4000-8000-000000000001", USER_2, null, null),
+      row("CCCCCCCC-0000-4000-8000-000000000002", USER_3, "owner", null),
+    ];
+    expect(projectFromLegacy(org(), rows).memberCount).toBe(4);
+  });
+
+  it("maps a NULL project name to an empty string", () => {
+    expect(projectFromLegacy(org({ name: null }), [creator("admin", null)]).name).toBe("");
+  });
+
+  it("refuses a project without membership rows, naming only the project id", () => {
+    expect(() => projectFromLegacy(org(), [])).toThrow(
+      expect.objectContaining({
+        name: "UnmappableLegacyRowError",
+        ids: { organizationId: "55555555-0000-4000-8000-00000000aaaa" },
+      }),
+    );
+  });
+});
+
+describe("membershipFromLegacy", () => {
+  const project: ProjectRecord = {
+    id: "55555555-0000-4000-8000-00000000aaaa",
+    name: "Example project",
+    ownerId: "11111111-0000-4000-8000-000000000001",
+    createdAt: "2025-06-01T12:00:00.000Z",
+    memberCount: 2,
+  };
+  const member = (role: string | null): LegacyOrganizationUserRow => ({
+    id: "AAAAAAAA-0000-4000-8000-0000000000CC",
+    organizationid: "55555555-0000-4000-8000-00000000AAAA",
+    userid: "11111111-0000-4000-8000-000000000001",
+    role,
+    happendat: null,
+  });
+
+  it("pairs the project record with the member's role", () => {
+    expect(membershipFromLegacy(project, member("user"))).toEqual({ project, role: "user" });
+  });
+
   it("compares the role case-insensitively", () => {
-    expect(membershipFromLegacy(org, member("Admin")).role).toBe("admin");
-    expect(membershipFromLegacy(org, member("USER")).role).toBe("user");
+    expect(membershipFromLegacy(project, member("Admin")).role).toBe("admin");
+    expect(membershipFromLegacy(project, member("USER")).role).toBe("user");
   });
 
   it("throws on an unknown role", () => {
-    expect(() => membershipFromLegacy(org, member("owner"))).toThrow(/role/i);
+    expect(() => membershipFromLegacy(project, member("owner"))).toThrow(/role/i);
   });
 
   it.each(["owner", null])(
@@ -251,7 +373,7 @@ describe("membershipFromLegacy", () => {
     (role) => {
       let error: unknown;
       try {
-        membershipFromLegacy(org, member(role));
+        membershipFromLegacy(project, member(role));
       } catch (e) {
         error = e;
       }
@@ -262,10 +384,6 @@ describe("membershipFromLegacy", () => {
       });
     },
   );
-
-  it("maps a NULL project name to an empty string", () => {
-    expect(membershipFromLegacy({ ...org, name: null }, member("user")).project.name).toBe("");
-  });
 });
 
 describe("licenceExpiriesFromLegacy", () => {
