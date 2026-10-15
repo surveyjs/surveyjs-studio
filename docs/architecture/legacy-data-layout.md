@@ -787,6 +787,12 @@ rename, theme, publish, archive, restore, move, settings and layout save) moves 
 (`site code`), `the site's code` (`site code`,
 `site code`). Table rows must use the Edm types given in 3.5–3.8.
 
+**Implemented in Step 4:** the "Create survey" row below is built exactly as written (the columns, the
+blobs when a definition is given, and the `SURVEY_CREATE` audit row, written last and best effort) in
+`server/src/providers/azure-legacy/writes.ts`; see
+[ADR 0010](../adr/0010-writing-to-the-legacy-stores.md). When a definition is given, it writes the three
+blobs of a definition save before the row. Every other row of the table is still to build.
+
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | Create survey                     | INSERT `Surveys` with `id`, `name`, `userid`, `creatorid`, `postid`, `resultid` (three new GUIDs), `createdat`, `timestamp`. No blob yet.                                                                                                                                                                                                                                                                                                | `SURVEY_CREATE`               |
@@ -850,8 +856,8 @@ Legacy permission rules the new app must reproduce or consciously change:
 - The list shows modify actions when the user's role in the current scope is `admin` (always true for
   Personal) **or** the user is the survey's `creatorid`. **[C]**
   `the site's code` (`MySurveyInfo.CanModifySurvey`). The spec says "any
-  member may modify"; the choice is deferred to Step 4 or 5
-  (see [Open for later steps](../architecture.md#open-for-later-steps)).
+  member may modify"; Step 4 keeps the legacy rule, and the product owner is to confirm it
+  ([ADR 0009](../adr/0009-survey-permissions-follow-legacy.md), gap 12).
 - The legacy UI cannot move a project survey back to Personal: the Personal entry has no action.
   **[C]** `the site's codehtml`
 - Removing the last admin is refused; deleting a project requires no surveys and the caller as the

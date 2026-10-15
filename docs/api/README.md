@@ -8,6 +8,7 @@ This directory holds guides. The reference itself is generated from the contract
 committed.
 
 - [Conventions](conventions.md): errors, paging, concurrency, CSRF, idempotency and more.
+- [Paging](paging.md): `limit` and `cursor`, what a page can hold, and the reference cursor format for ports.
 - [Authentication, sessions and CSRF](authentication.md): the sign-in flow, `returnTo`, the cookies,
   the CSRF header, sign-out and rate limiting.
 
@@ -60,6 +61,33 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | ------ | ------------------------------------------------------------------------------------------ |
 | Step 1 | `getConfig`                                                                                |
 | Step 3 | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md)) |
+| Step 4 | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)       |
+
+### Step 4: surveys and projects
+
+All five need a session; `createSurvey` also needs the CSRF header. Paging:
+[Paging](paging.md).
+
+| Operation      | Behaviour                                                                                                                                                                                                                                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `listSurveys`  | Query `project` (`personal`, the default, or a project id), `archived` (default `false`), `limit`, `cursor`. Newest `updatedAt` first. A project the user does not belong to, an unknown one and text that is no id all answer `404 not-found`. A bad cursor, `limit` or `archived` is `400`                                  |
+| `createSurvey` | Optional body `{ name, projectId, definition }`. No `projectId` (or `null`): the user's personal scope; a project the user is not a member of: `403 forbidden`. No `name`: "New Survey N" (see [Your surveys](../user-guide/your-surveys.md#create-a-survey)). Answers `201`, `Location: /api/v1/surveys/{id}` and the survey |
+| `getSurvey`    | The survey when the user can see it; `404 not-found` for an unknown survey **and** for one the user cannot see                                                                                                                                                                                                                |
+| `listProjects` | The projects the user belongs to, by name ignoring case, then id, with the user's `role`. Paged                                                                                                                                                                                                                               |
+| `getProject`   | The project when the user is a member; `404 not-found` otherwise                                                                                                                                                                                                                                                              |
+
+Rules for `createSurvey`:
+
+- A given `name` is kept as sent. It must have 1 to 200 characters and not be blank after trimming.
+  A blank name is `422 validation-failed` with a pointer `/name`. The contract's `maxLength: 200`
+  counts characters (code points), but the legacy column holds 200 UTF-16 code units, so the server
+  also answers `422` at `/name` for a name longer than 200 UTF-16 code units (a name with emoji can
+  pass the schema and still fail here).
+- `createdAt` and `updatedAt` are the server's clock; the ids of the survey, its `postId` and its
+  `resultId` are new GUIDs. The survey starts unpublished and not archived, with every setting off.
+- A given `definition` is stored. Nothing is stored without one, and the definition then reads as
+  `{}`. It is read back over HTTP in a later step (`getSurveyDefinition` is still `501`).
+- `permissions.canModify` follows [ADR 0009](../adr/0009-survey-permissions-follow-legacy.md).
 
 Every other operation answers `501` with a Problem Details body (`code: not-implemented`), after
 authentication: a private operation called without a session answers `401`. `passwordLogin` stays

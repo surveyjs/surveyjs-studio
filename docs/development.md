@@ -221,6 +221,20 @@ a demo ([Signing in](#signing-in) above):
 | `outsider@example.com` | Oscar Outsider | None                                             | One personal survey, in no project                     |
 | `blocked@example.com`  | (none)         | None                                             | Blocked user; the display name falls back to the email |
 
+What each user sees in the survey list (Step 4; "newest first" is by updated date):
+
+| User           | Personal, active (newest first)            | Personal, archived | Projects (role)                        |
+| -------------- | ------------------------------------------ | ------------------ | -------------------------------------- |
+| Olivia Owner   | API created, Customer feedback, Draft idea | Old poll           | Engineering (user), Marketing (admin)  |
+| Adam Admin     | none                                       | none               | Engineering (admin), Marketing (admin) |
+| Mia Member     | none                                       | none               | Marketing (user)                       |
+| Oscar Outsider | Outsider quiz                              | none               | none                                   |
+
+Project surveys: Marketing has "Campaign survey" (active) and "Archived campaign" (archived);
+Engineering has "Engineering retro" (active). Mia can modify "Campaign survey" (she created it) and
+not "Archived campaign"; Olivia cannot modify "Engineering retro"
+([ADR 0009](adr/0009-survey-permissions-follow-legacy.md)).
+
 To change them:
 
 1. Edit the files and keep them valid legacy data; check the
