@@ -20,8 +20,8 @@ updated at the same moment are ordered by their id.
 
 If the list is empty, the page says "No surveys yet" and offers a **Create a Survey** button.
 
-Clicking a row does nothing yet. The row menu, renaming in place and the other row actions arrive in
-a later version.
+Clicking a row does nothing yet. Each row has a "�" menu and, when you can modify the survey, a pencil
+for renaming. See [Managing a survey](managing-a-survey.md).
 
 ## Personal surveys and projects
 
@@ -44,8 +44,8 @@ switch **Active / Archived** appears above it. Switch to **Archived** to see onl
 **Create a Survey** button is not shown in the toolbar there: you create surveys in the Active view.
 (If you open an empty Archived view by its address, the empty-list message offers the button.)
 
-The switch is not shown when the list has no archived surveys. Archiving and restoring surveys
-arrive in a later version.
+The switch is not shown when the list has no archived surveys. Archive and restore surveys from the row
+menu ([Managing a survey](managing-a-survey.md#archive-and-restore)).
 
 ## The address keeps the view
 

@@ -68,6 +68,12 @@ as `cursor` to get the next page. Do not parse it. More in [Paging](paging.md).
 Send `Content-Type: application/merge-patch+json` or `application/json`. Members you omit stay as
 they are; `null` removes a member.
 
+Two rules apply to `PATCH /surveys/{surveyId}`:
+
+- `projectId: null` is a **value**, not a removal: it moves the survey to the caller's Personal
+  surveys. (`projectId` has no "removed" state.)
+- Every successful `PATCH` moves `updatedAt`, even when no value changes.
+
 ## Concurrent edits (ETag)
 
 Large documents (the survey definition and the theme) return an `ETag`. A write must send the
