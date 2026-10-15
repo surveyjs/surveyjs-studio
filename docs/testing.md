@@ -101,9 +101,10 @@ calls the callback. It knows two providers:
 | `/__dev/sign-in` (the dev provider)        | Reads the page, finds the link of the user (its `code` is the user id) and opens it                                             |
 | A form with a `username` field (mock OIDC) | Posts the user id as `username` to the form's action. The mock (`docker/mock-oidc.json`) signs in that user with email and name |
 
-The user is one of the legacy fixtures (`fixtureUsers`: the owner, and the blocked user). With any
-other login page the driver throws `SignInUnsupportedError`, and the tests that need a session are
-**skipped**, with the redirect target in the skip note. The tests that need none still run.
+The user is one of the legacy fixtures (`fixtureUsers`: the owner, the project admin, the member,
+the outsider and the blocked user). With any other login page the driver throws
+`SignInUnsupportedError`, and the tests that need a session are **skipped**, with the redirect target
+in the skip note. The tests that need none still run.
 
 **To make another server pass the suite**, give it a sign-in that the driver can complete. The
 simplest way is the mock OIDC server of Azurite mode (`pnpm demo:azurite:up` starts it):
