@@ -1,3 +1,13 @@
 .claude/skills
 .agents/skills
 *.temp.md
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo

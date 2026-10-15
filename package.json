@@ -1,0 +1,36 @@
+{
+  "name": "my-surveys",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24.21.0 <25"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck && tsc -p tsconfig.json --noEmit",
+    "check:deps": "tsx scripts/check-deps/cli.ts",
+    "test:unit": "vitest run",
+    "test:conformance": "pnpm --filter @my-surveys/conformance-tests test",
+    "test": "pnpm test:unit && pnpm test:conformance",
+    "e2e": "pnpm --filter @my-surveys/e2e test",
+    "lint:contract": "pnpm --filter @my-surveys/contract lint && pnpm --filter @my-surveys/contract check:generated",
+    "build": "pnpm --filter @my-surveys/contract build:docs && pnpm --filter @my-surveys/web build",
+    "demo": "pnpm --filter @my-surveys/contract build:docs && concurrently -n server,web -c blue,green \"pnpm --filter @my-surveys/server dev\" \"pnpm --filter @my-surveys/web dev\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.0",
+    "concurrently": "10.0.5",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.2"
+  }
+}

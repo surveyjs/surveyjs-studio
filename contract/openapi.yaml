@@ -1202,7 +1202,9 @@ components:
         instance: { type: string }
         code:
           type: string
-          description: Stable machine-readable error code.
+          description: >-
+            Stable machine-readable error code. `internal-error` is used for
+            unexpected server errors (`500`).
           enum:
             - bad-request
             - unauthenticated
@@ -1225,6 +1227,7 @@ components:
             - validation-failed
             - rate-limited
             - not-implemented
+            - internal-error
         errors:
           type: array
           description: Present for `validation-failed`.

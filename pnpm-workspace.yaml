@@ -1,0 +1,22 @@
+packages:
+  - contract
+  - server
+  - web
+  - conformance-tests
+  - e2e
+
+allowBuilds:
+  esbuild: true
+  # core-js only prints a donation banner in its postinstall; not needed.
+  core-js: false
+  # msw only copies the browser service worker in its postinstall; the tests use msw/node.
+  msw: false
+
+peerDependencyRules:
+  allowedVersions:
+    # openapi-typescript declares typescript ^5 but works with 6 (it only uses the TS compiler API).
+    "openapi-typescript>typescript": "6"
+
+permissions:
+  "@tanstack/router-plugin":
+    skills: false
