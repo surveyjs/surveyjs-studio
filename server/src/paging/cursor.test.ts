@@ -96,7 +96,9 @@ describe("survey cursors", () => {
     // "???>>>" puts "/" and "+" in the base64 text, where base64url has "_" and "-".
     [
       "standard base64 characters",
-      Buffer.from(JSON.stringify({ ...surveyPayload, i: "???>>>" })).toString("base64"),
+      Buffer.from(JSON.stringify({ ...surveyPayload, i: "???>>>" }))
+        .toString("base64")
+        .replace(/=+$/, ""),
     ],
     ["non-canonical trailing bits", nonCanonical(surveyPayload)],
     ["text that is not JSON", raw("not json")],
@@ -113,6 +115,12 @@ describe("survey cursors", () => {
     ["archived not a boolean", raw({ ...surveyPayload, a: "false" })],
     ["a timestamp that is not ISO", raw({ ...surveyPayload, u: "April 14, 2026" })],
     ["a timestamp that is not a date", raw({ ...surveyPayload, u: "2026-13-45T15:30:00.000Z" })],
+    ["a timestamp before 1753", raw({ ...surveyPayload, u: "1752-12-31T23:59:59.999Z" })],
+    ["a timestamp in year 1000", raw({ ...surveyPayload, u: "1000-01-01T00:00:00.000Z" })],
+    [
+      "a timestamp with an expanded year",
+      raw({ ...surveyPayload, u: "+010000-01-01T00:00:00.000Z" }),
+    ],
     ["a timestamp without milliseconds", raw({ ...surveyPayload, u: "2026-04-14T15:30:00Z" })],
     ["an id that is not a string", raw({ ...surveyPayload, i: 5 })],
     ["an empty id", raw({ ...surveyPayload, i: "" })],
@@ -128,6 +136,16 @@ describe("survey cursors", () => {
     expect(cursor.length).toBeGreaterThan(1024);
     expectInvalid(() => decodeSurveyCursor(cursor, list));
   });
+
+  it.each(["1753-01-01T00:00:00.000Z", "9999-12-31T23:59:59.999Z"])(
+    "accept the timestamp %s, a limit of the SQL datetime range",
+    (updatedAt) => {
+      const edge = { ...position, updatedAt };
+      expect(decodeSurveyCursor(encodeSurveyCursor(edge, personalActive), personalActive)).toEqual(
+        edge,
+      );
+    },
+  );
 
   it("accept a 64-character id", () => {
     const long = { ...position, id: "a".repeat(64) };

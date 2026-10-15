@@ -132,6 +132,21 @@ test.describe("an unknown project in the URL", () => {
   });
 });
 
+test.describe("an unknown survey id in the URL", () => {
+  test.use({
+    expectedErrorResponses: [{ path: `/api/v1/surveys/${UNKNOWN_PROJECT}`, status: 404 }],
+  });
+
+  test("shows that the survey is not available, with a way back", async ({ page }) => {
+    await signInAt(page, `/surveys/${UNKNOWN_PROJECT}/edit`, "outsider");
+
+    await expect(page.getByText("This survey is not available.")).toBeVisible();
+    await page.getByRole("link", { name: "Back to My Surveys" }).click();
+    await expect(page).toHaveURL("/");
+    await expect(createButton(page)).toBeVisible();
+  });
+});
+
 test("Create a Survey opens the new survey, which then heads the list", async ({ page }) => {
   await signInAt(page, "/", "outsider");
 

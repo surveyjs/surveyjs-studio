@@ -65,7 +65,9 @@ const isId = (value: unknown): value is string =>
 function isTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const time = Date.parse(value);
-  return !Number.isNaN(time) && new Date(time).toISOString() === value;
+  if (Number.isNaN(time) || new Date(time).toISOString() !== value) return false;
+  // Four-digit years only, within the range of SQL `datetime` (azure-legacy binds this value).
+  return /^\d{4}-/.test(value) && Number(value.slice(0, 4)) >= 1753;
 }
 
 /** Rejects a value that is not the canonical encoding of what it decoded to. */

@@ -41,7 +41,8 @@ to on surveyjs.io.
 
 Archived surveys are kept out of the normal list. When the chosen list has archived surveys, a
 switch **Active / Archived** appears above it. Switch to **Archived** to see only those. The
-**Create a Survey** button is hidden there: you create surveys in the Active view.
+**Create a Survey** button is not shown in the toolbar there: you create surveys in the Active view.
+(If you open an empty Archived view by its address, the empty-list message offers the button.)
 
 The switch is not shown when the list has no archived surveys. Archiving and restoring surveys
 arrive in a later version.

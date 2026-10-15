@@ -101,6 +101,9 @@ builds a cursor as the **base64url encoding, without padding, of a UTF-8 JSON ob
 | `i`    | The id of the last item of the page, lower case, 1 to 64 characters                            |
 | `n`    | Projects: the name of the last item, lower-cased                                               |
 
+A decoder also rejects a timestamp `u` whose year is not four digits between 1753 and 9999 (the range of
+SQL `datetime`), so the answer is `400` and not a database error.
+
 Members are written in the order shown, with no spaces. Example (the owner's active personal list,
 after "Customer feedback"):
 

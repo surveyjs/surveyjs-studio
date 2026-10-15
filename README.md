@@ -45,8 +45,9 @@ pnpm demo
 ```
 
 Then open <http://localhost:5173>. The browser goes to a "Sign in as…" page (development sign-in, no
-password): choose **Olivia Owner**. The home page then shows `signed in as: Olivia Owner`,
-`edition: self-hosted` and `shell: surveyjs-site`, inside the surveyjs.io header and footer. The API
+password): choose **Olivia Owner**. The home page is then **My Surveys**, inside the surveyjs.io
+header and footer: Olivia's personal surveys, newest first, with a project selector, an
+Active/Archived switch and a **Create a Survey** button. The API
 reference is at <http://localhost:3000/api/docs>.
 
 If `corepack enable` is not possible (on Windows it may need an administrator shell), use
@@ -112,14 +113,14 @@ Run from the repository root.
 - [Development](docs/development.md): setup, environment variables, scripts, dependency upgrades.
 - [Testing](docs/testing.md): the test seams and how to run each suite.
 - [User guide](docs/user-guide/README.md): [signing in](docs/user-guide/signing-in.md), the account menu, licence notices and the cookie banner, and [your surveys](docs/user-guide/your-surveys.md), the survey list.
-- [API guides](docs/api/README.md): conventions, [paging](docs/api/paging.md) and authentication.
-- [API](docs/api/README.md), [API conventions](docs/api/conventions.md) and
+- [API](docs/api/README.md): [conventions](docs/api/conventions.md), [paging](docs/api/paging.md) and
   [authentication, sessions and CSRF](docs/api/authentication.md).
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
 - [Step 1 demo script](docs/demo/step-01.md): how to check that Step 1 works.
 - [Step 2 demo script](docs/demo/step-02.md): how to check the legacy storage spike.
 - [Step 3 demo script](docs/demo/step-03.md): how to check sign-in, the session and the shell.
+- [Step 4 demo script](docs/demo/step-04.md): how to check the survey list, paging and survey creation.
 
 ## Licence
 

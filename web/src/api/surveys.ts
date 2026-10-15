@@ -82,6 +82,9 @@ export const surveyQueryOptions = (surveyId: string) =>
 /**
  * Makes a created survey visible at once: stores its detail, puts it at the top of the scope's cached
  * active list, and marks the scope's lists stale so they refetch the next time they are shown.
+ *
+ * The cache key uses the server's lower-case `projectId`: a hand-typed upper-case project id in the URL
+ * is refreshed by the list's own refetch on mount (default `staleTime` 0), not by this update.
  */
 export function addCreatedSurvey(queryClient: QueryClient, survey: Survey): void {
   const project = survey.projectId ?? "personal";

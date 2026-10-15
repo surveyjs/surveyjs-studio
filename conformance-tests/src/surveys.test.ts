@@ -299,6 +299,12 @@ describe("paging (outsider's personal scope)", () => {
 });
 
 describe("createSurvey", () => {
+  it("answers 401 unauthenticated when signed out", async () => {
+    const response = await create({});
+    expect(response.status).toBe(401);
+    expect(await codeOf(response)).toBe("unauthenticated");
+  });
+
   it("creates a personal survey without a body", async (ctx) => {
     const headers = await as(ctx, outsider);
     await tick();
@@ -442,5 +448,6 @@ describe("getSurvey", () => {
   it("answers 401 unauthenticated when signed out", async () => {
     const response = await get({}, fixture.customerFeedback);
     expect(response.status).toBe(401);
+    expect(await codeOf(response)).toBe("unauthenticated");
   });
 });

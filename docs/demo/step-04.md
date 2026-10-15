@@ -65,7 +65,7 @@ Expected:
 
 - Only **Old poll** (created `12/10/2025`, updated `5/20/2026`).
 - The address is `http://localhost:5173/?archived=true`.
-- There is no **Create a Survey** button in this view.
+- There is no **Create a Survey** button in the toolbar of this view.
 
 Reload the page: the Archived view stays. Press the browser's Back button: you return to the Active
 view at `http://localhost:5173/`.
