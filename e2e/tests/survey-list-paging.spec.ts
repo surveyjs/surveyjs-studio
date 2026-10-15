@@ -4,10 +4,13 @@ import { loadAllPages, loadMoreButton, surveyRows } from "./support/survey-list.
 import { expect, test } from "./support/test.js";
 
 // Memory mode only (it writes many surveys). Engineering is a scope tests may write to; the other
-// browsers fill it at the same time, so the test only makes sure it holds more than one page.
+// browsers fill it at the same time (and the survey actions spec moves surveys through it), so the
+// test only makes sure it holds more than one page, with a margin.
 
 const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const PAGE_SIZE = 50;
+// The survey actions spec moves surveys into Engineering and out again while this runs.
+const MARGIN = 10;
 
 async function activeEngineeringSurveyCount(page: Page): Promise<number> {
   const response = await page.request.get(
@@ -23,7 +26,7 @@ async function fillEngineering(page: Page, browserName: string): Promise<void> {
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "msid_csrf");
   expect(csrf).toBeDefined();
   const headers = { "X-CSRF-Token": decodeURIComponent(csrf?.value ?? "") };
-  const missing = PAGE_SIZE + 1 - (await activeEngineeringSurveyCount(page));
+  const missing = PAGE_SIZE + MARGIN + 1 - (await activeEngineeringSurveyCount(page));
   for (let i = 1; i <= missing; i++) {
     const response = await page.request.post("/api/v1/surveys", {
       headers,
@@ -31,7 +34,7 @@ async function fillEngineering(page: Page, browserName: string): Promise<void> {
     });
     expect(response.status()).toBe(201);
   }
-  expect(await activeEngineeringSurveyCount(page)).toBeGreaterThan(PAGE_SIZE);
+  expect(await activeEngineeringSurveyCount(page)).toBeGreaterThan(PAGE_SIZE + MARGIN);
 }
 
 test("a list longer than one page loads the rest with Load more", async ({ page, browserName }) => {

@@ -32,7 +32,10 @@ function createButton(page: Page) {
 
 /** The project drop-down: its button shows the selected scope; its menu items are links. */
 function projectSelector(page: Page) {
-  return page.locator(".v2-class---my-surveys-page .v2-class---drop-down-button");
+  // Not the rows' "…" buttons, which are drop-down buttons too.
+  return page.locator(
+    ".v2-class---my-surveys-page__actions-container .v2-class---drop-down-button",
+  );
 }
 
 async function chooseProject(page: Page, name: string) {
