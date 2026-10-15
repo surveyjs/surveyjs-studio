@@ -99,6 +99,10 @@ export function ProjectSelector({
         id={menuId}
         className="v2-class---drop-down-menu v2-class---drop-down-menu--popup-menu"
         hidden={!open}
+        // Focusable without a tab stop: WebKit does not focus a clicked link, so a mousedown on an
+        // item would otherwise blur the trigger with no relatedTarget and close the menu before
+        // the click lands. With this, focus moves to the menu, inside the root.
+        tabIndex={-1}
       >
         <ul className="v2-class---drop-down-menu__list">
           <ProjectItem
