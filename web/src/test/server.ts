@@ -54,3 +54,82 @@ export function unauthenticatedHandler() {
     ),
   );
 }
+
+type Survey = components["schemas"]["Survey"];
+type SurveyPage = components["schemas"]["SurveyPage"];
+type Project = components["schemas"]["Project"];
+type ProjectPage = components["schemas"]["ProjectPage"];
+
+export const sampleSurvey: Survey = {
+  id: "11111111-0000-4000-8000-000000000001",
+  name: "Customer feedback",
+  projectId: null,
+  published: false,
+  archived: false,
+  createdAt: "2026-04-01T09:00:00.000Z",
+  updatedAt: "2026-04-02T10:00:00.000Z",
+  postId: "11111111-0000-4000-8000-0000000000a1",
+  resultId: "11111111-0000-4000-8000-0000000000b1",
+  permissions: { canModify: true },
+  settings: { publicResults: false, storeRespondentIp: false },
+};
+
+export const sampleProject: Project = {
+  id: "55555555-0000-4000-8000-a00000000001",
+  name: "Marketing",
+  ownerId: currentUser.id,
+  role: "admin",
+  memberCount: 3,
+  createdAt: "2025-11-21T10:00:00.000Z",
+};
+
+function badRequest() {
+  return HttpResponse.json(
+    { type: "about:blank", title: "Bad request", status: 400, code: "bad-request" },
+    { status: 400, headers: { "Content-Type": "application/problem+json" } },
+  );
+}
+
+/**
+ * Answers `GET /surveys` from `pagesByCursor`: the key is the request's `cursor`, or "" for the first
+ * page. `onRequest` sees every request URL.
+ */
+export function surveysHandler(
+  pagesByCursor: Record<string, SurveyPage>,
+  onRequest?: (url: URL) => void,
+) {
+  // Untyped msw handler: an unknown cursor answers 400, which `response()` cannot express.
+  return mswHttp.get("*/api/v1/surveys", ({ request }) => {
+    const url = new URL(request.url);
+    onRequest?.(url);
+    const page = pagesByCursor[url.searchParams.get("cursor") ?? ""];
+    return page === undefined ? badRequest() : HttpResponse.json(page);
+  });
+}
+
+/** Answers `POST /surveys` with 201 and `survey`; `onBody` sees the request body. */
+export function createSurveyHandler(survey = sampleSurvey, onBody?: (body: unknown) => void) {
+  return http.post("/surveys", async ({ request, response }) => {
+    onBody?.(await request.json());
+    return response(201).json(survey, { headers: { Location: `/api/v1/surveys/${survey.id}` } });
+  });
+}
+
+export function surveyHandler(survey = sampleSurvey) {
+  return mswHttp.get("*/api/v1/surveys/:surveyId", ({ params }) =>
+    params.surveyId === survey.id
+      ? HttpResponse.json(survey)
+      : HttpResponse.json(
+          { type: "about:blank", title: "Not found", status: 404, code: "not-found" },
+          { status: 404, headers: { "Content-Type": "application/problem+json" } },
+        ),
+  );
+}
+
+/** Answers `GET /projects` from `pagesByCursor` (key: the request's `cursor`, "" for the first page). */
+export function projectsHandler(pagesByCursor: Record<string, ProjectPage>) {
+  return mswHttp.get("*/api/v1/projects", ({ request }) => {
+    const page = pagesByCursor[new URL(request.url).searchParams.get("cursor") ?? ""];
+    return page === undefined ? badRequest() : HttpResponse.json(page);
+  });
+}
