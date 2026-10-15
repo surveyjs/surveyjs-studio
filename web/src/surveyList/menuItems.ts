@@ -57,7 +57,7 @@ export type MenuEntry =
 
 const COPY_ITEMS: readonly CopyItemId[] = ["copy-id", "copy-result-id", "copy-post-id"];
 
-/** The menu of one survey row, in the site's order (see the assets README for the table). */
+/** The menu of one survey row, in the site's order (table: docs/user-guide/managing-a-survey.md). */
 export function surveyMenuItems(
   survey: Survey,
   view: { archived: boolean; hasProjects: boolean },

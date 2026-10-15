@@ -22,6 +22,11 @@ describe("validateSurveyListSearch", () => {
     },
   );
 
+  it("lower-cases a project id (GUIDs are case-insensitive; the server answers lower case)", () => {
+    const project = "55555555-0000-4000-8000-A00000000002";
+    expect(validateSurveyListSearch({ project })).toEqual({ project: project.toLowerCase() });
+  });
+
   it("keeps a project of 64 characters", () => {
     const project = "x".repeat(64);
     expect(validateSurveyListSearch({ project })).toEqual({ project });
