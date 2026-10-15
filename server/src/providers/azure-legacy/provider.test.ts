@@ -175,7 +175,7 @@ describe("azure-legacy provider without a reachable store", () => {
     it("refuses a clone with a non-GUID copy id before any read", async () => {
       await expect(
         providers.surveys.cloneSurvey(ID, { ...copy, postId: "not-a-guid" }),
-      ).rejects.toThrow(/^Survey create refused/);
+      ).rejects.toThrow(/^Survey clone refused/);
     });
 
     it.each([

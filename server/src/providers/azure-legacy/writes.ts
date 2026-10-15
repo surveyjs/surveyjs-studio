@@ -89,7 +89,7 @@ function checkName(operation: string, name: string): void {
  * The survey with lower-case ids, checked before anything is written: every id must be a GUID
  * (they also name blobs) and the name must fit `Surveys.name` (a longer one must not be cut).
  */
-function checked(survey: NewSurvey): NewSurvey {
+function checked(survey: NewSurvey, operation: "create" | "clone"): NewSurvey {
   const ids = [
     survey.id,
     ownerIdOf(survey.owner),
@@ -97,8 +97,8 @@ function checked(survey: NewSurvey): NewSurvey {
     survey.postId,
     survey.resultId,
   ];
-  if (!ids.every(isGuid)) throw new Error("Survey create refused: every id must be a GUID");
-  checkName("create", survey.name);
+  if (!ids.every(isGuid)) throw new Error(`Survey ${operation} refused: every id must be a GUID`);
+  checkName(operation, survey.name);
   return {
     ...survey,
     id: survey.id.toLowerCase(),
@@ -259,12 +259,13 @@ export async function writeNewSurvey(
   input: NewSurvey,
   definition?: SurveyDefinition,
 ): Promise<string> {
-  const survey = checked(input);
+  const survey = checked(input, "create");
   const text = definition === undefined ? undefined : JSON.stringify(definition);
   return storeNewSurvey(
     targets,
     survey,
     text === undefined ? undefined : Buffer.from(text, "utf8"),
+    "create",
   );
 }
 
@@ -276,6 +277,7 @@ async function storeNewSurvey(
   targets: LegacyWriteTargets,
   survey: NewSurvey,
   definition: Buffer | undefined,
+  operation: "create" | "clone",
 ): Promise<string> {
   try {
     const pool = await targets.pool();
@@ -305,7 +307,7 @@ async function storeNewSurvey(
       .input("timestamp", sql.DateTime, new Date(survey.updatedAt))
       .query(SURVEY_INSERT);
   } catch (error) {
-    throw new LegacyStoreError("survey create", error);
+    throw new LegacyStoreError(`survey ${operation}`, error);
   }
 
   await appendEventBestEffort(targets, survey.id, createEvent(survey), "the survey is stored.");
@@ -406,7 +408,7 @@ export async function writeClonedSurvey(
   input: NewSurvey,
 ): Promise<string | null> {
   const source = checkedId("clone", sourceId);
-  const copy = checked(input);
+  const copy = checked(input, "clone");
   let theme: string | null;
   let definition: Buffer | undefined;
   try {
@@ -425,7 +427,7 @@ export async function writeClonedSurvey(
     throw new LegacyStoreError("survey clone", error);
   }
 
-  await storeNewSurvey(targets, copy, definition);
+  await storeNewSurvey(targets, copy, definition, "clone");
   if (theme === null || theme === "") return copy.id;
 
   try {
