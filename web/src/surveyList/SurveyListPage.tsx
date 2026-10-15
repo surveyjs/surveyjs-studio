@@ -11,12 +11,14 @@ import { ProjectSelector } from "./ProjectSelector";
 import { surveyListSearch, type SurveyListParams } from "./search";
 import styles from "./SurveyListPage.module.css";
 import { SurveyRow } from "./SurveyRow";
+import { useSurveyActions } from "./useSurveyActions";
 
 /**
  * The My Surveys page in the markup of surveyjs.io's `the site's page markup` (D14):
  * the Active/Archived switch, the project drop-down, Create a Survey, and the list of the scope's
- * surveys, newest first, with "Load more" when more pages follow. The route loader has fetched the
- * first page, the archived check and the projects.
+ * surveys, newest first, with "Load more" when more pages follow. Each row has the rename pencil and
+ * the "…" menu; a failed row action shows one message under the actions until the next action. The
+ * route loader has fetched the first page, the archived check and the projects.
  */
 export function SurveyListPage({ project, archived }: SurveyListParams) {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
   const { data: hasArchived } = useSuspenseQuery(hasArchivedQueryOptions(project));
   const { data: projects } = useSuspenseQuery(projectsQueryOptions);
   const create = useCreateSurvey();
+  const { error: actionError, actions } = useSurveyActions();
   // A ref, not isPending: two clicks in the same tick both see the old render.
   const creating = useRef(false);
 
@@ -81,8 +84,14 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
           </div>
 
           {create.isError && (
-            <p className={styles.createError} role="alert">
+            <p className={styles.error} role="alert">
               Could not create a survey. Please try again.
+            </p>
+          )}
+
+          {actionError !== null && (
+            <p className={styles.error} role="alert">
+              {actionError}
             </p>
           )}
 
@@ -106,7 +115,13 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
           ) : (
             <div className="v2-class---my-surveys-page__list v2-class---my-surveys-page__list--table-view">
               {surveys.map((survey) => (
-                <SurveyRow key={survey.id} survey={survey} />
+                <SurveyRow
+                  key={survey.id}
+                  survey={survey}
+                  archived={archived}
+                  projects={projects}
+                  actions={actions}
+                />
               ))}
             </div>
           )}

@@ -1,20 +1,97 @@
-import { useId } from "react";
+import { useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import type { Project } from "../api/projects";
 import type { Survey } from "../api/surveys";
+import { iconHtml } from "../shell/surveyjs-site/icons";
 import { formatListDate } from "./formatDate";
+import { SurveyMenu } from "./SurveyMenu";
+import { SurveyNameEditor } from "./SurveyNameEditor";
+import type { SurveyActions } from "./useSurveyActions";
+
+const classes = (...names: (string | false)[]) => names.filter(Boolean).join(" ");
 
 /**
- * One survey of the list, in the row markup of `the site's page markup` (table view)
- * without the rename editor, the pencil and the "…" menu (Step 5).
+ * One survey of the list, in the row markup of `the site's page markup` (table view):
+ * the name with the rename pencil, the two dates and the "…" menu. The pencil shows only in the
+ * Active view and when the user may modify the survey. A rename shows the new name at once and the
+ * old one again if the request fails (the page shows the error).
  */
-export function SurveyRow({ survey }: { survey: Survey }) {
+export function SurveyRow({
+  survey,
+  archived,
+  projects,
+  actions,
+}: {
+  survey: Survey;
+  /** The Archived view. */
+  archived: boolean;
+  /** The user's projects (the "Move to Project" targets). */
+  projects: readonly Project[];
+  actions: SurveyActions;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // The name sent by a rename that has not been answered yet.
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const renames = useRef(0);
+  const pencilRef = useRef<HTMLAnchorElement>(null);
+  const name = pendingName ?? survey.name;
+  const canRename = !archived && survey.permissions.canModify;
+
+  const closeEditor = () => {
+    flushSync(() => setEditing(false));
+    pencilRef.current?.focus();
+  };
+
+  const save = (value: string) => {
+    closeEditor();
+    if (value.trim() === "" || value === name) return;
+    const rename = ++renames.current;
+    setPendingName(value);
+    void actions.rename(survey, value).then(() => {
+      // Success: the cache holds the new name; failure: the old one shows again.
+      if (renames.current === rename) setPendingName(null);
+    });
+  };
+
   return (
-    <div className="v2-class---my-surveys-page__list-item">
+    <div
+      className={classes(
+        "v2-class---my-surveys-page__list-item",
+        menuOpen && "v2-class---my-surveys-page__list-item--dd-open",
+      )}
+    >
       <div className="v2-class---my-surveys-page__list-item-content">
-        <div className="v2-class---my-surveys-page__list-item-header">
-          <div className="v2-class---my-surveys-page__survey-name-container">
-            <span className="v2-class---my-surveys-page__survey-name" title={survey.name}>
-              {survey.name}
+        <div
+          className={classes(
+            "v2-class---my-surveys-page__list-item-header",
+            editing && "v2-class---my-surveys-page__list-item-header--title-edit-mode",
+          )}
+        >
+          {editing && <SurveyNameEditor name={name} onSave={save} onCancel={closeEditor} />}
+
+          <div
+            className="v2-class---my-surveys-page__survey-name-container"
+            style={editing ? { display: "none" } : undefined}
+          >
+            <span className="v2-class---my-surveys-page__survey-name" title={name}>
+              {name}
             </span>
+            {canRename && (
+              <a
+                ref={pencilRef}
+                href="#"
+                style={{ position: "relative" }}
+                aria-label="Rename survey"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setMenuOpen(false);
+                  setEditing(true);
+                }}
+              >
+                <EditIcon />
+              </a>
+            )}
           </div>
 
           <div className="v2-class---my-surveys-page__survey-details-container">
@@ -35,6 +112,15 @@ export function SurveyRow({ survey }: { survey: Survey }) {
                 {formatListDate(survey.updatedAt)}
               </div>
             </div>
+
+            <SurveyMenu
+              survey={survey}
+              archived={archived}
+              projects={projects}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              onAction={(action) => actions.run(survey, action)}
+            />
           </div>
         </div>
       </div>
@@ -42,8 +128,20 @@ export function SurveyRow({ survey }: { survey: Survey }) {
   );
 }
 
-// The two date icons are inline in the site's page. The site repeats their clip-path ids in
-// every row; here each row gets its own ids, so the page has no duplicate ids.
+/** The site's `16x16/Edit` icon, with its fixed clip-path id made unique to the row. */
+function EditIcon() {
+  const clipId = useId();
+  const { __html } = iconHtml("16x16/Edit");
+  return (
+    <div
+      className="v2-class---my-surveys-page__edit-icon v2-class---my-surveys-page__edit-icon--svg"
+      dangerouslySetInnerHTML={{ __html: __html.replaceAll("clip0_17855_154879", clipId) }}
+    />
+  );
+}
+
+// The two date icons are inline in the site's page. The site repeats their clip-path ids (and the
+// Edit icon's) in every row; here each row gets its own ids, so the page has no duplicate ids.
 
 function CreatedIcon() {
   const clipId = useId();

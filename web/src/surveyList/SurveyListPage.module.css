@@ -1,6 +1,6 @@
-/* Glue for what the copied surveyjs.io styles do not cover (the site has no paging, no create
-   error message and no keyboard access to the switch). Colours and type are the site's
-   (color-styles.scss, text-styles.scss). */
+/* Glue for what the copied surveyjs.io styles do not cover (the site has no paging, no error
+   messages and no keyboard access to the switch or the rename pencil). Colours
+   and type are the site's (color-styles.scss, text-styles.scss). */
 
 /* An inline icon in a flex row, without the line box of an inline <svg>. */
 .icon {
@@ -26,8 +26,8 @@
   outline-offset: 2px;
 }
 
-/* A failed create, under the actions. */
-.createError {
+/* A failed create or row action, under the actions. */
+.error {
   margin: 0 0 16px;
   color: #e60a3e; /* $Special--Red */
   font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -41,4 +41,11 @@
   display: flex;
   justify-content: center;
   margin-top: 16px;
+}
+
+/* The rename pencil shows only on hover in the site's styles (display: none otherwise), so the
+   keyboard could not reach it: it also shows while the focus is in its row. */
+:global(.v2-class---my-surveys-page__list-item):focus-within
+  :global(.v2-class---my-surveys-page__edit-icon) {
+  display: flex;
 }
