@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
 import { createProviders } from "./providers/index.js";
@@ -13,8 +14,13 @@ try {
   throw error;
 }
 
-const providers = createProviders(config);
+// The app's logger exists only once the app is built; until then warnings are dropped.
+let appLog: FastifyBaseLogger | undefined = undefined;
+const providers = await createProviders(config, {
+  logger: { warn: (details, message) => appLog?.warn(details, message) },
+});
 const app = await buildApp(config, providers);
+appLog = app.log;
 
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

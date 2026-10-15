@@ -1,0 +1,7 @@
+[
+  {
+    "PartitionKey": "*",
+    "RowKey": "client-0002",
+    "ispartialcompleted": true
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "elements": [
+    {
+      "name": "satisfaction",
+      "isPublic": true
+    },
+    {
+      "name": "receipt",
+      "isPublic": false
+    }
+  ]
+}

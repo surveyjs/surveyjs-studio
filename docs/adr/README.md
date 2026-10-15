@@ -5,9 +5,11 @@ consequences. Use the format from [ADR 0001](0001-record-architecture-decisions.
 in order, never edit an accepted ADR to change its decision (add a new one that supersedes it),
 and add each one to this index.
 
-| No.                                           | Title                                              | Status   |
-| --------------------------------------------- | -------------------------------------------------- | -------- |
-| [0001](0001-record-architecture-decisions.md) | Record architecture decisions                      | Accepted |
-| [0002](0002-node-24-lts.md)                   | Node.js 24 LTS                                     | Accepted |
-| [0003](0003-custom-contract-loader.md)        | Build routes from the contract with our own loader | Accepted |
-| [0004](0004-body-limit.md)                    | Request body limit equals the response size limit  | Accepted |
+| No.                                           | Title                                                  | Status   |
+| --------------------------------------------- | ------------------------------------------------------ | -------- |
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions                          | Accepted |
+| [0002](0002-node-24-lts.md)                   | Node.js 24 LTS                                         | Accepted |
+| [0003](0003-custom-contract-loader.md)        | Build routes from the contract with our own loader     | Accepted |
+| [0004](0004-body-limit.md)                    | Request body limit equals the response size limit      | Accepted |
+| [0005](0005-respondent-files-as-urls.md)      | Respondent files are stored as URLs (D11)              | Accepted |
+| [0006](0006-legacy-replica.md)                | SQL Server 2022 next to Azurite for the legacy replica | Accepted |

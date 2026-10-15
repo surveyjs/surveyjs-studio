@@ -14,11 +14,15 @@ const appVariables = [
   "AUTH_METHODS",
   "SURVEYJS_LICENSE_KEY",
   "STORAGE_PROVIDER",
+  "MEMORY_SEED",
   "PUBLIC_BASE_URL",
   "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
   "LIMIT_MAX_FILE_BYTES",
   "LIMIT_MAX_RESPONSE_BYTES",
   "API_DOCS",
+  "LEGACY_SQL_CONNECTION_STRING",
+  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
 ];
 for (const name of Object.keys(process.env)) {
   if (appVariables.includes(name) || name.startsWith("VITE_")) {

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "55555555-0000-4000-8000-a00000000001",
+    "name": "Marketing",
+    "type": "ORGANIZATION_CREATE",
+    "happendat": "2025-11-21T10:00:00Z",
+    "timestamp": "2025-11-21T10:00:00Z",
+    "ipaddress": null
+  },
+  {
+    "id": "55555555-0000-4000-8000-a00000000002",
+    "name": "Engineering",
+    "type": "ORGANIZATION_UPDATE",
+    "happendat": "2025-12-05T09:30:00Z",
+    "timestamp": "2025-12-05T09:30:00Z",
+    "ipaddress": null
+  }
+]

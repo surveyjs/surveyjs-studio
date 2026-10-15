@@ -1,0 +1,17 @@
+{
+  "columns": [
+    {
+      "name": "satisfaction",
+      "displayname": "How satisfied are you?",
+      "visibility": 0,
+      "location": 0
+    },
+    {
+      "name": "receipt",
+      "displayname": "Upload your receipt",
+      "visibility": 2,
+      "location": 1
+    }
+  ],
+  "newcolumnsvisibility": 0
+}

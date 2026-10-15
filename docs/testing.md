@@ -6,11 +6,11 @@ warnings.
 
 ## The three seams
 
-| Seam               | Question it answers                             | Where                | Status                   |
-| ------------------ | ----------------------------------------------- | -------------------- | ------------------------ |
-| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/` | Built (Step 1)           |
-| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`               | Built (Step 1), one spec |
-| Provider suite     | Does a storage provider behave like the others? | (not yet)            | Arrives with Step 2      |
+| Seam               | Question it answers                             | Where                         | Status                   |
+| ------------------ | ----------------------------------------------- | ----------------------------- | ------------------------ |
+| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/`          | Built (Step 1)           |
+| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`                        | Built (Step 1), one spec |
+| Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2)           |
 
 Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
@@ -23,6 +23,14 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 | `pnpm test:conformance` | The conformance suite against a server it starts itself |
 | `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit              |
 
+These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
+`pnpm test`:
+
+| Command                         | Runs                                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:azurite`   | Three files against Azurite and SQL: the provider suite, the NULL-row tests and the fixture loader tests |
+| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                    |
+
 CI runs all of them (see [Development](development.md#ci)).
 
 ## Unit tests
@@ -31,10 +39,13 @@ Run with Vitest from the root. Scope:
 
 - `scripts/`: the `check:deps` rules.
 - `contract/`: the package exports.
-- `server/`: configuration (`loadConfig`), the error mapper, the contract loader, and the app
-  through Fastify's `inject` (HTTP in, HTTP out).
+- `server/`: configuration (`loadConfig`), the error mapper, the contract loader, the app
+  through Fastify's `inject` (HTTP in, HTTP out), the legacy mapping and fixture reading, the loader
+  guards, the inspector CLI, and the provider suite on the in-memory provider.
 - `web/`: the API client and config loader (with `msw` and `openapi-msw` mocks typed by the
   contract), the licence loader, and the app rendered with React Testing Library.
+
+`pnpm test:unit` leaves out the `providers-azurite` project, which needs Docker.
 
 Run one project: `pnpm vitest run --project server`. Run one file: `pnpm vitest run server/src/config.test.ts`.
 
@@ -94,7 +105,49 @@ build served by `vite preview` on 5173) and opens the app in three browsers. Rul
 
 Run one browser: `pnpm e2e --project=chromium`.
 
-## Provider suite (Step 2)
+## Provider suite
 
-One shared suite will run against every storage provider (in-memory, and Azure with Azurite) to
-prove they behave the same. It does not exist yet.
+One shared suite, `describeProviderSuite(name, create)` in `server/src/providers/suite/provider-suite.ts`,
+runs against every storage provider and checks that they behave the same. It uses only the
+`ProviderSet` interface. It runs on the golden fixtures (see
+[Development](development.md#golden-fixtures)), and compares with expected domain objects that are
+**written by hand** in `suite/expected.ts`, not computed from the mapping.
+
+It covers:
+
+- `getSurvey`: every fixture survey, an unknown id, and ids in upper case;
+- `listSurveys`: personal and project scopes, the order (`updatedAt` descending, then id), an owner
+  with no surveys, no mixing of scopes, and case-insensitive ids;
+- `getUser` and `findUserByEmail`: found, unknown, email in any case;
+- `listUserProjects`: roles, order (project name ignoring case, then id), unknown user;
+- the lifecycle: `ready()` resolves `true`, `close()` resolves.
+
+Where it runs:
+
+| Test file                                | Provider                               | Run with                      |
+| ---------------------------------------- | -------------------------------------- | ----------------------------- |
+| `memory.provider.test.ts`                | `memory`, seeded with fixtures         | `pnpm test:unit`              |
+| `azure-legacy.provider.azurite.test.ts`  | `azure-legacy` on the replica          | `pnpm test:providers:azurite` |
+| `azure-legacy.null-rows.azurite.test.ts` | `azure-legacy`, rows with NULL columns | `pnpm test:providers:azurite` |
+
+`pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
+`docker/azurite.env`, loads the fixtures into the running replica first, and needs
+`pnpm demo:azurite:up`. The NULL-row test adds rows with NULL columns and checks the defaults
+and the skip warnings (ids only).
+
+**To run the suite against a new provider**, add a test file next to the others in
+`server/src/providers/` that calls `describeProviderSuite("<name>", () => <create a ProviderSet
+that holds the golden fixtures>)`. If it needs a service, put it in its own Vitest project, as
+`providers-azurite` does, so `pnpm test:unit` stays free of it.
+
+### Conformance on a provider
+
+`CONFORMANCE_PROVIDER` selects the provider for the server that the conformance suite starts:
+`memory` (default; every app variable is removed) or `azure-legacy` (the three `LEGACY_*`
+variables are passed through, and the run fails if one is missing). `pnpm test:conformance:azurite`
+sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The
+reference server has no operations that use the stores yet, so for now the run proves that the
+server starts on the legacy provider and still answers as the contract says.
+
+The end-to-end tests still run on the memory provider. Running them on Azurite waits for Step 3,
+which brings the mock OIDC server they need.

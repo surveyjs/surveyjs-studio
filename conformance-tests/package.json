@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:azurite": "node --env-file=../docker/azurite.env --env-file=azure-legacy.env node_modules/vitest/vitest.mjs run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

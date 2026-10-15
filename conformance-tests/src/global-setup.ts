@@ -26,12 +26,46 @@ const appVariables = [
   "AUTH_METHODS",
   "SURVEYJS_LICENSE_KEY",
   "STORAGE_PROVIDER",
+  "MEMORY_SEED",
   "PUBLIC_BASE_URL",
   "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
   "LIMIT_MAX_FILE_BYTES",
   "LIMIT_MAX_RESPONSE_BYTES",
   "API_DOCS",
+  "LEGACY_SQL_CONNECTION_STRING",
+  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
 ];
+
+const legacyVariables = [
+  "LEGACY_SQL_CONNECTION_STRING",
+  "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+  "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+] as const;
+
+/**
+ * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores: the three
+ * `LEGACY_*` connection strings are forwarded from this process (`pnpm test:conformance:azurite`
+ * reads them from docker/azurite.env). Default: memory, with every app variable stripped.
+ */
+function providerEnv(): Record<string, string> {
+  const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";
+  if (provider === "memory") return { STORAGE_PROVIDER: "memory" };
+  if (provider !== "azure-legacy") {
+    throw new Error(`CONFORMANCE_PROVIDER must be memory or azure-legacy, got "${provider}"`);
+  }
+  const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
+  const missing: string[] = [];
+  for (const name of legacyVariables) {
+    const value = process.env[name];
+    if (value?.trim()) env[name] = value;
+    else missing.push(name);
+  }
+  if (missing.length > 0) {
+    throw new Error(`CONFORMANCE_PROVIDER=azure-legacy needs ${missing.join(", ")}`);
+  }
+  return env;
+}
 
 function serverEnv(port: number): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -41,8 +75,8 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     NODE_ENV: "test",
     HOST: "127.0.0.1",
     PORT: String(port),
-    STORAGE_PROVIDER: "memory",
     LOG_LEVEL: "warn",
+    ...providerEnv(),
   };
 }
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));

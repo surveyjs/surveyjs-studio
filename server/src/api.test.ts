@@ -18,7 +18,7 @@ async function start(
   options?: BuildOptions,
 ): Promise<FastifyInstance> {
   const config = loadConfig({ ...testEnv, ...env });
-  app = await buildApp(config, createProviders(config), options);
+  app = await buildApp(config, await createProviders(config), options);
   return app;
 }
 

@@ -1,0 +1,976 @@
+# Legacy data layout (surveyjs.io My Surveys)
+
+Status: spike result for Step 2, Task 1 · Last updated: 2026-10-14
+
+This page records how the current surveyjs.io site and `api.surveyjs.io` store My Surveys data. Later
+tasks (golden fixtures, the Azurite replica, the Azure legacy provider, the provider suite and the
+inspector CLI) are built from it.
+
+**Source.** The legacy repository `the site's repository`, read-only checkout at `C:\Work\surveyjs-site`,
+commit `3bbec88d99` (2026-10-12). Every path below is relative to that folder. Where it helps, the
+pre-.NET Core code is cited as `git 3cfb9f11a5^:<path>` (the commit before the "NET Core Migration").
+
+**Markers.**
+
+- **[C]** confirmed from code: the cited code does exactly this.
+- **[I]** inferred: follows from the code plus platform behaviour (Azure, SQL Server, Form Library), or
+  from naming. It needs a storage copy or the site team to confirm.
+
+**Examples are synthetic.** IDs are GUID-shaped so that key formats stay exact. They map to the
+names used in the brief:
+
+| Name          | GUID used in examples                  |
+| ------------- | -------------------------------------- |
+| user-0001     | `11111111-0000-4000-8000-000000000001` |
+| user-0002     | `11111111-0000-4000-8000-000000000002` |
+| survey-0001   | `22222222-0000-4000-8000-000000000001` |
+| post-0001     | `33333333-0000-4000-8000-000000000001` |
+| result-0001   | `44444444-0000-4000-8000-000000000001` |
+| project-0001  | `55555555-0000-4000-8000-000000000001` |
+| instance-0001 | `66666666-0000-4000-8000-000000000001` |
+| event-000N    | `77777777-0000-4000-8000-00000000000N` |
+| point-0001    | `88888888-0000-4000-8000-000000000001` |
+| file-0001     | `99999999-0000-4000-8000-000000000001` |
+| member-0001   | `aaaaaaaa-0000-4000-8000-000000000001` |
+
+Emails are `owner@example.com` and `member@example.com`. No real data or secret values appear here.
+
+## 1. Summary
+
+My Surveys data lives in three physical stores. **Azure SQL** (the "users" database) holds users,
+the survey records (name, owner, flags, theme JSON), projects ("organizations") and memberships.
+The **surveys storage account** holds the survey definition JSON, its edit history and the saved
+results layouts as append blobs, an audit log of survey events in the Azure table `surveys`, and
+editor uploads in an Azure **file share**. The **results storage account** holds one Azure table of
+responses per survey (`post{postId}`), one table of "already completed" markers per survey, and
+respondent uploads in a file share. The ASP.NET Identity database (`ConnectionStrings:Default`) is
+wired up but not used by My Surveys. The storage model is **not event-sourced**: every change is
+applied synchronously to current-state rows and blobs ("projections"), and for surveys an audit
+event row is also appended. Production code never rebuilds state from the event rows; replay exists
+only in unit tests and cannot handle several event types. A response row is both the "post result"
+event and the stored response.
+
+## 2. Stores and selection
+
+### 2.1 How the code picks a backend
+
+| Setting or switch                                            | Where                                                                                                                                                                                                                        | Effect                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site code` (static field)             | Set to `site code` at start-up in `the site's code` (`Program.Main`), `the site's code`, `the site's code`, `surveyjs.admin/the site's code`, `site code/the site's code`; tests set `site code` | `site code` makes every storage class use `site code`. `site code` makes each storage class use its real backend. **[C]** `the site's code` (`site code`)                                                                                                                           |
+| `site code` (constructor argument)                 | Hard-coded per storage class                                                                                                                                                                                                 | `StorageAccount` → `site code` (tables, blobs, file shares, queues). `SqlDatabase` → `site code` (SQL tables). Only `site code` passes `SqlDatabase`. **[C]** `the site's code` (`site code..ctor`, `site code`), `the site's code` (`site code..ctor`) |
+| Secret name `a site secret`                      | `the site's code` (`site code`)                                                                                                                                                            | Connection string of the surveys storage account, used by `site code`. **[C]** `the site's code` (`site code..ctor`)                                                                                                                                                                                                  |
+| Secret name `a site secret`                      | `the site's code` (`site code`)                                                                                                                                                            | Connection string of the results storage account, used by `site code`. **[C]** `the site's code` (`site code..ctor`)                                                                                                                                                                                                  |
+| Secret name `a site secret`                        | `the site's code` (`site code`)                                                                                                                                                              | Azure SQL connection string, used by `site code` and `site code`. **[C]** `the site's code` (`site code..ctor`)                                                                                                                                                                                                   |
+| Secret name `a site secret`                | `the site's code` (`site code`)                                                                                                                                                       | Storage account for sent-email bodies and the MCP log. Not My Surveys. **[C]** `the site's code` (`site code..ctor`)                                                                                                                                                                                             |
+| Where secrets come from                                      | `the site's code` (`site code`, `site code`)                                                                                                                                   | Azure Key Vault (vault URI hard-coded, a different vault for DEBUG builds, `site code`). If `App_Data/secrets.config` exists, its `appSettings` with the same key names are used instead. A failed Key Vault read returns the literal `error`. **[C]**                                                                                     |
+| `ConnectionStrings:Default`                                  | `the site/appsettings.json`; `the site's code` (`site code<site code>`)                                                                                                                              | SQL Server database for the ASP.NET Identity tables (`AspNetUsers`, …). The user store actually registered is `site code`, which reads `site code`. **[C]** `the site's code` (`site code`), `the site's code` (`site code<site code>`)                                            |
+| `AppSettings:AppDataStorage:*`, `a site secret` | `the site's code` (`site code`)                                                                                                                                               | Blob container for site content (docs, examples). Not My Surveys. **[C]**                                                                                                                                                                                                                                                                               |
+
+`the site/appsettings*.json` holds only `Logging:*` and `AllowedHosts`; no storage setting lives in
+an appsettings file. **[C]** (setting names listed with a key-only script; no values read into this
+document.)
+
+### 2.2 Stores
+
+| Store                                           | Backend                                                   | Holds (My Surveys)                                                                                                                                                                                                              | Code                                                                                                                               |
+| ----------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Users database                                  | Azure SQL (`site code`)                    | `Users`, `Surveys`, `Organizations`, `OrganizationUsers`                                                                                                                                                                        | `the site's code` (`site code`), `the site/Storage/sql/db.sql`                                       |
+| Surveys account                                 | Azure Table + Blob + Files (`site code`) | Table `surveys`; containers `surveyjson`, `surveytext`, `surveyjsonhistory`, `surveypublishedjson`, `surveyresultcolumns`, `surveyresulttablestate`, `surveyresultsummarystate`, `surveyresultpermissions`; share `surveyfiles` | `the site's code` (`site code`), `the site's code` (`site code`) |
+| Results account                                 | Azure Table + Files                                       | Tables `post{postId}`, `postdelete{postId}`, `SurveyCompletion{surveyId}`; shares `files`, `tempfiles`                                                                                                                          | `the site's code` (`site code`), `the site's code`                       |
+| Users-content account                           | Azure Table + Blob                                        | Nothing for My Surveys (sent emails, MCP log)                                                                                                                                                                                   | `the site's code`                                                                                     |
+| Identity database (`ConnectionStrings:Default`) | SQL Server via EF Core                                    | Nothing for My Surveys                                                                                                                                                                                                          | `the site's code`                                                                                             |
+| In-memory                                       | `site code`                                | Tests only; file operations are no-ops; blob directories are empty                                                                                                                                                              | `the site's code`                                                                                |
+
+`site code` also creates a `site code`, but no queue is ever used. **[C]**
+`the site's code` (`site code..ctor`; no other
+reference to `site code`).
+
+### 2.3 What production uses, and how sure we are
+
+Production most likely uses: **Azure SQL** for users, survey records and projects; **Azure Table,
+Blob and Files** in two storage accounts for definitions, history, layouts, results and uploads.
+Confidence: **high**.
+
+- High, because every deployable `the site's code` sets `site code` and the backend per storage
+  class is hard-coded, not configured. **[C]** (files listed in 2.1)
+- High, because the storage connection strings are named secrets in Key Vault, not settings. **[C]**
+  `the site's code` (`site code`)
+- The site team confirmed that `the site` with `the site` in this checkout is the .NET Core
+  code that implements access to the legacy storage, so this page treats it as the reference
+  behaviour. Data written earlier by the pre-port code can still differ in two places: respondent
+  IP capture (section 3.6) and history blob naming (section 3.4). Both behaviours are recorded.
+  **[C]** for the difference, **[I]** for which code wrote the existing data.
+- Unknown: whether the three `connection-string-*` accounts are three accounts or one, and whether
+  `a site secret` and `ConnectionStrings:Default` point to the same database. Only the
+  site team can say (section 11).
+
+## 3. Entities
+
+Three general rules first.
+
+**Property names.** `site code` lower-cases a name when it is set through its indexer, so
+almost every stored property or column name is lower case (`happendat`, `postid`). Values added
+through a dictionary keep their case. **[C]** `the site's code`
+(`site code[]`, `site code`)
+
+**Azure Table keys.** A table name is the storage "path" with `-` removed and a `t` prefix if it
+starts with a non-letter. `PartitionKey` is `*` unless the caller passes one; `RowKey` is the
+caller's key or the object's `id`. A write is an upsert (`site code`; the SDK default mode is
+merge, so properties left out of a write survive on an existing row **[I]**). On read, the code adds
+`rowkey` and `timestamp` to the values. **[C]**
+`the site's code` (`site code`, `site code`, `Write`,
+`site code`)
+
+**Azure SQL mapping.** `site code` maps a "path" to a SQL table and a key column,
+ignores the partition and row key arguments of `Write`, and builds an UPDATE-then-INSERT on the key
+column from every non-null value in the object. It sets `timestamp = DateTime.UtcNow` on every
+write. **[C]** `the site's code` (`Write`,
+`site code`, `site code`), `the site's code`
+(`site code`, `site code`, `site code`)
+
+| Path used in code           | SQL table           | Key column used for reads | "Partition" column used for lists |
+| --------------------------- | ------------------- | ------------------------- | --------------------------------- |
+| `site code`              | `Users`             | `id`                      | none                              |
+| `site code`       | `Users`             | `email`                   | `email`                           |
+| `site code`   | `Users`             | `accesskey`               | none                              |
+| `site code`        | `Users`             | `dxid`                    | none                              |
+| `Surveys`                   | `Surveys`           | `id`                      | `userid`                          |
+| `site code`    | `Surveys`           | `postid`                  | none                              |
+| `site code`  | `Surveys`           | `resultid`                | none                              |
+| `site code` | `Surveys`           | `publishid`               | none                              |
+| `Organizations`             | `Organizations`     | `id`                      | none                              |
+| `OrganizationUsers`         | `OrganizationUsers` | `id`                      | `organizationid`                  |
+| `site code`         | `OrganizationUsers` | `id`                      | `userid`                          |
+
+Because of this mapping, an extra property on a row object becomes an extra SQL column in the
+INSERT. A writer must not add properties to SQL rows that the table does not have. **[C]**
+`the site's code` (`site code`)
+
+### 3.1 Survey record: SQL `Surveys`
+
+Primary key `id`. Lists are `select * from Surveys where userid = @p`; lookups by `postid`,
+`resultid` and `publishid` are single-row selects on those columns. **[C]**
+`the site's code` (`site code`, `site code`, `site code`,
+`site code`, `site code`), `the site/Storage/sql/db.sql` (`create table Surveys`)
+
+| Column              | SQL type           | Model member (`the site's code`) | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | ------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                | `uniqueidentifier` | `Id`                                            | Survey ID. **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `name`              | `nvarchar(200)`    | `Name`                                          | Survey name. Max 200 characters (the contract allows 256). **[C]** for the column, **[I]** that longer names fail.                                                                                                                                                                                                                                                                                                                                                             |
+| `userid`            | `uniqueidentifier` | `UserId`                                        | **Owner scope**: the user's ID for a personal survey, the organization (project) ID for a project survey. **[C]** `the site's code` (`Create`, `MySurveys`), `the site's code` (`site code`)                                                                                                                                                                                                             |
+| `creatorid`         | `uniqueidentifier` | `CreatorId`                                     | User who created the survey, or who last moved it (move overwrites it). `00000000-…` when created through the private API. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)                                                                                                                                                                                                   |
+| `postid`            | `uniqueidentifier` | `PostId`                                        | Post ID (see section 4). **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `resultid`          | `uniqueidentifier` | `ResultId`                                      | Result ID (see section 4). **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `createdat`         | `datetime`         | `CreatedAt`                                     | Copied from the `SURVEY_CREATE` event's `happendat`, which is `DateTime.Now` (server local time). The SQL writer passes it on with no UTC conversion, unlike the Table writer. **[C]** `the site's code` (`site code`), `the site's code` (`site code`), `the site's code` (`Write`). It equals UTC only when the server time zone is UTC (the App Service default). **[I]** |
+| `timestamp`         | `datetime`         | `UpdatedOn`                                     | Set to UTC now by every SQL write, so it is the "updated" date. Every rename, JSON save, theme change, publish, archive and move rewrites the row. **[C]** `the site's code` (`Write`), `the site's code` (`site code`)                                                                                                                                                                                |
+| `ispublished`       | `tinyint`          | `IsPublished` (`bool?`)                         | `NULL` until first toggled. The list shows "Run" only when it is 1; the run page refuses only when it is 0. **[C]** `the site's codehtml` (`isPublished`), `the site's codehtml` (`Model.IsPublished == false`)                                                                                                                                                                                                         |
+| `isarchived`        | `tinyint`          | `IsArchived`                                    | Archived flag. **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `allowaccessresult` | `tinyint`          | `AllowAccessResult`                             | "Grant Access" (public results). **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `storeipaddress`    | `varchar(200)`     | `StoreIPAddress`                                | "Save Respondent IP". A `bool` written into a `varchar`; SQL Server stores `1`/`0`, and `GetValue<bool>` reads the string `1` as true. **[C]** for the code, **[I]** for the stored text.                                                                                                                                                                                                                                                                                      |
+| `usecookies`        | `tinyint`          | `UseCookies`                                    | "Limit to one response": the run page sets the survey's `cookieName` to the ID in the URL. **[C]** `the site's code` (`Index`)                                                                                                                                                                                                                                                                                                              |
+| `theme`             | `varchar(max)`     | `Theme`                                         | **Theme JSON** as a string (SurveyJS theme). `varchar`, not `nvarchar`: non-ASCII characters may not survive. **[C]** for the column, **[I]** for the character loss. `the site's code` (`site code`)                                                                                                                                                                                                                               |
+| `publishid`         | `uniqueidentifier` | `PublishId` (`string`)                          | Legacy "published version" ID. Set only by the hidden `publishVersion` API; plain publish does not set it. **[C]** `the site's code` (`site code`, `site code`), `the site's code` (`site code`)                                                                                                                                                                                                 |
+| `legacytheme`       | `varchar(max)`     | none                                            | Not referenced by any code. **[C]** (repository-wide search)                                                                                                                                                                                                                                                                                                                                                                                                                   |
+
+Synthetic row:
+
+```json
+{
+  "id": "22222222-0000-4000-8000-000000000001",
+  "name": "Customer feedback",
+  "userid": "55555555-0000-4000-8000-000000000001",
+  "creatorid": "11111111-0000-4000-8000-000000000001",
+  "postid": "33333333-0000-4000-8000-000000000001",
+  "resultid": "44444444-0000-4000-8000-000000000001",
+  "createdat": "2026-03-13 09:12:00.000",
+  "timestamp": "2026-04-14 15:30:00.000",
+  "ispublished": 1,
+  "isarchived": 0,
+  "allowaccessresult": 0,
+  "storeipaddress": "0",
+  "usecookies": null,
+  "theme": "{\"themeName\":\"default\",\"colorPalette\":\"light\",\"cssVariables\":{\"--sjs-primary-backcolor\":\"#19b394\"}}",
+  "publishid": null,
+  "legacytheme": null
+}
+```
+
+### 3.2 Survey definition: blobs `surveyjson` and `surveytext`
+
+| Item           | Value                                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Containers     | `surveyjson` and `surveytext` in the surveys account. **[C]** `the site's code` (`site code`, `site code`)                                                                                                                                   |
+| Blob name      | `{surveyId}` (GUID with dashes, lower case, no extension). **[C]** `the site's code` (`site code`)                                                                                                                                     |
+| Blob type      | **Append blob**, rewritten whole on each save (`OpenWrite(true)`), UTF-8 text. **[C]** `the site's code` (`site code`)                                                                                                                 |
+| Content        | SurveyJS survey JSON. The editor sends the same text as `Json` and `Text`, so both blobs hold the same string. **[C]** `the site/the site's source` (`site code`, `saveSurveyFunc`)                                                                   |
+| Who reads what | `surveyjson`: `getSurvey`, the run page, results and history. `surveytext`: only the editor page (it loads `creator.text` from it). **[C]** `the site's code` (`site code`), `the site's code` (`EditSurvey`) |
+| When created   | On the first save, not on create. Until then `getSurvey` answers 400. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)                                                              |
+
+The editor saves with `PUT private/Surveys/changeJson` on every auto-save. **[C]**
+`the site/the site's source` (`site code`)
+
+Synthetic content of `surveyjson/22222222-0000-4000-8000-000000000001`:
+
+```json
+{
+  "title": "Customer feedback",
+  "pages": [
+    {
+      "name": "page1",
+      "elements": [
+        { "type": "rating", "name": "satisfaction", "title": "How satisfied are you?" },
+        { "type": "file", "name": "receipt", "title": "Upload your receipt" }
+      ]
+    }
+  ]
+}
+```
+
+`surveypublishedjson/{publishId}` is an older "published version" snapshot. Nothing writes it now,
+but `site code` still reads it first when `publishid` is set. **[C]**
+`the site's code` (`site code` has no caller),
+`the site's code` (`site code`)
+
+### 3.3 Theme
+
+The theme JSON is the `theme` column of the SQL `Surveys` row (3.1), not a blob. The editor saves
+it with `PUT private/Surveys/changeTheme` and the body field `ThemeJson`. A theme change (and a definition save, through `site code`) also
+deletes the editor preview image `my-surveys-survey-preview-image-{surveyId}` from the `surveyfiles`
+share. **[C]** `the site's code` (`site code`, `site code`,
+`site code`), `the site/the site's source` (`saveThemeFunc`)
+
+### 3.4 Survey history: blob container `surveyjsonhistory`
+
+Every definition save writes a new history blob with a fresh GUID ("point ID") and the full JSON.
+The History page lists entries with the blob's `LastModified` as the time, and loads one by
+splitting the listed path at `/` into survey ID and point ID. No user is recorded. **[C]**
+`the site's code` (`site code`, `site code`, `site code`),
+`the site's codehtml` (`loadItem`)
+
+| Item                       | Value                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Intended blob name         | `{surveyId}/{pointId}` (append blob). This is what the pre-port code wrote and what the History page expects. **[C]** `git 3cfb9f11a5^:site code/Storage/the site's code` (`site code`, `site code`), `the site's codehtml` (`loadItem`)                                                     |
+| What the current port does | `site code` looks for any blob whose name starts with `{surveyId}`. If one exists it rewrites **that** blob; if none exists it writes a root-level blob named `{pointId}`. Listing returns only the first blob under the survey prefix. **[C]** `the site's code` (`site code`, `site code`) |
+| Consequence                | With this port (the reference code), history stops growing for old surveys, and new surveys get unlinked root-level blobs. **[I]** Confirm on a storage copy (section 11).                                                                                                                                                                             |
+| Retention                  | No deletion: deleting a survey leaves its history blobs. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                        |
+
+Example blob: `surveyjsonhistory/22222222-0000-4000-8000-000000000001/88888888-0000-4000-8000-000000000001`,
+content identical to the `surveyjson` blob at that time.
+
+### 3.5 Survey event log: Azure table `surveys`
+
+Every survey-level operation that runs with "save" appends one row to table `surveys` in the surveys
+account, then updates the projections. `PartitionKey` is `*` for all rows; `RowKey` is the event
+`id`. See section 5 for the event types and payloads. **[C]**
+`the site's code` (`site code`, `Write`),
+`the site's code` (`site code`)
+
+Common properties:
+
+| Property    | Type           | Notes                                                                                                                                                                                                                                |
+| ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`        | `Edm.Guid`     | New GUID per event; equals `RowKey`. **[C]** `the site's code` (`site code`)                                                                                                                 |
+| `type`      | `Edm.String`   | Event type code (section 5). **[C]**                                                                                                                                                                                                 |
+| `happendat` | `Edm.DateTime` | `DateTime.Now`, converted to UTC on write. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)                                                    |
+| `surveyid`  | `Edm.Guid`     | The survey. **[C]**                                                                                                                                                                                                                  |
+| `ipaddress` | `Edm.String`   | Written by the pre-port code for every event; the current port never sets it. **[C]** `git 3cfb9f11a5^:site code/Storage/the site's code` (`site code`), `the site's code` (`site code`, commented out) |
+
+Payload properties keep the .NET type of the event member: GUID members (`postid`, `resultid`,
+`userid`, `creatorid`) are `Edm.Guid`, flags (`ispublished`, `grantaccess`, `storeipaddress`,
+`usecookies`) are `Edm.Boolean`, text and JSON (`name`, `theme`, `resulttablestate`, …) are
+`Edm.String`. **[C]** `the site's code` (member types),
+`the site's code` (`site code`)
+
+Synthetic row for a rename, in the Table REST JSON format (`@odata.type` annotations mark non-string
+types; booleans are plain JSON `true`/`false`):
+
+```json
+{
+  "PartitionKey": "*",
+  "RowKey": "77777777-0000-4000-8000-000000000002",
+  "id@odata.type": "Edm.Guid",
+  "id": "77777777-0000-4000-8000-000000000002",
+  "type": "SURVEY_UPDATE",
+  "happendat@odata.type": "Edm.DateTime",
+  "happendat": "2026-04-14T15:30:00Z",
+  "surveyid@odata.type": "Edm.Guid",
+  "surveyid": "22222222-0000-4000-8000-000000000001",
+  "name": "Customer feedback"
+}
+```
+
+### 3.6 Results: Azure tables `post{postId}`
+
+One table per survey in the results account, named `post` plus the post ID with the dashes removed,
+for example `post33333333000040008000000000000001`. Each row is one submission. **[C]**
+`the site's code` (`site code`),
+`the site's code` (`site code`),
+`the site's code` (`site code`)
+
+| Property             | Type           | Domain name    | Notes                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PartitionKey`       | string         | none           | Always `*`. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                                         |
+| `RowKey`             | string         | `id`           | Same as `id`, GUID with dashes. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                                 |
+| `id`                 | `Edm.Guid`     | `id`           | The **InstanceId**. Readers expose it as `InstanceId`. **[C]** `the site's code` (`GetRowData`)                                                                                                                                                                                                                                  |
+| `type`               | `Edm.String`   | none           | `SURVEY_POSTRESUTL` (sic). **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                                              |
+| `happendat`          | `Edm.DateTime` | `submittedAt`  | Server time of the post, stored as UTC. Readers expose it as `HappendAt`. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)                                                                                                                 |
+| `surveyid`           | `Edm.Guid`     | none           | **Not the survey.** The post path never sets it, so `site code` fills a random GUID. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)                                                                                                                       |
+| `postid`             | `Edm.Guid`     | none           | The survey's post ID. **[C]**                                                                                                                                                                                                                                                                                                                                      |
+| `result`             | `Edm.String`   | `data`         | The response JSON as a string, after `site code` ran over the whole string. **[C]** `the site's code` (`site code`). The sanitizer HTML-encodes text, so characters such as `&` and `<` may be stored as entities. **[I]**                                                                    |
+| `clientid`           | `Edm.String`   | `clientId`     | Present only when the client sent one. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                             |
+| `ispartialcompleted` | `Edm.Boolean`  | `partial`      | Present (true) only when a client ID was sent with `isPartialCompleted`. **[C]** `the site's code` (`site code`)                                                                                                                                                                                           |
+| `ipaddress`          | `Edm.String`   | `respondentIp` | Kept only when the survey's `storeipaddress` is on (`site code` removes it otherwise). The pre-port code captured it from the request; the current port never sets it, so new rows have no IP. **[C]** `the site's code` (`site code`), `git 3cfb9f11a5^:site code/Storage/the site's code` (`site code`) |
+| `Timestamp`          | system         | none           | Azure last-modified time. **[C]**                                                                                                                                                                                                                                                                                                                                  |
+
+**The Edm types are part of the format.** A writer must store `id`, `postid` and `surveyid` as
+`Edm.Guid`, `happendat` as `Edm.DateTime` and `ispartialcompleted` as `Edm.Boolean`; `result`,
+`clientid`, `type` and `ipaddress` are `Edm.String`. The legacy reader converts a stored string to a
+value type only through `site code`, so with the wrong types:
+
+| Stored as                               | Legacy reader sees                                                                 |
+| --------------------------------------- | ---------------------------------------------------------------------------------- |
+| `id` as `Edm.String`                    | `InstanceId` = `00000000-0000-0000-0000-000000000000`                              |
+| `happendat` as `Edm.String`             | `HappendAt` = `DateTime.MinValue` (wrong dates, sorting and `from`/`till` filters) |
+| `ispartialcompleted` as string `"true"` | `false` (only the string `"1"` reads as true)                                      |
+
+**[C]** `the site's code` (`site code`),
+`the site's code` (`GetRowData`), member types in
+`the site's code` (`site code`), and
+`the site's code` (`site code`, which keeps `Guid`, `DateTime`
+and `bool` as typed properties).
+
+Synthetic row, in the Table REST JSON format:
+
+```json
+{
+  "PartitionKey": "*",
+  "RowKey": "66666666-0000-4000-8000-000000000001",
+  "id@odata.type": "Edm.Guid",
+  "id": "66666666-0000-4000-8000-000000000001",
+  "type": "SURVEY_POSTRESUTL",
+  "happendat@odata.type": "Edm.DateTime",
+  "happendat": "2026-10-05T06:48:57.517Z",
+  "surveyid@odata.type": "Edm.Guid",
+  "surveyid": "77777777-0000-4000-8000-000000000009",
+  "postid@odata.type": "Edm.Guid",
+  "postid": "33333333-0000-4000-8000-000000000001",
+  "result": "{\"satisfaction\":4,\"receipt\":[{\"name\":\"receipt.png\",\"type\":\"image/png\",\"content\":\"data:image/png;base64,iVBORw0KGgo=\"}]}",
+  "clientid": "client-0001",
+  "ispartialcompleted": true
+}
+```
+
+**Order.** Azure Table returns rows in `PartitionKey`, then `RowKey` order. With one partition and
+random GUID row keys, storage order is effectively random, not submission order. The legacy
+readers use storage order as is ("first 1,000 responses" means the first 1,000 by row key). **[C]**
+for the keys, **[I]** for the ordering (Azure Table semantics).
+`the site's code` (`site code`, `site code`)
+
+**Limits.** The run page refuses to post when the JSON string is 65,536 characters or longer. **[C]**
+`the site's codehtml` (`site code`). Azure Table limits one
+string property to 64 KiB, which is 32K UTF-16 characters, so `result` fails at about 32,000
+characters and `/post` then answers 400 with the Azure error. **[C]** for the in-repo note in
+`the site's code` (`site code`) and the error handling in
+`the site's code` (`Post`); **[I]** that this is the real cap for results.
+
+**Duplicates by client ID.** Readers merge rows that share a `clientid` and return the merged row
+once, but the two read paths merge differently:
+
+| Path                                                                                                                    | Row order before merging            | Which values win                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| JSON readers (`getSurveyResults`, `getSurveyDemoResults`, `getSurveyPublicResults`, JSON export): `site code` | Storage order                       | **Last** row in storage order: its keys overwrite the earlier row's.                                                                              |
+| Calculated paths (`getResult`, CSV export): `site code` → `site code`                 | Sorted by `happendat`, newest first | **First** row: `site code` only adds keys the row does not have yet, so the newest submission's values win and older rows only fill missing keys. |
+
+**[C]** `the site's code` (`site code`),
+`the site's code` (`site code`),
+`the site's code` (`site code`),
+`the site's code` (`site code`)
+
+### 3.7 "Already completed" markers: Azure tables `SurveyCompletion{surveyId}`
+
+One table per survey in the results account, for example
+`SurveyCompletion22222222000040008000000000000001`. A row is written for each post that has a client
+ID. **[C]** `the site's code` (`site code`,
+`site code`), `the site's code` (`site code`)
+
+| Property             | Type          | Notes                                                                                                                                                     |
+| -------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PartitionKey`       | string        | `*`. **[C]**                                                                                                                                              |
+| `RowKey`             | string        | The client ID as sent. Azure forbids `/`, `\`, `#`, `?` and control characters in keys, so such IDs fail. **[C]** for the key, **[I]** for the failure.   |
+| `ispartialcompleted` | `Edm.Boolean` | `true` → `isCompleted` answers `partial`, otherwise `completed`. **[C]** `the site's code` (`site code`) |
+| `publishid`          | `Edm.String`  | The survey's `publishid`; absent when null. **[C]** for the write, **[I]** for absence.                                                                   |
+
+`ispartialcompleted` must be `Edm.Boolean`: the reader uses `GetValue<bool>`, which reads a string
+as true only when it is `"1"`. `publishid` is `Edm.String` because `Survey.PublishId` is a string
+member. **[C]** `the site's code` (`site code`,
+`site code`), `the site's code` (`PublishId`),
+`the site's code` (`site code`)
+
+Synthetic row in `SurveyCompletion22222222000040008000000000000001`:
+
+```json
+{
+  "PartitionKey": "*",
+  "RowKey": "client-0001",
+  "ispartialcompleted": false
+}
+```
+
+The run page on surveyjs.io never sends a client ID, so it never creates these rows. **[C]**
+`the site's codehtml` (`postResults`)
+
+### 3.8 Deleted-result audit: Azure tables `postdelete{postId}`
+
+Deleting one result (private API `deleteResult`) appends a row here with a copy of the deleted
+`result`, `clientid` and `ispartialcompleted`, plus `instanceid`, `postid`, `type =
+SURVEY_DELETEPOSTRESUTL`, `happendat` and a random `surveyid`; then it deletes the `post{postId}` row
+and the client's completion row. Types follow 3.6: `instanceid`, `postid`, `surveyid` and the row
+`id` are `Edm.Guid`, `happendat` is `Edm.DateTime`. **[C]** `the site's code`
+(`site code`), `the site's code` (`site code`)
+
+### 3.9 Uploaded files
+
+| Kind                                   | Store                                                               | Name                                                                                           | How it is referenced                                                                               | Served by                                                                                                                                                                                                                                                                                          | Code                                                                                                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editor assets (images in survey JSON)  | **Azure file share** `surveyfiles`, surveys account, root directory | New GUID, **no extension**; or `my-surveys-survey-preview-image-{surveyId}` for preview images | Absolute URL in the survey JSON: `https://api.surveyjs.io/private/Surveys/files?name={guid}`       | `GET private/Surveys/files?name=` as `application/octet-stream`, no auth                                                                                                                                                                                                                           | **[C]** `the site's code` (`site code`, `Files`), `the site/the site's source` (`onUploadFile`), `the site's code` (`site code`)                     |
+| Respondent files, legacy upload API    | **Azure file share** `files`, results account                       | `{guid}{ext}`                                                                                  | The API returns `dxsimage:{name}` for jpeg, jpg, png, bmp, svg, gif and `dxsfile:{name}` otherwise | Meant to be `GET public/v1/Survey/image?filePath=` and `file?filePath=`. In the port these actions return an `site code` from an ASP.NET Core controller with no Web API compatibility shim, so they most likely answer with that object serialized as JSON, not the file bytes. **[I]** | **[C]** `the site's code` (`Upload`, `site code`, `site code`, `site code`, `site code`), `the site's code` (`site code`); no `site code` reference in `the site` |
+| Respondent files, surveyjs.io run page | Inline in `result`                                                  | none                                                                                           | Form Library file value `[{ name, type, content: "data:…;base64,…" }]`                             | Returned inside results                                                                                                                                                                                                                                                                            | **[C]** the run page has no upload handler and posts `survey.data`: `the site's codehtml`; **[I]** inline data URLs come from the Form Library default `storeDataAsText: true`                           |
+| Temporary files                        | **Azure file share** `tempfiles`, results account                   | `{guid}{ext}`                                                                                  | Not used by My Surveys pages                                                                       | `private/Surveys/getTempFile`, `tempFiles`                                                                                                                                                                                                                                                         | **[C]** `the site's code` (`site code`, `site code`)                                                                                                                                      |
+
+Facts that matter for the new app:
+
+- Editor assets are **not linked to a survey**: the upload ignores the posted `Id`, and nothing
+  records which survey uses a file. A per-survey quota cannot be computed from legacy data. **[C]**
+  `the site's code` (`site code`)
+- The "4,000 KB" limit is a **client-side check per upload batch**, not a per-survey total. **[C]**
+  `the site/the site's source` (`onUploadFile`, `site code > 4000 * 1024`)
+- No content type, original name or size is stored. **[C]** (`site code` stores only bytes)
+- Deleting a survey or its results deletes no files. **[C]** `the site's code`
+  (`site code`), `the site's code` (`site code`)
+
+### 3.10 Results layouts (the only saved UI state)
+
+The Summary and Table layouts are saved **per survey, not per user**. **[C]**
+`the site's code` (`site code`, `site code`),
+`the site/the site's source` (`site code`, `site code`, `site code`)
+
+| Container (surveys account) | Blob         | Content                                                                                                                                                                     | Code                                                                                                                                                                  |
+| --------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `surveyresulttablestate`    | `{surveyId}` | SurveyJS Dashboard Table state JSON: `{ "elements": [{ "name", "isVisible", "isPublic", … }], … }`                                                                          | **[C]** `the site's code` (`site code`, `site code`)                                                             |
+| `surveyresultsummarystate`  | `{surveyId}` | SurveyJS Dashboard state JSON, same `elements[].name/isPublic` convention                                                                                                   | **[C]** `the site's code` (`site code`)                                                                             |
+| `surveyresultpermissions`   | `{surveyId}` | `[{ "name": "q1", "isPublic": true }]`: which columns public results may show                                                                                               | **[C]** `the site's code` (`site code`)                                                                                        |
+| `surveyresultcolumns`       | `{surveyId}` | Old format: `{ "columns": [{ "name", "displayname", "visibility": 0/1/2, "location" }], "newcolumnsvisibility": 0 }`. Still read as a fallback and to filter public results | **[C]** `the site's code` (`site code`), `the site's code` (`site code`) |
+
+"Reset Table State" and "Reset Summary State" send `Json: null`, which deletes the blob. **[C]**
+`the site/the site's source` (`site code`, `site code`),
+`the site's code` (`site code`, `site code`)
+
+Survey deletion calls `site code` (a table operation) on these four paths instead of deleting the
+blobs, so the layout blobs survive, and `site code` creates empty tables with these names if they
+do not exist. **[C]** `the site's code` (`site code`),
+`the site's code` (`site code`, `site code`)
+
+Synthetic `surveyresulttablestate/22222222-0000-4000-8000-000000000001`:
+
+```json
+{
+  "locale": "",
+  "elements": [
+    {
+      "name": "satisfaction",
+      "displayName": "How satisfied are you?",
+      "isVisible": true,
+      "isPublic": true
+    },
+    {
+      "name": "receipt",
+      "displayName": "Upload your receipt",
+      "isVisible": true,
+      "isPublic": false
+    }
+  ],
+  "pageSize": 10
+}
+```
+
+The last selected project is a browser cookie `organizationId` (24 hours), not stored data. **[C]**
+`the site's code` (`MySurveys`)
+
+### 3.11 Users: SQL `Users`
+
+Primary key `id`. Lookups by `email` (lower-cased by the caller), `accesskey` and `dxid`. **[C]**
+`the site's code` (`site code`, `site code`, `site code`),
+`the site/Storage/sql/db.sql` (`create table Users`), `the site/Storage/sql/constraints.sql`
+(`users_email_idx`, `users_accesskey_idx`, `users_dxid_idx`)
+
+| Column (My Surveys needs)                                                                                    | Type               | Notes                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                                                                                         | `uniqueidentifier` | User ID; the `sub` of auth.surveyjs.io. **[C]** `the site's code` (`UserInfo`)                                                                                                      |
+| `email`                                                                                                      | `varchar(200)`     | Lower case on change; lookups lower-case the input. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)        |
+| `displayname`                                                                                                | `nvarchar(max)`    | Shown in member lists. **[C]** `the site's code` (`site code`)                                                                                                     |
+| `blocked`                                                                                                    | `tinyint`          | Blocked users cannot use My Surveys; their surveys show as unpublished. **[C]** `the site's code` (`MySurveys`), `the site's code` (`Index`) |
+| `accesskey`                                                                                                  | `varchar(200)`     | The legacy private API key, put in page source and URLs. **[C]** `the site's code` (`site code`)                                                                                        |
+| `timestamp`                                                                                                  | `datetime`         | Last write. **[C]**                                                                                                                                                                                              |
+| Other columns: `dxid`, `oldemail`, `passwordhash`, company and billing fields, reseller and enterprise flags | various            | Not needed by My Surveys. **[C]** `the site/Storage/sql/db.sql` (`create table Users`)                                                                                                                      |
+
+`db.sql` is not the full production schema. `site code` also writes `emailconfirmed`,
+`phonenumberconfirmed`, `lockoutenddate`, `lockoutcount`, `twofactorenabled` and
+`allowmarketingemails`, and the SQL writer inserts every property as a column, so production must
+have these columns. **[C]** `the site's code` (`site code`),
+`the site's code` (`site code`); **[I]** for the
+production columns.
+
+Site administrators are a hard-coded email list and may open every survey. **[C]**
+`the site's code` (`site code`), `the site's code`
+(`site code`)
+
+### 3.12 Projects: SQL `Organizations`
+
+| Column      | Type               | Notes                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | `uniqueidentifier` | Project ID. Also used as `Surveys.userid` for the project's surveys. **[C]**                                                                                                                                                                                                                                                                                                                            |
+| `name`      | `nvarchar(max)`    | Project name. **[C]**                                                                                                                                                                                                                                                                                                                                                                                   |
+| `type`      | `varchar(max)`     | `ORGANIZATION_CREATE`, or `ORGANIZATION_UPDATE` after a rename. **[C]** `the site's code`                                                                                                                                                                                                                                                                                   |
+| `happendat` | `datetime`         | Time of creation **or of the last rename**: a rename builds a fresh event object, which sets `happendat` to now. **[C]** `the site's code` (`site code`), `the site's code` (`site code`). Server local time (`DateTime.Now`), written to SQL with no UTC conversion. **[C]** `the site's code` (`Write`) |
+| `timestamp` | `datetime`         | Last write. **[C]**                                                                                                                                                                                                                                                                                                                                                                                     |
+| `ipaddress` | `varchar(max)`     | Only from pre-port writes. **[I]**                                                                                                                                                                                                                                                                                                                                                                      |
+
+There is **no owner column** and no reliable creation time. The creator's membership row (3.13)
+keeps the creation time until that member's role changes. **[C]** `the site/Storage/sql/db.sql`
+(`create table Organizations`), `the site's code`
+(`site code`)
+
+### 3.13 Members and roles: SQL `OrganizationUsers`
+
+One row per membership. **[C]** `the site's code`
+(`site code`, `site code`, `site code`)
+
+| Column           | Type               | Notes                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | `uniqueidentifier` | Membership ID. **For the creator's row it equals the organization ID**, because the create and join events share one data object. A role change replaces the row with a new random ID, so the marker is lost for creators whose role changed. **[C]** `the site's code` (`site code`), `the site's code` (`site code`, `site code`) |
+| `organizationid` | `uniqueidentifier` | Project. **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `userid`         | `uniqueidentifier` | Member. **[C]**                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `role`           | `varchar(max)`     | `admin` or `user`; compared case-insensitively. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                                                                                                       |
+| `type`           | `varchar(max)`     | `ORGANIZATION_CREATE` (creator row), `ORGANIZATION_JOIN` (added member) or `ORGANIZATION_LEAVE` (row rewritten by a role change, sic). **[C]** `the site's code` (`site code` of each event class)                                                                                                                                                                                                   |
+| `name`           | `nvarchar(max)`    | Project name, only on the creator's row. **[C]** (shared data object)                                                                                                                                                                                                                                                                                                                                                             |
+| `happendat`      | `datetime`         | Time of join or last role change, in server local time (`DateTime.Now`, no UTC conversion on the SQL write). **[C]** `the site's code` (`site code`), `the site's code` (`Write`)                                                                                                                                                                                       |
+| `timestamp`      | `datetime`         | Last write. **[C]**                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `ipaddress`      | `varchar(max)`     | Only from pre-port writes. **[I]**                                                                                                                                                                                                                                                                                                                                                                                                |
+
+Synthetic rows for project-0001 (creator user-0001, member user-0002):
+
+```json
+[
+  {
+    "id": "55555555-0000-4000-8000-000000000001",
+    "organizationid": "55555555-0000-4000-8000-000000000001",
+    "userid": "11111111-0000-4000-8000-000000000001",
+    "role": "admin",
+    "type": "ORGANIZATION_CREATE",
+    "name": "Example project",
+    "happendat": "2023-11-21 10:00:00.000"
+  },
+  {
+    "id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "organizationid": "55555555-0000-4000-8000-000000000001",
+    "userid": "11111111-0000-4000-8000-000000000002",
+    "role": "user",
+    "type": "ORGANIZATION_JOIN",
+    "happendat": "2023-11-22 08:00:00.000"
+  }
+]
+```
+
+### 3.14 Out of scope
+
+| Store                                                                                  | Why out of scope                                                                                 |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `UserCart`                                                                             | Shop cart.                                                                                       |
+| `UserInvoices`, `InvoiceItems`                                                         | Billing.                                                                                         |
+| `UserLicenses`, `LicenseTransfers`, `LicenseResell`, `LicenseInvoiceRenewal`           | Licences. The F1 licence-expiry notice will need a read of `UserLicenses`; that is a later task. |
+| `UserVATChecks`, `CurrencyLog`                                                         | Billing.                                                                                         |
+| `UserSites`, `UserCalls`, `UserExternalProviders`, `UserSecurityStamp`, `FailedLogins` | Account and sign-in data owned by surveyjs.io and auth.surveyjs.io.                              |
+| `DownloadedQuotas`, `CreateOrder`, `CaptureOrder`, `PaymentQueue`                      | Orders and payments.                                                                             |
+| `SentEmails`, `UriLog`, `Utils`                                                        | Site logs and counters.                                                                          |
+| Users-content account (`emails` blobs, `McpLog` table, `mcplog` blobs)                 | Email bodies and MCP log.                                                                        |
+| `AspNet*` tables (`ConnectionStrings:Default`)                                         | Identity tables registered but not used for users.                                               |
+| App-data blob container                                                                | Site content.                                                                                    |
+
+## 4. IDs
+
+| ID                        | Generated by                                                                                                                           | Format             | Relation                                                                                                   | Appears in public URLs                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Survey ID                 | `site code()` in `site code`. **[C]** `the site's code`                                            | GUID               | Primary key of `Surveys`; names the definition, history and layout blobs and the `SurveyCompletion` table. | `/published?id=`, `/Service/EditSurvey/{id}`, `/Service/SurveyResults/{id}`, `/Service/History/{id}`, `getSurvey?surveyId=`, `getSurveyPublicResults/{id}`. **[C]** controllers in section 7                                                                                                                                                                         |
+| Post ID                   | `site code()` in `site code`, independent of the survey ID. **[C]**                                              | GUID               | `Surveys.postid`; names the `post{postId}` and `postdelete{postId}` tables. Never changes.                 | Request body of `post`, form field of `upload`; shown by "Copy Post ID". **[C]** `the site's code` (`site code`, `Upload`), `the site's codehtml` (`site code(event, 'post')`), `the site's codehtml` (`data-postId`) |
+| Result ID                 | `site code()` in `site code`, independent. **[C]**                                                               | GUID               | `Surveys.resultid`; only a lookup key.                                                                     | `getResult?resultId=`, `isCompleted?resultId=`; the public results page `site code(id)` takes a result ID. **[C]** `the site's code` (`Survey`); its URL `/Results/Survey/{resultId}` assumes the default route **[I]**                                                                                              |
+| Instance ID               | `site code()` in `the site's code` (`site code`) for each post. **[C]**                     | GUID               | `RowKey` and `id` of a `post{postId}` row.                                                                 | Not in URLs. Returned as `InstanceId` by private results; nulled in public results; used by `deleteResult?postId=&instanceId=`. **[C]** `the site's code` (`site code`)                                                                                                                           |
+| Publish ID                | Legacy only; set by `publishVersion`.                                                                                                  | GUID string        | `Surveys.publishid`; names `surveypublishedjson` blobs.                                                    | `/published?id=` accepts a publish ID before a survey ID. **[C]** `the site's code` (`Index`)                                                                                                                                                                                                                                     |
+| User ID                   | `site code()` on registration. **[C]** `the site's code` (`site code`)           | GUID               | `Users.id` = OIDC `sub`.                                                                                   | Not in My Surveys URLs.                                                                                                                                                                                                                                                                                                                                              |
+| Project (organization) ID | `site code()` in `site code`. **[C]** `the site's code` (`site code..ctor`) | GUID               | `Organizations.id`; used as `Surveys.userid` for project surveys.                                          | `/Service/MySurveys/{orgId}`. **[C]** `the site's code` (`site code`)                                                                                                                                                                                                                                             |
+| History point ID          | `site code()` per save. **[C]** `the site's code` (`site code`)                          | GUID               | Blob name under `surveyjsonhistory/{surveyId}/`.                                                           | `getHistoryPoint?id=&pointId=`                                                                                                                                                                                                                                                                                                                                       |
+| File names                | `site code()` (+ extension for respondent files). **[C]**                                                                           | GUID or `GUID.ext` | File share names.                                                                                          | `files?name=`, `image?filePath=`, `file?filePath=`                                                                                                                                                                                                                                                                                                                   |
+| Client ID                 | Chosen by the API client.                                                                                                              | Free string        | `clientid` on result rows; `RowKey` of `SurveyCompletion` rows.                                            | Query parameter of `isCompleted` and `getSurveyAndIsCompleted`.                                                                                                                                                                                                                                                                                                      |
+
+GUIDs are written in the default lower-case "D" format with dashes, except in table names, where
+the dashes are removed. **[C]** for the removal (`site code`), **[I]** for the case (.NET
+`site code()`).
+
+## 5. Event model
+
+**Verdict.** The brief's first look ("event-based storage with interchangeable SQL, Table and
+in-memory backends") is only partly right:
+
+- The backends are not interchangeable. Each storage class is bound to one backend (2.1), and
+  `site code` does not support blobs (`site code` throws). **[C]**
+  `the site's code`
+- "Events" are command objects. `Perform(true)` writes the event row and then applies the change to
+  the current-state rows and blobs. **[C]** `the site's code` (`Perform`)
+- Production never replays events. `site code` and `site code` are
+  called only from unit tests. **[C]** (repository-wide search)
+- Replay could not rebuild state anyway: `site code` has no case for
+  `SURVEY_THEME_CHANGE`, `SURVEY_DELETE_RESULTS_TABLE_STATE` or `SURVEY_DELETE_RESULTS_SUMMARY_STATE`,
+  JSON content is not in the events, and `SURVEY_DELETEALLRESULTS` replays as a no-op. **[C]**
+  `the site's code` (`site code`), `the site's code`
+  (`site code`)
+- User and organization events are **not persisted**: their `Write` is overridden with the store
+  call commented out. **[C]** `the site's code` (`site code`),
+  `the site's code` (`site code`)
+
+So the table `surveys` is an **audit log** and the projections are the **source of truth**.
+
+**Ordering and versions.** No sequence number, version or ETag field exists. Rows can only be ordered
+by `happendat` (or the system `Timestamp`). **[C]** `the site's code` (`site code`)
+
+### 5.1 Survey event types (table `surveys`, surveys account)
+
+| Type code                                                                  | Written by (`Perform(true)`)                                                                                                                                                                      | Extra payload properties                                    | Projection change                                                                                                                                   |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SURVEY_CREATE`                                                            | Create (site, API), clone (for the copy)                                                                                                                                                          | `postid`, `resultid`, `userid`, `creatorid` (GUIDs), `name` | INSERT `Surveys` (`id`=`surveyid`, `createdat`=`happendat`, …). Clone names the copy `Copy of {name}`, keeps the source's `userid` and `creatorid`. |
+| `SURVEY_UPDATE`                                                            | Rename (`name`); JSON save (no payload: the JSON goes through a second, unsaved event); layout save (`resulttablestate`, `resultsummarystate`, `resultpermissions`, `resultcolumns` JSON strings) | as listed                                                   | Rewrites `Surveys` (bumps `timestamp`); writes `surveyjson` + `surveytext` + a history blob for JSON saves; writes the layout blob.                 |
+| `SURVEY_THEME_CHANGE`                                                      | Theme save, clone                                                                                                                                                                                 | `theme` (JSON string)                                       | `Surveys.theme`.                                                                                                                                    |
+| `SURVEY_PUBLISHED`                                                         | Publish, unpublish                                                                                                                                                                                | `ispublished` (bool)                                        | `Surveys.ispublished`.                                                                                                                              |
+| `SURVEY_ARCHIVE`, `SURVEY_RESTORE`                                         | Archive, restore                                                                                                                                                                                  | none                                                        | `Surveys.isarchived`.                                                                                                                               |
+| `SURVEY_DELETE`                                                            | Delete                                                                                                                                                                                            | none                                                        | Drops `SurveyCompletion{surveyId}` and `post{postId}`; deletes `surveyjson`, `surveytext` blobs and the `Surveys` row.                              |
+| `SURVEY_TRANSFER`                                                          | Move to project                                                                                                                                                                                   | `userid` (target project), `creatorid` (acting user)        | Deletes and rewrites the `Surveys` row with the new `userid` and `creatorid`.                                                                       |
+| `SURVEY_ACCESSRESUTL` (sic)                                                | Grant Access                                                                                                                                                                                      | `grantaccess` (bool)                                        | `Surveys.allowaccessresult`.                                                                                                                        |
+| `SURVEY_POSTRESUTL` (sic, **here**)                                        | "Save Respondent IP": `site code` reports the post-result type by mistake                                                                                                      | `storeipaddress` (bool)                                     | `Surveys.storeipaddress`.                                                                                                                           |
+| `SURVEY_USECOOKIES`                                                        | `setUseCookies` API                                                                                                                                                                               | `usecookies` (bool)                                         | `Surveys.usecookies`.                                                                                                                               |
+| `SURVEY_DELETEALLRESULTS`                                                  | Delete Results                                                                                                                                                                                    | none                                                        | Drops `SurveyCompletion{surveyId}` and `post{postId}`.                                                                                              |
+| `SURVEY_DELETE_RESULTS_TABLE_STATE`, `SURVEY_DELETE_RESULTS_SUMMARY_STATE` | Reset Table / Summary State                                                                                                                                                                       | none                                                        | Deletes the layout blob.                                                                                                                            |
+| `SURVEY_VERSION_CHANGETITLE`                                               | Hidden `changeVersionTitle` API                                                                                                                                                                   | `title`, `publishedid`                                      | None (the handler builds an object and discards it).                                                                                                |
+
+All rows in this table are **[C]** from `the site's code` (each class's
+`site code` and `Perform`), `the site's code` (`site code`),
+`the site's code` (`site code`), and the callers in
+`the site's code` and `the site's code`.
+Clone itself writes no `SURVEY_CLONE` row: it runs with `Perform()` (no save), and its type would read
+`SURVEY_DELETE` anyway. **[C]** `the site's code` (`site code`), `the site's code` (`site code`)
+
+Deleting a whole Azure table and posting to the same table name soon after can fail while Azure
+finishes the delete (about 40 seconds, HTTP 409). This affects "Delete Results" followed by a new
+submission. **[I]** (Azure Table behaviour) `the site's code`
+(`site code`)
+
+### 5.2 Result events (results account)
+
+| Type code                 | Table                | Payload     | Notes                             |
+| ------------------------- | -------------------- | ----------- | --------------------------------- |
+| `SURVEY_POSTRESUTL`       | `post{postId}`       | section 3.6 | The row is the stored response.   |
+| `SURVEY_DELETEPOSTRESUTL` | `postdelete{postId}` | section 3.8 | Audit copy of a deleted response. |
+
+### 5.3 What a writer must do so legacy readers see a change
+
+Legacy readers read **only** projections. A new writer must update the same projections in the same
+formats. Appending the matching audit row to `surveys` is not needed by any reader but keeps the log
+complete; we recommend it. **[C]** for "readers use projections only" (all read paths in section 7);
+the recommendation is ours.
+
+**Rule for every SQL write:** each write of a `Surveys`, `Organizations` or `OrganizationUsers` row
+also sets `timestamp` to UTC now, so every row below that changes `Surveys` (create, definition save,
+rename, theme, publish, archive, restore, move, settings and layout save) moves the survey's
+"updated" date. A layout reset does not touch the row. **[C]**
+`the site's code` (`Write`), `the site's code`
+(`site code`), `the site's code` (`site code`,
+`site code`). Table rows must use the Edm types given in 3.5–3.8.
+
+| Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Create survey                     | INSERT `Surveys` with `id`, `name`, `userid`, `creatorid`, `postid`, `resultid` (three new GUIDs), `createdat`, `timestamp`. No blob yet.                                                                                                                                                                                                                                                                                                | `SURVEY_CREATE`               |
+| Save definition                   | Overwrite append blobs `surveyjson/{id}` and `surveytext/{id}`; add append blob `surveyjsonhistory/{id}/{newGuid}`; rewrite the `Surveys` row so `timestamp` moves; delete the preview image `my-surveys-survey-preview-image-{id}` from share `surveyfiles` if we keep that behaviour (`site code` calls `site code`, `the site's code`).                                    | `SURVEY_UPDATE` (no payload)  |
+| Rename                            | `Surveys.name`, `timestamp`.                                                                                                                                                                                                                                                                                                                                                                                                             | `SURVEY_UPDATE` with `name`   |
+| Save theme                        | `Surveys.theme`, `timestamp`; delete the preview image file if we keep that behaviour.                                                                                                                                                                                                                                                                                                                                                   | `SURVEY_THEME_CHANGE`         |
+| Publish / unpublish               | `Surveys.ispublished` = 1 / 0.                                                                                                                                                                                                                                                                                                                                                                                                           | `SURVEY_PUBLISHED`            |
+| Archive / restore                 | `Surveys.isarchived`.                                                                                                                                                                                                                                                                                                                                                                                                                    | `SURVEY_ARCHIVE` / `_RESTORE` |
+| Move                              | `Surveys.userid` = project ID (or user ID for Personal), `creatorid` = acting user.                                                                                                                                                                                                                                                                                                                                                      | `SURVEY_TRANSFER`             |
+| Delete survey                     | Delete tables `post{postId}` and `SurveyCompletion{surveyId}`, blobs `surveyjson/{id}` and `surveytext/{id}`, then the `Surveys` row.                                                                                                                                                                                                                                                                                                    | `SURVEY_DELETE`               |
+| Settings                          | `allowaccessresult`, `storeipaddress` (`1`/`0`), `usecookies`.                                                                                                                                                                                                                                                                                                                                                                           | as in 5.1                     |
+| Submit response                   | Insert into `post{postId}` (create the table if missing) with the properties of 3.6, `PartitionKey` `*`, `RowKey` = new GUID; `id`, `postid`, `surveyid` as `Edm.Guid`, `happendat` as `Edm.DateTime`, `ispartialcompleted` as `Edm.Boolean`, the rest `Edm.String`. When a client ID is given, upsert `SurveyCompletion{surveyId}` row `RowKey` = client ID with `ispartialcompleted` as `Edm.Boolean` and `publishid` as `Edm.String`. | none (the row is the event)   |
+| Delete all responses              | Delete both tables.                                                                                                                                                                                                                                                                                                                                                                                                                      | `SURVEY_DELETEALLRESULTS`     |
+| Save / reset layouts              | Overwrite or delete `surveyresulttablestate/{id}` / `surveyresultsummarystate/{id}` / `surveyresultpermissions/{id}`.                                                                                                                                                                                                                                                                                                                    | `SURVEY_UPDATE` / `_DELETE_…` |
+| Create project                    | INSERT `Organizations` (`id`, `name`, `type`, `happendat`, `timestamp`); INSERT `OrganizationUsers` for the creator (`role` = `admin`).                                                                                                                                                                                                                                                                                                  | none (not persisted today)    |
+| Add member / change role / remove | INSERT / DELETE+INSERT / DELETE `OrganizationUsers` rows.                                                                                                                                                                                                                                                                                                                                                                                | none                          |
+| Rename project                    | `Organizations.name`, `timestamp`. Legacy also rewrites `type` (`ORGANIZATION_UPDATE`) and `happendat`; we may skip that.                                                                                                                                                                                                                                                                                                                | none                          |
+| Delete project                    | Legacy allows it only with no surveys and one member (the caller); it deletes that membership, then the organization.                                                                                                                                                                                                                                                                                                                    | none                          |
+
+New concepts can be added without breaking readers:
+
+- Extra **Azure Table properties** on result rows are ignored by every reader (they read only
+  `result`, `happendat`, `ipaddress`, `clientid`, `id`). **[C]** `the site's code` (`site code`).
+  Pick names that cannot clash with question names, because `getResult` looks up question names
+  among row properties. **[C]** `the site's code` (`site code`)
+- Extra **SQL columns** would be read (`select *`) and written back by legacy code, which is
+  harmless, but they are a schema change owned by the site team. A writer that sends a property with
+  no matching column fails, because every property becomes a column in the INSERT. **[C]**
+  `the site's code` (`site code`, `site code`);
+  **[I]** for "harmless".
+- New **blob containers** (history snapshots with metadata, per-user views, respondent files) are
+  invisible to legacy code. **[C]** (legacy code addresses containers by fixed names only)
+
+## 6. Directory (D12)
+
+Users, projects, members and roles all live in the **Azure SQL users database**
+(`a site secret`), not in Azure Table storage and not in the ASP.NET Identity database.
+**[C]** `the site's code` (`site code..ctor`),
+`the site's code` (`site code`)
+
+| Need                          | Table and columns                                                                                           | Code                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User by ID                    | `Users` where `id` = `sub`                                                                                  | `the site's code` (`site code`)                                                                             |
+| User by email (add member)    | `Users` where `email` = lower-cased input                                                                   | `the site's code` (`site code`), `the site's code` (`site code`) |
+| Projects of a user            | `OrganizationUsers` where `userid` = user, then `Organizations` by `organizationid`                         | `the site's code` (`site code`), `site code`                                         |
+| Members of a project          | `OrganizationUsers` where `organizationid` = project, joined to `Users` in code (missing users are skipped) | `the site's code` (`site code`), `site code`                                            |
+| Role                          | `OrganizationUsers.role` (`admin` / `user`)                                                                 | `the site's code` (`site code`)                                                                              |
+| Surveys of Personal / project | `Surveys` where `userid` = user ID / project ID, filtered by `isarchived` in code                           | `the site's code` (`site code`)                                                                      |
+
+How a user is identified: the auth server's UserInfo returns `sub` = `id` = the `Users.id` GUID and
+`email`. **[C]** `the site's code` (`UserInfo`). The current site and
+API resolve the signed-in user by email (`User.Identity.Name`), not by ID. **[C]**
+`the site's code` (`site code`),
+`the site's code` (`site code`)
+
+Legacy permission rules the new app must reproduce or consciously change:
+
+- A user may open a survey when `Surveys.userid` is their ID, when they are a member of the project
+  whose ID is `Surveys.userid` (any role), or when they are a site admin. **[C]**
+  `the site's code` (`site code`), `the site's code` (`site code`)
+- The list shows modify actions when the user's role in the current scope is `admin` (always true for
+  Personal) **or** the user is the survey's `creatorid`. **[C]**
+  `the site's code` (`MySurveyInfo.CanModifySurvey`). The spec says "any
+  member may modify"; the choice is deferred to Step 4 or 5
+  (see [Open for later steps](../architecture.md#open-for-later-steps)).
+- The legacy UI cannot move a project survey back to Personal: the Personal entry has no action.
+  **[C]** `the site's codehtml`
+- Removing the last admin is refused; deleting a project requires no surveys and the caller as the
+  only member. **[C]** `the site's code` (`site code`, `site code`,
+  `site code`)
+- Deleting a survey from the site works only when `Surveys.userid` is the caller (or for a site
+  admin), so project surveys cannot be deleted from the legacy list; the private API instead
+  requires the `admin` role. Neither checks that the survey is archived. **[C]**
+  `the site's code` (`DeleteSurvey`),
+  `the site's code` (`DeleteSurvey`)
+- Deleting an account deletes the user's personal surveys and their results, but leaves their
+  `OrganizationUsers` rows. **[C]** `the site's code` (`site code`)
+
+## 7. How `api.surveyjs.io` reads results and inline files
+
+The public controller is mounted at both `public/Survey` and `public/v1/Survey`; the private one at
+`private/Surveys` and `private/v1/Surveys`. **[C]** `the site's code`,
+`the site's code` (`Route` attributes)
+
+| Endpoint                                          | Code path                                                                                                                                                                                                                                                                                                                                                  | Data read                                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET getSurvey?surveyId=`                         | `the site's code` (`site code`) → `the site's code` (`site code`) → `the site's code` (`site code`). No publish check. 400 when the blob is empty.                                                             | Blob `surveyjson/{surveyId}`                                                       |
+| `GET getSurveyAndIsCompleted`                     | `the site's code` (`site code`) → `site code` + `site code`. Answers `{ survey, isCompleted: "no" / "partial" / "completed" }`.                                                                                                                                               | `Surveys` by `id`; `SurveyCompletion{surveyId}` row = client ID; `surveyjson` blob |
+| `POST post`                                       | `the site's code` (`site code`) → `the site's code` (`site code`): look up `Surveys` by `postid`, sanitize the string, `site code(true)`. No publish check.                                                                           | Writes `post{postId}` (+ `SurveyCompletion`)                                       |
+| `POST upload`                                     | `the site's code` (`site code`) → `the site's code` (`site code`)                                                                                                                                                                                                        | Writes share `files`                                                               |
+| `GET getResult?resultId=&name=`                   | `the site's code` (`site code`) → `Surveys` by `resultid` → `site code` → all rows of `post{postId}` → `site code` (parses each `result`, merges by client ID) → counts values of question `name`. Cached 60 min in release builds.                                             | `{ AnswersCount, QuestionResult, FirstResultAt, LastResultAt, ResultCount }`       |
+| `GET isCompleted?resultId=&clientId=`             | `the site's code` (`site code`)                                                                                                                                                                                                                                                                   | `Surveys` by `resultid`; `SurveyCompletion` row                                    |
+| `GET private/Surveys/getSurveyPublicResults/{id}` | `the site's code` (`site code`): requires `allowaccessresult`. `site code(…, site code: false)`: `InstanceId` nulled, columns limited by `surveyresultpermissions` / `surveyresultcolumns`. Streamed as `{ Data, ResultCount }`.                                       | `post{postId}`, layout blobs                                                       |
+| `GET private/Surveys/getSurveyResults/{id}`       | `the site's code` (`site code`, `site code`): private, full access. Without `take`: streamed. With `take` (1–1000): Azure continuation token, or a numeric skip when a date filter is used or any row has a client ID.                                                                                       | `post{postId}`                                                                     |
+| `GET private/Surveys/getSurveyDemoResults`        | `the site's code` (`site code`), used by the results page. `site code`: the first 1,000 rows in storage order.                                                                                                                                                                    | `post{postId}`                                                                     |
+| `GET private/Surveys/exportSurveyResults`         | `the site's code` (`site code`) → `the site's code` (`site code`): `csv` → `site code` (columns from `site code`; arrays and objects serialized as JSON text); any other format, `xlsx` included, → JSON via `site code` with `site code` false. | `post{postId}`, layout blobs                                                       |
+
+Row shape returned by the JSON readers: the parsed `result` object plus `HappendAt`, `IPAddress` (if
+stored), `ClientId` (if stored) and `InstanceId`. **[C]** `the site's code` (`site code`)
+
+All paths above are **[C]** from `the site's code`,
+`the site's code`, `the site's code`,
+`the site's code`, `the site's code` and
+`the site's code`.
+
+**How a file answer is stored and read back.**
+
+- Stored: as part of the `result` JSON string. From the surveyjs.io run page it is a Form Library file
+  value with an inline data URL in `content`. **[C]** for "part of the string" (3.6), **[I]** for the
+  data URL (3.9).
+- Size: limited by the 65,536-character client check and the 32K-character Azure property limit
+  (3.6). There is no server-side size check. **[C]** `the site's code` (`site code`)
+- Read back: every reader parses the string into dictionaries and lists and returns the values as
+  they are. No code looks at `content`, `data:` or the file value's shape. **[C]**
+  `the site's code` (`site code`),
+  `the site's code` (`site code`); repository-wide search finds no `data:` handling in result code.
+- `getResult` on a file question counts the key/value pairs inside the file objects, so its output is
+  already meaningless for file questions. **[C]** `the site's code` (`site code`)
+- The only file-aware code checks string values that start with `dxsimage:` or `dxsfile:` and marks
+  the column as an image or file link. Its HTML renderer has no caller. **[C]**
+  `the site's code` (`site code`) (unused), `the site's code` (`site code`)
+- The browser results page (SurveyJS Dashboard and Table) renders the values client-side. **[C]**
+  `the site's codehtml`
+
+## 8. D11 verdict
+
+**Yes, with conditions.** Respondent files can be stored as URLs in place of inline content without
+breaking `api.surveyjs.io` readers.
+
+Evidence:
+
+1. Results are an opaque JSON string in one property; every reader parses and passes values through
+   without inspecting file content. **[C]** `the site's code` (`site code`,
+   `site code`); `the site's code` (`site code`); `the site's code` (`site code`)
+2. References in results already exist in legacy data: the legacy `upload` endpoint stores the bytes
+   in the `files` share and returns a `dxsimage:`/`dxsfile:` reference for the client to keep in the
+   answer. **[C]** `the site's code` (`Upload`, `site code`)
+3. Nothing reads `content` as base64, and `getResult` output for file questions is unchanged in kind.
+   **[C]** section 7
+
+Conditions:
+
+| #   | Condition                                                                                                                                                                                                                                                                                          | Why                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Keep the Form Library value shape `[{ "name", "type", "content" }]` and put an **absolute HTTPS URL** in `content`.                                                                                                                                                                                | The SurveyJS Dashboard, Table and Form Library (display mode) treat `content` as a link or image source. **[I]**                                    |
+| 2   | The URL must work **without our session**: unguessable and long-lived (or permanent), like the legacy editor-asset URL `private/Surveys/files?name=`, which serves bytes with no auth. (The public `image?filePath=` and `file?filePath=` actions likely do not serve bytes in the port; see 3.9.) | Legacy API clients, exports and the old results page only get the URL. **[C]** for the legacy URLs being unauthenticated, **[I]** for client needs. |
+| 3   | Write result rows **directly** to `post{postId}`, not through legacy `POST post`.                                                                                                                                                                                                                  | `site code` runs `site code` over the string, which may HTML-encode `&` in URLs. **[C]** for the sanitizer call, **[I]** for the encoding.     |
+| 4   | Clean up files ourselves.                                                                                                                                                                                                                                                                          | Legacy delete paths (`deleteResult`, `deleteAllResults`, survey delete, account delete) do not touch files. **[C]** 3.9                             |
+| 5   | Accept that consumers who decode `content` as a data URL will see a URL.                                                                                                                                                                                                                           | External integrations are outside this code. Only usage data or customers can tell. **[I]**                                                         |
+
+What would break if the conditions are not met: links that need a cookie would show broken images in
+exports and in the old results page; sanitized URLs with `&amp;` would 404; deleted results would
+leave orphaned files. Nothing in the code depends on a storage copy for this verdict; a storage copy
+would only tell us how many existing results hold `dxsimage:` references or very large data URLs
+(section 11).
+
+## 9. Mapping to the domain
+
+Contract field names come from `contract/openapi.yaml` (`components.schemas`).
+
+### 9.1 Survey (`Survey`)
+
+| Legacy                                                               | Domain                           | Rule                                                                                                                                      |
+| -------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `Surveys.id`                                                         | `id`                             | As is.                                                                                                                                    |
+| `Surveys.name`                                                       | `name`                           | As is (max 200 in SQL).                                                                                                                   |
+| `Surveys.userid`                                                     | `projectId`                      | The project ID when `userid` is an `Organizations.id`; `null` when it is a user ID (Personal).                                            |
+| `Surveys.userid` (Personal)                                          | owner (internal)                 | The owning user for Personal surveys.                                                                                                     |
+| `Surveys.creatorid`                                                  | (internal)                       | Needed for the legacy `canModify` rule.                                                                                                   |
+| `Surveys.ispublished`                                                | `published`                      | `true` only when 1. `NULL` → `false` (the list hides "Run"), even though the old run page still shows the survey.                         |
+| `Surveys.isarchived`                                                 | `archived`                       | 1 → `true`.                                                                                                                               |
+| `Surveys.createdat`                                                  | `createdAt`                      | Treat as UTC **[I]**: written from `DateTime.Now` with no conversion, so it is UTC only on a UTC server (App Service default); see gap 9. |
+| `Surveys.timestamp`                                                  | `updatedAt`                      | UTC.                                                                                                                                      |
+| `Surveys.postid`                                                     | `postId`                         | As is.                                                                                                                                    |
+| `Surveys.resultid`                                                   | `resultId`                       | As is.                                                                                                                                    |
+| `Surveys.allowaccessresult`                                          | `settings.publicResults`         | 1 → `true`.                                                                                                                               |
+| `Surveys.storeipaddress`                                             | `settings.storeRespondentIp`     | `1` → `true`.                                                                                                                             |
+| role + `creatorid`                                                   | `permissions.canModify`          | Legacy: `admin` in scope, or user is `creatorid` (section 6).                                                                             |
+| blob `surveyjson/{id}`                                               | `SurveyDefinition`               | Parse JSON; `{}` when missing.                                                                                                            |
+| `Surveys.theme`                                                      | `SurveyTheme`                    | Parse JSON; `{}` when empty.                                                                                                              |
+| `Surveys.usecookies`                                                 | (none yet)                       | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                       |
+| blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                | `user` = `null` for all legacy entries.                                                                                                   |
+| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`) | Legacy state is per survey; the contract's views are per user. Seed a user's view from the survey's blob.                                 |
+
+### 9.2 Response (`SurveyResponse`, `ResultStats`)
+
+| Legacy (`post{postId}` row)   | Domain                                                     | Rule                                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `id` / `RowKey` (InstanceId)  | `id`                                                       | As is.                                                                                                                    |
+| `happendat` (HappendAt)       | `submittedAt`                                              | UTC (the Table writer converts to UTC). **[C]**                                                                           |
+| `result`                      | `data`                                                     | `JSON.parse`; may contain HTML entities from the sanitizer (section 11).                                                  |
+| `clientid`                    | `clientId`                                                 | Optional.                                                                                                                 |
+| `ipaddress`                   | `respondentIp`                                             | Optional; present only on rows written while the setting was on (and by pre-port code).                                   |
+| `ispartialcompleted`          | `partial`                                                  | Missing → `false`.                                                                                                        |
+| count / min / max `happendat` | `ResultStats.count`, `firstSubmittedAt`, `lastSubmittedAt` | Full scan of the table; legacy merges rows with the same client ID before counting (merge rules differ by path, see 3.6). |
+
+### 9.3 Project (`Project`)
+
+| Legacy                                                  | Domain        | Rule                                                                                                                                                  |
+| ------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Organizations.id`                                      | `id`          | As is.                                                                                                                                                |
+| `Organizations.name`                                    | `name`        | As is.                                                                                                                                                |
+| none                                                    | `ownerId`     | No column. Use the `OrganizationUsers` row whose `id` equals the organization ID (the creator's row); else the earliest admin by `happendat`. **[I]** |
+| `OrganizationUsers.role` (current user)                 | `role`        | Lower-case.                                                                                                                                           |
+| count of `OrganizationUsers` rows                       | `memberCount` | Count rows for the project.                                                                                                                           |
+| creator row `happendat`, else `Organizations.happendat` | `createdAt`   | `Organizations.happendat` moves on rename (3.12), so prefer the creator's membership row. Both are server local time; treat as UTC **[I]** (gap 9).   |
+
+### 9.4 Member (`Member`) and user (`CurrentUser`)
+
+| Legacy                     | Domain                    | Rule                |
+| -------------------------- | ------------------------- | ------------------- |
+| `OrganizationUsers.userid` | `Member.userId`           | As is.              |
+| `Users.displayname`        | `Member.displayName`      | Join on `Users.id`. |
+| `Users.email`              | `Member.email`            | As is.              |
+| `OrganizationUsers.role`   | `Member.role`             | Lower-case.         |
+| `Users.id`                 | `CurrentUser.id`          | Equals OIDC `sub`.  |
+| `Users.displayname`        | `CurrentUser.displayName` | Fallback: email.    |
+| `Users.email`              | `CurrentUser.email`       | As is.              |
+| none                       | `CurrentUser.avatarUrl`   | `null`.             |
+
+### 9.5 Files (`StoredFile`)
+
+| Legacy                             | Domain                                | Rule                                                            |
+| ---------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored. |
+| Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                     |
+| New blob container (our choice)    | `StoredFile` for new uploads          | Store content type, name, size and survey ID as blob metadata.  |
+
+## 10. Replica plan
+
+A local offline replica needs **Azurite and a SQL Server container**.
+
+| Need                                              | Local tool                                                   | Why                                                                                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Azure Table (surveys log, results, completion)    | Azurite Table service                                        | Section 3.5–3.8.                                                                                                                                  |
+| Azure Blob (definitions, history, layouts)        | Azurite Blob service                                         | Section 3.2–3.4, 3.10. Use **append blobs** to match legacy writers.                                                                              |
+| Azure Queue                                       | not needed                                                   | No queue is used (2.2).                                                                                                                           |
+| Azure Files (`surveyfiles`, `files`, `tempfiles`) | **Not available in Azurite** **[I]**                         | Fixtures for legacy files need another approach: serve them from a stub behind the FileStore interface, or skip legacy file reads in the replica. |
+| Users database                                    | SQL Server 2022 container (`mcr.microsoft.com/mssql/server`) | `Users`, `Surveys`, `Organizations`, `OrganizationUsers` are SQL tables (6). Azure SQL Edge was retired in 2025, so do not use it. **[I]**        |
+
+One Azurite account can host all three storage accounts' objects: their table and container names do
+not collide. **[I]** (names in this page). Separate accounts (Azurite `AZURITE_ACCOUNTS`) are also
+possible if we want to test three connection strings.
+
+The replica must create:
+
+| Kind                                       | Name                                                                                                                                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL tables                                 | `Users`, `Surveys`, `Organizations`, `OrganizationUsers` (columns as in sections 3.1, 3.11–3.13; `UserLicenses` later for the licence notice)                                             |
+| Azure tables (surveys account)             | `surveys`                                                                                                                                                                                 |
+| Azure tables (results account), per survey | `post{postId without dashes}`, `SurveyCompletion{surveyId without dashes}`, optionally `postdelete{postId without dashes}`                                                                |
+| Blob containers (surveys account)          | `surveyjson`, `surveytext`, `surveyjsonhistory`, `surveyresulttablestate`, `surveyresultsummarystate`, `surveyresultpermissions`, `surveyresultcolumns`, optionally `surveypublishedjson` |
+| File shares (if emulated)                  | `surveyfiles` (surveys account), `files` (results account)                                                                                                                                |
+
+SQL indexes from `the site/Storage/sql/constraints.sql`: `users_email_idx`, `users_dxid_idx`,
+`users_accesskey_idx` on `Users`, and `organizationusers_userid_idx`,
+`organizationusers_organizationid_idx` on `OrganizationUsers`. **[C]** The same file adds foreign keys
+from `OrganizationUsers` to `Organizations` and `Users`; keep them in the replica so fixtures stay
+consistent. **[C]**
+
+Use the full Users column list from production (section 11) rather than `db.sql`, so that rows our
+provider writes stay writable by legacy code.
+
+## 11. Gaps and open questions
+
+| #   | Question                                                                                                                                                                                                                                                        | Why it matters                                                                               | Who can answer                            |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | The port is the reference; since when has it written production data, and which rows were written by the pre-port code?                                                                                                                                         | IP capture and history naming differ between the two (3.4, 3.6).                             | Site team / DevOps                        |
+| 2   | Are `a site secret`, `-results` and `-users-content` three accounts or one? Same region?                                                                                                                                                            | Provider configuration and least-privilege credentials.                                      | DevOps                                    |
+| 3   | Is `a site secret` the same database as `ConnectionStrings:Default`?                                                                                                                                                                                  | Directory credentials and schema ownership.                                                  | DevOps                                    |
+| 4   | Real column list of `Users`, `Surveys`, `Organizations`, `OrganizationUsers` (`INFORMATION_SCHEMA.COLUMNS`), indexes, and any triggers.                                                                                                                         | `db.sql` is incomplete (3.11); lookups by `postid` / `resultid` have no index in `db.sql`.   | DBA / DevOps                              |
+| 5   | What blob names exist in `surveyjsonhistory` (`{surveyId}/{pointId}` vs root `{pointId}`)?                                                                                                                                                                      | History import and display (3.4).                                                            | A read-only storage copy                  |
+| 6   | Are `&`, `<`, `>` stored HTML-encoded in `result` strings?                                                                                                                                                                                                      | Correct `data` for the new API (3.6).                                                        | A storage copy, or a test post to staging |
+| 7   | How many result rows contain `dxsimage:` / `dxsfile:` values or near-limit data URLs? Largest `result` size?                                                                                                                                                    | Legacy file migration and D11 rollout.                                                       | A storage copy                            |
+| 8   | Data volume: number of surveys, users, projects; rows per `post…` table (largest).                                                                                                                                                                              | Paging, statistics and sorting strategy (results are not stored in submission order).        | DevOps / storage metrics                  |
+| 9   | What time zone do the servers run in, and do old rows hold UTC or local time? Applies to Table `happendat` and to the SQL dates `Surveys.createdat`, `Organizations.happendat`, `OrganizationUsers.happendat` (written from `DateTime.Now` with no conversion). | `submittedAt`, `createdAt` correctness.                                                      | DevOps; a storage copy                    |
+| 10  | Do external customers rely on base64 `content` in exported or API results?                                                                                                                                                                                      | D11 condition 5.                                                                             | Support / product                         |
+| 11  | Do rows with an unexpected `surveyid`, missing `postid`, or empty tables named `surveyresult…` exist?                                                                                                                                                           | Fixture realism and the inspector CLI.                                                       | A storage copy                            |
+| 12  | Should the new app keep the legacy `canModify` rule (admin or creator) or the spec's "any member"?                                                                                                                                                              | Permissions parity (6).                                                                      | Product owner (Step 4 or 5)               |
+| 13  | Are orphaned `OrganizationUsers` rows (deleted users) common?                                                                                                                                                                                                   | Member lists and `memberCount`.                                                              | A storage copy                            |
+| 14  | Do the public `image?filePath=` and `file?filePath=` actions return file bytes in the port as deployed, or a JSON-serialized `site code`?                                                                                                             | Whether legacy respondent-file links (`dxsimage:`/`dxsfile:`) still work; how we serve them. | A request against staging; site team      |

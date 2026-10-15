@@ -30,6 +30,25 @@ With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @my-surveys/s
 on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`), waits up to 30 s for
 `/readyz`, and stops it (and its process tree) afterwards.
 
+## Run against the Azure legacy provider
+
+`CONFORMANCE_PROVIDER` picks the storage provider of the reference server:
+
+| Value              | Reference server                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory` (default) | `STORAGE_PROVIDER=memory`; every app variable of the developer's shell is stripped.                                                                       |
+| `azure-legacy`     | `STORAGE_PROVIDER=azure-legacy`; the three `LEGACY_*` connection strings are forwarded from the environment (every other app variable is still stripped). |
+
+Against the local replica of the legacy stores (Azurite and SQL Server in Docker):
+
+```sh
+pnpm demo:azurite:up            # start the replica and load the golden fixtures
+pnpm test:conformance:azurite   # reads docker/azurite.env and azure-legacy.env
+pnpm demo:azurite:down          # stop and wipe the replica
+```
+
+A missing `LEGACY_*` variable stops the run with an error that names it.
+
 ## Run against another server
 
 Start the server, then point the suite at its origin (without `/api/v1`, which the suite appends):

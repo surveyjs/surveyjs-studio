@@ -1,0 +1,3 @@
+# Blob and file fixtures are byte-exact content: no line-ending conversion.
+blobs/** -text
+files/** -text

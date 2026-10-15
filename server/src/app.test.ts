@@ -4,12 +4,13 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { AppError } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
+import { createMemoryProviders } from "./providers/memory.js";
 
 const config = loadConfig({ NODE_ENV: "test", LIMIT_MAX_RESPONSE_BYTES: "64" });
 let app: FastifyInstance | undefined;
 
-async function start(providers: ProviderSet = createProviders(config)): Promise<FastifyInstance> {
-  app = await buildApp(config, providers);
+async function start(providers?: ProviderSet): Promise<FastifyInstance> {
+  app = await buildApp(config, providers ?? (await createProviders(config)));
   return app;
 }
 
@@ -33,6 +34,7 @@ describe("health", () => {
 
   it("GET /readyz answers 503 when providers are not ready", async () => {
     const notReady: ProviderSet = {
+      ...createMemoryProviders(),
       name: "down",
       ready: () => Promise.resolve(false),
       close: () => Promise.resolve(),
@@ -45,6 +47,7 @@ describe("health", () => {
   it("closes providers when the app closes", async () => {
     let closed = false;
     const spy: ProviderSet = {
+      ...createMemoryProviders(),
       name: "spy",
       ready: () => Promise.resolve(true),
       close: () => {
