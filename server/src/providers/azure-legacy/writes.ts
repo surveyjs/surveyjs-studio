@@ -34,6 +34,19 @@ const APPEND_BLOCK_BYTES = 4 * 1024 * 1024;
 const SURVEY_INSERT =
   "INSERT INTO Surveys (id, name, userid, creatorid, postid, resultid, createdat, [timestamp]) " +
   "VALUES (@id, @name, @userid, @creatorid, @postid, @resultid, @createdat, @timestamp)";
+const SURVEY_EXISTS = "SELECT 1 AS found FROM Surveys WHERE id = @id";
+
+/**
+ * A survey with this id exists already. It carries SQL Server's primary-key violation number, so
+ * the LegacyStoreError reads the same as when the INSERT itself hits the key.
+ */
+class DuplicateSurveyIdError extends Error {
+  readonly number = 2627;
+  constructor() {
+    super("A survey with this id exists");
+    this.name = "DuplicateSurveyIdError";
+  }
+}
 
 const ownerIdOf = (survey: NewSurvey): string =>
   survey.owner.kind === "personal" ? survey.owner.userId : survey.owner.projectId;
@@ -112,7 +125,8 @@ async function appendEvent(events: TableClient, event: TableEntity): Promise<voi
 }
 
 /**
- * Stores a new survey as the legacy create does: the definition blobs first (when given), then
+ * Stores a new survey as the legacy create does, after checking that the id is free: the
+ * definition blobs first (when given), then
  * the `Surveys` row with exactly the legacy create columns (all others stay NULL), then the audit
  * row. A failure before the row leaves only orphan blobs that no reader finds, never a survey
  * without its definition. The audit row is best effort: legacy readers use the projections only
@@ -127,6 +141,14 @@ export async function writeNewSurvey(
 ): Promise<string> {
   const survey = checked(input);
   try {
+    const pool = await targets.pool();
+    // Before any blob: a duplicate id must not leave blobs that an existing survey would read
+    // as its definition. The INSERT's primary key still guards against a race.
+    const existing = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, survey.id)
+      .query(SURVEY_EXISTS);
+    if (existing.recordset.length > 0) throw new DuplicateSurveyIdError();
     if (definition !== undefined) {
       const text = Buffer.from(JSON.stringify(definition), "utf8");
       await writeNewAppendBlob(targets.blobs, "surveyjson", survey.id, text);
@@ -135,9 +157,7 @@ export async function writeNewSurvey(
       const point = `${survey.id}/${randomUUID()}`;
       await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, text);
     }
-    await (
-      await targets.pool()
-    )
+    await pool
       .request()
       .input("id", sql.UniqueIdentifier, survey.id)
       .input("name", sql.NVarChar(MAX_NAME_LENGTH), survey.name)

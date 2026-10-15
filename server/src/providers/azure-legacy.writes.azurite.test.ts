@@ -221,40 +221,57 @@ describe("azure-legacy survey creation writes the legacy format (local replica)"
     expect(audit[0]).toMatchObject({ userid: { type: "Guid", value: PROJECT_B_ID } });
   });
 
-  it("rejects a duplicate id with a LegacyStoreError that holds no connection-string text", async () => {
-    const definition = { title: "First" };
-    const first = await store().surveys.createSurvey(newSurvey(personal()), definition);
-    const secrets = [
+  /** The rejection of a create with an id that is taken; checks the message is safe. */
+  async function expectDuplicateRejection(
+    survey: NewSurvey,
+    definition?: Record<string, unknown>,
+  ): Promise<void> {
+    const error: unknown = await store()
+      .surveys.createSurvey(survey, definition)
+      .then(
+        () => undefined,
+        (rejected: unknown) => rejected,
+      );
+    expect(error).toBeInstanceOf(LegacyStoreError);
+    const message = (error as Error).message;
+    expect(message).toMatch(/^Legacy store survey create failed \(.*SQL error 2627/);
+    for (const secret of [
       config.sqlConnectionString,
       config.surveysStorageConnectionString,
       "Password",
       "AccountKey",
       "127.0.0.1",
       "devstoreaccount1",
-    ];
-
-    // Without a definition the INSERT hits the primary key; with one, the first blob exists.
-    for (const [second, code] of [
-      [undefined, "SQL error 2627"],
-      [{ title: "Second" }, "BlobAlreadyExists"],
-    ] as const) {
-      const error: unknown = await store()
-        .surveys.createSurvey(newSurvey(personal(), { id: first.id }), second)
-        .then(
-          () => undefined,
-          (rejected: unknown) => rejected,
-        );
-      expect(error).toBeInstanceOf(LegacyStoreError);
-      const message = (error as Error).message;
-      expect(message).toMatch(/^Legacy store survey create failed \(/);
-      expect(message).toContain(code);
-      for (const secret of secrets) expect(message).not.toContain(secret);
+    ]) {
+      expect(message).not.toContain(secret);
     }
+  }
+
+  it("rejects a duplicate id with a LegacyStoreError that holds no connection-string text", async () => {
+    const definition = { title: "First" };
+    const first = await store().surveys.createSurvey(newSurvey(personal()), definition);
+
+    await expectDuplicateRejection(newSurvey(personal(), { id: first.id }));
+    await expectDuplicateRejection(newSurvey(personal(), { id: first.id }), { title: "Second" });
 
     // The first survey and its definition are unchanged.
     expect(await store().surveys.getSurvey(first.id)).toEqual(first);
     expect(await store().surveys.getDefinition(first.id)).toEqual(definition);
     expect(await historyNames(first.id)).toHaveLength(1);
+  });
+
+  it("writes no blob for a duplicate id whose survey has no definition yet", async () => {
+    const first = await store().surveys.createSurvey(newSurvey(personal()));
+
+    await expectDuplicateRejection(newSurvey(personal(), { id: first.id }), { title: "Second" });
+
+    for (const container of ["surveyjson", "surveytext"]) {
+      const blob = blobs.getContainerClient(container).getBlobClient(first.id);
+      expect(await blob.exists(), container).toBe(false);
+    }
+    expect(await historyNames(first.id)).toEqual([]);
+    expect(await store().surveys.getDefinition(first.id)).toEqual({});
+    expect(await store().surveys.getSurvey(first.id)).toEqual(first);
   });
 
   it("round-trips a name of 200 characters with non-ASCII letters", async () => {
