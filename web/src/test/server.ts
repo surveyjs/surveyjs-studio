@@ -144,3 +144,50 @@ export function surveyListPageHandlers(surveys: Survey[] = [sampleSurvey]) {
     projectsHandler({ "": { items: [], nextCursor: null } }),
   ];
 }
+
+/**
+ * Answers `PATCH /surveys/{id}` with 200 and `survey`; `onRequest` sees the parsed body and the
+ * request's content type.
+ */
+export function updateSurveyHandler(
+  survey = sampleSurvey,
+  onRequest?: (body: unknown, contentType: string | null) => void,
+) {
+  return http.patch("/surveys/{surveyId}", async ({ request, response }) => {
+    onRequest?.(await request.json(), request.headers.get("content-type"));
+    return response(200).json(survey);
+  });
+}
+
+/** Answers `POST /surveys/{id}/clones` with 201 and `copy`; `onRequest` sees the request. */
+export function cloneSurveyHandler(copy = sampleSurvey, onRequest?: (request: Request) => void) {
+  return http.post("/surveys/{surveyId}/clones", ({ request, response }) => {
+    onRequest?.(request);
+    return response(201).json(copy, { headers: { Location: `/api/v1/surveys/${copy.id}` } });
+  });
+}
+
+/** Answers `DELETE /surveys/{id}` with 204; `onRequest` sees the request. */
+export function deleteSurveyHandler(onRequest?: (request: Request) => void) {
+  return http.delete("/surveys/{surveyId}", ({ request, response }) => {
+    onRequest?.(request);
+    return response(204).empty();
+  });
+}
+
+/** Answers `method` on `/surveys/{id}` (and `/clones`) with a 409 Problem. */
+export function surveyActionProblemHandler(method: "patch" | "delete" | "post") {
+  const path =
+    method === "post" ? "*/api/v1/surveys/:surveyId/clones" : "*/api/v1/surveys/:surveyId";
+  return mswHttp[method](path, () =>
+    HttpResponse.json(
+      {
+        type: "https://my-surveys.surveyjs.io/problems/survey-not-archived",
+        title: "Survey is not archived",
+        status: 409,
+        code: "survey-not-archived",
+      },
+      { status: 409, headers: { "Content-Type": "application/problem+json" } },
+    ),
+  );
+}

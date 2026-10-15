@@ -121,3 +121,117 @@ export function useCreateSurvey() {
     onSuccess: (survey) => addCreatedSurvey(queryClient, survey),
   });
 }
+
+export type SurveyPatch = components["schemas"]["SurveyPatch"];
+
+const scopeOf = (survey: Survey) => survey.projectId ?? "personal";
+
+type SurveyListData = InfiniteData<SurveyPage, string | null>;
+
+/** Replaces (`replacement`) or removes (`undefined`) the item with `id` in every cached survey list. */
+function patchCachedLists(
+  queryClient: QueryClient,
+  id: string,
+  decide: (project: string, archived: boolean) => Survey | undefined,
+): void {
+  for (const [key, cached] of queryClient.getQueriesData<SurveyListData>({
+    queryKey: ["surveys", "list"],
+  })) {
+    if (cached === undefined) continue;
+    const [, , project, archived] = key as readonly [string, string, string, boolean];
+    const replacement = decide(project, archived);
+    queryClient.setQueryData<SurveyListData>(key, {
+      ...cached,
+      pages: cached.pages.map((page) => ({
+        ...page,
+        items:
+          replacement === undefined
+            ? page.items.filter((item) => item.id !== id)
+            : page.items.map((item) => (item.id === id ? replacement : item)),
+      })),
+    });
+  }
+}
+
+/**
+ * Applies an updated survey to the cache: the detail is replaced, the item is replaced in place in
+ * the list it still belongs to and removed from the others, the lists of both scopes are refreshed
+ * (so they re-sort), and the has-archived flags are refreshed when the archive state or scope changed.
+ */
+export function applyUpdatedSurvey(queryClient: QueryClient, before: Survey, after: Survey): void {
+  const from = scopeOf(before);
+  const to = scopeOf(after);
+  queryClient.setQueryData(surveyKeys.detail(after.id), after);
+  patchCachedLists(queryClient, after.id, (project, archived) =>
+    project === to && archived === after.archived ? after : undefined,
+  );
+  void queryClient.invalidateQueries({ queryKey: surveyKeys.listsOf(from) });
+  if (to !== from) void queryClient.invalidateQueries({ queryKey: surveyKeys.listsOf(to) });
+  if (before.archived !== after.archived || from !== to) {
+    void queryClient.invalidateQueries({ queryKey: surveyKeys.hasArchived(from) });
+    if (to !== from) {
+      void queryClient.invalidateQueries({ queryKey: surveyKeys.hasArchived(to) });
+    }
+  }
+}
+
+/** Drops a deleted survey from the cache and refreshes its scope's lists and has-archived flag. */
+export function removeDeletedSurvey(queryClient: QueryClient, survey: Survey): void {
+  const scope = scopeOf(survey);
+  queryClient.removeQueries({ queryKey: surveyKeys.detail(survey.id) });
+  patchCachedLists(queryClient, survey.id, () => undefined);
+  void queryClient.invalidateQueries({ queryKey: surveyKeys.listsOf(scope) });
+  void queryClient.invalidateQueries({ queryKey: surveyKeys.hasArchived(scope) });
+}
+
+/** Renames, moves, archives, restores, publishes or changes settings: one merge patch. */
+export function useUpdateSurvey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      survey,
+      patch,
+    }: {
+      survey: Survey;
+      patch: SurveyPatch;
+    }): Promise<Survey> => {
+      const { data, error, response } = await client.PATCH("/surveys/{surveyId}", {
+        params: { path: { surveyId: survey.id } },
+        body: patch,
+        headers: { "Content-Type": "application/merge-patch+json" },
+      });
+      if (!response.ok || data === undefined) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (updated, { survey }) => applyUpdatedSurvey(queryClient, survey, updated),
+  });
+}
+
+/** Copies a survey into a new unpublished one in the source's scope. */
+export function useCloneSurvey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (survey: Survey): Promise<Survey> => {
+      const { data, error, response } = await client.POST("/surveys/{surveyId}/clones", {
+        params: { path: { surveyId: survey.id } },
+      });
+      if (!response.ok || data === undefined) throw toApiError(error, response);
+      return data;
+    },
+    onSuccess: (copy) => addCreatedSurvey(queryClient, copy),
+  });
+}
+
+/** Permanently deletes an archived survey. */
+export function useDeleteSurvey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (survey: Survey): Promise<void> => {
+      const { error, response } = await client.DELETE("/surveys/{surveyId}", {
+        params: { path: { surveyId: survey.id } },
+      });
+      if (!response.ok) throw toApiError(error, response);
+    },
+    onSuccess: (_void, survey) => removeDeletedSurvey(queryClient, survey),
+  });
+}
