@@ -10,9 +10,9 @@ import {
 import { expect, test } from "./support/test.js";
 
 // Runs in memory mode on three browsers and in Azurite mode on the replica. Tests write only to
-// the outsider's personal scope (other browsers and the conformance suite write there too), so
-// the owner's scope and Marketing hold exactly their fixture rows; the outsider's list is read
-// to its end.
+// the outsider's Personal scope, the admin's Personal scope and Engineering (other browsers and the
+// conformance suite write there too), never the owner's Personal scope, Marketing or a fixture
+// survey, so those hold exactly their fixture rows; the outsider's list is read to its end.
 
 const MARKETING = "55555555-0000-4000-8000-a00000000001";
 const UNKNOWN_PROJECT = "99999999-9999-4999-8999-999999999999";

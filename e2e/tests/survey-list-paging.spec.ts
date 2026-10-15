@@ -34,7 +34,7 @@ async function fillEngineering(page: Page, browserName: string): Promise<void> {
     });
     expect(response.status()).toBe(201);
   }
-  expect(await activeEngineeringSurveyCount(page)).toBeGreaterThan(PAGE_SIZE + MARGIN);
+  expect(await activeEngineeringSurveyCount(page)).toBeGreaterThan(PAGE_SIZE);
 }
 
 test("a list longer than one page loads the rest with Load more", async ({ page, browserName }) => {

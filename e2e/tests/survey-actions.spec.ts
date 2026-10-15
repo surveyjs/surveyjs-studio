@@ -3,13 +3,10 @@ import { signInAt } from "./support/sign-in.js";
 import {
   answerNextConfirm,
   copiedValues,
-  copySurveyId,
   createSurveyViaApi,
   discardSurveyViaApi,
   findSurveysViaApi,
-  followMenuLink,
   getSurveyViaApi,
-  gotoList,
   loadAllPages,
   menuEntries,
   menuTrigger,
@@ -22,23 +19,26 @@ import {
 import { expect, test } from "./support/test.js";
 
 // Writes only to scopes tests may write to (the other browsers and the conformance suite write there
-// too): the outsider's Personal scope, the admin's Personal scope and Engineering. Never the owner's
-// Personal scope or Marketing (other specs count their rows), never a fixture survey. Every test
-// creates surveys with unique names and removes them (archive, then delete) at the end. Assertions
-// are about one named row, never about how many surveys a scope holds. The "cannot modify" tests
-// only read fixtures.
+// too): the admin's Personal scope and Engineering. Nothing here touches the outsider's Personal
+// scope: survey-list.spec.ts expects it to hold no archived survey, which cleanup (archive, then
+// delete) would leave for a moment. Never the owner's Personal scope or Marketing (other specs count
+// their rows), never a fixture survey. Every test creates surveys with unique names and removes them
+// at the end. Assertions are about one named row, never about how many surveys a scope holds. The
+// "cannot modify" tests only read fixtures.
 
 // Each test signs in, creates a survey and acts on its row; Firefox on a busy machine needs the time.
 test.describe.configure({ timeout: 60_000 });
 
 const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+const MARKETING = "55555555-0000-4000-8000-a00000000001";
+const MOVE_CONFIRM =
+  "Do you want to move this survey to another organization? This operation can't be undone.";
+
 // The cookie banner is fixed to the bottom of the page and covers the last menu items; it has
 // already been answered.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("isInformedAboutCookieAndPolicies", "true"));
 });
-
-const MARKETING = "55555555-0000-4000-8000-a00000000001";
 
 function uniqueName(browserName: string): string {
   return `Actions ${browserName} ${Math.random().toString(36).slice(2, 8)}`;
@@ -68,12 +68,12 @@ test("rename: Esc keeps the name, Enter saves it, and it survives a reload", asy
   page,
   browserName,
 }) => {
-  await signInAt(page, "/", "outsider");
+  await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const renamed = `${name} renamed`;
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     const row = surveyRow(page, name);
     await expect(row).toBeVisible();
     const input = page.getByRole("textbox", { name: "Survey name" });
@@ -107,11 +107,11 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
   context,
   browserName,
 }) => {
-  await signInAt(page, "/", "outsider");
+  await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     let popup = await openRowMenu(surveyRow(page, name));
     await expect(popup.getByRole("link", { name: "Run", exact: true })).toHaveCount(0);
     await pickMenuItem(popup, "Publish");
@@ -136,12 +136,12 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
 });
 
 test("clone adds Copy of <name>, which is unpublished", async ({ page, browserName }) => {
-  await signInAt(page, "/", "outsider");
+  await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const copyName = `Copy of ${name}`;
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [{ name: copyName, projectId: null }], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     const popup = await openRowMenu(surveyRow(page, name));
     await pickMenuItem(popup, "Clone");
     const copyRow = surveyRow(page, copyName);
@@ -156,14 +156,19 @@ test("clone adds Copy of <name>, which is unpublished", async ({ page, browserNa
 
 test("Survey IDs copies the id, the result id and the post id", async ({ page, browserName }) => {
   await recordClipboard(page);
-  await signInAt(page, "/", "outsider");
+  await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     const row = surveyRow(page, name);
     const items = ["Copy ID", "Copy Result ID", "Copy Post ID"];
-    for (const [index, item] of items.entries()) await copySurveyId(page, row, item, index + 1);
+    for (const item of items) {
+      const popup = await openRowMenu(row);
+      const flyout = await openFlyout(popup, "Survey IDs");
+      await flyout.getByRole("link", { name: item, exact: true }).click();
+      await expect(popup).toHaveCount(0);
+    }
     const stored = await getSurveyViaApi(page, survey.id);
     expect(await copiedValues(page)).toEqual([stored?.id, stored?.resultId, stored?.postId]);
   });
@@ -173,7 +178,7 @@ test("Edit, View Results and View History open their pages with the survey name"
   page,
   browserName,
 }) => {
-  await signInAt(page, "/", "outsider");
+  await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
@@ -183,9 +188,10 @@ test("Edit, View Results and View History open their pages with the survey name"
       { item: "View History", path: "history" },
     ];
     for (const { item, path } of targets) {
-      await gotoList(page);
+      await page.goto("/");
       const url = new RegExp(`/surveys/${survey.id}/${path}$`);
-      await followMenuLink(page, surveyRow(page, name), item, url);
+      await pickMenuItem(await openRowMenu(surveyRow(page, name)), item);
+      await expect(page).toHaveURL(url);
       await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
     }
   });
@@ -199,14 +205,14 @@ test("Move to Project moves a Personal survey to Engineering and back, after a c
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     let popup = await openRowMenu(surveyRow(page, name));
     let flyout = await openFlyout(popup, "Move to Project");
 
     // Dismissing the confirmation changes nothing.
     let asked = answerNextConfirm(page, false);
     await flyout.getByRole("link", { name: "Engineering", exact: true }).click();
-    expect(await asked).toContain("Do you want to move this survey");
+    expect(await asked).toBe(MOVE_CONFIRM);
     await expect(page).toHaveURL(/\/$/);
     await expect(surveyRow(page, name)).toBeVisible();
     expect((await getSurveyViaApi(page, survey.id))?.projectId).toBeNull();
@@ -215,7 +221,7 @@ test("Move to Project moves a Personal survey to Engineering and back, after a c
     flyout = await openFlyout(popup, "Move to Project");
     asked = answerNextConfirm(page, true);
     await flyout.getByRole("link", { name: "Engineering", exact: true }).click();
-    expect(await asked).toContain("This operation can't be undone.");
+    expect(await asked).toBe(MOVE_CONFIRM);
     await expect(page).toHaveURL(new RegExp(`[?&]project=${ENGINEERING}$`));
     await expect(surveyRow(page, name)).toBeVisible();
     expect((await getSurveyViaApi(page, survey.id))?.projectId).toBe(ENGINEERING);
@@ -239,7 +245,7 @@ test("Archive, Restore and Delete move a survey between the views and remove it"
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
-    await gotoList(page);
+    await page.goto("/");
     await pickMenuItem(await openRowMenu(surveyRow(page, name)), "Archive");
     await expect(surveyRow(page, name)).toHaveCount(0);
 
@@ -249,12 +255,12 @@ test("Archive, Restore and Delete move a survey between the views and remove it"
 
     await pickMenuItem(await openRowMenu(surveyRow(page, name)), "Restore");
     await expect(surveyRow(page, name)).toHaveCount(0);
-    await gotoList(page);
+    await page.goto("/");
     await expect(surveyRow(page, name)).toBeVisible();
 
     await pickMenuItem(await openRowMenu(surveyRow(page, name)), "Archive");
     await expect(surveyRow(page, name)).toHaveCount(0);
-    await gotoList(page, "/?archived=true");
+    await page.goto("/?archived=true");
     await expect(surveyRow(page, name)).toBeVisible();
 
     // Dismissing the confirmation keeps the survey.
@@ -287,13 +293,8 @@ test("a member who cannot modify a survey sees no pencil and no modifying items 
 
   const popup = await openRowMenu(row);
   const entries = await menuEntries(popup).allInnerTexts();
-  expect(entries.filter((text) => text !== "Run")).toEqual([
-    "Edit",
-    "Clone",
-    "Survey IDs",
-    "View Results",
-    "View History",
-  ]);
+  // Engineering retro is unpublished, so no Run.
+  expect(entries).toEqual(["Edit", "Clone", "Survey IDs", "View Results", "View History"]);
   await expect(menuTrigger(row)).toBeVisible();
 });
 
