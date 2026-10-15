@@ -490,7 +490,10 @@ paths:
         A single call covers rename, move to a project (`projectId`; `null` means
         Personal), archive and restore (`archived`), publish and unpublish
         (`published`), and settings. Requires modify permission; moving also
-        requires membership of the target project.
+        requires membership of the target project. Every successful update moves
+        `updatedAt`, even when no value changes. Moving sets the caller as the
+        survey's creator; `projectId: null` moves the survey to the caller's
+        Personal surveys. Moving to the current scope changes nothing but `updatedAt`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -514,6 +517,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Survey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -531,6 +535,7 @@ paths:
         - bearerAuth: []
       responses:
         '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -543,8 +548,12 @@ paths:
       operationId: cloneSurvey
       summary: Clone a survey
       description: |
-        Copies the definition and theme into a new, unpublished survey in the same
-        project, unless `projectId` is given. Results and history are not copied.
+        Copies the definition and theme into a new, unpublished, active survey.
+        Anyone who can read the source may clone it. The copy goes to the source's
+        project (or Personal), unless `projectId` is given (`null` = the caller's
+        Personal surveys; a project requires membership). The caller becomes the
+        copy's creator. The default name is `Copy of {name}`, cut to 200 characters.
+        Results, history and settings are not copied.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -566,9 +575,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Survey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
 
   # --------------------------------------------------------- Survey content
   /surveys/{surveyId}/definition:

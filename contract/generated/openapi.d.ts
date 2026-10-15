@@ -285,7 +285,10 @@ export interface paths {
          * @description A single call covers rename, move to a project (`projectId`; `null` means
          *     Personal), archive and restore (`archived`), publish and unpublish
          *     (`published`), and settings. Requires modify permission; moving also
-         *     requires membership of the target project.
+         *     requires membership of the target project. Every successful update moves
+         *     `updatedAt`, even when no value changes. Moving sets the caller as the
+         *     survey's creator; `projectId: null` moves the survey to the caller's
+         *     Personal surveys. Moving to the current scope changes nothing but `updatedAt`.
          */
         patch: operations["updateSurvey"];
         trace?: never;
@@ -303,8 +306,12 @@ export interface paths {
         put?: never;
         /**
          * Clone a survey
-         * @description Copies the definition and theme into a new, unpublished survey in the same
-         *     project, unless `projectId` is given. Results and history are not copied.
+         * @description Copies the definition and theme into a new, unpublished, active survey.
+         *     Anyone who can read the source may clone it. The copy goes to the source's
+         *     project (or Personal), unless `projectId` is given (`null` = the caller's
+         *     Personal surveys; a project requires membership). The caller becomes the
+         *     copy's creator. The default name is `Copy of {name}`, cut to 200 characters.
+         *     Results, history and settings are not copied.
          */
         post: operations["cloneSurvey"];
         delete?: never;
@@ -1682,6 +1689,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1713,6 +1721,7 @@ export interface operations {
                     "application/json": components["schemas"]["Survey"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1747,9 +1756,11 @@ export interface operations {
                     "application/json": components["schemas"]["Survey"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getSurveyDefinition: {

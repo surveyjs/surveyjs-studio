@@ -19,13 +19,18 @@ const PROJECT_ID = "bbbbbbbb-0000-4000-8000-000000000001";
 const OTHER_PROJECT_ID = "bbbbbbbb-0000-4000-8000-000000000002";
 
 let n = 0;
-function survey(name: string, owner: SurveyRecord["owner"], archived = false): SurveyRecord {
+function survey(
+  name: string,
+  owner: SurveyRecord["owner"],
+  archived = false,
+  creatorId: string = USER.id,
+): SurveyRecord {
   n += 1;
   return {
     id: `cccccccc-0000-4000-8000-${String(n).padStart(12, "0")}`,
     name,
     owner,
-    creatorId: USER.id,
+    creatorId,
     postId: `dddddddd-0000-4000-8000-${String(n).padStart(12, "0")}`,
     resultId: `eeeeeeee-0000-4000-8000-${String(n).padStart(12, "0")}`,
     published: false,
@@ -46,6 +51,8 @@ const seed: MemorySeed = {
     survey("New Survey 7", personal, true),
     survey("New Survey 4", project),
     survey("New Survey 9", { kind: "project", projectId: OTHER_PROJECT_ID }),
+    // Made by someone else in USER's project: visible to USER, not modifiable.
+    survey("Colleague poll", project, true, "aaaaaaaa-0000-4000-8000-000000000009"),
   ],
   projects: [
     { id: PROJECT_ID, name: "Team", ownerId: USER.id, createdAt: "2025-01-01T00:00:00.000Z" },
@@ -190,5 +197,144 @@ describe("listSurveys", () => {
     const res = await server.inject({ url: "/api/v1/surveys?cursor=abc", headers });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: "bad-request", detail: "Invalid cursor." });
+  });
+});
+
+const [ownPersonal, , ownProject, , colleaguePoll] = seed.surveys;
+
+function patch(
+  server: FastifyInstance,
+  headers: Record<string, string>,
+  id: string | undefined,
+  payload: object,
+) {
+  return server.inject({ method: "PATCH", url: `/api/v1/surveys/${id}`, headers, payload });
+}
+
+describe("updateSurvey", () => {
+  it("sets updatedAt to the clock, also when no value changes", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, ownPersonal?.id, { name: ownPersonal?.name });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ name: "New Survey 2", updatedAt: NOW });
+  });
+
+  it("moves a survey to the Personal scope and keeps the rights of the new scope", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, ownProject?.id, { projectId: null });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ projectId: null, permissions: { canModify: true } });
+  });
+
+  it("answers 403 with the reason for a survey the user cannot modify", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, colleaguePoll?.id, { name: "Mine now" });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      code: "forbidden",
+      detail: "You cannot modify this survey.",
+    });
+  });
+
+  it("answers 403 for a target project the user is not a member of", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, ownPersonal?.id, { projectId: OTHER_PROJECT_ID });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      code: "forbidden",
+      detail: "You are not a member of this project.",
+    });
+  });
+
+  it("answers 404 for a survey of someone else", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, seed.surveys[3]?.id, { name: "x" });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("deleteSurvey", () => {
+  it("answers 409 survey-not-archived for an active survey", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/surveys/${ownPersonal?.id}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: "survey-not-archived",
+      title: "Archive the survey before deleting it",
+    });
+  });
+
+  it("answers 403 with the reason for an archived survey the user cannot modify", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/surveys/${colleaguePoll?.id}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ detail: "You cannot modify this survey." });
+  });
+
+  it("deletes an archived survey with 204 and an empty body", async () => {
+    const { server, headers } = await start();
+    const archived = seed.surveys[1];
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/surveys/${archived?.id}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+    const read = await server.inject({ url: `/api/v1/surveys/${archived?.id}`, headers });
+    expect(read.statusCode).toBe(404);
+  });
+});
+
+describe("cloneSurvey", () => {
+  it("answers 201 with Location and the clock as createdAt and updatedAt", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({
+      method: "POST",
+      url: `/api/v1/surveys/${ownProject?.id}/clones`,
+      headers,
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ id: string; createdAt: string; updatedAt: string }>();
+    expect(body).toMatchObject({
+      name: "Copy of New Survey 4",
+      projectId: PROJECT_ID,
+      published: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(res.headers.location).toBe(`/api/v1/surveys/${body.id}`);
+  });
+
+  it("makes the caller the creator, so a copy of a survey they cannot modify is modifiable", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({
+      method: "POST",
+      url: `/api/v1/surveys/${colleaguePoll?.id}/clones`,
+      headers,
+      payload: { name: "Mine" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ name: "Mine", permissions: { canModify: true } });
+  });
+
+  it("answers 403 for a target project the user is not a member of", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({
+      method: "POST",
+      url: `/api/v1/surveys/${ownPersonal?.id}/clones`,
+      headers,
+      payload: { projectId: OTHER_PROJECT_ID },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ detail: "You are not a member of this project." });
   });
 });

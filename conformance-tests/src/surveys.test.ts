@@ -4,7 +4,8 @@
  * The Azurite replica keeps data between runs, so tests that create surveys do so only in the
  * outsider's personal scope or in the Engineering project, and assertions never assume the exact
  * size of those scopes: they check membership, relative order and computed expectations, walking
- * every page. The owner's personal scope and the Marketing project are never written.
+ * every page. The owner's personal scope and the Marketing project are never written. Since Step 5
+ * `survey-actions.test.ts` also writes to the admin's personal scope; the same rules apply there.
  */
 import { describe, expect, it, type TestContext } from "vitest";
 import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";

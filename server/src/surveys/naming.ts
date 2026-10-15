@@ -22,3 +22,19 @@ export function nextNewSurveyName(names: readonly string[]): string {
   }
   return `${PREFIX} ${next}`;
 }
+
+const COPY_PREFIX = "Copy of ";
+/** Legacy `Surveys.name` is nvarchar(200): 200 UTF-16 code units. */
+const MAX_NAME_UNITS = 200;
+
+/**
+ * The default name of a clone: "Copy of " and the source name, cut to 200 UTF-16 code units
+ * without splitting a surrogate pair.
+ */
+export function cloneName(sourceName: string): string {
+  const name = COPY_PREFIX + sourceName;
+  if (name.length <= MAX_NAME_UNITS) return name;
+  const last = name.charCodeAt(MAX_NAME_UNITS - 1);
+  const end = last >= 0xd800 && last <= 0xdbff ? MAX_NAME_UNITS - 1 : MAX_NAME_UNITS;
+  return name.slice(0, end);
+}

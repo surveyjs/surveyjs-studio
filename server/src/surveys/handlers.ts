@@ -8,8 +8,10 @@ import {
 } from "./service.js";
 
 type SurveyCreate = components["schemas"]["SurveyCreate"];
+type SurveyPatch = components["schemas"]["SurveyPatch"];
+type SurveyClone = { name?: string; projectId?: string | null };
 
-/** `listSurveys`, `createSurvey` and `getSurvey`. Requests reach them validated by the contract. */
+/** The survey operations: list, create, get, update, delete and clone. Requests reach them validated by the contract. */
 export function createSurveyHandlers(options: SurveysServiceOptions): Handlers {
   const service = createSurveysService(options);
 
@@ -27,6 +29,27 @@ export function createSurveyHandlers(options: SurveysServiceOptions): Handlers {
     getSurvey: (request) => {
       const { surveyId } = request.params as { surveyId: string };
       return service.get(requireUser(request), surveyId);
+    },
+
+    updateSurvey: (request) => {
+      const { surveyId } = request.params as { surveyId: string };
+      return service.update(requireUser(request), surveyId, request.body as SurveyPatch);
+    },
+
+    deleteSurvey: async (request, reply) => {
+      const { surveyId } = request.params as { surveyId: string };
+      await service.delete(requireUser(request), surveyId);
+      return reply.code(204).send();
+    },
+
+    cloneSurvey: async (request, reply) => {
+      const { surveyId } = request.params as { surveyId: string };
+      const copy = await service.clone(
+        requireUser(request),
+        surveyId,
+        request.body as SurveyClone | undefined,
+      );
+      return reply.code(201).header("location", `/api/v1/surveys/${copy.id}`).send(copy);
     },
   };
 }
