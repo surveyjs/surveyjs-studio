@@ -8,6 +8,21 @@ export const users = {
     email: "owner@example.com",
     name: "Olivia Owner",
   },
+  admin: {
+    id: "11111111-0000-4000-8000-a00000000002",
+    email: "admin@example.com",
+    name: "Adam Admin",
+  },
+  member: {
+    id: "11111111-0000-4000-8000-a00000000003",
+    email: "member@example.com",
+    name: "Mia Member",
+  },
+  outsider: {
+    id: "11111111-0000-4000-8000-a00000000004",
+    email: "outsider@example.com",
+    name: "Oscar Outsider",
+  },
 } as const;
 
 export type UserKey = keyof typeof users;

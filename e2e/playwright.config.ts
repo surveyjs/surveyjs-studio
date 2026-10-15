@@ -18,7 +18,8 @@ const reuseExistingServer = !process.env["CI"];
 // Two modes, because two server configurations cannot share port 3000:
 // - memory (default): the dev identity provider; all specs on Chromium, Firefox and WebKit.
 // - azurite (E2E_MODE=azurite, `pnpm e2e:azurite`): the azure-legacy provider on the local replica
-//   and the mock OIDC server (`pnpm demo:azurite:up` first); only the sign-in spec, on Chromium.
+//   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in and survey list specs, on
+//   Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 
 const serverEnv = {
@@ -113,12 +114,18 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   forbidOnly: !!process.env["CI"],
   reporter: process.env["CI"] ? [["line"], ["html", { open: "never" }]] : "list",
-  use: { baseURL: "http://localhost:5173", trace: "retain-on-failure" },
+  // A fixed locale and time zone, so the list's dates read the same on every machine.
+  use: {
+    baseURL: "http://localhost:5173",
+    trace: "retain-on-failure",
+    locale: "en-US",
+    timezoneId: "UTC",
+  },
   projects: azurite
     ? [
         {
           name: "azurite-chromium",
-          testMatch: "sign-in.spec.ts",
+          testMatch: ["sign-in.spec.ts", "survey-list.spec.ts"],
           use: { ...devices["Desktop Chrome"], viewport },
         },
       ]
