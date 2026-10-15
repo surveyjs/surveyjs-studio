@@ -20,7 +20,7 @@ updated at the same moment are ordered by their id.
 
 If the list is empty, the page says "No surveys yet" and offers a **Create a Survey** button.
 
-Clicking a row does nothing yet. Each row has a "�" menu and, when you can modify the survey, a pencil
+Clicking a row does nothing yet. Each row has a "…" menu and, when you can modify the survey, a pencil
 for renaming. See [Managing a survey](managing-a-survey.md).
 
 ## Personal surveys and projects

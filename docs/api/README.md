@@ -151,37 +151,66 @@ Rules for `cloneSurvey`:
 Examples. Rename:
 
 ```sh
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"name":"Customer feedback 2026"}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"name":"Customer feedback 2026"}'
 ```
 
 Publish and archive (one request can carry several fields):
 
 ```sh
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"published":true}'
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"archived":true}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"published":true}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"archived":true}'
 ```
 
 Move to a project, and back to the caller's Personal surveys (`null` is a value here, not a removal):
 
 ```sh
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"projectId":"55555555-0000-4000-8000-a00000000002"}'
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"projectId":null}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"projectId":"55555555-0000-4000-8000-a00000000002"}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"projectId":null}'
 ```
 
 Settings:
 
 ```sh
-curl -b cookies.txt -X PATCH "$API/surveys/$ID"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json"   -d '{"settings":{"publicResults":true,"storeRespondentIp":false}}'
+curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"settings":{"publicResults":true,"storeRespondentIp":false}}'
 ```
 
-Each of these answers `200` with the survey, for example `{"id":"�","name":"Customer feedback 2026",
-"projectId":null,"published":true,"archived":false,�,"permissions":{"canModify":true}}`.
+Each of these answers `200` with the survey, for example:
+
+```json
+{
+  "id": "22222222-0000-4000-8000-a00000000001",
+  "name": "Customer feedback 2026",
+  "projectId": null,
+  "published": true,
+  "archived": false,
+  "createdAt": "2026-03-13T10:00:00.000Z",
+  "updatedAt": "2026-10-15T09:30:00.000Z",
+  "postId": "33333333-0000-4000-8000-a00000000001",
+  "resultId": "44444444-0000-4000-8000-a00000000001",
+  "settings": { "publicResults": true, "storeRespondentIp": false },
+  "permissions": { "canModify": true }
+}
+```
 
 Clone, with the default name and with a name and a target:
 
 ```sh
 curl -i -b cookies.txt -X POST -H "X-CSRF-Token: $CSRF" "$API/surveys/$ID/clones"
-curl -i -b cookies.txt -X POST "$API/surveys/$ID/clones"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json"   -d '{"name":"Pilot","projectId":null}'
+curl -i -b cookies.txt -X POST "$API/surveys/$ID/clones" \
+  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" \
+  -d '{"name":"Pilot","projectId":null}'
 ```
 
 Delete. A survey that is not archived is refused; archive it first:
@@ -192,7 +221,7 @@ curl -i -b cookies.txt -X DELETE -H "X-CSRF-Token: $CSRF" "$API/surveys/$ID"
 
 ```text
 HTTP/1.1 409 Conflict
-{"type":"�","title":"Archive the survey before deleting it","status":409,"code":"survey-not-archived"}
+{"type":"https://my-surveys.surveyjs.io/problems/survey-not-archived","title":"Archive the survey before deleting it","status":409,"code":"survey-not-archived"}
 ```
 
 After `{"archived":true}` the same request answers `204 No Content`, and a third one `404`.

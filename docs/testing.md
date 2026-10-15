@@ -58,7 +58,7 @@ Run with Vitest from the root. Scope:
   Testing Library. For the survey list: the search parameter validation, the date format, the query
   modules, the cache rules (a created, updated and deleted survey in the cached lists), the three
   mutations, the retry policy, the menu items per view and permission (`menuItems.ts`, pure), and the
-  whole app rendered at `/` for the row: the "�" menu (open, close, keyboard, every action with its
+  whole app rendered at `/` for the row: the "…" menu (open, close, keyboard, every action with its
   confirmation, the copy items with a stubbed clipboard, the error message), the inline rename
   and the placeholder pages.
 

@@ -146,13 +146,18 @@ Sign out and sign in as **Olivia Owner**. In the selector choose **Engineering**
 (created by Adam) has no pencil, and its menu has **Edit**, **Clone**, **Survey IDs**, **View Results**
 and **View History**: no **Publish**, no **Move to Project**, no **Archive**.
 
-The server refuses the same changes. With the cookie jar of a signed-in Olivia (see
-[the Step 3 demo](step-03.md#3-sign-out); the CSRF header is described in
-[Authentication](../api/authentication.md#csrf-the-double-submit-rule)):
+The server refuses the same changes. This block signs in as Olivia with `curl` (the same steps as the
+optional CSRF part of [the Step 3 demo](step-03.md#3-sign-out)) and then tries to rename Engineering
+retro. It needs the server of this part running. The CSRF header is described in
+[Authentication](../api/authentication.md#csrf-the-double-submit-rule).
 
 ```sh
-CSRF=$(awk '$6=="msid_csrf"{print $7}' cookies.txt)
-curl -i -b cookies.txt -X PATCH http://localhost:3000/api/v1/surveys/22222222-0000-4000-8000-a00000000006 \
+JAR=$(mktemp)
+LOC=$(curl -s -D - -o /dev/null -c "$JAR" "http://localhost:5173/api/v1/auth/login" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+STATE=${LOC##*state=}
+curl -s -o /dev/null -b "$JAR" -c "$JAR" "http://localhost:5173/api/v1/auth/callback?code=11111111-0000-4000-8000-a00000000001&state=$STATE"
+CSRF=$(awk '$6=="msid_csrf"{print $7}' "$JAR")
+curl -i -b "$JAR" -X PATCH http://localhost:5173/api/v1/surveys/22222222-0000-4000-8000-a00000000006 \
   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" -d '{"name":"x"}'
 ```
 
@@ -174,7 +179,8 @@ The first command starts the replica and the mock sign-in server and loads the f
 `azure-legacy` provider with the mock OIDC server. Open <http://localhost:5173/> and sign in as
 **owner** (type `owner` in the form).
 
-Repeat parts 1, 2, 3, 5 and 6 with a **Create a Survey** survey. After each action, look at the stored
+Repeat parts 1, 2, 3, 5 and 6 with a **Create a Survey** survey (it is named **New Survey N**, not
+necessarily 1, on a replica that earlier runs wrote to). After each action, look at the stored
 data in another terminal:
 
 ```sh
