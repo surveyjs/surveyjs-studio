@@ -52,7 +52,7 @@ jobs:
       - name: Conformance tests (in-memory)
         run: pnpm test:conformance
 
-      - name: Start the legacy replica (Azurite and SQL Server)
+      - name: Start the legacy replica and the mock OIDC server (Azurite, SQL Server, mock-oauth2-server)
         run: pnpm demo:azurite:up
 
       - name: Provider suite (Azurite)
@@ -66,6 +66,9 @@ jobs:
 
       - name: End-to-end tests
         run: pnpm e2e
+
+      - name: End-to-end tests (Azurite mode)
+        run: pnpm e2e:azurite
 
       - name: Upload Playwright report
         if: failure()

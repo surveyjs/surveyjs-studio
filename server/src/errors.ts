@@ -13,6 +13,8 @@ export interface AppErrorInit {
   title: string;
   detail?: string;
   errors?: ProblemFieldError[];
+  /** The underlying failure, for the server log only; never part of the Problem. */
+  cause?: unknown;
 }
 
 export class AppError extends Error {
@@ -23,7 +25,7 @@ export class AppError extends Error {
   readonly errors?: ProblemFieldError[];
 
   constructor(init: AppErrorInit) {
-    super(init.detail ?? init.title);
+    super(init.detail ?? init.title, init.cause === undefined ? undefined : { cause: init.cause });
     this.name = "AppError";
     this.code = init.code;
     this.status = init.status;

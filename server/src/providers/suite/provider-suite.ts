@@ -159,6 +159,16 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("notices", () => {
+      // ACCOUNT_NOTICES is `none` unless the factory sets it; the licence cases have their own suite.
+      it.each(fixtureUsers.map((user) => [user.email, user.id] as const))(
+        "gives %s no notices by default",
+        async (_email, id) => {
+          expect(await providers.notices.noticesFor(id)).toEqual([]);
+        },
+      );
+    });
+
     describe("lifecycle", () => {
       it("ready resolves true", async () => {
         expect(await providers.ready()).toBe(true);

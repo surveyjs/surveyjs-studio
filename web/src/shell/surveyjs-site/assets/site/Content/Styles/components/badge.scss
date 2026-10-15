@@ -1,0 +1,116 @@
+.v2-class---badge,
+.v2-class---markdown-content-page__in-progress-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: $Secondary--Secondary-15;
+    border-radius: size(0.5);
+    @include No-Spacing--X-Small-Bold;
+    color: $Secondary--Secondary;
+    padding: size(0.25) size(0.75);
+    margin-left: size(2);
+    white-space: nowrap;
+    text-transform: none;
+}
+
+.v2-class---badge--compact {
+    padding: 1px 4px 3px 4px;
+    font-size: 14px;
+    margin-left: 0;
+    margin: -2px 0;
+    align-self: flex-start;
+    border-radius: 3px;
+}
+
+.v2-class---badge--all-products,
+.v2-class---badge--planned,
+.v2-class---markdown-content-page__in-progress-label--all-products,
+.v2-class---markdown-content-page__in-progress-label--planned {
+    color: $General--Forecolor-75;
+    background: $General--Backcolor-Gray;
+}
+
+.v2-class---badge--form-library,
+.v2-class---markdown-content-page__in-progress-label--form-library {
+    color: $Secondary--Secondary;
+    background: $Secondary--Secondary-10;
+}
+
+.v2-class---badge--survey-creator,
+.v2-class---badge--released,
+.v2-class---markdown-content-page__in-progress-label--survey-creator,
+.v2-class---markdown-content-page__in-progress-label--released {
+    color: $Primary--Primary;
+    background: $Primary--Primary-10;
+}
+
+.v2-class---badge--dashboard,
+.v2-class---badge--in-progress,
+.v2-class---markdown-content-page__in-progress-label--dashboard,
+.v2-class---markdown-content-page__in-progress-label--in-progress {
+    color: $Special--Blue;
+    background: $Special--Blue-10;
+}
+
+.v2-class---badge--pdf-generator,
+.v2-class---markdown-content-page__in-progress-label--pdf-generator {
+    color: $Special--Red;
+    background: $Special--Red-10;
+}
+
+.v2-class---badge--new {
+    background: $Primary--Primary-15;
+    color: $Primary--Primary;
+}
+
+.v2-class---badge--upd {
+    background: $Secondary--Secondary-15;
+    color: $Secondary--Secondary;
+}
+
+.v2-class---badge--primary {
+    background: $Primary--Primary;
+    color: $Primary--Forecolor;
+}
+
+.v2-class---badge--primary.v2-class---badge--blue {
+    background: $Special--Blue;
+    color: $Special--Forecolor;
+}
+
+.v2-class---badge--highlight {
+    position: relative;
+    overflow: hidden;
+}
+
+.v2-class---badge--highlight::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -50px;
+    z-index: 1;
+    width: 50px;
+    pointer-events: none;
+    background: linear-gradient(292deg, rgba(255, 255, 255, 0) 29.2%, rgba(255, 255, 255, 0.8) 49.55%, rgba(255, 255, 255, 0) 69.9%);
+    opacity: 0.8;
+    animation: v2-keyframes---badge-shine-sweep 3s linear infinite;
+}
+
+@keyframes v2-keyframes---badge-shine-sweep {
+    0% {
+        left: -50px;
+    }
+
+    33.3333333333%,
+    100% {
+        left: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .v2-class---badge--highlight::after {
+        animation: none;
+        display: none;
+    }
+}

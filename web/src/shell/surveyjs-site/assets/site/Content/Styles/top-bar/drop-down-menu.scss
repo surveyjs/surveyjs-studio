@@ -1,0 +1,186 @@
+﻿.v2-class---drop-down-menu {
+    display: block;
+    position: absolute;
+    left: size(-1);
+    top: calc(100% + 4px);
+    background: $General--Backcolor;
+    border: 1px solid $General--Line-10-proc;
+    -webkit-background-clip: padding-box; /* for Safari */ /* see https://stackoverflow.com/questions/4062001/can-you-set-a-border-opacity-in-css*/
+    background-clip: padding-box; /* for IE9+, Firefox 4+, Opera, Chrome */
+    @include Shadows--Large;
+    min-width: size(32);
+    border-radius: size(1);
+}
+
+.v2-class---drop-down-menu--no-offset {
+    left: 0;
+    top: 100%;
+}
+
+.v2-class---drop-down-menu--no-offset-reverse {
+    left: unset;
+    top: unset;
+    right: 0;
+    bottom: 100%;
+    @include media(Mobile) {
+        left: 0;
+        right: unset;
+    }
+}
+
+.v2-class---drop-down-menu--account {
+    min-width: size(24);
+    left: size(0.25);
+
+    .v2-class---drop-down-menu-item__link {
+        min-height: size(5);
+        padding: size(1) size(2);
+        box-sizing: border-box;
+    }
+
+    @include media(Mobile) {
+        left: initial;
+        right: size(-2);
+    }
+}
+
+.v2-class---drop-down-menu--popup-menu {
+    z-index: -1;
+    opacity: 0;
+    overflow: hidden;
+    width: 0;
+    height: 0;
+    border-width: 0;
+    // animation: dropDownFadeOutAnimantion 100ms linear;
+
+    &.v2-class---drop-down-fadein {
+        animation: dropDownFadeInAnimantion 100ms;
+        animation-timing-function: linear;
+    }
+
+
+    &.v2-class---drop-down-fadeout {
+        animation: dropDownFadeOutAnimantion 100ms;
+        animation-timing-function: linear;
+    }
+}
+
+@keyframes dropDownFadeInAnimantion {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes dropDownFadeOutAnimantion {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+.v2-class---drop-down-menu--mobile-menu {
+    display: none;
+    position: fixed;
+    right: 0;
+    top: 0;
+    left: initial;
+    bottom: 0;
+    min-width: size(45);
+    z-index: 2000;
+    overflow: auto;
+    border-radius: 0;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+
+    @include media(Mobile) {
+        left: 0;
+        min-width: 100%;
+    }
+
+    .v2-class---drop-down-menu-item__separator {
+        display: none;
+    }
+
+    .v2-class---drop-down-menu-item--features {
+        display: none;
+    }
+
+    .v2-class---drop-down-menu__group-list--demos .v2-class---drop-down-menu-item__separator {
+        display: block;
+    }
+}
+
+.v2-class---drop-down-menu__list {
+    display: flex;
+    flex-direction: column;
+    padding: size(2);
+}
+
+.v2-class---drop-down-menu__list--groups {
+    flex-direction: row;
+    gap: size(4);
+}
+
+.v2-class---drop-down-menu__list--columns {
+    flex-direction: row;
+    align-items: stretch;
+    padding: 0;
+}
+
+.v2-class---drop-down-menu__column {
+    display: flex;
+    flex-direction: column;
+    padding: size(2);
+    box-sizing: border-box;
+}
+
+.v2-class---drop-down-menu__column--new-demos {
+    min-width: size(38);
+    border-left: 1px solid $General--Line;
+
+    .v2-class---drop-down-menu-item__link {
+        min-height: size(6);
+        box-sizing: border-box;
+    }
+}
+
+.v2-class---drop-down-menu__list--mobile {
+    flex-direction: column;
+    border-radius: 0;
+    padding-top: size(2 + 4); //additional padding for absolute group-header
+    padding-bottom: size(8);
+    background-color: $General--Backcolor;
+}
+
+.v2-class---drop-down-menu__list--account-mobile {
+    .v2-class---drop-down-menu-item__separator {
+        display: block;
+    }
+}
+
+.v2-class---drop-down-menu__list--main-mobile {
+    display: flex;
+}
+
+.v2-class---drop-down-menu__group-header--mobile {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: size(4);
+    top: size(2);
+    cursor: pointer;
+}
+
+.v2-class---drop-down-menu__group-list {
+    display: flex;
+    flex-direction: column;
+    min-width: size(35)
+}

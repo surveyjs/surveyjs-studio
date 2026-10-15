@@ -14,7 +14,7 @@ Server), a provider test suite, and an inspector command. There are still no sur
 You need what [the Step 1 demo](step-01.md#before-you-start) lists (Node.js 24.21.0, pnpm 12.11.2),
 and **Docker** with Compose, running. Run `pnpm install` once.
 
-Ports 10000, 10002 and 14333 on 127.0.0.1 must be free.
+Ports 10000, 10002 and 14333 on 127.0.0.1 must be free (Step 3 adds 18080 for the mock sign-in server).
 
 ## 1. Start the replica
 
@@ -22,12 +22,13 @@ Ports 10000, 10002 and 14333 on 127.0.0.1 must be free.
 pnpm demo:azurite:up
 ```
 
-Expected: Docker creates two containers, `my-surveys-legacy-azurite-1` and
-`my-surveys-legacy-legacy-sql-1`, and waits until both are `Healthy` (SQL Server takes up to a
-minute). Then the fixture loader prints its summary:
+Expected: Docker creates the containers `my-surveys-legacy-azurite-1` and
+`my-surveys-legacy-legacy-sql-1` (Step 3 adds `my-surveys-legacy-mock-oidc-1`, the mock sign-in
+server), and waits until all are `Healthy` (SQL Server takes up to a minute). Then the fixture loader
+prints its summary:
 
 ```text
-SQL: Users=5, Surveys=8, Organizations=2, OrganizationUsers=5
+SQL: Users=5, Surveys=8, Organizations=2, OrganizationUsers=5, UserLicenses=5, LicenseTransfers=1
 Tables: 6 tables, 22 entities
 Blobs: 12 append blobs in 7 containers
 Files: skipped 2 fixture files (Azure Files is not emulated by Azurite)
@@ -197,7 +198,7 @@ the next `pnpm demo:azurite:up` starts clean.
 
 ## What is not in Step 2
 
-- End-to-end tests on Azurite wait for Step 3 (they need the mock OIDC server).
+- End-to-end tests on Azurite: done in Step 3, with the mock OIDC server ([demo](step-03.md#6-tests)).
 - The test with more than 1,000 responses waits for Step 9.
 - Writes to any store: the legacy provider is read-only by design.
 - Azure Files: not emulated, so legacy file reads are not tested.

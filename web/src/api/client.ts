@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 import createQueryClient from "openapi-react-query";
 import type { components, paths } from "@my-surveys/contract/types";
+import { csrfMiddleware } from "./csrf";
 
 export type Problem = components["schemas"]["Problem"];
 
@@ -40,5 +41,13 @@ export const client = createClient<paths>({
   baseUrl: import.meta.env.VITE_API_BASE_URL ?? "/api/v1",
   credentials: "include",
 });
+
+client.use(csrfMiddleware);
+
+/** Query retry policy: a 401 is an answer, not a glitch, so it fails fast; anything else retries up to 3 times. */
+export function shouldRetryQuery(failureCount: number, error: Error): boolean {
+  if (error instanceof ApiError && error.problem.status === 401) return false;
+  return failureCount < 3;
+}
 
 export const $api = createQueryClient(client);

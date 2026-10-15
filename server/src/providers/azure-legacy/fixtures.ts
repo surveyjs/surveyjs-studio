@@ -18,6 +18,16 @@ import type {
  * replica loader.
  */
 
+/** The SQL tables of the fixtures (`sql/<Table>.json`), in an order that satisfies the foreign keys. */
+export const LEGACY_SQL_TABLES = [
+  "Users",
+  "Surveys",
+  "Organizations",
+  "OrganizationUsers",
+  "UserLicenses",
+  "LicenseTransfers",
+] as const;
+
 export const DEFAULT_FIXTURE_DIR = fileURLToPath(
   new URL("../../../fixtures/legacy/", import.meta.url),
 );
@@ -201,7 +211,7 @@ export async function readLegacyFixtures(
   dir: string = DEFAULT_FIXTURE_DIR,
 ): Promise<LegacyFixtures> {
   const rawSqlRows: Record<string, Record<string, unknown>[]> = {};
-  for (const table of ["Users", "Surveys", "Organizations", "OrganizationUsers"]) {
+  for (const table of LEGACY_SQL_TABLES) {
     const path = join(dir, "sql", `${table}.json`);
     rawSqlRows[table] = (await listDir(join(dir, "sql"))).includes(`${table}.json`)
       ? await readJsonArray<Record<string, unknown>>(path)

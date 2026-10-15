@@ -1,0 +1,63 @@
+import type { ReactNode } from "react";
+import type { ShellProps } from "./types";
+
+/** Minimal shell: app name, links, the user with a Sign Out button, notices, main, footer. */
+export function PlainShell({
+  user,
+  notices,
+  links,
+  onSignOut,
+  signingOut,
+  signOutError,
+  children,
+}: ShellProps) {
+  return (
+    <ShellFrame>
+      <header>
+        <strong>My Surveys</strong>
+        {Object.keys(links).length > 0 && (
+          <nav>
+            {Object.entries(links).map(([name, href]) => (
+              <a key={name} href={href}>
+                {name}
+              </a>
+            ))}
+          </nav>
+        )}
+        <span>{user.displayName}</span>
+        <button type="button" onClick={onSignOut} disabled={signingOut}>
+          Sign Out
+        </button>
+      </header>
+      {signOutError && <div role="alert">{signOutError}</div>}
+      {notices.map((notice) => (
+        <div key={notice.code} role="status">
+          {notice.message}
+          {notice.actionUrl && <a href={notice.actionUrl}>{notice.actionLabel ?? "Learn more"}</a>}
+        </div>
+      ))}
+      <main>{children}</main>
+    </ShellFrame>
+  );
+}
+
+/** Used when no user is known (the error state): the same frame without account controls. */
+export function AnonymousShell({ children }: { children: ReactNode }) {
+  return (
+    <ShellFrame>
+      <header>
+        <strong>My Surveys</strong>
+      </header>
+      <main>{children}</main>
+    </ShellFrame>
+  );
+}
+
+function ShellFrame({ children }: { children: ReactNode }) {
+  return (
+    <>
+      {children}
+      <footer>My Surveys</footer>
+    </>
+  );
+}

@@ -3,7 +3,7 @@ import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router";
-import { appConfig, configHandler, server } from "./test/server";
+import { appConfig, configHandler, meHandler, server } from "./test/server";
 
 const setLicenseKey = vi.fn();
 vi.mock("survey-core", () => ({ setLicenseKey }));
@@ -20,7 +20,7 @@ function renderApp() {
 
 describe("SurveyJS licence key", () => {
   it("is passed from /config to survey-core without blocking the page", async () => {
-    server.use(configHandler({ ...appConfig, surveyjsLicenseKey: "key-from-config" }));
+    server.use(meHandler(), configHandler({ ...appConfig, surveyjsLicenseKey: "key-from-config" }));
 
     renderApp();
 

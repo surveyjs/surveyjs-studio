@@ -1,0 +1,45 @@
+﻿@mixin media($screens...) {
+    @each $screen in $screens {
+        @if ($screen == Large-Desktop ) {
+            @media (min-width: 1600px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Desktop ) {
+            @media (min-width: 1200px) and (max-width: 1600px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Desktop-2 ) {
+            @media (min-width: 1200px) and (max-width: 1400px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Desktop-1 ) {
+            @media (min-width: 1400px) and (max-width: 1600px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Tablet ) {
+            @media (min-width: 904px) and (max-width: 1200px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Vertical-Tablet ) {
+            @media (min-width: 600px) and (max-width: 904px) {
+                @content;
+            }
+        }
+
+        @if ($screen == Mobile ) {
+            @media (max-width: 600px) {
+                @content;
+            }
+        }
+    }
+}

@@ -1,0 +1,175 @@
+﻿.v2-class---circle-icon {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.v2-class---circle-icon--x-large {
+    height: size(20);
+    width: size(20);
+    border-radius: size(20);
+}
+
+.v2-class---circle-icon__icon--x-large {
+    width: size(8);
+    height: size(8);
+}
+
+.v2-class---circle-icon--large {
+    height: size(16);
+    width: size(16);
+    border-radius: size(16);
+}
+.v2-class---circle-icon__icon--large {
+    width: size(6);
+    height: size(6);
+}
+
+.v2-class---circle-icon--medium {
+    height: size(12);
+    width: size(12);
+    border-radius: size(12);
+}
+.v2-class---circle-icon__icon--medium {
+    width: size(5);
+    height: size(5);
+}
+
+.v2-class---circle-icon--small {
+    height: size(4);
+    width: size(4);
+    border-radius: size(4);
+}
+.v2-class---circle-icon__icon--small {
+/*    width: size(2);
+    height: size(2);*/
+}
+
+.v2-class---circle-icon--primary {
+    background-color: $Primary--Primary-15;
+    svg {
+        fill: $Primary--Primary;
+    }
+}
+.v2-class---circle-icon--secondary {
+    background-color: $Secondary--Secondary-15;
+    svg {
+        fill: $Secondary--Secondary;
+    }
+}
+.v2-class---circle-icon--simple {
+    background-color: $General--Backcolor-Gray;
+    svg {
+        fill: $General--Forecolor-50;
+    }
+}
+
+.v2-class---circle-icon--gray {
+    background-color: #EFEFEF;
+
+    svg path {
+        fill: $General--Forecolor-75;
+    }
+}
+
+.v2-class---circle-icon--primary-light {
+    background-color: $Primary--Primary-15;
+    svg {
+        fill: $Primary--Primary;
+    }
+}
+
+.v2-class---circle-icon--secondary-light {
+    background-color: $Secondary--Secondary-15;
+    svg {
+        fill: $Secondary--Secondary;
+    }
+}
+
+.v2-class---circle-icon--blue-light {
+    background-color: $Special--Blue-15;
+    svg {
+        fill: $Special--Blue;
+    }
+}
+
+.v2-class---circle-icon--red-light {
+    background-color: $Special--Red-15;
+
+    svg {
+        fill: $Special--Red;
+    }
+}
+
+.v2-class---circle-icon__icon {
+    display: flex;
+}
+
+.v2-class---circle-icon--image-background {
+    background-color: initial;
+
+    &.v2-class---circle-icon--primary {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Primary--Primary-15;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--secondary {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Secondary--Secondary-15;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--simple {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $General--Backcolor-Gray;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--primary-light {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Primary--Primary-5-proc;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--secondary-light {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Secondary--Secondary-5-proc;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--blue-light {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Special--Blue-5-proc;
+            }
+        }
+    }
+
+    &.v2-class---circle-icon--red-light {
+        .v2-class---circle-icon__image-background {
+            path {
+                fill: $Special--Red-4-proc;
+            }
+        }
+    }
+}
+
+.v2-class---circle-icon__image-background {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}

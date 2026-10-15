@@ -1,0 +1,37 @@
+// The surveyjs.io design-system styles the shell needs: the partials of the site's
+// `the site's source` that style the top bar, the menus, the footer, the cookie
+// banner and the licence dialogs, imported in the site's order. The partials under `site/` are
+// copies; see README.md for their origin and the one change.
+
+@import "site/Content/Styles/fonts.scss";
+@import "site/Content/Styles/sizes.scss";
+@import "site/Content/Styles/media-breakpoints.scss";
+
+@import "site/Content/Styles/text-styles.scss";
+@import "site/Content/Styles/color-styles.scss";
+@import "site/Content/Styles/effect-styles.scss";
+
+@import "site/Content/Styles/layout-styles.scss";
+@import "site/Content/Styles/common-styles.scss";
+@import "site/Content/Styles/mobile-menu.scss";
+@import "site/Content/Styles/cookies-popup.scss";
+
+@import "site/Content/Styles/components/popups.scss";
+@import "site/Content/Styles/components/logo.scss";
+@import "site/Content/Styles/components/button.scss";
+@import "site/Content/Styles/components/circle-icon.scss";
+@import "site/Content/Styles/components/icon.scss";
+@import "site/Content/Styles/components/paragraph.scss";
+@import "site/Content/Styles/components/expand-collapse-button.scss";
+@import "site/Content/Styles/components/faq-question.scss";
+@import "site/Content/Styles/components/badge.scss";
+@import "site/Content/Styles/components/forms/checkbox.scss";
+
+@import "site/Content/Styles/top-bar/top-bar.scss";
+@import "site/Content/Styles/top-bar/menu.scss";
+@import "site/Content/Styles/top-bar/top-menu-item.scss";
+@import "site/Content/Styles/top-bar/drop-down-menu.scss";
+@import "site/Content/Styles/components/drop-down-menu-item.scss";
+
+@import "site/Content/Styles/footer/footer.scss";
+@import "site/Content/Styles/footer/footer-link-group-item.scss";

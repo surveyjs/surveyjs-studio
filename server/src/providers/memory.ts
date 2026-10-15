@@ -1,4 +1,6 @@
+import type { AccountNoticesSetting } from "../config.js";
 import type { ProjectMembership, SurveyOwner, SurveyRecord, User } from "../domain/types.js";
+import { demoAccountNotices } from "../notices/account-notices.js";
 import { projectListOrder, surveyListOrder } from "./ordering.js";
 import type { ProviderSet } from "./types.js";
 
@@ -6,6 +8,11 @@ export interface MemorySeed {
   users: User[];
   surveys: SurveyRecord[];
   memberships: { userId: string; membership: ProjectMembership }[];
+}
+
+export interface MemoryOptions {
+  /** `ACCOUNT_NOTICES`; default `none`. Only the demo settings: the memory store has no licences. */
+  readonly accountNotices?: AccountNoticesSetting;
 }
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
@@ -26,7 +33,12 @@ const copyMembership = (m: ProjectMembership): ProjectMembership => ({
 });
 
 /** In-memory provider, empty unless a seed is given. Returns copies, so callers cannot change the store. */
-export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
+export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions = {}): ProviderSet {
+  const accountNotices = options.accountNotices ?? "none";
+  if (accountNotices === "surveyjs-licenses") {
+    throw new Error("ACCOUNT_NOTICES=surveyjs-licenses needs STORAGE_PROVIDER=azure-legacy");
+  }
+  const notices = demoAccountNotices(accountNotices);
   const surveys = (seed?.surveys ?? []).map(copySurvey);
   const users = (seed?.users ?? []).map(copyUser);
   const memberships = (seed?.memberships ?? []).map((m) => ({
@@ -69,6 +81,7 @@ export function createMemoryProviders(seed?: MemorySeed): ProviderSet {
             .sort(projectListOrder),
         ),
     },
+    notices,
     ready: () => Promise.resolve(true),
     close: () => Promise.resolve(),
   };

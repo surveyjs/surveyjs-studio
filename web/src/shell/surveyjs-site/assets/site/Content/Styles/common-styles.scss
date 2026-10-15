@@ -1,0 +1,328 @@
+﻿html {
+    scroll-behavior: smooth;
+}
+
+body {
+    min-width: initial;
+    position: relative;
+    line-height: initial;
+    min-height: 100vh;
+    min-height: calc(var(--surveyjs-io-vh, 1vh) * 100);
+    display: flex;
+    flex-direction: column;
+
+    a {
+        text-decoration: none;
+    }
+}
+
+main {
+    flex-grow: 1;
+}
+
+p {
+    margin: 0;
+}
+
+/* Reset list markers only on site chrome / UI lists.
+   Surveys, Creator, docs, and article HTML keep UA list styles.
+   (a site issue) */
+.v2-class---top-bar-menu,
+.v2-class---drop-down-menu__list,
+.v2-class---drop-down-menu__column,
+.v2-class---drop-down-menu__group-list,
+.v2-class---footer__category,
+.v2-class---footer__top-products-links,
+.v2-class---footer__social-links,
+.v2-class---sidebar-list,
+.v2-class---anchor-menu__list,
+.v2-class---demo-tabs,
+.v2-class---demo-footer__tabs,
+.v2-class---theme-settings__themes,
+.v2-class---pricing-pack-details__list,
+.v2-class---pricing-product-details,
+.tabs,
+.tabs__wrapper {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+
+dl, dt, dd {
+    margin-block-start: 0;
+    margin-block-end: 0;
+    margin-inline-start: 0;
+}
+
+strong, b {
+    @include Article--Paragraphs--Small-Bold;
+    //color: $General--Forecolor;
+}
+
+.v2-class---is-mac {
+    strong, b, .v2-class---paragraph--bold, .v2-class---overview-featured-demo-item__text {
+        font-size: 15.4px;
+    }
+}
+
+hr {
+    height: 0;
+    border: none;
+    border-top: 1px solid $General--Line-10-proc;
+    margin: size(2) 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    line-height: normal;
+}
+
+@include media(Large-Desktop) {
+    .v2-class---br--hide-ld {
+        display: none;
+    }
+}
+
+@include media(Desktop) {
+    .v2-class---br--hide-d {
+        display: none;
+    }
+}
+
+@include media(Tablet) {
+    .v2-class---br--hide-t {
+        display: none;
+    }
+}
+
+@include media(Vertical-Tablet) {
+    .v2-class---br--hide-vt {
+        display: none;
+    }
+}
+
+@include media(Mobile) {
+    .v2-class---br--hide-m {
+        display: none;
+    }
+}
+
+.v2-class---banner {
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+    box-sizing: border-box;
+    z-index: 1040;
+    display: none;
+}
+
+.v2-class---banner.v2-class---banner--cookies {
+    z-index: 100500;
+}
+
+footer {
+    clear: both;
+}
+
+@mixin custom-scrollbar {
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    & {
+
+        @-moz-document url-prefix() {
+            scrollbar-width: thin;
+            scrollbar-color: $General--Line transparent;
+        }
+
+        &::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+            background-color: transparent;
+        }
+
+        &::-webkit-scrollbar-thumb {
+            border: 4px solid rgba(0, 0, 0, 0);
+            background-clip: padding-box;
+            border-radius: 32px;
+            background-color: transparent;
+        }
+
+        &::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        &:hover::-webkit-scrollbar-thumb {
+            background-color: $General--Line;
+            &:hover {
+                border: 2px solid rgba(0, 0, 0, 0);
+                background-color: $General--Forecolor-50;
+            }
+        }
+    }
+}
+
+.running-survey {
+    position: relative;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.running-survey__header {
+    text-align: center;
+    font-family: 'Open Sans', sans-serif;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    color: white;
+    background-color: #FF9814;
+
+    div {
+        max-width: 970px;
+        margin: auto;
+    }
+
+    padding: 16px 128px;
+
+    @media screen and (max-width: 1350px) {
+        padding: 16px 24px;
+    }
+}
+
+.running-survey__container {
+    height: 100%;
+
+    &:not(:first-child) {
+        overflow: auto;
+    }
+}
+
+$mobile-version-width: 850px;
+$main-color: #1ab394;
+$text-color-inverse: #fff;
+$text-color: #404040;
+$content-max-width: 1170px;
+$border-color: #e7e7e7;
+$font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+@mixin mobile-block {
+    @media(max-width: $mobile-version-width) {
+        &:first-child {
+            margin-top: 0;
+        }
+
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 100%;
+        margin: 0;
+        padding: 0 16px;
+        display: block;
+    }
+}
+
+.title {
+    font-family: 'Raleway', sans-serif;
+    font-weight: bold;
+    font-size: 22px;
+    color: $text-color;
+
+    @media(max-width: $mobile-version-width) {
+        font-size: 20px;
+    }
+
+    @include mobile-block;
+}
+
+.title--large {
+    font-size: 40px;
+
+    @media(max-width: $mobile-version-width) {
+        font-size: 30px;
+        word-break: break-word;
+    }
+}
+
+.title--small {
+    font-size: 20px;
+
+    @media(max-width: $mobile-version-width) {
+        font-size: 18px;
+    }
+}
+
+.action-link {
+    font-family: $font-family;
+    color: $text-color;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+@media only screen and (max-width: 600px) {
+    .documentation-page {
+        .action-link {
+            display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    }
+}
+
+.action-link:hover {
+    color: $main-color;
+}
+
+.source-code {
+    &[class*="language-"] {
+        background-color: $text-color-inverse;
+        border-radius: 0;
+        font-size: 14px;
+        border: solid 1px $border-color;
+    }
+}
+
+html {
+    scroll-padding-top: 80px;
+}
+
+body {
+    font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.56;
+    color: $text-color;
+    word-spacing: -1px;
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    .ace_editor, .ace_editor * {
+        word-spacing: normal;
+    }
+
+    @media(max-width: $mobile-version-width) {
+        position: relative;
+        overflow: auto;
+    }
+
+    a {
+        text-decoration: none;
+    }
+
+    .content-fix-width-center {
+        max-width: $content-max-width;
+        margin: auto;
+        padding: 0 32px;
+        width: 100%;
+        position: relative;
+
+        @media(max-width: $mobile-version-width) {
+            padding: 0;
+        }
+    }
+
+    h1, h2, h3, h4, h5 {
+        margin: 0;
+        line-height: normal;
+    }
+}

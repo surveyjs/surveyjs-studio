@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+import { validateReturnTo } from "./return-to.js";
+
+const BASE = "https://surveys.example.com";
+
+describe("validateReturnTo", () => {
+  it("defaults to / when absent", () => {
+    expect(validateReturnTo(undefined, BASE)).toBe("/");
+  });
+
+  it.each(["/", "/a", "/a?b=c#d", "/surveys/1/edit?x=1&y=2", "/a//b", "/a%2F%2Fb", "/?next=//x"])(
+    "accepts %s",
+    (value) => {
+      expect(validateReturnTo(value, BASE)).toBe(value);
+    },
+  );
+
+  it.each([
+    ["empty", ""],
+    ["relative", "a/b"],
+    ["protocol-relative", "//evil.com"],
+    ["protocol-relative path", "//evil.com/a"],
+    ["backslash", "/\\evil.com"],
+    ["absolute URL", "https://evil.com"],
+    ["same-origin absolute URL", `${BASE}/a`],
+    ["javascript scheme", "javascript:alert(1)"],
+    ["CRLF", "/a\r\nSet-Cookie: x=1"],
+    ["raw newline", "/a\nb"],
+    ["tab", "/\t/evil.com"],
+    ["NUL", "/a\u0000b"],
+    ["DEL", "/a\u007fb"],
+    ["C1 control", "/a\u0085b"],
+    ["leading space", " /a"],
+    ["over-long", `/${"a".repeat(2048)}`],
+    ["dot segment to a protocol-relative path", "/.//evil.com"],
+  ])("rejects %s", (_name, value) => {
+    expect(validateReturnTo(value, BASE)).toBeNull();
+  });
+
+  it("accepts a path of exactly 2048 characters", () => {
+    const value = `/${"a".repeat(2047)}`;
+    expect(validateReturnTo(value, BASE)).toBe(value);
+  });
+
+  it("returns the normalised, percent-encoded path", () => {
+    expect(validateReturnTo("/€", BASE)).toBe("/%E2%82%AC");
+    expect(validateReturnTo("/a b?q=x y#h z", BASE)).toBe("/a%20b?q=x%20y#h%20z");
+    expect(validateReturnTo("/a/../b", BASE)).toBe("/b");
+  });
+
+  it("accepts percent-encoded control characters: they stay inert in the path", () => {
+    expect(validateReturnTo("/%0d%0a", BASE)).toBe("/%0d%0a");
+  });
+
+  it("resolves against a base URL with a port or a path", () => {
+    expect(validateReturnTo("/a", "http://localhost:5173")).toBe("/a");
+    expect(validateReturnTo("/a", "https://a.example/app/")).toBe("/a");
+  });
+});

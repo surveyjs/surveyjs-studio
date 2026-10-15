@@ -29,6 +29,35 @@ describe("azure-legacy provider without a reachable store", () => {
     },
   );
 
+  it.each(["", "not-a-guid", "' OR 1=1 --"])(
+    "answers licence notices for a non-GUID id %j without a query",
+    async (id) => {
+      const licences = createAzureLegacyProviders(unreachable, {
+        accountNotices: "surveyjs-licenses",
+      });
+      try {
+        expect(await licences.notices.noticesFor(id)).toEqual([]);
+      } finally {
+        await licences.close();
+      }
+    },
+  );
+
+  it("serves a demo ACCOUNT_NOTICES setting without a query", async () => {
+    const demo = createAzureLegacyProviders(unreachable, {
+      accountNotices: "license-expires-soon",
+    });
+    try {
+      const notices = await demo.notices.noticesFor("11111111-0000-4000-8000-a00000000001");
+      expect(notices.map((notice) => notice.code)).toEqual(["license-expires-soon"]);
+      expect(await providers.notices.noticesFor("11111111-0000-4000-8000-a00000000001")).toEqual(
+        [],
+      );
+    } finally {
+      await demo.close();
+    }
+  });
+
   it("answers an empty or over-long email without a query", async () => {
     expect(await providers.directory.findUserByEmail("")).toBeNull();
     expect(await providers.directory.findUserByEmail(`${"a".repeat(200)}@example.com`)).toBeNull();

@@ -1,0 +1,47 @@
+/* Glue for what the copied surveyjs.io styles do not cover. Colours are the site's palette
+   (color-styles.scss). */
+
+/* The user's avatar fills the site's 16 px account icon box. */
+.avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* A failed sign-out, under the top bar (the site has no such message). */
+.signOutError {
+  margin: 0;
+  padding: 12px 32px;
+  background-color: #fbdae2; /* $Special--Red-15 */
+  color: #161616; /* $General--Forecolor */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* The cookie settings popup's close control is a <button>; drop the browser's button look. */
+.closeButton {
+  border: none;
+  padding: 0;
+  background-color: transparent;
+}
+
+/* A drop-down opened from the keyboard (DropDownTopMenuItem) gets the site's :hover styles
+   (top-bar/top-menu-item.scss, `.v2-class---top-menu-item--drop-down:hover`), so mouse users see
+   no change. The extra class outranks the site's closed state (0,2,0). */
+:global(.v2-class---top-menu-item--drop-down).dropDownOpen {
+  color: #8a8a8a; /* $General--Forecolor-50 */
+}
+
+:global(.v2-class---top-menu-item--drop-down).dropDownOpen
+  :global(.v2-class---drop-down-menu--popup-menu) {
+  z-index: 2000;
+  opacity: 1;
+  max-height: initial;
+  display: block;
+  border: 1px solid rgba(0, 0, 0, 0.1); /* $General--Line-10-proc */
+  box-shadow: 0px 32px 64px rgba(0, 0, 0, 0.07); /* Shadows--Large */
+}

@@ -102,6 +102,7 @@ paths:
           headers:
             Location: { $ref: '#/components/headers/Location' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /auth/callback:
     get:
       tags: [Session]
@@ -121,6 +122,12 @@ paths:
             Location: { $ref: '#/components/headers/Location' }
             Set-Cookie: { $ref: '#/components/headers/SetCookie' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: The account is blocked (`forbidden`). No session is created.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /auth/logout:
     post:
       tags: [Session]
@@ -129,9 +136,13 @@ paths:
       description: |
         Ends the local session. The response carries the identity provider's
         end-session URL; the client navigates there to sign out everywhere.
+        Works without a session too (for example after it expired), so the
+        client can still end the provider's session. With a valid session,
+        the CSRF token is required.
       security:
         - cookieAuth: []
           csrfToken: []
+        - {}
       responses:
         '200':
           description: Signed out.
@@ -142,7 +153,7 @@ paths:
                 required: [redirectUrl]
                 properties:
                   redirectUrl: { type: string, format: uri }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /auth/password/login:
     post:
       tags: [Session]
@@ -236,6 +247,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
   /projects/{projectId}:
     parameters:
@@ -822,6 +834,7 @@ paths:
       responses:
         '204': { description: Saved. }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
     delete:
@@ -835,6 +848,7 @@ paths:
       responses:
         '204': { description: Reset. }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   # ----------------------------------------------------------------- Public

@@ -60,6 +60,9 @@ export interface paths {
          * Sign out
          * @description Ends the local session. The response carries the identity provider's
          *     end-session URL; the client navigates there to sign out everywhere.
+         *     Works without a session too (for example after it expired), so the
+         *     client can still end the provider's session. With a valid session,
+         *     the CSRF token is required.
          */
         post: operations["logout"];
         delete?: never;
@@ -1186,6 +1189,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     loginCallback: {
@@ -1210,6 +1214,16 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            /** @description The account is blocked (`forbidden`). No session is created. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     logout: {
@@ -1233,7 +1247,7 @@ export interface operations {
                     };
                 };
             };
-            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     passwordLogin: {
@@ -1358,6 +1372,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
         };
     };
@@ -2065,6 +2080,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
         };
@@ -2090,6 +2106,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

@@ -30,7 +30,45 @@ export interface AppConfig {
     readonly maxResponseBytes: number;
   };
   readonly apiDocs: boolean;
+  readonly identityProvider: "surveyjs-oidc" | "dev";
+  /** Secret: never log or echo. The dev constant when `SESSION_SECRET` is unset outside production. */
+  readonly sessionSecret: string;
+  /** True when `sessionSecret` is the built-in development constant; the server logs a warning. */
+  readonly sessionSecretIsDevDefault: boolean;
+  readonly sessionMaxAgeSeconds: number;
+  /** Set only when `identityProvider` is `surveyjs-oidc` (and identity is not skipped). */
+  readonly oidc: OidcConfig | null;
+  readonly signInRateLimitPerMinute: number;
+  readonly accountNotices: AccountNoticesSetting;
+  /** Optional account links merged over the shell's built-in ones. */
+  readonly shellLinks: Readonly<Record<string, string>>;
 }
+
+export const ACCOUNT_NOTICES = [
+  "none",
+  "license-expired",
+  "license-expires-soon",
+  "surveyjs-licenses",
+] as const;
+export type AccountNoticesSetting = (typeof ACCOUNT_NOTICES)[number];
+
+export const OIDC_DISCOVERY = ["oauth-authorization-server", "openid-configuration"] as const;
+
+export interface OidcConfig {
+  readonly issuerUrl: string;
+  readonly clientId: string;
+  /** Secret: never log or echo. */
+  readonly clientSecret: string;
+  /**
+   * Which metadata the issuer publishes: RFC 8414 `oauth-authorization-server` (auth.surveyjs.io:
+   * OAuth 2.0 with UserInfo, no ID token) or OpenID Connect `openid-configuration`.
+   */
+  readonly discovery: (typeof OIDC_DISCOVERY)[number];
+  readonly scopes: string;
+}
+
+/** Fixed key for development and tests only; production requires `SESSION_SECRET`. */
+export const DEV_SESSION_SECRET = "development-only-session-secret-do-not-use-in-production";
 
 export interface LegacyConfig {
   readonly sqlConnectionString: string;
@@ -65,6 +103,47 @@ const httpUrl = z
     message: "must be an absolute http(s) URL",
   });
 
+/**
+ * The browser-visible origin. A base path is not supported in Phase 1 (the OIDC `redirect_uri`
+ * and every redirect are built on the origin), so a path, query, hash or user info is refused.
+ * Normalised to the origin, without a trailing slash.
+ */
+const publicBaseUrl = httpUrl
+  .refine(
+    (value) => {
+      if (!URL.canParse(value)) return true; // reported by httpUrl
+      const url = new URL(value);
+      return url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+    },
+    { message: "must be an origin only, such as https://surveys.example.com (no path)" },
+  )
+  .transform((value) => new URL(value).origin);
+
+/** Parsed with a plain string so a bad value never appears in a message. */
+const shellLinks = z.string().transform((value, ctx): Record<string, string> => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    ctx.addIssue({ code: "custom", message: "must be a JSON object" });
+    return z.NEVER;
+  }
+  const isObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+  const entries: [string, unknown][] = isObject
+    ? Object.entries(parsed as Record<string, unknown>)
+    : [];
+  const valid =
+    isObject &&
+    entries.every(
+      ([, url]) => typeof url === "string" && URL.canParse(url) && /^https?:\/\//.test(url),
+    );
+  if (!valid) {
+    ctx.addIssue({ code: "custom", message: "must be a JSON object of absolute http(s) URLs" });
+    return z.NEVER;
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+});
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().min(1).default("127.0.0.1"),
@@ -76,11 +155,24 @@ const envSchema = z.object({
   SURVEYJS_LICENSE_KEY: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["memory", "azure-legacy"]).default("memory"),
   MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
-  PUBLIC_BASE_URL: httpUrl.optional(),
+  PUBLIC_BASE_URL: publicBaseUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
   API_DOCS: z.enum(["true", "false"]).optional(),
+  IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
+  // Plain strings (checked in loadConfig): a schema check here could echo the secret.
+  SESSION_SECRET: z.string().optional(),
+  SESSION_MAX_AGE_SECONDS: positiveInt.default(43200),
+  OIDC_ISSUER_URL: httpUrl.optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  OIDC_DISCOVERY: z.enum(OIDC_DISCOVERY).default("oauth-authorization-server"),
+  // Default by OIDC_DISCOVERY: auth.surveyjs.io advertises only profile and email.
+  OIDC_SCOPES: z.string().min(1).optional(),
+  SIGN_IN_RATE_LIMIT: positiveInt.default(30),
+  ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
+  SHELL_LINKS: shellLinks.optional(),
   // Plain strings: a schema check here could echo a value in its message.
   LEGACY_SQL_CONNECTION_STRING: z.string().optional(),
   LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: z.string().optional(),
@@ -96,7 +188,76 @@ function withoutBlanks(
   );
 }
 
-export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfig {
+export interface LoadConfigOptions {
+  /**
+   * Skips the identity cross-field rules (dev refusal, OIDC trio, production session secret) for
+   * tools that never serve HTTP, such as the inspector CLI. The values are still parsed.
+   */
+  readonly skipIdentityRules?: boolean;
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** True for an absolute URL whose host is `localhost`, `127.0.0.1` or `[::1]`. */
+function isLoopback(url: string): boolean {
+  return URL.canParse(url) && LOOPBACK_HOSTS.has(new URL(url).hostname);
+}
+
+/**
+ * True when `PUBLIC_BASE_URL` is https or not on a loopback host: other people may reach the
+ * server, so the public development session secret is refused even if `NODE_ENV` was forgotten.
+ */
+function isServedToOthers(env: Record<string, string | undefined>): boolean {
+  const base = env.PUBLIC_BASE_URL;
+  if (base === undefined || !URL.canParse(base)) return false; // default, or reported elsewhere
+  return new URL(base).protocol === "https:" || !isLoopback(base);
+}
+
+function identityProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const provider = env.IDENTITY_PROVIDER ?? "surveyjs-oidc";
+  if (provider === "dev") {
+    if (env.NODE_ENV === "production") {
+      problems.push("IDENTITY_PROVIDER: dev is not allowed when NODE_ENV=production");
+    }
+    if (env.APP_EDITION === "hosted") {
+      problems.push("IDENTITY_PROVIDER: dev is not allowed when APP_EDITION=hosted");
+    }
+    if (env.STORAGE_PROVIDER !== undefined && env.STORAGE_PROVIDER !== "memory") {
+      problems.push("IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory");
+    }
+  } else if (provider === "surveyjs-oidc") {
+    for (const name of ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"]) {
+      if (env[name] === undefined) {
+        problems.push(`${name}: required when IDENTITY_PROVIDER=surveyjs-oidc`);
+      }
+    }
+    // Plain http only to an issuer on this machine (the mock OIDC server); never in transit.
+    const issuer = env.OIDC_ISSUER_URL;
+    if (issuer !== undefined && URL.canParse(issuer) && new URL(issuer).protocol === "http:") {
+      if (!isLoopback(issuer)) {
+        problems.push(
+          "OIDC_ISSUER_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+        );
+      }
+    }
+  }
+  if (env.SESSION_SECRET === undefined) {
+    if (env.NODE_ENV === "production") {
+      problems.push("SESSION_SECRET: required when NODE_ENV=production");
+    } else if (isServedToOthers(env)) {
+      problems.push(
+        "SESSION_SECRET: required when PUBLIC_BASE_URL is https or not on localhost, 127.0.0.1 or [::1]",
+      );
+    }
+  }
+  return problems;
+}
+
+export function loadConfig(
+  rawEnv: Record<string, string | undefined>,
+  options: LoadConfigOptions = {},
+): AppConfig {
   const env = withoutBlanks(rawEnv);
   const parsed = envSchema.safeParse(env);
   const problems: string[] = [];
@@ -116,6 +277,15 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfi
       }
     }
   }
+  if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
+    problems.push("SESSION_SECRET: must be at least 32 characters");
+  }
+  if (parsed.success && parsed.data.ACCOUNT_NOTICES === "surveyjs-licenses") {
+    if (env.STORAGE_PROVIDER !== "azure-legacy") {
+      problems.push("ACCOUNT_NOTICES: surveyjs-licenses requires STORAGE_PROVIDER=azure-legacy");
+    }
+  }
+  if (options.skipIdentityRules !== true) problems.push(...identityProblems(env));
   if (!parsed.success || problems.length > 0) {
     const lines = problems.map((p) => `  - ${p}`).join("\n");
     throw new ConfigError(`Invalid configuration:\n${lines}`);
@@ -147,5 +317,29 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): AppConfi
       maxResponseBytes: e.LIMIT_MAX_RESPONSE_BYTES,
     }),
     apiDocs: e.API_DOCS === undefined ? e.NODE_ENV !== "production" : e.API_DOCS === "true",
+    identityProvider: e.IDENTITY_PROVIDER,
+    sessionSecret: e.SESSION_SECRET ?? DEV_SESSION_SECRET,
+    sessionSecretIsDevDefault: e.SESSION_SECRET === undefined,
+    sessionMaxAgeSeconds: e.SESSION_MAX_AGE_SECONDS,
+    oidc:
+      e.IDENTITY_PROVIDER === "surveyjs-oidc" &&
+      e.OIDC_ISSUER_URL !== undefined &&
+      e.OIDC_CLIENT_ID !== undefined &&
+      e.OIDC_CLIENT_SECRET !== undefined
+        ? Object.freeze({
+            issuerUrl: e.OIDC_ISSUER_URL,
+            clientId: e.OIDC_CLIENT_ID,
+            clientSecret: e.OIDC_CLIENT_SECRET,
+            discovery: e.OIDC_DISCOVERY,
+            scopes:
+              e.OIDC_SCOPES ??
+              (e.OIDC_DISCOVERY === "openid-configuration"
+                ? "openid profile email"
+                : "profile email"),
+          })
+        : null,
+    signInRateLimitPerMinute: e.SIGN_IN_RATE_LIMIT,
+    accountNotices: e.ACCOUNT_NOTICES,
+    shellLinks: Object.freeze({ ...e.SHELL_LINKS }),
   });
 }

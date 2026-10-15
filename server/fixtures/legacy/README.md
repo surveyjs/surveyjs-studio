@@ -18,7 +18,7 @@ They serve three jobs:
 
 | Path                                      | Content                                                                                                                                                   |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql/schema.sql`                          | Our own T-SQL DDL for `Users`, `Surveys`, `Organizations`, `OrganizationUsers`, with the replica indexes and keys.                                        |
+| `sql/schema.sql`                          | Our own T-SQL DDL for `Users`, `Surveys`, `Organizations`, `OrganizationUsers`, `UserLicenses`, `LicenseTransfers`, with the replica indexes and keys.    |
 | `sql/<Table>.json`                        | Array of rows. Keys are lower-case column names. GUIDs are strings, `tinyint` is a number or null, `datetime` is ISO `Z`.                                 |
 | `tables/<account>/<TableName>.json`       | Azure Table entities in Table REST JSON: `PartitionKey`, `RowKey`, properties and `<prop>@odata.type` annotations. `<account>` is `surveys` or `results`. |
 | `blobs/<account>/<container>/<blob name>` | Raw blob content. A blob name with `/` is a nested folder. Loaded as append blobs.                                                                        |
@@ -36,6 +36,7 @@ They serve three jobs:
 | Event log                    | `surveys` table audit rows for the main operations                                                                                                                          |
 | Results                      | `post{postId}` for two surveys: plain, client id and partial, IP address, inline file, `dxsimage:` reference; `SurveyCompletion{surveyId}` and one `postdelete{postId}` row |
 | Files                        | one editor asset and one respondent file                                                                                                                                    |
+| Licences                     | owner: expired and valid; admin: expires soon; member: a seat of the owner's valid one; outsider: no date, and a transfer                                                   |
 
 ## Changing them
 

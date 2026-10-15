@@ -1,0 +1,9 @@
+﻿.v2-class---top-bar-menu {
+    display: flex;
+    gap: size(1);
+    align-items: center;
+
+    @include media(Desktop-2) {
+        gap: size(0);
+    }
+}

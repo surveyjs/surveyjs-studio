@@ -1,0 +1,30 @@
+﻿body.mobile-menu--opened {
+    height: 100vh;
+    overflow-y: hidden;
+}
+
+@mixin Section-Size {
+    margin: auto;
+
+    @include media(Large-Desktop) {
+        width: size(175);
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    @include media(Desktop) {
+        width: size(135);
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    @include media(Tablet, Vertical-Tablet) {
+        padding-left: size(6);
+        padding-right: size(6);
+    }
+
+    @include media(Mobile) {
+        padding-left: size(3);
+        padding-right: size(3);
+    }
+}

@@ -164,7 +164,7 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 | Azure | **@azure/data-tables** and **@azure/storage-blob** | Direct access to the existing storage (D12). |
 | Unit tests | **Vitest**; on the front-end **React Testing Library** and **openapi-msw** (type-checked mocks of network calls) | |
 | End-to-end tests | **Playwright** (Chromium, Firefox, WebKit), including screenshot comparisons | |
-| Test infrastructure | **Azurite** (Azure Storage emulator) and a **mock OIDC server** container that issues codes without a login form, run in Docker Compose | |
+| Test infrastructure | **Azurite** (Azure Storage emulator) and a **mock OIDC server** container, run in Docker Compose; tests sign in through its login form | |
 | Repository | **pnpm workspaces**: `contract`, `server`, `web`, `conformance-tests`, `e2e` | |
 
 ### Dependencies and upgrades
@@ -202,11 +202,11 @@ People will fork the repository, so it must always build from a known set of ver
 
    The only routes outside `/api/v1` are health checks and legacy-URL redirects.
 2. **Session and sign-in.**
-   - The server is a confidential OIDC client of `auth.surveyjs.io`, registered as a new client.
+   - The server is a confidential OAuth 2.0 client of `auth.surveyjs.io` (OIDC when the provider supports it; see [ADR 0008](docs/adr/0008-surveyjs-auth-oauth2-userinfo.md)), registered as a new client.
    - After the callback it issues a **stateless, encrypted, signed session cookie** (`msid`) containing the user ID, display data and expiry, plus a readable `msid_csrf` cookie. There is no server-side session store, which keeps ports simple.
    - Provider tokens are not kept after sign-in.
    - Sign-out returns the provider's end-session URL.
-   - Sign-in is a provider interface (`IdentityProvider`); Phase 1 implements surveyjs.io OIDC only.
+   - Sign-in is a provider interface (`IdentityProvider`); Phase 1 implements the surveyjs.io OAuth 2.0 client only (OIDC when the provider supports it; see ADR 0008).
 3. **Application services.** These modules hold all business rules and are tested through the HTTP layer:
    - **Surveys:** create with "New Survey N" naming, list, rename, publish, archive and restore, move, clone, delete only when archived, settings.
    - **Content:** definition and theme with ETag, plus history recording.

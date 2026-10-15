@@ -6,7 +6,11 @@ import { AppError } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { createMemoryProviders } from "./providers/memory.js";
 
-const config = loadConfig({ NODE_ENV: "test", LIMIT_MAX_RESPONSE_BYTES: "64" });
+const config = loadConfig({
+  NODE_ENV: "test",
+  IDENTITY_PROVIDER: "dev",
+  LIMIT_MAX_RESPONSE_BYTES: "64",
+});
 let app: FastifyInstance | undefined;
 
 async function start(providers?: ProviderSet): Promise<FastifyInstance> {

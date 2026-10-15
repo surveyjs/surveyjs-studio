@@ -5,6 +5,7 @@ import type { Edm, EdmTypes, TableEntity } from "@azure/data-tables";
 import sql from "mssql";
 import {
   DEFAULT_FIXTURE_DIR,
+  LEGACY_SQL_TABLES,
   readLegacyFixtures,
   type LegacyBlob,
   type LegacyTable,
@@ -39,8 +40,9 @@ export interface LoadSummary {
   filesSkipped: number;
 }
 
-const SQL_TABLES = ["Users", "Surveys", "Organizations", "OrganizationUsers"] as const;
-const DROP_ORDER = ["OrganizationUsers", "Organizations", "Surveys", "Users"] as const;
+/** Inserted in this order; dropped in the reverse order, so foreign keys hold. */
+const SQL_TABLES = LEGACY_SQL_TABLES;
+const DROP_ORDER = [...SQL_TABLES].reverse();
 const APPEND_BLOCK_BYTES = 4 * 1024 * 1024;
 
 function required(env: LegacyEnv, name: string): string {

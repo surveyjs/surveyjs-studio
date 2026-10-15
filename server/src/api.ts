@@ -1,5 +1,6 @@
 import type { operations } from "@my-surveys/contract";
 import type { FastifyPluginAsync, FastifyRequest, RouteHandlerMethod } from "fastify";
+import { authenticationHook, type AuthenticationOptions } from "./auth/authenticate.js";
 import { isJsonMediaType, type Contract, type ContractOperation } from "./contract.js";
 import { AppError } from "./errors.js";
 
@@ -8,9 +9,19 @@ export type OperationId = keyof operations;
 /** Handlers keyed by `operationId`; an operation without one answers 501. */
 export type Handlers = Partial<Record<OperationId, RouteHandlerMethod>>;
 
+/** Requests per time window (milliseconds) per client IP. */
+export interface RateLimit {
+  readonly max: number;
+  readonly timeWindow: number;
+}
+
 export interface ApiOptions {
   readonly contract: Contract;
   readonly handlers: Handlers;
+  /** Applies each operation's contract security (session, CSRF) before validation. */
+  readonly authentication: AuthenticationOptions;
+  /** Operations limited per client IP (needs `@fastify/rate-limit` registered with `global: false`). */
+  readonly rateLimits?: Partial<Record<OperationId, RateLimit>>;
 }
 
 function notImplemented(operationId: string): RouteHandlerMethod {
@@ -58,11 +69,13 @@ function bodyGuard(
 }
 
 /**
- * Registers every contract operation as a route (mount it under `/api/v1`), with request
- * validation from the contract's schemas.
+ * Registers every contract operation as a route (mount it under `/api/v1`), with authentication
+ * from the contract's security requirements and request validation from its schemas.
  */
-export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, { contract, handlers }) => {
+export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
+  const { contract, handlers, authentication, rateLimits = {} } = options;
   api.setValidatorCompiler(contract.compileValidator);
+  api.decorateRequest("user", null);
 
   const mediaTypes = new Set(contract.operations.flatMap((op) => op.requestBody?.mediaTypes ?? []));
   for (const mediaType of mediaTypes) {
@@ -86,12 +99,17 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, { contract, handl
   }
 
   for (const op of contract.operations) {
+    const operationId = op.operationId as OperationId;
+    const onRequest = authenticationHook(op.security, authentication);
+    const rateLimit = rateLimits[operationId];
     api.route({
       method: op.method,
       url: op.url,
       schema: { ...op.schema },
+      ...(onRequest && { onRequest }),
+      ...(rateLimit && { config: { rateLimit } }),
       ...(op.requestBody && { preValidation: bodyGuard(op.requestBody) }),
-      handler: handlers[op.operationId as OperationId] ?? notImplemented(op.operationId),
+      handler: handlers[operationId] ?? notImplemented(op.operationId),
     });
   }
   return Promise.resolve();

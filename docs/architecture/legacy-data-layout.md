@@ -32,6 +32,8 @@ names used in the brief:
 | point-0001    | `88888888-0000-4000-8000-000000000001` |
 | file-0001     | `99999999-0000-4000-8000-000000000001` |
 | member-0001   | `aaaaaaaa-0000-4000-8000-000000000001` |
+| licence-000N  | `bbbbbbbb-0000-4000-8000-00000000000N` |
+| transfer-0001 | `cccccccc-0000-4000-8000-000000000001` |
 
 Emails are `owner@example.com` and `member@example.com`. No real data or secret values appear here.
 
@@ -141,6 +143,10 @@ write. **[C]** `the site's code` (`Write`,
 | `Organizations`             | `Organizations`     | `id`                      | none                              |
 | `OrganizationUsers`         | `OrganizationUsers` | `id`                      | `organizationid`                  |
 | `site code`         | `OrganizationUsers` | `id`                      | `userid`                          |
+| `UserLicenses`              | `UserLicenses`      | `id`                      | `userid`                          |
+| `site code`      | `UserLicenses`      | `id`                      | `parentlicenseid`                 |
+| `LicenseTransfers`          | `LicenseTransfers`  | `id`                      | `userid`                          |
+| `site code`        | `LicenseTransfers`  | `id`                      | `licenseid`                       |
 
 Because of this mapping, an extra property on a row object becomes an extra SQL column in the
 INSERT. A writer must not add properties to SQL rows that the table does not have. **[C]**
@@ -583,18 +589,106 @@ Synthetic rows for project-0001 (creator user-0001, member user-0002):
 
 ### 3.14 Out of scope
 
-| Store                                                                                  | Why out of scope                                                                                 |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `UserCart`                                                                             | Shop cart.                                                                                       |
-| `UserInvoices`, `InvoiceItems`                                                         | Billing.                                                                                         |
-| `UserLicenses`, `LicenseTransfers`, `LicenseResell`, `LicenseInvoiceRenewal`           | Licences. The F1 licence-expiry notice will need a read of `UserLicenses`; that is a later task. |
-| `UserVATChecks`, `CurrencyLog`                                                         | Billing.                                                                                         |
-| `UserSites`, `UserCalls`, `UserExternalProviders`, `UserSecurityStamp`, `FailedLogins` | Account and sign-in data owned by surveyjs.io and auth.surveyjs.io.                              |
-| `DownloadedQuotas`, `CreateOrder`, `CaptureOrder`, `PaymentQueue`                      | Orders and payments.                                                                             |
-| `SentEmails`, `UriLog`, `Utils`                                                        | Site logs and counters.                                                                          |
-| Users-content account (`emails` blobs, `McpLog` table, `mcplog` blobs)                 | Email bodies and MCP log.                                                                        |
-| `AspNet*` tables (`ConnectionStrings:Default`)                                         | Identity tables registered but not used for users.                                               |
-| App-data blob container                                                                | Site content.                                                                                    |
+| Store                                                                                  | Why out of scope                                                    |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `UserCart`                                                                             | Shop cart.                                                          |
+| `UserInvoices`, `InvoiceItems`                                                         | Billing.                                                            |
+| `UserLicenses`, `LicenseTransfers`, `LicenseResell`, `LicenseInvoiceRenewal`           | Licences, except the expiry read of section 3.15.                   |
+| `UserVATChecks`, `CurrencyLog`                                                         | Billing.                                                            |
+| `UserSites`, `UserCalls`, `UserExternalProviders`, `UserSecurityStamp`, `FailedLogins` | Account and sign-in data owned by surveyjs.io and auth.surveyjs.io. |
+| `DownloadedQuotas`, `CreateOrder`, `CaptureOrder`, `PaymentQueue`                      | Orders and payments.                                                |
+| `SentEmails`, `UriLog`, `Utils`                                                        | Site logs and counters.                                             |
+| Users-content account (`emails` blobs, `McpLog` table, `mcplog` blobs)                 | Email bodies and MCP log.                                           |
+| `AspNet*` tables (`ConnectionStrings:Default`)                                         | Identity tables registered but not used for users.                  |
+| App-data blob container                                                                | Site content.                                                       |
+
+### 3.15 Licences and the licence-expiry dialogs
+
+surveyjs.io shows two dialogs about the licence renewal subscription: "has expired" and "expires
+soon". My Surveys shows the same state as `CurrentUser.notices` when
+`ACCOUNT_NOTICES=surveyjs-licenses`. The licence rows live in the **same SQL database** as `Users`
+(`a site secret`), so the azure-legacy provider reads them over its existing connection.
+**[C]** `the site's code` (`site code..ctor`, `site code`,
+`site code`), `the site's code` (`site code`,
+`site code`)
+
+This section was read at legacy commit `(a site commit)` (2026-10-14), later than the rest of the page.
+
+**When the site asks.** The site layout includes both dialogs on every page
+(`the site's codehtml`; partials
+`the site's codehtml` and
+`the site's page markup`). For a signed-in visitor, a page script calls
+`GET /api/ManageUser/getLicensesExpirationPopupType` and caches the answer for 6 hours in the
+`expirationCookie` cookie. It sends two dismissal times from the browser's `localStorage`
+(`expiredNotificationDateTime`, `expiresSoonNotificationDateTime`). The answer is `{ popupType }`:
+`none`, `expired`, `expiresSoon` or `warningOnly`. The dialogs and a warning marker in the top bar
+(`the site's codehtml`, `site code`) act on it.
+**[C]** `the site's code` (`site code`)
+
+**Which licences belong to a user.** The endpoint uses `site code`,
+which calls `site code`. **[C]** `the site's code`,
+`the site's code`
+
+1. Owned licences: the `UserLicenses` rows whose `userid` is the user (`site code`).
+2. A row with a non-empty `parentlicenseid` is a developer seat (the older scheme). Its own
+   `expirationdate` is replaced by the parent row's (`site code`). When the parent row is missing,
+   the code dereferences null. The endpoint catches the exception and answers 400, the page script
+   cannot parse that answer, and no dialog shows at all. **[C]** for the exception, **[I]** for the
+   browser side.
+3. Transferred licences (the newer scheme): the `LicenseTransfers` rows whose `userid` is the user.
+   Each gives the `UserLicenses` row named by `licenseid`, with that row's own expiry
+   (`site code`, `site code`). A missing licence row gives a licence
+   with no expiry, which the rule skips.
+
+The rest of that method (seat assignments, reseller flags, paid state) does not change the answer.
+
+| Column                         | Type               | Use                                                                                                    |
+| ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `UserLicenses.id`              | `uniqueidentifier` | Licence ID; the parent of a seat.                                                                      |
+| `UserLicenses.userid`          | `uniqueidentifier` | Owner of the licence (or of the seat).                                                                 |
+| `UserLicenses.parentlicenseid` | `uniqueidentifier` | Set on a developer seat; NULL or all-zero otherwise.                                                   |
+| `UserLicenses.expirationdate`  | `datetime`         | End of the renewal subscription. NULL: the licence is skipped (`site code == DateTime.MinValue`). |
+| `LicenseTransfers.licenseid`   | `uniqueidentifier` | The transferred `UserLicenses` row.                                                                    |
+| `LicenseTransfers.userid`      | `uniqueidentifier` | The user who received it.                                                                              |
+| Other `UserLicenses` columns   | various            | Company, invoice, price, product and count fields. Not needed. `the site/Storage/sql/db.sql`      |
+
+`expirationdate` is written from server dates with no UTC conversion, like the other SQL dates
+(gap 9). My Surveys treats it as UTC. **[I]**
+
+**The rule.** **[C]** `the site's code` (`site code`,
+`site code`), `the site's code`
+(`site code`)
+
+- A licence is **expired** when its expiry is earlier than the server's current time.
+- A licence **expires soon** when it is not expired and the remaining time has at most 14 whole days
+  (`site code`, which drops the fraction). So "soon" starts exactly 15 days before the expiry,
+  and the expiry instant itself still counts as "soon".
+- Per licence, with the dismissal times: expired and not dismissed since the expiry → the expired
+  dialog; else expires soon and not dismissed since 14 days before the expiry → the soon dialog;
+  else expired or soon → `warningOnly` (top-bar marker only).
+- Over all licences: `expired` wins over `expiresSoon`, which wins over `warningOnly`; else `none`.
+- Every signed-in user with such a licence gets it. No role, reseller or "can renew" check applies.
+
+**Dismissal is per browser.** "Later" stores the current time in `localStorage`; "Renew" does the
+same and opens `/manage` (the account's licence page). A dialog script also shows its dialog only
+when no dismissal time is stored at all. **[C]** (both popup views)
+
+**Dialog content.** Headline "Your renewal subscription has expired." or "Your renewal subscription
+expires soon.". The body (the same in both) says the licence is perpetual, so versions released in
+the first 12 months stay available, and that renewing keeps Help Desk support and product updates.
+The buttons are "Renew" (to `/manage`) and "Later". **[C]** (both popup views)
+
+**My Surveys.** It cannot see the site's `localStorage` dismissals, so it applies the rule as for a
+visitor who never dismissed a dialog; `warningOnly` cannot occur. Dismissal is the shell's job.
+
+| Legacy `popupType`      | `Notice.code`          | `message`                                 | `actionUrl`                  | `actionLabel` |
+| ----------------------- | ---------------------- | ----------------------------------------- | ---------------------------- | ------------- |
+| `expired`               | `license-expired`      | `Your renewal subscription has expired.`  | `https://surveyjs.io/manage` | `Renew`       |
+| `expiresSoon`           | `license-expires-soon` | `Your renewal subscription expires soon.` | `https://surveyjs.io/manage` | `Renew`       |
+| `none`, (`warningOnly`) | no notice              |                                           |                              |               |
+
+A developer seat whose parent row is missing gives no notice, as on the site, and the provider logs
+a warning with the seat's ID.
 
 ## 4. IDs
 
@@ -771,6 +865,27 @@ Legacy permission rules the new app must reproduce or consciously change:
 - Deleting an account deletes the user's personal surveys and their results, but leaves their
   `OrganizationUsers` rows. **[C]** `the site's code` (`site code`)
 
+### 6.1 Sign-in server: `auth.surveyjs.io`
+
+The legacy sign-in server is a plain **OAuth 2.0** authorization server with a UserInfo endpoint, in
+the style of GitHub or Slack. It is not a full OpenID provider. **[C]**
+`the site's code` (`site code`)
+
+| Item      | What it does                                                                                                                                                                                               |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metadata  | RFC 8414 at `/.well-known/oauth-authorization-server` only. No `openid-configuration`, no `jwks_uri`. Advertised scopes: `profile`, `email`                                                                |
+| Authorize | `/OAuth/Authorize`: `response_type=code` only; `state` required; PKCE optional, but only `S256`. `scope` is stored as sent, not checked; `nonce` is stored but never returned                              |
+| Token     | `/OAuth/Token`: `authorization_code` only; client secret by form post or HTTP Basic; checks the client, the redirect URI and the PKCE verifier. Answers an **opaque** access token, with **no `id_token`** |
+| UserInfo  | `/OAuth/UserInfo` (bearer token): `sub` and `id` (both the `Users.id` GUID), `email`, `name` (the display name, else the email), `scope`                                                                   |
+| Logout    | `/OAuth/Logout` (the `end_session_endpoint`): signs out of the auth server, then returns to `post_logout_redirect_uri` if it is registered for `client_id`                                                 |
+| Revoke    | `/OAuth/Revoke` (RFC 7009), client-authenticated                                                                                                                                                           |
+
+My Surveys therefore signs in with `OIDC_DISCOVERY=oauth-authorization-server` (the default):
+authorization code with PKCE S256 and `state`, then the identity from UserInfo. The
+`openid-configuration` mode exists for a real OpenID provider. There, an ID token is required and
+checked (with a `nonce`) only when the scopes also include `openid`; without `openid` no nonce is sent
+and no ID token is expected.
+
 ## 7. How `api.surveyjs.io` reads results and inline files
 
 The public controller is mounted at both `public/Survey` and `public/v1/Survey`; the private one at
@@ -912,6 +1027,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | `Users.displayname`        | `CurrentUser.displayName` | Fallback: email.    |
 | `Users.email`              | `CurrentUser.email`       | As is.              |
 | none                       | `CurrentUser.avatarUrl`   | `null`.             |
+| `UserLicenses` (3.15)      | `CurrentUser.notices`     | Licence rule, 3.15. |
 
 ### 9.5 Files (`StoredFile`)
 
@@ -941,7 +1057,7 @@ The replica must create:
 
 | Kind                                       | Name                                                                                                                                                                                      |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL tables                                 | `Users`, `Surveys`, `Organizations`, `OrganizationUsers` (columns as in sections 3.1, 3.11–3.13; `UserLicenses` later for the licence notice)                                             |
+| SQL tables                                 | `Users`, `Surveys`, `Organizations`, `OrganizationUsers` (columns as in sections 3.1, 3.11–3.13), `UserLicenses` and `LicenseTransfers` (3.15)                                            |
 | Azure tables (surveys account)             | `surveys`                                                                                                                                                                                 |
 | Azure tables (results account), per survey | `post{postId without dashes}`, `SurveyCompletion{surveyId without dashes}`, optionally `postdelete{postId without dashes}`                                                                |
 | Blob containers (surveys account)          | `surveyjson`, `surveytext`, `surveyjsonhistory`, `surveyresulttablestate`, `surveyresultsummarystate`, `surveyresultpermissions`, `surveyresultcolumns`, optionally `surveypublishedjson` |

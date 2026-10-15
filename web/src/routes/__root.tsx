@@ -6,7 +6,7 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { configQueryOptions } from "../api/config";
-import { PlaceholderShell } from "../shell/PlaceholderShell";
+import { AnonymousShell } from "../shell/PlainShell";
 import { applySurveyJSLicense } from "../surveyjs/license";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -18,28 +18,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     applySurveyJSLicense(config.surveyjsLicenseKey ?? null).catch((error: unknown) => {
       console.warn("Could not apply the SurveyJS licence key", error);
     });
+    return config;
   },
-  component: () => (
-    <PlaceholderShell>
-      <Outlet />
-    </PlaceholderShell>
-  ),
+  component: Outlet,
   errorComponent: LoadError,
 });
 
 function LoadError({ error }: ErrorComponentProps) {
   const router = useRouter();
   return (
-    <PlaceholderShell>
+    <AnonymousShell>
       <div role="alert">
         <p>
-          Could not load the application configuration:{" "}
-          {error instanceof Error ? error.message : String(error)}
+          Could not load the application: {error instanceof Error ? error.message : String(error)}
         </p>
         <button type="button" onClick={() => void router.invalidate()}>
           Retry
         </button>
       </div>
-    </PlaceholderShell>
+    </AnonymousShell>
   );
 }

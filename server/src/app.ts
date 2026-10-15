@@ -1,18 +1,33 @@
 import { randomUUID } from "node:crypto";
+import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@my-surveys/contract";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
-import { apiRoutes } from "./api.js";
+import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
+import type { IdentityProvider } from "./auth/identity.js";
+import { createIdentityProvider } from "./auth/providers/index.js";
+import type { Clock } from "./auth/session.js";
+import { createSessionHandlers } from "./auth/session-handlers.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
-import { PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
+import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
+import { serializeRequest } from "./logging.js";
 import type { ProviderSet } from "./providers/index.js";
 
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
   readonly apiDocsPath?: string;
+  /** Replaces the configured identity provider (tests). */
+  readonly identity?: IdentityProvider;
+  /** Clock for session and sign-in expiry (tests). */
+  readonly now?: Clock;
+  /** Receives the JSON log lines, even when `NODE_ENV=test` (tests). */
+  readonly logStream?: { write(line: string): void };
 }
+
+/** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
+const SIGN_IN_OPERATIONS: readonly OperationId[] = ["login", "loginCallback", "passwordLogin"];
 
 function sendProblem(reply: FastifyReply, body: Problem): FastifyReply {
   return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
@@ -25,7 +40,15 @@ export async function buildApp(
 ): Promise<FastifyInstance> {
   const contract = await loadContract(openapiPath);
   const app = Fastify({
-    logger: config.nodeEnv === "test" ? false : { level: config.logLevel },
+    // The request serializer keeps the sign-in callback's `code` and `state` out of the logs.
+    logger:
+      config.nodeEnv === "test" && !options.logStream
+        ? false
+        : {
+            level: config.logLevel,
+            serializers: { req: serializeRequest },
+            ...(options.logStream && { stream: options.logStream }),
+          },
     genReqId: (req) => {
       const incoming = req.headers["x-request-id"];
       return typeof incoming === "string" && incoming !== "" && incoming.length <= 128
@@ -68,10 +91,40 @@ export async function buildApp(
     return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable" });
   });
 
+  // Only routes with a `rateLimit` config are limited (the sign-in operations).
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: (_request, context) =>
+      new AppError({
+        code: "rate-limited",
+        status: 429,
+        title: "Too many requests",
+        detail: `Too many sign-in attempts. Try again in ${context.after}.`,
+      }),
+  });
+
+  const identity = options.identity ?? (await createIdentityProvider(config));
+  if (identity.routes) await app.register(identity.routes);
+
+  const signInLimit: RateLimit = { max: config.signInRateLimitPerMinute, timeWindow: 60_000 };
   await app.register(apiRoutes, {
     prefix: "/api/v1",
     contract,
-    handlers: createHandlers(config),
+    handlers: {
+      ...createHandlers(config),
+      ...createSessionHandlers({
+        config,
+        identity,
+        directory: providers.directory,
+        notices: providers.notices,
+        ...(options.now && { now: options.now }),
+      }),
+    },
+    authentication: {
+      sessionSecret: config.sessionSecret,
+      ...(options.now && { now: options.now }),
+    },
+    rateLimits: Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);

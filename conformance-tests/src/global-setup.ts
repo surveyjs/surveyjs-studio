@@ -14,7 +14,7 @@ const READY_TIMEOUT_MS = 30_000;
 
 // Every variable of the server's environment table (server/src/config.ts). The reference
 // server must see only the explicit values set below, never the developer's shell.
-// Keep in sync with server/src/config.ts and with e2e/playwright.config.ts (each package
+// Keep in sync with server/src/config.ts and with e2e/app-variables.mjs (each package
 // keeps its own copy so none depends on another).
 const appVariables = [
   "NODE_ENV",
@@ -35,6 +35,17 @@ const appVariables = [
   "LEGACY_SQL_CONNECTION_STRING",
   "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+  "IDENTITY_PROVIDER",
+  "SESSION_SECRET",
+  "SESSION_MAX_AGE_SECONDS",
+  "OIDC_ISSUER_URL",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
+  "OIDC_DISCOVERY",
+  "OIDC_SCOPES",
+  "SIGN_IN_RATE_LIMIT",
+  "ACCOUNT_NOTICES",
+  "SHELL_LINKS",
 ];
 
 const legacyVariables = [
@@ -43,26 +54,39 @@ const legacyVariables = [
   "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
 ] as const;
 
+// The mock OIDC server of docker/compose.azurite.yaml (settings in docker/azurite.env).
+const oidcVariables = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
+// Forwarded when set (the mock needs the openid scope).
+const optionalOidcVariables = ["OIDC_DISCOVERY", "OIDC_SCOPES"] as const;
+
 /**
- * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores: the three
- * `LEGACY_*` connection strings are forwarded from this process (`pnpm test:conformance:azurite`
- * reads them from docker/azurite.env). Default: memory, with every app variable stripped.
+ * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
+ * through the mock OIDC server: the three `LEGACY_*` connection strings and the `OIDC_*` settings are
+ * forwarded from this process (`pnpm test:conformance:azurite` reads them from docker/azurite.env).
+ * Default: memory, with every app variable stripped.
  */
 function providerEnv(): Record<string, string> {
   const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";
-  if (provider === "memory") return { STORAGE_PROVIDER: "memory" };
+  if (provider === "memory") {
+    // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
+    return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
+  }
   if (provider !== "azure-legacy") {
     throw new Error(`CONFORMANCE_PROVIDER must be memory or azure-legacy, got "${provider}"`);
   }
   const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
   const missing: string[] = [];
-  for (const name of legacyVariables) {
+  for (const name of [...legacyVariables, ...oidcVariables]) {
     const value = process.env[name];
     if (value?.trim()) env[name] = value;
     else missing.push(name);
   }
   if (missing.length > 0) {
     throw new Error(`CONFORMANCE_PROVIDER=azure-legacy needs ${missing.join(", ")}`);
+  }
+  for (const name of optionalOidcVariables) {
+    const value = process.env[name];
+    if (value?.trim()) env[name] = value;
   }
   return env;
 }
@@ -76,6 +100,10 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     HOST: "127.0.0.1",
     PORT: String(port),
     LOG_LEVEL: "warn",
+    // Sign-in redirects (and the OIDC redirect_uri) point at the server under test.
+    PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+    // The suite signs in many times from one IP; the limit itself is tested in the server tests.
+    SIGN_IN_RATE_LIMIT: "100000",
     ...providerEnv(),
   };
 }

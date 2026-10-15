@@ -1,3 +1,4 @@
+import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach } from "vitest";
 import { server } from "./server";
 
@@ -16,7 +17,10 @@ globalThis.Request = class extends NodeRequest {
 
 // Listen at import time: openapi-fetch captures globalThis.fetch when the client module is created.
 server.listen({ onUnhandledRequest: "error" });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  cleanup();
+  server.resetHandlers();
+});
 afterAll(() => server.close());
 
 // jsdom does not implement scrolling, which the router calls on navigation.

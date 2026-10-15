@@ -1,0 +1,6 @@
+﻿$base-unit: 8px;
+
+@function size($multiplier) {
+    $result: calc(#{$multiplier} * #{$base-unit});
+    @return $result;
+}

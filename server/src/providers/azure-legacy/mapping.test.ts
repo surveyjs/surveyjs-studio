@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   UnmappableLegacyRowError,
+  licenceExpiriesFromLegacy,
   membershipFromLegacy,
   responseFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
 import type {
+  LegacyLicenceRow,
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
   LegacyResultEntity,
@@ -263,5 +265,46 @@ describe("membershipFromLegacy", () => {
 
   it("maps a NULL project name to an empty string", () => {
     expect(membershipFromLegacy({ ...org, name: null }, member("user")).project.name).toBe("");
+  });
+});
+
+describe("licenceExpiriesFromLegacy", () => {
+  const ZERO = "00000000-0000-0000-0000-000000000000";
+  const own = new Date("2026-08-01T00:00:00.000Z");
+  const parents = new Date("2027-06-01T00:00:00.000Z");
+  const licence = (over: Partial<LegacyLicenceRow> = {}): LegacyLicenceRow => ({
+    id: "BBBBBBBB-0000-4000-8000-000000000001",
+    expirationdate: own,
+    parentlicenseid: null,
+    parentid: null,
+    parentexpirationdate: null,
+    ...over,
+  });
+
+  it("uses the licence's own expiry when it has no parent", () => {
+    expect(licenceExpiriesFromLegacy([licence()])).toEqual([own]);
+    expect(licenceExpiriesFromLegacy([licence({ parentlicenseid: ZERO })])).toEqual([own]);
+  });
+
+  it("uses the parent's expiry for a developer seat", () => {
+    const seat = licence({
+      parentlicenseid: "BBBBBBBB-0000-4000-8000-000000000002",
+      parentid: "BBBBBBBB-0000-4000-8000-000000000002",
+      parentexpirationdate: parents,
+    });
+    expect(licenceExpiriesFromLegacy([seat])).toEqual([parents]);
+    expect(licenceExpiriesFromLegacy([{ ...seat, parentexpirationdate: null }])).toEqual([null]);
+  });
+
+  it("keeps a NULL expiry as null (the rule ignores it)", () => {
+    expect(licenceExpiriesFromLegacy([licence({ expirationdate: null })])).toEqual([null]);
+  });
+
+  it("throws, naming the seat, when a developer seat's parent licence is missing", () => {
+    const orphan = licence({ parentlicenseid: "BBBBBBBB-0000-4000-8000-000000000009" });
+    expect(() => licenceExpiriesFromLegacy([licence(), orphan])).toThrow(UnmappableLegacyRowError);
+    expect(() => licenceExpiriesFromLegacy([orphan])).toThrow(
+      expect.objectContaining({ ids: { licenceId: "bbbbbbbb-0000-4000-8000-000000000001" } }),
+    );
   });
 });
