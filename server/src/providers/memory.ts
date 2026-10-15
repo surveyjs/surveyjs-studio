@@ -7,8 +7,10 @@ import type {
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  SurveyTheme,
   User,
 } from "../domain/types.js";
+import { applySurveyChanges } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
 import { isAfter, projectListOrder, surveyListOrder } from "./ordering.js";
 import type { ProviderSet } from "./types.js";
@@ -21,6 +23,8 @@ export interface MemorySeed {
   memberships: { userId: string; projectId: string; role: ProjectRole }[];
   /** Survey definitions by survey id. */
   definitions?: Record<string, SurveyDefinition>;
+  /** Survey themes by survey id. */
+  themes?: Record<string, SurveyTheme>;
 }
 
 export interface MemoryOptions {
@@ -83,7 +87,20 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     Object.entries(seed?.definitions ?? {}).map(([id, d]) => [lower(id), structuredClone(d)]),
   );
 
+  const themes = new Map(
+    Object.entries(seed?.themes ?? {}).map(([id, t]) => [lower(id), structuredClone(t)]),
+  );
+
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
+
+  /** Stores a new survey; throws on a duplicate id. */
+  const add = (survey: NewSurvey, definition: SurveyDefinition | undefined): SurveyRecord => {
+    const record = surveyFromNew(survey);
+    if (findSurvey(record.id)) throw new Error(`survey ${record.id} already exists`);
+    surveys.push(record);
+    if (definition !== undefined) definitions.set(record.id, structuredClone(definition));
+    return copySurvey(record);
+  };
 
   /** A fresh membership with the project's current member count. */
   const membershipOf = (m: (typeof memberships)[number]): ProjectMembership => {
@@ -122,17 +139,46 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         });
       },
       createSurvey: (survey, definition) => {
-        const record = surveyFromNew(survey);
-        if (findSurvey(record.id)) {
-          return Promise.reject(new Error(`survey ${record.id} already exists`));
+        try {
+          return Promise.resolve(add(survey, definition));
+        } catch (error) {
+          return Promise.reject(error as Error);
         }
-        surveys.push(record);
-        if (definition !== undefined) definitions.set(record.id, structuredClone(definition));
-        return Promise.resolve(copySurvey(record));
       },
       getDefinition: (id) => {
         if (!findSurvey(id)) return Promise.resolve(null);
         return Promise.resolve(structuredClone(definitions.get(lower(id)) ?? {}));
+      },
+      getTheme: (id) => {
+        if (!findSurvey(id)) return Promise.resolve(null);
+        return Promise.resolve(structuredClone(themes.get(lower(id)) ?? {}));
+      },
+      updateSurvey: (id, changes) => {
+        const index = surveys.findIndex((s) => s.id === lower(id));
+        if (index < 0) return Promise.resolve(null);
+        const updated = applySurveyChanges(surveys[index]!, changes);
+        surveys[index] = updated;
+        return Promise.resolve(copySurvey(updated));
+      },
+      cloneSurvey: (sourceId, copy) => {
+        const source = findSurvey(sourceId);
+        if (!source) return Promise.resolve(null);
+        try {
+          const stored = add(copy, definitions.get(source.id));
+          const theme = themes.get(source.id);
+          if (theme !== undefined) themes.set(stored.id, structuredClone(theme));
+          return Promise.resolve(stored);
+        } catch (error) {
+          return Promise.reject(error as Error);
+        }
+      },
+      deleteSurvey: (id) => {
+        const index = surveys.findIndex((s) => s.id === lower(id));
+        if (index < 0) return Promise.resolve(false);
+        const [removed] = surveys.splice(index, 1);
+        definitions.delete(removed!.id);
+        themes.delete(removed!.id);
+        return Promise.resolve(true);
       },
     },
     directory: {

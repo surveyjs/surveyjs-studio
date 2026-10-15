@@ -23,6 +23,20 @@ export interface SurveyRecord {
 
 export type SurveyDefinition = Record<string, unknown>;
 
+export type SurveyTheme = Record<string, unknown>;
+
+/** A survey record change; every member is optional except `updatedAt`. */
+export interface SurveyChanges {
+  readonly name?: string;
+  /** A move: the new scope, and the user who moved it (legacy overwrites the creator). */
+  readonly move?: { readonly owner: SurveyOwner; readonly creatorId: string };
+  readonly published?: boolean;
+  readonly archived?: boolean;
+  readonly settings?: { readonly publicResults?: boolean; readonly storeRespondentIp?: boolean };
+  /** ISO 8601 UTC; always set. */
+  readonly updatedAt: string;
+}
+
 /** Everything the service decides for a new survey; the store adds the legacy defaults. */
 export interface NewSurvey {
   readonly id: string; // lower-case GUID

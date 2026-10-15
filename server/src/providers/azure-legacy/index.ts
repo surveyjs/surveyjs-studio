@@ -360,6 +360,10 @@ export function createAzureLegacyProviders(
     }
   }
 
+  function notYetImplemented(): never {
+    throw new Error("not implemented until Task 2");
+  }
+
   async function createSurvey(survey: NewSurvey, definition?: SurveyDefinition) {
     const id = await writeNewSurvey(
       { pool: connected, blobs: surveysAccount.blobs, events: surveyEvents, logger },
@@ -403,6 +407,10 @@ export function createAzureLegacyProviders(
       listSurveyPage,
       createSurvey,
       getDefinition,
+      getTheme: notYetImplemented,
+      updateSurvey: notYetImplemented,
+      cloneSurvey: notYetImplemented,
+      deleteSurvey: notYetImplemented,
     },
 
     directory: {

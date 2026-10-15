@@ -12,6 +12,7 @@ import {
   PROJECT_A_ID,
   PROJECT_B_ID,
   adminProjects,
+  feedbackTheme,
   fixtureDefinitions,
   fixtureSurveys,
   fixtureUsers,
@@ -349,6 +350,228 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         const without = await providers.surveys.createSurvey(newSurvey(freshScope()));
         expect(await providers.surveys.getDefinition(withDefinition.id)).toEqual(definition);
         expect(await providers.surveys.getDefinition(without.id)).toEqual({});
+      });
+    });
+
+    describe("surveys.getTheme", () => {
+      it("returns the stored theme of fixture 01", async () => {
+        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
+      });
+
+      it("returns {} for a survey without a theme", async () => {
+        expect(await providers.surveys.getTheme(surveyDraft.id)).toEqual({});
+      });
+
+      it("returns null for an unknown id", async () => {
+        expect(await providers.surveys.getTheme(UNKNOWN_ID)).toBeNull();
+      });
+
+      it("matches ids case-insensitively", async () => {
+        expect(await providers.surveys.getTheme(surveyFeedback.id.toUpperCase())).toEqual(
+          feedbackTheme,
+        );
+      });
+    });
+
+    describe("surveys.updateSurvey", () => {
+      const UPDATED_AT = "2026-09-01T12:34:56.000Z";
+      const created = (scope = freshScope()) =>
+        providers.surveys.createSurvey(newSurvey(scope, { name: "Before" }));
+
+      it.each([
+        ["name", { name: "After" }, { name: "After" }],
+        ["published", { published: true }, { published: true }],
+        ["archived", { archived: true }, { archived: true }],
+        [
+          "settings.publicResults",
+          { settings: { publicResults: true } },
+          { settings: { publicResults: true, storeRespondentIp: false, useCookies: false } },
+        ],
+        [
+          "settings.storeRespondentIp",
+          { settings: { storeRespondentIp: true } },
+          { settings: { publicResults: false, storeRespondentIp: true, useCookies: false } },
+        ],
+      ] as const)("changes %s alone", async (_field, changes, expected) => {
+        const survey = await created();
+        const updated = await providers.surveys.updateSurvey(survey.id, {
+          ...changes,
+          updatedAt: UPDATED_AT,
+        });
+        expect(updated).toEqual({ ...survey, ...expected, updatedAt: UPDATED_AT });
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(updated);
+      });
+
+      it("keeps the other setting when one setting changes", async () => {
+        const survey = await created();
+        await providers.surveys.updateSurvey(survey.id, {
+          settings: { publicResults: true },
+          updatedAt: UPDATED_AT,
+        });
+        const updated = await providers.surveys.updateSurvey(survey.id, {
+          settings: { storeRespondentIp: true },
+          updatedAt: UPDATED_AT,
+        });
+        expect(updated?.settings).toEqual({
+          publicResults: true,
+          storeRespondentIp: true,
+          useCookies: false,
+        });
+      });
+
+      it("takes updatedAt even when nothing else changes", async () => {
+        const survey = await created();
+        const updated = await providers.surveys.updateSurvey(survey.id, { updatedAt: UPDATED_AT });
+        expect(updated).toEqual({ ...survey, updatedAt: UPDATED_AT });
+      });
+
+      it("matches ids case-insensitively", async () => {
+        const survey = await created();
+        const updated = await providers.surveys.updateSurvey(survey.id.toUpperCase(), {
+          name: "Upper",
+          updatedAt: UPDATED_AT,
+        });
+        expect(updated).toEqual({ ...survey, name: "Upper", updatedAt: UPDATED_AT });
+      });
+
+      it("moves to a project and to another Personal scope, changing owner and creator", async () => {
+        const from = freshScope();
+        const survey = await created(from);
+        const mover = randomUUID();
+        const project = { kind: "project", projectId: PROJECT_B_ID } as const;
+        const toProject = await providers.surveys.updateSurvey(survey.id, {
+          move: { owner: project, creatorId: mover },
+          updatedAt: UPDATED_AT,
+        });
+        expect(toProject).toEqual({
+          ...survey,
+          owner: project,
+          creatorId: mover,
+          updatedAt: UPDATED_AT,
+        });
+        expect(await providers.surveys.listSurveys(from)).toEqual([]);
+        expect((await providers.surveys.listSurveys(project)).map((s) => s.id)).toContain(
+          survey.id,
+        );
+
+        // Back to a Personal scope, then onwards: only the new scope lists it.
+        const to = freshScope();
+        const toPersonal = await providers.surveys.updateSurvey(survey.id, {
+          move: { owner: to, creatorId: to.userId },
+          updatedAt: UPDATED_AT,
+        });
+        expect(toPersonal).toEqual({
+          ...survey,
+          owner: to,
+          creatorId: to.userId,
+          updatedAt: UPDATED_AT,
+        });
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(toPersonal);
+        expect(await providers.surveys.listSurveys(to)).toEqual([toPersonal]);
+        expect((await providers.surveys.listSurveys(project)).map((s) => s.id)).not.toContain(
+          survey.id,
+        );
+      });
+
+      it("moves an archived survey from the active to the archived page", async () => {
+        const scope = freshScope();
+        const survey = await created(scope);
+        const page = (archived: boolean) =>
+          providers.surveys.listSurveyPage({ owner: scope, archived, limit: 50 });
+        expect((await page(false)).items).toEqual([survey]);
+        const updated = await providers.surveys.updateSurvey(survey.id, {
+          archived: true,
+          updatedAt: UPDATED_AT,
+        });
+        expect((await page(false)).items).toEqual([]);
+        expect((await page(true)).items).toEqual([updated]);
+      });
+
+      it("returns null for an unknown id and creates nothing", async () => {
+        expect(
+          await providers.surveys.updateSurvey(UNKNOWN_ID, {
+            name: "Ghost",
+            updatedAt: UPDATED_AT,
+          }),
+        ).toBeNull();
+        expect(await providers.surveys.getSurvey(UNKNOWN_ID)).toBeNull();
+      });
+    });
+
+    describe("surveys.cloneSurvey", () => {
+      const copyOf = (scope: PersonalScope, over: Partial<NewSurvey> = {}) =>
+        newSurvey(scope, {
+          name: "Copy of source",
+          createdAt: "2026-09-02T10:00:00.000Z",
+          updatedAt: "2026-09-02T10:00:00.000Z",
+          ...over,
+        });
+
+      it("copies fixture 01 with its definition and theme and leaves the source alone", async () => {
+        const scope = freshScope();
+        const copy = copyOf(scope);
+        const stored = await providers.surveys.cloneSurvey(surveyFeedback.id, copy);
+        expect(stored).toEqual(storedRecord(copy));
+        expect(await providers.surveys.getSurvey(copy.id)).toEqual(stored);
+        expect(await providers.surveys.getDefinition(copy.id)).toEqual(fixtureDefinitions[0]![1]);
+        expect(await providers.surveys.getTheme(copy.id)).toEqual(feedbackTheme);
+        expect(await providers.surveys.listSurveys(scope)).toEqual([stored]);
+        expect(await providers.surveys.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
+        expect(await providers.surveys.getDefinition(surveyFeedback.id)).toEqual(
+          fixtureDefinitions[0]![1],
+        );
+        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
+      });
+
+      it("copies a survey without definition or theme as {} and {}", async () => {
+        const copy = copyOf(freshScope());
+        expect(await providers.surveys.cloneSurvey(surveyDraft.id, copy)).toEqual(
+          storedRecord(copy),
+        );
+        expect(await providers.surveys.getDefinition(copy.id)).toEqual({});
+        expect(await providers.surveys.getTheme(copy.id)).toEqual({});
+      });
+
+      it("copies the definition of a survey created with one", async () => {
+        const definition = { title: "Clone me", pages: [{ name: "page1", elements: [] }] };
+        const source = await providers.surveys.createSurvey(newSurvey(freshScope()), definition);
+        const copy = copyOf(freshScope());
+        await providers.surveys.cloneSurvey(source.id, copy);
+        expect(await providers.surveys.getDefinition(copy.id)).toEqual(definition);
+      });
+
+      it("returns null for an unknown source and creates no copy", async () => {
+        const copy = copyOf(freshScope());
+        expect(await providers.surveys.cloneSurvey(UNKNOWN_ID, copy)).toBeNull();
+        expect(await providers.surveys.getSurvey(copy.id)).toBeNull();
+      });
+    });
+
+    describe("surveys.deleteSurvey", () => {
+      it("deletes a survey with its definition and theme, once", async () => {
+        const scope = freshScope();
+        const survey = await providers.surveys.createSurvey(newSurvey(scope), { title: "Gone" });
+        const other = await providers.surveys.createSurvey(newSurvey(scope));
+        expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+        expect(await providers.surveys.getSurvey(survey.id)).toBeNull();
+        expect(await providers.surveys.getDefinition(survey.id)).toBeNull();
+        expect(await providers.surveys.getTheme(survey.id)).toBeNull();
+        expect((await providers.surveys.listSurveys(scope)).map((s) => s.id)).toEqual([other.id]);
+        expect(await providers.surveys.deleteSurvey(survey.id)).toBe(false);
+        expect(await providers.surveys.getSurvey(other.id)).toEqual(other);
+      });
+
+      it("returns false for an unknown id", async () => {
+        expect(await providers.surveys.deleteSurvey(UNKNOWN_ID)).toBe(false);
+      });
+
+      it("deletes a clone of fixture 01, which has a theme", async () => {
+        const copy = newSurvey(freshScope());
+        await providers.surveys.cloneSurvey(surveyFeedback.id, copy);
+        expect(await providers.surveys.deleteSurvey(copy.id)).toBe(true);
+        expect(await providers.surveys.getSurvey(copy.id)).toBeNull();
+        expect(await providers.surveys.getTheme(copy.id)).toBeNull();
+        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
       });
     });
 
