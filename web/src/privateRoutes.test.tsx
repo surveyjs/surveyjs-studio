@@ -11,7 +11,9 @@ import {
   currentUser,
   meHandler,
   problemHandler,
+  sampleSurvey,
   server,
+  surveyHandler,
   surveyListPageHandlers,
   unauthenticatedHandler,
 } from "./test/server";
@@ -187,3 +189,59 @@ function logoutHandler(status: number, code: string, title: string) {
     ),
   );
 }
+
+describe("survey placeholder routes", () => {
+  it.each([
+    ["results", "Survey results arrive in a later version."],
+    ["history", "Survey history arrives in a later version."],
+  ])("/surveys/<id>/%s shows the survey name and its text", async (page, text) => {
+    server.use(configHandler(), meHandler(), surveyHandler());
+
+    renderAt(`/surveys/${sampleSurvey.id}/${page}`);
+
+    expect(await screen.findByRole("heading", { level: 1, name: sampleSurvey.name })).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to My Surveys" })).toBeTruthy();
+  });
+
+  it.each(["results", "history"])(
+    "/surveys/<unknown>/%s says the survey is not available",
+    async (page) => {
+      server.use(configHandler(), meHandler(), surveyHandler());
+
+      renderAt(`/surveys/22222222-0000-4000-8000-000000000002/${page}`);
+
+      expect(await screen.findByText("This survey is not available.")).toBeTruthy();
+    },
+  );
+
+  it.each(["results", "history"])(
+    "/surveys/<id>/%s sends a signed-out visitor to sign-in",
+    async (page) => {
+      server.use(configHandler(), unauthenticatedHandler());
+      const path = `/surveys/${sampleSurvey.id}/${page}`;
+
+      renderAt(path);
+
+      await waitFor(() =>
+        expect(navigateTo).toHaveBeenCalledExactlyOnceWith(
+          `/api/v1/auth/login?returnTo=${encodeURIComponent(path)}`,
+        ),
+      );
+    },
+  );
+});
+
+describe("public run route", () => {
+  it("/s/<id> renders without a session and calls no survey endpoint", async () => {
+    // Only /config (the root loader) is answered: any other request fails the test.
+    server.use(configHandler());
+
+    renderAt(`/s/${sampleSurvey.id}`);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Survey" })).toBeTruthy();
+    expect(screen.getByText("The survey run page arrives in a later version.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
+    expect(navigateTo).not.toHaveBeenCalled();
+  });
+});
