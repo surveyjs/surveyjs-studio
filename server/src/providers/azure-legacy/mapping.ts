@@ -1,6 +1,7 @@
 import type {
   ProjectMembership,
   ProjectRecord,
+  SurveyDefinition,
   SurveyRecord,
   SurveyResponse,
   User,
@@ -35,6 +36,11 @@ export class UnmappableLegacyRowError extends Error {
 }
 
 const guid = (value: string): string => value.toLowerCase();
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A GUID with dashes, in any case: the only id form the legacy stores hold. */
+export const isGuid = (value: string): boolean => GUID.test(value);
+
 const flag = (value: number | null): boolean => value === 1;
 
 export function surveyFromLegacy(
@@ -74,6 +80,27 @@ export function surveyFromLegacy(
       useCookies: flag(row.usecookies),
     },
   };
+}
+
+/**
+ * A survey definition from the text of its `surveyjson` blob (layout section 3.2). An empty blob
+ * is an empty survey; text that is not a JSON object cannot be represented.
+ */
+export function definitionFromLegacy(surveyId: string, text: string): SurveyDefinition {
+  if (text.trim() === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new UnmappableLegacyRowError({ surveyId: guid(surveyId) }, "definition is not JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new UnmappableLegacyRowError(
+      { surveyId: guid(surveyId) },
+      "definition is not a JSON object",
+    );
+  }
+  return parsed as SurveyDefinition;
 }
 
 export function responseFromLegacy(entity: LegacyResultEntity): SurveyResponse {

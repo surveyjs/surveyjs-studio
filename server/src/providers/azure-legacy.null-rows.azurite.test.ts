@@ -2,6 +2,7 @@ import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SurveyRecord } from "../domain/types.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
+import { localBlobServiceClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "./azure-legacy/index.js";
 import {
@@ -11,6 +12,7 @@ import {
   OWNER_ID,
   PROJECT_B_ID,
   memberProjects,
+  ownerPersonalActiveSurveys,
   ownerPersonalSurveys,
 } from "./suite/expected.js";
 import type { ProviderSet } from "./types.js";
@@ -19,7 +21,8 @@ import type { ProviderSet } from "./types.js";
 // then restores the golden fixtures so other files see the usual data in any order.
 
 const NULL_NAME_SURVEY = "eeeeeeee-0000-4000-8000-0000000000a1";
-const NULL_POSTID_SURVEY = "eeeeeeee-0000-4000-8000-0000000000a2";
+// Sorts before NULL_NAME_SURVEY (same time, smaller id), so a page can end on this skipped row.
+const NULL_POSTID_SURVEY = "eeeeeeee-0000-4000-8000-0000000000a0";
 const NULL_ROLE_MEMBERSHIP = "eeeeeeee-0000-4000-8000-0000000000b1";
 const NULL_EMAIL_USER = "eeeeeeee-0000-4000-8000-0000000000e1";
 const EXPIRED_LICENCE = "eeeeeeee-0000-4000-8000-0000000000f1";
@@ -30,6 +33,16 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 interface Warning {
   details: Readonly<Record<string, string>>;
   message: string;
+}
+
+/** A `surveyjson` blob whose text is not JSON, for the NULL-name survey. */
+async function writeBrokenDefinition(connectionString: string): Promise<void> {
+  const blob = localBlobServiceClient(connectionString, "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING")
+    .getContainerClient("surveyjson")
+    .getAppendBlobClient(NULL_NAME_SURVEY);
+  const text = Buffer.from('{"title": "Cut off', "utf8");
+  await blob.create();
+  await blob.appendBlock(text, text.length);
 }
 
 async function insertRows(connectionString: string): Promise<void> {
@@ -88,6 +101,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
   beforeAll(async () => {
     const config = replicaConfig();
     await insertRows(config.sqlConnectionString);
+    await writeBrokenDefinition(config.surveysStorageConnectionString);
     providers = createAzureLegacyProviders(config, {
       logger: { warn: (details, message) => warnings.push({ details, message }) },
       accountNotices: "surveyjs-licenses",
@@ -144,10 +158,39 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     ]);
   });
 
+  it("pages past a skipped row: a shorter page that still points at the rest", async () => {
+    const owner = { kind: "personal", userId: OWNER_ID } as const;
+    warnings.length = 0;
+    // The fourth row of the active list is the skipped one; a fifth row follows it.
+    const first = await store().surveys.listSurveyPage({ owner, archived: false, limit: 4 });
+    expect(first).toEqual({
+      items: ownerPersonalActiveSurveys,
+      next: { updatedAt: OLDEST, id: NULL_POSTID_SURVEY },
+    });
+    const second = await store().surveys.listSurveyPage({
+      owner,
+      archived: false,
+      limit: 4,
+      after: first.next!,
+    });
+    expect(second.items.map((survey) => survey.id)).toEqual([NULL_NAME_SURVEY]);
+    expect(second.next).toBeNull();
+    expect(warnings.map((w) => w.details)).toEqual([{ surveyId: NULL_POSTID_SURVEY }]);
+  });
+
   it("skips a survey with a NULL postid: getSurvey gives null and a warning", async () => {
     warnings.length = 0;
     expect(await store().surveys.getSurvey(NULL_POSTID_SURVEY)).toBeNull();
     expect(warnings.map((w) => w.details)).toEqual([{ surveyId: NULL_POSTID_SURVEY }]);
+  });
+
+  it("reads a definition blob that is not JSON as {} and warns with the survey id only", async () => {
+    warnings.length = 0;
+    expect(await store().surveys.getDefinition(NULL_NAME_SURVEY)).toEqual({});
+    expect(warnings).toEqual([
+      { details: { surveyId: NULL_NAME_SURVEY }, message: expect.any(String) as string },
+    ]);
+    expect(warnings[0]!.message).not.toContain("Cut off");
   });
 
   it("skips a membership with a NULL role and reports its ids", async () => {

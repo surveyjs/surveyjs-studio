@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   UnmappableLegacyRowError,
+  definitionFromLegacy,
+  isGuid,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
   projectFromLegacy,
@@ -142,6 +144,55 @@ describe("surveyFromLegacy", () => {
         expect((error as Error).message).not.toContain("Customer feedback");
       },
     );
+  });
+});
+
+describe("definitionFromLegacy", () => {
+  const SURVEY = "AAAAAAAA-0000-4000-8000-000000000001";
+
+  it("parses the blob text", () => {
+    const definition = { title: "Größe ✓", pages: [{ name: "page1" }] };
+    expect(definitionFromLegacy(SURVEY, JSON.stringify(definition))).toEqual(definition);
+  });
+
+  it.each(["", " \t "])("reads an empty blob %j as an empty survey", (text) => {
+    expect(definitionFromLegacy(SURVEY, text)).toEqual({});
+  });
+
+  it.each(['{"title": "cut', "[1, 2]", "null", '"text"', "42"])(
+    "refuses %j with the survey id only",
+    (text) => {
+      const error = (() => {
+        try {
+          definitionFromLegacy(SURVEY, text);
+        } catch (e) {
+          return e;
+        }
+      })();
+      expect(error).toBeInstanceOf(UnmappableLegacyRowError);
+      expect((error as UnmappableLegacyRowError).ids).toEqual({
+        surveyId: "aaaaaaaa-0000-4000-8000-000000000001",
+      });
+      expect((error as Error).message).not.toContain("cut");
+    },
+  );
+});
+
+describe("isGuid", () => {
+  it.each(["aaaaaaaa-0000-4000-8000-000000000001", "AAAAAAAA-0000-4000-8000-00000000000F"])(
+    "accepts %j",
+    (value) => {
+      expect(isGuid(value)).toBe(true);
+    },
+  );
+
+  it.each([
+    "",
+    "personal",
+    "aaaaaaaa00004000800000000000001",
+    "aaaaaaaa-0000-4000-8000-00000000000g",
+  ])("refuses %j", (value) => {
+    expect(isGuid(value)).toBe(false);
   });
 });
 
