@@ -10,7 +10,7 @@ import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { createProviders } from "./providers/index.js";
-import { ownerUser } from "./providers/suite/expected.js";
+import { ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
@@ -203,7 +203,7 @@ describe("request validation", () => {
 describe("operations without a handler", () => {
   it("answer 501 not-implemented naming the operationId", async () => {
     const { server, headers } = await startSignedIn();
-    const res = await server.inject({ url: "/api/v1/surveys", headers });
+    const res = await server.inject({ url: "/api/v1/surveys/s1/history", headers });
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
@@ -211,7 +211,7 @@ describe("operations without a handler", () => {
       title: "Not implemented",
       status: 501,
       code: "not-implemented",
-      detail: expect.stringContaining("listSurveys") as string,
+      detail: expect.stringContaining("listSurveyHistory") as string,
     });
   });
 
@@ -261,6 +261,11 @@ function contractOperations(): ContractOperation[] {
     p.$ref === undefined
       ? p
       : (doc.components.parameters[p.$ref.replace("#/components/parameters/", "")] ?? {});
+  // Ids of the owner's fixture records, so implemented reads find them (a 404 here means "not routed").
+  const pathValues: Record<string, string> = {
+    surveyId: surveyFeedback.id,
+    projectId: PROJECT_A_ID,
+  };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
   for (const [path, item] of Object.entries(doc.paths)) {
@@ -270,7 +275,7 @@ function contractOperations(): ContractOperation[] {
       const params = [...(item.parameters ?? []), ...(op.parameters ?? [])].map(deref);
       const url = path.replace(/\{([^}]+)\}/g, (_m, name: string) => {
         const param = params.find((p) => p.in === "path" && p.name === name);
-        return param?.schema?.enum?.[0] ?? "abc";
+        return param?.schema?.enum?.[0] ?? pathValues[name] ?? "abc";
       });
       operations.push({ operationId: op.operationId, method: method.toUpperCase(), url });
     }
@@ -295,7 +300,7 @@ describe("contract coverage", () => {
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      expect([200, 302, 400, 422, 501]).toContain(res.statusCode);
+      expect([200, 201, 302, 400, 422, 501]).toContain(res.statusCode);
     },
   );
 });

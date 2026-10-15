@@ -32,6 +32,8 @@ export interface LegacyUserRow {
 export interface LegacyOrganizationRow {
   id: string;
   name: string | null;
+  /** Time of creation or of the last rename (layout 3.12). */
+  happendat: Date | null;
 }
 
 /** SQL `OrganizationUsers` (layout section 3.13). */
@@ -40,6 +42,8 @@ export interface LegacyOrganizationUserRow {
   organizationid: string;
   userid: string;
   role: string | null;
+  /** Time of join or of the last role change (layout 3.13). */
+  happendat: Date | null;
 }
 
 /**

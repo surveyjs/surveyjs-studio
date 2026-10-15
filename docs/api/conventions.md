@@ -60,7 +60,7 @@ The `Problem` schema in the contract holds the full list of codes.
 
 List endpoints use opaque cursors: `?limit=&cursor=` (`limit` 1-200, default 50). The response is
 `{ "items": [...], "nextCursor": "..." }`. `nextCursor` is `null` on the last page. Pass it back
-as `cursor` to get the next page. Do not parse it.
+as `cursor` to get the next page. Do not parse it. More in [Paging](paging.md).
 
 ## Partial updates (Merge Patch)
 

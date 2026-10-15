@@ -21,6 +21,20 @@ export interface SurveyRecord {
   };
 }
 
+export type SurveyDefinition = Record<string, unknown>;
+
+/** Everything the service decides for a new survey; the store adds the legacy defaults. */
+export interface NewSurvey {
+  readonly id: string; // lower-case GUID
+  readonly name: string;
+  readonly owner: SurveyOwner;
+  readonly creatorId: string; // the signed-in user
+  readonly postId: string; // lower-case GUID, independent
+  readonly resultId: string; // lower-case GUID, independent
+  readonly createdAt: string; // ISO 8601 UTC (Date#toISOString)
+  readonly updatedAt: string; // equal to createdAt
+}
+
 export interface User {
   readonly id: string;
   readonly email: string;
@@ -30,8 +44,17 @@ export interface User {
 
 export type ProjectRole = "admin" | "user";
 
+/** A project as the Directory returns it (contract `Project` minus the caller's `role`). */
+export interface ProjectRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly ownerId: string;
+  readonly createdAt: string; // ISO 8601 UTC
+  readonly memberCount: number; // >= 1
+}
+
 export interface ProjectMembership {
-  readonly project: { readonly id: string; readonly name: string };
+  readonly project: ProjectRecord;
   readonly role: ProjectRole;
 }
 

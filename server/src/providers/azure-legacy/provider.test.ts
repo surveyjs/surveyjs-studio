@@ -1,7 +1,7 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LegacyConfig } from "../../config.js";
-import { createAzureLegacyProviders } from "./index.js";
+import { LegacyStoreError, createAzureLegacyProviders } from "./index.js";
 
 // Nothing listens on port 1: any call that reached SQL or storage would fail.
 const SECRET = "Unreachable-Secret-77";
@@ -24,8 +24,20 @@ describe("azure-legacy provider without a reachable store", () => {
       expect(await providers.surveys.getSurvey(id)).toBeNull();
       expect(await providers.surveys.listSurveys({ kind: "personal", userId: id })).toEqual([]);
       expect(await providers.surveys.listSurveys({ kind: "project", projectId: id })).toEqual([]);
+      for (const owner of [
+        { kind: "personal", userId: id },
+        { kind: "project", projectId: id },
+      ] as const) {
+        expect(
+          await providers.surveys.listSurveyPage({ owner, archived: false, limit: 50 }),
+        ).toEqual({ items: [], next: null });
+      }
+      expect(await providers.surveys.getDefinition(id)).toBeNull();
       expect(await providers.directory.getUser(id)).toBeNull();
       expect(await providers.directory.listUserProjects(id)).toEqual([]);
+      const user = "11111111-0000-4000-8000-a00000000001";
+      expect(await providers.directory.getUserProject(id, user)).toBeNull();
+      expect(await providers.directory.getUserProject(user, id)).toBeNull();
     },
   );
 
@@ -74,10 +86,50 @@ describe("azure-legacy provider without a reachable store", () => {
     );
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
-    expect(message).toMatch(/^Legacy SQL survey lookup failed/);
+    expect(message).toMatch(/^Legacy store survey lookup failed/);
     expect(message).not.toContain("127.0.0.1");
     expect(message).not.toContain(SECRET);
     expect((error as Error).cause).toBeUndefined();
+  });
+
+  describe("createSurvey", () => {
+    const valid = {
+      id: "22222222-0000-4000-8000-0000000000f1",
+      name: "New Survey 1",
+      owner: { kind: "personal", userId: "11111111-0000-4000-8000-a00000000001" },
+      creatorId: "11111111-0000-4000-8000-a00000000001",
+      postId: "33333333-0000-4000-8000-0000000000f1",
+      resultId: "44444444-0000-4000-8000-0000000000f1",
+      createdAt: "2026-08-01T10:00:00.000Z",
+      updatedAt: "2026-08-01T10:00:00.000Z",
+    } as const;
+
+    // A store call would fail with a LegacyStoreError; the refusal comes first.
+    it.each([
+      ["a non-GUID survey id", { id: "../surveyjson/other" }],
+      ["a non-GUID owner id", { owner: { kind: "project", projectId: "personal" } }],
+      ["a non-GUID creator id", { creatorId: "" }],
+      ["a non-GUID post id", { postId: "' OR 1=1 --" }],
+      ["a non-GUID result id", { resultId: "not-a-guid" }],
+      ["a name over 200 characters", { name: "x".repeat(201) }],
+    ] as const)("refuses %s before any write", async (_name, over) => {
+      await expect(
+        providers.surveys.createSurvey({ ...valid, ...over }, { title: "t" }),
+      ).rejects.toThrow(/^Survey create refused/);
+    });
+
+    it("reports a failed write without any connection-string value", async () => {
+      const error = await providers.surveys.createSurvey(valid).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(LegacyStoreError);
+      const message = (error as Error).message;
+      expect(message).toMatch(/^Legacy store survey create failed/);
+      expect(message).not.toContain("127.0.0.1");
+      expect(message).not.toContain(SECRET);
+      expect((error as Error).cause).toBeUndefined();
+    });
   });
 
   it("names the variable, not the value, for an invalid storage connection string", () => {
@@ -129,12 +181,12 @@ describe("azure-legacy provider closing while SQL is connecting", () => {
     );
     await expect(providers.close()).resolves.toBeUndefined();
     await expect(providers.close()).resolves.toBeUndefined();
-    expect(await pending).toMatch(/^Legacy SQL survey lookup failed/);
+    expect(await pending).toMatch(/^Legacy store survey lookup failed/);
 
     const before = accepted;
     await expect(
       providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001"),
-    ).rejects.toThrow(/^Legacy SQL survey lookup failed/);
+    ).rejects.toThrow(/^Legacy store survey lookup failed/);
     expect(await providers.ready()).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(accepted).toBe(before);

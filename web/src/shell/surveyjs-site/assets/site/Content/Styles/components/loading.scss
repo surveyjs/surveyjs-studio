@@ -1,0 +1,20 @@
+﻿.v2-class---loading {
+    background-color: $General--Backcolor;
+    opacity: 0.85;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    position: fixed;
+    z-index: 10000;
+    display: none;
+}
+
+.v2-class---loading__indicator {
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    left: calc(50% - 64px/2);
+    top: calc(50% - 64px/2);
+    animation: rotation 1s infinite linear;
+}

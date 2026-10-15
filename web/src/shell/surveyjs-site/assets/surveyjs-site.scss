@@ -1,7 +1,7 @@
 // The surveyjs.io design-system styles the shell needs: the partials of the site's
 // `the site's source` that style the top bar, the menus, the footer, the cookie
-// banner and the licence dialogs, imported in the site's order. The partials under `site/` are
-// copies; see README.md for their origin and the one change.
+// banner, the licence dialogs and the My Surveys page, imported in the site's order. The partials
+// under `site/` are copies; see README.md for their origin and the one change.
 
 @import "site/Content/Styles/fonts.scss";
 @import "site/Content/Styles/sizes.scss";
@@ -18,14 +18,17 @@
 
 @import "site/Content/Styles/components/popups.scss";
 @import "site/Content/Styles/components/logo.scss";
+@import "site/Content/Styles/components/header.scss";
 @import "site/Content/Styles/components/button.scss";
 @import "site/Content/Styles/components/circle-icon.scss";
 @import "site/Content/Styles/components/icon.scss";
 @import "site/Content/Styles/components/paragraph.scss";
 @import "site/Content/Styles/components/expand-collapse-button.scss";
 @import "site/Content/Styles/components/faq-question.scss";
+@import "site/Content/Styles/components/switcher.scss";
 @import "site/Content/Styles/components/badge.scss";
 @import "site/Content/Styles/components/forms/checkbox.scss";
+@import "site/Content/Styles/components/loading.scss";
 
 @import "site/Content/Styles/top-bar/top-bar.scss";
 @import "site/Content/Styles/top-bar/menu.scss";
@@ -35,3 +38,34 @@
 
 @import "site/Content/Styles/footer/footer.scss";
 @import "site/Content/Styles/footer/footer-link-group-item.scss";
+
+// The site defines the spinner animation of `loading.scss` in `pages/cart-page.scss`, a page the
+// shell does not copy; these are its lines.
+@keyframes rotation {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(359deg);
+  }
+}
+
+@import "site/Content/Styles/pages/my-surveys.scss";
+
+// The page styles of `the site's page markup` (its `pageStyles` section), limited to the
+// pages that render the My Surveys article, so other pages keep the site's default `main`.
+main:has(> .v2-class---my-surveys-page) {
+  display: flex;
+  flex-direction: column;
+}
+
+main:has(> .v2-class---my-surveys-page) .v2-class---loading.v2-class---loading {
+  opacity: 1;
+}
+
+// `loading.scss` hides the indicator and the site never unhides it on this page; the app renders
+// it only while a survey is being created, so it shows whenever it is there.
+#my-surveys-loading .v2-class---loading {
+  display: block;
+}

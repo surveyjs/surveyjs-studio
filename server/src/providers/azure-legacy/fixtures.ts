@@ -2,8 +2,14 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SurveyDefinition } from "../../domain/types.js";
 import type { MemorySeed } from "../memory.js";
-import { membershipFromLegacy, surveyFromLegacy, userFromLegacy } from "./mapping.js";
+import {
+  membershipFromLegacy,
+  projectFromLegacy,
+  surveyFromLegacy,
+  userFromLegacy,
+} from "./mapping.js";
 import type {
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
@@ -126,6 +132,9 @@ const date = (row: Record<string, unknown>, column: string): Date => {
   return value;
 };
 
+const optDate = (row: Record<string, unknown>, column: string): Date | null =>
+  typeof row[column] === "string" ? date(row, column) : null;
+
 function surveyRow(row: Record<string, unknown>): LegacySurveyRow {
   return {
     id: str(row, "id"),
@@ -235,6 +244,7 @@ export async function readLegacyFixtures(
     organizations: (rawSqlRows.Organizations ?? []).map((row): LegacyOrganizationRow => ({
       id: str(row, "id"),
       name: str(row, "name"),
+      happendat: optDate(row, "happendat"),
     })),
     organizationUsers: (rawSqlRows.OrganizationUsers ?? []).map(
       (row): LegacyOrganizationUserRow => ({
@@ -242,6 +252,7 @@ export async function readLegacyFixtures(
         organizationid: str(row, "organizationid"),
         userid: str(row, "userid"),
         role: str(row, "role"),
+        happendat: optDate(row, "happendat"),
       }),
     ),
     rawSqlRows,
@@ -254,21 +265,47 @@ export async function readLegacyFixtures(
 
 /**
  * Fixtures -> domain through the legacy mapping. A survey whose `userid` is an
- * `Organizations.id` is a project survey, any other is personal.
+ * `Organizations.id` is a project survey, any other is personal. Definitions are the parsed
+ * `surveyjson` blobs.
  */
 export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
   const fixtures = await readLegacyFixtures(dir);
   const orgs = new Map(fixtures.organizations.map((org) => [org.id.toLowerCase(), org]));
+  const membersOf = (orgId: string) =>
+    fixtures.organizationUsers.filter((m) => m.organizationid.toLowerCase() === orgId);
+  const projects = new Map(
+    [...orgs].map(([orgId, org]) => [orgId, projectFromLegacy(org, membersOf(orgId))]),
+  );
+  const definitions: Record<string, SurveyDefinition> = {};
+  for (const blob of fixtures.blobs) {
+    if (blob.account !== "surveys" || blob.container !== "surveyjson") continue;
+    definitions[blob.name.toLowerCase()] = JSON.parse(
+      blob.content.toString("utf8"),
+    ) as SurveyDefinition;
+  }
   return {
     users: fixtures.users.map(userFromLegacy),
     surveys: fixtures.surveys.map((row) =>
       surveyFromLegacy(row, orgs.has((row.userid ?? "").toLowerCase()) ? "project" : "personal"),
     ),
+    // The memory store counts the members itself.
+    projects: [...projects.values()].map(({ id, name, ownerId, createdAt }) => ({
+      id,
+      name,
+      ownerId,
+      createdAt,
+    })),
     memberships: fixtures.organizationUsers.map((member) => {
-      const org = orgs.get(member.organizationid.toLowerCase());
-      if (!org)
+      const project = projects.get(member.organizationid.toLowerCase());
+      if (!project) {
         throw new Error(`Membership refers to unknown organization ${member.organizationid}`);
-      return { userId: member.userid.toLowerCase(), membership: membershipFromLegacy(org, member) };
+      }
+      return {
+        userId: member.userid.toLowerCase(),
+        projectId: project.id,
+        role: membershipFromLegacy(project, member).role,
+      };
     }),
+    definitions,
   };
 }

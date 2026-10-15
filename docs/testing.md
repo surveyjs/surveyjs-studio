@@ -16,21 +16,21 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 ## Run everything
 
-| Command                 | Runs                                                    |
-| ----------------------- | ------------------------------------------------------- |
-| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`          |
-| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web` |
-| `pnpm test:conformance` | The conformance suite against a server it starts itself |
-| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit              |
-| `pnpm e2e:azurite`      | Playwright sign-in spec in Azurite mode (needs Docker)  |
+| Command                 | Runs                                                                    |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                          |
+| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                 |
+| `pnpm test:conformance` | The conformance suite against a server it starts itself                 |
+| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                              |
+| `pnpm e2e:azurite`      | Playwright sign-in and survey list specs in Azurite mode (needs Docker) |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
 
-| Command                         | Runs                                                                                                     |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pnpm test:providers:azurite`   | Three files against Azurite and SQL: the provider suite, the NULL-row tests and the fixture loader tests |
-| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                    |
+| Command                         | Runs                                                                                                                                     |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey-creation write tests and the fixture loader tests |
+| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                    |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -46,11 +46,14 @@ Run with Vitest from the root. Scope:
   sealing and session expiry (with an injected clock), CSRF comparison, `returnTo` validation, the
   cookies, the sign-in flow and the authentication order through `inject` with the dev provider, the
   OIDC provider against an in-process fake identity server, the licence-expiry rule, and the refusal
-  of the dev provider in production and hosted.
+  of the dev provider in production and hosted. For the survey list: "New Survey N" naming,
+  permissions, cursor encoding and decoding, the surveys and projects handlers through `inject`, the
+  mapping of projects, and the in-memory provider.
 - `web/`: the API client and config loader (with `msw` and `openapi-msw` mocks typed by the
   contract), the licence loader, the CSRF middleware, the route guard and sign-out, shell selection,
   the surveyjs.io shell (account menu, notice dialogs, cookie banner), and the app rendered with React
-  Testing Library.
+  Testing Library. For the survey list: the search parameter validation, the date format, the query
+  modules, the cache rule that adds a created survey to the list, and the retry policy.
 
 `pnpm test:unit` leaves out the `providers-azurite` project, which needs Docker.
 
@@ -89,6 +92,25 @@ Remove-Item Env:CONFORMANCE_BASE_URL
 
 A port is accepted when this suite passes against it.
 
+### Files and the shared harness
+
+| File                  | Checks                                                                                                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harness.ts`          | The helpers all test files share: `call` (a request whose response must conform to the contract), `codeOf`, `signedIn` and `sessionHeaders` (cookies and CSRF header) |
+| `conformance.test.ts` | `getConfig`, errors, the sign-in flow (below), the session, and `501` for operations that are not built                                                               |
+| `sign-in.test.ts`     | The cookie jar of the sign-in driver (a unit test of the suite itself)                                                                                                |
+| `surveys.test.ts`     | `listSurveys` (filters, order, visibility, paging), `createSurvey` (defaults, naming, validation, scopes) and `getSurvey` (a stranger's survey is `404`)              |
+| `projects.test.ts`    | `listProjects` and `getProject` (roles, order, paging, a non-member gets `404`)                                                                                       |
+
+`fixtureUsers` in `sign-in.ts` holds the owner, the admin, the member, the outsider and the blocked
+user: the same people as the [seed accounts](development.md#golden-fixtures).
+
+**Tests must tolerate data from other tests and from earlier runs.** The Azurite replica keeps what
+tests create. So tests never assume the exact size of a scope that tests write to: they check
+membership, relative order and values computed from what they created, and walk every page. The
+rule for test data is in [Test data](#test-data) below. `pnpm legacy:load` reloads the fixtures and
+removes everything else, which resets a replica.
+
 ### Signing in from the conformance suite
 
 Private operations need a session, so the suite signs in over HTTP only, the way a browser does
@@ -101,9 +123,10 @@ calls the callback. It knows two providers:
 | `/__dev/sign-in` (the dev provider)        | Reads the page, finds the link of the user (its `code` is the user id) and opens it                                             |
 | A form with a `username` field (mock OIDC) | Posts the user id as `username` to the form's action. The mock (`docker/mock-oidc.json`) signs in that user with email and name |
 
-The user is one of the legacy fixtures (`fixtureUsers`: the owner, and the blocked user). With any
-other login page the driver throws `SignInUnsupportedError`, and the tests that need a session are
-**skipped**, with the redirect target in the skip note. The tests that need none still run.
+The user is one of the legacy fixtures (`fixtureUsers`: the owner, the project admin, the member,
+the outsider and the blocked user). With any other login page the driver throws
+`SignInUnsupportedError`, and the tests that need a session are **skipped**, with the redirect target
+in the skip note. The tests that need none still run.
 
 **To make another server pass the suite**, give it a sign-in that the driver can complete. The
 simplest way is the mock OIDC server of Azurite mode (`pnpm demo:azurite:up` starts it):
@@ -131,6 +154,17 @@ is `401` even when it is not built, and a change without the CSRF token is `403`
 against a small fixture contract (`conformance-tests/src/fixtures/things.yaml`), so a broken
 validator cannot give false passes.
 
+### Test data
+
+Tests that write (create surveys) do so in only two scopes: **the outsider's personal scope** and
+**the Engineering project**. The owner's personal scope and the Marketing project are
+**fixture-only**: no test writes to them, because the end-to-end tests assert their exact first rows
+on Azurite, where data stays between runs. A test that looks for one fixture row in a scope that
+others write to walks every page and does not assume it is on the first. Later steps must follow the
+same rule, and must **not archive the outsider's surveys**: the outsider spec asserts that this user
+has no Active/Archived switch, which is shown only when there is an archived survey. The suite
+assumes a replica loaded by `pnpm legacy:load` at most a few runs ago.
+
 ## Browser end-to-end
 
 Install the browsers once (see [Development](development.md#setup)), then:
@@ -151,26 +185,41 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
 - Locally it reuses servers already running on 3000 and 5173 (for example `pnpm demo`). Those servers must use the default configuration, or the home page spec fails. With `CI` set it does not
   reuse them, and fails if the ports are busy.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
-  page error, except the console errors of an observed signed-out `/api/v1/me` 401 and Firefox's
-  favicon CSP message.
+  page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
+  message of Firefox, and the error responses a test allows (below).
+- The browsers run with the locale `en-US` and the time zone `UTC` (set in `e2e/playwright.config.ts`), so the
+  dates in the list read the same on every machine (`4/14/2026`).
 - Traces are kept for failures; CI uploads `e2e/playwright-report/`.
 
 Run one browser: `pnpm e2e --project=chromium`.
 
 The specs (`e2e/tests/`):
 
-| Spec              | Checks                                                                                                                        | Modes           |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `home.spec.ts`    | After sign-in the home page shows the configured edition and shell, with no console errors                                    | memory          |
-| `sign-in.spec.ts` | An anonymous visit goes to sign-in; signing in shows the user's name; a deep link survives sign-in; Sign Out ends the session | memory, Azurite |
-| `shell.spec.ts`   | A keyboard user opens the Account menu and signs out; Escape closes a menu and keeps focus (not on WebKit)                    | memory          |
-| `notices.spec.ts` | With `ACCOUNT_NOTICES=license-expired` (the second server pair) the renewal dialog opens, and Later closes it                 | memory          |
+| Spec                         | Checks                                                                                                                                                                                                                                                                                                                                                                         | Modes                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `home.spec.ts`               | After sign-in the home page shows the My Surveys heading and a survey row, with no console errors                                                                                                                                                                                                                                                                              | memory                               |
+| `sign-in.spec.ts`            | An anonymous visit goes to sign-in; signing in shows the user's name; a deep link survives sign-in; Sign Out ends the session                                                                                                                                                                                                                                                  | memory, Azurite                      |
+| `shell.spec.ts`              | A keyboard user opens the Account menu and signs out; Escape closes a menu and keeps focus (not on WebKit)                                                                                                                                                                                                                                                                     | memory                               |
+| `notices.spec.ts`            | With `ACCOUNT_NOTICES=license-expired` (the second server pair) the renewal dialog opens, and Later closes it                                                                                                                                                                                                                                                                  | memory                               |
+| `survey-list.spec.ts`        | The owner's list (rows, dates, newest first), the Active/Archived view and the URL (reload and Back), the project selector, a user with neither selector nor switch, an unknown project that falls back to Personal Surveys, an unknown survey id ("This survey is not available." and its back link), and Create a Survey (opens the editor placeholder, then heads the list) | memory, Azurite                      |
+| `survey-list-paging.spec.ts` | Fills Engineering through the API until it holds more than 50 surveys, then Load more adds rows until the button goes and no row repeats                                                                                                                                                                                                                                       | memory only (it writes many surveys) |
 
-`e2e/tests/support/sign-in.ts` signs in through the browser: on the dev page it clicks the user, on the
-mock OIDC form it types the user id.
+Helpers (`e2e/tests/support/`):
 
-Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in spec on Chromium
-against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+- `sign-in.ts`: `users` (owner, admin, member and outsider) and `signInAt(page, path, user)`, which signs in
+  through the browser: on the dev page it clicks the user, on the mock OIDC form it types the user id.
+- `survey-list.ts`: locators for the rows and names (`surveyRows`, `surveyNames`, `surveysNamed`,
+  `loadMoreButton`), `expectSurveyRow` (name, created and updated dates) and `loadAllPages` (clicks Load
+  more until the list ends).
+- `test.ts`: the shared `test` and its console guard. **`expectedErrorResponses`** is a fixture option, a
+  list of `{ path, status }`: a per-test allowance for API answers that the test expects to be
+  errors, which browsers log as console errors (for example a `404` for an unknown project). Set it
+  with `test.use({ expectedErrorResponses: [{ path: "/api/v1/surveys", status: 404 }] })`. Every such
+  console error must be matched by an observed response with that path and status, so an allowance
+  cannot hide an error that never came from the listed response.
+
+Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in and survey list specs on
+Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
@@ -187,21 +236,31 @@ It covers:
 - `listSurveys`: personal and project scopes, the order (`updatedAt` descending, then id), an owner
   with no surveys, no mixing of scopes, and case-insensitive ids;
 - `getUser` and `findUserByEmail`: found, unknown, email in any case;
-- `listUserProjects`: roles, order (project name ignoring case, then id), unknown user;
+- `listSurveyPage`: pages of the active and the archived list, the position of the last item, a walk
+  that stays whole while a newer survey is added, ordering by id at equal times;
+- `createSurvey` and `getDefinition`: the legacy defaults and lower-case ids, the same record from
+  every read, a duplicate id, a definition kept (and `{}` without one);
+- `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
+  project record, unknown user or project, a non-member;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
 
 Where it runs:
 
-| Test file                                | Provider                               | Run with                      |
-| ---------------------------------------- | -------------------------------------- | ----------------------------- |
-| `memory.provider.test.ts`                | `memory`, seeded with fixtures         | `pnpm test:unit`              |
-| `azure-legacy.provider.azurite.test.ts`  | `azure-legacy` on the replica          | `pnpm test:providers:azurite` |
-| `azure-legacy.null-rows.azurite.test.ts` | `azure-legacy`, rows with NULL columns | `pnpm test:providers:azurite` |
+| Test file                                | Provider                                              | Run with                      |
+| ---------------------------------------- | ----------------------------------------------------- | ----------------------------- |
+| `memory.provider.test.ts`                | `memory`, seeded with fixtures                        | `pnpm test:unit`              |
+| `azure-legacy.provider.azurite.test.ts`  | `azure-legacy` on the replica                         | `pnpm test:providers:azurite` |
+| `azure-legacy.null-rows.azurite.test.ts` | `azure-legacy`, rows with NULL columns                | `pnpm test:providers:azurite` |
+| `azure-legacy.writes.azurite.test.ts`    | `azure-legacy`, the legacy format of a created survey | `pnpm test:providers:azurite` |
 
 `pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
 `docker/azurite.env`, loads the fixtures into the running replica first, and needs
 `pnpm demo:azurite:up`. The NULL-row test adds rows with NULL columns and checks the defaults
-and the skip warnings (ids only).
+and the skip warnings (ids only). The writes test reads the replica directly and checks what a
+create leaves: exactly the legacy columns of the `Surveys` row, the blobs, the audit row, a project
+survey, and a duplicate id (a `LegacyStoreError` with no connection-string text). The **create tests
+of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
+earlier runs and leave nothing that another test could see.
 
 **To run the suite against a new provider**, add a test file next to the others in
 `server/src/providers/` that calls `describeProviderSuite("<name>", () => <create a ProviderSet
@@ -215,8 +274,9 @@ that holds the golden fixtures>)`. If it needs a service, put it in its own Vite
 three `LEGACY_*` variables and the `OIDC_*` settings of the mock OIDC server are passed through, and
 the run fails if one is missing; sign-in goes through the mock). `pnpm test:conformance:azurite`
 sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The
-reference server has no operations that use the stores yet, so for now the run proves that the
-server starts on the legacy provider and still answers as the contract says.
+survey and project tests run on the provider, so on Azurite they read the fixtures from the replica and
+create surveys in it (only in the scopes named in [Test data](#test-data)).
 
-The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in spec, on the
-`azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`).
+The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in and survey list
+specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
+runs in memory mode only.

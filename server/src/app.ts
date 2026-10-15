@@ -13,14 +13,16 @@ import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
 import { serializeRequest } from "./logging.js";
+import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
+import { createSurveyHandlers } from "./surveys/handlers.js";
 
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
   readonly apiDocsPath?: string;
   /** Replaces the configured identity provider (tests). */
   readonly identity?: IdentityProvider;
-  /** Clock for session and sign-in expiry (tests). */
+  /** Clock for session and sign-in expiry and for creation times (tests). */
   readonly now?: Clock;
   /** Receives the JSON log lines, even when `NODE_ENV=test` (tests). */
   readonly logStream?: { write(line: string): void };
@@ -117,6 +119,12 @@ export async function buildApp(
         identity,
         directory: providers.directory,
         notices: providers.notices,
+        ...(options.now && { now: options.now }),
+      }),
+      ...createProjectHandlers({ directory: providers.directory }),
+      ...createSurveyHandlers({
+        surveys: providers.surveys,
+        directory: providers.directory,
         ...(options.now && { now: options.now }),
       }),
     },

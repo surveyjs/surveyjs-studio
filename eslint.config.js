@@ -28,10 +28,15 @@ export default tseslint.config(
     languageOptions: { globals: globals.browser },
   },
   {
-    // The azure-legacy provider reads the live surveyjs.io stores: keep it read-only by
-    // construction (Step 2). Lift a rule only together with the step that adds writes.
+    // The azure-legacy provider works on the live surveyjs.io stores: keep it read-only by
+    // construction (Step 2). Every write lives in writes.ts, the one file listed in `ignores`;
+    // add a write there only together with the step that needs it.
     files: ["server/src/providers/azure-legacy/**/*.ts"],
-    ignores: ["**/*.test.ts"],
+    ignores: [
+      "**/*.test.ts",
+      // the only file allowed to write to the legacy stores; Step 4: survey creation
+      "server/src/providers/azure-legacy/writes.ts",
+    ],
     rules: {
       "no-restricted-syntax": [
         "error",

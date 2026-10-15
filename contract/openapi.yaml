@@ -223,6 +223,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProjectPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Projects]
@@ -262,6 +263,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
@@ -431,6 +433,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SurveyPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
@@ -438,8 +441,10 @@ paths:
       operationId: createSurvey
       summary: Create a survey
       description: |
-        Without a `name`, the server picks the next free "New Survey N". Without a
-        `definition`, the survey starts from the default template.
+        Without a `name`, the server picks the next free "New Survey N". N is one
+        more than the highest number among the active surveys of the target scope
+        whose names are `New Survey N`. Without a `definition`, the survey starts
+        from the default template. The default template is an empty survey (`{}`).
       security:
         - cookieAuth: []
           csrfToken: []
@@ -457,6 +462,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Survey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
@@ -473,6 +479,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Survey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
@@ -1390,7 +1397,7 @@ components:
     SurveyName:
       type: string
       minLength: 1
-      maxLength: 256
+      maxLength: 200
     SurveySettings:
       type: object
       properties:
@@ -1416,7 +1423,10 @@ components:
         - settings
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        name: { $ref: '#/components/schemas/SurveyName' }
+        name:
+          type: string
+          maxLength: 200
+          description: May be empty for legacy records.
         projectId: { $ref: '#/components/schemas/NullableProjectId' }
         published: { type: boolean }
         archived: { type: boolean }

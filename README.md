@@ -11,18 +11,22 @@ language is accepted when it passes the conformance suite in this repository.
 
 ## Status
 
-Phase 1, **Step 3: sign-in, session and the surveyjs.io shell**. Step 3 adds sign-in and sign-out,
+Phase 1, **Step 4: survey list and survey creation**. Step 4 adds the My Surveys list (personal
+surveys and projects, Active and Archived, loading more pages) and "Create a Survey", the five
+operations behind them, and the first write to the legacy stores (survey creation). Step 3 added
+sign-in and sign-out,
 a stateless session cookie with CSRF protection, private pages that send an anonymous visitor to
 sign-in, `GET /api/v1/me` with account notices, and the surveyjs.io look (header with the account
-menu, footer, cookie banner, licence dialogs). Step 2 added a read-only provider for the current
+menu, footer, cookie banner, licence dialogs). Step 2 added a provider for the current
 surveyjs.io stores, an offline replica of them (Azurite and SQL Server in Docker), golden fixtures,
 a shared provider test suite and an inspector command. What works:
 
 - The full API contract, with every operation served by the server. `getConfig`, `login`,
-  `loginCallback`, `logout` and `getCurrentUser` do real work. Every other operation answers
-  `401` without a session and `501 Not Implemented` (a Problem Details body) with one.
-- A web app that signs you in and shows the surveyjs.io shell around a home page with your name,
-  the edition and the shell name. There are no screens for surveys yet.
+  `loginCallback`, `logout`, `getCurrentUser`, `listSurveys`, `createSurvey`, `getSurvey`,
+  `listProjects` and `getProject` do real work. Every other operation answers `401` without a
+  session and `501 Not Implemented` (a Problem Details body) with one.
+- A web app that signs you in and shows the surveyjs.io shell around the survey list. Rows do
+  nothing yet; the editor is a placeholder page.
 - Generated API reference at `/api/docs`, health checks, tests (unit, HTTP conformance, browser
   end-to-end, in memory and Azurite modes), and a CI workflow.
 
@@ -41,8 +45,9 @@ pnpm demo
 ```
 
 Then open <http://localhost:5173>. The browser goes to a "Sign in as…" page (development sign-in, no
-password): choose **Olivia Owner**. The home page then shows `signed in as: Olivia Owner`,
-`edition: self-hosted` and `shell: surveyjs-site`, inside the surveyjs.io header and footer. The API
+password): choose **Olivia Owner**. The home page is then **My Surveys**, inside the surveyjs.io
+header and footer: Olivia's personal surveys, newest first, with a project selector, an
+Active/Archived switch and a **Create a Survey** button. The API
 reference is at <http://localhost:3000/api/docs>.
 
 If `corepack enable` is not possible (on Windows it may need an administrator shell), use
@@ -94,7 +99,7 @@ Run from the repository root.
 | `pnpm test:providers:azurite`   | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
 | `pnpm test:conformance:azurite` | Conformance suite on the `azure-legacy` provider and the replica                                                          |
 | `pnpm e2e`                      | Playwright tests in three browsers (starts server and web app)                                                            |
-| `pnpm e2e:azurite`              | Playwright sign-in spec on the replica and the mock OIDC server (needs `demo:azurite:up`)                                 |
+| `pnpm e2e:azurite`              | Playwright sign-in and survey list specs on the replica and the mock OIDC server (needs `demo:azurite:up`)                |
 | `pnpm lint`                     | ESLint                                                                                                                    |
 | `pnpm typecheck`                | `tsc` in every package                                                                                                    |
 | `pnpm format`                   | Prettier, write                                                                                                           |
@@ -107,14 +112,15 @@ Run from the repository root.
 - [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow, identity and session.
 - [Development](docs/development.md): setup, environment variables, scripts, dependency upgrades.
 - [Testing](docs/testing.md): the test seams and how to run each suite.
-- [User guide](docs/user-guide/README.md): [signing in](docs/user-guide/signing-in.md), the account menu, licence notices and the cookie banner.
-- [API](docs/api/README.md), [API conventions](docs/api/conventions.md) and
+- [User guide](docs/user-guide/README.md): [signing in](docs/user-guide/signing-in.md), the account menu, licence notices and the cookie banner, and [your surveys](docs/user-guide/your-surveys.md), the survey list.
+- [API](docs/api/README.md): [conventions](docs/api/conventions.md), [paging](docs/api/paging.md) and
   [authentication, sessions and CSRF](docs/api/authentication.md).
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
 - [Step 1 demo script](docs/demo/step-01.md): how to check that Step 1 works.
 - [Step 2 demo script](docs/demo/step-02.md): how to check the legacy storage spike.
 - [Step 3 demo script](docs/demo/step-03.md): how to check sign-in, the session and the shell.
+- [Step 4 demo script](docs/demo/step-04.md): how to check the survey list, paging and survey creation.
 
 ## Licence
 

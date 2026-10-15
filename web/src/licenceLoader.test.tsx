@@ -3,7 +3,14 @@ import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router";
-import { appConfig, configHandler, meHandler, server } from "./test/server";
+import {
+  appConfig,
+  configHandler,
+  meHandler,
+  sampleSurvey,
+  server,
+  surveyListPageHandlers,
+} from "./test/server";
 
 const setLicenseKey = vi.fn();
 vi.mock("survey-core", () => ({ setLicenseKey }));
@@ -20,11 +27,15 @@ function renderApp() {
 
 describe("SurveyJS licence key", () => {
   it("is passed from /config to survey-core without blocking the page", async () => {
-    server.use(meHandler(), configHandler({ ...appConfig, surveyjsLicenseKey: "key-from-config" }));
+    server.use(
+      meHandler(),
+      configHandler({ ...appConfig, surveyjsLicenseKey: "key-from-config" }),
+      ...surveyListPageHandlers(),
+    );
 
     renderApp();
 
-    expect(await screen.findByText("edition: self-hosted")).toBeTruthy();
+    expect(await screen.findByText(sampleSurvey.name)).toBeTruthy();
     await waitFor(() => expect(setLicenseKey).toHaveBeenCalledExactlyOnceWith("key-from-config"));
   });
 });

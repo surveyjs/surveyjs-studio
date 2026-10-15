@@ -247,8 +247,10 @@ export interface paths {
         put?: never;
         /**
          * Create a survey
-         * @description Without a `name`, the server picks the next free "New Survey N". Without a
-         *     `definition`, the survey starts from the default template.
+         * @description Without a `name`, the server picks the next free "New Survey N". N is one
+         *     more than the highest number among the active surveys of the target scope
+         *     whose names are `New Survey N`. Without a `definition`, the survey starts
+         *     from the default template. The default template is an empty survey (`{}`).
          */
         post: operations["createSurvey"];
         delete?: never;
@@ -794,7 +796,8 @@ export interface components {
          */
         Survey: {
             id: components["schemas"]["Id"];
-            name: components["schemas"]["SurveyName"];
+            /** @description May be empty for legacy records. */
+            name: string;
             projectId: components["schemas"]["NullableProjectId"];
             published: boolean;
             archived: boolean;
@@ -1345,6 +1348,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1396,6 +1400,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1600,6 +1605,7 @@ export interface operations {
                     "application/json": components["schemas"]["SurveyPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1627,6 +1633,7 @@ export interface operations {
                     "application/json": components["schemas"]["Survey"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
@@ -1652,6 +1659,7 @@ export interface operations {
                     "application/json": components["schemas"]["Survey"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

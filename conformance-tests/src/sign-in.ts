@@ -12,6 +12,21 @@ export const fixtureUsers = {
     displayName: "Olivia Owner",
     email: "owner@example.com",
   },
+  admin: {
+    id: "11111111-0000-4000-8000-a00000000002",
+    displayName: "Adam Admin",
+    email: "admin@example.com",
+  },
+  member: {
+    id: "11111111-0000-4000-8000-a00000000003",
+    displayName: "Mia Member",
+    email: "member@example.com",
+  },
+  outsider: {
+    id: "11111111-0000-4000-8000-a00000000004",
+    displayName: "Oscar Outsider",
+    email: "outsider@example.com",
+  },
   blocked: { id: "11111111-0000-4000-8000-a00000000005" },
 } as const;
 

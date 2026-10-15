@@ -1,81 +1,12 @@
-import { openapiPath } from "@my-surveys/contract";
-import { beforeAll, describe, expect, inject, it, type TestContext } from "vitest";
-import {
-  CookieJar,
-  finishSignIn,
-  fixtureUsers,
-  signIn,
-  SignInUnsupportedError,
-  startSignIn,
-  type SignInResult,
-} from "./sign-in.js";
-import { createValidator, type Validator } from "./validator.js";
+import { describe, expect, it } from "vitest";
+import { baseUrl, call, codeOf, sessionHeaders, signedIn, validator } from "./harness.js";
+import { CookieJar, finishSignIn, fixtureUsers, startSignIn } from "./sign-in.js";
 
-const baseUrl = inject("baseUrl");
 const { owner, blocked } = fixtureUsers;
-
-interface CallOptions {
-  /** The concrete path, when it differs from the contract's path template. */
-  readonly path?: string;
-  readonly headers?: Record<string, string>;
-  /** Sent as JSON. */
-  readonly body?: unknown;
-}
+/** The owner's "Customer feedback" survey of the fixtures. */
+const SURVEY_ID = "22222222-0000-4000-8000-a00000000001";
 
 describe(`server at ${baseUrl}`, () => {
-  let validator: Validator;
-  beforeAll(async () => {
-    validator = await createValidator(openapiPath);
-  });
-
-  async function expectConforms(method: string, pathTemplate: string, response: Response) {
-    expect(await validator.check(method, pathTemplate, response)).toEqual([]);
-  }
-
-  /** Calls `/api/v1{path}` (redirects not followed) and fails unless the response conforms. */
-  async function call(method: string, pathTemplate: string, options: CallOptions = {}) {
-    const json = options.body !== undefined;
-    const response = await fetch(`${baseUrl}/api/v1${options.path ?? pathTemplate}`, {
-      method,
-      redirect: "manual",
-      headers: { ...(json && { "content-type": "application/json" }), ...options.headers },
-      ...(json && { body: JSON.stringify(options.body) }),
-    });
-    await expectConforms(method, pathTemplate, response);
-    return response;
-  }
-
-  async function codeOf(response: Response): Promise<unknown> {
-    return ((await response.clone().json()) as { code?: unknown }).code;
-  }
-
-  /**
-   * Signs in through the login redirects and checks both API responses. Skips the test when the
-   * sign-in driver cannot complete the server's identity provider.
-   */
-  async function signedIn(
-    ctx: TestContext,
-    userId: string = owner.id,
-    returnTo = "/",
-    complete: () => Promise<SignInResult> = () => signIn(baseUrl, userId, returnTo),
-  ) {
-    let result: SignInResult;
-    try {
-      result = await complete();
-    } catch (error) {
-      if (error instanceof SignInUnsupportedError) ctx.skip(error.message);
-      throw error;
-    }
-    await expectConforms("GET", "/auth/login", result.login);
-    await expectConforms("GET", "/auth/callback", result.callback);
-    return result;
-  }
-
-  /** Request headers of a signed-in browser that sends its CSRF token. */
-  function sessionHeaders({ jar }: SignInResult): Record<string, string> {
-    return { cookie: jar.header(), "x-csrf-token": jar.get("msid_csrf") ?? "" };
-  }
-
   it("getConfig answers 200 with the configuration", async () => {
     const response = await call("GET", "/config");
     expect(response.status).toBe(200);
@@ -242,11 +173,16 @@ describe(`server at ${baseUrl}`, () => {
 
   describe("authentication of private operations", () => {
     it("an anonymous call answers 401, even to an unimplemented operation", async () => {
-      const list = await call("GET", "/surveys");
-      expect(list.status).toBe(401);
-      const create = await call("POST", "/surveys", { body: {} });
-      expect(create.status).toBe(401);
-      expect(await codeOf(create)).toBe("unauthenticated");
+      const history = await call("GET", "/surveys/{surveyId}/history", {
+        path: `/surveys/${SURVEY_ID}/history`,
+      });
+      expect(history.status).toBe(401);
+      const clone = await call("POST", "/surveys/{surveyId}/clones", {
+        path: `/surveys/${SURVEY_ID}/clones`,
+        body: {},
+      });
+      expect(clone.status).toBe(401);
+      expect(await codeOf(clone)).toBe("unauthenticated");
     });
 
     it("a change without the CSRF token answers 403 csrf-token-invalid", async (ctx) => {
@@ -261,18 +197,25 @@ describe(`server at ${baseUrl}`, () => {
 
     it("an unimplemented operation answers 501 not-implemented", async (ctx) => {
       const session = await signedIn(ctx);
-      const list = await call("GET", "/surveys", { headers: sessionHeaders(session) });
-      expect(list.status).toBe(501);
-      expect(await codeOf(list)).toBe("not-implemented");
-      const create = await call("POST", "/surveys", { headers: sessionHeaders(session), body: {} });
-      expect(create.status).toBe(501);
+      const history = await call("GET", "/surveys/{surveyId}/history", {
+        path: `/surveys/${SURVEY_ID}/history`,
+        headers: sessionHeaders(session),
+      });
+      expect(history.status).toBe(501);
+      expect(await codeOf(history)).toBe("not-implemented");
+      const clone = await call("POST", "/surveys/{surveyId}/clones", {
+        path: `/surveys/${SURVEY_ID}/clones`,
+        headers: sessionHeaders(session),
+        body: {},
+      });
+      expect(clone.status).toBe(501);
     });
   });
 
   it("an unknown route answers 404 not-found", async () => {
     const response = await fetch(`${baseUrl}/api/v1/does-not-exist`);
     expect(response.status).toBe(404);
-    expect(await validator.checkProblem(response)).toEqual([]);
+    expect(await (await validator()).checkProblem(response)).toEqual([]);
     expect(await response.json()).toMatchObject({ code: "not-found" });
   });
 });

@@ -5,27 +5,46 @@ interface ConsoleError {
   readonly url: string;
 }
 
+/** An API answer a test expects to fail, which browsers log as a resource-load console error. */
+export interface ExpectedErrorResponse {
+  /** The URL path, without the query. */
+  readonly path: string;
+  readonly status: number;
+}
+
+/** The signed-out `/api/v1/me` probe: expected in every test. */
+const ME_401: ExpectedErrorResponse = { path: "/api/v1/me", status: 401 };
+
 /**
  * The shared `test`: every spec imports it instead of `@playwright/test`. An automatic fixture
  * watches the page and fails the test at teardown on any unexpected console error or page error.
  *
  * Expected noise, and only this:
- * - The signed-out `/api/v1/me` probe answers 401. Chromium and Firefox log it as a resource-load
- *   error located at `/api/v1/me` (WebKit logs nothing). Each such console error must be matched
- *   by an observed 401 response, and the two are compared only at the end of the test because the
+ * - The signed-out `/api/v1/me` probe answers 401, and the error responses a test lists in its
+ *   `expectedErrorResponses` option (`test.use`). Browsers may log such an answer as a
+ *   resource-load error located at its URL (which ones do differs by browser and status; WebKit
+ *   does not log the /me 401). Each such console error must be matched by an observed response
+ *   with that path and status, and the two are compared only at the end of the test because the
  *   browser does not order the response event before the console message.
  * - Firefox reports the dev sign-in page's CSP blocking its favicon request.
  */
-export const test = base.extend<{ consoleGuard: void }>({
+export const test = base.extend<{
+  expectedErrorResponses: ExpectedErrorResponse[];
+  consoleGuard: void;
+}>({
+  expectedErrorResponses: [[], { option: true }],
   consoleGuard: [
-    async ({ page }, use) => {
+    async ({ page, expectedErrorResponses }, use) => {
+      const expected = [ME_401, ...expectedErrorResponses];
       const consoleErrors: ConsoleError[] = [];
       const pageErrors: string[] = [];
-      let me401Responses = 0;
+      const observed = new Map<ExpectedErrorResponse, number>();
       page.on("response", (response) => {
-        if (new URL(response.url()).pathname === "/api/v1/me" && response.status() === 401) {
-          me401Responses += 1;
-        }
+        const path = new URL(response.url()).pathname;
+        const match = expected.find(
+          (item) => item.path === path && item.status === response.status(),
+        );
+        if (match) observed.set(match, (observed.get(match) ?? 0) + 1);
       });
       page.on("console", (message) => {
         if (message.type() === "error") {
@@ -36,14 +55,18 @@ export const test = base.extend<{ consoleGuard: void }>({
 
       await use();
 
-      const isMe401 = (error: ConsoleError) =>
-        error.text.includes("status of 401") && pathOf(error.url) === "/api/v1/me";
+      const matchOf = (error: ConsoleError) =>
+        expected.find(
+          (item) =>
+            error.text.includes(`status of ${item.status}`) && pathOf(error.url) === item.path,
+        );
       const isFaviconCsp = (error: ConsoleError) =>
         error.text.includes("Content-Security-Policy") && error.text.includes("/favicon.ico");
-      const me401Errors = consoleErrors.filter(isMe401);
-      const unexpected = consoleErrors.filter((error) => !isMe401(error) && !isFaviconCsp(error));
-      // Each /me 401 console error needs its own observed 401 response; the surplus is a problem.
-      const unmatched = me401Errors.slice(me401Responses);
+      const unexpected = consoleErrors.filter((error) => !matchOf(error) && !isFaviconCsp(error));
+      // Each such console error needs its own observed response; the surplus is a problem.
+      const unmatched = expected.flatMap((item) =>
+        consoleErrors.filter((error) => matchOf(error) === item).slice(observed.get(item) ?? 0),
+      );
       expect(
         [...unexpected, ...unmatched].map((error) => `console: ${error.text} (${error.url})`),
       ).toEqual([]);

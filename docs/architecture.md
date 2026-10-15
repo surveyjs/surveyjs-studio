@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes what is built now (Steps 1 to 3). The final design is in `spec.md`; the later steps
+This page describes what is built now (Steps 1 to 4). The final design is in `spec.md`; the later steps
 are listed at the end.
 
 ## Principles
@@ -52,6 +52,9 @@ flowchart LR
 | `providers/`     | Provider registry (`createProviders`), the store interfaces, the `memory` and `azure-legacy` providers and the shared list order. See [Storage providers](#storage-providers)                                                                                              |
 | `domain/`        | Domain types shared by every provider (`types.ts`). See [Domain types](#domain-types)                                                                                                                                                                                      |
 | `auth/`          | Identity and session: the `IdentityProvider` interface and its two providers, the sealed cookies, CSRF, `returnTo`, the authentication hook and the handlers of `login`, `loginCallback`, `logout` and `getCurrentUser`. See [Identity and session](#identity-and-session) |
+| `surveys/`       | `listSurveys`, `createSurvey` and `getSurvey`: the service (scopes, paging, creation), the pure rules (`permissions.ts`, `naming.ts` for "New Survey N") and the JSON mapping. See [Surveys and projects](#surveys-and-projects)                                           |
+| `projects/`      | `listProjects` and `getProject`: the service, the handlers and the JSON mapping                                                                                                                                                                                            |
+| `paging/`        | `cursor.ts`: the opaque cursors of both lists (pure). See [Paging](api/paging.md)                                                                                                                                                                                          |
 | `notices/`       | `AccountNotices` (`CurrentUser.notices`): the demo settings, and the surveyjs.io licence-expiry rule used by the `azure-legacy` provider                                                                                                                                   |
 | `shell-links.ts` | The built-in surveyjs.io account links and their merge with `SHELL_LINKS` (`/config.links`)                                                                                                                                                                                |
 | `legacy/`        | Tools for the offline replica of the legacy stores: the fixture loader, its endpoint safety guard and Edm validation. Not used by the server at run time                                                                                                                   |
@@ -75,20 +78,20 @@ Rules that hold everywhere:
 Storage sits behind three interfaces in `server/src/providers/types.ts`. Nothing outside
 `providers/` knows which implementation runs.
 
-| Interface     | Methods                                                             | Rules                                                                                               |
-| ------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `SurveyStore` | `getSurvey(id)`, `listSurveys(owner)`                               | `null` when not found. Lists include archived surveys, ordered by `updatedAt` descending, then `id` |
-| `Directory`   | `getUser(id)`, `findUserByEmail(email)`, `listUserProjects(userId)` | Email match ignores case. Projects are ordered by project name ignoring case, then project id       |
-| `ProviderSet` | `name`, `surveys`, `directory`, `notices`, `ready()`, `close()`     | What the server holds. `ready()` feeds `/readyz`. `notices` is `AccountNotices` (see below)         |
+| Interface     | Methods                                                                                                                  | Rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SurveyStore` | `getSurvey(id)`, `listSurveys(owner)`, `listSurveyPage(query)`, `createSurvey(survey, definition?)`, `getDefinition(id)` | `null` when not found. `listSurveys` includes archived surveys, ordered by `updatedAt` descending, then `id`. `listSurveyPage` returns the rows of that list that match `archived`, after a position, at most `limit` of them, with the position of the last row when more follow. `createSurvey` stores the legacy defaults and returns the record as stored; it throws on a duplicate id. `getDefinition` returns `{}` when the survey has none, `null` for an unknown id |
+| `Directory`   | `getUser(id)`, `findUserByEmail(email)`, `listUserProjects(userId)`, `getUserProject(userId, projectId)`                 | Email match ignores case. Projects are ordered by project name ignoring case, then project id. `getUserProject` returns `null` when the user is not a member or the project does not exist                                                                                                                                                                                                                                                                                  |
+| `ProviderSet` | `name`, `surveys`, `directory`, `notices`, `ready()`, `close()`                                                          | What the server holds. `ready()` feeds `/readyz`. `notices` is `AccountNotices` (see below)                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Ids are GUIDs. Stores match them case-insensitively and return them in lower case. The list orders
-live in `providers/ordering.ts`, so every provider sorts the same way. The interfaces have read
-methods only; writes arrive with the application services.
+live in `providers/ordering.ts`, so every provider sorts the same way. The only writes in the interfaces are
+`createSurvey` (Step 4); the other writes arrive with the steps that need them.
 
-| Provider       | `STORAGE_PROVIDER` | What it is                                                                                                                                                                                                                                                                                       |
-| -------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `memory`       | `memory` (default) | Holds records in memory and returns copies. Empty unless `MEMORY_SEED=legacy-fixtures`, which loads the golden fixtures in `server/fixtures/legacy/` through the same mapping as the legacy provider                                                                                             |
-| `azure-legacy` | `azure-legacy`     | Reads the real surveyjs.io stores, **read-only**: SQL for users, surveys, projects and memberships, through a lazily created pool. `ready()` checks SQL and both storage accounts. A skipped row is reported as a warning with ids only. ESLint forbids write calls in `providers/azure-legacy/` |
+| Provider       | `STORAGE_PROVIDER` | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory`       | `memory` (default) | Holds records in memory and returns copies. Empty unless `MEMORY_SEED=legacy-fixtures`, which loads the golden fixtures in `server/fixtures/legacy/` through the same mapping as the legacy provider                                                                                                                                                                                                                                                 |
+| `azure-legacy` | `azure-legacy`     | Works on the real surveyjs.io stores: SQL for users, surveys, projects and memberships, through a lazily created pool. `ready()` checks SQL and both storage accounts. A skipped row is reported as a warning with ids only. It reads everything and writes **only survey creation**, in `providers/azure-legacy/writes.ts`; ESLint forbids write calls in the rest of the folder. See [Writing to the legacy stores](#writing-to-the-legacy-stores) |
 
 `createProviders` picks the provider from `STORAGE_PROVIDER`. The settings are described in
 [Development](development.md#environment-variables-server): `STORAGE_PROVIDER`, `MEMORY_SEED`
@@ -105,13 +108,93 @@ Server, and what is not emulated: [ADR 0006](adr/0006-legacy-replica.md).
 
 `server/src/domain/types.ts` holds what the providers return.
 
-| Type                | Holds                                                                                                                                                      |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SurveyOwner`       | A user (`kind: "personal"`, `userId`) or a project (`kind: "project"`, `projectId`)                                                                        |
-| `SurveyRecord`      | Survey metadata: `id`, `name`, `owner`, `creatorId`, `postId`, `resultId`, `published`, `archived`, `createdAt` and `updatedAt` (ISO 8601 UTC), `settings` |
-| `User`              | `id`, `email`, `displayName` (the email when the legacy name is blank), `blocked`                                                                          |
-| `ProjectMembership` | A project (`id`, `name`) and the user's `role` (`admin` or `user`)                                                                                         |
-| `SurveyResponse`    | Declared for the results steps: `id`, `submittedAt`, `data`, optional `clientId` and `respondentIp`, `partial`                                             |
+| Type                | Holds                                                                                                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SurveyOwner`       | A user (`kind: "personal"`, `userId`) or a project (`kind: "project"`, `projectId`)                                                                                          |
+| `SurveyRecord`      | Survey metadata: `id`, `name`, `owner`, `creatorId`, `postId`, `resultId`, `published`, `archived`, `createdAt` and `updatedAt` (ISO 8601 UTC), `settings`                   |
+| `User`              | `id`, `email`, `displayName` (the email when the legacy name is blank), `blocked`                                                                                            |
+| `ProjectRecord`     | A project as the Directory returns it: `id`, `name`, `ownerId`, `createdAt` (ISO 8601 UTC), `memberCount` (at least 1)                                                       |
+| `ProjectMembership` | A `ProjectRecord` and the user's `role` (`admin` or `user`)                                                                                                                  |
+| `NewSurvey`         | What the service decides for a new survey: `id`, `name`, `owner`, `creatorId`, `postId`, `resultId`, `createdAt` and `updatedAt` (equal). The store adds the legacy defaults |
+| `SurveyDefinition`  | The survey definition, a JSON object (`Record<string, unknown>`)                                                                                                             |
+| `SurveyResponse`    | Declared for the results steps: `id`, `submittedAt`, `data`, optional `clientId` and `respondentIp`, `partial`                                                               |
+
+## Surveys and projects
+
+Step 4 builds `listSurveys`, `createSurvey`, `getSurvey`, `listProjects` and `getProject`. The routes come
+from the contract like every other; the handlers are in `surveys/handlers.ts` and
+`projects/handlers.ts` and call a service that holds the rules. The client view is
+[API: What is implemented](api/README.md#what-is-implemented) and [Paging](api/paging.md).
+
+### Permissions
+
+`surveys/permissions.ts` (pure) follows the legacy rule; the reason and what changes if the product
+owner chooses otherwise are in [ADR 0009](adr/0009-survey-permissions-follow-legacy.md).
+
+| Question                | Personal survey                 | Project survey                                         |
+| ----------------------- | ------------------------------- | ------------------------------------------------------ |
+| Can see (list, get)     | The user is the owner           | The user is a member of the project, in any role       |
+| `permissions.canModify` | `true` (only the owner sees it) | The user's role is `admin`, **or** the user created it |
+| Can create in the scope | Always                          | Any member                                             |
+
+A survey the user cannot see answers `404 not-found`, like an unknown id.
+
+### Listing
+
+`listSurveys` takes `project` (`personal` or a project id). Any other value must be the id of a project
+the user belongs to (`Directory.getUserProject`); an unknown id, text that is no id and a project of
+others all answer `404 not-found`. The service cuts the page with `SurveyStore.listSurveyPage`, using the
+position decoded from the cursor, and turns the store's `next` position into `nextCursor`.
+`listProjects` asks the Directory for the whole list (it is short) and cuts the page itself. Cursors are
+in `paging/cursor.ts`: the format is a reference, not part of the contract, and is written down for ports in
+[Paging](api/paging.md#for-ports-the-reference-cursor-format). A cursor belongs to one list (scope and
+`archived`), so a mismatch is `400 bad-request`.
+
+### Creation
+
+`createSurvey` checks, in this order: a given name is not blank and fits (`422`, see below); the
+`projectId`, if any, is a project of the user (`403 forbidden` otherwise). Without a name the service
+reads the **active** surveys of the scope and calls `nextNewSurveyName` (`surveys/naming.ts`, pure), which
+reproduces the legacy rule: start at 1; for each name that starts with the exact text `New Survey` and
+whose rest is a number (optional sign, surrounding white space allowed, at most `2147483647`), take the
+highest; answer `New Survey <highest + 1>`. Gaps are not filled and archived names are ignored. The ids
+come from `crypto.randomUUID()`, the time from `BuildOptions.now` (default `Date.now`), and the answer is
+`201` with `Location`.
+
+**Name length.** The contract says `maxLength: 200`. JSON Schema counts characters (code points); the
+legacy column holds 200 UTF-16 code units. The service therefore also refuses a name longer than 200
+UTF-16 code units with `422` at `/name`. ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md))
+
+### Writing to the legacy stores
+
+The `azure-legacy` provider was read-only until Step 4. Its first write is survey creation, and the
+rule is: **every write lives in `providers/azure-legacy/writes.ts`**. ESLint keeps the read-only rule
+for the rest of the folder and lists that one file in the rule block's `ignores`. Details and reasons:
+[ADR 0010](adr/0010-writing-to-the-legacy-stores.md). In short, `createSurvey`:
+
+1. checks that the id is free (one `SELECT`);
+2. when a definition is given, writes the append blobs `surveyjson/{id}`, `surveytext/{id}` and
+   `surveyjsonhistory/{id}/{newGuid}`;
+3. inserts the `Surveys` row with exactly the legacy create columns (all others stay `NULL`);
+4. appends the `SURVEY_CREATE` audit row to table `surveys`, **best effort**: a failure is a warning
+   with the survey id and the create still succeeds;
+5. reads the survey back and returns it.
+
+Blobs come before the row, so a failure leaves invisible orphan blobs and never a survey without its
+definition. A store failure is a `LegacyStoreError` (`providers/azure-legacy/errors.ts`, re-exported from
+`index.ts`), whose message reads "Legacy store <operation> failed" plus driver codes and never a
+connection string or row content. The layout reference is
+[section 5.3](architecture/legacy-data-layout.md#53-what-a-writer-must-do-so-legacy-readers-see-a-change).
+
+### Projects
+
+`ProjectRecord` has `ownerId`, `createdAt` and `memberCount`, which legacy does not store. The read side
+infers them in `projectFromLegacy` (`providers/azure-legacy/mapping.ts`,
+[layout, 9.3](architecture/legacy-data-layout.md#93-project-project)): the owner is the user of the
+membership row whose id equals the project id (the creator's row), else the earliest admin, else the
+earliest member; `createdAt` is that row's `happendat` (else the project's, else
+`1970-01-01T00:00:00.000Z`), read as UTC; `memberCount` is the number of membership rows. Step 11 only adds
+the writes.
 
 ## Legacy mapping
 
@@ -148,18 +231,18 @@ conditions": [ADR 0005](adr/0005-respondent-files-as-urls.md).
 Steps 2 and 3 leave these points open. The first group are differences between the legacy system and the
 contract; the last rows come from Step 3.
 
-| Point                                                                                                                                                                   | To settle in                        |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `canModify`: legacy allows a project admin or the survey's creator; the spec allows any member                                                                          | Step 4 or 5                         |
-| Survey name length: 200 in SQL, 256 in the contract                                                                                                                     | Step 4 or 5                         |
-| Results layouts: legacy keeps them per survey, the contract per user                                                                                                    | Step 9 or 10                        |
-| Project `ownerId` and `createdAt`: legacy has no columns; they are inferred from the creator's membership row                                                           | Step 11                             |
-| Fixtures are synthetic; the spec wants them copied from storage. Check them on a read-only copy (site team)                                                             | Step 14                             |
-| `azure-legacy` readiness makes account-level calls; a container SAS keeps `/readyz` at 503. Narrow the probe                                                            | Step 14                             |
-| Sign-in rate limit keys on the socket IP and does not trust `X-Forwarded-For`; behind a reverse proxy all users share one counter                                       | Step 14 (trusted proxy)             |
-| Keyboard and ARIA polish of the copied surveyjs.io header; the Open Sans font is not self-hosted (the text falls back to Helvetica)                                     | Step 13                             |
-| The copied cookie banner mentions advertising partners (Google, Reddit, X) that My Surveys does not use; the hosted deployment needs reviewed text                      | Step 13 or before the hosted launch |
-| Session revocation: the session is a stateless sealed cookie (12 h, no renewal), so a session cannot be ended on the server. Changing `SESSION_SECRET` ends all of them | Not planned; stateless by design    |
+| Point                                                                                                                                                                                                                             | To settle in                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| ~~`canModify`: legacy allows a project admin or the survey's creator; the spec allows any member~~ Settled in Step 4: the legacy rule ([ADR 0009](adr/0009-survey-permissions-follow-legacy.md)); the product owner is to confirm | Step 4 (done)                       |
+| ~~Survey name length: 200 in SQL, 256 in the contract~~ Settled in Step 4: the contract says 200, plus a server check in UTF-16 code units ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md))                                 | Step 4 (done)                       |
+| Results layouts: legacy keeps them per survey, the contract per user                                                                                                                                                              | Step 9 or 10                        |
+| Project `ownerId` and `createdAt`: legacy has no columns; they are inferred from the creator's membership row. The read side is settled in Step 4 ([Projects](#projects)); the writes remain                                      | Step 11 (writes)                    |
+| Fixtures are synthetic; the spec wants them copied from storage. Check them on a read-only copy (site team)                                                                                                                       | Step 14                             |
+| `azure-legacy` readiness makes account-level calls; a container SAS keeps `/readyz` at 503. Narrow the probe                                                                                                                      | Step 14                             |
+| Sign-in rate limit keys on the socket IP and does not trust `X-Forwarded-For`; behind a reverse proxy all users share one counter                                                                                                 | Step 14 (trusted proxy)             |
+| Keyboard and ARIA polish of the copied surveyjs.io header; the Open Sans font is not self-hosted (the text falls back to Helvetica)                                                                                               | Step 13                             |
+| The copied cookie banner mentions advertising partners (Google, Reddit, X) that My Surveys does not use; the hosted deployment needs reviewed text                                                                                | Step 13 or before the hosted launch |
+| Session revocation: the session is a stateless sealed cookie (12 h, no renewal), so a session cannot be ended on the server. Changing `SESSION_SECRET` ends all of them                                                           | Not planned; stateless by design    |
 
 ## Request flow
 
@@ -363,18 +446,41 @@ session, so an expired session still leaves the provider's session.
 
 ## Web modules (`web/src`)
 
-| Path                             | Role                                                                                                                                                                                                                                                                          |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.tsx`                       | Creates the TanStack Query client and the router, renders the app                                                                                                                                                                                                             |
-| `router.ts`, `routeTree.gen.ts`  | TanStack Router. The route tree is generated by the Vite plugin from `routes/`                                                                                                                                                                                                |
-| `routes/__root.tsx`              | Root route. Its loader fetches `/config` and starts applying the SurveyJS licence key in the background (not awaited; a failure is logged with `console.warn` and does not affect the page); an error component shows a retry button                                          |
-| `shell/`                         | Replaceable shells with a narrow interface (`ShellProps` in `types.ts`: `user`, `notices`, `links`, `onSignOut`, `children`). `registry.tsx` picks one by `/config.shell`; `PlainShell.tsx` holds `PlainShell` and `AnonymousShell`; `surveyjs-site/` is the surveyjs.io look |
-| `routes/_private.tsx`            | Pathless layout of the private pages: ensures the current user, redirects to sign-in on `401`, renders the shell                                                                                                                                                              |
-| `routes/_private/index.lazy.tsx` | The home page (private). Shows the signed-in name, `edition:` and `shell:`                                                                                                                                                                                                    |
-| `api/session.ts`, `api/csrf.ts`  | The `GET /me` query and the sign-out hook; the middleware that adds `X-CSRF-Token` on unsafe methods                                                                                                                                                                          |
-| `api/client.ts`                  | openapi-fetch client typed by the contract. Base URL is `VITE_API_BASE_URL`, default `/api/v1`; cookies are sent (`credentials: "include"`)                                                                                                                                   |
-| `api/config.ts`                  | Query options for `GET /config` (cached 5 minutes)                                                                                                                                                                                                                            |
-| `surveyjs/license.ts`            | `applySurveyJSLicense(key)`: imports `survey-core` lazily and calls `setLicenseKey`; concurrent calls share one in-flight promise. With no key it does nothing and `survey-core` is not downloaded                                                                            |
+| Path                                                          | Role                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.tsx`                                                    | Creates the TanStack Query client and the router, renders the app                                                                                                                                                                                                             |
+| `router.ts`, `routeTree.gen.ts`                               | TanStack Router. The route tree is generated by the Vite plugin from `routes/`                                                                                                                                                                                                |
+| `routes/__root.tsx`                                           | Root route. Its loader fetches `/config` and starts applying the SurveyJS licence key in the background (not awaited; a failure is logged with `console.warn` and does not affect the page); an error component shows a retry button                                          |
+| `shell/`                                                      | Replaceable shells with a narrow interface (`ShellProps` in `types.ts`: `user`, `notices`, `links`, `onSignOut`, `children`). `registry.tsx` picks one by `/config.shell`; `PlainShell.tsx` holds `PlainShell` and `AnonymousShell`; `surveyjs-site/` is the surveyjs.io look |
+| `routes/_private.tsx`                                         | Pathless layout of the private pages: ensures the current user, redirects to sign-in on `401`, renders the shell                                                                                                                                                              |
+| `routes/_private/index.tsx`, `index.lazy.tsx`                 | The survey list at `/` (private). The route validates `project` and `archived` (`surveyList/search.ts`) and its loader fetches the first page, the archived check and the projects; a `404` for the project redirects to `/`. The lazy file renders `SurveyListPage`          |
+| `routes/_private/surveys/$surveyId/edit.tsx`, `edit.lazy.tsx` | The editor **stub**: loads the survey, shows its name, "The survey editor arrives in a later version." and a Back to My Surveys link to the survey's own list; a `404` shows "This survey is not available.". Step 6 replaces it                                              |
+| `surveyList/`                                                 | The list page in the surveyjs.io markup (D14): `SurveyListPage`, `SurveyRow`, `ProjectSelector`, `ActiveArchivedSwitch`, the pure `search.ts` (URL search, with defaults omitted in links) and `formatDate.ts` (`4/14/2026`)                                                  |
+| `api/session.ts`, `api/csrf.ts`                               | The `GET /me` query and the sign-out hook; the middleware that adds `X-CSRF-Token` on unsafe methods                                                                                                                                                                          |
+| `api/client.ts`                                               | openapi-fetch client typed by the contract. Base URL is `VITE_API_BASE_URL`, default `/api/v1`; cookies are sent (`credentials: "include"`)                                                                                                                                   |
+| `api/surveys.ts`, `api/projects.ts`                           | The query modules (`queryOptions`/`infiniteQueryOptions` on the typed client) and the key builders `surveyKeys` and `projectKeys`; `useCreateSurvey` and `addCreatedSurvey` (below)                                                                                           |
+| `api/config.ts`                                               | Query options for `GET /config` (cached 5 minutes)                                                                                                                                                                                                                            |
+| `surveyjs/license.ts`                                         | `applySurveyJSLicense(key)`: imports `survey-core` lazily and calls `setLicenseKey`; concurrent calls share one in-flight promise. With no key it does nothing and `survey-core` is not downloaded                                                                            |
+
+### Query keys and the cache rule for creation
+
+| Key                                      | Data                                                                                          |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `["surveys", "list", project, archived]` | Infinite query of `GET /surveys` with `limit=50` (`SURVEY_PAGE_SIZE`), following `nextCursor` |
+| `["surveys", "has-archived", project]`   | `GET /surveys?archived=true&limit=1`: whether to show the Active/Archived switch              |
+| `["surveys", "detail", surveyId]`        | `GET /surveys/{surveyId}`                                                                     |
+| `["projects", "list"]`                   | Every page of `GET /projects` as one array                                                    |
+| `["projects", "detail", projectId]`      | `GET /projects/{projectId}`                                                                   |
+
+`addCreatedSurvey` runs when a creation succeeds: it stores the survey as `detail`, puts it at the top of
+the scope's cached **active** list (unless a page already holds it), and marks the scope's lists stale
+without refetching (`refetchType: "none"`), so the list shows the new survey at once and refetches the next
+time it is shown. Other scopes, `has-archived` and the projects are left alone. The list shows a **Load
+more** button only when the infinite query has a next page.
+
+**Retry policy** (`shouldRetryQuery` in `api/client.ts`): a query does not retry a `4xx` error, except `408` and
+`429`, so a page can react at once to an answer such as the `404` of an unknown project. Server and network
+errors retry up to 3 times.
 
 The licence key travels: `SURVEYJS_LICENSE_KEY` (server) -> `GET /api/v1/config` ->
 `applySurveyJSLicense` (browser). It is never in the code.
@@ -393,6 +499,10 @@ The licence key travels: `SURVEYJS_LICENSE_KEY` (server) -> `GET /api/v1/config`
 - Done in Step 3: sign-in with the dev provider and the surveyjs.io (OAuth 2.0 and UserInfo) provider,
   the mock OIDC server, sealed session and CSRF cookies, `/me` with account notices, the
   `surveyjs-site` shell, and end-to-end tests in memory and Azurite modes.
-- Later: write methods and application services, stores for content, results, files and views,
-  survey list, editor, results and run page, and Docker packaging. The contract already describes
-  all of these.
+- Done in Step 4: the survey list and survey creation: `listSurveys`, `createSurvey`, `getSurvey`,
+  `listProjects` and `getProject`, paging cursors, permissions, "New Survey N", the first legacy write
+  (survey creation in `writes.ts`), the list page and the editor stub.
+- Later: the other write methods and services (rename, archive, move, clone and delete in Step 5;
+  definitions, themes and history in Step 6; project and member writes in Step 11), stores for
+  content, results, files and views, the editor, results and run page, and Docker packaging. The
+  contract already describes all of these.

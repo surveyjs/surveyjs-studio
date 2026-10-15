@@ -1,4 +1,10 @@
-import type { ProjectMembership, SurveyRecord, User } from "../../domain/types.js";
+import type {
+  ProjectMembership,
+  ProjectRecord,
+  SurveyDefinition,
+  SurveyRecord,
+  User,
+} from "../../domain/types.js";
 import type { Notice } from "../../notices/account-notices.js";
 
 /**
@@ -211,10 +217,67 @@ export const projectASurveys: readonly SurveyRecord[] = [surveyCampaign, surveyA
 export const projectBSurveys: readonly SurveyRecord[] = [surveyRetro];
 export const outsiderSurveys: readonly SurveyRecord[] = [surveyOutsider];
 
+/** The active and the archived part of each list, in list order (`listSurveyPage`). */
+export const ownerPersonalActiveSurveys: readonly SurveyRecord[] = [
+  surveyApiCreated,
+  surveyFeedback,
+  surveyDraft,
+];
+export const ownerPersonalArchivedSurveys: readonly SurveyRecord[] = [surveyOldPoll];
+export const projectAActiveSurveys: readonly SurveyRecord[] = [surveyCampaign];
+export const projectAArchivedSurveys: readonly SurveyRecord[] = [surveyArchivedCampaign];
+
+// ---- Definitions: the surveyjson blobs in blobs/surveys/surveyjson ----
+
+/** The three saved fixture surveys share one page layout; only the title differs. */
+const fixtureDefinition = (title: string): SurveyDefinition => ({
+  title,
+  pages: [
+    {
+      name: "page1",
+      elements: [
+        { type: "rating", name: "satisfaction", title: "How satisfied are you?" },
+        { type: "file", name: "receipt", title: "Upload your receipt" },
+      ],
+    },
+  ],
+});
+
+/** Survey -> its stored definition. Every other fixture survey has no surveyjson blob. */
+export const fixtureDefinitions: readonly (readonly [SurveyRecord, SurveyDefinition])[] = [
+  [surveyFeedback, fixtureDefinition("Customer feedback")],
+  [surveyCampaign, fixtureDefinition("Campaign survey")],
+  [surveyRetro, fixtureDefinition("Engineering retro")],
+];
+export const surveysWithoutDefinition: readonly SurveyRecord[] = [
+  surveyDraft,
+  surveyOldPoll,
+  surveyArchivedCampaign,
+  surveyOutsider,
+  surveyApiCreated,
+];
+
 // ---- Projects, ordered by project name ("Engineering" before "Marketing") ----
 
-const projectA = { id: PROJECT_A_ID, name: "Marketing" };
-const projectB = { id: PROJECT_B_ID, name: "Engineering" };
+/**
+ * Owner and creation time come from the creator's membership row (its id equals the project
+ * id). The member count counts every OrganizationUsers row of the project.
+ */
+export const projectA: ProjectRecord = {
+  id: PROJECT_A_ID,
+  name: "Marketing",
+  ownerId: OWNER_ID,
+  createdAt: "2025-11-21T10:00:00.000Z",
+  memberCount: 3, // owner, admin, member
+};
+/** Organizations.happendat moved to 2025-12-05 with a rename; the creator's row keeps 2025-12-01. */
+export const projectB: ProjectRecord = {
+  id: PROJECT_B_ID,
+  name: "Engineering",
+  ownerId: ADMIN_ID,
+  createdAt: "2025-12-01T09:00:00.000Z",
+  memberCount: 2, // admin, owner
+};
 
 export const ownerProjects: readonly ProjectMembership[] = [
   { project: projectB, role: "user" }, // joined project B
