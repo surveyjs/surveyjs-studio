@@ -156,16 +156,15 @@ curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
   -d '{"name":"Customer feedback 2026"}'
 ```
 
-Publish and archive (one request can carry several fields):
+Publish and archive in one request (one request can carry several fields):
 
 ```sh
 curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
-  -d '{"published":true}'
-curl -b cookies.txt -X PATCH "$API/surveys/$ID" \
-  -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
-  -d '{"archived":true}'
+  -d '{"published":true,"archived":true}'
 ```
+
+Each field also works alone, for example `{"archived":true}`.
 
 Move to a project, and back to the caller's Personal surveys (`null` is a value here, not a removal):
 

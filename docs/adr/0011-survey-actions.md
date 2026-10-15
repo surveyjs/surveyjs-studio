@@ -98,6 +98,9 @@ leaves the results-layout blobs behind; a deleted survey here leaves nothing. Fi
 yet: there is no file store, and legacy editor assets are not tied to a survey
 ([layout, section 3.9](../architecture/legacy-data-layout.md#39-uploaded-files)). Step 7 adds them.
 
+A restore that lands between the archived check and the store delete could let an active survey be
+deleted. The window is tiny and legacy has the same race. A future fix is a conditional delete.
+
 ### R10 and R11
 
 Legacy archives without unpublishing, so an archived survey that was published stays published. Whether

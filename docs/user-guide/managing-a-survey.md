@@ -92,7 +92,8 @@ or the same project). The copy:
 
 You can clone any survey you can see, also from the Archived view. The copy is always created
 **active**, so after cloning from the Archived view you find it in the Active view. It is the newest
-survey, so it is at the top of the list.
+survey, so it is at the top of the list. Cloning from the Archived view puts the active copy in the
+Active list, so nothing new appears on the Archived list.
 
 ### Survey IDs
 
