@@ -49,7 +49,8 @@ async function openEditor(survey = sampleSurvey) {
     themeHandler({ themeName: "default" }, '"t1"'),
   );
   renderApp(path);
-  await screen.findByTestId("fake-creator");
+  // The first open of a test file loads the lazy route and page modules: give it time.
+  await screen.findByTestId("fake-creator", {}, { timeout: 5000 });
 }
 
 beforeEach(() => {

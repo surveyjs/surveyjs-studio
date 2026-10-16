@@ -27,6 +27,7 @@ import {
   type SaverState,
 } from "./autosave";
 import styles from "./editor.module.css";
+import { FooterNameEditor } from "./FooterNameEditor";
 import type { EditorDocuments, EditorSaves } from "./SurveyEditor";
 
 // The Creator and its styles load only here, on demand: nothing the survey list or this page's
@@ -36,6 +37,7 @@ const SurveyEditor = lazy(async () => ({ default: (await import("./SurveyEditor"
 const rootRoute = getRouteApi("__root__");
 
 const CONFLICT_TEXT = "The survey was changed by someone else. Your latest changes are not saved.";
+const RENAME_FAILED_TEXT = "Could not rename the survey. Please try again.";
 
 /**
  * The editor page (`/surveys/$surveyId/edit`), as surveyjs.io's `the site's page markup`: the Creator
@@ -166,8 +168,9 @@ function EditorSession({
 
 /**
  * The page around the Creator, in the markup of `the site's page markup`: the `#creator` container and
- * the fixed bottom bar with the survey name (the status at its left is ours). A notice takes the top
- * of the container and the Creator the rest, so no part of the Creator slides under the bar.
+ * the fixed bottom bar with the survey name and its rename editor (the status at its left is ours).
+ * Notices take the top of the container and the Creator the rest, so no part of the Creator slides
+ * under the bar. A failed rename shows a notice until the next rename.
  */
 function EditorFrame({
   survey,
@@ -180,6 +183,7 @@ function EditorFrame({
   notice?: ReactNode;
   children?: ReactNode;
 }) {
+  const [renameFailed, setRenameFailed] = useState(false);
   return (
     <>
       <div
@@ -187,6 +191,11 @@ function EditorFrame({
         className={`editor-editor v2-class---my-surveys-edit-survey ${styles.creator}`}
       >
         {notice}
+        {renameFailed && (
+          <div className={styles.notice} role="alert">
+            <span>{RENAME_FAILED_TEXT}</span>
+          </div>
+        )}
         <div className={styles.creatorArea}>{children}</div>
       </div>
       <div
@@ -198,11 +207,12 @@ function EditorFrame({
             ? ""
             : statusText[status.kind === "conflict" ? "error" : status.kind]}
         </span>
-        <div className="v2-class---my-surveys-page__survey-name-container">
-          <span className="v2-class---my-surveys-page__survey-name" title={survey.name}>
-            {survey.name}
-          </span>
-        </div>
+        <FooterNameEditor
+          survey={survey}
+          readOnly={!survey.permissions.canModify}
+          onRenameStart={() => setRenameFailed(false)}
+          onRenamed={(ok) => setRenameFailed(!ok)}
+        />
       </div>
     </>
   );
