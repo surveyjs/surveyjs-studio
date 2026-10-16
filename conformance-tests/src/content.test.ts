@@ -15,6 +15,11 @@ import { fixtureUsers, type SignInResult } from "./sign-in.js";
 const { owner, admin, outsider } = fixtureUsers;
 
 const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
+/**
+ * An entity tag no document version has: refused writes on fixture surveys send it, so a broken
+ * access check would answer 412 instead of overwriting the shared fixture.
+ */
+const NEVER_MATCHES = '"never-matches"';
 
 const fixture = {
   feedback: "22222222-0000-4000-8000-a00000000001",
@@ -211,9 +216,10 @@ describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
 
   it("answers 403 forbidden for a member who cannot modify the survey", async (ctx) => {
     const headers = await as(ctx, owner);
+    // A tag that never matches: should the access check fail, the fixture is still not written.
     const response = await putDocument(headers, fixture.engineeringRetro, document, {
       body: content("Mine"),
-      ifMatch: "*",
+      ifMatch: NEVER_MATCHES,
     });
     expect(response.status).toBe(403);
     expect(await codeOf(response)).toBe("forbidden");
@@ -227,7 +233,7 @@ describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
       expect(await codeOf(read)).toBe("not-found");
       const write = await putDocument(headers, id, document, {
         body: content("Mine"),
-        ifMatch: "*",
+        ifMatch: NEVER_MATCHES,
       });
       expect(write.status).toBe(404);
     }
