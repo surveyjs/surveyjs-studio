@@ -12,6 +12,8 @@ import {
   PROJECT_A_ID,
   PROJECT_B_ID,
   adminProjects,
+  feedbackHistoryIds,
+  feedbackHistorySnapshots,
   feedbackTheme,
   fixtureDefinitions,
   fixtureSurveys,
@@ -319,13 +321,13 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           ([survey, definition]) => [survey.name, survey, definition] as const,
         ),
       )("returns the stored definition of %s", async (_name, survey, definition) => {
-        expect(await providers.surveys.getDefinition(survey.id)).toEqual(definition);
+        expect((await providers.surveys.getDefinition(survey.id))?.content).toEqual(definition);
       });
 
       it.each(surveysWithoutDefinition.map((survey) => [survey.name, survey] as const))(
         "returns {} for %s, which has none",
         async (_name, survey) => {
-          expect(await providers.surveys.getDefinition(survey.id)).toEqual({});
+          expect((await providers.surveys.getDefinition(survey.id))?.content).toEqual({});
         },
       );
 
@@ -335,7 +337,9 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
 
       it("matches ids case-insensitively", async () => {
         const [survey, definition] = fixtureDefinitions[0]!;
-        expect(await providers.surveys.getDefinition(survey.id.toUpperCase())).toEqual(definition);
+        expect((await providers.surveys.getDefinition(survey.id.toUpperCase()))?.content).toEqual(
+          definition,
+        );
       });
 
       it("returns the definition a survey was created with, or {} without one", async () => {
@@ -348,18 +352,22 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           definition,
         );
         const without = await providers.surveys.createSurvey(newSurvey(freshScope()));
-        expect(await providers.surveys.getDefinition(withDefinition.id)).toEqual(definition);
-        expect(await providers.surveys.getDefinition(without.id)).toEqual({});
+        expect((await providers.surveys.getDefinition(withDefinition.id))?.content).toEqual(
+          definition,
+        );
+        expect((await providers.surveys.getDefinition(without.id))?.content).toEqual({});
       });
     });
 
     describe("surveys.getTheme", () => {
       it("returns the stored theme of fixture 01", async () => {
-        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
+        expect((await providers.surveys.getTheme(surveyFeedback.id))?.content).toEqual(
+          feedbackTheme,
+        );
       });
 
       it("returns {} for a survey without a theme", async () => {
-        expect(await providers.surveys.getTheme(surveyDraft.id)).toEqual({});
+        expect((await providers.surveys.getTheme(surveyDraft.id))?.content).toEqual({});
       });
 
       it("returns null for an unknown id", async () => {
@@ -367,9 +375,367 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
 
       it("matches ids case-insensitively", async () => {
-        expect(await providers.surveys.getTheme(surveyFeedback.id.toUpperCase())).toEqual(
-          feedbackTheme,
+        expect(
+          (await providers.surveys.getTheme(surveyFeedback.id.toUpperCase()))?.content,
+        ).toEqual(feedbackTheme);
+      });
+    });
+
+    describe("surveys.getDefinition and getTheme versions", () => {
+      it.each(["getDefinition", "getTheme"] as const)(
+        "%s returns a version without quotes, the same for two reads",
+        async (method) => {
+          for (const survey of [surveyFeedback, surveyDraft]) {
+            const first = await providers.surveys[method](survey.id);
+            const second = await providers.surveys[method](survey.id);
+            expect(first?.version).toEqual(expect.any(String));
+            expect(first?.version).not.toBe("");
+            expect(first?.version).not.toContain('"');
+            expect(second?.version).toBe(first?.version);
+          }
+        },
+      );
+    });
+
+    describe("surveys.saveDefinition", () => {
+      const savedAt = (second: number) =>
+        `2026-09-01T10:00:${String(second).padStart(2, "0")}.000Z`;
+
+      it("saves with the current version and reads back content, version and date", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "Before",
+        });
+        const before = (await providers.surveys.getDefinition(survey.id))!;
+        const definition = { title: "After", pages: [{ name: "page1", elements: [] }] };
+        const outcome = await providers.surveys.saveDefinition(survey.id, definition, {
+          ifVersion: before.version,
+          userId: ADMIN_ID,
+          savedAt: savedAt(5),
+        });
+        expect(outcome.kind).toBe("saved");
+        const after = (await providers.surveys.getDefinition(survey.id))!;
+        expect(after.content).toEqual(definition);
+        expect(after.version).not.toBe(before.version);
+        expect(outcome).toEqual({ kind: "saved", version: after.version });
+        expect((await providers.surveys.getSurvey(survey.id))?.updatedAt).toBe(savedAt(5));
+        const entries = (await providers.surveys.listHistory({ surveyId: survey.id, limit: 10 }))
+          .items;
+        expect(entries[0]).toMatchObject({ at: savedAt(5), userId: ADMIN_ID });
+        expect(await providers.surveys.getHistorySnapshot(survey.id, entries[0]!.id)).toEqual(
+          definition,
         );
+      });
+
+      it("answers conflict for a stale version and changes nothing", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "Start",
+        });
+        const start = (await providers.surveys.getDefinition(survey.id))!;
+        const first = await providers.surveys.saveDefinition(
+          survey.id,
+          { title: "First" },
+          { ifVersion: start.version, userId: ADMIN_ID, savedAt: savedAt(1) },
+        );
+        expect(first.kind).toBe("saved");
+        const read = (await providers.surveys.getDefinition(survey.id))!;
+        const record = await providers.surveys.getSurvey(survey.id);
+        const history = await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 });
+        const stale = await providers.surveys.saveDefinition(
+          survey.id,
+          { title: "Second" },
+          { ifVersion: start.version, userId: ADMIN_ID, savedAt: savedAt(2) },
+        );
+        expect(stale).toEqual({ kind: "conflict" });
+        expect(await providers.surveys.getDefinition(survey.id)).toEqual(read);
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(record);
+        expect(await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 })).toEqual(
+          history,
+        );
+      });
+
+      it("answers not-found for an unknown survey and creates nothing", async () => {
+        const outcome = await providers.surveys.saveDefinition(
+          UNKNOWN_ID,
+          { title: "x" },
+          { ifVersion: "none", userId: ADMIN_ID, savedAt: savedAt(1) },
+        );
+        expect(outcome).toEqual({ kind: "not-found" });
+        expect(await providers.surveys.getSurvey(UNKNOWN_ID)).toBeNull();
+        expect(await providers.surveys.getDefinition(UNKNOWN_ID)).toBeNull();
+        expect(await providers.surveys.listHistory({ surveyId: UNKNOWN_ID, limit: 10 })).toEqual({
+          items: [],
+          next: null,
+        });
+      });
+
+      it("saves a survey created without a definition with the version it read", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const read = (await providers.surveys.getDefinition(survey.id))!;
+        expect(read.content).toEqual({});
+        const outcome = await providers.surveys.saveDefinition(
+          survey.id,
+          { title: "First" },
+          { ifVersion: read.version, userId: ADMIN_ID, savedAt: savedAt(1) },
+        );
+        expect(outcome.kind).toBe("saved");
+        expect((await providers.surveys.getDefinition(survey.id))?.content).toEqual({
+          title: "First",
+        });
+      });
+
+      it("keeps the definition version when the theme is saved", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "Both",
+        });
+        const definition = (await providers.surveys.getDefinition(survey.id))!;
+        const theme = (await providers.surveys.getTheme(survey.id))!;
+        const saved = await providers.surveys.saveTheme(
+          survey.id,
+          { themeName: "x" },
+          { ifVersion: theme.version, savedAt: savedAt(1) },
+        );
+        expect(saved.kind).toBe("saved");
+        expect(await providers.surveys.getDefinition(survey.id)).toEqual(definition);
+        const outcome = await providers.surveys.saveDefinition(
+          survey.id,
+          { title: "Next" },
+          { ifVersion: definition.version, userId: ADMIN_ID, savedAt: savedAt(2) },
+        );
+        expect(outcome.kind).toBe("saved");
+        expect((await providers.surveys.getTheme(survey.id))?.content).toEqual({ themeName: "x" });
+      });
+    });
+
+    describe("surveys.saveTheme", () => {
+      const savedAt = (second: number) =>
+        `2026-09-01T11:00:${String(second).padStart(2, "0")}.000Z`;
+
+      it("saves with the current version, moves updatedAt and adds no history entry", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "Themed",
+        });
+        const before = (await providers.surveys.getTheme(survey.id))!;
+        const historyBefore = await providers.surveys.listHistory({
+          surveyId: survey.id,
+          limit: 50,
+        });
+        const theme = {
+          themeName: "default",
+          cssVariables: { "--sjs-primary-backcolor": "#123456" },
+        };
+        const outcome = await providers.surveys.saveTheme(survey.id, theme, {
+          ifVersion: before.version,
+          savedAt: savedAt(7),
+        });
+        expect(outcome.kind).toBe("saved");
+        const after = (await providers.surveys.getTheme(survey.id))!;
+        expect(after.content).toEqual(theme);
+        expect(after.version).not.toBe(before.version);
+        expect(outcome).toEqual({ kind: "saved", version: after.version });
+        expect((await providers.surveys.getSurvey(survey.id))?.updatedAt).toBe(savedAt(7));
+        expect(await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 })).toEqual(
+          historyBefore,
+        );
+      });
+
+      it("answers conflict for a stale version and changes nothing", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const start = (await providers.surveys.getTheme(survey.id))!;
+        const first = await providers.surveys.saveTheme(
+          survey.id,
+          { themeName: "one" },
+          { ifVersion: start.version, savedAt: savedAt(1) },
+        );
+        expect(first.kind).toBe("saved");
+        const read = (await providers.surveys.getTheme(survey.id))!;
+        const record = await providers.surveys.getSurvey(survey.id);
+        const stale = await providers.surveys.saveTheme(
+          survey.id,
+          { themeName: "two" },
+          { ifVersion: start.version, savedAt: savedAt(2) },
+        );
+        expect(stale).toEqual({ kind: "conflict" });
+        expect(await providers.surveys.getTheme(survey.id)).toEqual(read);
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(record);
+      });
+
+      it("answers not-found for an unknown survey", async () => {
+        expect(
+          await providers.surveys.saveTheme(
+            UNKNOWN_ID,
+            { themeName: "x" },
+            { ifVersion: "none", savedAt: savedAt(1) },
+          ),
+        ).toEqual({ kind: "not-found" });
+        expect(await providers.surveys.getTheme(UNKNOWN_ID)).toBeNull();
+      });
+
+      it("keeps the theme version when the definition is saved", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "Both",
+        });
+        const definition = (await providers.surveys.getDefinition(survey.id))!;
+        const theme = (await providers.surveys.getTheme(survey.id))!;
+        await providers.surveys.saveDefinition(
+          survey.id,
+          { title: "Changed" },
+          { ifVersion: definition.version, userId: ADMIN_ID, savedAt: savedAt(3) },
+        );
+        expect(await providers.surveys.getTheme(survey.id)).toEqual(theme);
+      });
+    });
+
+    describe("surveys.listHistory and getHistorySnapshot", () => {
+      const savedAt = (second: number) =>
+        `2026-09-01T12:00:${String(second).padStart(2, "0")}.000Z`;
+
+      /** A survey with its create entry and one entry per given time. */
+      const savedSurvey = async (seconds: readonly number[]) => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "v0",
+        });
+        for (const second of seconds) {
+          const read = (await providers.surveys.getDefinition(survey.id))!;
+          const outcome = await providers.surveys.saveDefinition(
+            survey.id,
+            { title: `v${second}`, n: Math.random() },
+            { ifVersion: read.version, userId: ADMIN_ID, savedAt: savedAt(second) },
+          );
+          expect(outcome.kind).toBe("saved");
+        }
+        return survey;
+      };
+
+      it("lists the create entry and every save, newest first", async () => {
+        const survey = await savedSurvey([1, 2, 3]);
+        const { items, next } = await providers.surveys.listHistory({
+          surveyId: survey.id,
+          limit: 50,
+        });
+        expect(items.map((e) => e.at)).toEqual([
+          savedAt(3),
+          savedAt(2),
+          savedAt(1),
+          survey.createdAt,
+        ]);
+        expect(items.map((e) => e.userId)).toEqual([
+          ADMIN_ID,
+          ADMIN_ID,
+          ADMIN_ID,
+          survey.creatorId,
+        ]);
+        expect(next).toBeNull();
+        expect(await providers.surveys.getHistorySnapshot(survey.id, items[0]!.id)).toMatchObject({
+          title: "v3",
+        });
+        expect(await providers.surveys.getHistorySnapshot(survey.id, items[3]!.id)).toEqual({
+          title: "v0",
+        });
+      });
+
+      it("pages without gaps or repeats", async () => {
+        const survey = await savedSurvey([1, 2, 3]);
+        const all = (await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 })).items;
+        const first = await providers.surveys.listHistory({ surveyId: survey.id, limit: 2 });
+        expect(first.items).toEqual(all.slice(0, 2));
+        expect(first.next).toEqual({ at: all[1]!.at, id: all[1]!.id });
+        const second = await providers.surveys.listHistory({
+          surveyId: survey.id,
+          after: first.next!,
+          limit: 2,
+        });
+        expect(second.items).toEqual(all.slice(2));
+        expect(second.next).toBeNull();
+      });
+
+      it("orders equal times by id descending", async () => {
+        const survey = await savedSurvey([4, 4]);
+        const { items } = await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 });
+        const tied = items.filter((e) => e.at === savedAt(4)).map((e) => e.id);
+        expect(tied).toHaveLength(2);
+        expect(tied).toEqual([...tied].sort().reverse());
+        expect(items.slice(0, 2).map((e) => e.id)).toEqual(tied);
+      });
+
+      it("accepts an upper-case survey id and gives an empty page for an unknown one", async () => {
+        const survey = await savedSurvey([1]);
+        const lower = await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 });
+        expect(
+          await providers.surveys.listHistory({ surveyId: survey.id.toUpperCase(), limit: 50 }),
+        ).toEqual(lower);
+        expect(await providers.surveys.listHistory({ surveyId: UNKNOWN_ID, limit: 50 })).toEqual({
+          items: [],
+          next: null,
+        });
+      });
+
+      it("returns null for a snapshot that does not exist", async () => {
+        const survey = await savedSurvey([]);
+        expect(await providers.surveys.getHistorySnapshot(survey.id, UNKNOWN_ID)).toBeNull();
+        expect(await providers.surveys.getHistorySnapshot(UNKNOWN_ID, UNKNOWN_ID)).toBeNull();
+      });
+
+      it("holds the two legacy points of fixture 01, without a user", async () => {
+        const { items } = await providers.surveys.listHistory({
+          surveyId: surveyFeedback.id,
+          limit: 50,
+        });
+        expect(items.map((e) => e.id).sort()).toEqual([...feedbackHistoryIds]);
+        expect(items.every((e) => e.userId === null)).toBe(true);
+        for (const id of feedbackHistoryIds) {
+          expect(await providers.surveys.getHistorySnapshot(surveyFeedback.id, id)).toEqual(
+            feedbackHistorySnapshots[id],
+          );
+        }
+      });
+
+      it("records one entry by the creator for a create with a definition, none without", async () => {
+        const created = await providers.surveys.createSurvey(newSurvey(freshScope()), {
+          title: "With",
+        });
+        const { items } = await providers.surveys.listHistory({ surveyId: created.id, limit: 50 });
+        expect(items).toEqual([
+          { id: expect.any(String) as string, at: created.createdAt, userId: created.creatorId },
+        ]);
+        expect(await providers.surveys.getHistorySnapshot(created.id, items[0]!.id)).toEqual({
+          title: "With",
+        });
+        const without = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        expect(await providers.surveys.listHistory({ surveyId: without.id, limit: 50 })).toEqual({
+          items: [],
+          next: null,
+        });
+      });
+
+      it("records one entry for a clone of fixture 01 and leaves the source alone", async () => {
+        const copy = newSurvey(freshScope(), {
+          createdAt: "2026-09-02T10:00:00.000Z",
+          updatedAt: "2026-09-02T10:00:00.000Z",
+        });
+        await providers.surveys.cloneSurvey(surveyFeedback.id, copy);
+        const { items } = await providers.surveys.listHistory({ surveyId: copy.id, limit: 50 });
+        expect(items).toEqual([
+          { id: expect.any(String) as string, at: copy.createdAt, userId: copy.creatorId },
+        ]);
+        expect(await providers.surveys.getHistorySnapshot(copy.id, items[0]!.id)).toEqual(
+          fixtureDefinitions[0]![1],
+        );
+        const source = await providers.surveys.listHistory({
+          surveyId: surveyFeedback.id,
+          limit: 50,
+        });
+        expect(source.items.map((e) => e.id).sort()).toEqual([...feedbackHistoryIds]);
+      });
+
+      it("removes the history with the survey", async () => {
+        const survey = await savedSurvey([1]);
+        const { items } = await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 });
+        expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+        expect(await providers.surveys.listHistory({ surveyId: survey.id, limit: 50 })).toEqual({
+          items: [],
+          next: null,
+        });
+        expect(await providers.surveys.getHistorySnapshot(survey.id, items[0]!.id)).toBeNull();
       });
     });
 
@@ -513,14 +879,18 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         const stored = await providers.surveys.cloneSurvey(surveyFeedback.id, copy);
         expect(stored).toEqual(storedRecord(copy));
         expect(await providers.surveys.getSurvey(copy.id)).toEqual(stored);
-        expect(await providers.surveys.getDefinition(copy.id)).toEqual(fixtureDefinitions[0]![1]);
-        expect(await providers.surveys.getTheme(copy.id)).toEqual(feedbackTheme);
-        expect(await providers.surveys.listSurveys(scope)).toEqual([stored]);
-        expect(await providers.surveys.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
-        expect(await providers.surveys.getDefinition(surveyFeedback.id)).toEqual(
+        expect((await providers.surveys.getDefinition(copy.id))?.content).toEqual(
           fixtureDefinitions[0]![1],
         );
-        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
+        expect((await providers.surveys.getTheme(copy.id))?.content).toEqual(feedbackTheme);
+        expect(await providers.surveys.listSurveys(scope)).toEqual([stored]);
+        expect(await providers.surveys.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
+        expect((await providers.surveys.getDefinition(surveyFeedback.id))?.content).toEqual(
+          fixtureDefinitions[0]![1],
+        );
+        expect((await providers.surveys.getTheme(surveyFeedback.id))?.content).toEqual(
+          feedbackTheme,
+        );
       });
 
       it("copies a survey without definition or theme as {} and {}", async () => {
@@ -528,8 +898,8 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await providers.surveys.cloneSurvey(surveyDraft.id, copy)).toEqual(
           storedRecord(copy),
         );
-        expect(await providers.surveys.getDefinition(copy.id)).toEqual({});
-        expect(await providers.surveys.getTheme(copy.id)).toEqual({});
+        expect((await providers.surveys.getDefinition(copy.id))?.content).toEqual({});
+        expect((await providers.surveys.getTheme(copy.id))?.content).toEqual({});
       });
 
       it("copies the definition of a survey created with one", async () => {
@@ -537,7 +907,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         const source = await providers.surveys.createSurvey(newSurvey(freshScope()), definition);
         const copy = copyOf(freshScope());
         await providers.surveys.cloneSurvey(source.id, copy);
-        expect(await providers.surveys.getDefinition(copy.id)).toEqual(definition);
+        expect((await providers.surveys.getDefinition(copy.id))?.content).toEqual(definition);
       });
 
       it("returns null for an unknown source and creates no copy", async () => {
@@ -571,7 +941,9 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await providers.surveys.deleteSurvey(copy.id)).toBe(true);
         expect(await providers.surveys.getSurvey(copy.id)).toBeNull();
         expect(await providers.surveys.getTheme(copy.id)).toBeNull();
-        expect(await providers.surveys.getTheme(surveyFeedback.id)).toEqual(feedbackTheme);
+        expect((await providers.surveys.getTheme(surveyFeedback.id))?.content).toEqual(
+          feedbackTheme,
+        );
       });
     });
 

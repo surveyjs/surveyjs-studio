@@ -219,7 +219,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     expect(await blobType("surveyjsonhistory", point)).toBe("AppendBlob");
     expect(await blobText("surveyjsonhistory", point)).toBe(text);
 
-    expect(await store().surveys.getDefinition(survey.id)).toEqual(definition);
+    expect((await store().surveys.getDefinition(survey.id))?.content).toEqual(definition);
   });
 
   it("stores a project survey under the project id and lists it in the project", async () => {
@@ -275,7 +275,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
     // The first survey and its definition are unchanged.
     expect(await store().surveys.getSurvey(first.id)).toEqual(first);
-    expect(await store().surveys.getDefinition(first.id)).toEqual(definition);
+    expect((await store().surveys.getDefinition(first.id))?.content).toEqual(definition);
     expect(await historyNames(first.id)).toHaveLength(1);
   });
 
@@ -289,7 +289,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect(await blob.exists(), container).toBe(false);
     }
     expect(await historyNames(first.id)).toEqual([]);
-    expect(await store().surveys.getDefinition(first.id)).toEqual({});
+    expect((await store().surveys.getDefinition(first.id))?.content).toEqual({});
     expect(await store().surveys.getSurvey(first.id)).toEqual(first);
   });
 

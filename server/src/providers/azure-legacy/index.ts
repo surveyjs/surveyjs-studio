@@ -10,7 +10,9 @@ import type {
   SurveyDefinition,
   SurveyOwner,
   SurveyTheme,
+  Versioned,
 } from "../../domain/types.js";
+import { contentVersion } from "../../domain/content-version.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
 import { licenceNotices } from "../../notices/licence-rule.js";
@@ -52,6 +54,13 @@ import {
  * folder): survey creation, update, clone and delete call the writers of writes.ts.
  * Connection strings are secrets: no error or log line built here holds one.
  */
+
+/** Reads a download stream to the end (a missing body is empty). */
+async function streamToBuffer(stream: NodeJS.ReadableStream | undefined): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  if (stream) for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks);
+}
 
 export { LegacyStoreError } from "./errors.js";
 
@@ -346,30 +355,34 @@ export function createAzureLegacyProviders(
     };
   }
 
-  async function getDefinition(id: string): Promise<SurveyDefinition | null> {
+  async function getDefinition(id: string): Promise<Versioned<SurveyDefinition> | null> {
     const survey = await getSurvey(id);
     if (!survey) return null;
-    let content: Buffer;
+    let text: string;
+    let version: string;
     try {
-      content = await surveysAccount.blobs
+      const response = await surveysAccount.blobs
         .getContainerClient("surveyjson")
         .getBlobClient(survey.id)
-        .downloadToBuffer();
+        .download();
+      // Body and ETag come from the same response, so the version names the text read.
+      text = (await streamToBuffer(response.readableStreamBody)).toString("utf8");
+      version = (response.etag ?? "").replaceAll('"', "");
     } catch (error) {
       // No blob until the first save (layout section 3.2).
-      if (statusOf(error) === 404) return {};
+      if (statusOf(error) === 404) return { content: {}, version: "none" };
       throw new LegacyStoreError("definition read", error);
     }
     try {
-      return definitionFromLegacy(survey.id, content.toString("utf8"));
+      return { content: definitionFromLegacy(survey.id, text), version };
     } catch (error) {
       if (!(error instanceof UnmappableLegacyRowError)) throw error;
       logger.warn({ ...error.ids }, `Ignored a legacy survey definition. ${error.message}`);
-      return {};
+      return { content: {}, version };
     }
   }
 
-  async function getTheme(id: string): Promise<SurveyTheme | null> {
+  async function getTheme(id: string): Promise<Versioned<SurveyTheme> | null> {
     if (!isGuid(id)) return null;
     const rows = await select<{ id: string; theme: string | null }>(
       "theme read",
@@ -377,8 +390,17 @@ export function createAzureLegacyProviders(
       (request) => request.input("id", sql.UniqueIdentifier, id),
     );
     const [row] = rows;
-    return row ? themeFromLegacy(row.id, row.theme, logger) : null;
+    return row
+      ? {
+          content: themeFromLegacy(row.id, row.theme, logger),
+          version: contentVersion(row.theme ?? ""),
+        }
+      : null;
   }
+
+  const notYet = (): never => {
+    throw new Error("not implemented until Task 2");
+  };
 
   const writeTargets: LegacyWriteTargets = {
     pool: connected,
@@ -450,6 +472,10 @@ export function createAzureLegacyProviders(
       createSurvey,
       getDefinition,
       getTheme,
+      saveDefinition: () => Promise.resolve(notYet()),
+      saveTheme: () => Promise.resolve(notYet()),
+      listHistory: () => Promise.resolve(notYet()),
+      getHistorySnapshot: () => Promise.resolve(notYet()),
       updateSurvey,
       cloneSurvey,
       deleteSurvey,

@@ -186,7 +186,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
 
   it("reads a definition blob that is not JSON as {} and warns with the survey id only", async () => {
     warnings.length = 0;
-    expect(await store().surveys.getDefinition(NULL_NAME_SURVEY)).toEqual({});
+    expect((await store().surveys.getDefinition(NULL_NAME_SURVEY))?.content).toEqual({});
     expect(warnings).toEqual([
       { details: { surveyId: NULL_NAME_SURVEY }, message: expect.any(String) as string },
     ]);

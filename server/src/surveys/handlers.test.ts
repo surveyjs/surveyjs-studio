@@ -135,13 +135,13 @@ describe("createSurvey", () => {
     const res = await create(server, headers, { definition });
     expect(res.statusCode).toBe(201);
     const { id } = res.json<{ id: string }>();
-    expect(await providers.surveys.getDefinition(id)).toEqual(definition);
+    expect((await providers.surveys.getDefinition(id))?.content).toEqual(definition);
   });
 
   it("stores no definition without one, so it reads as an empty survey", async () => {
     const { server, headers, providers } = await start();
     const { id } = (await create(server, headers)).json<{ id: string }>();
-    expect(await providers.surveys.getDefinition(id)).toEqual({});
+    expect((await providers.surveys.getDefinition(id))?.content).toEqual({});
   });
 
   it("rejects a blank name with 422 validation-failed at /name", async () => {

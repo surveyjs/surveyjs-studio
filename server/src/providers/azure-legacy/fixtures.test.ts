@@ -243,4 +243,19 @@ describe("legacyFixtureSeed", () => {
       },
     });
   });
+
+  it("holds the history points by survey id, timed at the survey update time, without a user", async () => {
+    const seed = await legacyFixtureSeed();
+    const feedback = seed.surveys.find((s) => s.name === "Customer feedback");
+    expect(Object.keys(seed.history ?? {})).toEqual(["22222222-0000-4000-8000-a00000000001"]);
+    const points = seed.history?.["22222222-0000-4000-8000-a00000000001"] ?? [];
+    expect(points.map((p) => p.id).sort()).toEqual([
+      "88888888-0000-4000-8000-a00000000001",
+      "88888888-0000-4000-8000-a00000000002",
+    ]);
+    expect(points.every((p) => p.at === feedback?.updatedAt && p.userId === null)).toBe(true);
+    expect(points.find((p) => p.id.endsWith("a00000000001"))?.snapshot).toMatchObject({
+      title: "Customer feedback (draft)",
+    });
+  });
 });

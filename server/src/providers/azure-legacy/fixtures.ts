@@ -283,6 +283,21 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
       blob.content.toString("utf8"),
     ) as SurveyDefinition;
   }
+  const surveyRows = new Map(fixtures.surveys.map((row) => [row.id.toLowerCase(), row]));
+  const history: NonNullable<MemorySeed["history"]> = {};
+  for (const blob of fixtures.blobs) {
+    if (blob.account !== "surveys" || blob.container !== "surveyjsonhistory") continue;
+    const [surveyId, pointId, ...rest] = blob.name.toLowerCase().split("/");
+    const row = surveyId ? surveyRows.get(surveyId) : undefined;
+    if (!surveyId || !pointId || rest.length > 0 || !row) continue;
+    // The fixtures carry no time for a point: the survey update time stands in.
+    (history[surveyId] ??= []).push({
+      id: pointId,
+      at: surveyFromLegacy(row, "personal").updatedAt,
+      userId: null,
+      snapshot: JSON.parse(blob.content.toString("utf8")) as SurveyDefinition,
+    });
+  }
   const themes: Record<string, SurveyTheme> = {};
   for (const row of fixtures.rawSqlRows.Surveys ?? []) {
     const text = optStr(row, "theme");
@@ -314,5 +329,6 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     }),
     definitions,
     themes,
+    history,
   };
 }

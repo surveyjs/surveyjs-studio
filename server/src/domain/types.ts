@@ -80,3 +80,24 @@ export interface SurveyResponse {
   readonly respondentIp?: string;
   readonly partial: boolean; // missing -> false
 }
+
+/** A stored document and its version token (opaque, never contains `"`). */
+export interface Versioned<T> {
+  readonly content: T;
+  readonly version: string;
+}
+
+/** One saved version of a survey definition. */
+export interface HistoryEntryRecord {
+  /** Lower-case GUID (azure: the point blob's name after `{surveyId}/`). */
+  readonly id: string;
+  /** ISO 8601 UTC. */
+  readonly at: string;
+  /** The user who saved; null for legacy entries. */
+  readonly userId: string | null;
+}
+
+export type SaveOutcome =
+  | { readonly kind: "saved"; readonly version: string }
+  | { readonly kind: "conflict" }
+  | { readonly kind: "not-found" };
