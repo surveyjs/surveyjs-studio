@@ -1,4 +1,5 @@
-import { useId, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useId, useRef, useState, type MouseEvent } from "react";
 import { flushSync } from "react-dom";
 import type { Project } from "../api/projects";
 import type { Survey } from "../api/surveys";
@@ -10,11 +11,17 @@ import type { SurveyActions } from "./useSurveyActions";
 
 const classes = (...names: (string | false)[]) => names.filter(Boolean).join(" ");
 
+// Clicks inside these do not open the editor: they belong to the "…" menu and the rename editor.
+const MENU = "v2-class---my-surveys-page__survey-context-menu-button";
+const NAME_EDITOR = "v2-class---my-surveys-page__edit-survey-name-container";
+
 /**
  * One survey of the list, in the row markup of `the site's page markup` (table view):
  * the name with the rename pencil, the two dates and the "…" menu. The pencil shows only in the
  * Active view and when the user may modify the survey. A rename shows the new name at once and the
- * old one again if the request fails (the page shows the error).
+ * old one again if the request fails (the page shows the error). In the Active view a click on the
+ * row opens the editor, as on the site, except on its links (the pencil, the menu) and in the rename
+ * editor.
  */
 export function SurveyRow({
   survey,
@@ -37,6 +44,7 @@ export function SurveyRow({
   const pencilRef = useRef<HTMLAnchorElement>(null);
   const name = pendingName ?? survey.name;
   const canRename = !archived && survey.permissions.canModify;
+  const navigate = useNavigate();
 
   const closeEditor = () => {
     flushSync(() => setEditing(false));
@@ -54,12 +62,19 @@ export function SurveyRow({
     });
   };
 
+  const openEditor = (event: MouseEvent<HTMLDivElement>) => {
+    if (archived || editing) return;
+    if ((event.target as Element).closest(`a, button, input, .${MENU}, .${NAME_EDITOR}`)) return;
+    void navigate({ to: "/surveys/$surveyId/edit", params: { surveyId: survey.id } });
+  };
+
   return (
     <div
       className={classes(
         "v2-class---my-surveys-page__list-item",
         menuOpen && "v2-class---my-surveys-page__list-item--dd-open",
       )}
+      onClick={openEditor}
     >
       <div className="v2-class---my-surveys-page__list-item-content">
         <div

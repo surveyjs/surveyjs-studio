@@ -40,6 +40,19 @@ Step 5 (the row's "…" menu and rename editor) added these copies:
 The "…" button's three dots and the flyout chevron are inline `<svg>` in the site's view, not partials;
 the React row inlines them too.
 
+Step 6 (the survey editor) copies no new style file: the editor page uses rules of the
+`pages/my-surveys.scss` copy above. It copies markup and Creator settings from
+`the site's page markup` and `the site's source` (commit `(a site commit)`):
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                      | In                             | Original                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The Creator container `div#creator.editor-editor.v2-class---my-surveys-edit-survey` and the fixed bottom bar `#edit-survey-change-name-container.v2-class---edit-survey-change-name-container` with the survey name (`…__survey-name-container`, `…__survey-name`)                                                                                                                                                                        | `src/editor/EditorPage.tsx`    | `the site's page markup`; styled by `my-surveys.scss:589-684` (the bar) and `:787-797` (the Creator height)                                         |
+| The hidden site footer (`footer { display: none; }`)                                                                                                                                                                                                                                                                                                                                                                                      | `src/editor/editor.module.css` | the inline style of `the site's page markup`, limited to the page that holds `#creator`                                                              |
+| Creator options: `showTranslationTab`, `showLogicTab`, `showThemeTab`, `generateValidJSON`, auto-save, `settings.layout.allowCollapseSidebar = false`, the hidden `file.storeDataAsText` property, the survey themes registered as survey and Creator themes, Ace for the JSON tab (search box, language tools, JSON mode and worker, `clouds_midnight`), the Creator UI theme kept in `localStorage["OnlineEditorSurveyCreatorThemeV3"]` | `src/editor/creatorSetup.ts`   | `the site's page markup`, `:112-144`; `editor.tsx:128-175`. The site's "Saved to surveyjs.io service" text is not copied (the default "Saved" stays) |
+
+The save status at the left of the bar, the conflict notice above the Creator and the load error are
+the app's own (glue in `src/editor/editor.module.css`); the site has none of them.
+
 The React components in `..` reproduce the markup of these Razor views (structure, class names and
 texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page markup`,
 `Views/Shared/V2/components/{Button,Logo,Drop-Down-Menu-Item,FAQ-Question,Expand-Collapse-Button,Badge}the site's page markup`,
@@ -47,10 +60,10 @@ texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page mark
 `Views/Shared/V2/components/popups/{Cookies,LicencesExpired,LicencesExpiresSoon}the site's page markup`,
 `Views/Shared/V2/footer/*the site's page markup` and `Views/Shared/V2/mobile-menu/*the site's page markup`.
 
-The My Surveys page (`src/surveyList/`) and the editor stub reproduce `the site's page markup`
-(page structure, actions bar, project drop-down, empty state and the row markup with its two inline
-date icons) and the partials it uses: `V2/components/{Header,Button,Loading}the site's page markup` and
-`the site's page markup`. The "…" menu
+The My Surveys page (`src/surveyList/`) and its placeholder pages reproduce
+`the site's page markup` (page structure, actions bar, project drop-down, empty state
+and the row markup with its two inline date icons) and the partials it uses:
+`V2/components/{Header,Button,Loading}the site's page markup` and `the site's page markup`. The "…" menu
 (`the site's page markup`), the pencil and the rename editor are added
 with the row's menu (Step 5); the menu's entries are the pure function `surveyMenuItems` in
 `src/surveyList/menuItems.ts`. Changes to the markup:

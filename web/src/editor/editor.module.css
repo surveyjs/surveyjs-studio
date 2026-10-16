@@ -1,0 +1,64 @@
+/* Glue for the editor page. Its layout (the #creator height, the fixed bottom bar) is the copied
+   surveyjs.io CSS in pages/my-surveys.scss; colours and fonts are the site's (color-styles.scss,
+   text-styles.scss). */
+
+/* the site's page markup hides the site footer with an inline style (`footer { display: none; }`): the
+   Creator and the fixed bar take its place. Here the same, limited to the page that holds the
+   Creator. */
+:global(main:has(#creator) ~ footer) {
+  display: none;
+}
+
+/* A height for shells without the site's styles (the site's `#creator` rule is more specific).
+   A notice takes the top of the container, the Creator the rest. */
+.creator {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 160px);
+}
+
+.creatorArea {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The save status, at the left of the bar; the survey name stays centred. */
+.status {
+  position: absolute;
+  left: 16px;
+  color: #ffffff; /* $Primary--Forecolor */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+/* The conflict notice and the load error, above the Creator (the site has no such message). */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 32px;
+  background-color: #fbdae2; /* $Special--Red-15 */
+  color: #161616; /* $General--Forecolor */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.noticeButton {
+  padding: 4px 16px;
+  border: none;
+  border-radius: 4px;
+  background-color: #19b394; /* $Primary--Primary */
+  color: #ffffff; /* $Primary--Forecolor */
+  font: inherit;
+  cursor: pointer;
+}
+
+.noticeButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
