@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectMembership, SurveyRecord } from "../domain/types.js";
-import { isAfter, projectListOrder, surveyListOrder } from "./ordering.js";
+import type { HistoryEntryRecord, ProjectMembership, SurveyRecord } from "../domain/types.js";
+import {
+  historyOrder,
+  isAfter,
+  isAfterHistory,
+  projectListOrder,
+  surveyListOrder,
+} from "./ordering.js";
 
 const membership = (id: string, name: string): ProjectMembership => ({
   project: { id, name, ownerId: "o", createdAt: "2026-01-01T00:00:00.000Z", memberCount: 1 },
@@ -65,6 +71,33 @@ describe("isAfter", () => {
     list.forEach((current, index) => {
       const at = { updatedAt: current.updatedAt, id: current.id };
       expect(list.filter((s) => isAfter(s, at))).toEqual(list.slice(index + 1));
+    });
+  });
+});
+
+describe("historyOrder and isAfterHistory", () => {
+  const entry = (id: string, at: string): HistoryEntryRecord => ({ id, at, userId: null });
+
+  it("orders newest first, then by id descending", () => {
+    const list = [
+      entry("a", "2026-05-01T10:00:00.000Z"),
+      entry("c", "2026-04-01T10:00:00.000Z"),
+      entry("b", "2026-05-01T10:00:00.000Z"),
+      entry("d", "2026-06-01T10:00:00.000Z"),
+    ].sort(historyOrder);
+    expect(list.map((e) => e.id)).toEqual(["d", "b", "a", "c"]);
+  });
+
+  it("agrees with historyOrder, comparing times as instants and ids in lower case", () => {
+    const list = [
+      entry("b", "2026-05-01T10:00:00.000Z"),
+      entry("a", "2026-05-01T10:00:00.000Z"),
+      entry("c", "2026-04-01T10:00:00.000Z"),
+      entry("d", "2026-06-01T10:00:00.000Z"),
+    ].sort(historyOrder);
+    list.forEach((current, index) => {
+      const at = { at: current.at.replace(".000Z", "Z"), id: current.id.toUpperCase() };
+      expect(list.filter((e) => isAfterHistory(e, at))).toEqual(list.slice(index + 1));
     });
   });
 });

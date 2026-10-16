@@ -34,6 +34,16 @@ describe("azure-legacy provider without a reachable store", () => {
       }
       expect(await providers.surveys.getDefinition(id)).toBeNull();
       expect(await providers.surveys.getTheme(id)).toBeNull();
+      const save = { ifVersion: "none", userId: id, savedAt: new Date(0).toISOString() };
+      expect(await providers.surveys.saveDefinition(id, {}, save)).toEqual({ kind: "not-found" });
+      expect(await providers.surveys.saveTheme(id, {}, save)).toEqual({ kind: "not-found" });
+      expect(await providers.surveys.listHistory({ surveyId: id, limit: 50 })).toEqual({
+        items: [],
+        next: null,
+      });
+      const survey = "22222222-0000-4000-8000-a00000000001";
+      expect(await providers.surveys.getHistorySnapshot(id, survey)).toBeNull();
+      expect(await providers.surveys.getHistorySnapshot(survey, id)).toBeNull();
       expect(
         await providers.surveys.updateSurvey(id, { updatedAt: new Date(0).toISOString() }),
       ).toBeNull();
@@ -191,6 +201,41 @@ describe("azure-legacy provider without a reachable store", () => {
         expect(error).toBeInstanceOf(LegacyStoreError);
         const message = (error as Error).message;
         expect(message).toMatch(new RegExp(`^Legacy store survey ${operation} failed`));
+        expect(message).not.toContain("127.0.0.1");
+        expect(message).not.toContain(SECRET);
+      },
+    );
+  });
+
+  describe("definition and theme saves, history", () => {
+    const ID = "22222222-0000-4000-8000-0000000000f4";
+    const save = {
+      ifVersion: "none",
+      userId: "11111111-0000-4000-8000-a00000000001",
+      savedAt: "2026-08-01T10:00:00.000Z",
+    };
+
+    it("refuses a definition save by a non-GUID user before any write", async () => {
+      await expect(
+        providers.surveys.saveDefinition(ID, {}, { ...save, userId: "' OR 1=1 --" }),
+      ).rejects.toThrow(/^Survey definition save refused/);
+    });
+
+    it.each([
+      ["definition save", () => providers.surveys.saveDefinition(ID, { title: "t" }, save)],
+      ["theme read", () => providers.surveys.saveTheme(ID, { themeName: "t" }, save)],
+      ["history list", () => providers.surveys.listHistory({ surveyId: ID, limit: 50 })],
+      ["history read", () => providers.surveys.getHistorySnapshot(ID, ID)],
+    ] as const)(
+      "reports a failed %s without any connection-string value",
+      async (operation, call) => {
+        const error = await call().then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(LegacyStoreError);
+        const message = (error as Error).message;
+        expect(message).toMatch(new RegExp(`^Legacy store ${operation} failed`));
         expect(message).not.toContain("127.0.0.1");
         expect(message).not.toContain(SECRET);
       },

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Edm, TableClient, TableEntity, TableServiceClient } from "@azure/data-tables";
-import type { BlobServiceClient } from "@azure/storage-blob";
+import type { BlobRequestConditions, BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
 import type {
   NewSurvey,
+  SaveOutcome,
   SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
@@ -15,8 +16,9 @@ import { isGuid } from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
- * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete. Each
- * write uses the format the legacy site writes (layout section 5.3).
+ * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
+ * Step 6: definition and theme saves. Each write uses the format the legacy site writes (layout
+ * section 5.3).
  *
  * Errors and log lines built here hold operation names, driver codes and row ids only, never row
  * content or a connection string.
@@ -46,6 +48,19 @@ const SURVEY_EXISTS = "SELECT 1 AS found FROM Surveys WHERE id = @id";
 const SURVEY_THEME_SELECT = "SELECT theme FROM Surveys WHERE id = @id";
 const SURVEY_THEME_UPDATE = "UPDATE Surveys SET theme = @theme WHERE id = @id";
 const SURVEY_DELETE = "DELETE FROM Surveys WHERE id = @id";
+const SURVEY_TIMESTAMP_UPDATE = "UPDATE Surveys SET [timestamp] = @timestamp WHERE id = @id";
+/**
+ * Compare-and-set of the theme (ADR 0012 R2): writes only while the column still holds the text
+ * the caller's version was computed from. The binary collation and the byte length make the
+ * comparison exact (`=` alone follows the database collation and ignores trailing spaces).
+ * OUTPUT returns the text as stored: `varchar` can change non-ASCII characters.
+ */
+const SURVEY_THEME_SAVE =
+  "UPDATE Surveys SET theme = @theme, [timestamp] = @timestamp OUTPUT inserted.theme " +
+  "WHERE id = @id AND ISNULL(theme, '') COLLATE Latin1_General_BIN2 = @expected " +
+  "AND DATALENGTH(ISNULL(theme, '')) = DATALENGTH(@expected)";
+/** Azure Table strings hold 64 KiB (32,768 UTF-16 code units); the rest of the row needs room. */
+const MAX_AUDIT_THEME_LENGTH = 32_000;
 
 /** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
 const LAYOUT_CONTAINERS = [
@@ -121,6 +136,42 @@ async function ignoringNotFound(action: () => Promise<unknown>): Promise<void> {
   }
 }
 
+/** Blob metadata of a history point: who saved it and when (ADR 0012 R8). */
+interface HistoryPointMetadata {
+  /** Lower-case GUID of the saving user. */
+  readonly userid: string;
+  /** ISO 8601 UTC with milliseconds. */
+  readonly savedat: string;
+}
+
+/**
+ * Writes append blob `{container}/{name}` holding `content`: Put Blob (`create`) under
+ * `conditions`, which replaces an existing blob, then Append Block in 4 MiB chunks. Each append
+ * is conditioned on the ETag of the write before, so a writer that replaces the blob in between
+ * makes the append fail instead of mixing two texts. Returns the ETag after the last write.
+ */
+async function writeAppendBlob(
+  blobs: BlobServiceClient,
+  container: string,
+  name: string,
+  content: Buffer,
+  conditions: BlobRequestConditions,
+  metadata?: HistoryPointMetadata,
+): Promise<string> {
+  const blob = blobs.getContainerClient(container).getAppendBlobClient(name);
+  const created = await blob.create({ conditions, ...(metadata && { metadata: { ...metadata } }) });
+  let etag = created.etag;
+  for (let offset = 0; offset < content.length; offset += APPEND_BLOCK_BYTES) {
+    const chunk = content.subarray(offset, offset + APPEND_BLOCK_BYTES);
+    const appended = await blob.appendBlock(chunk, chunk.length, {
+      ...(etag !== undefined && { conditions: { ifMatch: etag } }),
+    });
+    etag = appended.etag;
+  }
+  if (etag === undefined) throw new Error("The blob write answered without an ETag");
+  return etag;
+}
+
 /**
  * Creates append blob `{container}/{name}` holding `content`. Refuses to replace an existing
  * blob, so a duplicate survey id never overwrites another survey's definition.
@@ -130,13 +181,23 @@ async function writeNewAppendBlob(
   container: string,
   name: string,
   content: Buffer,
+  metadata?: HistoryPointMetadata,
 ): Promise<void> {
-  const blob = blobs.getContainerClient(container).getAppendBlobClient(name);
-  await blob.create({ conditions: { ifNoneMatch: "*" } });
-  for (let offset = 0; offset < content.length; offset += APPEND_BLOCK_BYTES) {
-    const chunk = content.subarray(offset, offset + APPEND_BLOCK_BYTES);
-    await blob.appendBlock(chunk, chunk.length);
-  }
+  await writeAppendBlob(blobs, container, name, content, { ifNoneMatch: "*" }, metadata);
+}
+
+/**
+ * Replaces append blob `{container}/{name}` with `content`, as the legacy `OpenWrite(true)`
+ * does, under `conditions` (none: replace whatever is there). Returns the ETag after the write.
+ */
+async function replaceAppendBlob(
+  blobs: BlobServiceClient,
+  container: string,
+  name: string,
+  content: Buffer,
+  conditions: BlobRequestConditions = {},
+): Promise<string> {
+  return writeAppendBlob(blobs, container, name, content, conditions);
 }
 
 /** The bytes of blob `{container}/{name}`; undefined when it does not exist. */
@@ -291,9 +352,12 @@ async function storeNewSurvey(
     if (definition !== undefined) {
       await writeNewAppendBlob(targets.blobs, "surveyjson", survey.id, definition);
       await writeNewAppendBlob(targets.blobs, "surveytext", survey.id, definition);
-      // The legacy definition save also writes a history point.
+      // The legacy definition save also writes a history point; ours names the creator.
       const point = `${survey.id}/${randomUUID()}`;
-      await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, definition);
+      await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, definition, {
+        userid: survey.creatorId,
+        savedat: new Date(survey.createdAt).toISOString(),
+      });
     }
     await pool
       .request()
@@ -497,4 +561,128 @@ export async function writeSurveyDeletion(
   const event = surveyEvent("SURVEY_DELETE", id, deletedAt);
   await appendEventBestEffort(targets, id, event, "the survey is deleted.");
   return true;
+}
+
+/** A storage answer that means "the blob is not the version the save was based on". */
+function isBlobConflict(error: unknown): boolean {
+  const status = statusOf(error);
+  return status === 412 || status === 409;
+}
+
+/**
+ * Saves a survey definition as the legacy save does (layout section 5.3; ADR 0012 R2, R8, R13):
+ *
+ * 1. `surveyjson/{id}` replaced only while its ETag is still `blobVersion` (`"none"`: only while
+ *    no blob exists). A storage 412 or 409 is a conflict, and nothing is written.
+ * 2. `surveytext/{id}` replaced with the same text.
+ * 3. A new history point `surveyjsonhistory/{id}/{new GUID}` with the text and the metadata
+ *    `userid` and `savedat`.
+ * 4. `Surveys.timestamp` set to `savedAt`.
+ * 5. A best-effort `SURVEY_UPDATE` audit row without payload.
+ *
+ * An unknown survey is `not-found` before any blob is written; a survey deleted during the save
+ * is `not-found` after step 4 (its blobs stay; no reader finds them without the row). The saved
+ * version is the ETag of `surveyjson` after the write, without quotes. Store failures reject
+ * with LegacyStoreError.
+ */
+export async function writeDefinitionSave(
+  targets: LegacyWriteTargets,
+  surveyId: string,
+  text: string,
+  save: { readonly blobVersion: string; readonly userId: string; readonly savedAt: string },
+): Promise<SaveOutcome> {
+  const id = checkedId("definition save", surveyId);
+  const userId = checkedId("definition save", save.userId);
+  // A version is an unquoted ETag; anything else cannot match the blob.
+  if (save.blobVersion === "" || save.blobVersion.includes('"')) return { kind: "conflict" };
+  const content = Buffer.from(text, "utf8");
+  const savedAt = new Date(save.savedAt);
+  let version: string;
+  try {
+    const pool = await targets.pool();
+    const existing = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .query(SURVEY_EXISTS);
+    if (existing.recordset.length === 0) return { kind: "not-found" };
+    const conditions: BlobRequestConditions =
+      save.blobVersion === "none" ? { ifNoneMatch: "*" } : { ifMatch: `"${save.blobVersion}"` };
+    try {
+      version = await replaceAppendBlob(targets.blobs, "surveyjson", id, content, conditions);
+    } catch (error) {
+      if (isBlobConflict(error)) return { kind: "conflict" };
+      throw error;
+    }
+    await replaceAppendBlob(targets.blobs, "surveytext", id, content);
+    const point = `${id}/${randomUUID()}`;
+    await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, content, {
+      userid: userId,
+      savedat: savedAt.toISOString(),
+    });
+    const result = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .input("timestamp", sql.DateTime, savedAt)
+      .query(SURVEY_TIMESTAMP_UPDATE);
+    if ((result.rowsAffected[0] ?? 0) === 0) return { kind: "not-found" };
+  } catch (error) {
+    throw new LegacyStoreError("definition save", error);
+  }
+
+  const event = surveyEvent("SURVEY_UPDATE", id, savedAt.toISOString());
+  await appendEventBestEffort(targets, id, event, "the definition is saved.");
+  return { kind: "saved", version: version.replaceAll('"', "") };
+}
+
+/** What writeThemeSave did; `stored` is the column text after the save. */
+export type ThemeSaveOutcome =
+  | { readonly kind: "saved"; readonly stored: string }
+  | { readonly kind: "conflict" }
+  | { readonly kind: "not-found" };
+
+/**
+ * Saves a survey theme as the legacy `changeTheme` does (layout sections 3.3 and 5.3; ADR 0012
+ * R2, R13): one UPDATE sets `Surveys.theme` to `text` and `timestamp` to `savedAt`, only while
+ * the column (NULL read as "") still holds `expectedRaw`. Then a best-effort
+ * `SURVEY_THEME_CHANGE` audit row with `theme`, or without it when the text is longer than an
+ * Azure Table string holds.
+ *
+ * When no row changed, the survey is looked up again: gone is `not-found`, else `conflict`.
+ * Store failures reject with LegacyStoreError.
+ */
+export async function writeThemeSave(
+  targets: LegacyWriteTargets,
+  surveyId: string,
+  text: string,
+  save: { readonly expectedRaw: string; readonly savedAt: string },
+): Promise<ThemeSaveOutcome> {
+  const id = checkedId("theme save", surveyId);
+  const savedAt = new Date(save.savedAt);
+  let stored: string;
+  try {
+    const pool = await targets.pool();
+    const result = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .input("theme", sql.VarChar(sql.MAX), text)
+      .input("timestamp", sql.DateTime, savedAt)
+      .input("expected", sql.VarChar(sql.MAX), save.expectedRaw)
+      .query<{ theme: string | null }>(SURVEY_THEME_SAVE);
+    const [row] = result.recordset;
+    if (!row) {
+      const existing = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, id)
+        .query(SURVEY_EXISTS);
+      return existing.recordset.length === 0 ? { kind: "not-found" } : { kind: "conflict" };
+    }
+    stored = row.theme ?? "";
+  } catch (error) {
+    throw new LegacyStoreError("theme save", error);
+  }
+
+  const payload = text.length > MAX_AUDIT_THEME_LENGTH ? {} : { theme: text };
+  const event = surveyEvent("SURVEY_THEME_CHANGE", id, savedAt.toISOString(), payload);
+  await appendEventBestEffort(targets, id, event, "the theme is saved.");
+  return { kind: "saved", stored };
 }

@@ -16,7 +16,13 @@ import { randomUUID } from "node:crypto";
 import { contentVersion } from "../domain/content-version.js";
 import { applySurveyChanges } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
-import { isAfter, projectListOrder, surveyListOrder } from "./ordering.js";
+import {
+  historyOrder,
+  isAfter,
+  isAfterHistory,
+  projectListOrder,
+  surveyListOrder,
+} from "./ordering.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -39,10 +45,6 @@ interface StoredHistoryEntry {
   readonly userId: string | null;
   readonly snapshot: SurveyDefinition;
 }
-
-/** History order: newest first, ties by id descending (plain string comparison). */
-const historyOrder = (a: StoredHistoryEntry, b: StoredHistoryEntry): number =>
-  a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 
 /** The version of a stored document: the hash of its compact JSON, or of "" when none is stored. */
 const versionOf = (content: Record<string, unknown> | undefined): string =>
@@ -233,9 +235,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
       listHistory: ({ surveyId, after, limit }) => {
         const matching = [...(history.get(lower(surveyId)) ?? [])]
           .sort(historyOrder)
-          .filter(
-            (e) => !after || e.at < after.at || (e.at === after.at && e.id < lower(after.id)),
-          );
+          .filter((e) => !after || isAfterHistory(e, after));
         const items = matching.slice(0, limit).map(({ id, at, userId }) => ({ id, at, userId }));
         const last = items.at(-1);
         return Promise.resolve({
