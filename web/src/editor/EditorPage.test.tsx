@@ -10,7 +10,14 @@ import {
   type SavedContent,
 } from "../test/content-handlers";
 import { renderApp } from "../test/renderApp";
-import { configHandler, meHandler, sampleSurvey, server, surveyHandler } from "../test/server";
+import {
+  configHandler,
+  http,
+  meHandler,
+  sampleSurvey,
+  server,
+  surveyHandler,
+} from "../test/server";
 import type { SurveyEditorProps } from "./SurveyEditor";
 
 // jsdom never loads the Creator: the fake shows what the page passes and keeps the latest props.
@@ -139,6 +146,65 @@ describe("the editor page", () => {
 
     expect(await save("definition", { title: "Theirs and mine" })).toBe(true);
     expect(definitions).toEqual([{ ifMatch: '"v7"', body: { title: "Theirs and mine" } }]);
+  });
+
+  it("keeps the editor and the notice when 'Reload latest' fails, and reloads on the next try", async () => {
+    await openEditor();
+    server.use(editConflictHandler("definition"));
+    await save("definition", { title: "Mine" });
+    await screen.findByRole("alert");
+    const shownEditor = screen.getByTestId("fake-creator");
+    server.use(
+      mswHttp.get("*/api/v1/surveys/:surveyId/definition", () =>
+        HttpResponse.json(
+          { type: "about:blank", title: "Server error", status: 500, code: "internal-error" },
+          { status: 500, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload latest" }));
+
+    await screen.findByText("Could not reload the survey. Please try again.");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The survey was changed by someone else.",
+    );
+    expect(screen.getByTestId("fake-creator")).toBe(shownEditor);
+    expect(shown()).toEqual({ definition: { title: "First" }, theme: { themeName: "default" } });
+    expect(screen.queryByText("Could not load the survey. Please try again.")).toBeNull();
+
+    server.use(definitionHandler({ title: "Theirs" }, '"v7"'), themeHandler({}, '"t7"'));
+    const reload = screen.getByRole("button", { name: "Reload latest" });
+    await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(reload);
+
+    await waitFor(() => expect(shown()).toEqual({ definition: { title: "Theirs" }, theme: {} }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("fake-creator")).toBe(shownEditor);
+  });
+
+  it("offers 'Reload latest' only once no save of the other document is in flight", async () => {
+    await openEditor();
+    let answerTheme: () => void = () => {};
+    server.use(
+      editConflictHandler("definition"),
+      http.put("/surveys/{surveyId}/theme", async ({ response }) => {
+        await new Promise<void>((resolve) => (answerTheme = resolve));
+        return response(204).empty({ headers: { ETag: '"t2"' } });
+      }),
+    );
+
+    // Not in act(): the theme save stays open while the test goes on.
+    const themeSaved = new Promise<boolean>((resolve) =>
+      saves().theme({ themeName: "flat" }, (ok) => resolve(ok)),
+    );
+    await save("definition", { title: "Mine" });
+    const reload = await screen.findByRole("button", { name: "Reload latest" });
+    expect((reload as HTMLButtonElement).disabled).toBe(true);
+
+    answerTheme();
+    expect(await themeSaved).toBe(true);
+    await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("shows that changes are not saved when a save fails, and retries with the next one", async () => {

@@ -49,10 +49,14 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
   const definition = useQuery(definitionQueryOptions(surveyId));
   const theme = useQuery(themeQueryOptions(surveyId));
 
-  if (definition.isError || theme.isError) {
+  // Only a first read that failed: once the editor is open, a failed "Reload latest" also puts
+  // these queries in error (with their data kept), and the open editor must stay.
+  const definitionFailed = definition.isError && definition.data === undefined;
+  const themeFailed = theme.isError && theme.data === undefined;
+  if (definitionFailed || themeFailed) {
     const retry = () => {
-      if (definition.isError) void definition.refetch();
-      if (theme.isError) void theme.refetch();
+      if (definitionFailed) void definition.refetch();
+      if (themeFailed) void theme.refetch();
     };
     return (
       <EditorFrame
@@ -139,7 +143,8 @@ function EditorSession({
             <button
               type="button"
               className={styles.noticeButton}
-              disabled={reloading}
+              // A save still in flight could land after the reload read and conflict again.
+              disabled={reloading || states.includes("saving")}
               onClick={() => void reload()}
             >
               Reload latest
