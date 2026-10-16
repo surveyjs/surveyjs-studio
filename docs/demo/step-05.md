@@ -9,7 +9,8 @@ survey in place, **Run**, **Clone**, **Publish** and **Unpublish**, copy the thr
 Project** (and back to Personal Surveys), **Archive**, **Restore** and **Delete**. Items that change a
 survey are hidden from a user who cannot modify it. Behind it are three API operations
 (`updateSurvey`, `deleteSurvey`, `cloneSurvey`) and three legacy writes (update, clone and delete).
-The pages that Edit, View Results, View History and Run open are placeholders. The full description for
+The pages that Edit, View Results, View History and Run open were placeholders (Edit and View History
+became real in Step 6). The full description for
 users is [Managing a survey](../user-guide/managing-a-survey.md).
 
 ## Before you start
@@ -43,7 +44,7 @@ pnpm demo
 ```
 
 Open <http://localhost:5173/>, choose **Olivia Owner** on the "Sign in as…" page, and click **Create a
-Survey**. On the editor page that opens, click **Back to My Surveys**. **New Survey 1** is at the top of
+Survey**. On the editor page that opens, press the browser's Back button. **New Survey 1** is at the top of
 the list.
 
 Each row has a pencil next to its name and three dots at its right end.
@@ -264,8 +265,8 @@ pnpm demo:azurite:down
 
 ## What is not in Step 5
 
-- The real editor, and opening a survey from its row: Step 6. **Edit**, **View History**, **View
-  Results** and **Run** open placeholders until Steps 6, 9 and 8.
+- The real editor and the history page: Step 6 (done; see [the Step 6 demo](step-06.md)). **View
+  Results** and **Run** open placeholders until Steps 9 and 8.
 - Changing the survey settings ("Grant Access", "Save Respondent IP") in the page: Step 10. The API
   supports them now (`PATCH` with `settings`).
 - Deleting files with a survey: Step 7 (there is no file store yet).

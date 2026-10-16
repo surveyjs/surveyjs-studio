@@ -41,21 +41,21 @@ Items are shown in this order. "Modify" means you can modify the survey.
 
 ### Active view
 
-| Item                  | Shown when                    | What it does                                                              |
-| --------------------- | ----------------------------- | ------------------------------------------------------------------------- |
-| **Run**               | The survey is published       | Opens `/s/<survey id>` in a new tab (a placeholder page for now)          |
-| **Edit**              | Always                        | Opens `/surveys/<survey id>/edit` (a placeholder page for now)            |
-| **Clone**             | Always                        | Makes a copy (see below)                                                  |
-| (separator)           | Modify                        |                                                                           |
-| **Publish**           | Modify, and not published     | Publishes the survey                                                      |
-| **Unpublish**         | Modify, and published         | Unpublishes it. **Run** disappears                                        |
-| (separator)           | Always                        |                                                                           |
-| **Survey IDs** >      | Always                        | A submenu: **Copy ID**, **Copy Result ID** and **Copy Post ID**           |
-| **View Results**      | Always                        | Opens `/surveys/<survey id>/results` (a placeholder page for now)         |
-| **View History**      | Always                        | Opens `/surveys/<survey id>/history` (a placeholder page for now)         |
-| (separator)           | Modify                        |                                                                           |
-| **Move to Project** > | Modify, and you have projects | A submenu: **Personal Surveys** and your projects. Asks first (see below) |
-| **Archive**           | Modify                        | Moves the survey to the Archived view. Asks nothing                       |
+| Item                  | Shown when                    | What it does                                                                                |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
+| **Run**               | The survey is published       | Opens `/s/<survey id>` in a new tab (a placeholder page for now)                            |
+| **Edit**              | Always                        | Opens the editor, `/surveys/<survey id>/edit` ([Designing a survey](designing-a-survey.md)) |
+| **Clone**             | Always                        | Makes a copy (see below)                                                                    |
+| (separator)           | Modify                        |                                                                                             |
+| **Publish**           | Modify, and not published     | Publishes the survey                                                                        |
+| **Unpublish**         | Modify, and published         | Unpublishes it. **Run** disappears                                                          |
+| (separator)           | Always                        |                                                                                             |
+| **Survey IDs** >      | Always                        | A submenu: **Copy ID**, **Copy Result ID** and **Copy Post ID**                             |
+| **View Results**      | Always                        | Opens `/surveys/<survey id>/results` (a placeholder page for now)                           |
+| **View History**      | Always                        | Opens `/surveys/<survey id>/history` ([Survey history](survey-history.md))                  |
+| (separator)           | Modify                        |                                                                                             |
+| **Move to Project** > | Modify, and you have projects | A submenu: **Personal Surveys** and your projects. Asks first (see below)                   |
+| **Archive**           | Modify                        | Moves the survey to the Archived view. Asks nothing                                         |
 
 ### Archived view
 
@@ -154,21 +154,21 @@ again.". The next action clears it. The list stays as it was.
 
 ## The placeholder pages
 
-Four addresses open pages that are not built yet. Each shows only a line of text:
+Two addresses open pages that are not built yet. Each shows only a line of text:
 
-| Address                 | Opened by    | Shows                                                               |
-| ----------------------- | ------------ | ------------------------------------------------------------------- |
-| `/surveys/<id>/edit`    | Edit         | The survey name and "The survey editor arrives in a later version." |
-| `/surveys/<id>/results` | View Results | The survey name and "Survey results arrive in a later version."     |
-| `/surveys/<id>/history` | View History | The survey name and "Survey history arrives in a later version."    |
-| `/s/<id>`               | Run          | "Survey" and "The survey run page arrives in a later version."      |
+| Address                 | Opened by    | Shows                                                           |
+| ----------------------- | ------------ | --------------------------------------------------------------- |
+| `/surveys/<id>/results` | View Results | The survey name and "Survey results arrive in a later version." |
+| `/s/<id>`               | Run          | "Survey" and "The survey run page arrives in a later version."  |
 
-The first three need you to be signed in and have a **Back to My Surveys** link. They say "This survey
+The results page needs you to be signed in and has a **Back to My Surveys** link. It says "This survey
 is not available." for a survey that does not exist or that you cannot see. The Run page needs no
 sign-in and does not look the survey up.
 
+The editor (**Edit**) and the history page (**View History**) are described in
+[Designing a survey](designing-a-survey.md) and [Survey history](survey-history.md).
+
 ## Not here yet
 
-- Clicking a row does not open the editor.
 - The survey settings "Grant Access" and "Save Respondent IP" can be changed through the API only;
   their switches arrive with the results page.

@@ -65,7 +65,7 @@ project in a cookie for a day; this app does not).
 ## Create a Survey
 
 Choose the list (Personal Surveys or a project) and click **Create a Survey**. The survey is created
-in that list, with you as its creator, and the editor page opens.
+in that list, with you as its creator, and the editor opens.
 
 The name is **New Survey N**. N is one more than the highest number among the **active** surveys of
 that list whose names are `New Survey` followed by a number:
@@ -80,14 +80,16 @@ same name. A name is at most 200 characters.
 
 You can create a survey in a project when you are a member of it, whatever your role.
 
-## The editor placeholder
+## The editor
 
-After you create a survey, the page `/surveys/<survey id>/edit` opens. For now it shows only the
-survey name, the line "The survey editor arrives in a later version." and a **Back to My Surveys**
-link. The link returns to the list the survey belongs to, where the new survey is at the top.
+After you create a survey, the editor opens at `/surveys/<survey id>/edit`
+([Designing a survey](designing-a-survey.md)). To return to the list, use the browser's Back button or
+the **My Surveys** item of the page header. The new survey is at the top of its list.
 
 If the survey does not exist, or belongs to someone else, the page says "This survey is not
-available."
+available." and has a **Back to My Surveys** link.
+
+In the Active view a click on a row opens the editor too.
 
 ## Loading more
 

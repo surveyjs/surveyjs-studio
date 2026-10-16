@@ -16,21 +16,21 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 ## Run everything
 
-| Command                 | Runs                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------- |
-| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                          |
-| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                 |
-| `pnpm test:conformance` | The conformance suite against a server it starts itself                                 |
-| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                              |
-| `pnpm e2e:azurite`      | Playwright sign-in, survey list and survey actions specs in Azurite mode (needs Docker) |
+| Command                 | Runs                                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                           |
+| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                  |
+| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                  |
+| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                               |
+| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor and history specs in Azurite mode (needs Docker) |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
 
-| Command                         | Runs                                                                                                                                                            |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey write tests (create, update, clone, delete) and the fixture loader tests |
-| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                           |
+| Command                         | Runs                                                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey write tests (create, update, clone, delete, definition and theme saves) and the fixture loader tests |
+| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                                                       |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -162,17 +162,26 @@ is `401` even when it is not built, and a change without the CSRF token is `403`
 against a small fixture contract (`conformance-tests/src/fixtures/things.yaml`), so a broken
 validator cannot give false passes.
 
+### The body limit on the conformance server
+
+The suite starts the reference server with `LIMIT_MAX_DOCUMENT_BYTES=262144` (set in
+`conformance-tests/src/global-setup.ts`), so the `413` test for the definition and theme saves does not
+have to send 30 MB. The test reads the limit from `GET /config` (`limits.maxDocumentBytes`) and sends a
+body just over it, so it also works against a server with another limit. A server under test only has to
+report a limit that it really enforces.
+
 ### Test data
 
 Tests that write (create, update, clone, move and delete surveys) do so in only a few scopes, and
 only in surveys they created themselves. No test changes a fixture survey: the checks on fixtures
 (for example "the owner cannot modify Engineering retro") are refusals, which write nothing.
 
-| Suite           | Writable scopes                                                                                                 |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| Conformance     | The outsider's Personal scope, **Engineering** and the **admin's Personal scope**                               |
-| Step 5 e2e spec | The admin's Personal scope and **Engineering** only (`survey-actions.spec.ts`)                                  |
-| Other e2e specs | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering |
+| Suite            | Writable scopes                                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| Conformance      | The outsider's Personal scope, **Engineering** and the **admin's Personal scope**                               |
+| Step 5 e2e spec  | The admin's Personal scope and **Engineering** only (`survey-actions.spec.ts`)                                  |
+| Step 6 e2e specs | The admin's Personal scope only (`editor.spec.ts`, `history.spec.ts`), each test with its own survey            |
+| Other e2e specs  | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering |
 
 The owner's Personal scope, the Marketing project and every fixture survey are **fixture-only**:
 no test writes to them, because the end-to-end tests assert their exact first rows on Azurite, where
@@ -184,7 +193,14 @@ e2e spec archives and deletes in the admin's scope, and the outsider's scope is 
 Tests that create surveys archive and delete them at the end where they can; moves go to Engineering
 and back out. The suite assumes a replica loaded by `pnpm legacy:load` at most a few runs ago.
 
-Who can modify what on the fixtures (the read-only checks of Step 5 rely on it): Olivia cannot modify
+The content tests of Step 6 (`conformance-tests/src/content.test.ts`) work in the same scopes. They
+create their own surveys, save definitions and themes (with a stale, a missing, a weak and a `*`
+`If-Match`; the `400`, `403`, `404`, `413` and `422` answers), and check the history: one entry for each
+definition save, none for a theme save, paging, an invalid cursor, and the two legacy entries of Customer
+feedback (read, never written). Olivia's `PUT`s on Engineering retro are refusals (`403`) and write
+nothing.
+
+Who can modify what on the fixtures (the read-only checks of Step 5 and Step 6 rely on it): Olivia cannot modify
 "Engineering retro" (created by Adam, she is a plain member there), so her `PATCH` and `DELETE` are
 `403`; Mia can modify "Campaign survey" (she created it) and not "Archived campaign" (created by Olivia);
 Oscar cannot see anything that is not his (`404`). The table is in
@@ -220,15 +236,17 @@ Run one browser: `pnpm e2e --project=chromium`.
 
 The specs (`e2e/tests/`):
 
-| Spec                         | Checks                                                                                                                                                                                                                                                                                                                                                                              | Modes                                |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `home.spec.ts`               | After sign-in the home page shows the My Surveys heading and a survey row, with no console errors                                                                                                                                                                                                                                                                                   | memory                               |
-| `sign-in.spec.ts`            | An anonymous visit goes to sign-in; signing in shows the user's name; a deep link survives sign-in; Sign Out ends the session                                                                                                                                                                                                                                                       | memory, Azurite                      |
-| `shell.spec.ts`              | A keyboard user opens the Account menu and signs out; Escape closes a menu and keeps focus (not on WebKit)                                                                                                                                                                                                                                                                          | memory                               |
-| `notices.spec.ts`            | With `ACCOUNT_NOTICES=license-expired` (the second server pair) the renewal dialog opens, and Later closes it                                                                                                                                                                                                                                                                       | memory                               |
-| `survey-list.spec.ts`        | The owner's list (rows, dates, newest first), the Active/Archived view and the URL (reload and Back), the project selector, a user with neither selector nor switch, an unknown project that falls back to Personal Surveys, an unknown survey id ("This survey is not available." and its back link), and Create a Survey (opens the editor placeholder, then heads the list)      | memory, Azurite                      |
-| `survey-list-paging.spec.ts` | Fills Engineering through the API until it holds more than 50 surveys, then Load more adds rows until the button goes and no row repeats                                                                                                                                                                                                                                            | memory only (it writes many surveys) |
-| `survey-actions.spec.ts`     | One scenario per row action: rename (Esc, Enter, reload), publish, Run in a new tab and unpublish, clone, the three copy items against the API values, Edit, View Results and View History, Move (the confirmation, to Engineering and back to Personal), Archive, Restore and Delete; and the two "no modify rights" views (Olivia on Engineering retro, Mia on Archived campaign) | memory, Azurite                      |
+| Spec                         | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Modes                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `home.spec.ts`               | After sign-in the home page shows the My Surveys heading and a survey row, with no console errors                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | memory                               |
+| `sign-in.spec.ts`            | An anonymous visit goes to sign-in; signing in shows the user's name; a deep link survives sign-in; Sign Out ends the session                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | memory, Azurite                      |
+| `shell.spec.ts`              | A keyboard user opens the Account menu and signs out; Escape closes a menu and keeps focus (not on WebKit)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | memory                               |
+| `notices.spec.ts`            | With `ACCOUNT_NOTICES=license-expired` (the second server pair) the renewal dialog opens, and Later closes it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | memory                               |
+| `survey-list.spec.ts`        | The owner's list (rows, dates, newest first), the Active/Archived view and the URL (reload and Back), the project selector, a user with neither selector nor switch, an unknown project that falls back to Personal Surveys, an unknown survey id ("This survey is not available." and its back link), and Create a Survey (opens the editor, then heads the list)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | memory, Azurite                      |
+| `survey-list-paging.spec.ts` | Fills Engineering through the API until it holds more than 50 surveys, then Load more adds rows until the button goes and no row repeats                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | memory only (it writes many surveys) |
+| `editor.spec.ts`             | **One test after another** (the Creator is heavy). A row click opens the editor, and an added question is saved (the `PUT` answers `204`, the status says "All changes saved") and survives a reload; the Themes tab saves a theme; **two browser contexts** edit the same survey and the second one gets the conflict notice, then **Reload latest** brings the first one's changes and saving works again; Clear Survey asks, then saves the empty survey (still empty after a reload); the name in the bottom bar is renamed; the Embed Survey tab shows the service address only with "Load Survey JSON from service"; read-only (Olivia on Engineering retro: status "Read-only", nothing editable, no write request sent); and the **bundle split** (the survey list loads no `survey-creator`, `SurveyEditor`, worker or Ace file, and the editor does) | memory, Azurite                      |
+| `history.spec.ts`            | The history page of a new survey (first "No edits yet.", then two saves give two rows, newest first, with the user and the time zone; Back returns to the list), and of Customer feedback (two legacy entries without a user)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | memory, Azurite                      |
+| `survey-actions.spec.ts`     | One scenario per row action: rename (Esc, Enter, reload), publish, Run in a new tab and unpublish, clone, the three copy items against the API values, Edit, View Results and View History, Move (the confirmation, to Engineering and back to Personal), Archive, Restore and Delete; and the two "no modify rights" views (Olivia on Engineering retro, Mia on Archived campaign)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | memory, Azurite                      |
 
 Helpers (`e2e/tests/support/`):
 
@@ -257,6 +275,15 @@ Helpers (`e2e/tests/support/`):
     or focus the link and press Enter.
   - Each test creates its own survey through the API with a unique name and removes it afterwards
     (`discardSurveyViaApi`: archive, then delete). Assertions are about one named row, never a count.
+- `editor.ts` (Step 6): `uniqueSurveyName`, `withCleanup`, `openEditor` and `expectEditorReady`, `expectSaved`
+  (waits for the `PUT` to answer `204`, then for "All changes saved"), `addQuestion`, `openTab` (through
+  the tab bar's "More" menu when a tab is in the overflow), `getDocumentViaApi` (content and ETag),
+  `putDefinitionViaApi` (set-up: read the ETag, then `PUT` with `If-Match` and the CSRF header).
+  Rules learned: the editor spec runs its tests one after another, because several Creators starting
+  together make Firefox slow to render; the first render of the Creator waits up to 30 s; a test that
+  opens a **second browser context** watches that context's console with `watchConsole` too; and
+  `expectedErrorResponses` accepts a `RegExp` path for an id known only at run time (the conflict test
+  expects one `412`).
 - `test.ts`: the shared `test` and its console guard. **`expectedErrorResponses`** is a fixture option, a
   list of `{ path, status }`: a per-test allowance for API answers that the test expects to be
   errors, which browsers log as console errors (for example a `404` for an unknown project). Set it
@@ -264,8 +291,8 @@ Helpers (`e2e/tests/support/`):
   console error must be matched by an observed response with that path and status, so an allowance
   cannot hide an error that never came from the listed response.
 
-Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list and survey
-actions specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
+actions, editor and history specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
@@ -294,6 +321,15 @@ It covers:
   source without a definition gives a copy that reads `{}`, an unknown source, a duplicate copy id;
 - `deleteSurvey`: the survey, its definition and its theme are gone, the other surveys are not touched,
   a second delete is `false`;
+- `getDefinition` and `getTheme`: the version token (the same for the same text, changed by a write,
+  a version also for a survey without content, `null` for an unknown id);
+- `saveDefinition` and `saveTheme`: a save with the current version stores the content and returns the
+  next version; a stale version is a `conflict` and writes nothing; an unknown survey is `not-found`;
+  `updatedAt` moves; the definition and the theme are independent;
+- `listHistory` and `getHistorySnapshot`: one entry for each definition save with the saving user and the
+  snapshot, newest first, ties by id, cursor paging (a walk), ids in upper case, the entries that create
+  and clone add, the two legacy entries of Customer feedback (no user), delete removes the history, and
+  an unknown survey gives an empty page;
 - `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
   project record, unknown user or project, a non-member;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
@@ -317,7 +353,15 @@ the raw rows after an update (only the named columns and `timestamp` change, the
 order with their Edm types, `{ settings: {} }` writes only `timestamp`), a clone (the theme text and the
 definition bytes equal the source's, the history blob, `SURVEY_THEME_CHANGE`), a delete (the three
 tables, the blobs, the history and the layout blobs are gone, one `SURVEY_DELETE` row, a second delete is
-`false`), and that an unreachable audit table only logs warnings (survey id and event type only). The **create tests
+`false`), and that an unreachable audit table only logs warnings (survey id and event type only). For
+Step 6 it checks the definition save (`surveyjson` and `surveytext` are append blobs with the same compact
+text and no BOM, the new history point with the metadata `userid` and `savedat`, only `timestamp`
+changed in the row, one `SURVEY_UPDATE` row, the returned version equals the blob's ETag), a **stale save
+that writes nothing** (blobs, ETags, history names, row and audit rows unchanged), a first save of a
+survey without a blob (`"none"`), the theme save (the text, `timestamp`, one `SURVEY_THEME_CHANGE`, no
+history point; a 40,000-character theme saves and its audit row has no `theme`; a non-ASCII theme gets a
+version that the next save accepts), the SQL compare-and-set alone (a different case or a trailing
+space is a conflict), and the metadata on create and clone points. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
 earlier runs and leave nothing that another test could see.
 
@@ -336,6 +380,6 @@ sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.
 survey and project tests run on the provider, so on Azurite they read the fixtures from the replica and
 create surveys in it (only in the scopes named in [Test data](#test-data)).
 
-The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list and survey
-actions specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
+The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
+actions, editor and history specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
 runs in memory mode only.

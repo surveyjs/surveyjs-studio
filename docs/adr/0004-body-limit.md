@@ -26,3 +26,11 @@ that do not upload files never accept more than the global limit.
 - Whoever adds an upload route must set the per-route limit, or uploads fail with `413`.
 - Changing `LIMIT_MAX_RESPONSE_BYTES` also changes the largest accepted JSON body. The limit is
   reported to clients in `GET /api/v1/config`.
+
+## Addendum (Step 6)
+
+The first per-route override is not for files. The survey definition and theme saves
+(`saveSurveyDefinition`, `saveSurveyTheme`) use their own limit, `LIMIT_MAX_DOCUMENT_BYTES` (default
+30,000,000 bytes, reported as `limits.maxDocumentBytes`), because existing surveys with inline images are
+far larger than 1 MB. Every other route keeps the global limit. See
+[ADR 0012](0012-editor-content-and-history.md#the-body-limit-r12).

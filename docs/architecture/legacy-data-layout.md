@@ -263,6 +263,21 @@ splitting the listed path at `/` into survey ID and point ID. No user is recorde
 Example blob: `surveyjsonhistory/22222222-0000-4000-8000-000000000001/88888888-0000-4000-8000-000000000001`,
 content identical to the `surveyjson` blob at that time.
 
+**History metadata (Step 6).** The new application writes a **user** for each history point as blob
+metadata on the point itself: `userid` (the saving user's id, a lower-case GUID) and `savedat` (the save
+time, ISO 8601 UTC with milliseconds). The blob name and content stay in the legacy format, and legacy
+code ignores metadata, so the point reads as before. Reading uses `savedat` for the time when it parses
+(otherwise the blob's `LastModified`) and `userid` for the user when it is a GUID (otherwise none), so
+points written by legacy have no user. Create and clone points get the metadata too (`userid` = the
+creator, `savedat` = the creation time). Reasons: [ADR 0012](../adr/0012-editor-content-and-history.md).
+
+**Legacy-overwrite caveat.** With the current port's `site code` (above), a definition save by the
+legacy editor **rewrites the alphabetically first blob under `{surveyId}`** instead of adding a point. If
+that blob is a point written by the new application, its content and `LastModified` change, and its
+metadata is replaced by none: the entry then reads as written by no user at the time of that save. This
+is accepted ([ADR 0012](../adr/0012-editor-content-and-history.md), R8). Blobs at the root of the
+container (that port's new points) are not listed for any survey by the new application.
+
 ### 3.5 Survey event log: Azure table `surveys`
 
 Every survey-level operation that runs with "save" appends one row to table `surveys` in the surveys
@@ -791,7 +806,7 @@ rename, theme, publish, archive, restore, move, settings and layout save) moves 
 blobs when a definition is given, and the `SURVEY_CREATE` audit row, written last and best effort) in
 `server/src/providers/azure-legacy/writes.ts`; see
 [ADR 0010](../adr/0010-writing-to-the-legacy-stores.md). When a definition is given, it writes the three
-blobs of a definition save before the row. Every other row of the table is still to build.
+blobs of a definition save before the row.
 
 **Implemented in Step 5** (same file, `writes.ts`; the rules and orders are in
 [ADR 0010](../adr/0010-writing-to-the-legacy-stores.md)). Each row of the table below that Step 5 builds
@@ -820,10 +835,23 @@ is listed here with how it is done:
   `SURVEY_THEME_CHANGE` (`theme`, `Edm.String`). The copy is **not** given the source's creator: the
   acting user is its creator. Legacy's extra empty `SURVEY_UPDATE` row is not written.
 
+**Implemented in Step 6** (same file; rules and order in
+[ADR 0010](../adr/0010-writing-to-the-legacy-stores.md#step-6-definition-and-theme-saves)):
+
+- **Save definition:** an existence check; `surveyjson/{id}` replaced with a condition (`If-Match` of the
+  blob's ETag, or `If-None-Match: *` for a survey without a blob; a refusal is a conflict and nothing else
+  is written); `surveytext/{id}` replaced; a new point `surveyjsonhistory/{id}/{newGuid}` with the metadata
+  `userid` and `savedat` (3.4); `UPDATE Surveys SET [timestamp]`; audit row `SURVEY_UPDATE` without a
+  payload. All blobs hold the compact JSON text, UTF-8 without a BOM, as append blobs.
+- **Save theme:** `UPDATE Surveys SET theme, [timestamp] ... OUTPUT inserted.theme` with a `WHERE` that
+  compares the old theme text exactly (the compare-and-set); audit row `SURVEY_THEME_CHANGE` with `theme`
+  (`Edm.String`), or without `theme` when it is longer than 32,000 UTF-16 code units. No history entry.
+- Not done: deleting the editor preview image from the `surveyfiles` share (the rows above say "if we keep
+  that behaviour"); it waits for the file store in Step 7.
+
 All of these set `timestamp` to the time the server's clock gives, once per request, and an update that
 changes no value still rewrites it. Every audit row is best effort (a failure is logged with the survey
-id and the type only). Still to build: the definition and theme saves, the settings `usecookies`, and the
-result and layout rows.
+id and the type only). Still to build: the settings `usecookies`, and the result and layout rows.
 
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |

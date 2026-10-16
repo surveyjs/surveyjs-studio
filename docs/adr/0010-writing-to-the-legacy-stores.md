@@ -147,6 +147,81 @@ because only archived surveys can be deleted) and can be deleted again.
   be deleted through it.
 - Files are not deleted: no file store exists yet. Step 7 adds them to the cascade.
 
+## Step 6: definition and theme saves
+
+Step 6 adds two writes to `writes.ts` under the same rules. The rulings behind them (versions, the
+compare-and-set, history metadata) are in [ADR 0012](0012-editor-content-and-history.md). A save
+replaces the text of a document that already exists, so unlike the create it needs a condition.
+
+### Save definition
+
+`writeDefinitionSave(targets, id, text, { blobVersion, userId, savedAt })` runs in this order:
+
+1. **Existence check** (`SELECT 1 ... WHERE id`). An unknown survey is `not-found` before any blob is
+   written, so a save for a missing survey leaves nothing behind.
+2. **`surveyjson/{id}`** is replaced (Put Blob, then appends of at most 4 MiB) with
+   `ifMatch: "<blobVersion>"`, or `ifNoneMatch: "*"` when the version is `"none"` (no blob yet). A storage
+   `412` (condition not met) or `409` (blob already exists) is a **conflict**: the call returns at once and
+   nothing else is written. A version that is empty or contains `"` is a conflict without a call. Each
+   append is conditioned on the ETag of the write before it, so if another writer replaces the blob between
+   the Put Blob and an append, the append fails and two texts never share a blob.
+3. **`surveytext/{id}`** is replaced with the same text (no condition).
+4. **A new history point** `surveyjsonhistory/{id}/{newGuid}` with the same text and the blob metadata
+   `userid` (lower-case GUID of the saving user) and `savedat` (ISO 8601 UTC with milliseconds).
+5. **`UPDATE Surveys SET [timestamp] = @timestamp WHERE id = @id`.** Zero rows is `not-found`; the blobs stay,
+   which is harmless because the survey is gone.
+6. **`SURVEY_UPDATE`** audit row without a payload, best effort.
+
+It returns the version for the next save: the ETag of the `surveyjson` blob after its last append, without
+quotes. The blob is replaced as a whole, as in legacy, and a replacement is **not atomic**: a failure after
+the Put Blob can leave `surveyjson` empty or partial (it then reads as `{}`), and the caller gets
+a `LegacyStoreError` and can save again.
+
+### Save theme
+
+`writeThemeSave(targets, id, text, { expectedRaw, savedAt })` is one statement:
+
+```sql
+UPDATE Surveys SET theme = @theme, [timestamp] = @timestamp
+OUTPUT inserted.theme
+WHERE id = @id
+  AND ISNULL(theme, '') COLLATE Latin1_General_BIN2 = @expected
+  AND DATALENGTH(ISNULL(theme, '')) = DATALENGTH(@expected)
+```
+
+`theme` and `expected` are `VarChar(max)`, `timestamp` is `DateTime`. `@expected` is the raw column text whose
+hash matched the version the client sent (the provider reads it first and compares the hash). The binary
+collation makes the comparison exact, and `DATALENGTH` makes it see trailing spaces. Zero rows are
+re-checked: the survey is gone (`not-found`) or the text changed (`conflict`). The version returned to the
+client is computed from the `OUTPUT` text, because a `varchar` column can change non-ASCII characters.
+
+The `SURVEY_THEME_CHANGE` audit row follows, best effort, with `theme`; when the text is longer than 32,000
+UTF-16 code units it is written **without** `theme` (the 64 KiB limit of an Azure Table string).
+
+### Create and clone
+
+The history point that create and clone already write now carries the metadata `userid` (the creator) and
+`savedat` (the creation time). Nothing else changes.
+
+### Reads
+
+Reads stay in `index.ts`: `getDefinition` uses one `download()` for the text and the ETag,
+`getTheme` hashes the raw column text, `listHistory` lists `surveyjsonhistory` with the prefix `{id}/` and
+metadata, and `getHistorySnapshot` downloads one point.
+
+### Consequences of Step 6
+
+- A conflict is detected by the store (blob `ifMatch`, SQL `WHERE`), not before it, so there is no window
+  for a lost update between two new-application writers. The legacy editor sends no condition, so it can
+  still overwrite a save, and the new one then sees a conflict at its next save.
+- A save by the legacy editor in parallel rewrites the alphabetically first history point of the survey,
+  which then has no `userid`.
+- A non-conflict failure after the Put Blob can leave `surveyjson` empty (see above).
+- The preview image (`my-surveys-survey-preview-image-{id}` in the `surveyfiles` share) that legacy deletes
+  on a save is not deleted, because there is no file store yet (Step 7).
+- `ESLint` lists "Step 6: definition and theme saves" in the comment of the rule block's `ignores`;
+  `writes.ts` is still the only file that writes.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

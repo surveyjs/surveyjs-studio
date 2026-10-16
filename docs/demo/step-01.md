@@ -80,7 +80,7 @@ The configuration itself is plain JSON:
 curl http://localhost:3000/api/v1/config
 ```
 
-Expected (defaults): `{"edition":"self-hosted","shell":"surveyjs-site","authMethods":["surveyjs"],"surveyjsLicenseKey":null,"limits":{"maxAssetBytesPerSurvey":52428800,"maxFileBytes":10485760,"maxResponseBytes":1048576},"links":{...}}`
+Expected (defaults): `{"edition":"self-hosted","shell":"surveyjs-site","authMethods":["surveyjs"],"surveyjsLicenseKey":null,"limits":{"maxAssetBytesPerSurvey":52428800,"maxFileBytes":10485760,"maxResponseBytes":1048576,"maxDocumentBytes":30000000},"links":{...}}`
 (`links` holds the account links of the shell, added in Step 3).
 The same answer comes through the web app's proxy at `http://localhost:5173/api/v1/config`.
 

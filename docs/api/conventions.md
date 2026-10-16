@@ -76,9 +76,9 @@ Two rules apply to `PATCH /surveys/{surveyId}`:
 
 ## Concurrent edits (ETag)
 
-Large documents (the survey definition and the theme) return an `ETag`. A write must send the
-value back in `If-Match`. A stale value fails with `412 edit-conflict`; a missing header with
-`428 if-match-required`.
+The survey definition and the theme return an `ETag`. A write must send it back in `If-Match`. A stale
+value fails with `412 edit-conflict`, and a missing header with `428 if-match-required`. The rules, the
+meaning of `*`, and a `curl` loop are in [Concurrent editing with ETags](concurrency.md).
 
 ## Creation
 
@@ -120,4 +120,5 @@ for every operation that a step has not built yet, and the conformance suite acc
 ## Limits
 
 Configured on the server and returned by `GET /api/v1/config` as `limits`:
-`maxAssetBytesPerSurvey` (50 MB), `maxFileBytes` (10 MB) and `maxResponseBytes` (1 MB).
+`maxAssetBytesPerSurvey` (50 MB), `maxFileBytes` (10 MB), `maxResponseBytes` (1 MB) and `maxDocumentBytes` (30 MB). The last one is the
+body limit of the survey definition and theme saves; the others follow [ADR 0004](../adr/0004-body-limit.md).
