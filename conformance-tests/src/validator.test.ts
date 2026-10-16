@@ -148,7 +148,12 @@ describe("validator (real contract, smoke)", () => {
       shell: "surveyjs-site",
       authMethods: ["surveyjs"],
       surveyjsLicenseKey: null,
-      limits: { maxAssetBytesPerSurvey: 1, maxFileBytes: 1, maxResponseBytes: 1 },
+      limits: {
+        maxAssetBytesPerSurvey: 1,
+        maxFileBytes: 1,
+        maxResponseBytes: 1,
+        maxDocumentBytes: 1,
+      },
     };
     expect(await v.check("GET", "/config", respond(200, config, JSON_TYPE))).toEqual([]);
     const bad = respond(200, { ...config, edition: "x" }, JSON_TYPE);

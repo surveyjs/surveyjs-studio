@@ -16,6 +16,7 @@ export function createHandlers(config: AppConfig): Handlers {
       maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
       maxFileBytes: config.limits.maxFileBytes,
       maxResponseBytes: config.limits.maxResponseBytes,
+      maxDocumentBytes: config.limits.maxDocumentBytes,
     },
     links: shellLinks(config.shellLinks),
   };

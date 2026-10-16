@@ -334,7 +334,9 @@ export interface paths {
         /**
          * Save the survey definition
          * @description Used by Survey Creator auto-save. Also updates `updatedAt` and adds a
-         *     history entry.
+         *     history entry. Send the ETag of your last read or write in `If-Match`
+         *     (`*` matches any version; weak tags never match). Bodies larger than
+         *     `limits.maxDocumentBytes` are rejected with `413`.
          */
         put: operations["saveSurveyDefinition"];
         post?: never;
@@ -355,7 +357,13 @@ export interface paths {
         };
         /** Get the survey theme */
         get: operations["getSurveyTheme"];
-        /** Save the survey theme */
+        /**
+         * Save the survey theme
+         * @description Also updates `updatedAt`. Does not add a history entry. Send the ETag of
+         *     your last read or write in `If-Match` (`*` matches any version; weak tags
+         *     never match). Bodies larger than `limits.maxDocumentBytes` are rejected
+         *     with `413`.
+         */
         put: operations["saveSurveyTheme"];
         post?: never;
         delete?: never;
@@ -399,7 +407,9 @@ export interface paths {
         };
         /**
          * List edits of a survey
-         * @description Newest first.
+         * @description Newest first. Every definition save adds an entry, and so do creating a
+         *     survey with a definition and cloning one. `user` is `null` for entries
+         *     recorded without a user (legacy) and for users who no longer exist.
          */
         get: operations["listSurveyHistory"];
         put?: never;
@@ -715,6 +725,8 @@ export interface components {
                 maxAssetBytesPerSurvey: number;
                 maxFileBytes: number;
                 maxResponseBytes: number;
+                /** @description Largest survey definition or theme body accepted, in bytes. */
+                maxDocumentBytes: number;
             };
             /** @description Shell links, such as account settings and help desk. */
             links?: {
@@ -1165,7 +1177,7 @@ export interface components {
     headers: {
         /** @description URL of the created resource or redirect target. */
         Location: string;
-        /** @description Version tag of the document; send it back in `If-Match`. */
+        /** @description Strong, opaque version tag of the document; send it back in `If-Match`. */
         ETag: string;
         /** @description Session cookies `msid` (HttpOnly) and `msid_csrf` (readable). */
         SetCookie: string;
@@ -1784,6 +1796,7 @@ export interface operations {
                     "application/json": components["schemas"]["SurveyDefinition"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1814,6 +1827,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1844,6 +1858,7 @@ export interface operations {
                     "application/json": components["schemas"]["SurveyTheme"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1874,11 +1889,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["ValidationFailed"];
             428: components["responses"]["PreconditionRequired"];
         };
     };
@@ -1939,6 +1956,7 @@ export interface operations {
                     "application/json": components["schemas"]["HistoryPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

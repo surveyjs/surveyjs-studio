@@ -13,7 +13,12 @@ export const appConfig: components["schemas"]["AppConfig"] = {
   shell: "plain",
   authMethods: ["surveyjs"],
   surveyjsLicenseKey: null,
-  limits: { maxAssetBytesPerSurvey: 52428800, maxFileBytes: 10485760, maxResponseBytes: 1048576 },
+  limits: {
+    maxAssetBytesPerSurvey: 52428800,
+    maxFileBytes: 10485760,
+    maxResponseBytes: 1048576,
+    maxDocumentBytes: 30000000,
+  },
 };
 
 export function configHandler(config = appConfig) {

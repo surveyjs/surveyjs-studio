@@ -28,6 +28,8 @@ export interface AppConfig {
     readonly maxAssetBytesPerSurvey: number;
     readonly maxFileBytes: number;
     readonly maxResponseBytes: number;
+    /** Largest survey definition or theme body, in bytes (a per-route limit). */
+    readonly maxDocumentBytes: number;
   };
   readonly apiDocs: boolean;
   readonly identityProvider: "surveyjs-oidc" | "dev";
@@ -159,6 +161,7 @@ const envSchema = z.object({
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
+  LIMIT_MAX_DOCUMENT_BYTES: positiveInt.default(30000000),
   API_DOCS: z.enum(["true", "false"]).optional(),
   IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
@@ -315,6 +318,7 @@ export function loadConfig(
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,
       maxFileBytes: e.LIMIT_MAX_FILE_BYTES,
       maxResponseBytes: e.LIMIT_MAX_RESPONSE_BYTES,
+      maxDocumentBytes: e.LIMIT_MAX_DOCUMENT_BYTES,
     }),
     apiDocs: e.API_DOCS === undefined ? e.NODE_ENV !== "production" : e.API_DOCS === "true",
     identityProvider: e.IDENTITY_PROVIDER,

@@ -22,6 +22,8 @@ export interface ApiOptions {
   readonly authentication: AuthenticationOptions;
   /** Operations limited per client IP (needs `@fastify/rate-limit` registered with `global: false`). */
   readonly rateLimits?: Partial<Record<OperationId, RateLimit>>;
+  /** Request body limit in bytes of the operations that need more (or less) than the server's. */
+  readonly bodyLimits?: Partial<Record<OperationId, number>>;
 }
 
 function notImplemented(operationId: string): RouteHandlerMethod {
@@ -73,7 +75,7 @@ function bodyGuard(
  * from the contract's security requirements and request validation from its schemas.
  */
 export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
-  const { contract, handlers, authentication, rateLimits = {} } = options;
+  const { contract, handlers, authentication, rateLimits = {}, bodyLimits = {} } = options;
   api.setValidatorCompiler(contract.compileValidator);
   api.decorateRequest("user", null);
 
@@ -102,12 +104,14 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
     const operationId = op.operationId as OperationId;
     const onRequest = authenticationHook(op.security, authentication);
     const rateLimit = rateLimits[operationId];
+    const bodyLimit = bodyLimits[operationId];
     api.route({
       method: op.method,
       url: op.url,
       schema: { ...op.schema },
       ...(onRequest && { onRequest }),
       ...(rateLimit && { config: { rateLimit } }),
+      ...(bodyLimit !== undefined && { bodyLimit }),
       ...(op.requestBody && { preValidation: bodyGuard(op.requestBody) }),
       handler: handlers[operationId] ?? notImplemented(op.operationId),
     });

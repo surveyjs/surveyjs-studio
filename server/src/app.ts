@@ -15,6 +15,7 @@ import { createHandlers } from "./handlers.js";
 import { serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
+import { createContentHandlers } from "./content/handlers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 
 export interface BuildOptions {
@@ -122,6 +123,11 @@ export async function buildApp(
         ...(options.now && { now: options.now }),
       }),
       ...createProjectHandlers({ directory: providers.directory }),
+      ...createContentHandlers({
+        surveys: providers.surveys,
+        directory: providers.directory,
+        ...(options.now && { now: options.now }),
+      }),
       ...createSurveyHandlers({
         surveys: providers.surveys,
         directory: providers.directory,
@@ -133,6 +139,11 @@ export async function buildApp(
       ...(options.now && { now: options.now }),
     },
     rateLimits: Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
+    // Survey documents may carry inline images: they get their own, larger limit.
+    bodyLimits: {
+      saveSurveyDefinition: config.limits.maxDocumentBytes,
+      saveSurveyTheme: config.limits.maxDocumentBytes,
+    },
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);

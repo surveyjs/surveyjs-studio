@@ -1,5 +1,5 @@
 import { AppError } from "../errors.js";
-import type { SurveyPosition } from "../providers/types.js";
+import type { HistoryPosition, SurveyPosition } from "../providers/types.js";
 
 /**
  * Opaque paging cursors: base64url (no padding) of a UTF-8 JSON payload.
@@ -7,6 +7,7 @@ import type { SurveyPosition } from "../providers/types.js";
  * - Surveys: `{"v":1,"k":"surveys","p":<scope>,"a":<archived>,"u":<updatedAt>,"i":<id>}`, where the
  *   scope is `personal` or the lower-case project id. A cursor belongs to one list (scope and archived).
  * - Projects: `{"v":1,"k":"projects","n":<lower-cased name>,"i":<id>}`.
+ * - History: `{"v":1,"k":"history","u":<at>,"i":<entry id>}`.
  *
  * Only the canonical encoding is accepted: a value is valid when encoding what it decodes to gives
  * the value back (so no padding, no extra members or spaces, upper-case ids or loose timestamps).
@@ -125,4 +126,23 @@ export function decodeProjectCursor(value: string): ProjectPosition {
   }
   const position = { name: n.toLowerCase(), id: i.toLowerCase() };
   return canonical(value, position, encodeProjectCursor(position));
+}
+
+const historyPayload = (position: HistoryPosition) => ({
+  v: VERSION,
+  k: "history",
+  u: position.at,
+  i: position.id,
+});
+
+export function encodeHistoryCursor(position: HistoryPosition): string {
+  return encode(historyPayload(position));
+}
+
+/** The position of a history cursor; throws `400 bad-request` ("Invalid cursor.") otherwise. */
+export function decodeHistoryCursor(value: string): HistoryPosition {
+  const { v, k, u, i } = decode(value);
+  if (v !== VERSION || k !== "history" || !isTimestamp(u) || !isId(i)) throw invalidCursor();
+  const position = { at: u, id: i.toLowerCase() };
+  return canonical(value, position, encodeHistoryCursor(position));
 }

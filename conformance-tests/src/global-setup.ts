@@ -31,6 +31,7 @@ const appVariables = [
   "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
   "LIMIT_MAX_FILE_BYTES",
   "LIMIT_MAX_RESPONSE_BYTES",
+  "LIMIT_MAX_DOCUMENT_BYTES",
   "API_DOCS",
   "LEGACY_SQL_CONNECTION_STRING",
   "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
@@ -104,6 +105,8 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
     // The suite signs in many times from one IP; the limit itself is tested in the server tests.
     SIGN_IN_RATE_LIMIT: "100000",
+    // Small, so the 413 test stays cheap (it reads the limit from /config).
+    LIMIT_MAX_DOCUMENT_BYTES: "262144",
     ...providerEnv(),
   };
 }

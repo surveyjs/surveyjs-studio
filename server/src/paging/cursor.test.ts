@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
 import {
+  decodeHistoryCursor,
   decodeProjectCursor,
   decodeSurveyCursor,
+  encodeHistoryCursor,
   encodeProjectCursor,
   encodeSurveyCursor,
 } from "./cursor.js";
@@ -182,5 +184,28 @@ describe("project cursors", () => {
     ["a value over 1024 characters", raw({ ...projectPayload, n: "n".repeat(1024) })],
   ])("reject %s", (_name, cursor) => {
     expectInvalid(() => decodeProjectCursor(cursor));
+  });
+});
+
+describe("history cursors", () => {
+  const entry = { at: "2026-04-14T15:30:00.000Z", id: "88888888-0000-4000-8000-a00000000001" };
+  const historyPayload = { v: 1, k: "history", u: entry.at, i: entry.id };
+
+  it("round-trip a position", () => {
+    const cursor = encodeHistoryCursor(entry);
+    expect(cursor).toBe(raw(historyPayload));
+    expect(decodeHistoryCursor(cursor)).toEqual(entry);
+  });
+
+  it.each([
+    ["text that is not base64url", "***"],
+    ["a survey cursor", encodeSurveyCursor(position, personalActive)],
+    ["the wrong version", raw({ ...historyPayload, v: 0 })],
+    ["a loose timestamp", raw({ ...historyPayload, u: "2026-04-14T15:30:00Z" })],
+    ["an empty id", raw({ ...historyPayload, i: "" })],
+    ["an upper-case id", raw({ ...historyPayload, i: entry.id.toUpperCase() })],
+    ["padding", `${raw(historyPayload)}=`],
+  ])("reject %s", (_name, cursor) => {
+    expectInvalid(() => decodeHistoryCursor(cursor));
   });
 });
