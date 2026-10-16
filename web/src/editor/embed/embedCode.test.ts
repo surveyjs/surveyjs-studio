@@ -84,6 +84,30 @@ describe("the Embed Survey code", () => {
     },
   );
 
+  it.each(platforms)("%s: reports a survey that cannot be loaded", (platform) => {
+    const code = allCode(survey(platform, true));
+
+    expect(code).toContain(
+      'throw new Error("Could not load the survey (" + response.status + ")")',
+    );
+    expect(code).toMatch(/loadSurvey\(\)\s*\.then\([\s\S]*?\)\s*\.catch\(/);
+    expect(code).toMatch(
+      /\.catch\(\(error(: unknown)?\) => console\.error\("Could not load the survey:", error\)\)/,
+    );
+  });
+
+  it.each(platforms)("%s: imports Model from survey-core in both variants", (platform) => {
+    for (const service of [true, false]) {
+      const code = allCode(survey(platform, service));
+      const modelImports = code.match(/import \{[^}]*\bModel\b[^}]*\} from "[^"]+"/g) ?? [];
+
+      expect(modelImports.length, `service: ${service}`).toBeGreaterThan(0);
+      for (const line of modelImports) {
+        expect(line, `service: ${service}`).toMatch(/ from "survey-core"$/);
+      }
+    }
+  });
+
   it.each(platforms)("%s: without it, inlines the survey and theme JSON", (platform) => {
     const blocks = survey(platform, false);
 

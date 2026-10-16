@@ -157,9 +157,11 @@ export default function SurveyComponent() {
   const [survey, setSurvey] = useState(null);
   useEffect(() => {
     let active = true;
-    loadSurvey().then((loaded) => {
-      if (active) setSurvey(loaded);
-    });
+    loadSurvey()
+      .then((loaded) => {
+        if (active) setSurvey(loaded);
+      })
+      .catch((error) => console.error("Could not load the survey:", error));
     return () => {
       active = false;
     };
@@ -202,7 +204,9 @@ export class SurveyComponent implements OnInit {
   surveyModel: Model | null = null;
 
   ngOnInit() {
-    loadSurvey().then((survey) => (this.surveyModel = survey));
+    loadSurvey()
+      .then((survey) => (this.surveyModel = survey))
+      .catch((error: unknown) => console.error("Could not load the survey:", error));
   }
 }
 `
@@ -243,11 +247,14 @@ function vanillaSurvey(service: boolean, hasTheme: boolean): CodeBlock[] {
 import "survey-core/survey-core.css";
 import { loadSurvey } from "./service";
 
-loadSurvey().then((survey) => {
-  renderSurvey(survey, document.getElementById("surveyContainer"));
-});
+loadSurvey()
+  .then((survey) => {
+    renderSurvey(survey, document.getElementById("surveyContainer"));
+  })
+  .catch((error) => console.error("Could not load the survey:", error));
 `
-    : `import { Model, renderSurvey } from "survey-js-ui";
+    : `import { Model } from "survey-core";
+import { renderSurvey } from "survey-js-ui";
 import "survey-core/survey-core.css";
 ${inlineImports(hasTheme)}
 
