@@ -136,7 +136,8 @@ export interface ApiSurvey {
   readonly archived: boolean;
 }
 
-async function csrfHeaders(page: Page): Promise<Record<string, string>> {
+/** The CSRF header the API wants on writes, from the signed-in context's cookie. */
+export async function csrfHeaders(page: Page): Promise<Record<string, string>> {
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "msid_csrf");
   expect(csrf).toBeDefined();
   return { "X-CSRF-Token": decodeURIComponent(csrf?.value ?? "") };

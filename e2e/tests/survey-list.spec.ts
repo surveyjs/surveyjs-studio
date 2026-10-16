@@ -157,11 +157,15 @@ test("Create a Survey opens the new survey, which then heads the list", async ({
   await expect(page).toHaveURL(
     /\/surveys\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/edit$/,
   );
-  const heading = page.getByRole("heading", { level: 1 });
-  await expect(heading).toHaveText(/^New Survey \d+$/);
-  const name = await heading.innerText();
+  // The editor: the Creator, and the new survey's name in its bottom bar.
+  await expect(page.locator("#creator .svc-creator")).toBeVisible({ timeout: 30_000 });
+  const footerName = page.locator(
+    "#edit-survey-change-name-container .v2-class---my-surveys-page__survey-name",
+  );
+  await expect(footerName).toHaveText(/^New Survey \d+$/);
+  const name = await footerName.innerText();
 
-  await page.getByRole("link", { name: "Back to My Surveys" }).click();
+  await page.goBack();
   await expect(page).toHaveURL("/");
   await expect(surveysNamed(page, name).first()).toBeVisible();
   await loadAllPages(page);

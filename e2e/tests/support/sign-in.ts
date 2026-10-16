@@ -57,7 +57,9 @@ export async function completeSignIn(page: Page, user: UserKey = "owner"): Promi
 export async function signInAt(page: Page, path = "/", user: UserKey = "owner"): Promise<void> {
   await page.goto(path);
   await completeSignIn(page, user);
-  await expect(accountTrigger(page, user)).toBeVisible();
+  // A browser the run has just launched (several start side by side, next to the Survey Creator
+  // in other workers) can take longer than the default 10 s to show its first signed-in page.
+  await expect(accountTrigger(page, user)).toBeVisible({ timeout: 30_000 });
 }
 
 /** The header's account item, which shows the user's display name. */

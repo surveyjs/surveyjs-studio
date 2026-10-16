@@ -183,16 +183,34 @@ test("Edit, View Results and View History open their pages with the survey name"
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
     const targets = [
-      { item: "Edit", path: "edit" },
-      { item: "View Results", path: "results" },
-      { item: "View History", path: "history" },
+      // The editor shows the name in its bottom bar.
+      {
+        item: "Edit",
+        path: "edit",
+        shows: page.locator(
+          "#edit-survey-change-name-container .v2-class---my-surveys-page__survey-name",
+        ),
+        text: name,
+      },
+      {
+        item: "View Results",
+        path: "results",
+        shows: page.getByRole("heading", { level: 1 }),
+        text: name,
+      },
+      {
+        item: "View History",
+        path: "history",
+        shows: page.getByRole("heading", { level: 1 }),
+        text: `Survey editing history of the '${name}'`,
+      },
     ];
-    for (const { item, path } of targets) {
+    for (const { item, path, shows, text } of targets) {
       await page.goto("/");
       const url = new RegExp(`/surveys/${survey.id}/${path}$`);
       await pickMenuItem(await openRowMenu(surveyRow(page, name)), item);
       await expect(page).toHaveURL(url);
-      await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+      await expect(shows).toHaveText(text);
     }
   });
 });
