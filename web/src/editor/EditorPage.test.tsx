@@ -33,6 +33,13 @@ const path = `/surveys/${sampleSurvey.id}/edit`;
 const shown = () => JSON.parse(screen.getByTestId("fake-creator").textContent!) as unknown;
 const saves = () => editor.props!.saves!;
 
+/** Whether the page asks before it is unloaded (a `beforeunload` listener cancels the event). */
+function leavingIsQuestioned(): boolean {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 /** Asks the page to save `content` as the Creator does; resolves to the `done` outcome. */
 function save(document: "definition" | "theme", content: Record<string, unknown>) {
   return act(
@@ -71,6 +78,48 @@ describe("the editor page", () => {
 
     expect(screen.getByText("Read-only")).toBeTruthy();
     expect(editor.props!.saves).toBeNull();
+    expect(leavingIsQuestioned()).toBe(false);
+  });
+
+  it("shows a change the Creator holds back as saving, and asks before the page is left", async () => {
+    await openEditor();
+    expect(leavingIsQuestioned()).toBe(false);
+
+    act(() => editor.props!.onPendingChange!(true));
+
+    expect(screen.getByText("Saving…")).toBeTruthy();
+    expect(leavingIsQuestioned()).toBe(true);
+
+    act(() => editor.props!.onPendingChange!(false));
+
+    expect(screen.getByText("All changes saved")).toBeTruthy();
+    expect(leavingIsQuestioned()).toBe(false);
+  });
+
+  it("asks before the page is left while a save is in flight or has failed", async () => {
+    await openEditor();
+    let answer: () => void = () => {};
+    server.use(
+      mswHttp.put("*/api/v1/surveys/:surveyId/definition", async () => {
+        await new Promise<void>((resolve) => (answer = resolve));
+        return HttpResponse.json(
+          { type: "about:blank", title: "Server error", status: 500, code: "internal-error" },
+          { status: 500, headers: { "Content-Type": "application/problem+json" } },
+        );
+      }),
+    );
+
+    // Not in act(): the save stays open while the test goes on.
+    const saved = new Promise<boolean>((resolve) =>
+      saves().definition({ title: "Second" }, (ok) => resolve(ok)),
+    );
+    await screen.findByText("Saving…");
+    expect(leavingIsQuestioned()).toBe(true);
+
+    answer();
+    expect(await saved).toBe(false);
+    await screen.findByText("Changes are not saved");
+    expect(leavingIsQuestioned()).toBe(true);
   });
 
   it("saves through the savers with the ETags of the reads, chaining the new ones", async () => {

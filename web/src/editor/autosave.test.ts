@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDocumentSaver, editorStatus, statusText, type SaverState } from "./autosave";
+import {
+  createDocumentSaver,
+  editorStatus,
+  isSafeToLeave,
+  statusText,
+  type SaverState,
+} from "./autosave";
 
 interface Call {
   content: string;
@@ -111,6 +117,21 @@ describe("editorStatus", () => {
     expect(editorStatus(["error", "saving"], false)).toEqual({ kind: "saving" });
     expect(editorStatus(["saved", "error"], false)).toEqual({ kind: "error" });
     expect(editorStatus(["saved", "saved"], false)).toEqual({ kind: "saved" });
+  });
+
+  it("counts a change not yet handed to a saver as saving", () => {
+    expect(editorStatus(["saved", "saved"], false, true)).toEqual({ kind: "saving" });
+    expect(editorStatus(["saved", "error"], false, true)).toEqual({ kind: "saving" });
+    expect(editorStatus(["conflict", "saved"], false, true)).toEqual({ kind: "conflict" });
+    expect(editorStatus(["saved", "saved"], true, true)).toEqual({ kind: "read-only" });
+  });
+
+  it("tells when leaving the page is safe", () => {
+    expect(isSafeToLeave({ kind: "saved" })).toBe(true);
+    expect(isSafeToLeave({ kind: "read-only" })).toBe(true);
+    for (const kind of ["saving", "error", "conflict"] as const) {
+      expect(isSafeToLeave({ kind })).toBe(false);
+    }
   });
 
   it("has the footer texts", () => {

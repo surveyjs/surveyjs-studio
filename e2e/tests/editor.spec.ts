@@ -79,6 +79,58 @@ test("a row click opens the editor; an added question is saved and survives a re
   });
 });
 
+test("an edit reads as saving until it is saved, and leaving the editor at once still saves it", async ({
+  page,
+  browserName,
+}) => {
+  await signInAt(page, "/", "admin");
+  const name = uniqueSurveyName("Pending", browserName);
+  const survey = await createSurveyViaApi(page, name);
+  await withCleanup(page, [survey.id], async () => {
+    await page.reload();
+    await surveyRow(page, name).locator('[title="Created on"]').click();
+    await expectEditorReady(page);
+    await expect(editorStatus(page)).toHaveText("All changes saved");
+
+    // The Creator sends a change 500 ms after it; until then it is not saved either. The status is
+    // read in the page right after the click, before that delay can end, whatever the machine load.
+    const firstSave = page.waitForResponse(
+      (response) => isDocumentSave(response, survey.id, "definition") && response.status() === 204,
+    );
+    const statusRightAfterEdit = await page
+      .locator(".svc-add-new-question-action")
+      .getByText("Add Question")
+      .first()
+      .evaluate(async (button) => {
+        // Runs in the page; this project has no DOM types.
+        type Node = { textContent: string | null; click(): void };
+        const { document } = globalThis as unknown as {
+          document: { querySelector(selector: string): Node | null };
+        };
+        (button as unknown as Node).click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return document.querySelector("#edit-survey-change-name-container [role=status]")
+          ?.textContent;
+      });
+    expect(statusRightAfterEdit).toBe("Saving…");
+    await expect(designerQuestions(page)).toHaveCount(1);
+    await firstSave;
+    await expect(editorStatus(page)).toHaveText("All changes saved");
+
+    // Back to the list (in the app) right after the next edit: the change is sent all the same.
+    const secondSave = page.waitForResponse(
+      (response) => isDocumentSave(response, survey.id, "definition") && response.status() === 204,
+    );
+    await addQuestion(page);
+    await page.goBack();
+    await expect(surveyRow(page, name)).toBeVisible();
+    await secondSave;
+    expect(questionNames((await getDocumentViaApi(page, survey.id, "definition")).content)).toEqual(
+      ["question1", "question2"],
+    );
+  });
+});
+
 test("a predefined theme picked on the Themes tab is saved and kept after a reload", async ({
   page,
   browserName,

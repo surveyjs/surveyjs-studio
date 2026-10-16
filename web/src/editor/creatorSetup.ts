@@ -24,6 +24,7 @@ import {
   settings,
   type ICreatorPlugin,
   type ICreatorTheme,
+  type ThemeTabPlugin,
 } from "survey-creator-core";
 import { SurveyCreator } from "survey-creator-react";
 import type { SurveyDefinition, SurveyTheme as StoredTheme } from "../api/content";
@@ -293,14 +294,39 @@ export function addSiteToolbarItemsAndTabs(
   addEmbedTabs(creator, context.surveyId);
 }
 
+/** A Creator and how to close it. */
+export interface CreatorSession {
+  readonly creator: SurveyCreator;
+  /**
+   * Hands every change not yet sent to the saves (they finish on their own), then disposes the
+   * Creator, so that leaving the editor loses no change and no Creator timer fires afterwards.
+   */
+  close(): void;
+}
+
+/**
+ * Cancels a scheduled auto-save. Creator 3.1.2 keeps the timer in a private `autoSaveTimerId`: the
+ * Creator's for the survey, the Themes tab plugin's for the theme; no public call cancels it.
+ */
+function cancelAutoSave(owner: object | undefined): void {
+  const timed = owner as { autoSaveTimerId?: ReturnType<typeof setTimeout> | null } | undefined;
+  if (timed?.autoSaveTimerId) {
+    clearTimeout(timed.autoSaveTimerId);
+    timed.autoSaveTimerId = null;
+  }
+}
+
 /**
  * A new Creator for one survey. Without `saves` it is read-only: nothing can be changed and
  * nothing is saved. Otherwise every change is saved (500 ms after the last one) through `saves`.
+ * `onPendingChange(true)` tells that a change is waiting for that delay (not yet handed to
+ * `saves`), `onPendingChange(false)` that every change has been handed over.
  */
 export function createCreator(options: {
   readonly surveyId: string;
   readonly saves: EditorSaves | null;
-}): SurveyCreator {
+  readonly onPendingChange?: (pending: boolean) => void;
+}): CreatorSession {
   configureOnce();
   const creator = new SurveyCreator({
     showTranslationTab: true,
@@ -318,17 +344,72 @@ export function createCreator(options: {
 
   if (saves === null) {
     creator.readOnly = true;
-    return creator;
+    return { creator, close: () => creator.dispose() };
   }
+
+  // A change is pending from the event the Creator schedules its auto-save with (`onModified` for
+  // the survey, the Themes tab's change events for the theme) until the save function runs.
+  let closed = false;
+  const pending = { definition: false, theme: false };
+  let reported = false;
+  const report = () => {
+    const now = pending.definition || pending.theme;
+    if (now === reported) return;
+    reported = now;
+    options.onPendingChange?.(now);
+  };
+  const changed = (document: keyof typeof pending) => {
+    if (closed) return;
+    pending[document] = true;
+    report();
+  };
+  const sendDefinition = (done: (ok: boolean) => void) => {
+    saves.definition(creator.JSON as SurveyDefinition, done);
+    pending.definition = false;
+    report();
+  };
+  const sendTheme = (done: (ok: boolean) => void) => {
+    saves.theme(creator.theme as StoredTheme, done);
+    pending.theme = false;
+    report();
+  };
+
+  creator.onModified.add(() => changed("definition"));
+  const themeTab = creator.getPlugin<ThemeTabPlugin>("theme");
+  themeTab?.onThemeSelected.add(() => changed("theme"));
+  themeTab?.onThemePropertyChanged.add(() => changed("theme"));
+
   // Before the save functions: with auto-save on, the Creator shows no Save button.
   creator.autoSaveEnabled = true;
+  // A save that ends after `close` does not call back into the disposed Creator.
   creator.saveSurveyFunc = (saveNo: number, callback: (no: number, ok: boolean) => void) => {
-    saves.definition(creator.JSON as SurveyDefinition, (ok) => callback(saveNo, ok));
+    sendDefinition((ok) => {
+      if (!closed) callback(saveNo, ok);
+    });
   };
   creator.saveThemeFunc = (saveNo: number, callback: (no: number, ok: boolean) => void) => {
-    saves.theme(creator.theme as StoredTheme, (ok) => callback(saveNo, ok));
+    sendTheme((ok) => {
+      if (!closed) callback(saveNo, ok);
+    });
   };
-  return creator;
+
+  return {
+    creator,
+    close() {
+      // Text typed on the JSON tab reaches the survey when the tab is left; leaving the page
+      // leaves it too (text that does not parse, or has errors, is not applied).
+      creator.applyPendingChanges();
+      cancelAutoSave(creator);
+      cancelAutoSave(themeTab);
+      if (pending.definition) sendDefinition(() => {});
+      if (pending.theme) sendTheme(() => {});
+      closed = true;
+      creator.dispose();
+      // Disposing leaves the open tab, which may apply the JSON tab's text and schedule a save.
+      cancelAutoSave(creator);
+      cancelAutoSave(themeTab);
+    },
+  };
 }
 
 /**

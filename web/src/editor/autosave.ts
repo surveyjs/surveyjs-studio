@@ -108,14 +108,25 @@ export type EditorStatus =
   | { kind: "error" }
   | { kind: "saved" };
 
-/** The footer status of the editor: read-only wins, then conflict, saving, error. */
-export function editorStatus(states: readonly SaverState[], readOnly: boolean): EditorStatus {
+/**
+ * The footer status of the editor: read-only wins, then conflict, saving, error. A change the
+ * Creator has not handed to a saver yet (`pendingChange`) counts as saving: it is not saved.
+ */
+export function editorStatus(
+  states: readonly SaverState[],
+  readOnly: boolean,
+  pendingChange = false,
+): EditorStatus {
   if (readOnly) return { kind: "read-only" };
-  for (const kind of ["conflict", "saving", "error"] as const) {
-    if (states.includes(kind)) return { kind };
-  }
+  if (states.includes("conflict")) return { kind: "conflict" };
+  if (pendingChange || states.includes("saving")) return { kind: "saving" };
+  if (states.includes("error")) return { kind: "error" };
   return { kind: "saved" };
 }
+
+/** Whether leaving the page now loses nothing: every change is saved, or none can be made. */
+export const isSafeToLeave = (status: EditorStatus) =>
+  status.kind === "saved" || status.kind === "read-only";
 
 export const statusText: Record<"read-only" | "saving" | "error" | "saved", string> = {
   "read-only": "Read-only",

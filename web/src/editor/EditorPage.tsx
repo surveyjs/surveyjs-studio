@@ -22,6 +22,7 @@ import { applySurveyJSLicense } from "../surveyjs/license";
 import {
   createDocumentSaver,
   editorStatus,
+  isSafeToLeave,
   statusText,
   type EditorStatus,
   type SaverState,
@@ -112,7 +113,10 @@ function EditorSession({
   }));
   const [reloading, setReloading] = useState(false);
   const [reloadFailed, setReloadFailed] = useState(false);
-  const status = editorStatus(states, readOnly);
+  // A change the Creator holds for its auto-save delay, not yet handed to a saver.
+  const [pendingChange, setPendingChange] = useState(false);
+  const status = editorStatus(states, readOnly, pendingChange);
+  useLeaveGuard(!isSafeToLeave(status));
 
   const reload = async () => {
     if (savers === null) return;
@@ -160,6 +164,7 @@ function EditorSession({
           surveyId={survey.id}
           documents={documents}
           saves={savers === null ? null : savers.saves}
+          onPendingChange={setPendingChange}
         />
       </Suspense>
     </EditorFrame>
@@ -216,6 +221,24 @@ function EditorFrame({
       </div>
     </>
   );
+}
+
+/**
+ * While `active`, closing the tab, reloading or leaving for another site asks first (the browser's
+ * own prompt). Leaving within the app needs no prompt: the editor hands its pending changes to the
+ * savers when it closes, and they finish on their own.
+ */
+function useLeaveGuard(active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    const ask = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Older browsers (Chrome and Edge before 119) ask only when `returnValue` is set.
+      event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [active]);
 }
 
 /** Applies the SurveyJS licence key before the Creator is built (the Creator reads it then). */
