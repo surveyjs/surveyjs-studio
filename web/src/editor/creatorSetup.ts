@@ -197,17 +197,29 @@ function downloadText(fileName: string, text: string): void {
  * Creator's own download) and "Download obfuscated JSON" (`survey.obf.json`, see obfuscate.ts).
  */
 function addObfuscatedExport(creator: SurveyCreator): void {
+  // As the site: makes sure the JSON tab's plugin, which adds `svc-json-export`, exists (the
+  // Creator normally creates it with its tabs).
   creator.getPlugin("json");
   const exportAction = creator.toolbarItems.find((item) => item.id === "svc-json-export");
   if (!exportAction) return;
   const downloadObfuscated = () => {
     const model = creator.getPlugin<ICreatorPlugin & { model?: JsonTabModel }>("json")?.model;
     if (!model) return;
+    const fixErrors = () => creator.notify("Please fix error(s)", "error");
     if (hasJsonErrors(model)) {
-      creator.notify("Please fix error(s)", "error");
+      fixErrors();
       return;
     }
-    downloadText("survey.obf.json", obfuscateSurvey(JSON.parse(model.text) as object));
+    let text: string;
+    try {
+      // The tab also accepts JSON5 (comments, unquoted keys, trailing commas), which JSON.parse
+      // refuses; the tab's own parser is not exported.
+      text = obfuscateSurvey(JSON.parse(model.text) as object);
+    } catch {
+      fixErrors();
+      return;
+    }
+    downloadText("survey.obf.json", text);
   };
   const exportList = createDropdownActionModelAdvanced(
     {

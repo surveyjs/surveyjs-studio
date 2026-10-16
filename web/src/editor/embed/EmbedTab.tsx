@@ -166,6 +166,15 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
   );
 }
 
+/**
+ * Copies `text`, quietly doing nothing where the browser offers no clipboard (`navigator.clipboard`
+ * is missing on pages served over plain HTTP) or refuses the write: the code can still be selected.
+ */
+function copyToClipboard(text: string): void {
+  if (typeof navigator.clipboard?.writeText !== "function") return;
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
 function CodeItem({ block }: { block: CodeBlock }) {
   return (
     <div className="svc-embed-tab__code">
@@ -179,7 +188,7 @@ function CodeItem({ block }: { block: CodeBlock }) {
           type="button"
           className="svc-custom-embedded-tab__copy-button svc-toolbar__item"
           title="Copy Code"
-          onClick={() => void navigator.clipboard.writeText(block.content)}
+          onClick={() => copyToClipboard(block.content)}
         >
           <SvgIcon title="Copy Code" iconName="icon-copyembedded" size="auto" />
         </button>
