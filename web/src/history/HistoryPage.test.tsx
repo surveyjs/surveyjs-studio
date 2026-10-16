@@ -60,6 +60,32 @@ describe("the history page", () => {
     expect(await screen.findByText("No edits yet.")).toBeTruthy();
   });
 
+  it("offers a retry when the first load fails", async () => {
+    open({});
+
+    expect(await screen.findByText(/Could not load the history. Please try again./)).toBeTruthy();
+    server.use(historyHandler({ "": { ...first, nextCursor: null } }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText(/by Ada Admin/)).toBeTruthy();
+    expect(screen.queryByText(/Could not load the history/)).toBeNull();
+  });
+
+  it("keeps the loaded entries when the next page fails and retries on Show more", async () => {
+    open({ "": first });
+
+    fireEvent.click(await screen.findByText("Show more"));
+
+    expect(await screen.findByText("Could not load more entries. Please try again.")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    server.use(historyHandler({ "": first, c2: second }));
+    fireEvent.click(screen.getByText("Show more"));
+
+    expect(await screen.findByText(/by Bob Builder/)).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText(/Could not load more entries/)).toBeNull();
+  });
+
   it("says the survey is not available for an unknown survey", async () => {
     server.use(configHandler(), meHandler(), surveyHandler(), historyHandler({}));
     renderApp("/surveys/22222222-0000-4000-8000-000000000002/history");
