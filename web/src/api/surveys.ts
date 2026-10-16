@@ -124,7 +124,7 @@ export function useCreateSurvey() {
 
 export type SurveyPatch = components["schemas"]["SurveyPatch"];
 
-const scopeOf = (survey: Survey) => survey.projectId ?? "personal";
+export const scopeOf = (survey: Survey) => survey.projectId ?? "personal";
 
 type SurveyListData = InfiniteData<SurveyPage, string | null>;
 
