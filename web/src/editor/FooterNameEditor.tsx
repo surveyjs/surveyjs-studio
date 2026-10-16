@@ -1,7 +1,7 @@
-import { useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useId, useState } from "react";
 import { useUpdateSurvey, type Survey } from "../api/surveys";
 import { SiteButton } from "../shell/surveyjs-site/SiteButton";
+import { useRenameEditor } from "../surveyList/useRenameEditor";
 
 /**
  * The survey name in the editor's bottom bar, with its rename editor, as `the site's page markup` has it.
@@ -24,52 +24,20 @@ export function FooterNameEditor({
   onRenamed: (ok: boolean) => void;
 }) {
   const update = useUpdateSurvey();
-  const [editing, setEditing] = useState(false);
   const [editingName, setEditingName] = useState("");
-  // The name sent by a rename that has not been answered yet.
-  const [pendingName, setPendingName] = useState<string | null>(null);
-  // Blur follows Enter and the button presses: the first of them ends the edit, the rest do nothing.
-  const open = useRef(false);
-  const renames = useRef(0);
-  const pencilRef = useRef<HTMLAnchorElement>(null);
-  const name = pendingName ?? survey.name;
+  const { name, editing, pencilRef, startEdit, cancel, save } = useRenameEditor(
+    survey.name,
+    (value) => {
+      onRenameStart();
+      return update.mutateAsync({ survey, patch: { name: value } }).then(
+        () => onRenamed(true),
+        () => onRenamed(false),
+      );
+    },
+  );
 
-  const startEdit = () => {
-    if (readOnly || open.current) return;
-    open.current = true;
-    setEditingName(name);
-    setEditing(true);
-  };
-
-  const close = (refocus: boolean) => {
-    open.current = false;
-    flushSync(() => setEditing(false));
-    if (refocus) pencilRef.current?.focus();
-  };
-
-  const save = (refocus: boolean) => {
-    if (!open.current) return;
-    const value = editingName;
-    close(refocus);
-    if (value.trim() === "" || value === name) return;
-    const rename = ++renames.current;
-    setPendingName(value);
-    onRenameStart();
-    update.mutate(
-      { survey, patch: { name: value } },
-      {
-        onSuccess: () => onRenamed(true),
-        onError: () => onRenamed(false),
-        onSettled: () => {
-          // Success: the cache holds the new name; failure: the old one shows again.
-          if (renames.current === rename) setPendingName(null);
-        },
-      },
-    );
-  };
-
-  const cancel = (refocus: boolean) => {
-    if (open.current) close(refocus);
+  const open = () => {
+    if (!readOnly && startEdit()) setEditingName(name);
   };
 
   return (
@@ -86,14 +54,14 @@ export function FooterNameEditor({
               value={editingName}
               onFocus={(event) => event.target.select()}
               onChange={(event) => setEditingName(event.target.value)}
-              onBlur={() => save(false)}
+              onBlur={() => save(editingName, false)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  save(true);
+                  save(editingName);
                 } else if (event.key === "Escape") {
                   event.preventDefault();
-                  cancel(true);
+                  cancel();
                 }
               }}
             />
@@ -108,14 +76,14 @@ export function FooterNameEditor({
                 mode="Tertiary"
                 size="Small"
                 disabled={editingName === ""}
-                onClick={() => save(true)}
+                onClick={() => save(editingName)}
               />
             </div>
 
             <div
               onMouseDown={(event) => {
                 event.preventDefault();
-                cancel(true);
+                cancel();
               }}
             >
               <SiteButton
@@ -123,7 +91,7 @@ export function FooterNameEditor({
                 style="Brand"
                 mode="Tertiary"
                 size="Small"
-                onClick={() => cancel(true)}
+                onClick={() => cancel()}
               />
             </div>
           </div>
@@ -133,7 +101,7 @@ export function FooterNameEditor({
       <div
         className="v2-class---my-surveys-page__survey-name-container"
         style={editing ? { display: "none" } : readOnly ? { cursor: "default" } : undefined}
-        onClick={startEdit}
+        onClick={open}
       >
         <span className="v2-class---my-surveys-page__survey-name" title={name}>
           {name}

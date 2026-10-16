@@ -1,6 +1,10 @@
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterAll, afterEach } from "vitest";
 import { server } from "./server";
+
+// The first render of a test file loads the app's lazy route modules; with the suite's files running
+// in parallel that can take longer than Testing Library's default 1 s wait for `findBy…`/`waitFor`.
+configure({ asyncUtilTimeout: 5000 });
 
 // Node's Request needs absolute URLs; the app uses a relative base URL ("/api/v1") like in a browser.
 const NodeRequest = globalThis.Request;

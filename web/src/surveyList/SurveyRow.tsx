@@ -1,12 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useId, useRef, useState, type MouseEvent } from "react";
-import { flushSync } from "react-dom";
+import { useId, useState, type MouseEvent } from "react";
 import type { Project } from "../api/projects";
 import type { Survey } from "../api/surveys";
 import { iconHtml } from "../shell/surveyjs-site/icons";
 import { formatListDate } from "./formatDate";
 import { SurveyMenu } from "./SurveyMenu";
 import { SurveyNameEditor } from "./SurveyNameEditor";
+import { useRenameEditor } from "./useRenameEditor";
 import type { SurveyActions } from "./useSurveyActions";
 
 const classes = (...names: (string | false)[]) => names.filter(Boolean).join(" ");
@@ -37,30 +37,12 @@ export function SurveyRow({
   actions: SurveyActions;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  // The name sent by a rename that has not been answered yet.
-  const [pendingName, setPendingName] = useState<string | null>(null);
-  const renames = useRef(0);
-  const pencilRef = useRef<HTMLAnchorElement>(null);
-  const name = pendingName ?? survey.name;
+  const { name, editing, pencilRef, startEdit, cancel, save } = useRenameEditor(
+    survey.name,
+    (value) => actions.rename(survey, value),
+  );
   const canRename = !archived && survey.permissions.canModify;
   const navigate = useNavigate();
-
-  const closeEditor = () => {
-    flushSync(() => setEditing(false));
-    pencilRef.current?.focus();
-  };
-
-  const save = (value: string) => {
-    closeEditor();
-    if (value.trim() === "" || value === name) return;
-    const rename = ++renames.current;
-    setPendingName(value);
-    void actions.rename(survey, value).then(() => {
-      // Success: the cache holds the new name; failure: the old one shows again.
-      if (renames.current === rename) setPendingName(null);
-    });
-  };
 
   const openEditor = (event: MouseEvent<HTMLDivElement>) => {
     if (archived || editing) return;
@@ -83,7 +65,13 @@ export function SurveyRow({
             editing && "v2-class---my-surveys-page__list-item-header--title-edit-mode",
           )}
         >
-          {editing && <SurveyNameEditor name={name} onSave={save} onCancel={closeEditor} />}
+          {editing && (
+            <SurveyNameEditor
+              name={name}
+              onSave={(value) => save(value)}
+              onCancel={() => cancel()}
+            />
+          )}
 
           <div
             className="v2-class---my-surveys-page__survey-name-container"
@@ -101,7 +89,7 @@ export function SurveyRow({
                 onClick={(event) => {
                   event.preventDefault();
                   setMenuOpen(false);
-                  setEditing(true);
+                  startEdit();
                 }}
               >
                 <EditIcon />

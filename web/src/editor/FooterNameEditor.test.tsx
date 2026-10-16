@@ -26,8 +26,7 @@ async function openEditor(survey = sampleSurvey) {
     themeHandler({}, '"t1"'),
   );
   renderApp(`/surveys/${survey.id}/edit`);
-  // The first open of a test file loads the lazy route and page modules: give it time.
-  await screen.findByTestId("fake-creator", {}, { timeout: 5000 });
+  await screen.findByTestId("fake-creator");
 }
 
 const bar = () => document.getElementById("edit-survey-change-name-container")!;
