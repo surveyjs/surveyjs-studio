@@ -41,7 +41,7 @@ export function SurveyNotAvailable() {
 }
 
 /** The My Surveys page frame (its article and header) around a placeholder's text. */
-function PlaceholderFrame({ title, children }: { title: string; children: ReactNode }) {
+export function PlaceholderFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <article className="v2-class---my-surveys-page">
       <div className="v2-class---my-surveys-page__container">

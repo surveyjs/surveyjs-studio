@@ -167,3 +167,13 @@ Helvetica Neue / Helvetica / Arial. Step 13 (visual parity) decides whether to s
   fallback value, `4.7k`.
 - The cart count: the site reads it from its own `/api/Cart/get`; the shell shows the empty cart.
 - The "logged in as another user" badge and the scroll-to-top button.
+
+Step 6 (the History page) copies one more file:
+
+| Copy                                  | Used by                                 | Original                                               |
+| ------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `site/Content/Images/Clock_12x12.svg` | the clock in front of each entry's time | `the site's source`; none changed |
+
+The page uses the `.my-surveys-history-item` and `.my-surveys-page__clock-icon` rules of the
+`pages/my-surveys.scss` copy. It shows the time in the browser's locale and time zone with the zone
+named (the site shows the server's `DateTime.ToString()` without a zone).

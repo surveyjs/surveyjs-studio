@@ -1,14 +1,13 @@
 import { createLazyFileRoute } from "@tanstack/react-router";
-import { SurveyNotAvailable, SurveyPlaceholder } from "../../../../surveyList/surveyPlaceholder";
+import { HistoryPage } from "../../../../history/HistoryPage";
+import { SurveyNotAvailable } from "../../../../surveyList/surveyPlaceholder";
 
 export const Route = createLazyFileRoute("/_private/surveys/$surveyId/history")({
-  component: Placeholder,
+  component: History,
   notFoundComponent: SurveyNotAvailable,
 });
 
-function Placeholder() {
+function History() {
   const { surveyId } = Route.useParams();
-  return (
-    <SurveyPlaceholder surveyId={surveyId} text="Survey history arrives in a later version." />
-  );
+  return <HistoryPage surveyId={surveyId} />;
 }
