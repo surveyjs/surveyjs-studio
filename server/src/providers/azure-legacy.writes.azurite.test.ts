@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { TableServiceClient, type TableClient } from "@azure/data-tables";
-import type { BlobServiceClient } from "@azure/storage-blob";
+import {
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+  newPipeline,
+  type RequestPolicyFactory,
+  type WebResource,
+} from "@azure/storage-blob";
 import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { NewSurvey, SurveyOwner } from "../domain/types.js";
@@ -10,7 +16,11 @@ import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
 import { ADMIN_ID, PROJECT_B_ID, surveyDraft, surveyFeedback } from "./suite/expected.js";
 import type { ProviderSet } from "./types.js";
-import { writeThemeSave, type LegacyWriteTargets } from "./azure-legacy/writes.js";
+import {
+  writeDefinitionSave,
+  writeThemeSave,
+  type LegacyWriteTargets,
+} from "./azure-legacy/writes.js";
 
 // Runs in the `providers-azurite` Vitest project. Checks that survey create, update, clone,
 // delete and the definition and theme saves write exactly the legacy format (layout section 5.3),
@@ -813,6 +823,182 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
       expect(stale).toEqual({ kind: "conflict" });
       expect(await snapshot()).toEqual(before);
+    });
+
+    /** The write targets of the replica, with `blobsClient` for the surveys account's blobs. */
+    function targetsWith(blobsClient: BlobServiceClient): LegacyWriteTargets {
+      return {
+        pool: () => Promise.resolve(pool!),
+        blobs: blobsClient,
+        events,
+        resultTables: TableServiceClient.fromConnectionString(
+          config.resultsStorageConnectionString,
+          { allowInsecureConnection: true },
+        ),
+        logger: { warn: (details, message) => warnings.push({ details, message }) },
+      };
+    }
+
+    /**
+     * A client of the replica's surveys account (the guarded client's URL) whose Append Block
+     * requests on `surveyjson/{surveyId}` first go to `intercept`. Throwing there stands for a
+     * request that got no answer.
+     */
+    function blobsWithAppendHook(
+      surveyId: string,
+      intercept: (request: WebResource) => Promise<void>,
+    ): BlobServiceClient {
+      const connection = config.surveysStorageConnectionString;
+      const account = /(?:^|;)AccountName=([^;]+)/.exec(connection)?.[1];
+      const key = /(?:^|;)AccountKey=([^;]+)/.exec(connection)?.[1];
+      if (!account || !key) throw new Error("The replica's surveys account has no account key");
+      const pipeline = newPipeline(new StorageSharedKeyCredential(account, key));
+      const hook: RequestPolicyFactory = {
+        create: (next) => ({
+          sendRequest: async (request) => {
+            const url = new URL(request.url);
+            if (
+              request.method === "PUT" &&
+              url.searchParams.get("comp") === "appendblock" &&
+              url.pathname.endsWith(`/surveyjson/${surveyId}`)
+            ) {
+              await intercept(request);
+            }
+            return next.sendRequest(request);
+          },
+        }),
+      };
+      // First in the list: before the SDK's own retries, so each try of ours is one request.
+      pipeline.factories.unshift(hook);
+      return new BlobServiceClient(blobs.url, pipeline);
+    }
+
+    const noAnswer = () => Promise.reject(new Error("injected: no answer"));
+
+    it("reads surveytext with surveyjson's ETag when surveyjson is empty; the next save rewrites both", async () => {
+      // An empty surveyjson is what a save leaves when it fails after Put Blob.
+      const survey = newSurvey(personal());
+      await store().surveys.createSurvey(survey, { title: "Before" });
+      const emptied = await blobs
+        .getContainerClient("surveyjson")
+        .getAppendBlobClient(survey.id)
+        .create();
+      expect((await blobBytes("surveyjson", survey.id)).length).toBe(0);
+
+      const read = await store().surveys.getDefinition(survey.id);
+
+      expect(read).toEqual({
+        content: { title: "Before" },
+        version: emptied.etag?.replaceAll('"', ""),
+      });
+      const outcome = await store().surveys.saveDefinition(
+        survey.id,
+        { title: "After" },
+        { ifVersion: read!.version, userId: ADMIN_ID, savedAt: SAVED_AT },
+      );
+      expect(outcome.kind).toBe("saved");
+      for (const container of ["surveyjson", "surveytext"]) {
+        expect((await blobBytes(container, survey.id)).toString("utf8"), container).toBe(
+          '{"title":"After"}',
+        );
+      }
+      expect((await store().surveys.getDefinition(survey.id))?.content).toEqual({ title: "After" });
+    });
+
+    it("tries an append that got no answer again, and saves", async () => {
+      const survey = newSurvey(personal());
+      await store().surveys.createSurvey(survey, { title: "Before" });
+      const read = (await store().surveys.getDefinition(survey.id))!;
+      let tries = 0;
+      const targets = targetsWith(
+        blobsWithAppendHook(survey.id, () => (++tries === 1 ? noAnswer() : Promise.resolve())),
+      );
+
+      const outcome = await writeDefinitionSave(targets, survey.id, '{"title":"After"}', {
+        blobVersion: read.version,
+        userId: ADMIN_ID,
+        savedAt: SAVED_AT,
+      });
+
+      expect(outcome).toEqual({
+        kind: "saved",
+        version: (await blobProperties("surveyjson", survey.id)).etag?.replaceAll('"', ""),
+      });
+      expect(tries).toBe(2);
+      for (const container of ["surveyjson", "surveytext"]) {
+        expect((await blobBytes(container, survey.id)).toString("utf8"), container).toBe(
+          '{"title":"After"}',
+        );
+      }
+    });
+
+    it("gives up after three tries; the read then serves the previous text and the next save heals it", async () => {
+      const survey = newSurvey(personal());
+      await store().surveys.createSurvey(survey, { title: "Before" });
+      const read = (await store().surveys.getDefinition(survey.id))!;
+      let tries = 0;
+      const targets = targetsWith(
+        blobsWithAppendHook(survey.id, () => {
+          tries += 1;
+          return noAnswer();
+        }),
+      );
+
+      await expect(
+        writeDefinitionSave(targets, survey.id, '{"title":"Lost"}', {
+          blobVersion: read.version,
+          userId: ADMIN_ID,
+          savedAt: SAVED_AT,
+        }),
+      ).rejects.toThrow(LegacyStoreError);
+
+      expect(tries).toBe(3);
+      expect((await blobBytes("surveyjson", survey.id)).length).toBe(0);
+      expect((await blobBytes("surveytext", survey.id)).toString("utf8")).toBe(
+        '{"title":"Before"}',
+      );
+      const after = (await store().surveys.getDefinition(survey.id))!;
+      expect(after.content).toEqual({ title: "Before" });
+      expect(after.version).not.toBe(read.version);
+      // The editor's next save carries the version of that read.
+      const healed = await store().surveys.saveDefinition(
+        survey.id,
+        { title: "Healed" },
+        { ifVersion: after.version, userId: ADMIN_ID, savedAt: SAVED_AT },
+      );
+      expect(healed.kind).toBe("saved");
+      for (const container of ["surveyjson", "surveytext"]) {
+        expect((await blobBytes(container, survey.id)).toString("utf8"), container).toBe(
+          '{"title":"Healed"}',
+        );
+      }
+    });
+
+    it("does not try an append again that storage refused because the blob changed", async () => {
+      const survey = newSurvey(personal());
+      await store().surveys.createSurvey(survey, { title: "Before" });
+      const read = (await store().surveys.getDefinition(survey.id))!;
+      let tries = 0;
+      const other = blobs.getContainerClient("surveyjson").getAppendBlobClient(survey.id);
+      // Another writer changes the blob between our Put Blob and our append: storage answers 412.
+      const targets = targetsWith(
+        blobsWithAppendHook(survey.id, async () => {
+          tries += 1;
+          await other.appendBlock("{}", 2);
+        }),
+      );
+
+      const outcome = await writeDefinitionSave(targets, survey.id, '{"title":"Mine"}', {
+        blobVersion: read.version,
+        userId: ADMIN_ID,
+        savedAt: SAVED_AT,
+      });
+
+      expect(outcome).toEqual({ kind: "conflict" });
+      expect(tries).toBe(1);
+      expect((await blobBytes("surveytext", survey.id)).toString("utf8")).toBe(
+        '{"title":"Before"}',
+      );
     });
 
     it("creates the blobs on the first save of a survey without a definition", async () => {

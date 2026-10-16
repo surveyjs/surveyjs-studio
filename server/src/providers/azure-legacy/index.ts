@@ -386,6 +386,10 @@ export function createAzureLegacyProviders(
       if (statusOf(error) === 404) return { content: {}, version: "none" };
       throw new LegacyStoreError("definition read", error);
     }
+    // An empty surveyjson is a save that failed after replacing it (writeDefinitionSave): the
+    // text is still in surveytext, written after it. The version stays surveyjson's, so the next
+    // save with it rewrites both blobs.
+    if (text === "") text = await surveyTextBlob(survey.id);
     // A version is never empty: without an ETag no save could be checked against this read.
     if (version === "") throw new LegacyStoreError("definition read", new Error("no ETag"));
     try {
@@ -394,6 +398,20 @@ export function createAzureLegacyProviders(
       if (!(error instanceof UnmappableLegacyRowError)) throw error;
       logger.warn({ ...error.ids }, `Ignored a legacy survey definition. ${error.message}`);
       return { content: {}, version };
+    }
+  }
+
+  /** The text of `surveytext/{id}`; "" when there is no such blob. */
+  async function surveyTextBlob(id: string): Promise<string> {
+    try {
+      const response = await surveysAccount.blobs
+        .getContainerClient("surveytext")
+        .getBlobClient(id)
+        .download();
+      return (await streamToBuffer(response.readableStreamBody)).toString("utf8");
+    } catch (error) {
+      if (statusOf(error) === 404) return "";
+      throw new LegacyStoreError("definition read", error);
     }
   }
 

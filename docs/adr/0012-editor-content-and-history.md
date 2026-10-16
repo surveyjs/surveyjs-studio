@@ -145,12 +145,24 @@ override it announced.
 - A save that loses the race is refused with `412`, and the editor says so. The legacy editor, which sends
   no token, is not protected: its save can still overwrite ours. Ours then fails at the next save.
 - **An append-blob rewrite is not atomic**, as in legacy (`OpenWrite(true)`). The replacement is a Put
-  Blob followed by appends of at most 4 MiB. If an append fails for a reason other than a conflict after
-  the blob was created, `surveyjson` is left empty or partial and reads as `{}`, and the error reaches the
-  client as a failed save. A definition above 4 MiB needs several appends, so the window is wider there.
-  The editor still holds the content and the next autosave writes it again. We accept this to stay
-  compatible with the legacy format; the conditioned appends make sure two writers never mix their texts
-  in one blob.
+  Blob followed by appends of at most 4 MiB. Two things keep a failed append from losing the survey:
+  - Each append that fails for a reason that may pass (no answer, `408`, `429`, `5xx`) is tried again,
+    up to 3 tries in total with a short wait (100 ms, then 200 ms), still conditioned on the ETag of the
+    write before. A `412` is a conflict and is never tried again.
+  - When every try fails right after the Put Blob, `surveyjson` is left empty with a new ETag, and the
+    client gets a failed save (`500`). `surveytext` is written after `surveyjson`, so it still holds the
+    previous text. A definition read that finds an empty `surveyjson` serves the `surveytext` text with
+    `surveyjson`'s ETag as the version. The editor's next save is then refused with `412` (its ETag is
+    the old one), "Reload latest" shows the previous text instead of an empty survey, and the save after
+    the reload rewrites both blobs.
+  - Left open: a definition above 4 MiB needs several appends. If a later one fails on every try,
+    `surveyjson` holds part of the text, which does not parse and reads as `{}` (with a warning) until the
+    next save. An append whose answer was lost after it was applied is tried again with the old ETag and
+    gets `412`, so that save reads as a conflict.
+
+  We accept this to stay compatible with the legacy format; the conditioned appends make sure two writers
+  never mix their texts in one blob.
+
 - A history time (`savedat`) keeps its milliseconds, while `Surveys.timestamp` is a SQL `datetime`
   (about 3 ms steps), so an entry's time and the survey's `updatedAt` can differ by a few milliseconds.
 - The memory provider and the `azure-legacy` provider give different `ETag` values for the same text. The

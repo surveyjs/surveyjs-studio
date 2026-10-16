@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import type { Edm, TableClient, TableEntity, TableServiceClient } from "@azure/data-tables";
-import type { BlobRequestConditions, BlobServiceClient } from "@azure/storage-blob";
+import type {
+  AppendBlobClient,
+  BlobRequestConditions,
+  BlobServiceClient,
+} from "@azure/storage-blob";
 import sql from "mssql";
 import type {
   NewSurvey,
@@ -144,11 +149,51 @@ interface HistoryPointMetadata {
   readonly savedat: string;
 }
 
+/** Tries of one Append Block, the first included (ADR 0012, Consequences). */
+const APPEND_ATTEMPTS = 3;
+/** Wait before the second try; it doubles before each later one. */
+const APPEND_RETRY_DELAY_MS = 100;
+
+/** A failed storage call that may pass when tried again: no answer, 408, 429 or a 5xx. */
+function mayPassOnRetry(error: unknown): boolean {
+  const status = statusOf(error);
+  return (
+    status === undefined ||
+    status === 408 ||
+    status === 429 ||
+    (typeof status === "number" && status >= 500)
+  );
+}
+
+/**
+ * Append Block of `chunk`, conditioned on `etag`. After Put Blob the blob holds only part of the
+ * text, so a failure that may pass is tried again, up to APPEND_ATTEMPTS tries, with the same
+ * condition: a 412 (the blob changed) is a conflict and never tried again.
+ */
+async function appendWithRetry(
+  blob: AppendBlobClient,
+  chunk: Buffer,
+  etag: string | undefined,
+): Promise<string | undefined> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const appended = await blob.appendBlock(chunk, chunk.length, {
+        ...(etag !== undefined && { conditions: { ifMatch: etag } }),
+      });
+      return appended.etag;
+    } catch (error) {
+      if (attempt >= APPEND_ATTEMPTS || !mayPassOnRetry(error)) throw error;
+      await setTimeout(APPEND_RETRY_DELAY_MS * 2 ** (attempt - 1));
+    }
+  }
+}
+
 /**
  * Writes append blob `{container}/{name}` holding `content`: Put Blob (`create`) under
  * `conditions`, which replaces an existing blob, then Append Block in 4 MiB chunks. Each append
  * is conditioned on the ETag of the write before, so a writer that replaces the blob in between
- * makes the append fail instead of mixing two texts. Returns the ETag after the last write.
+ * makes the append fail instead of mixing two texts; an append that fails otherwise is tried
+ * again (appendWithRetry). Returns the ETag after the last write.
  */
 async function writeAppendBlob(
   blobs: BlobServiceClient,
@@ -163,10 +208,7 @@ async function writeAppendBlob(
   let etag = created.etag;
   for (let offset = 0; offset < content.length; offset += APPEND_BLOCK_BYTES) {
     const chunk = content.subarray(offset, offset + APPEND_BLOCK_BYTES);
-    const appended = await blob.appendBlock(chunk, chunk.length, {
-      ...(etag !== undefined && { conditions: { ifMatch: etag } }),
-    });
-    etag = appended.etag;
+    etag = await appendWithRetry(blob, chunk, etag);
   }
   if (etag === undefined) throw new Error("The blob write answered without an ETag");
   return etag;
@@ -583,7 +625,10 @@ function isBlobConflict(error: unknown): boolean {
  * An unknown survey is `not-found` before any blob is written; a survey deleted during the save
  * is `not-found` after step 4 (its blobs stay; no reader finds them without the row). The saved
  * version is the ETag of `surveyjson` after the write, without quotes. Store failures reject
- * with LegacyStoreError.
+ * with LegacyStoreError. When step 1 fails after its Put Blob (an append failed on every try),
+ * `surveyjson` is left empty with a new ETag while `surveytext` still holds the previous text:
+ * the definition read then serves that text with the empty blob's ETag, and the next save with
+ * it rewrites both blobs (ADR 0012, Consequences).
  */
 export async function writeDefinitionSave(
   targets: LegacyWriteTargets,
