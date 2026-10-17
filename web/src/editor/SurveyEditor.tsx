@@ -18,7 +18,7 @@ export interface SurveyEditorProps {
   readonly documents: EditorDocuments;
   /** Where changes go; `null` makes the Creator read-only. */
   readonly saves: EditorSaves | null;
-  /** Where files go (`null` in read-only mode). Keep it stable: a new one is not picked up. */
+  /** Where files go (`null` in read-only mode). Keep it stable: a new object builds a new Creator. */
   readonly uploads: EditorUploads | null;
   /**
    * `true` while a change waits for the Creator's auto-save delay (not yet handed to `saves`),

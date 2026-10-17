@@ -13,6 +13,17 @@ const MAX = 1048576;
 const problem = (status: number, code: Problem["code"]) =>
   new ApiError({ type: "about:blank", title: code, status, code });
 
+/** Node's `process`, which runs these tests (the web project has no Node types). */
+type UnhandledListener = (reason: unknown) => void;
+const nodeProcess = (
+  globalThis as unknown as {
+    process: {
+      on(event: "unhandledRejection", listener: UnhandledListener): void;
+      off(event: "unhandledRejection", listener: UnhandledListener): void;
+    };
+  }
+).process;
+
 const QUOTA = "A survey can store up to 1 MB of files in total. This file was not uploaded.";
 const TRY_AGAIN = "The file was not uploaded. Please try again.";
 
@@ -93,9 +104,10 @@ function setUp(options: { closed?: () => boolean } = {}) {
     maxAssetBytesPerSurvey: MAX,
     isClosed: options.closed,
   });
-  const request = (files: File[]): UploadRequest => ({
+  const request = (files: File[], callback?: UploadRequest["callback"]): UploadRequest => ({
     files,
-    callback: (status, url) => callbacks.push(url === undefined ? [status] : [status, url]),
+    callback:
+      callback ?? ((status, url) => callbacks.push(url === undefined ? [status] : [status, url])),
   });
   /** Lets the upload's answer reach the handler. */
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -103,7 +115,7 @@ function setUp(options: { closed?: () => boolean } = {}) {
     uploaded,
     notified,
     callbacks,
-    send: (files: File[]) => handle(request(files)),
+    send: (files: File[], callback?: UploadRequest["callback"]) => handle(request(files, callback)),
     succeed: async () => {
       answer!.resolve(stored);
       await settle();
@@ -157,6 +169,30 @@ describe("the upload handler", () => {
 
     expect(upload.uploaded).toEqual([first]);
     expect(upload.callbacks).toEqual([["success", stored.url]]);
+  });
+
+  it("keeps a throw in the Creator's success callback from becoming an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    nodeProcess.on("unhandledRejection", onUnhandled);
+    try {
+      const upload = setUp();
+      const statuses: string[] = [];
+
+      upload.send([fileOf(3)], (status) => {
+        statuses.push(status);
+        throw new Error("Creator failed");
+      });
+      await upload.succeed();
+      // Node reports unhandled rejections after the microtasks of a macrotask.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      expect(statuses).toEqual(["success"]);
+      expect(upload.notified).toEqual([]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      nodeProcess.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("reports an error when there is no file", () => {

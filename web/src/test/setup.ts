@@ -45,7 +45,8 @@ globalThis.Request = class extends NodeRequest {
     if (init?.body instanceof FormData) {
       const { body, contentType } = multipartBody(init.body);
       const headers = new Headers(init.headers);
-      headers.set("Content-Type", contentType);
+      // As a browser: a Content-Type the caller set stays.
+      if (!headers.has("Content-Type")) headers.set("Content-Type", contentType);
       nodeInit = { ...init, body, headers, duplex: "half" } as RequestInit;
     }
     super(

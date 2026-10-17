@@ -78,15 +78,20 @@ export function createUploadHandler(
       callback("error");
       return;
     }
-    deps.upload(file).then(
-      (stored) => {
-        if (!closed()) callback("success", stored.url);
-      },
-      (error: unknown) => {
-        if (closed()) return;
-        deps.notify(uploadErrorMessage(error, maxAssetBytesPerSurvey));
-        callback("error");
-      },
-    );
+    deps
+      .upload(file)
+      .then(
+        (stored) => {
+          if (!closed()) callback("success", stored.url);
+        },
+        (error: unknown) => {
+          if (closed()) return;
+          deps.notify(uploadErrorMessage(error, maxAssetBytesPerSurvey));
+          callback("error");
+        },
+      )
+      // A throw in the Creator's callback is not an upload failure (the file is stored, and a
+      // second callback would contradict the first); it only must not become an unhandled rejection.
+      .catch(() => undefined);
   };
 }

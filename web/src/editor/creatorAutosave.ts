@@ -39,7 +39,10 @@ export interface AutoSaveCreator {
   dispose(): void;
 }
 
-/** The members of the Creator's Themes tab plugin the wiring uses (and its `autoSaveTimerId`). */
+/**
+ * The members of the Creator's Themes tab plugin the wiring uses. Its private `autoSaveTimerId` is
+ * read through a cast (see `cancelAutoSave`).
+ */
 export interface AutoSaveThemeTab {
   readonly onThemeSelected: CreatorEvent;
   readonly onThemePropertyChanged: CreatorEvent;
