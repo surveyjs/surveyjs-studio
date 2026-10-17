@@ -312,12 +312,12 @@ pnpm demo:azurite:down
 
 ## What is not in Step 6
 
-- Uploading images and files from the editor, and the editor's file quota: Step 7. Until then, use image
-  links.
+- Uploading images and files from the editor, and the editor's file quota: Step 7 (done, see
+  [the Step 7 demo](step-07.md)). Until then, use image links.
 - Machine translation in the Translation tab: needs a service that is not part of the API.
 - Opening, comparing or restoring one history entry: phase 2.
 - The run page and the public endpoints that the embed code calls (`/s/<id>`, `/api/v1/public/...`): Step 8.
-- Deleting the editor's preview image on a save, as the old editor does: Step 7 (there is no file store
-  yet).
+- Deleting the editor's preview image on a save, as the old editor does: not built in Step 7 either
+  ([ADR 0013](../adr/0013-editor-uploads-and-files.md), R4).
 - jQuery and the Pop-up display method in the Embed tabs, and pixel parity of those tabs: see
   [ADR 0012](../adr/0012-editor-content-and-history.md#the-page-r21-to-r26).

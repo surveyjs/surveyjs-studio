@@ -128,6 +128,12 @@ without leaving the editor (not shown on a small screen).
 The new name shows at once. If saving fails, the old name returns and the page says "Could not rename the
 survey. Please try again.". The rules for names are those of [Rename](managing-a-survey.md#rename).
 
+## Images and files
+
+Choose a picture or a video in an Image question, an image choice, the survey logo or a theme background
+and it is uploaded to the server. The allowed types, the limit per survey and what happens to the files
+when you clone or delete a survey are on [Images and files in your survey](images-and-files.md).
+
 ## Embed tabs
 
 **Embed Survey** and **Embed Creator** show code for your own application. Choose the platform
@@ -164,4 +170,6 @@ with `SURVEYJS_LICENSE_KEY` (see [Development](../development.md#environment-var
 - A survey definition or a theme can be up to about 30 MB (the server setting
   `LIMIT_MAX_DOCUMENT_BYTES`). A larger one is refused, and the bar says **Changes are not saved**.
   Large images inside a survey are the usual cause: use image links.
-- Uploading files (images and logos) from the editor arrives in a later version.
+- Images, logos and videos you choose in the editor are uploaded to the server, up to 50 MB for each
+  survey (the server setting `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`). See
+  [Images and files in your survey](images-and-files.md).

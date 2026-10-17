@@ -34,3 +34,12 @@ The first per-route override is not for files. The survey definition and theme s
 30,000,000 bytes, reported as `limits.maxDocumentBytes`), because existing surveys with inline images are
 far larger than 1 MB. Every other route keeps the global limit. See
 [ADR 0012](0012-editor-content-and-history.md#the-body-limit-r12).
+
+## Addendum (Step 7)
+
+The upload route is not raised to `LIMIT_MAX_FILE_BYTES` either. A `multipart/form-data` body is read by
+the handler, so Fastify's `bodyLimit` does not apply to it. The editor upload (`uploadSurveyAsset`) is
+bounded by the **remaining quota** of the survey (`LIMIT_MAX_ASSET_BYTES_PER_SURVEY` minus what its files
+already use), through the busboy `fileSize` limit, and by fixed limits on the number and size of the other
+parts. `LIMIT_MAX_FILE_BYTES` stays for respondent files (Step 8). See
+[ADR 0013](0013-editor-uploads-and-files.md).

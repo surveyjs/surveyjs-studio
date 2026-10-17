@@ -152,6 +152,29 @@ Never put a key in a file of this repository.
 **Body limit.** The definition and theme saves accept up to `LIMIT_MAX_DOCUMENT_BYTES` (default
 30,000,000 bytes); other routes keep `LIMIT_MAX_RESPONSE_BYTES`. The conformance suite lowers it to 262144.
 
+**Uploads.** Choosing a picture or a video in the editor (an Image question, an image choice, the logo, a
+theme background) uploads it through `POST /surveys/{id}/assets` and puts the returned link into the
+survey ([Uploads and files](api/uploads.md), [for users](user-guide/images-and-files.md)). Where the
+files go:
+
+| Mode    | Where uploaded files are stored                                                                                                                                                    |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| memory  | In the server's memory. A restart loses them, and the links then answer `404` (like all memory data)                                                                               |
+| Azurite | In the blob container `my-surveys-files` of the replica (created on the first upload), as `{surveyId}/{fileId}`. They stay until the survey is deleted or `pnpm demo:azurite:down` |
+
+The legacy file share `surveyfiles` is not used in either mode.
+
+**Try the quota message.** A survey may hold `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` bytes of files (default
+50 MB). To see the message without a 50 MB file, start the demo with a small limit (Git Bash):
+
+```sh
+LIMIT_MAX_ASSET_BYTES_PER_SURVEY=1048576 pnpm demo
+```
+
+PowerShell: `$env:LIMIT_MAX_ASSET_BYTES_PER_SURVEY = "1048576"; pnpm demo`. Then choose an image of more than
+1 MB: the editor shows "A survey can store up to 1 MB of files in total. This file was not uploaded." The
+Step 7 demo script has the full walk-through ([demo](demo/step-07.md)).
+
 ## Azurite mode
 
 Azurite mode runs the server and the tools against a local replica of the legacy stores, and signs
