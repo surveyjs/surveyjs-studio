@@ -9,18 +9,22 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
-import { createProviders } from "./providers/index.js";
+import { newFileId } from "./domain/file-id.js";
+import { createProviders, type ProviderSet } from "./providers/index.js";
 import { ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
+/** The providers of the last started app. */
+let providers: ProviderSet | undefined;
 
 async function start(
   env: Record<string, string> = {},
   options?: BuildOptions,
 ): Promise<FastifyInstance> {
   const config = loadConfig({ ...testEnv, ...env });
-  app = await buildApp(config, await createProviders(config), options);
+  providers = await createProviders(config);
+  app = await buildApp(config, providers, options);
   return app;
 }
 
@@ -224,11 +228,12 @@ describe("operations without a handler", () => {
 
   it("multipart uploads reach the operation instead of answering 415", async () => {
     const boundary = "----test";
-    const { server, headers } = await startSignedIn();
-    const res = await server.inject({
+    const res = await (
+      await start()
+    ).inject({
       method: "POST",
-      url: "/api/v1/surveys/s1/assets",
-      headers: { ...headers, "content-type": `multipart/form-data; boundary=${boundary}` },
+      url: "/api/v1/public/surveys/s1/files",
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
       payload: [
         `--${boundary}`,
         'Content-Disposition: form-data; name="file"; filename="a.txt"',
@@ -241,6 +246,18 @@ describe("operations without a handler", () => {
     });
     expect(res.statusCode).toBe(501);
     expect(res.json()).toMatchObject({ code: "not-implemented" });
+  });
+
+  it("a JSON body to a multipart operation answers 415", async () => {
+    const { server, headers } = await startSignedIn();
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/v1/surveys/s1/assets",
+      headers,
+      payload: { file: "x" },
+    });
+    expect(res.statusCode).toBe(415);
+    expect(res.json()).toMatchObject({ code: "unsupported-media-type" });
   });
 
   it("unknown /api/v1 routes stay 404 not-found", async () => {
@@ -272,6 +289,7 @@ function contractOperations(): ContractOperation[] {
   const pathValues: Record<string, string> = {
     surveyId: surveyFeedback.id,
     projectId: PROJECT_A_ID,
+    fileId: STORED_FILE.id,
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
@@ -290,6 +308,17 @@ function contractOperations(): ContractOperation[] {
   return operations;
 }
 
+/** A file the coverage test stores before `downloadFile` (the fixtures hold none). */
+const STORED_FILE = {
+  id: newFileId(surveyFeedback.id),
+  surveyId: surveyFeedback.id,
+  kind: "asset",
+  name: "a.png",
+  contentType: "image/png",
+  size: 1,
+  createdAt: "2026-01-01T00:00:00.000Z",
+} as const;
+
 describe("contract coverage", () => {
   const operations = contractOperations();
 
@@ -301,6 +330,9 @@ describe("contract coverage", () => {
     "%s is routed under /api/v1",
     async (_id, op) => {
       const { server, headers } = await startSignedIn();
+      if (op.operationId === "downloadFile") {
+        await providers?.files.putFile(STORED_FILE, Buffer.from([0]));
+      }
       const res = await server.inject({
         method: op.method as "GET",
         url: `/api/v1${op.url}`,

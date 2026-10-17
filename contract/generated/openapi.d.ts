@@ -388,6 +388,14 @@ export interface paths {
          * @description Images and other files placed into the survey from Survey Creator. Each
          *     survey has a total quota (see `AppConfig.limits`); exceeding it returns
          *     `413 quota-exceeded`.
+         *
+         *     Send one file as the multipart part `file`. Its type is detected from its
+         *     content (the declared type and the file name are ignored); allowed are PNG,
+         *     JPEG, GIF, WebP, AVIF, BMP and SVG images and MP4, WebM and Ogg videos,
+         *     anything else is `415`. A survey's files count towards
+         *     `limits.maxAssetBytesPerSurvey` until the survey is deleted; an upload that
+         *     would go over it is `413 quota-exceeded`. Copies of a survey get copies of
+         *     its files.
          */
         post: operations["uploadSurveyAsset"];
         delete?: never;
@@ -600,7 +608,12 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Download a stored file */
+        /**
+         * Download a stored file
+         * @description Public: the unguessable URL is the permission. Images are served `inline`,
+         *     other files as `attachment`. Deleting the survey deletes its files (`404`
+         *     afterwards; caches may keep a copy for up to an hour).
+         */
         get: operations["downloadFile"];
         put?: never;
         post?: never;
@@ -722,7 +735,9 @@ export interface components {
              */
             surveyjsLicenseKey?: string | null;
             limits: {
+                /** @description Total bytes of editor uploads one survey may hold. */
                 maxAssetBytesPerSurvey: number;
+                /** @description Largest respondent file, in bytes. */
                 maxFileBytes: number;
                 maxResponseBytes: number;
                 /** @description Largest survey definition or theme body accepted, in bytes. */
@@ -873,15 +888,20 @@ export interface components {
         SurveyTheme: {
             [key: string]: unknown;
         };
+        /** @description One file in the multipart part `file`. */
         FileUpload: {
             file: string;
         };
         StoredFile: {
+            /** @description Opaque; at least 128 bits of randomness. */
             id: string;
             /** @description Absolute URL of `GET /public/files/{fileId}`; this is what goes into the survey JSON or response. */
             url: string;
+            /** @description The uploaded file name, without any folder part. */
             name: string;
+            /** @description Detected from the file's content. */
             contentType: string;
+            /** @description Bytes. */
             size: number;
         };
         HistoryEntry: {
@@ -1914,7 +1934,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Stored. */
+            /** @description Stored. `Location` is the file's download path. */
             201: {
                 headers: {
                     Location: components["headers"]["Location"];
@@ -1924,11 +1944,13 @@ export interface operations {
                     "application/json": components["schemas"]["StoredFile"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listSurveyHistory: {
@@ -2261,12 +2283,27 @@ export interface operations {
             /** @description The file content. */
             200: {
                 headers: {
-                    "Content-Disposition": components["headers"]["ContentDisposition"];
-                    "Cache-Control"?: string;
+                    /** @description `inline` for images, else `attachment`, with `filename` and `filename*`. */
+                    "Content-Disposition": string;
+                    /** @description Public, cacheable for up to an hour. */
+                    "Cache-Control": string;
+                    /** @description Always `nosniff`; the served type matches the content. */
+                    "X-Content-Type-Options": "nosniff";
+                    /** @description A sandboxing policy, so a file opened directly runs no script. */
+                    "Content-Security-Policy": string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": string;
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/gif": string;
+                    "image/webp": string;
+                    "image/avif": string;
+                    "image/bmp": string;
+                    "image/svg+xml": string;
+                    "video/mp4": string;
+                    "video/webm": string;
+                    "video/ogg": string;
                 };
             };
             404: components["responses"]["NotFound"];

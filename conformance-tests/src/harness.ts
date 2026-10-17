@@ -56,6 +56,26 @@ export async function call(
   return response;
 }
 
+export interface UploadOptions {
+  /** The concrete path, when it differs from the contract's path template. */
+  readonly path?: string;
+  readonly headers?: Record<string, string>;
+  /** Sent as multipart/form-data (fetch sets the media type and its boundary). */
+  readonly form: FormData;
+}
+
+/** POSTs a multipart form to `/api/v1{path}` and fails unless the response conforms. */
+export async function upload(pathTemplate: string, options: UploadOptions): Promise<Response> {
+  const response = await fetch(`${baseUrl}/api/v1${options.path ?? pathTemplate}`, {
+    method: "POST",
+    redirect: "manual",
+    ...(options.headers && { headers: options.headers }),
+    body: options.form,
+  });
+  await expectConforms("POST", pathTemplate, response);
+  return response;
+}
+
 /** The Problem `code` of a response. */
 export async function codeOf(response: Response): Promise<unknown> {
   return ((await response.clone().json()) as { code?: unknown }).code;

@@ -1,3 +1,4 @@
+import multipart from "@fastify/multipart";
 import type { operations } from "@my-surveys/contract";
 import type { FastifyPluginAsync, FastifyRequest, RouteHandlerMethod } from "fastify";
 import { authenticationHook, type AuthenticationOptions } from "./auth/authenticate.js";
@@ -26,6 +27,18 @@ export interface ApiOptions {
   readonly bodyLimits?: Partial<Record<OperationId, number>>;
 }
 
+/**
+ * Busboy limits of every multipart body (R12): one file, a few small fields. Uploads add their own
+ * `fileSize` (the default is the server's body limit).
+ */
+export const MULTIPART_LIMITS = {
+  files: 1,
+  fields: 10,
+  fieldSize: 1024,
+  parts: 20,
+  headerPairs: 100,
+} as const;
+
 function notImplemented(operationId: string): RouteHandlerMethod {
   return () => {
     throw new AppError({
@@ -49,7 +62,8 @@ function bodyGuard(
   body: NonNullable<ContractOperation["requestBody"]>,
 ): (request: FastifyRequest) => Promise<void> {
   return async (request) => {
-    if (request.body === undefined) {
+    // A multipart body is read by the handler (request.file()), so it never sets request.body.
+    if (request.body === undefined && !request.isMultipart()) {
       if (!body.required) return;
       throw new AppError({
         code: "validation-failed",
@@ -74,10 +88,13 @@ function bodyGuard(
  * Registers every contract operation as a route (mount it under `/api/v1`), with authentication
  * from the contract's security requirements and request validation from its schemas.
  */
-export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
+export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) => {
   const { contract, handlers, authentication, rateLimits = {}, bodyLimits = {} } = options;
   api.setValidatorCompiler(contract.compileValidator);
   api.decorateRequest("user", null);
+  // Parses multipart/form-data lazily, in the handler. Fastify's bodyLimit does not apply to it;
+  // the busboy limits do. Registered first, so the loop below finds its parser.
+  await api.register(multipart, { limits: MULTIPART_LIMITS });
 
   const mediaTypes = new Set(contract.operations.flatMap((op) => op.requestBody?.mediaTypes ?? []));
   for (const mediaType of mediaTypes) {
@@ -90,13 +107,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
         api.getDefaultJsonParser(onProtoPoisoning, onConstructorPoisoning),
       );
     } else {
-      // Not parsed yet (e.g. multipart/form-data): the handler receives the raw stream.
-      // TODO: replace with @fastify/multipart and per-route limits (maxFileBytes, the asset
-      // limits) in Step 7 (editor uploads) and Step 8 (respondent files). This pass-through
-      // bypasses Fastify's bodyLimit for these media types, but never buffers the body.
-      api.addContentTypeParser(mediaType, (_request, payload, done) => {
-        done(null, payload);
-      });
+      throw new Error(`No body parser for ${mediaType}`);
     }
   }
 
@@ -116,5 +127,4 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = (api, options) => {
       handler: handlers[operationId] ?? notImplemented(op.operationId),
     });
   }
-  return Promise.resolve();
 };
