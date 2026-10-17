@@ -20,15 +20,16 @@ import { demoAccountNotices, type AccountNotices } from "../../notices/account-n
 import { licenceNotices } from "../../notices/licence-rule.js";
 import { historyOrder, isAfterHistory, projectListOrder, surveyListOrder } from "../ordering.js";
 import type {
+  CloneOptions,
   HistoryPage,
   HistoryQuery,
-  FileStore,
   ProviderSet,
   SurveyPage,
   SurveyPageQuery,
   SurveyPosition,
 } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
+import { createAzureFileStore } from "./files.js";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
@@ -65,7 +66,7 @@ import {
  *
  * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
  * folder): survey creation, update, clone, delete and the definition and theme saves call the
- * writers of writes.ts.
+ * writers of writes.ts. Editor files live in a container of their own (files.ts).
  * Connection strings are secrets: no error or log line built here holds one.
  */
 
@@ -95,7 +96,12 @@ export interface AzureLegacyOptions {
   readonly accountNotices?: AccountNoticesSetting;
   /** Clock for the licence-expiry rule and the survey-delete audit row; default `Date.now`. */
   readonly now?: Clock;
+  /** Blob container of the editor files in the surveys account; default `my-surveys-files`. Tests only. */
+  readonly filesContainer?: string;
 }
+
+/** The editor files' container (Step 7, R2), invisible to legacy code. */
+const FILES_CONTAINER = "my-surveys-files";
 
 /** Users.email is varchar(200) (layout section 3.11). */
 const MAX_EMAIL_LENGTH = 200;
@@ -474,9 +480,9 @@ export function createAzureLegacyProviders(
     return (await writeSurveyChanges(writeTargets, id, changes)) ? getSurvey(id) : null;
   }
 
-  async function cloneSurvey(sourceId: string, copy: NewSurvey) {
+  async function cloneSurvey(sourceId: string, copy: NewSurvey, options?: CloneOptions) {
     if (!isGuid(sourceId)) return null;
-    const id = await writeClonedSurvey(writeTargets, sourceId, copy);
+    const id = await writeClonedSurvey(writeTargets, sourceId, copy, options?.rewriteText);
     return id === null ? null : storedSurvey(id);
   }
 
@@ -594,17 +600,6 @@ export function createAzureLegacyProviders(
     await account.tables.listTables({ abortSignal: signal }).byPage({ maxPageSize: 1 }).next();
   }
 
-  // Temporary: replaced by the Azure file store in Task 2.
-  const notImplemented = () => Promise.reject(new Error("not implemented until Task 2"));
-  const notImplementedFiles: FileStore = {
-    putFile: notImplemented,
-    getFile: notImplemented,
-    usage: notImplemented,
-    deleteFile: notImplemented,
-    deleteSurveyFiles: notImplemented,
-    copySurveyAssets: notImplemented,
-  };
-
   return {
     name: "azure-legacy",
     surveys: {
@@ -635,7 +630,10 @@ export function createAzureLegacyProviders(
       deleteSurvey,
     },
 
-    files: notImplementedFiles,
+    files: createAzureFileStore(surveysAccount.blobs, {
+      container: options.filesContainer ?? FILES_CONTAINER,
+    }),
+
     directory: {
       async getUser(id) {
         if (!isGuid(id)) return null;

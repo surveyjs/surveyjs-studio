@@ -5,8 +5,10 @@ import type {
   AppendBlobClient,
   BlobRequestConditions,
   BlobServiceClient,
+  ContainerClient,
 } from "@azure/storage-blob";
 import sql from "mssql";
+import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   NewSurvey,
   SaveOutcome,
@@ -14,16 +16,18 @@ import type {
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  StoredFileRecord,
 } from "../../domain/types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { isGuid } from "./mapping.js";
+import { fileRecordFromBlob, isGuid } from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
  * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
- * Step 6: definition and theme saves. Each write uses the format the legacy site writes (layout
- * section 5.3).
+ * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
+ * legacy code never reads) and clone rewriting. Each survey write uses the format the legacy site
+ * writes (layout section 5.3).
  *
  * Errors and log lines built here hold operation names, driver codes and row ids only, never row
  * content or a connection string.
@@ -504,6 +508,8 @@ export async function writeSurveyChanges(
  * source's `surveyjson` blob copied byte for byte (no blobs when the source has none), then the
  * source's raw `theme` text on the copy's row (without moving `timestamp`) and a best-effort
  * `SURVEY_THEME_CHANGE` audit row. Results, history, layouts and settings are not copied.
+ * `rewriteText`, when given, is applied to the definition text (read as UTF-8) and the theme text
+ * before they are stored for the copy (Step 7, R11); without it the copy is byte for byte.
  *
  * Returns the copy's lower-case id, or null when no survey has `sourceId` (nothing is written).
  * Store failures reject with LegacyStoreError; a duplicate copy id fails as in writeNewSurvey.
@@ -512,6 +518,7 @@ export async function writeClonedSurvey(
   targets: LegacyWriteTargets,
   sourceId: string,
   input: NewSurvey,
+  rewriteText?: (text: string) => string,
 ): Promise<string | null> {
   const source = checkedId("clone", sourceId);
   const copy = checked(input, "clone");
@@ -529,6 +536,11 @@ export async function writeClonedSurvey(
     theme = row.theme;
     // No blob until the first definition save (layout section 3.2).
     definition = await readBlob(targets.blobs, "surveyjson", source);
+    if (rewriteText) {
+      // One buffer for surveyjson, surveytext and the history point, so they stay byte-equal.
+      if (definition) definition = Buffer.from(rewriteText(definition.toString("utf8")), "utf8");
+      if (theme !== null && theme !== "") theme = rewriteText(theme);
+    }
   } catch (error) {
     throw new LegacyStoreError("survey clone", error);
   }
@@ -730,4 +742,155 @@ export async function writeThemeSave(
   const event = surveyEvent("SURVEY_THEME_CHANGE", id, savedAt.toISOString(), payload);
   await appendEventBestEffort(targets, id, event, "the theme is saved.");
   return { kind: "saved", stored };
+}
+
+/**
+ * Put Blob of block blob `{surveyId}/{fileId}` in `files`, refusing to replace a blob (R2). A
+ * missing container is created (private) and the upload tried once more.
+ */
+async function uploadNewFile(
+  files: ContainerClient,
+  file: StoredFileRecord,
+  content: Buffer,
+): Promise<void> {
+  const upload = () =>
+    files.getBlockBlobClient(`${file.surveyId}/${file.id}`).uploadData(content, {
+      blobHTTPHeaders: { blobContentType: file.contentType },
+      // Metadata is ASCII only, so the name is URI-encoded.
+      metadata: {
+        kind: file.kind,
+        name: encodeURIComponent(file.name),
+        createdat: new Date(file.createdAt).toISOString(),
+      },
+      conditions: { ifNoneMatch: "*" },
+    });
+  try {
+    await upload();
+  } catch (error) {
+    // A 404 is the container: Put Blob creates the blob itself.
+    if (statusOf(error) !== 404) throw error;
+    await files.createIfNotExists();
+    await upload();
+  }
+}
+
+/**
+ * Stores a new editor file as block blob `{container}/{surveyId}/{fileId}` (Step 7, R2): the type
+ * as the blob's content type, metadata `kind`, `name` and `createdat`. Never replaces a blob: when
+ * a file with this id exists it rejects and nothing is changed.
+ *
+ * Store failures reject with LegacyStoreError, which names the file operation only.
+ */
+export async function writeFile(
+  blobs: BlobServiceClient,
+  container: string,
+  file: StoredFileRecord,
+  content: Buffer,
+): Promise<void> {
+  if (!FILE_ID_PATTERN.test(file.id) || surveyIdOfFile(file.id) !== file.surveyId) {
+    throw new Error("File upload refused: the file id must belong to the file's survey");
+  }
+  if (content.length !== file.size) {
+    throw new Error("File upload refused: the size does not match the content");
+  }
+  try {
+    await uploadNewFile(blobs.getContainerClient(container), file, content);
+  } catch (error) {
+    throw new LegacyStoreError("file upload", error);
+  }
+}
+
+/** Deletes blob `{container}/{surveyId}/{fileId}`; false when there was none. */
+export async function writeFileDeletion(
+  blobs: BlobServiceClient,
+  container: string,
+  fileId: string,
+): Promise<boolean> {
+  const id = fileId.toLowerCase();
+  const surveyId = surveyIdOfFile(id);
+  if (surveyId === null) return false;
+  try {
+    await blobs
+      .getContainerClient(container)
+      .getBlobClient(`${surveyId}/${id}`)
+      .delete({ deleteSnapshots: "include" });
+    return true;
+  } catch (error) {
+    if (statusOf(error) === 404) return false;
+    throw new LegacyStoreError("file delete", error);
+  }
+}
+
+/**
+ * Deletes every blob under `{container}/{surveyId}/`, of every kind (R3); returns how many were
+ * deleted. A missing container holds none.
+ */
+export async function writeSurveyFilesDeletion(
+  blobs: BlobServiceClient,
+  container: string,
+  surveyId: string,
+): Promise<number> {
+  const id = checkedId("file delete", surveyId);
+  try {
+    let deleted = 0;
+    for (const name of await blobNames(blobs, container, `${id}/`)) {
+      try {
+        await blobs.getContainerClient(container).getBlobClient(name).delete({
+          deleteSnapshots: "include",
+        });
+        deleted += 1;
+      } catch (error) {
+        // Deleted by someone else since the listing.
+        if (statusOf(error) !== 404) throw error;
+      }
+    }
+    return deleted;
+  } catch (error) {
+    throw new LegacyStoreError("file delete", error);
+  }
+}
+
+/**
+ * Copies each asset of `fromSurveyId` to `toSurveyId` under a new id, with the same name, type and
+ * bytes and `createdAt` = `copiedAt` (R11). Returns old id → new id. On a failure part-way the
+ * copies made so far are deleted (best effort), then it rejects with LegacyStoreError.
+ */
+export async function writeSurveyAssetsCopy(
+  blobs: BlobServiceClient,
+  container: string,
+  fromSurveyId: string,
+  toSurveyId: string,
+  copiedAt: string,
+): Promise<ReadonlyMap<string, string>> {
+  const from = checkedId("file copy", fromSurveyId);
+  const to = checkedId("file copy", toSurveyId);
+  const files = blobs.getContainerClient(container);
+  const copied = new Map<string, string>();
+  try {
+    const sources: StoredFileRecord[] = [];
+    await ignoringNotFound(async () => {
+      for await (const blob of files.listBlobsFlat({ prefix: `${from}/`, includeMetadata: true })) {
+        const file = fileRecordFromBlob(blob.name, blob.properties, blob.metadata);
+        if (file?.kind === "asset") sources.push(file);
+      }
+    });
+    for (const source of sources) {
+      const content = await files.getBlobClient(`${from}/${source.id}`).downloadToBuffer();
+      const copy: StoredFileRecord = {
+        ...source,
+        id: newFileId(to),
+        surveyId: to,
+        size: content.length,
+        createdAt: copiedAt,
+      };
+      await uploadNewFile(files, copy, content);
+      copied.set(source.id, copy.id);
+    }
+    return copied;
+  } catch (error) {
+    for (const id of copied.values()) {
+      await writeFileDeletion(blobs, container, id).catch(() => false);
+    }
+    throw new LegacyStoreError("file copy", error);
+  }
 }

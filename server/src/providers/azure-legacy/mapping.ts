@@ -1,10 +1,13 @@
+import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
+  FileKind,
   HistoryEntryRecord,
   ProjectMembership,
   ProjectRecord,
   SurveyDefinition,
   SurveyRecord,
   SurveyResponse,
+  StoredFileRecord,
   SurveyTheme,
   User,
 } from "../../domain/types.js";
@@ -162,6 +165,56 @@ export function historyEntryFromBlob(
     id: guid(pointId),
     at: at.toISOString(),
     userId: userId !== undefined && isGuid(userId) ? guid(userId) : null,
+  };
+}
+
+const isFileKind = (value: string | undefined): value is FileKind => value === "asset";
+
+/** The `name` metadata decoded (it is URI-encoded: metadata is ASCII only); null when unreadable. */
+function decodedFileName(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stored file from a blob of the files container (Step 7, R2). Only `{surveyId}/{fileId}` in
+ * lower case, with the survey part equal to the one the id names, is a file; so is only a blob
+ * with a known `kind` metadata, a content type and a length. Other blobs give null (treated as
+ * missing). The name is the decoded `name` metadata, else the file id; the time is the
+ * `createdat` metadata when it is ISO 8601 UTC, else the epoch.
+ */
+export function fileRecordFromBlob(
+  name: string,
+  properties: {
+    readonly contentType?: string | undefined;
+    readonly contentLength?: number | undefined;
+  },
+  metadata: Readonly<Record<string, string | undefined>> | undefined,
+): StoredFileRecord | null {
+  const slash = name.indexOf("/");
+  const id = name.slice(slash + 1);
+  if (slash < 0 || !FILE_ID_PATTERN.test(id)) return null;
+  const surveyId = surveyIdOfFile(id);
+  if (surveyId === null || name.slice(0, slash) !== surveyId) return null;
+  const kind = metadata?.kind;
+  const { contentType, contentLength } = properties;
+  if (!isFileKind(kind) || !contentType || contentLength === undefined) return null;
+  const createdAt = metadata?.createdat;
+  return {
+    id,
+    surveyId,
+    kind,
+    name: decodedFileName(metadata?.name) ?? id,
+    contentType,
+    size: contentLength,
+    createdAt:
+      createdAt !== undefined && SAVED_AT.test(createdAt) && Number.isFinite(Date.parse(createdAt))
+        ? new Date(createdAt).toISOString()
+        : EPOCH.toISOString(),
   };
 }
 
