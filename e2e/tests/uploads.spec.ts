@@ -75,10 +75,11 @@ test("an image chosen in the editor is uploaded, shown, saved, served, and remov
     expect(Buffer.compare(await served.body(), PNG_1X1)).toBe(0);
 
     const headers = await csrfHeaders(page);
-    await page.request.patch(`/api/v1/surveys/${survey.id}`, {
+    const archived = await page.request.patch(`/api/v1/surveys/${survey.id}`, {
       headers: { ...headers, "Content-Type": "application/merge-patch+json" },
       data: { archived: true },
     });
+    expect(archived.status()).toBe(200);
     expect((await page.request.delete(`/api/v1/surveys/${survey.id}`, { headers })).status()).toBe(
       204,
     );
@@ -116,6 +117,8 @@ test.describe("quota", () => {
       await chooseImage(page, paddedPng(1_200_000), "too-big.png");
       await expect(creatorNotification(page)).toContainText(message);
       expect(requests).toHaveLength(0);
+      // The toast fades after a couple of seconds; the next one must be a new one.
+      await expect(creatorNotification(page)).toBeHidden();
 
       const refused = page.waitForResponse(
         (response) => isAssetUpload(response.request()) && response.status() === 413,
