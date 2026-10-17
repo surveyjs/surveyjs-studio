@@ -143,6 +143,7 @@ describe("uploadSurveyAsset and downloadFile", () => {
     expect(file.headers.get("cache-control")).toBe("public, max-age=3600");
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
     expect(file.headers.get("content-security-policy")).toContain("sandbox");
+    expect(file.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
 
     const upper = await download(stored.id.toUpperCase());
     expect(upper.status).toBe(200);

@@ -2291,6 +2291,8 @@ export interface operations {
                     "X-Content-Type-Options": "nosniff";
                     /** @description A sandboxing policy, so a file opened directly runs no script. */
                     "Content-Security-Policy": string;
+                    /** @description Always `cross-origin`, so surveys embedded on other sites show the files. */
+                    "Cross-Origin-Resource-Policy": "cross-origin";
                     [name: string]: unknown;
                 };
                 content: {

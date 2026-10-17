@@ -1021,6 +1021,10 @@ paths:
               description: A sandboxing policy, so a file opened directly runs no script.
               required: true
               schema: { type: string }
+            Cross-Origin-Resource-Policy:
+              description: Always `cross-origin`, so surveys embedded on other sites show the files.
+              required: true
+              schema: { type: string, enum: [cross-origin] }
           content:
             image/png:
               schema: { type: string, contentMediaType: image/png }
