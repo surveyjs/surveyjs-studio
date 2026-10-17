@@ -1,18 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { validateRunSearch } from "../../run/search";
 
 /**
- * The public run page of a survey (`/s/$surveyId`); a placeholder until Step 8. It sits outside
- * `_private`: no sign-in, no shell and no API call.
+ * The public run page of a survey (`/s/$surveyId`). It sits outside `_private`: no sign-in and no
+ * shell. The page itself (`$surveyId.lazy.tsx`) and the Form Library load on demand; every search
+ * member except `locale` prefills an answer.
  */
 export const Route = createFileRoute("/s/$surveyId")({
-  component: RunPlaceholder,
+  validateSearch: validateRunSearch,
 });
-
-function RunPlaceholder() {
-  return (
-    <main>
-      <h1>Survey</h1>
-      <p>The survey run page arrives in a later version.</p>
-    </main>
-  );
-}

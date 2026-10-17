@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PrivateRouteImport } from './routes/_private'
+import { Route as PublishedRouteImport } from './routes/published'
 import { Route as PrivateIndexRouteImport } from './routes/_private/index'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
 import { Route as PrivateSurveysSurveyIdEditRouteImport } from './routes/_private/surveys/$surveyId/edit'
@@ -18,6 +19,11 @@ import { Route as PrivateSurveysSurveyIdResultsRouteImport } from './routes/_pri
 
 const PrivateRoute = PrivateRouteImport.update({
   id: '/_private',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PublishedRoute = PublishedRouteImport.update({
+  id: '/published',
+  path: '/published',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivateIndexRoute = PrivateIndexRouteImport.update({
@@ -31,7 +37,7 @@ const SSurveyIdRoute = SSurveyIdRouteImport.update({
   id: '/s/$surveyId',
   path: '/s/$surveyId',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/s/$surveyId.lazy').then((d) => d.Route))
 const PrivateSurveysSurveyIdEditRoute =
   PrivateSurveysSurveyIdEditRouteImport.update({
     id: '/surveys/$surveyId/edit',
@@ -65,12 +71,14 @@ const PrivateSurveysSurveyIdResultsRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof PrivateIndexRoute
+  '/published': typeof PublishedRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
   '/surveys/$surveyId/history': typeof PrivateSurveysSurveyIdHistoryRoute
   '/surveys/$surveyId/results': typeof PrivateSurveysSurveyIdResultsRoute
 }
 export interface FileRoutesByTo {
+  '/published': typeof PublishedRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/': typeof PrivateIndexRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
@@ -80,6 +88,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_private': typeof PrivateRouteWithChildren
+  '/published': typeof PublishedRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/_private/': typeof PrivateIndexRoute
   '/_private/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
@@ -90,12 +99,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/published'
     | '/s/$surveyId'
     | '/surveys/$surveyId/edit'
     | '/surveys/$surveyId/history'
     | '/surveys/$surveyId/results'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/published'
     | '/s/$surveyId'
     | '/'
     | '/surveys/$surveyId/edit'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_private'
+    | '/published'
     | '/s/$surveyId'
     | '/_private/'
     | '/_private/surveys/$surveyId/edit'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   PrivateRoute: typeof PrivateRouteWithChildren
+  PublishedRoute: typeof PublishedRoute
   SSurveyIdRoute: typeof SSurveyIdRoute
 }
 
@@ -123,6 +136,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof PrivateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/published': {
+      id: '/published'
+      path: '/published'
+      fullPath: '/published'
+      preLoaderRoute: typeof PublishedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_private/': {
@@ -182,6 +202,7 @@ const PrivateRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   PrivateRoute: PrivateRouteWithChildren,
+  PublishedRoute: PublishedRoute,
   SSurveyIdRoute: SSurveyIdRoute,
 }
 export const routeTree = rootRouteImport
