@@ -131,7 +131,7 @@ const MAX_NAME_LENGTH = 255;
  */
 export function fileNameOf(raw: string | undefined): string {
   const base = (raw ?? "").split(/[/\\]/).pop() ?? "";
-  const printable = [...base.replace(/\p{Surrogate}/gu, "�")]
+  const printable = [...base.replace(/\p{Surrogate}/gu, "\ufffd")]
     .filter((char) => char >= " " && char !== "\u007f")
     .join("")
     .trim();

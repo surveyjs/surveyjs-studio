@@ -161,6 +161,6 @@ describe("fileNameOf", () => {
   });
 
   it("replaces a lone surrogate", () => {
-    expect(fileNameOf("a\ud800b.png")).toBe("a�b.png");
+    expect(fileNameOf("a\ud800b.png")).toBe("a\ufffdb.png");
   });
 });
