@@ -14,6 +14,9 @@ committed.
   the CSRF header, sign-out and rate limiting.
 - [Uploads and files](uploads.md): editor uploads, the allowed types, the quota, the download headers and
   file ids.
+- [Public endpoints, rate limits and idempotency](public-endpoints.md): loading and answering a published
+  survey, respondent files, `Idempotency-Key`, the one-response rule, `TRUST_PROXY`, payload limits and
+  rate limits.
 
 ## View the API reference
 
@@ -68,6 +71,7 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | Step 5 | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
 | Step 6 | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
 | Step 7 | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
+| Step 8 | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                          |
 
 ### Step 4: surveys and projects
 
@@ -315,8 +319,24 @@ curl -b cookies.txt "$API/surveys/$ID/history?limit=2"
 
 The type is found from the content, a survey's files are limited by `limits.maxAssetBytesPerSurvey`, and
 deleting a survey deletes its files. A clone copies them. Everything is in
-[Uploads and files](uploads.md). `uploadResponseFile` still answers `501` (Step 8).
+[Uploads and files](uploads.md).
 
-Every other operation answers `501` with a Problem Details body (`code: not-implemented`), after
+### Step 8: the run page's operations
+
+| Operation            | Behaviour                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getPublishedSurvey` | `GET /public/surveys/{surveyId}`, optional `clientId`. No session. `200` with the definition, the theme and, with a `clientId`, `completed`. `404 survey-not-available` when unknown or unpublished |
+| `submitResponse`     | `POST /public/surveys/{surveyId}/responses`, `{ data, clientId? }`, optional `Idempotency-Key`. No session. `201 { id }`; `409` when the one-response limit is on and the client has completed      |
+| `uploadResponseFile` | `POST /public/surveys/{surveyId}/files`, multipart part `file`. No session. `201`, `Location` and the stored file; any type, up to `limits.maxFileBytes`                                            |
+| `getResultStats`     | `GET /surveys/{surveyId}/results/stats`. Needs a session. `200 { count, firstSubmittedAt, lastSubmittedAt }`; `404` for an unknown survey or one the user cannot see                                |
+
+A survey runs while it is published, archived or not. The three public operations are rate limited per
+address. The rules, `curl` examples, the idempotency scheme, the `cookieName` convention, `TRUST_PROXY` and
+the error table are in [Public endpoints, rate limits and idempotency](public-endpoints.md).
+`getResultStats` is built early, because it is the only way to see that a response was stored; Step 9 adds
+the other results operations.
+
+Every other operation (the results, views and exports of Steps 9 and 10, the project and member writes)
+answers `501` with a Problem Details body (`code: not-implemented`), after
 authentication: a private operation called without a session answers `401`. `passwordLogin` stays
 `501` until P1.

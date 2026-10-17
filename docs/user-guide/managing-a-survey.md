@@ -43,7 +43,7 @@ Items are shown in this order. "Modify" means you can modify the survey.
 
 | Item                  | Shown when                    | What it does                                                                                |
 | --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| **Run**               | The survey is published       | Opens `/s/<survey id>` in a new tab (a placeholder page for now)                            |
+| **Run**               | The survey is published       | Opens `/s/<survey id>` in a new tab: the survey as respondents see it                       |
 | **Edit**              | Always                        | Opens the editor, `/surveys/<survey id>/edit` ([Designing a survey](designing-a-survey.md)) |
 | **Clone**             | Always                        | Makes a copy (see below)                                                                    |
 | (separator)           | Modify                        |                                                                                             |
@@ -73,11 +73,13 @@ There is no pencil in the Archived view.
 ### Run, Publish and Unpublish
 
 **Publish** and **Unpublish** change the survey at once, without a question. **Run** is in the menu
-only while the survey is published, and opens the survey's public address in a new tab. The page
-there is a placeholder ("The survey run page arrives in a later version.") until the run page is
-built. It needs no sign-in.
+only while the survey is published, and opens the survey's public address in a new tab. That address is
+what you give to respondents. It needs no sign-in. What respondents see, how the survey collects
+responses and how to stop it are in [Publishing and collecting
+responses](publishing-and-collecting-responses.md).
 
-Archiving a survey does not unpublish it.
+Archiving a survey does not unpublish it, and an archived survey that is still published keeps
+collecting responses. Unpublish it to stop.
 
 ### Clone
 
@@ -154,18 +156,17 @@ even when the new value is the same as the old one. The survey then moves to the
 A failed action shows one message above the list, such as "Could not archive the survey. Please try
 again.". The next action clears it. The list stays as it was.
 
-## The placeholder pages
+## The placeholder page
 
-Two addresses open pages that are not built yet. Each shows only a line of text:
+One address opens a page that is not built yet. It shows only a line of text:
 
 | Address                 | Opened by    | Shows                                                           |
 | ----------------------- | ------------ | --------------------------------------------------------------- |
 | `/surveys/<id>/results` | View Results | The survey name and "Survey results arrive in a later version." |
-| `/s/<id>`               | Run          | "Survey" and "The survey run page arrives in a later version."  |
 
 The results page needs you to be signed in and has a **Back to My Surveys** link. It says "This survey
-is not available." for a survey that does not exist or that you cannot see. The Run page needs no
-sign-in and does not look the survey up.
+is not available." for a survey that does not exist or that you cannot see. The run page (**Run**) is
+built: see [Publishing and collecting responses](publishing-and-collecting-responses.md).
 
 The editor (**Edit**) and the history page (**View History**) are described in
 [Designing a survey](designing-a-survey.md) and [Survey history](survey-history.md).
@@ -173,4 +174,5 @@ The editor (**Edit**) and the history page (**View History**) are described in
 ## Not here yet
 
 - The survey settings "Grant Access" and "Save Respondent IP" can be changed through the API only;
-  their switches arrive with the results page.
+  their switches arrive with the results page. "Save Respondent IP" is explained in [Publishing and
+  collecting responses](publishing-and-collecting-responses.md#save-respondent-ip).

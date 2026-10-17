@@ -104,13 +104,16 @@ Full description: [Authentication, sessions and CSRF](authentication.md).
   with the value of the readable `msid_csrf` cookie (double-submit). Otherwise: `403 csrf-token-invalid`.
 - Order of checks: authentication (`401`), CSRF (`403`), request validation, then the handler.
 - Bearer API tokens (`Authorization: Bearer <token>`) arrive in phase 2 (P1).
-- `/public/*` operations need no authentication.
+- `/public/*` operations need no authentication. They are rate limited per address
+  ([Public endpoints](public-endpoints.md#rate-limits)).
 
 ## Idempotent submissions
 
-A respondent submission may carry an `Idempotency-Key` header (up to 128 characters; a UUID is
-recommended). A repeated key returns the original result instead of storing a second response.
-Keys are remembered for 24 hours.
+A respondent submission may carry an `Idempotency-Key` header (1 to 128 characters; a UUID is
+recommended). A repeated key for the same survey returns the original response's `id` (`201`) instead of
+storing a second response. Keys are remembered for at least 24 hours. How the key becomes the response id,
+and how it works with the one-response limit, is in
+[Public endpoints](public-endpoints.md#idempotency).
 
 ## Phasing
 
