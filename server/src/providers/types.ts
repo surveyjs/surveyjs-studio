@@ -1,4 +1,6 @@
+import type { Readable } from "node:stream";
 import type {
+  FileKind,
   HistoryEntryRecord,
   NewSurvey,
   ProjectMembership,
@@ -7,6 +9,7 @@ import type {
   SurveyOwner,
   SurveyRecord,
   SaveOutcome,
+  StoredFileRecord,
   SurveyTheme,
   User,
   Versioned,
@@ -54,6 +57,47 @@ export interface HistoryPage {
   readonly next: HistoryPosition | null;
 }
 
+export interface CloneOptions {
+  /**
+   * Applied to the source's stored definition text and theme text before they are stored for the copy
+   * (memory: `JSON.stringify` of the stored object, parsed back after). The copy's history entry holds
+   * the rewritten definition. Absent: the copy is made exactly as in Step 5.
+   */
+  readonly rewriteText?: (text: string) => string;
+}
+
+export interface StoredFileContent {
+  readonly file: StoredFileRecord;
+  /** The bytes, streamed. The reader consumes it to the end or destroys it. */
+  readonly content: Readable;
+}
+
+export interface FileStore {
+  /**
+   * Stores a new file. `content.length` equals `file.size`. Rejects when a file with this id exists
+   * (nothing is changed then).
+   */
+  putFile(file: StoredFileRecord, content: Buffer): Promise<void>;
+  /** The file and its bytes; null for an unknown or malformed id. Ids match case-insensitively. */
+  getFile(id: string): Promise<StoredFileContent | null>;
+  /** Sum of `size` over the survey's files of this kind; 0 when it has none. */
+  usage(surveyId: string, kind: FileKind): Promise<number>;
+  /** Deletes one file; false when there was none (or the id is malformed). */
+  deleteFile(id: string): Promise<boolean>;
+  /** Deletes every file of the survey, of every kind; returns how many were deleted. */
+  deleteSurveyFiles(surveyId: string): Promise<number>;
+  /**
+   * Copies each asset of `fromSurveyId` to `toSurveyId` under a new id (`newFileId(toSurveyId)`), with the
+   * same name, type and bytes and `createdAt` = `copiedAt`. Returns old id → new id (empty when none).
+   * On a failure part-way it deletes the copies it made, then rejects.
+   */
+  copySurveyAssets(
+    fromSurveyId: string,
+    toSurveyId: string,
+    copiedAt: string,
+  ): Promise<ReadonlyMap<string, string>>;
+}
+
 export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
@@ -99,9 +143,17 @@ export interface SurveyStore {
   /**
    * Creates `copy` (legacy defaults, as `createSurvey`) with the source's definition and theme.
    * Returns the stored copy; null when no survey has `sourceId`. Throws on a duplicate copy id.
+   * `options.rewriteText` rewrites the stored definition and theme text for the copy (R11).
    */
-  cloneSurvey(sourceId: string, copy: NewSurvey): Promise<SurveyRecord | null>;
-  /** Deletes the survey and everything stored for it; false when no survey has this id. */
+  cloneSurvey(
+    sourceId: string,
+    copy: NewSurvey,
+    options?: CloneOptions,
+  ): Promise<SurveyRecord | null>;
+  /**
+   * Deletes the survey and everything stored for it; false when no survey has this id. Files are the
+   * FileStore's: the service deletes them first (R10).
+   */
   deleteSurvey(id: string): Promise<boolean>;
 }
 
@@ -122,6 +174,7 @@ export interface ProviderSet {
   readonly name: string;
   readonly surveys: SurveyStore;
   readonly directory: Directory;
+  readonly files: FileStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
   ready(): Promise<boolean>;

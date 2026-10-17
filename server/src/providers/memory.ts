@@ -23,6 +23,7 @@ import {
   projectListOrder,
   surveyListOrder,
 } from "./ordering.js";
+import { createMemoryFileStore } from "./memory-files.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -254,12 +255,17 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         surveys[index] = updated;
         return Promise.resolve(copySurvey(updated));
       },
-      cloneSurvey: (sourceId, copy) => {
+      cloneSurvey: (sourceId, copy, options) => {
         const source = findSurvey(sourceId);
         if (!source) return Promise.resolve(null);
+        const rewrite = options?.rewriteText;
+        const rewritten = (doc: Record<string, unknown> | undefined) =>
+          doc === undefined || !rewrite
+            ? doc
+            : (JSON.parse(rewrite(JSON.stringify(doc))) as Record<string, unknown>);
         try {
-          const stored = add(copy, definitions.get(source.id));
-          const theme = themes.get(source.id);
+          const stored = add(copy, rewritten(definitions.get(source.id)));
+          const theme = rewritten(themes.get(source.id));
           if (theme !== undefined) themes.set(stored.id, structuredClone(theme));
           return Promise.resolve(stored);
         } catch (error) {
@@ -276,6 +282,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         return Promise.resolve(true);
       },
     },
+    files: createMemoryFileStore(),
     directory: {
       getUser: (id) => {
         const found = users.find((u) => u.id === lower(id));

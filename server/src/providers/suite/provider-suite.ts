@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { NewSurvey, SurveyOwner, SurveyRecord } from "../../domain/types.js";
+import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
+import type { NewSurvey, StoredFileRecord, SurveyOwner, SurveyRecord } from "../../domain/types.js";
 import { surveyListOrder } from "../ordering.js";
 import type { ProviderSet, SurveyPosition } from "../types.js";
 import {
@@ -37,6 +38,12 @@ import {
 } from "./expected.js";
 
 const UNKNOWN_ID = "99999999-9999-4999-8999-999999999999";
+
+/** A minimal valid 1x1 PNG. */
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 /** The list position of a survey. */
 const positionOf = (survey: SurveyRecord): SurveyPosition => ({
@@ -915,6 +922,44 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await providers.surveys.cloneSurvey(UNKNOWN_ID, copy)).toBeNull();
         expect(await providers.surveys.getSurvey(copy.id)).toBeNull();
       });
+
+      it("rewrites the definition and theme text of the copy only, history included", async () => {
+        const definition = { title: "Logo OLD-MARKER", logo: "https://x/OLD-MARKER.png" };
+        const theme = { themeName: "t", cssVariables: { "--img": "url(OLD-MARKER)" } };
+        const source = await providers.surveys.createSurvey(newSurvey(freshScope()), definition);
+        const themeVersion = (await providers.surveys.getTheme(source.id))!.version;
+        await providers.surveys.saveTheme(source.id, theme, {
+          ifVersion: themeVersion,
+          savedAt: "2026-08-01T11:00:00.000Z",
+        });
+        const sourceHistory = await providers.surveys.listHistory({
+          surveyId: source.id,
+          limit: 50,
+        });
+        const copy = copyOf(freshScope());
+        const rewriteText = (text: string) => text.replaceAll("OLD-MARKER", "NEW-MARKER");
+        await providers.surveys.cloneSurvey(source.id, copy, { rewriteText });
+
+        const rewrittenDefinition = { title: "Logo NEW-MARKER", logo: "https://x/NEW-MARKER.png" };
+        expect((await providers.surveys.getDefinition(copy.id))?.content).toEqual(
+          rewrittenDefinition,
+        );
+        expect((await providers.surveys.getTheme(copy.id))?.content).toEqual({
+          themeName: "t",
+          cssVariables: { "--img": "url(NEW-MARKER)" },
+        });
+        const copyHistory = await providers.surveys.listHistory({ surveyId: copy.id, limit: 50 });
+        expect(copyHistory.items).toHaveLength(1);
+        expect(
+          await providers.surveys.getHistorySnapshot(copy.id, copyHistory.items[0]!.id),
+        ).toEqual(rewrittenDefinition);
+
+        expect((await providers.surveys.getDefinition(source.id))?.content).toEqual(definition);
+        expect((await providers.surveys.getTheme(source.id))?.content).toEqual(theme);
+        expect(await providers.surveys.listHistory({ surveyId: source.id, limit: 50 })).toEqual(
+          sourceHistory,
+        );
+      });
     });
 
     describe("surveys.deleteSurvey", () => {
@@ -944,6 +989,151 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect((await providers.surveys.getTheme(surveyFeedback.id))?.content).toEqual(
           feedbackTheme,
         );
+      });
+    });
+
+    describe("files", () => {
+      const fileRecord = (
+        surveyId: string,
+        over: Partial<StoredFileRecord> = {},
+      ): StoredFileRecord => ({
+        id: newFileId(surveyId),
+        surveyId,
+        kind: "asset",
+        name: "logo.png",
+        contentType: "image/png",
+        size: PNG.length,
+        createdAt: "2026-09-01T10:00:00.000Z",
+        ...over,
+      });
+      const read = async (id: string) => {
+        const found = await providers.files.getFile(id);
+        if (!found) return null;
+        const chunks: Buffer[] = [];
+        for await (const chunk of found.content) chunks.push(chunk as Buffer);
+        return { file: found.file, bytes: Buffer.concat(chunks) };
+      };
+      const put = async (
+        surveyId: string,
+        bytes: Buffer = PNG,
+        over: Partial<StoredFileRecord> = {},
+      ) => {
+        const file = fileRecord(surveyId, { size: bytes.length, ...over });
+        await providers.files.putFile(file, bytes);
+        return file;
+      };
+      /** A fresh survey id (the store does not need the survey to exist), files removed at the end. */
+      const surveyIds: string[] = [];
+      const freshSurveyId = (): string => {
+        const id = randomUUID();
+        surveyIds.push(id);
+        return id;
+      };
+      afterAll(async () => {
+        for (const id of surveyIds) await providers.files.deleteSurveyFiles(id);
+      });
+
+      it("stores a file and reads back its record and bytes, in any id case", async () => {
+        const surveyId = freshSurveyId();
+        const file = await put(surveyId);
+        const found = await read(file.id);
+        expect(found?.file).toEqual(file);
+        expect(found?.bytes.equals(PNG)).toBe(true);
+        expect((await read(file.id.toUpperCase()))?.file).toEqual(file);
+      });
+
+      it("answers null for a well-formed unknown id and for a malformed id", async () => {
+        expect(await providers.files.getFile(newFileId(freshSurveyId()))).toBeNull();
+        expect(await providers.files.getFile("not-a-file-id")).toBeNull();
+        expect(await providers.files.getFile("")).toBeNull();
+      });
+
+      it("rejects a second put of the same id and keeps the first file", async () => {
+        const file = await put(freshSurveyId());
+        const other = Buffer.concat([PNG, Buffer.from("more")]);
+        await expect(
+          providers.files.putFile({ ...file, size: other.length, name: "other.png" }, other),
+        ).rejects.toThrow();
+        const found = await read(file.id);
+        expect(found?.file).toEqual(file);
+        expect(found?.bytes.equals(PNG)).toBe(true);
+      });
+
+      it("keeps a non-ASCII name with spaces and quotes", async () => {
+        const file = await put(freshSurveyId(), PNG, { name: 'Логотип "ü" 1.png' });
+        expect((await read(file.id))?.file.name).toBe('Логотип "ü" 1.png');
+      });
+
+      it("round-trips a 5 MiB file byte for byte", async () => {
+        const bytes = Buffer.concat([PNG, randomBytes(5 * 1024 * 1024 - PNG.length)]);
+        const file = await put(freshSurveyId(), bytes);
+        const found = await read(file.id);
+        expect(found?.file.size).toBe(bytes.length);
+        expect(found?.bytes.equals(bytes)).toBe(true);
+      });
+
+      it("counts the sizes of a survey's assets only", async () => {
+        const surveyId = freshSurveyId();
+        const other = freshSurveyId();
+        expect(await providers.files.usage(surveyId, "asset")).toBe(0);
+        const sizes = [PNG.length, PNG.length + 10, PNG.length + 200];
+        const files = [];
+        for (const size of sizes) {
+          files.push(await put(surveyId, Buffer.concat([PNG, Buffer.alloc(size - PNG.length)])));
+        }
+        await put(other);
+        expect(await providers.files.usage(surveyId, "asset")).toBe(
+          sizes.reduce((a, b) => a + b, 0),
+        );
+        expect(await providers.files.deleteFile(files[1]!.id)).toBe(true);
+        expect(await providers.files.usage(surveyId, "asset")).toBe(sizes[0]! + sizes[2]!);
+        expect(await providers.files.getFile(files[1]!.id)).toBeNull();
+        expect(await providers.files.deleteFile(files[1]!.id)).toBe(false);
+        expect(await providers.files.deleteFile(newFileId(freshSurveyId()))).toBe(false);
+      });
+
+      it("deletes all files of one survey and leaves another's", async () => {
+        const surveyId = freshSurveyId();
+        const other = freshSurveyId();
+        const mine = [await put(surveyId), await put(surveyId)];
+        const theirs = await put(other);
+        expect(await providers.files.deleteSurveyFiles(surveyId)).toBe(2);
+        for (const file of mine) expect(await providers.files.getFile(file.id)).toBeNull();
+        expect(await providers.files.usage(surveyId, "asset")).toBe(0);
+        expect((await read(theirs.id))?.file).toEqual(theirs);
+        expect(await providers.files.usage(other, "asset")).toBe(PNG.length);
+        expect(await providers.files.deleteSurveyFiles(freshSurveyId())).toBe(0);
+      });
+
+      it("copies a survey's assets under new ids of the target survey", async () => {
+        const source = freshSurveyId();
+        const target = freshSurveyId();
+        const bytes = Buffer.concat([PNG, Buffer.from("padding")]);
+        const first = await put(source, PNG, { name: "a b.png" });
+        const second = await put(source, bytes, { name: "ü.png" });
+        const copiedAt = "2026-09-05T12:00:00.000Z";
+        const map = await providers.files.copySurveyAssets(source, target, copiedAt);
+        expect([...map.keys()].sort()).toEqual([first.id, second.id].sort());
+        for (const original of [first, second]) {
+          const newId = map.get(original.id)!;
+          expect(surveyIdOfFile(newId)).toBe(target);
+          const copy = await read(newId);
+          const src = await read(original.id);
+          expect(copy?.file).toEqual({
+            ...original,
+            id: newId,
+            surveyId: target,
+            createdAt: copiedAt,
+          });
+          expect(copy?.bytes.equals(src!.bytes)).toBe(true);
+          expect(src?.file).toEqual(original);
+        }
+        expect(await providers.files.usage(target, "asset")).toBe(
+          await providers.files.usage(source, "asset"),
+        );
+        expect([
+          ...(await providers.files.copySurveyAssets(freshSurveyId(), target, copiedAt)),
+        ]).toEqual([]);
       });
     });
 

@@ -22,6 +22,7 @@ import { historyOrder, isAfterHistory, projectListOrder, surveyListOrder } from 
 import type {
   HistoryPage,
   HistoryQuery,
+  FileStore,
   ProviderSet,
   SurveyPage,
   SurveyPageQuery,
@@ -593,6 +594,17 @@ export function createAzureLegacyProviders(
     await account.tables.listTables({ abortSignal: signal }).byPage({ maxPageSize: 1 }).next();
   }
 
+  // Temporary: replaced by the Azure file store in Task 2.
+  const notImplemented = () => Promise.reject(new Error("not implemented until Task 2"));
+  const notImplementedFiles: FileStore = {
+    putFile: notImplemented,
+    getFile: notImplemented,
+    usage: notImplemented,
+    deleteFile: notImplemented,
+    deleteSurveyFiles: notImplemented,
+    copySurveyAssets: notImplemented,
+  };
+
   return {
     name: "azure-legacy",
     surveys: {
@@ -623,6 +635,7 @@ export function createAzureLegacyProviders(
       deleteSurvey,
     },
 
+    files: notImplementedFiles,
     directory: {
       async getUser(id) {
         if (!isGuid(id)) return null;
