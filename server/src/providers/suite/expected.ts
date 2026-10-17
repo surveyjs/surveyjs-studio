@@ -3,6 +3,7 @@ import type {
   ProjectRecord,
   SurveyDefinition,
   SurveyRecord,
+  SurveyResponse,
   SurveyTheme,
   User,
 } from "../../domain/types.js";
@@ -364,3 +365,65 @@ export const feedbackHistorySnapshots: Readonly<Record<string, SurveyDefinition>
   "88888888-0000-4000-8000-a00000000001": fixtureDefinition("Customer feedback (draft)"),
   "88888888-0000-4000-8000-a00000000002": fixtureDefinition("Customer feedback"),
 };
+
+// ---- Results ----
+
+const RECEIPT_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/** The five fixture responses of one post table: ids 66666666-...-a000000000{base+1..5}, on `day`. */
+const fixtureResponses = (
+  idPrefix: string,
+  day: string,
+  clientId: string,
+): readonly SurveyResponse[] => [
+  {
+    id: `66666666-0000-4000-8000-a000000000${idPrefix}1`,
+    submittedAt: `${day}T08:00:00.500Z`,
+    data: { satisfaction: 4 },
+    partial: false,
+  },
+  {
+    id: `66666666-0000-4000-8000-a000000000${idPrefix}2`,
+    submittedAt: `${day}T09:15:00.000Z`,
+    data: { satisfaction: 2 },
+    clientId,
+    partial: true,
+  },
+  {
+    id: `66666666-0000-4000-8000-a000000000${idPrefix}3`,
+    submittedAt: `${day}T10:30:00.000Z`,
+    data: { satisfaction: 5 },
+    respondentIp: "203.0.113.7",
+    partial: false,
+  },
+  {
+    id: `66666666-0000-4000-8000-a000000000${idPrefix}4`,
+    submittedAt: `${day}T11:45:00.000Z`,
+    data: {
+      satisfaction: 3,
+      receipt: [{ name: "receipt.png", type: "image/png", content: RECEIPT_PNG }],
+    },
+    partial: false,
+  },
+  {
+    id: `66666666-0000-4000-8000-a000000000${idPrefix}5`,
+    submittedAt: `${day}T12:00:00.000Z`,
+    data: { satisfaction: 1, receipt: "dxsimage:99999999-0000-4000-8000-a00000000002.png" },
+    partial: false,
+  },
+];
+
+/** Responses of fixture 01, in list order. Row 02 is a legacy partial response of client-0001. */
+export const feedbackResponses: readonly SurveyResponse[] = fixtureResponses(
+  "0",
+  "2026-04-01",
+  "client-0001",
+);
+
+/** Responses of fixture 04, in list order. Row 12 is a legacy partial response of client-0002. */
+export const campaignResponses: readonly SurveyResponse[] = fixtureResponses(
+  "1",
+  "2026-04-02",
+  "client-0002",
+);

@@ -7,6 +7,7 @@ import type { MemorySeed } from "../memory.js";
 import {
   membershipFromLegacy,
   projectFromLegacy,
+  responseFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
@@ -304,6 +305,22 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     if (text === null || text.trim() === "") continue;
     themes[str(row, "id").toLowerCase()] = JSON.parse(text) as SurveyTheme;
   }
+  const dashless = (id: string): string => id.toLowerCase().replaceAll("-", "");
+  const responses: NonNullable<MemorySeed["responses"]> = {};
+  const completions: NonNullable<MemorySeed["completions"]> = {};
+  for (const row of fixtures.surveys) {
+    const survey = surveyFromLegacy(row, "personal");
+    const rows = fixtures.resultsByTable[`post${dashless(survey.postId)}`];
+    if (rows) responses[survey.id] = rows.map(responseFromLegacy);
+    const table = fixtures.tables.find(
+      (t) => t.account === "results" && t.name === `SurveyCompletion${dashless(survey.id)}`,
+    );
+    if (table) {
+      completions[survey.id] = Object.fromEntries(
+        table.entities.map((e) => [String(e.RowKey), { partial: e.ispartialcompleted === true }]),
+      );
+    }
+  }
   return {
     users: fixtures.users.map(userFromLegacy),
     surveys: fixtures.surveys.map((row) =>
@@ -330,5 +347,7 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     definitions,
     themes,
     history,
+    responses,
+    completions,
   };
 }

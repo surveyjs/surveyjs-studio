@@ -100,6 +100,9 @@ export interface AzureLegacyOptions {
   readonly filesContainer?: string;
 }
 
+const notImplemented = (): Promise<never> =>
+  Promise.reject(new Error("not implemented until Task 2"));
+
 /** The editor files' container (Step 7, R2), invisible to legacy code. */
 const FILES_CONTAINER = "my-surveys-files";
 
@@ -633,6 +636,15 @@ export function createAzureLegacyProviders(
     files: createAzureFileStore(surveysAccount.blobs, {
       container: options.filesContainer ?? FILES_CONTAINER,
     }),
+
+    // Task 2 replaces this stub with the table-backed store.
+    results: {
+      appendResponse: notImplemented,
+      hasResponse: notImplemented,
+      listResponses: notImplemented,
+      stats: notImplemented,
+      completion: notImplemented,
+    },
 
     directory: {
       async getUser(id) {
