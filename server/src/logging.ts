@@ -1,9 +1,13 @@
 import type { FastifyRequest } from "fastify";
+import { truncatedIp } from "./ip.js";
 
-/** Query parameters never written to logs: the OAuth `code` and `state` of the sign-in callback. */
-const REDACTED_PARAMETERS = new Set(["code", "state"]);
+/**
+ * Query parameters never written to logs: the OAuth `code` and `state` of the sign-in callback and
+ * the respondent's `clientId`.
+ */
+const REDACTED_PARAMETERS = new Set(["code", "state", "clientId"]);
 
-/** The request URL with the values of `code` and `state` replaced by `[redacted]`. */
+/** The request URL with the values of `code`, `state` and `clientId` replaced by `[redacted]`. */
 export function redactUrl(url: string): string {
   const at = url.indexOf("?");
   if (at < 0) return url;
@@ -24,7 +28,7 @@ export function redactUrl(url: string): string {
   return `${url.slice(0, at)}?${pairs.join("&")}`;
 }
 
-/** Fastify's default `req` log serializer, with the URL redacted. */
+/** Fastify's default `req` log serializer, with the URL redacted and the address truncated. */
 export function serializeRequest(request: FastifyRequest) {
   const version = request.headers["accept-version"];
   return {
@@ -32,7 +36,7 @@ export function serializeRequest(request: FastifyRequest) {
     url: redactUrl(request.url),
     version: typeof version === "string" ? version : undefined,
     host: request.host,
-    remoteAddress: request.ip,
+    remoteAddress: truncatedIp(request.ip),
     remotePort: request.socket.remotePort,
   };
 }

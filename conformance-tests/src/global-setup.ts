@@ -45,6 +45,9 @@ const appVariables = [
   "OIDC_DISCOVERY",
   "OIDC_SCOPES",
   "SIGN_IN_RATE_LIMIT",
+  "TRUST_PROXY",
+  "PUBLIC_RATE_LIMIT",
+  "PUBLIC_FILE_RATE_LIMIT",
   "ACCOUNT_NOTICES",
   "SHELL_LINKS",
 ];
@@ -105,6 +108,11 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
     // The suite signs in many times from one IP; the limit itself is tested in the server tests.
     SIGN_IN_RATE_LIMIT: "100000",
+    // The suite reaches the server from loopback; the rate-limit test sends its own X-Forwarded-For.
+    TRUST_PROXY: "127.0.0.1,::1",
+    // The suite reads public surveys many times from one IP; the limits are tested in the server tests.
+    PUBLIC_RATE_LIMIT: "300",
+    PUBLIC_FILE_RATE_LIMIT: "10000",
     // Small, so the 413 test stays cheap (it reads the limit from /config).
     LIMIT_MAX_DOCUMENT_BYTES: "262144",
     // Small, so the quota tests stay cheap (they read the limit from /config).

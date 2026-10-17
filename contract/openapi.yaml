@@ -1047,6 +1047,7 @@ paths:
             video/ogg:
               schema: { type: string, contentMediaType: video/ogg }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/results:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }

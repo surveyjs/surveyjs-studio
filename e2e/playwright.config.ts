@@ -32,6 +32,9 @@ const serverEnv = {
   LOG_LEVEL: "warn",
   // All browsers and workers sign in from one IP; the limit itself is covered by server tests.
   SIGN_IN_RATE_LIMIT: "100000",
+  // All browsers and workers share one IP; the limits are covered by server tests.
+  PUBLIC_RATE_LIMIT: "100000",
+  PUBLIC_FILE_RATE_LIMIT: "100000",
   // Small, so the quota test sends little.
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "1048576",
 };

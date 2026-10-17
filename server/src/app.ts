@@ -31,6 +31,11 @@ export interface BuildOptions {
 }
 
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
+const PUBLIC_OPERATIONS: readonly OperationId[] = [
+  "getPublishedSurvey",
+  "submitResponse",
+  "uploadResponseFile",
+];
 const SIGN_IN_OPERATIONS: readonly OperationId[] = ["login", "loginCallback", "passwordLogin"];
 
 function sendProblem(reply: FastifyReply, body: Problem): FastifyReply {
@@ -65,6 +70,8 @@ export async function buildApp(
       return sendProblem(reply, body);
     },
     bodyLimit: config.limits.maxResponseBytes,
+    // Empty trusts nobody: `request.ip` is then the socket's peer, whatever X-Forwarded-For says.
+    ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
 
   app.addHook("onSend", (request, reply, payload, done) => {
@@ -95,7 +102,8 @@ export async function buildApp(
     return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable" });
   });
 
-  // Only routes with a `rateLimit` config are limited (the sign-in operations).
+  // Only routes with a `rateLimit` config are limited (sign-in and the public operations); each
+  // route has its own counter. This builder is the fallback; the routes set their own text.
   await app.register(rateLimit, {
     global: false,
     errorResponseBuilder: (_request, context) =>
@@ -103,14 +111,25 @@ export async function buildApp(
         code: "rate-limited",
         status: 429,
         title: "Too many requests",
-        detail: `Too many sign-in attempts. Try again in ${context.after}.`,
+        detail: `Too many requests. Try again in ${context.after}.`,
       }),
   });
 
   const identity = options.identity ?? (await createIdentityProvider(config));
   if (identity.routes) await app.register(identity.routes);
 
-  const signInLimit: RateLimit = { max: config.signInRateLimitPerMinute, timeWindow: 60_000 };
+  const window = 60_000;
+  const signInLimit: RateLimit = {
+    max: config.signInRateLimitPerMinute,
+    timeWindow: window,
+    detail: (after) => `Too many sign-in attempts. Try again in ${after}.`,
+  };
+  const publicLimit: RateLimit = {
+    max: config.publicRateLimitPerMinute,
+    timeWindow: window,
+    detail: (after) => `Too many requests. Try again in ${after}.`,
+  };
+  const fileLimit: RateLimit = { ...publicLimit, max: config.publicFileRateLimitPerMinute };
   await app.register(apiRoutes, {
     prefix: "/api/v1",
     contract,
@@ -148,7 +167,11 @@ export async function buildApp(
       sessionSecret: config.sessionSecret,
       ...(options.now && { now: options.now }),
     },
-    rateLimits: Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
+    rateLimits: {
+      ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
+      ...Object.fromEntries(PUBLIC_OPERATIONS.map((id) => [id, publicLimit])),
+      downloadFile: fileLimit,
+    },
     // Survey documents may carry inline images: they get their own, larger limit.
     bodyLimits: {
       saveSurveyDefinition: config.limits.maxDocumentBytes,
