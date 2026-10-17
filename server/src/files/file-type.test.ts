@@ -36,6 +36,13 @@ describe("detectFileType", () => {
     ["MP4 (mp42)", ftyp("mp42"), "video/mp4", false],
     ["WebM", ebml("webm"), "video/webm", false],
     ["Ogg", bytes("OggS", 0), "video/ogg", false],
+    // R6 order: BMP is checked before MP4.
+    [
+      "BMP whose bytes 4–11 read ftypisom",
+      bytes("BM", 0, 0, "ftypisom", 0, 0, 40, 0, 0, 0),
+      "image/bmp",
+      true,
+    ],
   ] as const)("%s", (_name, input, contentType, inline) => {
     expect(detectFileType(input)).toStrictEqual({ contentType, inline });
   });
@@ -104,6 +111,17 @@ describe("contentDisposition", () => {
     );
   });
 
+  it("encodes a name cut at a surrogate pair", () => {
+    const a254 = "a".repeat(254);
+    const a253 = "a".repeat(253);
+    expect(
+      contentDisposition({ contentType: "image/png", name: fileNameOf(`${a254}\u{1f600}.png`) }),
+    ).toBe(`inline; filename="${a254}"; filename*=UTF-8''${a254}`);
+    expect(
+      contentDisposition({ contentType: "image/png", name: fileNameOf(`${a253}\u{1f600}.png`) }),
+    ).toBe(`inline; filename="${a253}__"; filename*=UTF-8''${a253}%F0%9F%98%80`);
+  });
+
   it("replaces backslashes and percent signs in the fallback", () => {
     expect(contentDisposition({ contentType: "image/png", name: "a\\b%c'*.png" })).toBe(
       `inline; filename="a_b_c'*.png"; filename*=UTF-8''a%5Cb%25c%27%2A.png`,
@@ -130,5 +148,19 @@ describe("fileNameOf", () => {
 
   it("cuts the name at 255 UTF-16 code units", () => {
     expect(fileNameOf(`${"a".repeat(300)}.png`)).toBe("a".repeat(255));
+  });
+
+  it("leaves out a surrogate pair that would end past the cut", () => {
+    // The pair would take code units 255 and 256.
+    expect(fileNameOf(`${"a".repeat(254)}\u{1f600}.png`)).toBe("a".repeat(254));
+    expect(fileNameOf(`${"a".repeat(253)}\u{1f600}.png`)).toBe(`${"a".repeat(253)}\u{1f600}`);
+  });
+
+  it("trims a space the cut ends in", () => {
+    expect(fileNameOf(`${"a".repeat(254)} b.png`)).toBe("a".repeat(254));
+  });
+
+  it("replaces a lone surrogate", () => {
+    expect(fileNameOf("a\ud800b.png")).toBe("a�b.png");
   });
 });

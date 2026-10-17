@@ -91,12 +91,11 @@ export function detectFileType(bytes: Uint8Array): AllowedFileType | null {
   const gif = ascii(bytes, 0, 6);
   if (gif === "GIF87a" || gif === "GIF89a") return image("image/gif");
   if (ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 4) === "WEBP") return image("image/webp");
-  if (ascii(bytes, 4, 4) === "ftyp") {
-    const brand = ascii(bytes, 8, 4);
-    if (AVIF_BRANDS.has(brand)) return image("image/avif");
-    if (MP4_BRANDS.has(brand)) return video("video/mp4");
-  }
+  // R6 order: AVIF, BMP, MP4 (a BMP's bytes 4–11 may read `ftyp` and an MP4 brand).
+  const isoBrand = ascii(bytes, 4, 4) === "ftyp" ? ascii(bytes, 8, 4) : "";
+  if (AVIF_BRANDS.has(isoBrand)) return image("image/avif");
   if (isBmp(bytes)) return image("image/bmp");
+  if (MP4_BRANDS.has(isoBrand)) return video("video/mp4");
   if (
     hasBytes(bytes, 0, EBML_SIGNATURE) &&
     ascii(bytes, 0, Math.min(64, bytes.length)).includes("webm")
@@ -125,10 +124,24 @@ export function contentDisposition(file: { contentType: string; name: string }):
 
 const MAX_NAME_LENGTH = 255;
 
-/** The stored name of an uploaded file (R12): no folder part, no control characters, 1–255 code units. */
+/**
+ * The stored name of an uploaded file (R12): no folder part, no control characters, 1–255 UTF-16 code
+ * units. The cut never splits a surrogate pair and a lone surrogate becomes U+FFFD, so the name always
+ * encodes (`encodeURIComponent` throws on a lone surrogate).
+ */
 export function fileNameOf(raw: string | undefined): string {
   const base = (raw ?? "").split(/[/\\]/).pop() ?? "";
-  const printable = [...base].filter((char) => char >= " " && char !== "\u007f").join("");
-  const name = printable.trim().slice(0, MAX_NAME_LENGTH);
+  const printable = [...base.replace(/\p{Surrogate}/gu, "�")]
+    .filter((char) => char >= " " && char !== "\u007f")
+    .join("")
+    .trim();
+  let name = "";
+  // By code points: a surrogate pair is kept whole or left out.
+  for (const char of printable) {
+    if (name.length + char.length > MAX_NAME_LENGTH) break;
+    name += char;
+  }
+  // Trimmed again: the cut may end in a space.
+  name = name.trimEnd();
   return name === "" ? "file" : name;
 }
