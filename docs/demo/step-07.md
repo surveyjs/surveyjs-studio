@@ -61,7 +61,7 @@ the address: you need it later.
 ## 1. Upload a picture (checklist 1)
 
 On the **Designer** tab, click **Image** in the toolbox on the left. An Image question is added and
-selected. Click the button of the question that chooses a file, and pick `small.png` (or your own
+selected. Click the **Choose Image** button of the question, and pick `small.png` (or your own
 picture).
 
 Expected: the bar at the bottom shows **Saving…** and then **All changes saved**, and the picture shows

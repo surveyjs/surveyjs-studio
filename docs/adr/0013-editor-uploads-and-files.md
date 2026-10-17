@@ -121,8 +121,8 @@ Without (b), an edit made before the reload could be saved over the reloaded con
 
 - A survey's files are public to anyone with the link, and are never listed, signed or expiring. The id
   is unguessable (128 random bits). Whoever has a link can pass it on.
-- Space is never freed while the survey exists. A user who hits the quota can only delete the survey or
-  copy it and delete the original. A way to delete one file is a later contract change.
+- Space is never freed while the survey exists. Deleting the survey is the only way to free it, and
+  a clone does not help, because it copies the files. A way to delete one file is a later contract change.
 - A deleted survey's images can stay in a browser cache for up to an hour, and the legacy links of R4 keep
   working until `api.surveyjs.io` is retired.
 - Cloning copies up to the quota, so a clone of a survey full of files takes longer.

@@ -6,8 +6,8 @@ version the Creator kept such a picture inside the survey text; now the text hol
 
 ## Where you can upload
 
-- **Image question**: select the question and choose a file in its **Image** setting (the choose-file
-  button, or drag a file on it). The same works for a video, with the **Video** content mode.
+- **Image question**: click **Image** in the toolbox, select the question and click its **Choose Image**
+  button. The same works for a video, with the **Video** content mode.
 - **Image choices**: in an Image Picker question, add a choice and choose a file for it.
 - **Survey logo**: the **Logo** setting of the survey.
 - **Theme background images**: the background image settings in the **Themes** tab.
@@ -35,8 +35,8 @@ A survey can store up to **50 MB** of files in total (the server setting
 The number in the message is the limit of your server. The survey is not changed.
 
 **Files stay until the survey is deleted.** Replacing an image or clearing it in the editor does not
-free its space: the old file is still stored, and still counts. If you reach the limit, delete the
-survey (or copy it into a new one and delete the old one).
+free its space: the old file is still stored, and still counts. Only deleting the survey frees the space. Copying
+the survey does not help: the copy gets copies of the same files.
 
 ## Other messages
 
