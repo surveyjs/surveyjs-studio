@@ -109,11 +109,19 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
         createdAt: new Date(now()).toISOString(),
       };
       await files.putFile(record, bytes);
-      // Concurrent uploads may each have passed the first check: the total decides (R5).
-      if ((await files.usage(survey.id, "asset")) > quota) {
-        await files.deleteFile(record.id);
-        throw quotaExceeded(quota);
+      let refusal: AppError | undefined;
+      try {
+        // A survey deleted while the bytes were stored must not keep a file nobody can delete (R10).
+        if (!(await surveys.getSurvey(survey.id))) refusal = notFound();
+        // Concurrent uploads may each have passed the first check: the total decides (R5).
+        else if ((await files.usage(survey.id, "asset")) > quota) refusal = quotaExceeded(quota);
+        if (refusal) await files.deleteFile(record.id);
+      } catch (error) {
+        // The store failed after the file was stored: it must not stay stored and counted.
+        await files.deleteFile(record.id).catch(() => undefined);
+        throw error;
       }
+      if (refusal) throw refusal;
       return {
         id: record.id,
         url: publicUrl(publicBaseUrl, filePath(record.id)),

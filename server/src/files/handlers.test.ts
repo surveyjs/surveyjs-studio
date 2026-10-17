@@ -65,7 +65,7 @@ afterEach(async () => {
 /** The app on a memory store (its FileStore changed by `files`), quota QUOTA, clock at NOW. */
 async function start(
   options: {
-    files?: (store: FileStore) => FileStore;
+    files?: (store: FileStore, memory: ProviderSet) => FileStore;
     logLines?: string[];
   } = {},
 ) {
@@ -78,7 +78,7 @@ async function start(
   const memory = createMemoryProviders(seed);
   const providers: ProviderSet = {
     ...memory,
-    files: options.files ? options.files(memory.files) : memory.files,
+    files: options.files ? options.files(memory.files, memory) : memory.files,
   };
   const { logLines } = options;
   app = await buildApp(config, providers, {
@@ -148,6 +148,53 @@ describe("uploadSurveyAsset", () => {
       detail: "This survey can store up to 1000 bytes of files.",
     });
     expect(await providers.files.usage(SURVEY_ID, "asset")).toBe(600);
+  });
+
+  it("deletes the new file and answers 404 when the survey was deleted while it was stored", async () => {
+    let storedId: string | undefined;
+    const { providers, upload } = await start({
+      // The survey and its files are deleted after the access check, before the file lands.
+      files: (store, memory) => ({
+        ...store,
+        putFile: async (file, content) => {
+          storedId = file.id;
+          await store.deleteSurveyFiles(SURVEY_ID);
+          await memory.surveys.deleteSurvey(SURVEY_ID);
+          await store.putFile(file, content);
+        },
+      }),
+    });
+    const res = await upload(fileBody("a.png", png(100)));
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "not-found", title: "Not found" });
+    expect(storedId).toBeDefined();
+    expect(await providers.files.getFile(storedId!)).toBeNull();
+    expect(await providers.files.usage(SURVEY_ID, "asset")).toBe(0);
+  });
+
+  it("deletes the new file and answers 500 when the store fails after storing it", async () => {
+    let storedId: string | undefined;
+    let calls = 0;
+    const { providers, upload } = await start({
+      logLines: [],
+      files: (store) => ({
+        ...store,
+        putFile: async (file, content) => {
+          storedId = file.id;
+          await store.putFile(file, content);
+        },
+        // The usage check after storing fails.
+        usage: (surveyId, kind) =>
+          calls++ === 0
+            ? store.usage(surveyId, kind)
+            : Promise.reject(new Error("store unavailable")),
+      }),
+    });
+    const res = await upload(fileBody("a.png", png(100)));
+    expect(res.statusCode).toBe(500);
+    expect(storedId).toBeDefined();
+    expect(await providers.files.getFile(storedId!)).toBeNull();
+    expect(await providers.files.usage(SURVEY_ID, "asset")).toBe(0);
   });
 
   it("answers 413 when the byte over the quota arrives in a chunk of its own", async () => {
