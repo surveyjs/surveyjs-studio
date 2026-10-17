@@ -25,18 +25,33 @@ function errorMessage(error: unknown): string {
 }
 
 /**
+ * What the handler uses of the survey model. The library writes its "Limit to one response" cookie
+ * (`{cookieName}=true`) on completion, before the answers are saved; both cookie methods do nothing
+ * without a `cookieName`.
+ */
+export interface SubmitSender {
+  readonly data: Record<string, unknown>;
+  setCookie(): void;
+  deleteCookie(): void;
+}
+
+/**
  * The `onComplete` handler of one survey model. Its first call creates the Idempotency-Key and
  * every later call reuses it: the library's "Try again" fires `onComplete` again for the same
  * answers, and the server stores them once. A call while a request is in flight does nothing;
  * once the answers are stored (or the server says this respondent has completed the survey), a
  * call shows the same success again without a request.
+ *
+ * The library's cookie is kept once the answers are stored (or the server says this respondent
+ * has completed the survey) and deleted when sending fails: otherwise a reload after a failure
+ * would show the library's "already completed" content with nothing stored.
  */
 export function createSubmitHandler(deps: {
   readonly submit: (body: ResponseBody, idempotencyKey: string) => Promise<{ id: string }>;
   /** The client id when the limit is on (clientIds.ensure()), else undefined. */
   readonly clientId: () => string | undefined;
   readonly newKey?: () => string;
-}): (sender: { data: Record<string, unknown> }, options: SaveOptions) => void {
+}): (sender: SubmitSender, options: SaveOptions) => void {
   const newKey = deps.newKey ?? (() => crypto.randomUUID());
   let key: string | undefined;
   let sending = false;
@@ -59,15 +74,18 @@ export function createSubmitHandler(deps: {
         () => {
           sending = false;
           done = [];
+          sender.setCookie();
           options.showSaveSuccess();
         },
         (error: unknown) => {
           sending = false;
           if (error instanceof ApiError && error.problem.status === 409) {
             done = [SUBMIT_MESSAGES.alreadyCompleted];
+            sender.setCookie();
             options.showSaveSuccess(...done);
             return;
           }
+          sender.deleteCookie();
           options.showSaveError(errorMessage(error));
         },
       )

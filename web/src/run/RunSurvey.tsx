@@ -4,8 +4,8 @@ import "survey-core/survey-core.css";
 import { Survey } from "survey-react-ui";
 import { submitResponse, uploadResponseFile } from "../api/public";
 import type { ClientIds } from "./clientId";
-import { completedBeforeCookie } from "./cookie";
-import { withServerFileStorage } from "./definition";
+import { completedBeforeCookie, runCookieName } from "./cookie";
+import { forRunPage } from "./definition";
 import type { RunSurveyData } from "./load";
 import { createResponseUploadHandler } from "./responseUploads";
 import { localeOf, needsLocales, prefillValues, type RunSearch } from "./search";
@@ -24,12 +24,14 @@ export interface RunSurveyProps {
 
 function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: RunSurveyProps) {
   const { survey, limitCookie } = data;
+  // The library writes and reads its cookie under this name, a token without attributes.
+  const cookieName = limitCookie === null ? null : runCookieName(limitCookie, surveyId);
   // The library reads the cookie while it loads the definition (S18).
-  if (kind === "completed" && limitCookie !== null) {
-    const cookie = completedBeforeCookie(limitCookie);
+  if (kind === "completed" && cookieName !== null) {
+    const cookie = completedBeforeCookie(cookieName);
     if (cookie !== null) document.cookie = cookie;
   }
-  const model = new Model(withServerFileStorage(survey.definition));
+  const model = new Model(forRunPage(survey.definition, cookieName));
   if (Object.keys(survey.theme).length > 0) model.applyTheme(survey.theme as ITheme);
   // As surveyjs.io's run page: no jump to the first question, and the library's brand footer.
   model.focusFirstQuestionAutomatic = false;

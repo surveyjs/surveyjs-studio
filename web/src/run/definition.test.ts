@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { limitCookieOf, withServerFileStorage } from "./definition";
+import { forRunPage, limitCookieOf, withServerFileStorage } from "./definition";
 
 describe("withServerFileStorage", () => {
   it("makes File Upload and Signature Pad questions at the top level store on the server", () => {
@@ -131,6 +131,51 @@ describe("withServerFileStorage", () => {
     const before = structuredClone(definition);
 
     withServerFileStorage(definition);
+
+    expect(definition).toEqual(before);
+  });
+});
+
+describe("forRunPage", () => {
+  it("drops the old service's surveyId, surveyPostId and clientId", () => {
+    const definition = {
+      title: "Feedback",
+      surveyId: "old-survey",
+      surveyPostId: "old-post",
+      clientId: "old-client",
+      elements: [{ type: "text", name: "surveyId" }],
+    };
+
+    expect(forRunPage(definition, null)).toEqual({
+      title: "Feedback",
+      elements: [{ type: "text", name: "surveyId" }],
+    });
+  });
+
+  it("sets the cookie name it is given", () => {
+    const definition = { cookieName: "msid_csrf=x; path=/; a", elements: [] };
+
+    expect(forRunPage(definition, "msid_csrf%3Dx%3B%20path%3D%2F%3B%20a")).toEqual({
+      cookieName: "msid_csrf%3Dx%3B%20path%3D%2F%3B%20a",
+      elements: [],
+    });
+  });
+
+  it("drops a cookie name without a limit", () => {
+    expect(forRunPage({ cookieName: 3 }, null)).toEqual({});
+  });
+
+  it("stores files on the server", () => {
+    expect(forRunPage({ elements: [{ type: "file", name: "f" }] }, null)).toEqual({
+      elements: [{ type: "file", name: "f", storeDataAsText: false }],
+    });
+  });
+
+  it("leaves the input unchanged", () => {
+    const definition = { surveyPostId: "old-post", cookieName: "a b" };
+    const before = structuredClone(definition);
+
+    forRunPage(definition, "a%20b");
 
     expect(definition).toEqual(before);
   });

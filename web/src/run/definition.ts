@@ -43,6 +43,29 @@ export function withServerFileStorage(definition: SurveyDefinition): SurveyDefin
 }
 
 /**
+ * Top-level properties of the old SurveyJS service that the Form Library still acts on:
+ * `surveyId` loads the definition from it, `surveyPostId` also posts the answers to it, and
+ * `clientId` goes with them. The run page loads and stores surveys itself.
+ */
+const SERVICE_PROPERTIES = ["surveyId", "surveyPostId", "clientId"] as const;
+
+/**
+ * The definition the run page gives the Form Library: `withServerFileStorage`, without the old
+ * service's properties, and with `cookieName` set to `runCookieName`'s token (`null`: no limit, no
+ * `cookieName`). The library writes `{cookieName}=true` itself on completion.
+ */
+export function forRunPage(
+  definition: SurveyDefinition,
+  cookieName: string | null,
+): SurveyDefinition {
+  const copy = withServerFileStorage(definition);
+  for (const property of SERVICE_PROPERTIES) delete copy[property];
+  if (cookieName === null) delete copy.cookieName;
+  else copy.cookieName = cookieName;
+  return copy;
+}
+
+/**
  * The cookie of "Limit to one response": the definition's non-empty string `cookieName` (the
  * server sets it to the survey id when the legacy setting is on), else null (no limit).
  */

@@ -41,10 +41,14 @@ function setUp(clientId?: string) {
     clientId: () => clientId,
     newKey: () => `key-${++keys}`,
   });
+  const setCookie = vi.fn<() => void>();
+  const deleteCookie = vi.fn<() => void>();
   return {
     requests,
+    setCookie,
+    deleteCookie,
     send: (options: SaveOptions, data: Record<string, unknown> = { satisfaction: 4 }) =>
-      handle({ data }, options),
+      handle({ data, setCookie, deleteCookie }, options),
     succeed: async () => {
       answer!.resolve();
       await settle();
@@ -68,6 +72,16 @@ describe("the submit handler", () => {
 
     expect(options.showSaveSuccess).toHaveBeenCalledExactlyOnceWith();
     expect(options.showSaveError).not.toHaveBeenCalled();
+  });
+
+  it("keeps the library's cookie once the answers are stored", async () => {
+    const submit = setUp("client-1");
+
+    submit.send(saveOptions());
+    await submit.succeed();
+
+    expect(submit.setCookie).toHaveBeenCalledOnce();
+    expect(submit.deleteCookie).not.toHaveBeenCalled();
   });
 
   it("sends the answers, the client id and a key", () => {
@@ -111,6 +125,12 @@ describe("the submit handler", () => {
     expect(submit.requests.map(({ key }) => key)).toEqual(["key-1", "key-1"]);
     expect(options.showSaveInProgress).toHaveBeenCalledTimes(2);
     expect(options.showSaveSuccess).toHaveBeenCalledExactlyOnceWith();
+    // Deleted after the failure, written again once the retry stores the answers.
+    expect(submit.deleteCookie).toHaveBeenCalledOnce();
+    expect(submit.setCookie).toHaveBeenCalledOnce();
+    expect(submit.deleteCookie.mock.invocationCallOrder[0]).toBeLessThan(
+      submit.setCookie.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("tells a respondent who has completed the survey before, as a success", async () => {
@@ -124,6 +144,8 @@ describe("the submit handler", () => {
       "You have already completed this survey.",
     );
     expect(options.showSaveError).not.toHaveBeenCalled();
+    expect(submit.setCookie).toHaveBeenCalledOnce();
+    expect(submit.deleteCookie).not.toHaveBeenCalled();
 
     submit.send(options);
     expect(submit.requests).toHaveLength(1);
@@ -152,6 +174,9 @@ describe("the submit handler", () => {
 
     expect(options.showSaveError).toHaveBeenCalledExactlyOnceWith(message);
     expect(options.showSaveSuccess).not.toHaveBeenCalled();
+    // A reload must not show the library's "already completed" content with nothing stored.
+    expect(submit.deleteCookie).toHaveBeenCalledOnce();
+    expect(submit.setCookie).not.toHaveBeenCalled();
   });
 
   it("sends nothing after a success, and shows the success again", async () => {
