@@ -188,6 +188,8 @@ describe("submitResponse", () => {
       clientId: "secret-client",
     });
     expect(res.statusCode).toBe(500);
+    // The failure is logged, so the absence checks below look at a real error line.
+    expect(logLines.some((line) => line.includes("boom"))).toBe(true);
     expect(logLines.join("\n")).not.toContain("secret-answer");
     expect(logLines.join("\n")).not.toContain("secret-client");
   });

@@ -99,11 +99,11 @@ async function start(
     ...(logLines && { logStream: { write: (line: string) => logLines.push(line) } }),
   });
   const { headers } = await signIn(app, USER.id);
-  const upload = (payload: Buffer | Readable) =>
+  const upload = (payload: Buffer | Readable, surveyId = SURVEY_ID) =>
     app!.inject({
       method: "POST",
       // Upper-case on purpose: stored files carry the survey's lower-case id.
-      url: `/api/v1/surveys/${SURVEY_ID.toUpperCase()}/assets`,
+      url: `/api/v1/surveys/${surveyId.toUpperCase()}/assets`,
       headers: { ...headers, "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
       payload,
     });
@@ -347,8 +347,10 @@ describe("uploadResponseFile", () => {
     });
     expect((await uploadResponse(fileBody("big.bin", Buffer.alloc(2000, 1)))).statusCode).toBe(201);
     expect(await providers.files.usage(PUBLISHED_ID, "response")).toBe(2000);
-    // The asset upload targets the unpublished survey the user owns.
-    expect((await upload(fileBody("a.png", png(500)))).statusCode).toBe(201);
+    // The same survey (the user owns it) still takes an asset: 2000 response bytes are over the
+    // 1024-byte asset quota, so this proves they are not counted against it.
+    expect((await upload(fileBody("a.png", png(500)), PUBLISHED_ID)).statusCode).toBe(201);
+    expect(await providers.files.usage(PUBLISHED_ID, "asset")).toBe(500);
   });
 });
 

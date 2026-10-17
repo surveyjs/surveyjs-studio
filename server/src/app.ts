@@ -31,12 +31,13 @@ export interface BuildOptions {
   readonly logStream?: { write(line: string): void };
 }
 
-/** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
+/** The respondent's operations, limited by `PUBLIC_RATE_LIMIT` per client IP and minute. */
 const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getPublishedSurvey",
   "submitResponse",
   "uploadResponseFile",
 ];
+/** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = ["login", "loginCallback", "passwordLogin"];
 
 function sendProblem(reply: FastifyReply, body: Problem): FastifyReply {
