@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import "survey-core/survey-core.css";
 import "survey-creator-core/survey-creator-core.css";
-import { SurveyCreatorComponent, type SurveyCreator } from "survey-creator-react";
+import { SurveyCreatorComponent } from "survey-creator-react";
 import {
   createCreator,
-  loadDocuments,
+  type CreatorSession,
   type EditorDocuments,
   type EditorSaves,
+  type EditorUploads,
 } from "./creatorSetup";
 
-export type { EditorDocuments, EditorSaves } from "./creatorSetup";
+export type { EditorDocuments, EditorSaves, EditorUploads } from "./creatorSetup";
 
 export interface SurveyEditorProps {
   readonly surveyId: string;
@@ -17,11 +18,15 @@ export interface SurveyEditorProps {
   readonly documents: EditorDocuments;
   /** Where changes go; `null` makes the Creator read-only. */
   readonly saves: EditorSaves | null;
+  /** Where files go (`null` in read-only mode). Keep it stable: a new one is not picked up. */
+  readonly uploads: EditorUploads | null;
   /**
    * `true` while a change waits for the Creator's auto-save delay (not yet handed to `saves`),
    * `false` once every change has been handed over.
    */
   readonly onPendingChange?: (pending: boolean) => void;
+  /** Called with `documents` once the Creator holds them (on open and after each new object). */
+  readonly onDocumentsLoaded?: (documents: EditorDocuments) => void;
 }
 
 /**
@@ -30,29 +35,41 @@ export interface SurveyEditorProps {
  * The Creator is built once per mount; on unmount its pending changes go to `saves` and it is
  * disposed.
  */
-export function SurveyEditor({ surveyId, documents, saves, onPendingChange }: SurveyEditorProps) {
-  const [creator, setCreator] = useState<SurveyCreator | null>(null);
-  // The latest callback, without building a new Creator when it changes.
+export function SurveyEditor({
+  surveyId,
+  documents,
+  saves,
+  uploads,
+  onPendingChange,
+  onDocumentsLoaded,
+}: SurveyEditorProps) {
+  const [session, setSession] = useState<CreatorSession | null>(null);
+  // The latest callbacks, without building a new Creator when they change.
   const pendingCallback = useRef(onPendingChange);
+  const loadedCallback = useRef(onDocumentsLoaded);
   useEffect(() => {
     pendingCallback.current = onPendingChange;
-  }, [onPendingChange]);
+    loadedCallback.current = onDocumentsLoaded;
+  }, [onPendingChange, onDocumentsLoaded]);
 
   // Built in the effect, not during render: the Creator holds timers and listeners that only
   // `dispose` releases, and Strict Mode runs effects twice (a disposed Creator cannot be reused).
   useEffect(() => {
-    const session = createCreator({
+    const created = createCreator({
       surveyId,
       saves,
+      uploads,
       onPendingChange: (pending) => pendingCallback.current?.(pending),
     });
-    setCreator(session.creator);
-    return () => session.close();
-  }, [surveyId, saves]);
+    setSession(created);
+    return () => created.close();
+  }, [surveyId, saves, uploads]);
 
   useEffect(() => {
-    if (creator !== null) loadDocuments(creator, documents);
-  }, [creator, documents]);
+    if (session === null) return;
+    session.load(documents);
+    loadedCallback.current?.(documents);
+  }, [session, documents]);
 
-  return creator === null ? null : <SurveyCreatorComponent creator={creator} />;
+  return session === null ? null : <SurveyCreatorComponent creator={session.creator} />;
 }

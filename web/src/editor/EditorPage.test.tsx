@@ -9,8 +9,10 @@ import {
   themeHandler,
   type SavedContent,
 } from "../test/content-handlers";
+import { sampleStoredFile, uploadAssetHandler, type SeenUpload } from "../test/file-handlers";
 import { renderApp } from "../test/renderApp";
 import {
+  appConfig,
   configHandler,
   http,
   meHandler,
@@ -32,6 +34,8 @@ vi.mock("./SurveyEditor", () => ({
 const path = `/surveys/${sampleSurvey.id}/edit`;
 const shown = () => JSON.parse(screen.getByTestId("fake-creator").textContent!) as unknown;
 const saves = () => editor.props!.saves!;
+/** What the Creator reports once it holds the documents it was given. */
+const reportLoaded = () => act(() => editor.props!.onDocumentsLoaded!(editor.props!.documents));
 
 /** Whether the page asks before it is unloaded (a `beforeunload` listener cancels the event). */
 function leavingIsQuestioned(): boolean {
@@ -47,9 +51,9 @@ function save(document: "definition" | "theme", content: Record<string, unknown>
   );
 }
 
-async function openEditor(survey = sampleSurvey) {
+async function openEditor(survey = sampleSurvey, config = appConfig) {
   server.use(
-    configHandler(),
+    configHandler(config),
     meHandler(),
     surveyHandler(survey),
     definitionHandler({ title: "First" }, '"v1"'),
@@ -78,7 +82,24 @@ describe("the editor page", () => {
 
     expect(screen.getByText("Read-only")).toBeTruthy();
     expect(editor.props!.saves).toBeNull();
+    expect(editor.props!.uploads).toBeNull();
     expect(leavingIsQuestioned()).toBe(false);
+  });
+
+  it("passes uploads to the survey's assets with the configured limit", async () => {
+    await openEditor(sampleSurvey, {
+      ...appConfig,
+      limits: { ...appConfig.limits, maxAssetBytesPerSurvey: 1048576 },
+    });
+    const seen: SeenUpload[] = [];
+    server.use(uploadAssetHandler(sampleStoredFile, (upload) => seen.push(upload)));
+    const uploads = editor.props!.uploads!;
+
+    expect(uploads.maxAssetBytesPerSurvey).toBe(1048576);
+    await expect(uploads.upload(new File(["png"], "logo.png"))).resolves.toEqual(sampleStoredFile);
+    expect(seen.map((upload) => [upload.path, upload.parts[0]?.fileName])).toEqual([
+      [`/api/v1/surveys/${sampleSurvey.id}/assets`, "logo.png"],
+    ]);
   });
 
   it("shows a change the Creator holds back as saving, and asks before the page is left", async () => {
@@ -190,9 +211,41 @@ describe("the editor page", () => {
       `/api/v1/surveys/${sampleSurvey.id}/definition`,
       `/api/v1/surveys/${sampleSurvey.id}/theme`,
     ]);
+    reportLoaded();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("All changes saved")).toBeTruthy();
 
+    expect(await save("definition", { title: "Theirs and mine" })).toBe(true);
+    expect(definitions).toEqual([{ ifMatch: '"v7"', body: { title: "Theirs and mine" } }]);
+  });
+
+  it("saves again only once the editor holds the reloaded documents", async () => {
+    await openEditor();
+    server.use(editConflictHandler("definition"));
+    await save("definition", { title: "Mine" });
+    await screen.findByRole("alert");
+    const definitions: SavedContent[] = [];
+    server.use(
+      definitionHandler({ title: "Theirs" }, '"v7"'),
+      themeHandler({ themeName: "sharp" }, '"t7"'),
+      saveDefinitionHandler('"v8"', (saved) => definitions.push(saved)),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload latest" }));
+    await waitFor(() =>
+      expect(shown()).toEqual({ definition: { title: "Theirs" }, theme: { themeName: "sharp" } }),
+    );
+
+    // A change made before the reload, saved before the editor holds the new documents.
+    expect(await save("definition", { title: "Mine, late" })).toBe(false);
+    expect(definitions).toEqual([]);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The survey was changed by someone else.",
+    );
+
+    reportLoaded();
+
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(await save("definition", { title: "Theirs and mine" })).toBe(true);
     expect(definitions).toEqual([{ ifMatch: '"v7"', body: { title: "Theirs and mine" } }]);
   });
@@ -228,6 +281,7 @@ describe("the editor page", () => {
     fireEvent.click(reload);
 
     await waitFor(() => expect(shown()).toEqual({ definition: { title: "Theirs" }, theme: {} }));
+    reportLoaded();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByTestId("fake-creator")).toBe(shownEditor);
   });

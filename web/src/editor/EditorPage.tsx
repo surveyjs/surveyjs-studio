@@ -5,7 +5,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api/client";
 import {
   definitionQueryOptions,
@@ -17,6 +17,7 @@ import {
   type SurveyTheme,
   type VersionedDocument,
 } from "../api/content";
+import { uploadSurveyAsset } from "../api/files";
 import { surveyQueryOptions, type Survey } from "../api/surveys";
 import { applySurveyJSLicense } from "../surveyjs/license";
 import {
@@ -29,7 +30,7 @@ import {
 } from "./autosave";
 import styles from "./editor.module.css";
 import { FooterNameEditor } from "./FooterNameEditor";
-import type { EditorDocuments, EditorSaves } from "./SurveyEditor";
+import type { EditorDocuments, EditorSaves, EditorUploads } from "./SurveyEditor";
 
 // The Creator and its styles load only here, on demand: nothing the survey list or this page's
 // own chunk imports pulls them in.
@@ -78,7 +79,14 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
   if (definition.data === undefined || theme.data === undefined || !licenceApplied) {
     return <EditorFrame survey={survey} />;
   }
-  return <EditorSession survey={survey} definition={definition.data} theme={theme.data} />;
+  return (
+    <EditorSession
+      survey={survey}
+      definition={definition.data}
+      theme={theme.data}
+      maxAssetBytesPerSurvey={config.limits.maxAssetBytesPerSurvey}
+    />
+  );
 }
 
 /** The open editor: the Creator, its savers, the status and the conflict notice. */
@@ -86,11 +94,14 @@ function EditorSession({
   survey,
   definition,
   theme,
+  maxAssetBytesPerSurvey,
 }: {
   survey: Survey;
   /** The documents as first read; later reads come from "Reload latest". */
   definition: VersionedDocument<SurveyDefinition>;
   theme: VersionedDocument<SurveyTheme>;
+  /** The configured upload quota per survey. */
+  maxAssetBytesPerSurvey: number;
 }) {
   const queryClient = useQueryClient();
   // Fixed for the session: the savers exist or not from the start.
@@ -107,10 +118,24 @@ function EditorSession({
           onChange: setStates,
         }),
   );
+  // Fixed for the session, like the savers: a new object would build a new Creator.
+  const [uploads] = useState<EditorUploads | null>(() =>
+    readOnly
+      ? null
+      : { upload: (file) => uploadSurveyAsset(survey.id, file), maxAssetBytesPerSurvey },
+  );
   const [documents, setDocuments] = useState<EditorDocuments>(() => ({
     definition: definition.content,
     theme: theme.content,
   }));
+  // The ETags of the last "Reload latest", with the documents object they belong to. The savers
+  // start again only once the Creator holds those documents: until then a change made before the
+  // reload could still be saved, over the reloaded content.
+  const reloaded = useRef<{
+    documents: EditorDocuments;
+    definitionEtag: string;
+    themeEtag: string;
+  } | null>(null);
   const [reloading, setReloading] = useState(false);
   const [reloadFailed, setReloadFailed] = useState(false);
   // A change the Creator holds for its auto-save delay, not yet handed to a saver.
@@ -128,13 +153,25 @@ function EditorSession({
         queryClient.fetchQuery({ ...definitionQueryOptions(survey.id), staleTime: 0 }),
         queryClient.fetchQuery({ ...themeQueryOptions(survey.id), staleTime: 0 }),
       ]);
-      savers.reset(latestDefinition.etag, latestTheme.etag);
-      setDocuments({ definition: latestDefinition.content, theme: latestTheme.content });
+      const latest = { definition: latestDefinition.content, theme: latestTheme.content };
+      reloaded.current = {
+        documents: latest,
+        definitionEtag: latestDefinition.etag,
+        themeEtag: latestTheme.etag,
+      };
+      setDocuments(latest);
     } catch {
       setReloadFailed(true);
     } finally {
       setReloading(false);
     }
+  };
+
+  const documentsLoaded = (loaded: EditorDocuments) => {
+    const latest = reloaded.current;
+    if (savers === null || latest === null || latest.documents !== loaded) return;
+    reloaded.current = null;
+    savers.reset(latest.definitionEtag, latest.themeEtag);
   };
 
   return (
@@ -164,7 +201,9 @@ function EditorSession({
           surveyId={survey.id}
           documents={documents}
           saves={savers === null ? null : savers.saves}
+          uploads={uploads}
           onPendingChange={setPendingChange}
+          onDocumentsLoaded={documentsLoaded}
         />
       </Suspense>
     </EditorFrame>
@@ -269,7 +308,7 @@ const isConflict = (error: unknown) =>
 /**
  * The two savers of the open survey. A conflict on either document stops both: requests fail at
  * once, and a save the other saver has queued fails as a conflict without being sent. `reset`
- * (after "Reload latest") starts both again with the new ETags.
+ * (once the Creator holds the documents of "Reload latest") starts both again with their ETags.
  */
 function createContentSavers(options: {
   queryClient: QueryClient;

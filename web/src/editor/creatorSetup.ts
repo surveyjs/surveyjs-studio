@@ -27,7 +27,6 @@ import {
   type ThemeTabPlugin,
 } from "survey-creator-core";
 import { SurveyCreator } from "survey-creator-react";
-import type { SurveyDefinition, SurveyTheme as StoredTheme } from "../api/content";
 import obfuscatedDownloadIcon from "../shell/surveyjs-site/assets/icons/editor/obf-download.svg?raw";
 import angularIcon from "../shell/surveyjs-site/assets/icons/editor/v1/angular.svg?raw";
 import copyIconV1 from "../shell/surveyjs-site/assets/icons/editor/v1/copy.svg?raw";
@@ -42,8 +41,13 @@ import embedCreatorIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/em
 import embedSurveyIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/embedsurvey-24x24.svg?raw";
 import helpIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/help.svg?raw";
 import publishIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/publish.svg?raw";
+import { wireAutoSave, type EditorDocuments, type EditorSaves } from "./creatorAutosave";
 import { addEmbedTabs } from "./embed/EmbedTab";
 import { obfuscateSurvey } from "./obfuscate";
+import { createUploadHandler, type EditorUploads } from "./uploads";
+
+export type { EditorDocuments, EditorSaves, SaveRequest } from "./creatorAutosave";
+export type { EditorUploads } from "./uploads";
 
 declare global {
   interface Window {
@@ -53,19 +57,6 @@ declare global {
 
 /** Where surveyjs.io keeps the user's Creator UI theme (`editor.tsx`). */
 const CREATOR_THEME_KEY = "OnlineEditorSurveyCreatorThemeV3";
-
-/** Saves one document; `done(ok)` once a save covering `content` ends. */
-export type SaveRequest<T> = (content: T, done: (ok: boolean) => void) => void;
-
-export interface EditorSaves {
-  readonly definition: SaveRequest<SurveyDefinition>;
-  readonly theme: SaveRequest<StoredTheme>;
-}
-
-export interface EditorDocuments {
-  readonly definition: SurveyDefinition;
-  readonly theme: StoredTheme;
-}
 
 let configured = false;
 
@@ -294,9 +285,14 @@ export function addSiteToolbarItemsAndTabs(
   addEmbedTabs(creator, context.surveyId);
 }
 
-/** A Creator and how to close it. */
+/** A Creator, how to load documents into it and how to close it. */
 export interface CreatorSession {
   readonly creator: SurveyCreator;
+  /**
+   * Shows `documents` in the Creator: on open, and again after "Reload latest". A change still
+   * waiting for the auto-save delay is dropped first, so it cannot save over the loaded documents.
+   */
+  load(documents: EditorDocuments): void;
   /**
    * Hands every change not yet sent to the saves (they finish on their own), then disposes the
    * Creator, so that leaving the editor loses no change and no Creator timer fires afterwards.
@@ -305,26 +301,16 @@ export interface CreatorSession {
 }
 
 /**
- * Cancels a scheduled auto-save. Creator 3.1.2 keeps the timer in a private `autoSaveTimerId`: the
- * Creator's for the survey, the Themes tab plugin's for the theme; no public call cancels it.
- */
-function cancelAutoSave(owner: object | undefined): void {
-  const timed = owner as { autoSaveTimerId?: ReturnType<typeof setTimeout> | null } | undefined;
-  if (timed?.autoSaveTimerId) {
-    clearTimeout(timed.autoSaveTimerId);
-    timed.autoSaveTimerId = null;
-  }
-}
-
-/**
- * A new Creator for one survey. Without `saves` it is read-only: nothing can be changed and
- * nothing is saved. Otherwise every change is saved (500 ms after the last one) through `saves`.
+ * A new Creator for one survey. Without `saves` it is read-only: nothing can be changed, saved or
+ * uploaded. Otherwise every change is saved (500 ms after the last one) through `saves`, and files
+ * go to `uploads` (without `uploads` the Creator keeps them in the survey JSON as data URLs).
  * `onPendingChange(true)` tells that a change is waiting for that delay (not yet handed to
  * `saves`), `onPendingChange(false)` that every change has been handed over.
  */
 export function createCreator(options: {
   readonly surveyId: string;
   readonly saves: EditorSaves | null;
+  readonly uploads: EditorUploads | null;
   readonly onPendingChange?: (pending: boolean) => void;
 }): CreatorSession {
   configureOnce();
@@ -339,84 +325,46 @@ export function createCreator(options: {
   creator.onCreatorThemePropertyChanged.add(() => saveCreatorTheme(creator));
   creator.onCreatorThemeSelected.add(() => saveCreatorTheme(creator));
 
-  const { saves } = options;
+  const { saves, uploads } = options;
   addSiteToolbarItemsAndTabs(creator, { surveyId: options.surveyId, readOnly: saves === null });
 
   if (saves === null) {
     creator.readOnly = true;
-    return { creator, close: () => creator.dispose() };
+    return {
+      creator,
+      load: (documents) => loadDocuments(creator, documents),
+      close: () => creator.dispose(),
+    };
   }
 
-  // A change is pending from the event the Creator schedules its auto-save with (`onModified` for
-  // the survey, the Themes tab's change events for the theme) until the save function runs.
   let closed = false;
-  const pending = { definition: false, theme: false };
-  let reported = false;
-  const report = () => {
-    const now = pending.definition || pending.theme;
-    if (now === reported) return;
-    reported = now;
-    options.onPendingChange?.(now);
-  };
-  const changed = (document: keyof typeof pending) => {
-    if (closed) return;
-    pending[document] = true;
-    report();
-  };
-  const sendDefinition = (done: (ok: boolean) => void) => {
-    saves.definition(creator.JSON as SurveyDefinition, done);
-    pending.definition = false;
-    report();
-  };
-  const sendTheme = (done: (ok: boolean) => void) => {
-    saves.theme(creator.theme as StoredTheme, done);
-    pending.theme = false;
-    report();
-  };
-
-  creator.onModified.add(() => changed("definition"));
-  const themeTab = creator.getPlugin<ThemeTabPlugin>("theme");
-  themeTab?.onThemeSelected.add(() => changed("theme"));
-  themeTab?.onThemePropertyChanged.add(() => changed("theme"));
-
-  // Before the save functions: with auto-save on, the Creator shows no Save button.
-  creator.autoSaveEnabled = true;
-  // A save that ends after `close` does not call back into the disposed Creator.
-  creator.saveSurveyFunc = (saveNo: number, callback: (no: number, ok: boolean) => void) => {
-    sendDefinition((ok) => {
-      if (!closed) callback(saveNo, ok);
+  const autoSave = wireAutoSave(
+    creator,
+    creator.getPlugin<ThemeTabPlugin>("theme"),
+    saves,
+    options.onPendingChange,
+  );
+  if (uploads !== null) {
+    const upload = createUploadHandler({
+      ...uploads,
+      notify: (message) => creator.notify(message, "error"),
+      isClosed: () => closed,
     });
-  };
-  creator.saveThemeFunc = (saveNo: number, callback: (no: number, ok: boolean) => void) => {
-    sendTheme((ok) => {
-      if (!closed) callback(saveNo, ok);
-    });
-  };
+    creator.onUploadFile.add((_, event) => upload(event));
+  }
 
   return {
     creator,
+    load: (documents) => autoSave.load(() => loadDocuments(creator, documents)),
     close() {
-      // Text typed on the JSON tab reaches the survey when the tab is left; leaving the page
-      // leaves it too (text that does not parse, or has errors, is not applied).
-      creator.applyPendingChanges();
-      cancelAutoSave(creator);
-      cancelAutoSave(themeTab);
-      if (pending.definition) sendDefinition(() => {});
-      if (pending.theme) sendTheme(() => {});
       closed = true;
-      creator.dispose();
-      // Disposing leaves the open tab, which may apply the JSON tab's text and schedule a save.
-      cancelAutoSave(creator);
-      cancelAutoSave(themeTab);
+      autoSave.close();
     },
   };
 }
 
-/**
- * Shows `documents` in the Creator: on open, and again after "Reload latest". A loaded theme is
- * not a pending change.
- */
-export function loadDocuments(creator: SurveyCreator, documents: EditorDocuments): void {
+/** Shows `documents` in the Creator. A loaded theme is not a pending change. */
+function loadDocuments(creator: SurveyCreator, documents: EditorDocuments): void {
   // The Themes tab reads the theme only when it opens; leave it so it reads the loaded one.
   if (creator.activeTab === "theme") creator.switchTab("designer");
   creator.JSON = documents.definition;
