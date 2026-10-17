@@ -113,7 +113,10 @@ Rules:
 ### Errors
 
 The checks run in this order: authentication and CSRF, the media type of the request, the path id, the
-survey (`404`, then `403`), the quota that is left, then the file. Nothing is stored for any error.
+survey (`404`, then `403`), the quota that is left, then the file. After the file is stored, the survey
+and the quota are checked once more: a survey deleted in the meantime gives `404`, and a total over the
+quota (another upload ran at the same time) gives `413`. The new file is deleted in both cases, and also
+when the store fails at that point (`500`). Nothing is kept for any error.
 
 | Status | `code`                   | When                                                                                                                                                                                 |
 | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
