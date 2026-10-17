@@ -60,7 +60,7 @@ Click **Create a Survey**. The editor opens at `/surveys/<id>/edit`. Note the su
 On the **Designer** tab, click **Single-Line Input** in the toolbox (or any other question; it adds a text
 question named `question1`). Open the
 **Themes** tab and choose a theme with a colour you can recognise (for example pick another theme from the
-list and change the **Primary Color**). The status bar shows **Saving…** and then **All changes saved**.
+list and change the **Accent color**). The status bar shows **Saving…** and then **All changes saved**.
 
 Go back to the list (**My Surveys** in the header). Open the "…" menu of your survey and click **Publish**.
 Open the menu again and click **Run**.

@@ -75,8 +75,10 @@ Run with Vitest from the root. Scope:
   (the closed session and the reload ordering) as modules with no Creator, and the editor page (the upload
   settings, and saving again only once the reloaded documents are in the editor). For the run page: the modules
   of `web/src/run/` that have no library in them (`search.ts`, `definition.ts` with `withServerFileStorage` over
-  every kind of question and matrix column, `cookie.ts`, `clientId.ts` with a fake storage, `load.ts`,
-  `runState.ts`, `submit.ts` and `responseUploads.ts` with every message), `api/public.ts`, and the routes
+  every kind of question and matrix column and `forRunPage` dropping the old service's properties, `cookie.ts`
+  with `runCookieName` mapping names such as `msid_csrf=x; path=/; a` to a token, `clientId.ts` with a fake
+  storage, `load.ts`, `runState.ts`, `submit.ts` (with the library's cookie kept or deleted) and
+  `responseUploads.ts` with every message), `api/public.ts`, and the routes
   rendered through the router (`runRoutes.test.tsx`: the states, the `/published` redirect that keeps the
   other search members; `privateRoutes.test.tsx`: `/s/<id>` needs no session). **`RunSurvey.tsx` has no real
   unit test**: the tests swap it for a stand-in, because jsdom does not run the library here, and the e2e spec

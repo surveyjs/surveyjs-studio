@@ -148,10 +148,19 @@ of the old site that put answers in the query string, which the old page did wit
 
 Four decisions came after the first design and replace its text:
 
-- **The completed-before cookie is written with `path=/s`, not `/` (S18).** The cookie name comes from the
-  survey's author. A cookie for the whole site with a name such as `msid_csrf` could overwrite the application's
-  own cookie. With `path=/s` it is sent only to run pages, and the library reads it at `/s/{id}`. The cost is that
-  only the pages under `/s` see the cookie.
+- **The limit cookie gets a token name and the run pages' scope (S18).** The cookie name comes from the
+  survey's author, and two code paths write it: the page (the completed-before cookie) and the Form Library itself,
+  which writes `{cookieName}=true` on every completion with no attributes of its own. A name such as
+  `msid_csrf=x; path=/; a` would make the library's write overwrite the application's `msid_csrf` cookie for the
+  whole site, and a `domain=` part could reach sibling hosts. So the page never hands the author's name to the
+  library: `runCookieName` keeps a name that is an RFC 6265 token and percent-encodes any other one into a token
+  (the survey id when it cannot be encoded), and the model's copy of the definition carries that name. The page
+  writes the completed-before cookie under the same name with `path=/s`. The library's write has no `path`, so
+  the browser gives it the default path of `/s/{id}`, which is `/s`: both writes are the same cookie, sent only
+  to run pages. What remains: a token name that equals one of the app's names (`msid_csrf`) gives a second
+  cookie of that name under `/s`, which shadows the app's one in `document.cookie` only while a page under `/s`
+  is open; requests to `/api` do not carry it. The server's `409` reads the stored definition, not this name.
+  The cost is that only the pages under `/s` see the cookie.
 - **`ClientId` has a pattern in the contract (S3).** Azure Table row keys refuse `/`, `\`, `#`, `?` and control
   characters (layout, 3.7), so a marker could not be written for such an id and the providers would differ.
   The contract's `ClientId` now has the pattern `^[^/\\#?\u0000-\u001F\u007F-\u009F]+$`. The server answers `400`

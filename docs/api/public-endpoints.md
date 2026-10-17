@@ -110,8 +110,10 @@ that has the old site's flag (`usecookies`, read only here) and no `cookieName` 
 `cookieName` with the survey id to the returned definition. An empty `cookieName` counts as none.
 
 The convention for an embed that uses the Form Library: take `cookieName` from the returned definition and
-pass the definition to `new Model(...)`; the library writes and reads that cookie itself. For the server
-side, send the same `clientId` on load and on submit:
+pass the definition to `new Model(...)`; the library writes and reads that cookie itself. The library writes
+the name into `document.cookie` as it is, so an embed that runs surveys it does not trust should replace a
+`cookieName` that is not an RFC 6265 token (the run page percent-encodes it). For the server side, send the
+same `clientId` on load and on submit:
 
 ```sh
 CLIENT=$(uuidgen)
@@ -202,8 +204,10 @@ Every answer of a limited operation also carries the limit headers of `@fastify/
 `x-ratelimit-limit` (the maximum), `x-ratelimit-remaining` and `x-ratelimit-reset` (seconds until the window
 ends). The sign-in operations keep their own detail text, "Too many sign-in attempts. Try again in ...".
 
-Several respondents behind one address (a school, an office) share a counter. Raise `PUBLIC_RATE_LIMIT` for
-such a deployment. The counters live in the process: with several server instances each one counts on its
+Several respondents behind one address (a school, an office) share a counter. The run page of a survey with
+"Limit to one response" reads `getPublishedSurvey` twice for a browser that has a client id (once to learn
+whether the limit is on, once with the id), so such page loads use the budget twice as fast. Raise
+`PUBLIC_RATE_LIMIT` for such a deployment. The counters live in the process: with several server instances each one counts on its
 own (a shared store is open for Step 14).
 
 ## Respondent files
