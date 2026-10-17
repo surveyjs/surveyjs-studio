@@ -168,7 +168,8 @@ export function historyEntryFromBlob(
   };
 }
 
-const isFileKind = (value: string | undefined): value is FileKind => value === "asset";
+const isFileKind = (value: string | undefined): value is FileKind =>
+  value === "asset" || value === "response";
 
 /** The `name` metadata decoded (it is URI-encoded: metadata is ASCII only); null when unreadable. */
 function decodedFileName(value: string | undefined): string | null {
@@ -218,11 +219,25 @@ export function fileRecordFromBlob(
   };
 }
 
+/**
+ * A stored response from a `post{postId}` row. A `result` that is not JSON, or not a JSON object,
+ * cannot be represented: the mapping throws UnmappableLegacyRowError naming the row id.
+ */
 export function responseFromLegacy(entity: LegacyResultEntity): SurveyResponse {
+  const id = guid(entity.id);
+  let data: unknown;
+  try {
+    data = JSON.parse(entity.result);
+  } catch {
+    throw new UnmappableLegacyRowError({ responseId: id }, "result is not JSON");
+  }
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    throw new UnmappableLegacyRowError({ responseId: id }, "result is not a JSON object");
+  }
   return {
-    id: guid(entity.id),
+    id,
     submittedAt: entity.happendat.toISOString(),
-    data: JSON.parse(entity.result) as Record<string, unknown>,
+    data: data as Record<string, unknown>,
     ...(entity.clientid ? { clientId: entity.clientid } : {}),
     ...(entity.ipaddress ? { respondentIp: entity.ipaddress } : {}),
     partial: entity.ispartialcompleted === true,

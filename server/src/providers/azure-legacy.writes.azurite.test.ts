@@ -10,13 +10,19 @@ import {
 import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newFileId } from "../domain/file-id.js";
-import type { NewSurvey, StoredFileRecord, SurveyOwner } from "../domain/types.js";
+import type {
+  NewResponse,
+  NewSurvey,
+  StoredFileRecord,
+  SurveyOwner,
+  SurveyRecord,
+} from "../domain/types.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { localBlobServiceClient, localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
 import { ADMIN_ID, PROJECT_B_ID, surveyDraft, surveyFeedback } from "./suite/expected.js";
-import type { ProviderSet } from "./types.js";
+import { ResponseTooLargeError, type AppendOutcome, type ProviderSet } from "./types.js";
 import {
   writeDefinitionSave,
   writeThemeSave,
@@ -753,6 +759,213 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     });
   });
 
+  describe("results", () => {
+    const RESULTS_ACCOUNT = "LEGACY_RESULTS_STORAGE_CONNECTION_STRING";
+    const SUBMITTED_AT = "2026-09-10T08:30:15.250Z";
+    const compact = (id: string) => id.replaceAll("-", "");
+    const table = (name: string) =>
+      localTableClient(config.resultsStorageConnectionString, name, RESULTS_ACCOUNT);
+    const rowsTable = (survey: SurveyRecord) => table(`post${compact(survey.postId)}`);
+    const markersTable = (survey: SurveyRecord) => table(`SurveyCompletion${compact(survey.id)}`);
+
+    async function tableExists(name: string): Promise<boolean> {
+      try {
+        await table(name).listEntities().byPage({ maxPageSize: 1 }).next();
+        return true;
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === 404) return false;
+        throw error;
+      }
+    }
+
+    /** A new survey of a fresh personal scope. */
+    const freshSurvey = (): Promise<SurveyRecord> =>
+      store().surveys.createSurvey(newSurvey(personal()));
+
+    const append = (
+      survey: SurveyRecord,
+      id: string,
+      over: Partial<NewResponse> = {},
+    ): Promise<AppendOutcome> =>
+      store().results.appendResponse(survey, {
+        id,
+        submittedAt: SUBMITTED_AT,
+        data: { q1: "first" },
+        ...over,
+      });
+
+    /** The row read without type conversion: the other properties come as `{ value, type }`. */
+    async function raw(client: TableClient, rowKey: string): Promise<Record<string, unknown>> {
+      return (await client.getEntity("*", rowKey, { disableTypeConversion: true })) as Record<
+        string,
+        unknown
+      >;
+    }
+    const SYSTEM = ["partitionKey", "rowKey", "etag", "timestamp"];
+    const propertiesOf = (row: Record<string, unknown>): string[] =>
+      Object.keys(row)
+        .filter((key) => !SYSTEM.includes(key) && !key.startsWith("odata"))
+        .sort();
+
+    it("creates post{postId} with exactly the legacy row properties and Edm types", async () => {
+      const survey = await freshSurvey();
+      const name = `post${compact(survey.postId)}`;
+      expect(await tableExists(name)).toBe(false);
+      const id = randomUUID();
+      expect(
+        await append(survey, id.toUpperCase(), {
+          data: { q1: "a", q2: [1, 2] },
+          clientId: "client-w1",
+          respondentIp: "203.0.113.9",
+        }),
+      ).toBe("stored");
+      expect(await tableExists(name)).toBe(true);
+
+      const row = await raw(rowsTable(survey), id);
+      expect(row.partitionKey).toBe("*");
+      expect(row.rowKey).toBe(id);
+      expect(propertiesOf(row)).toEqual(
+        ["id", "type", "happendat", "surveyid", "postid", "result", "clientid", "ipaddress"].sort(),
+      );
+      expect(row.id).toEqual({ type: "Guid", value: id });
+      expect(row.type).toEqual({ type: "String", value: "SURVEY_POSTRESUTL" });
+      expect(row.happendat).toEqual({ type: "DateTime", value: SUBMITTED_AT });
+      const surveyid = row.surveyid as { type: string; value: string };
+      expect(surveyid.type).toBe("Guid");
+      expect(surveyid.value).toMatch(GUID);
+      expect(surveyid.value).not.toBe(survey.id);
+      expect(row.postid).toEqual({ type: "Guid", value: survey.postId });
+      expect(row.result).toEqual({ type: "String", value: '{"q1":"a","q2":[1,2]}' });
+      expect(row.clientid).toEqual({ type: "String", value: "client-w1" });
+      expect(row.ipaddress).toEqual({ type: "String", value: "203.0.113.9" });
+      expect(row).not.toHaveProperty("ispartialcompleted");
+    });
+
+    it("writes neither clientid nor ipaddress when they are not given", async () => {
+      const survey = await freshSurvey();
+      const id = randomUUID();
+      await append(survey, id);
+      const row = await raw(rowsTable(survey), id);
+      expect(propertiesOf(row)).toEqual(
+        ["id", "type", "happendat", "surveyid", "postid", "result"].sort(),
+      );
+      expect(await tableExists(`SurveyCompletion${compact(survey.id)}`)).toBe(false);
+    });
+
+    it("writes the marker with a Boolean false, and publishid once the survey has one", async () => {
+      const survey = await freshSurvey();
+      await append(survey, randomUUID(), { clientId: "client-m1" });
+      const marker = await raw(markersTable(survey), "client-m1");
+      expect(marker.partitionKey).toBe("*");
+      expect(marker.rowKey).toBe("client-m1");
+      expect(propertiesOf(marker)).toEqual(["ispartialcompleted"]);
+      expect(marker.ispartialcompleted).toEqual({ type: "Boolean", value: "false" });
+      expect(await store().results.completion(survey, "client-m1")).toBe("completed");
+
+      if (!pool) throw new Error("beforeAll did not connect");
+      const publishId = randomUUID().toUpperCase();
+      await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, survey.id)
+        .input("p", sql.UniqueIdentifier, publishId)
+        .query("UPDATE Surveys SET publishid = @p WHERE id = @id");
+      await append(survey, randomUUID(), { clientId: "client-m1" });
+      const after = await raw(markersTable(survey), "client-m1");
+      expect(propertiesOf(after)).toEqual(["ispartialcompleted", "publishid"]);
+      expect(after.publishid).toEqual({ type: "String", value: publishId.toLowerCase() });
+      expect(after.ispartialcompleted).toEqual({ type: "Boolean", value: "false" });
+    });
+
+    it("round-trips a client id with a quote, an accent and spaces", async () => {
+      const survey = await freshSurvey();
+      const clientId = "o'Brien é  x";
+      await append(survey, randomUUID(), { clientId });
+      expect(await store().results.completion(survey, clientId)).toBe("completed");
+      expect(await store().results.completion(survey, "O'BRIEN É  X")).toBe("none");
+      expect((await store().results.listResponses(survey))[0]?.clientId).toBe(clientId);
+    });
+
+    describe("the 32,768 character cap", () => {
+      /** Data whose JSON text has exactly `length` characters. */
+      const dataOfLength = (length: number): Record<string, unknown> => {
+        const base = JSON.stringify({ t: "" }).length;
+        return { t: "x".repeat(length - base) };
+      };
+
+      it("stores exactly 32,768 and reads it back equal", async () => {
+        const survey = await freshSurvey();
+        const data = dataOfLength(32_768);
+        expect(JSON.stringify(data)).toHaveLength(32_768);
+        expect(await append(survey, randomUUID(), { data })).toBe("stored");
+        expect((await store().results.listResponses(survey))[0]?.data).toEqual(data);
+      });
+
+      it("refuses 32,769 with ResponseTooLargeError and writes nothing", async () => {
+        const survey = await freshSurvey();
+        const id = randomUUID();
+        const data = dataOfLength(32_769);
+        const error = await append(survey, id, { data, clientId: "client-big" }).catch(
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(ResponseTooLargeError);
+        expect(error).toMatchObject({ length: 32_769, max: 32_768 });
+        expect(await store().results.hasResponse(survey, id)).toBe(false);
+        expect(await tableExists(`post${compact(survey.postId)}`)).toBe(false);
+        expect(await store().results.completion(survey, "client-big")).toBe("none");
+      });
+    });
+
+    it("keeps the first row when the same id comes again", async () => {
+      const survey = await freshSurvey();
+      const id = randomUUID();
+      expect(await append(survey, id, { data: { q1: "first" } })).toBe("stored");
+      expect(await append(survey, id, { data: { q1: "second" } })).toBe("exists");
+      const row = await raw(rowsTable(survey), id);
+      expect(row.result).toEqual({ type: "String", value: '{"q1":"first"}' });
+    });
+
+    it("adds no row to the surveys audit table", async () => {
+      const survey = await freshSurvey();
+      const before = (await auditRows(survey.id)).length;
+      await append(survey, randomUUID(), { clientId: "client-audit" });
+      await append(survey, randomUUID());
+      expect(await auditRows(survey.id)).toHaveLength(before);
+    });
+
+    it("is dropped with the survey: post{postId} and SurveyCompletion{surveyId}", async () => {
+      const survey = await freshSurvey();
+      await append(survey, randomUUID(), { clientId: "client-del" });
+      const names = [`post${compact(survey.postId)}`, `SurveyCompletion${compact(survey.id)}`];
+      for (const name of names) expect(await tableExists(name), name).toBe(true);
+      expect(await store().surveys.deleteSurvey(survey.id)).toBe(true);
+      for (const name of names) expect(await tableExists(name), name).toBe(false);
+    });
+
+    it("stores a respondent file with the kind response", async () => {
+      const survey = await freshSurvey();
+      const file: StoredFileRecord = {
+        id: newFileId(survey.id),
+        surveyId: survey.id,
+        kind: "response",
+        name: "receipt.bin",
+        contentType: "application/octet-stream",
+        size: 4,
+        createdAt: "2026-09-10T08:30:15.250Z",
+      };
+      try {
+        await store().files.putFile(file, Buffer.from([1, 2, 3, 4]));
+        const properties = await blobs
+          .getContainerClient("my-surveys-files")
+          .getBlobClient(`${survey.id}/${file.id}`)
+          .getProperties();
+        expect(properties.metadata?.kind).toBe("response");
+        expect((await store().files.getFile(file.id))?.file).toEqual(file);
+      } finally {
+        await store().files.deleteSurveyFiles(survey.id);
+      }
+    });
+  });
+
   describe("deleteSurvey", () => {
     const RESULTS_ACCOUNT = "LEGACY_RESULTS_STORAGE_CONNECTION_STRING";
     const resultsTable = (name: string) =>
@@ -980,6 +1193,12 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
           config.resultsStorageConnectionString,
           { allowInsecureConnection: true },
         ),
+        resultTable: (name) =>
+          localTableClient(
+            config.resultsStorageConnectionString,
+            name,
+            "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+          ),
         logger: { warn: (details, message) => warnings.push({ details, message }) },
       };
     }
@@ -1276,6 +1495,12 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
             allowInsecureConnection: true,
           },
         ),
+        resultTable: (name) =>
+          localTableClient(
+            config.resultsStorageConnectionString,
+            name,
+            "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+          ),
         logger: { warn: (details, message) => warnings.push({ details, message }) },
       };
       const survey = newSurvey(personal());

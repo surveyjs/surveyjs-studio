@@ -10,6 +10,7 @@ import type {
 import sql from "mssql";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
+  NewResponse,
   NewSurvey,
   SaveOutcome,
   SurveyChanges,
@@ -18,6 +19,7 @@ import type {
   SurveyRecord,
   StoredFileRecord,
 } from "../../domain/types.js";
+import { ResponseTooLargeError, type AppendOutcome } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
 import { fileRecordFromBlob, isGuid } from "./mapping.js";
@@ -26,7 +28,8 @@ import { fileRecordFromBlob, isGuid } from "./mapping.js";
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
  * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
  * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
- * legacy code never reads) and clone rewriting. Each survey write uses the format the legacy site
+ * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers. Each
+ * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
  * Errors and log lines built here hold operation names, driver codes and row ids only, never row
@@ -43,6 +46,8 @@ export interface LegacyWriteTargets {
   readonly events: TableClient;
   /** Table service of the results account: `post…`, `SurveyCompletion…`, `postdelete…` tables. */
   readonly resultTables: TableServiceClient;
+  /** One table of the results account, by name (result rows and completion markers). */
+  readonly resultTable: (name: string) => TableClient;
   readonly logger: LegacyWarningLogger;
 }
 
@@ -70,6 +75,9 @@ const SURVEY_THEME_SAVE =
   "AND DATALENGTH(ISNULL(theme, '')) = DATALENGTH(@expected)";
 /** Azure Table strings hold 64 KiB (32,768 UTF-16 code units); the rest of the row needs room. */
 const MAX_AUDIT_THEME_LENGTH = 32_000;
+
+/** Azure Table strings hold 64 KiB = 32,768 UTF-16 code units: the longest `result` we store. */
+const MAX_RESULT_LENGTH = 32_768;
 
 /** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
 const LAYOUT_CONTAINERS = [
@@ -329,6 +337,93 @@ async function appendEvent(events: TableClient, event: TableEntity): Promise<voi
     await events.createTable();
     await events.createEntity(event);
   }
+}
+
+/** Creates the entity; creates the table when it is missing (a race for the table is fine). */
+async function createEntityInTable(table: TableClient, entity: TableEntity): Promise<void> {
+  try {
+    await table.createEntity(entity);
+  } catch (error) {
+    if (statusOf(error) !== 404) throw error;
+    await createTableIfMissing(table);
+    await table.createEntity(entity);
+  }
+}
+
+async function createTableIfMissing(table: TableClient): Promise<void> {
+  try {
+    await table.createTable();
+  } catch (error) {
+    if (statusOf(error) !== 409) throw error;
+  }
+}
+
+/**
+ * Stores a response as the legacy post does (layout sections 3.6, 3.7 and 5.2): a row in
+ * `post{postId}` (created when missing), then, for a response with a client id, that client's
+ * marker in `SurveyCompletion{surveyId}` as complete. The row's key is the response id, so an id
+ * that exists answers "exists" and leaves the row alone; the marker is still written, which repairs
+ * one lost to a failure after the row. No audit row: the row is the event.
+ *
+ * Refuses (nothing written) an id that is not a GUID and answers that do not fit one table string.
+ * Store failures reject with LegacyStoreError, which names the operation and driver code only.
+ */
+export async function writeResponse(
+  targets: LegacyWriteTargets,
+  survey: SurveyRecord,
+  response: NewResponse,
+  publishId: string | null,
+): Promise<AppendOutcome> {
+  const surveyId = checkedId("response write", survey.id);
+  const postId = checkedId("response write", survey.postId);
+  const id = checkedId("response write", response.id);
+  const result = JSON.stringify(response.data);
+  if (result.length > MAX_RESULT_LENGTH) {
+    throw new ResponseTooLargeError(result.length, MAX_RESULT_LENGTH);
+  }
+  const row: TableEntity<Record<string, unknown>> = {
+    partitionKey: "*",
+    rowKey: id,
+    id: guid(id),
+    type: "SURVEY_POSTRESUTL",
+    happendat: { type: "DateTime", value: response.submittedAt } satisfies Edm<"DateTime">,
+    // Legacy never sets it: a random GUID, not the survey (layout section 3.6).
+    surveyid: guid(randomUUID()),
+    postid: guid(postId),
+    result,
+    ...(response.clientId !== undefined && { clientid: response.clientId }),
+    ...(response.respondentIp !== undefined && { ipaddress: response.respondentIp }),
+  };
+
+  let outcome: AppendOutcome = "stored";
+  try {
+    await createEntityInTable(targets.resultTable(`post${postId.replaceAll("-", "")}`), row);
+  } catch (error) {
+    if (statusOf(error) !== 409) throw new LegacyStoreError("response write", error);
+    outcome = "exists";
+  }
+
+  if (response.clientId !== undefined) {
+    const marker: TableEntity<Record<string, unknown>> = {
+      partitionKey: "*",
+      rowKey: response.clientId,
+      ispartialcompleted: false,
+      ...(publishId !== null && { publishid: publishId }),
+    };
+    const table = targets.resultTable(`SurveyCompletion${surveyId.replaceAll("-", "")}`);
+    try {
+      try {
+        await table.upsertEntity(marker, "Replace");
+      } catch (error) {
+        if (statusOf(error) !== 404) throw error;
+        await createTableIfMissing(table);
+        await table.upsertEntity(marker, "Replace");
+      }
+    } catch (error) {
+      throw new LegacyStoreError("completion marker write", error);
+    }
+  }
+  return outcome;
 }
 
 /**

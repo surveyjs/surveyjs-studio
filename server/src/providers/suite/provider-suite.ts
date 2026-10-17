@@ -1020,8 +1020,12 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       const emptyStats = { count: 0, firstSubmittedAt: null, lastSubmittedAt: null };
 
       it("reads the fixture responses in order, with statistics and markers", async () => {
-        expect(await providers.results.listResponses(surveyFeedback)).toEqual(feedbackResponses);
-        expect(await providers.results.listResponses(surveyCampaign)).toEqual(campaignResponses);
+        expect(await providers.results.listResponses(surveyFeedback)).toStrictEqual(
+          feedbackResponses,
+        );
+        expect(await providers.results.listResponses(surveyCampaign)).toStrictEqual(
+          campaignResponses,
+        );
         expect(await providers.results.stats(surveyFeedback)).toEqual({
           count: 5,
           firstSubmittedAt: "2026-04-01T08:00:00.500Z",
@@ -1032,7 +1036,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           firstSubmittedAt: "2026-04-02T08:00:00.500Z",
           lastSubmittedAt: "2026-04-02T12:00:00.000Z",
         });
-        expect(await providers.results.listResponses(surveyDraft)).toEqual([]);
+        expect(await providers.results.listResponses(surveyDraft)).toStrictEqual([]);
         expect(await providers.results.stats(surveyDraft)).toEqual(emptyStats);
         const completion = (survey: SurveyRecord, client: string) =>
           providers.results.completion(survey, client);
@@ -1046,7 +1050,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         const survey = await freshSurvey();
         const id = randomUUID();
         expect(await append(survey, id.toUpperCase())).toBe("stored");
-        expect(await providers.results.listResponses(survey)).toEqual([
+        expect(await providers.results.listResponses(survey)).toStrictEqual([
           { id, submittedAt: "2026-08-02T12:00:00.000Z", data: { q: "first" }, partial: false },
         ]);
       });
@@ -1058,7 +1062,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await append(survey, id, { clientId: "c-1", respondentIp: "203.0.113.9" })).toBe(
           "stored",
         );
-        expect(await providers.results.listResponses(survey)).toEqual([
+        expect(await providers.results.listResponses(survey)).toStrictEqual([
           {
             id,
             submittedAt: "2026-08-02T12:00:00.000Z",
@@ -1079,7 +1083,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await append(survey, id)).toBe("stored");
         expect(await append(survey, id.toUpperCase(), { data: { q: "second" } })).toBe("exists");
         expect(await append(survey, id, { data: { q: "third" } })).toBe("exists");
-        expect((await providers.results.listResponses(survey)).map((r) => r.data)).toEqual([
+        expect((await providers.results.listResponses(survey)).map((r) => r.data)).toStrictEqual([
           { q: "first" },
         ]);
         expect(await providers.results.hasResponse(survey, id)).toBe(true);
@@ -1102,14 +1106,14 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       it("lists by time, then by id, and counts per survey", async () => {
         const survey = await freshSurvey();
         const other = await freshSurvey();
-        const at = (hour: number) => `2026-08-02T${String(hour)}:00:00.000Z`;
+        const at = (hour: number) => `2026-08-02T${String(hour).padStart(2, "0")}:00:00.000Z`;
         await append(survey, sid(1), { submittedAt: at(12) });
         await append(survey, sid(2), { submittedAt: at(10) });
         await append(survey, sid(3), { submittedAt: at(14) });
         await append(survey, sid(0xb), { submittedAt: at(11) });
         await append(survey, sid(0xa), { submittedAt: at(11) });
         await append(other, sid(1), { submittedAt: at(9) });
-        expect((await providers.results.listResponses(survey)).map((r) => r.id)).toEqual([
+        expect((await providers.results.listResponses(survey)).map((r) => r.id)).toStrictEqual([
           sid(2),
           sid(0xa),
           sid(0xb),
@@ -1150,7 +1154,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         const id = randomUUID();
         await append(survey, id, { clientId: "c-gone" });
         expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
-        expect(await providers.results.listResponses(survey)).toEqual([]);
+        expect(await providers.results.listResponses(survey)).toStrictEqual([]);
         expect((await providers.results.stats(survey)).count).toBe(0);
         expect(await providers.results.completion(survey, "c-gone")).toBe("none");
         expect(await providers.results.hasResponse(survey, id)).toBe(false);

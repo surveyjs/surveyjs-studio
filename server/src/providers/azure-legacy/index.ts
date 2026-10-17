@@ -30,6 +30,7 @@ import type {
 } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
+import { createAzureResultStore } from "./results.js";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
@@ -99,9 +100,6 @@ export interface AzureLegacyOptions {
   /** Blob container of the editor files in the surveys account; default `my-surveys-files`. Tests only. */
   readonly filesContainer?: string;
 }
-
-const notImplemented = (): Promise<never> =>
-  Promise.reject(new Error("not implemented until Task 2"));
 
 /** The editor files' container (Step 7, R2), invisible to legacy code. */
 const FILES_CONTAINER = "my-surveys-files";
@@ -190,6 +188,19 @@ function surveyEventsTable(connectionString: string): TableClient {
   } catch {
     throw new Error(
       "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING is not a valid Azure Storage connection string",
+    );
+  }
+}
+
+/** One table of the results account; a throw is wrapped, the SDK message may quote the string. */
+function resultTableClient(connectionString: string, name: string): TableClient {
+  try {
+    return TableClient.fromConnectionString(connectionString, name, {
+      allowInsecureConnection: isLocalStorageString(connectionString),
+    });
+  } catch {
+    throw new Error(
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING is not a valid Azure Storage connection string",
     );
   }
 }
@@ -464,8 +475,20 @@ export function createAzureLegacyProviders(
     blobs: surveysAccount.blobs,
     events: surveyEvents,
     resultTables: resultsAccount.tables,
+    resultTable: (name) => resultTableClient(legacy.resultsStorageConnectionString, name),
     logger,
   };
+
+  /** `Surveys.publishid` in lower case; null when it is NULL or the survey has no row. */
+  async function publishIdOf(surveyId: string): Promise<string | null> {
+    if (!isGuid(surveyId)) return null;
+    const rows = await select<{ publishid: string | null }>(
+      "publish id read",
+      "SELECT publishid FROM Surveys WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, surveyId),
+    );
+    return rows[0]?.publishid?.toLowerCase() ?? null;
+  }
 
   /** The survey as stored, read back after a write that made it. */
   async function storedSurvey(id: string) {
@@ -637,14 +660,7 @@ export function createAzureLegacyProviders(
       container: options.filesContainer ?? FILES_CONTAINER,
     }),
 
-    // Task 2 replaces this stub with the table-backed store.
-    results: {
-      appendResponse: notImplemented,
-      hasResponse: notImplemented,
-      listResponses: notImplemented,
-      stats: notImplemented,
-      completion: notImplemented,
-    },
+    results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows }),
 
     directory: {
       async getUser(id) {
