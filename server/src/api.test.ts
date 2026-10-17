@@ -244,8 +244,9 @@ describe("operations without a handler", () => {
         "",
       ].join("\r\n"),
     });
-    expect(res.statusCode).toBe(501);
-    expect(res.json()).toMatchObject({ code: "not-implemented" });
+    // The body reached the operation, which found no survey s1.
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "survey-not-available" });
   });
 
   it("a JSON body to a multipart operation answers 415", async () => {

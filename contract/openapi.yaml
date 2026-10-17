@@ -985,6 +985,13 @@ paths:
       description: |
         Files from File Upload and Signature questions are stored as blobs, and the
         response keeps only the returned URL. This lifts the 64 KB response limit.
+
+        Send one file as the multipart part `file`, up to `limits.maxFileBytes`
+        (`413 payload-too-large` above). Any type is accepted: the type is detected
+        from the content, and a file that is not one of the image or video types of
+        `downloadFile` is stored and served as `application/octet-stream`. The survey
+        must be published, as for `submitResponse`. Files stay until the survey is
+        deleted.
       security: []
       requestBody:
         required: true
@@ -993,12 +1000,16 @@ paths:
             schema: { $ref: '#/components/schemas/FileUpload' }
       responses:
         '201':
-          description: Stored.
+          description: Stored. `Location` is the file's download path.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StoredFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/files/{fileId}:
@@ -1016,7 +1027,8 @@ paths:
       summary: Download a stored file
       description: |
         Public: the unguessable URL is the permission. Images are served `inline`,
-        other files as `attachment`. Deleting the survey deletes its files (`404`
+        other files as `attachment`. Respondent files of other types are served as
+        `application/octet-stream`. Deleting the survey deletes its files (`404`
         afterwards; caches may keep a copy for up to an hour).
       security: []
       responses:
@@ -1064,6 +1076,8 @@ paths:
               schema: { type: string, contentMediaType: video/webm }
             video/ogg:
               schema: { type: string, contentMediaType: video/ogg }
+            application/octet-stream:
+              schema: { type: string, contentMediaType: application/octet-stream }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/results:

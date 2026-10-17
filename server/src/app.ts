@@ -167,6 +167,7 @@ export async function buildApp(
         files: providers.files,
         publicBaseUrl: config.publicBaseUrl,
         maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
+        maxFileBytes: config.limits.maxFileBytes,
         ...(options.now && { now: options.now }),
       }),
     },

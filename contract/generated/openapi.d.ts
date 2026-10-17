@@ -602,6 +602,13 @@ export interface paths {
          * Upload a respondent file
          * @description Files from File Upload and Signature questions are stored as blobs, and the
          *     response keeps only the returned URL. This lifts the 64 KB response limit.
+         *
+         *     Send one file as the multipart part `file`, up to `limits.maxFileBytes`
+         *     (`413 payload-too-large` above). Any type is accepted: the type is detected
+         *     from the content, and a file that is not one of the image or video types of
+         *     `downloadFile` is stored and served as `application/octet-stream`. The survey
+         *     must be published, as for `submitResponse`. Files stay until the survey is
+         *     deleted.
          */
         post: operations["uploadResponseFile"];
         delete?: never;
@@ -626,7 +633,8 @@ export interface paths {
         /**
          * Download a stored file
          * @description Public: the unguessable URL is the permission. Images are served `inline`,
-         *     other files as `attachment`. Deleting the survey deletes its files (`404`
+         *     other files as `attachment`. Respondent files of other types are served as
+         *     `application/octet-stream`. Deleting the survey deletes its files (`404`
          *     afterwards; caches may keep a copy for up to an hour).
          */
         get: operations["downloadFile"];
@@ -2277,18 +2285,21 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Stored. */
+            /** @description Stored. `Location` is the file's download path. */
             201: {
                 headers: {
+                    Location: components["headers"]["Location"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["StoredFile"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -2333,6 +2344,7 @@ export interface operations {
                     "video/mp4": string;
                     "video/webm": string;
                     "video/ogg": string;
+                    "application/octet-stream": string;
                 };
             };
             404: components["responses"]["NotFound"];

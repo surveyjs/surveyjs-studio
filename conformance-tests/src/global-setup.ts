@@ -117,6 +117,8 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     LIMIT_MAX_DOCUMENT_BYTES: "262144",
     // Small, so the quota tests stay cheap (they read the limit from /config).
     LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",
+    // Small, so the 413 test stays cheap (it reads the limit from /config).
+    LIMIT_MAX_FILE_BYTES: "65536",
     ...providerEnv(),
   };
 }
