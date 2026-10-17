@@ -249,8 +249,10 @@ rulings behind them (idempotent ids, the one-response rule, the size cap) are in
 3. **The marker**, when a `clientId` is given, also for `exists`: `upsertEntity` with `Replace` into
    `SurveyCompletion{surveyId}` (the survey id without dashes, lower case) at the row key `clientId`, with
    `ispartialcompleted` `Edm.Boolean` false and `publishid` `Edm.String` only when the survey has one. The same
-   `404` then `createTable()` then retry. Writing it for `exists` repairs a marker lost to a failure between the
-   row and the marker.
+   `404` then `createTable()` then retry. At the store level, `appendResponse` with an id that
+   already exists writes the marker again, which would repair a marker lost between the row and the marker
+   (for example when two identical requests race). The HTTP service does not reach this path for a keyed
+   retry: `submit` answers from `hasResponse` before it calls `appendResponse`.
 
 Failures are `LegacyStoreError("response write")` and `LegacyStoreError("completion marker write")`, with the
 operation and the driver's codes only.
@@ -285,9 +287,10 @@ operation and the driver's codes only.
 
 ### Consequences of Step 8
 
-- A response and its marker are two writes. A failure between them leaves a row without a marker. The retry
-  with the same `Idempotency-Key` repairs it (the marker is written for `exists` too). Without a key, the next
-  response of that client writes the marker.
+- A response and its marker are two writes. A failure between them leaves a row without a marker. A retry with
+  the same `Idempotency-Key` does **not** repair it: the service finds the response with `hasResponse` and
+  writes nothing. Only the next response of that client writes the marker. (The store itself writes the marker
+  for `exists`, which matters only for a race between two identical requests.)
 - The first response of a survey creates two tables on the fly (`post{postId}` and, with a client id,
   `SurveyCompletion{surveyId}`). The credentials of a production deployment need the right to create tables.
 - A table is deleted with its survey (`writeSurveyDeletion` already drops both).

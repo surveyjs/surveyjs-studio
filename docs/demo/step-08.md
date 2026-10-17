@@ -108,8 +108,8 @@ with its name and a size of 5 MB. Click **Complete**. Expected: "Thank you for c
 submission succeeded with a 5 MB file, although a response body may be only 1 MB: the file went to the server
 on its own, and the response holds only a link.
 
-Count again with the `curl` of part 2. Expected: one more than before (`"count":3` if you followed part 2
-exactly; a fresh survey that you complete once in this part shows `"count":2`).
+Count again with the `curl` of part 2. Expected: `"count":4`. Part 2 left three responses (the first
+completion, the one after the reload, and the double-click one), and this upload adds a fourth.
 
 To see the link, look at the answer. Open the **Network** tab of the browser's tools before you complete, and
 find the `POST` to `/api/v1/public/surveys/<id>/responses`: its payload holds

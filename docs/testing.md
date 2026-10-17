@@ -460,7 +460,7 @@ It covers:
 - `results` (the `ResultStore`): the fixture responses of Customer feedback in order, with the statistics and
   the markers (the partial marker of `client-0001` reads `partial`); a response stored on a new survey (the id
   in lower case); a stored `clientId` and IP, and the marker `completed`; an id that comes again answers `exists`
-  and keeps the first response; the same id again with a `clientId` repairs a missing marker; listing by
+  and keeps the first response; the same id again with a `clientId` writes the missing marker again (store level); listing by
   time and then id, and counts per survey; the answers returned unchanged; a non-GUID id rejected with nothing
   stored; and `deleteSurvey` empties it. The tests create their own surveys and read the fixtures only;
 - `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full

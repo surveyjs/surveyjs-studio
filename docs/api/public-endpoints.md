@@ -1,7 +1,7 @@
 # Public endpoints, rate limits and idempotency
 
-Four operations serve respondents and embeds. They need **no session and no CSRF token**, so they are
-rate limited. A fifth operation, `getResultStats`, is private and is listed because it is the way to count
+Four operations serve respondents and embeds: the three of Step 8 and `downloadFile` of Step 7. They need **no session and no CSRF token**, so they are
+rate limited. A fifth, `getResultStats`, needs a session and is listed because it is the way to count
 responses until the results page (Step 9). The reasons for each rule are in
 [ADR 0014](../adr/0014-run-page-and-response-collection.md). The people-facing description is
 [Publishing and collecting responses](../user-guide/publishing-and-collecting-responses.md).
