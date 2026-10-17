@@ -535,8 +535,13 @@ export interface paths {
         };
         /**
          * Load a published survey
-         * @description Used by the run page and by embeds. An unknown or unpublished survey
-         *     returns `404 survey-not-available`; the two cases are not distinguished.
+         * @description Used by the run page and by embeds. A survey runs while it is published,
+         *     archived or not. An unknown or unpublished survey returns
+         *     `404 survey-not-available`; the two cases are not distinguished.
+         *
+         *     "Limit to one response" is on when the returned `definition` has a non-empty
+         *     `cookieName`. The server sets `cookieName` to the survey ID when the survey's
+         *     legacy one-response setting is on and the definition has none.
          */
         get: operations["getPublishedSurvey"];
         put?: never;
@@ -560,10 +565,20 @@ export interface paths {
         put?: never;
         /**
          * Submit a response
-         * @description Stores a response to a published survey. When the survey allows one
-         *     response per client and `clientId` has already completed it, the server
-         *     returns `409 already-completed`. The respondent's IP address is stored
-         *     only when the survey's `storeRespondentIp` setting is on.
+         * @description Stores a response to a published survey (archived or not); an unknown or
+         *     unpublished survey is `404 survey-not-available`. The respondent's IP address
+         *     is stored only when the survey's `storeRespondentIp` setting is on.
+         *
+         *     When "Limit to one response" is on (see `getPublishedSurvey`) and `clientId`
+         *     has already completed the survey, the server returns `409 already-completed`.
+         *     A request whose `Idempotency-Key` already stored a response answers `201` with
+         *     that response's `id` and stores nothing, even if the client has completed
+         *     since. Two first submissions of one client sent at the same moment may both be
+         *     stored.
+         *
+         *     `partial` and `lastPageIndex` are ignored in Phase 1: the response is stored
+         *     as complete. A server may refuse answers its storage cannot hold with
+         *     `413 payload-too-large`, even below `limits.maxResponseBytes`.
          */
         post: operations["submitResponse"];
         delete?: never;
@@ -664,7 +679,7 @@ export interface components {
          * @example 2026-10-05T06:48:39.795Z
          */
         Timestamp: string;
-        /** @description Identifies a respondent's device or account, for one-response limits. */
+        /** @description Identifies a respondent's device or account, for one-response limits. Must not contain `/`, `\`, `#`, `?` or control characters. */
         ClientId: string;
         /** @description Pass as `cursor` to fetch the next page; `null` on the last page. */
         Cursor: string | null;
@@ -739,6 +754,7 @@ export interface components {
                 maxAssetBytesPerSurvey: number;
                 /** @description Largest respondent file, in bytes. */
                 maxFileBytes: number;
+                /** @description Largest response body, in bytes. */
                 maxResponseBytes: number;
                 /** @description Largest survey definition or theme body accepted, in bytes. */
                 maxDocumentBytes: number;
@@ -944,10 +960,17 @@ export interface components {
             nextCursor: components["schemas"]["Cursor"];
         };
         ResultStats: {
+            /** @description Stored responses. */
             count: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description `null` when there are none.
+             */
             firstSubmittedAt: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description `null` when there are none.
+             */
             lastSubmittedAt: string | null;
         };
         /** @description Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`). */
@@ -956,7 +979,8 @@ export interface components {
         };
         PublishedSurvey: {
             id: components["schemas"]["Id"];
-            name: components["schemas"]["SurveyName"];
+            /** @description May be empty for legacy records. */
+            name: string;
             definition: components["schemas"]["SurveyDefinition"];
             theme: components["schemas"]["SurveyTheme"];
             /** @description Present when `clientId` was given. */
@@ -968,11 +992,11 @@ export interface components {
             };
             clientId?: components["schemas"]["ClientId"];
             /**
-             * @description Save progress without completing.
+             * @description Save progress without completing. Ignored in Phase 1: the response is stored as complete.
              * @default false
              */
             partial: boolean;
-            /** @description Page to resume on. */
+            /** @description Page to resume on. Ignored in Phase 1. */
             lastPageIndex?: number;
         };
         PublicResultPage: {
@@ -1190,7 +1214,7 @@ export interface components {
         Cursor: string;
         /** @description The `ETag` from the last read or write of this document. */
         IfMatch: string;
-        /** @description A client-generated unique key (UUID recommended). Keys are remembered for 24 hours. */
+        /** @description A client-generated unique key (UUID recommended). A repeated key for the same survey returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours. */
         IdempotencyKey: string;
     };
     requestBodies: never;
@@ -2195,6 +2219,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublishedSurvey"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -2203,7 +2228,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A client-generated unique key (UUID recommended). Keys are remembered for 24 hours. */
+                /** @description A client-generated unique key (UUID recommended). A repeated key for the same survey returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours. */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -2217,7 +2242,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Stored. */
+            /** @description Stored, or already stored under this `Idempotency-Key` (same `id`). */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -2228,9 +2253,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
         };

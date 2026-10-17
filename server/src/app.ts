@@ -17,6 +17,7 @@ import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
+import { createResultHandlers } from "./results/handlers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 
 export interface BuildOptions {
@@ -152,6 +153,12 @@ export async function buildApp(
         surveys: providers.surveys,
         directory: providers.directory,
         files: providers.files,
+        ...(options.now && { now: options.now }),
+      }),
+      ...createResultHandlers({
+        surveys: providers.surveys,
+        directory: providers.directory,
+        results: providers.results,
         ...(options.now && { now: options.now }),
       }),
       ...createFileHandlers({

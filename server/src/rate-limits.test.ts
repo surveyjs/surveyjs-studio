@@ -31,7 +31,7 @@ describe("public rate limits", () => {
   it("limits each public operation per address, before the operation runs", async () => {
     const server = await start();
     const get = (remoteAddress: string) => server.inject({ url: SURVEY_URL, remoteAddress });
-    for (let i = 0; i < 2; i += 1) expect((await get("203.0.113.9")).statusCode).toBe(501);
+    for (let i = 0; i < 2; i += 1) expect((await get("203.0.113.9")).statusCode).toBe(200);
     const res = await get("203.0.113.9");
     expect(res.statusCode).toBe(429);
     expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
@@ -44,12 +44,13 @@ describe("public rate limits", () => {
 
     const post = await server.inject({
       method: "POST",
-      url: `${SURVEY_URL}/responses`,
+      url: "/api/v1/public/surveys/99999999-0000-4000-8000-a00000000099/responses",
       remoteAddress: "203.0.113.9",
       payload: { data: {} },
     });
-    expect(post.statusCode).not.toBe(429);
-    expect((await get("203.0.113.10")).statusCode).toBe(501);
+    // Its own counter: not limited, and answered by the operation (an unknown survey).
+    expect(post.statusCode).toBe(404);
+    expect((await get("203.0.113.10")).statusCode).toBe(200);
   });
 
   it("limits downloadFile on its own counter", async () => {
@@ -68,7 +69,7 @@ describe("public rate limits", () => {
         headers: { "x-forwarded-for": forwarded },
       });
     for (const forwarded of ["198.51.100.1", "198.51.100.2"]) {
-      for (let i = 0; i < 2; i += 1) expect((await via(forwarded)).statusCode).toBe(501);
+      for (let i = 0; i < 2; i += 1) expect((await via(forwarded)).statusCode).toBe(200);
     }
     expect((await via("198.51.100.1")).statusCode).toBe(429);
     await app?.close();
@@ -80,8 +81,8 @@ describe("public rate limits", () => {
         remoteAddress: "127.0.0.1",
         headers: { "x-forwarded-for": forwarded },
       });
-    expect((await direct("198.51.100.1")).statusCode).toBe(501);
-    expect((await direct("198.51.100.2")).statusCode).toBe(501);
+    expect((await direct("198.51.100.1")).statusCode).toBe(200);
+    expect((await direct("198.51.100.2")).statusCode).toBe(200);
     expect((await direct("198.51.100.3")).statusCode).toBe(429);
   });
 });
