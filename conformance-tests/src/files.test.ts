@@ -266,3 +266,69 @@ describe("uploadSurveyAsset and downloadFile", () => {
     expect((await download("abc")).status).toBe(404);
   });
 });
+
+/** Puts `definition` into the survey with the ETag of its current definition. */
+async function saveDefinition(
+  headers: Headers,
+  surveyId: string,
+  definition: object,
+): Promise<void> {
+  const path = `/surveys/${surveyId}/definition`;
+  const current = await call("GET", "/surveys/{surveyId}/definition", { path, headers });
+  expect(current.status).toBe(200);
+  const saved = await call("PUT", "/surveys/{surveyId}/definition", {
+    path,
+    headers: { ...headers, "if-match": current.headers.get("etag") ?? "" },
+    body: definition,
+  });
+  expect(saved.status).toBe(204);
+}
+
+async function bytesOf(response: Response): Promise<Buffer> {
+  return Buffer.from(await response.arrayBuffer());
+}
+
+describe("files and the life of a survey", () => {
+  it("deleting a survey deletes its files", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await createdSurvey(headers);
+    const { stored } = await uploaded(surveyId, headers, fileForm(PNG_1X1));
+    await saveDefinition(headers, surveyId, { title: "T", logo: stored.url });
+    expect((await download(stored.id)).status).toBe(200);
+
+    await cleanUp(headers, surveyId);
+    expect((await download(stored.id)).status).toBe(404);
+  });
+
+  it("a copy has its own files with rewritten URLs and keeps them when the source is deleted", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await createdSurvey(headers);
+    const { stored } = await uploaded(surveyId, headers, fileForm(PNG_1X1));
+    await saveDefinition(headers, surveyId, { title: "T", logo: stored.url });
+
+    const response = await call("POST", "/surveys/{surveyId}/clones", {
+      path: `/surveys/${surveyId}/clones`,
+      headers,
+    });
+    expect(response.status).toBe(201);
+    const { id: copyId } = (await response.json()) as { id: string };
+    onTestFinished(() => cleanUp(headers, copyId));
+
+    const copied = await call("GET", "/surveys/{surveyId}/definition", {
+      path: `/surveys/${copyId}/definition`,
+      headers,
+    });
+    expect(copied.status).toBe(200);
+    const { logo } = (await copied.json()) as { logo: string };
+    expect(logo).toMatch(/\/public\/files\/[0-9a-f]{64}$/);
+    expect(logo).not.toBe(stored.url);
+    const copyFileId = logo.slice(logo.lastIndexOf("/") + 1);
+    const file = await download(copyFileId);
+    expect(file.status).toBe(200);
+    expect(await bytesOf(file)).toEqual(PNG_1X1);
+
+    await cleanUp(headers, surveyId);
+    expect((await download(stored.id)).status).toBe(404);
+    expect((await download(copyFileId)).status).toBe(200);
+  });
+});

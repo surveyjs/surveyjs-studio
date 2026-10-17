@@ -132,6 +132,7 @@ export async function buildApp(
       ...createSurveyHandlers({
         surveys: providers.surveys,
         directory: providers.directory,
+        files: providers.files,
         ...(options.now && { now: options.now }),
       }),
       ...createFileHandlers({
