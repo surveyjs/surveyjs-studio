@@ -12,6 +12,11 @@ describe("tableRows", () => {
     ]);
   });
 
+  it("reads an item without an id", () => {
+    const item = { submittedAt: base.submittedAt, data: { q1: 2 } };
+    expect(tableRows([item], new Set(["q1"]))).toEqual([{ q1: 2, HappendAt: base.submittedAt }]);
+  });
+
   it("keeps the answer of a question named like an extra column", () => {
     const response = { ...withIp, data: { HappendAt: "mine", IPAddress: "yours" } };
     expect(tableRows([response], new Set(["HappendAt", "IPAddress"]))).toEqual([

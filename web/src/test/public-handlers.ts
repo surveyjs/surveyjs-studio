@@ -1,6 +1,6 @@
 // msw handlers for the respondent's endpoints (`/public/surveys/…`), used by the run page tests.
 import { HttpResponse, http as mswHttp } from "msw";
-import type { PublishedSurvey } from "../api/public";
+import type { PublicResultPage, PublishedSurvey } from "../api/public";
 import { multipartParts, sampleStoredFile, type SeenUpload } from "./file-handlers";
 import { sampleSurvey } from "./server";
 
@@ -117,4 +117,33 @@ export function publicProblemHandler(
   code: string,
 ) {
   return mswHttp[method](`*/api/v1${path}`, () => problem(status, code));
+}
+
+/**
+ * Answers `GET /public/surveys/{id}/results`: page `i` for cursor `c{i}` (the first without a
+ * cursor), `nextCursor` `c{i+1}` or null on the last page. `onRequest` sees every request URL.
+ */
+export function publicResultPagesHandler(
+  survey: PublicResultPage["survey"],
+  pages: PublicResultPage["items"][],
+  onRequest?: (url: URL) => void,
+) {
+  return mswHttp.get("*/api/v1/public/surveys/:surveyId/results", ({ request }) => {
+    const url = new URL(request.url);
+    onRequest?.(url);
+    const cursor = url.searchParams.get("cursor");
+    const index = cursor === null ? 0 : Number(cursor.slice(1));
+    const items = pages[index];
+    if (items === undefined) return problem(400, "bad-request");
+    return HttpResponse.json({
+      survey,
+      items,
+      nextCursor: index + 1 < pages.length ? `c${index + 1}` : null,
+    });
+  });
+}
+
+/** Answers `GET /public/surveys/{id}/results` with the Problem of `code`. */
+export function publicResultsProblemHandler(status: number, code: string) {
+  return mswHttp.get("*/api/v1/public/surveys/:surveyId/results", () => problem(status, code));
 }

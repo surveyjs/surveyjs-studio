@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./client";
+import { resultKeys } from "./results";
 import {
   addCreatedSurvey,
   applyUpdatedSurvey,
@@ -303,6 +304,30 @@ describe("survey action hooks", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(seen).toEqual([{ body: { name: "Renamed" }, type: "application/merge-patch+json" }]);
     expect(client.getQueryData(personalActive)).toEqual(data(renamed, other));
+  });
+
+  it("useUpdateSurvey changes a setting without touching the results caches (R17)", async () => {
+    const seen: unknown[] = [];
+    const answer = { ...existing, settings: { ...existing.settings, storeRespondentIp: true } };
+    server.use(updateSurveyHandler(answer, (body) => seen.push(body)));
+    const { client, result } = render(useUpdateSurvey);
+    client.setQueryData(resultKeys.all(existing.id), []);
+    client.setQueryData(resultKeys.stats(existing.id), {
+      count: 0,
+      firstSubmittedAt: null,
+      lastSubmittedAt: null,
+    });
+
+    result.current.mutate({
+      survey: existing,
+      patch: { settings: { storeRespondentIp: true } },
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(seen).toEqual([{ settings: { storeRespondentIp: true } }]);
+    expect(client.getQueryData(surveyKeys.detail(existing.id))).toEqual(answer);
+    expect(stale(client, resultKeys.all(existing.id))).toBe(false);
+    expect(stale(client, resultKeys.stats(existing.id))).toBe(false);
   });
 
   it("useUpdateSurvey ends in ApiError and leaves the cache on a Problem", async () => {
