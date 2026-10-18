@@ -452,7 +452,11 @@ export interface paths {
         post?: never;
         /**
          * Delete all responses
-         * @description Also deletes files uploaded by respondents. Cannot be undone.
+         * @description Deletes every response, the completion markers (so "already completed" no longer applies)
+         *     and the files respondents uploaded. Editor assets, saved layouts and settings stay; the
+         *     survey's `updatedAt` does not change. Requires modify permission. Answers `204` also when
+         *     there are no responses. Cannot be undone. `403` means the caller cannot modify the survey,
+         *     or a missing or wrong CSRF token.
          */
         delete: operations["deleteResults"];
         options?: never;
@@ -490,9 +494,20 @@ export interface paths {
         };
         /**
          * Download all responses
-         * @description Streams the whole dataset as an attachment. The format comes from `Accept`,
-         *     or from `format`, which takes precedence. The table's own CSV, Excel and
-         *     PDF export runs in the browser and does not use this endpoint.
+         * @description Streams every stored response as an attachment, oldest first (by `submittedAt`, then `id`),
+         *     with no 1,000-response cap. Anyone who can see the survey may download it.
+         *
+         *     The format comes from `format`, or else from `Accept` by q-value: `application/json`,
+         *     `application/*`, `*\/*` or no `Accept` give JSON; `text/csv` or `text/*` give CSV; an `Accept`
+         *     that allows neither is `406 not-acceptable`. A browser link cannot set headers, so it uses
+         *     `format`.
+         *
+         *     JSON is an array of `SurveyResponse` items, as `listResults` returns them. CSV is UTF-8 with a
+         *     byte order mark, comma-separated, CRLF line ends and RFC 4180 quoting; its columns are
+         *     described in the API guide (`docs/api/exporting-results.md`). The file is named after the
+         *     survey (`results` when the name is blank).
+         *
+         *     The table's own CSV, Excel and PDF export runs in the browser and does not use this endpoint.
          */
         get: operations["exportResults"];
         put?: never;
@@ -683,10 +698,17 @@ export interface paths {
         };
         /**
          * Public results
-         * @description Available only while the survey's `publicResults` setting is on
-         *     ("Grant Access"); otherwise `404`. Each page includes the survey
-         *     definition so a Dashboard can render it. In P1 this is complemented by
-         *     token-based shareable reports.
+         * @description Public: no sign-in. Available only while the survey's `publicResults` setting is on
+         *     ("Grant Access"), whether or not the survey is published or archived; otherwise
+         *     `404 survey-not-available`, the same answer as for an unknown survey.
+         *
+         *     Every stored response, oldest first, paged as `listResults` (a cursor belongs to its
+         *     survey). Items carry `submittedAt` and `data` only: no id, client id or IP address. The
+         *     answers and comments of the questions in `settings.privateResultQuestions` are left out;
+         *     `survey.privateQuestions` names them. Each page includes the survey definition so a
+         *     dashboard can render it.
+         *
+         *     In P1 this is complemented by token-based shareable reports.
          */
         get: operations["getPublicResults"];
         put?: never;
@@ -857,6 +879,13 @@ export interface components {
             publicResults?: boolean;
             /** @description "Save Respondent IP in Results". */
             storeRespondentIp?: boolean;
+            /**
+             * @description Names of the questions hidden from public results: `getPublicResults` leaves their answers
+             *     (and comments) out, and the public dashboard does not show them. Empty means every question
+             *     is public. A patch replaces the whole list. `getSurvey`, `updateSurvey`, `createSurvey` and
+             *     `cloneSurvey` return it; `listSurveys` items leave it out.
+             */
+            privateResultQuestions?: string[];
         };
         /**
          * @example {
@@ -1038,8 +1067,11 @@ export interface components {
         PublicResultPage: {
             survey: {
                 id: components["schemas"]["Id"];
-                name: components["schemas"]["SurveyName"];
+                /** @description May be empty for legacy records. */
+                name: string;
                 definition: components["schemas"]["SurveyDefinition"];
+                /** @description The survey's settings.privateResultQuestions: their answers are left out of items, and a dashboard hides them. */
+                privateQuestions?: string[];
             };
             items: {
                 submittedAt: components["schemas"]["Timestamp"];
@@ -1261,7 +1293,7 @@ export interface components {
         ETag: string;
         /** @description Session cookies `msid` (HttpOnly) and `msid_csrf` (readable). */
         SetCookie: string;
-        /** @description `attachment; filename="…"` */
+        /** @description `attachment; filename="…"; filename*=UTF-8''…`: the ASCII fallback, then the UTF-8 name. */
         ContentDisposition: string;
         /** @description Seconds to wait before retrying. */
         RetryAfter: number;
@@ -2123,6 +2155,7 @@ export interface operations {
     exportResults: {
         parameters: {
             query?: {
+                /** @description json or csv; takes precedence over Accept. Any other value is 400 bad-request. */
                 format?: "json" | "csv";
             };
             header?: never;
@@ -2144,6 +2177,7 @@ export interface operations {
                     "text/csv": string;
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             406: components["responses"]["NotAcceptable"];
@@ -2388,6 +2422,7 @@ export interface operations {
     getPublicResults: {
         parameters: {
             query?: {
+                /** @description Page size, 1 to 1000. */
                 limit?: number;
                 /** @description The `nextCursor` value from the previous page. */
                 cursor?: components["parameters"]["Cursor"];
@@ -2409,6 +2444,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublicResultPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
