@@ -34,11 +34,14 @@ export function TableView({
   responses,
   savedState,
   onStateChange,
+  privateQuestions,
+  publicView = false,
 }: ResultsWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
   const [exportFailed, setExportFailed] = useState(false);
   // The state at mount: later changes of the prop come from this widget itself.
   const initialState = useRef(savedState);
+  const privateAtMount = useRef(privateQuestions);
   const stateCallback = useRef(onStateChange);
   useEffect(() => {
     stateCallback.current = onStateChange;
@@ -57,13 +60,22 @@ export function TableView({
     const table = new Tabulator(
       survey,
       tableRows(responses, names),
-      { downloadButtons: ["pdf", "xlsx", "csv"] },
+      { downloadButtons: publicView ? [] : ["pdf", "xlsx", "csv"] },
       extras as unknown as ConstructorParameters<typeof Tabulator>[3],
     );
     const defaults = defaultState(table, new Set(extras.map((column) => column.name)));
     // Always set before render (no onStateChanged then): it also fills the extra columns' cells,
     // which the library leaves empty for columns it adds after reading the data.
-    const state = reconcileElementsState(initialState.current, defaults) ?? defaults;
+    const reconciled = reconcileElementsState(initialState.current, defaults) ?? defaults;
+    // The public page keeps the private questions' columns out: a private question has no answers there.
+    const state = publicView
+      ? {
+          ...reconciled,
+          elements: reconciled.elements.filter(
+            (element) => !privateAtMount.current.includes(element.name),
+          ),
+        }
+      : reconciled;
     table.lockStateChanged();
     table.state = state as unknown as TableViewState;
     table.unlockStateChanged();
@@ -98,7 +110,7 @@ export function TableView({
       if (rendered) table.destroy();
       survey.dispose();
     };
-  }, [definition, responses]);
+  }, [definition, responses, publicView]);
 
   return (
     <>

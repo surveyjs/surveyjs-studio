@@ -5,7 +5,9 @@
 // - the results page (`/surveys/$surveyId/results`) reaches the Dashboard (`survey-dashboard`),
 //   its table (`survey-dashboard-table`) and the export libraries (`survey-dashboard-export`) only
 //   through dynamic imports: the route's own chunk (fetched by a hover preload) imports none of
-//   them, and the table's chunk does not import the export libraries.
+//   them, and the table's chunk does not import the export libraries;
+// - the public results page (`/results/$surveyId`) is the same: no Dashboard code in the route's
+//   own chunks, the Dashboard and its table only through dynamic imports.
 // Run by `pnpm build` after `vite build`; reads Vite's manifest (`build.manifest` in
 // vite.config.ts) and exits with 1 on a failure.
 import { readFile } from "node:fs/promises";
@@ -13,6 +15,7 @@ import { readFile } from "node:fs/promises";
 const ENTRY = "index.html";
 const RUN_ROUTE = "src/routes/s/$surveyId.lazy.tsx";
 const RESULTS_ROUTE = "src/routes/_private/surveys/$surveyId/results.lazy.tsx";
+const PUBLIC_RESULTS_ROUTE = "src/routes/results/$surveyId.lazy.tsx";
 const FORBIDDEN =
   /(^|\/)(survey-creator|SurveyEditor|worker-json)-|[/.-]ace[.-]|survey-analytics|dashboard/i;
 const FORM_JS = /^assets\/survey-form-.*\.js$/;
@@ -90,11 +93,31 @@ if (tableKey !== undefined) {
   }
 }
 
+const publicStatic = [...collect(PUBLIC_RESULTS_ROUTE, false)].sort();
+print(`The public results route (${PUBLIC_RESULTS_ROUTE}) imports statically:`, publicStatic);
+const publicEager = publicStatic.filter((file) => DASHBOARD_CODE.test(file));
+if (publicEager.length > 0) {
+  problems.push(
+    `Dashboard code in the public results route's own chunks: ${publicEager.join(", ")}`,
+  );
+}
+const publicAll = [...collect(PUBLIC_RESULTS_ROUTE, true)].sort();
+print(`The public results page (${PUBLIC_RESULTS_ROUTE}) can load:`, publicAll);
+for (const [pattern, name] of [
+  [DASHBOARD_JS, "survey-dashboard-*.js"],
+  [DASHBOARD_TABLE_JS, "survey-dashboard-table-*.js"],
+]) {
+  if (!publicAll.some((file) => pattern.test(file))) {
+    problems.push(`The public results page has no ${name} chunk.`);
+  }
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-run-chunks: ${problem}`);
   process.exit(1);
 }
 console.log(
   "check-run-chunks: the run page loads the Form Library and no Creator or Dashboard code; " +
-    "the results page loads the Dashboard, its table and the export libraries on demand.",
+    "the results page loads the Dashboard, its table and the export libraries on demand; " +
+    "the public results page loads the Dashboard and its table on demand.",
 );

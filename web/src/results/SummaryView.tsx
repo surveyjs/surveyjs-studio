@@ -26,6 +26,7 @@ export function SummaryView({
   onStateChange,
   privateQuestions,
   onPrivateQuestionsChange,
+  publicView = false,
 }: ResultsWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
   // The state at mount: later changes of the prop come from this widget itself.
@@ -49,7 +50,12 @@ export function SummaryView({
     if (target === null) return;
     const survey = new Model(definition);
     const dashboard = new Dashboard({
-      questions: survey.getAllQuestions(),
+      // The public page leaves the private questions out altogether.
+      questions: survey
+        .getAllQuestions()
+        .filter(
+          (question) => !publicView || !privateList.current!.current().includes(question.name),
+        ),
       data: summaryData(responses),
       survey,
       showToolbar: true,
@@ -79,7 +85,7 @@ export function SummaryView({
       dashboard.destroy();
       survey.dispose();
     };
-  }, [definition, responses, allowPrivacy]);
+  }, [definition, responses, allowPrivacy, publicView]);
 
   return <div ref={container} />;
 }
