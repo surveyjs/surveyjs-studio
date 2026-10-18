@@ -17,7 +17,8 @@ const rootRoute = getRouteApi("__root__");
  * be interrupted by a refetch.
  */
 export function RunPage({ surveyId, search }: { surveyId: string; search: RunSearch }) {
-  const [clientIds] = useState(() => createClientIds());
+  // The route mounts one page per survey (`key`), so one per mount is one per survey.
+  const [clientIds] = useState(() => createClientIds(surveyId));
   const { limits } = rootRoute.useLoaderData();
   const query = useQuery({
     queryKey: ["public-survey", surveyId],

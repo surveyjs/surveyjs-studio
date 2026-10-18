@@ -49,7 +49,7 @@ export interface SubmitSender {
 export function createSubmitHandler(deps: {
   readonly submit: (body: ResponseBody, idempotencyKey: string) => Promise<{ id: string }>;
   /** The client id when the limit is on (clientIds.ensure()), else undefined. */
-  readonly clientId: () => string | undefined;
+  readonly clientId: () => Promise<string | undefined>;
   readonly newKey?: () => string;
 }): (sender: SubmitSender, options: SaveOptions) => void {
   const newKey = deps.newKey ?? (() => crypto.randomUUID());
@@ -67,9 +67,14 @@ export function createSubmitHandler(deps: {
     sending = true;
     key ??= newKey();
     options.showSaveInProgress();
-    const clientId = deps.clientId();
+    const idempotencyKey = key;
+    const data = sender.data;
+    // The client id is derived with Web Crypto, which answers asynchronously.
     deps
-      .submit({ data: sender.data, ...(clientId !== undefined && { clientId }) }, key)
+      .clientId()
+      .then((clientId) =>
+        deps.submit({ data, ...(clientId !== undefined && { clientId }) }, idempotencyKey),
+      )
       .then(
         () => {
           sending = false;

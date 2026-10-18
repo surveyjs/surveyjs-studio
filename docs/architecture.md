@@ -968,7 +968,9 @@ TanStack Query, `staleTime: Infinity`, no refetch on focus), then builds one For
   and `onUploadFiles`.
 - **One response per respondent.** The limit is on when the returned definition has a non-empty `cookieName`.
   Then the page keeps one id for the browser (`my-surveys.client-id` in local storage; without storage, an id for
-  this page load) and sends it on submit. On load it asks `completed` only when the browser already has an id:
+  this page load) and never sends it: it sends this survey's id (`run/clientId.ts`, `perSurveyClientId`), the
+  lower-case hex SHA-256 of `{browser id}:{survey id in lower case}`, on submit. Without `crypto.subtle` (outside
+  a secure context) it sends a random id for this page load instead (Step 9). On load it asks `completed` only when the browser already has an id:
   a browser without an id cannot have completed, so the page makes a second request only in that case. When
   `completed` is true, the page writes the cookie `{name}=true` **before** it builds the model, so the
   library shows its completed-before content. The author's `cookieName` never reaches a cookie write as it is:
@@ -979,8 +981,9 @@ TanStack Query, `staleTime: Infinity`, no refetch on focus), then builds one For
   `path`, so it gets the default path of `/s/{id}`, `/s`, and is the same cookie. A token equal to an app cookie
   name only shadows that cookie in `document.cookie` while a run page is open. The submit handler deletes the
   library's cookie when sending fails and writes it again once the answers are stored (or on `409`), so a reload
-  after a failure does not show the completed-before content. The library reads it at `/s/{id}`. The client id is checked against the contract's
-  `ClientId` pattern before it is sent; a stored value that fails is replaced.
+  after a failure does not show the completed-before content. The library reads it at `/s/{id}`. The stored browser id is checked against the
+  contract's `ClientId` pattern; a stored value that fails is replaced. The derived id (64 hex characters) always
+  fits it.
 - **Submit** (`run/submit.ts`): one handler per model, so one `Idempotency-Key` for each completion attempt;
   "Try again" re-fires `onComplete` and reuses the key. A call during a request does nothing. Success shows the
   library's success text; `409` shows "You have already completed this survey."; `413` "Your answers are too

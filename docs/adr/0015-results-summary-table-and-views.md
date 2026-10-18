@@ -203,6 +203,10 @@ written.
 - **R12: every question is charted.** The old page charts the first 15. The owner may want the old limit, or a
   higher one.
 - **The source of `xlsx`.** The SheetJS CDN tarball (R15) instead of the npm package.
+- **F2: a per-survey client id.** `listResults` returns `clientId` (C8), so the run page now sends an id derived
+  from its browser id and the survey id ([ADR 0014](0014-run-page-and-response-collection.md), "Step 9 change")
+  instead of one id for the whole browser. The owner may prefer to omit `clientId` from `listResults`, which
+  would let the run page send one id again.
 
 ## Open
 
@@ -211,7 +215,8 @@ written.
 - **The table's row actions.** "Show in Survey" (the response in a read-only survey) and "Delete Result" are
   not built. There is no operation to delete one response in the contract.
 - **The per-survey client id.** The Step 8 open point (should a survey author see the client ids of the
-  respondents?) stays open for the product owner. The Table does not show `clientId`, but `listResults`
-  returns it as stored (C8), so an author can now read it through the API.
+  respondents?) is answered for now by F2 (see "To confirm"): `listResults` returns `clientId` as stored (C8),
+  and the run page sends a different id for each survey, so an author reads an id that means nothing outside
+  that survey. The Table does not show `clientId`.
 - **Public results and layouts** (Step 10): see above.
 - **The scan of large tables on Azure** (R3, layout gap 8): measure on real volumes.

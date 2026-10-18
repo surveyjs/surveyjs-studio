@@ -94,7 +94,8 @@ Run with Vitest from the root. Scope:
   of `web/src/run/` that have no library in them (`search.ts`, `definition.ts` with `withServerFileStorage` over
   every kind of question and matrix column and `forRunPage` dropping the old service's properties, `cookie.ts`
   with `runCookieName` mapping names such as `msid_csrf=x; path=/; a` to a token, `clientId.ts` with a fake
-  storage, `load.ts`, `runState.ts`, `submit.ts` (with the library's cookie kept or deleted) and
+  storage (the per-survey id: a known SHA-256, the same for one survey in any case, different across surveys,
+  never the stored browser id, and a random id for the page load without `crypto.subtle`), `load.ts`, `runState.ts`, `submit.ts` (with the library's cookie kept or deleted) and
   `responseUploads.ts` with every message), `api/public.ts`, and the routes
   rendered through the router (`runRoutes.test.tsx`: the states, the `/published` redirect that keeps the
   other search members; `privateRoutes.test.tsx`: `/s/<id>` needs no session). **`RunSurvey.tsx` has no real
