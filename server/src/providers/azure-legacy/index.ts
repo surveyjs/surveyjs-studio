@@ -662,6 +662,12 @@ export function createAzureLegacyProviders(
 
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows }),
 
+    views: {
+      getView: () => Promise.reject(new Error("not implemented until Task 2")),
+      saveView: () => Promise.reject(new Error("not implemented until Task 2")),
+      resetView: () => Promise.reject(new Error("not implemented until Task 2")),
+    },
+
     directory: {
       async getUser(id) {
         if (!isGuid(id)) return null;

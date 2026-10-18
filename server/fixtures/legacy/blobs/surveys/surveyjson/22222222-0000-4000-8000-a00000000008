@@ -1,0 +1,46 @@
+{
+  "title": "API created",
+  "pages": [
+    {
+      "name": "page1",
+      "elements": [
+        {
+          "type": "radiogroup",
+          "name": "color",
+          "title": "Favourite colour",
+          "choices": [
+            "Red",
+            "Green",
+            "Blue"
+          ]
+        },
+        {
+          "type": "rating",
+          "name": "score",
+          "title": "How likely are you to recommend us?"
+        },
+        {
+          "type": "boolean",
+          "name": "subscribe",
+          "title": "Subscribe to the newsletter?"
+        },
+        {
+          "type": "checkbox",
+          "name": "channels",
+          "title": "Where did you hear about us?",
+          "choices": [
+            "Search",
+            "Friend",
+            "Social",
+            "Ad"
+          ]
+        },
+        {
+          "type": "text",
+          "name": "comment",
+          "title": "Any comments?"
+        }
+      ]
+    }
+  ]
+}

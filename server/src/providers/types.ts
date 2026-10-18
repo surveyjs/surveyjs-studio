@@ -17,6 +17,8 @@ import type {
   SurveyTheme,
   User,
   Versioned,
+  ViewName,
+  ViewState,
 } from "../domain/types.js";
 import type { AccountNotices } from "../notices/account-notices.js";
 
@@ -59,6 +61,31 @@ export interface HistoryPage {
   readonly items: readonly HistoryEntryRecord[];
   /** The position of the last item when more entries follow; else null. */
   readonly next: HistoryPosition | null;
+}
+
+/** A place in submission order (submittedAt ascending, then id ascending). */
+export interface ResponsePosition {
+  /** ISO 8601 UTC as Date#toISOString writes it. */
+  readonly submittedAt: string;
+  /** Lower-case response id. */
+  readonly id: string;
+}
+
+export interface ResponsePageQuery {
+  /** Only responses after this position in submission order. */
+  readonly after?: ResponsePosition;
+  /** 1–1000. */
+  readonly limit: number;
+}
+
+export interface ResponsePage {
+  /**
+   * At most `limit` responses, in submission order. May be shorter than `limit` even when more
+   * follow (legacy rows the domain cannot represent are skipped, never repeated).
+   */
+  readonly items: SurveyResponse[];
+  /** Position of the last row this page covered when more rows follow; null on the last page. */
+  readonly next: ResponsePosition | null;
 }
 
 export interface CloneOptions {
@@ -135,6 +162,37 @@ export interface ResultStore {
   stats(survey: SurveyRecord): Promise<ResultStatsRecord>;
   /** The client's marker; client ids match exactly (case-sensitive). */
   completion(survey: SurveyRecord, clientId: string): Promise<CompletionState>;
+  /**
+   * One page of the survey's stored responses (fixture rows included) in submission order:
+   * submittedAt ascending (as instants), then id ascending (code-point order of lower-case ids),
+   * strictly after `after`. Rows of one client are not merged (R1). An unknown survey or one
+   * without responses gives `{ items: [], next: null }`.
+   */
+  listResponsePage(survey: SurveyRecord, query: ResponsePageQuery): Promise<ResponsePage>;
+}
+
+export interface ViewStore {
+  /**
+   * The user's saved state of this view of the survey. When the user has none and has not reset
+   * it since, the survey's legacy per-survey state as stored (R4): azure-legacy blob
+   * `surveyresultsummarystate/{surveyId}` (summary) or `surveyresulttablestate/{surveyId}`
+   * (table); memory the seed's `legacyViews`. null when there is neither, after a reset, for a
+   * stored value that is not a JSON object, and for a non-GUID survey or user id. Ids match
+   * case-insensitively.
+   */
+  getView(surveyId: string, userId: string, view: ViewName): Promise<ViewState | null>;
+  /**
+   * Stores a copy of `state` for this user, replacing an earlier state or a reset marker. Rejects
+   * (nothing written) for a non-GUID survey or user id; does not check that either exists and does
+   * not touch the survey record.
+   */
+  saveView(surveyId: string, userId: string, view: ViewName, state: ViewState): Promise<void>;
+  /**
+   * Deletes the user's state and leaves a reset marker, so `getView` answers null even where a
+   * legacy state exists, until the next save. Idempotent (a reset without a saved state is fine).
+   * Rejects for a non-GUID survey or user id, like `saveView`.
+   */
+  resetView(surveyId: string, userId: string, view: ViewName): Promise<void>;
 }
 
 export interface SurveyStore {
@@ -183,6 +241,7 @@ export interface SurveyStore {
    * Creates `copy` (legacy defaults, as `createSurvey`) with the source's definition and theme.
    * Returns the stored copy; null when no survey has `sourceId`. Throws on a duplicate copy id.
    * `options.rewriteText` rewrites the stored definition and theme text for the copy (R11).
+   * Saved views are not copied.
    */
   cloneSurvey(
     sourceId: string,
@@ -190,8 +249,8 @@ export interface SurveyStore {
     options?: CloneOptions,
   ): Promise<SurveyRecord | null>;
   /**
-   * Deletes the survey and everything stored for it, its responses and markers included; false when no
-   * survey has this id. Files are the FileStore's: the service deletes them first (R10).
+   * Deletes the survey and everything stored for it, its responses, markers and every user's saved
+   * views and reset markers included; false when no survey has this id. Files are the FileStore's: the service deletes them first (R10).
    */
   deleteSurvey(id: string): Promise<boolean>;
 }
@@ -215,6 +274,7 @@ export interface ProviderSet {
   readonly directory: Directory;
   readonly files: FileStore;
   readonly results: ResultStore;
+  readonly views: ViewStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
   ready(): Promise<boolean>;

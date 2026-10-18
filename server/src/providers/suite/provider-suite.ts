@@ -9,7 +9,7 @@ import type {
   SurveyRecord,
 } from "../../domain/types.js";
 import { surveyListOrder } from "../ordering.js";
-import type { AppendOutcome, ProviderSet, SurveyPosition } from "../types.js";
+import type { AppendOutcome, ProviderSet, ResponsePosition, SurveyPosition } from "../types.js";
 import {
   ADMIN_ID,
   BLOCKED_ID,
@@ -27,6 +27,13 @@ import {
   fixtureDefinitions,
   fixtureSurveys,
   fixtureUsers,
+  largeSurvey500,
+  largeSurvey501,
+  largeSurveyFirst,
+  largeSurveyId,
+  largeSurveyLast,
+  legacyFeedbackSummaryView,
+  legacyFeedbackTableView,
   memberProjects,
   outsiderSurveys,
   ownerPersonalActiveSurveys,
@@ -1158,6 +1165,246 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect((await providers.results.stats(survey)).count).toBe(0);
         expect(await providers.results.completion(survey, "c-gone")).toBe("none");
         expect(await providers.results.hasResponse(survey, id)).toBe(false);
+      });
+
+      describe("results paging", () => {
+        type Page = Awaited<ReturnType<ProviderSet["results"]["listResponsePage"]>>;
+
+        /** Every page of a walk, following `next` as the cursor does. */
+        const walk = async (survey: SurveyRecord, limit: number): Promise<Page[]> => {
+          const pages: Page[] = [];
+          let after: ResponsePosition | undefined;
+          do {
+            const page = await providers.results.listResponsePage(survey, {
+              limit,
+              ...(after && { after }),
+            });
+            pages.push(page);
+            after = page.next ?? undefined;
+          } while (after);
+          return pages;
+        };
+        const ids = (pages: readonly Page[]): string[] =>
+          pages.flatMap((page) => page.items.map((item) => item.id));
+
+        it("walks the 1,500 generated responses in pages of 500", async () => {
+          const pages = await walk(surveyApiCreated, 500);
+          expect(pages.map((page) => page.items.length)).toEqual([500, 500, 500]);
+          expect(pages.map((page) => page.next !== null)).toEqual([true, true, false]);
+          expect(ids(pages)).toEqual(Array.from({ length: 1500 }, (_, i) => largeSurveyId(i + 1)));
+          expect(pages[0]!.items[0]).toStrictEqual(largeSurveyFirst);
+          expect(pages[0]!.items[499]).toStrictEqual(largeSurvey500);
+          expect(pages[1]!.items[0]).toStrictEqual(largeSurvey501);
+          expect(pages[1]!.items[0]!.submittedAt).toBe(largeSurvey500.submittedAt);
+          expect(pages[2]!.items[499]).toStrictEqual(largeSurveyLast);
+        });
+
+        it("walks them in pages of 1,000 and 500", async () => {
+          const pages = await walk(surveyApiCreated, 1000);
+          expect(pages.map((page) => page.items.length)).toEqual([1000, 500]);
+          expect(pages.map((page) => page.next !== null)).toEqual([true, false]);
+          expect(pages[1]!.items[0]!.id).toBe(largeSurveyId(1001));
+        });
+
+        it("reports the statistics of the generated responses", async () => {
+          expect(await providers.results.stats(surveyApiCreated)).toEqual({
+            count: 1500,
+            firstSubmittedAt: "2026-05-01T08:00:00.000Z",
+            lastSubmittedAt: "2026-05-01T20:30:00.000Z",
+          });
+        });
+
+        it("pages the five responses of fixture 01 by two", async () => {
+          const pages = await walk(surveyFeedback, 2);
+          expect(pages.map((page) => page.items)).toStrictEqual([
+            feedbackResponses.slice(0, 2),
+            feedbackResponses.slice(2, 4),
+            feedbackResponses.slice(4, 5),
+          ]);
+          expect(pages.map((page) => page.next !== null)).toEqual([true, true, false]);
+        });
+
+        describe("on a fresh survey", () => {
+          const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
+          const seeded = async (): Promise<SurveyRecord> => {
+            const survey = await freshSurvey();
+            await append(survey, sid(1), { submittedAt: at(10) });
+            await append(survey, sid(3), { submittedAt: at(11) });
+            await append(survey, sid(2), { submittedAt: at(11) });
+            await append(survey, sid(4), { submittedAt: at(12) });
+            await append(survey, sid(5), { submittedAt: at(13) });
+            return survey;
+          };
+
+          it("orders by time, then id, across pages of two", async () => {
+            const pages = await walk(await seeded(), 2);
+            expect(pages.map((page) => page.items.map((item) => item.id))).toEqual([
+              [sid(1), sid(2)],
+              [sid(3), sid(4)],
+              [sid(5)],
+            ]);
+            expect(pages.map((page) => page.next !== null)).toEqual([true, true, false]);
+            expect(pages[2]!.next).toBeNull();
+          });
+
+          it("gives the next position as the last item of the page", async () => {
+            const first = await providers.results.listResponsePage(await seeded(), { limit: 2 });
+            expect(first.next).toEqual({ submittedAt: at(11), id: sid(2) });
+          });
+
+          it("returns everything in one page with no next when the limit is the count", async () => {
+            const page = await providers.results.listResponsePage(await seeded(), { limit: 5 });
+            expect(page.items.map((item) => item.id)).toEqual([1, 2, 3, 4, 5].map(sid));
+            expect(page.next).toBeNull();
+          });
+
+          it("returns nothing after the last position", async () => {
+            const page = await providers.results.listResponsePage(await seeded(), {
+              limit: 5,
+              after: { submittedAt: at(13), id: sid(5) },
+            });
+            expect(page).toEqual({ items: [], next: null });
+          });
+
+          it("returns an empty page for a survey without responses", async () => {
+            expect(
+              await providers.results.listResponsePage(await freshSurvey(), { limit: 5 }),
+            ).toEqual({
+              items: [],
+              next: null,
+            });
+          });
+        });
+
+        it("keeps a walk stable when responses arrive between pages", async () => {
+          const survey = await freshSurvey();
+          const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
+          await append(survey, sid(1), { submittedAt: at(10) });
+          await append(survey, sid(2), { submittedAt: at(11) });
+          await append(survey, sid(3), { submittedAt: at(12) });
+          const first = await providers.results.listResponsePage(survey, { limit: 2 });
+          expect(first.items.map((item) => item.id)).toEqual([sid(1), sid(2)]);
+          await append(survey, sid(4), { submittedAt: at(14) });
+          await append(survey, sid(5), { submittedAt: at(10) });
+          const rest = await providers.results.listResponsePage(survey, {
+            limit: 10,
+            after: first.next!,
+          });
+          expect(rest.items.map((item) => item.id)).toEqual([sid(3), sid(4)]);
+          expect(rest.next).toBeNull();
+          const again = await walk(survey, 2);
+          expect(ids(again)).toEqual([sid(1), sid(5), sid(2), sid(3), sid(4)]);
+        });
+
+        it("returns copies the caller can change", async () => {
+          const page = await providers.results.listResponsePage(surveyFeedback, { limit: 5 });
+          (page.items[0]!.data as Record<string, unknown>).satisfaction = 99;
+          const again = await providers.results.listResponsePage(surveyFeedback, { limit: 5 });
+          expect(again.items).toStrictEqual(feedbackResponses);
+        });
+      });
+    });
+
+    describe("views", () => {
+      const state = {
+        elements: [{ name: "q1", isVisible: false }],
+        note: "Ünïcødé 😀 & < > \" '",
+      };
+      const get = (surveyId: string, userId: string, view: "summary" | "table" = "summary") =>
+        providers.views.getView(surveyId, userId, view);
+
+      it("falls back to the legacy layouts of fixture 01 and to null elsewhere", async () => {
+        expect(await get(surveyFeedback.id, OWNER_ID, "summary")).toEqual(
+          legacyFeedbackSummaryView,
+        );
+        expect(await get(surveyFeedback.id, OWNER_ID, "table")).toEqual(legacyFeedbackTableView);
+        expect(await get(surveyCampaign.id, OWNER_ID, "summary")).toBeNull();
+      });
+
+      it("saves, replaces, resets and saves again, per user, survey and view", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const other = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const user = randomUUID();
+        expect(await get(survey.id, user)).toBeNull();
+
+        await providers.views.saveView(survey.id, user, "summary", state);
+        expect(await get(survey.id, user)).toEqual(state);
+        expect(await get(survey.id, user, "table")).toBeNull();
+        expect(await get(survey.id, randomUUID())).toBeNull();
+        expect(await get(other.id, user)).toBeNull();
+
+        await providers.views.saveView(survey.id, user, "summary", { replaced: true });
+        expect(await get(survey.id, user)).toEqual({ replaced: true });
+        expect(await get(survey.id.toUpperCase(), user.toUpperCase())).toEqual({ replaced: true });
+
+        await providers.views.resetView(survey.id, user, "summary");
+        expect(await get(survey.id, user)).toBeNull();
+        await providers.views.resetView(survey.id, user, "summary");
+        expect(await get(survey.id, user)).toBeNull();
+
+        await providers.views.saveView(survey.id, user, "summary", state);
+        expect(await get(survey.id, user)).toEqual(state);
+      });
+
+      it("hides the legacy layout after a reset, for that user and view only", async () => {
+        const user = randomUUID();
+        await providers.views.resetView(surveyFeedback.id, user, "summary");
+        expect(await get(surveyFeedback.id, user, "summary")).toBeNull();
+        expect(await get(surveyFeedback.id, user, "table")).toEqual(legacyFeedbackTableView);
+        expect(await get(surveyFeedback.id, randomUUID(), "summary")).toEqual(
+          legacyFeedbackSummaryView,
+        );
+        await providers.views.saveView(surveyFeedback.id, user, "summary", state);
+        expect(await get(surveyFeedback.id, user, "summary")).toEqual(state);
+      });
+
+      it("does not change the survey record", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const user = randomUUID();
+        await providers.views.saveView(survey.id, user, "table", state);
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+        await providers.views.resetView(survey.id, user, "table");
+        expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+      });
+
+      it("is not copied by cloneSurvey", async () => {
+        const source = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const user = randomUUID();
+        await providers.views.saveView(source.id, user, "summary", state);
+        const copy = newSurvey(freshScope());
+        await providers.surveys.cloneSurvey(source.id, copy);
+        expect(await get(copy.id, user)).toBeNull();
+        expect(await get(source.id, user)).toEqual(state);
+      });
+
+      it("is emptied by deleteSurvey, for every user and both views", async () => {
+        const survey = await providers.surveys.createSurvey(newSurvey(freshScope()));
+        const users = [randomUUID(), randomUUID()];
+        for (const user of users) {
+          await providers.views.saveView(survey.id, user, "summary", state);
+          await providers.views.saveView(survey.id, user, "table", state);
+        }
+        expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+        for (const user of users) {
+          expect(await get(survey.id, user, "summary")).toBeNull();
+          expect(await get(survey.id, user, "table")).toBeNull();
+        }
+      });
+
+      it("reads null and refuses writes for ids that are not GUIDs", async () => {
+        const user = randomUUID();
+        expect(await get("not-a-guid", user)).toBeNull();
+        expect(await get(surveyFeedback.id, "not-a-guid")).toBeNull();
+        await expect(
+          providers.views.saveView("not-a-guid", user, "summary", state),
+        ).rejects.toThrow();
+        await expect(
+          providers.views.saveView(surveyFeedback.id, "x", "summary", state),
+        ).rejects.toThrow();
+        await expect(providers.views.resetView("not-a-guid", user, "summary")).rejects.toThrow();
+        await expect(
+          providers.views.resetView(surveyFeedback.id, "x", "summary"),
+        ).rejects.toThrow();
       });
     });
 

@@ -135,5 +135,9 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
       if (marker === null) return "none";
       return marker.ispartialcompleted === true ? "partial" : "completed";
     },
+
+    listResponsePage() {
+      return Promise.reject(new Error("not implemented until Task 2"));
+    },
   };
 }
