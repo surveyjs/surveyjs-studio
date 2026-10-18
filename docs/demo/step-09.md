@@ -166,7 +166,7 @@ pnpm demo:azurite
 ```
 
 The first command starts the replica and the mock sign-in server and loads the fixtures (see
-[Step 2](step-02.md#1-start-the-replica) and [Step 3](step-03.md)). It reads the 1,500 responses in **batches**
+[Step 2](step-02.md#1-start-the-replica) and [Step 3](step-03.md)). It writes the 1,500 responses in **batches**
 (about 3 seconds). The second runs the server on the `azure-legacy` provider. Open <http://localhost:5173/>, sign
 in as **owner** (type `owner` in the form) and repeat parts 1 to 3. Everything works as in memory mode. Two
 differences you can see:
