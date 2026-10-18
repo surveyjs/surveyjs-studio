@@ -19,7 +19,7 @@ const reuseExistingServer = !process.env["CI"];
 // - memory (default): the dev identity provider; all specs on Chromium, Firefox and WebKit.
 // - azurite (E2E_MODE=azurite, `pnpm e2e:azurite`): the azure-legacy provider on the local replica
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,
-//   editor, history, uploads, run, results and results-details specs, on Chromium.
+//   editor, history, uploads, run, results, results-details and projects specs, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 
 const serverEnv = {
@@ -140,6 +140,7 @@ export default defineConfig({
             "run.spec.ts",
             "results.spec.ts",
             "results-details.spec.ts",
+            "projects.spec.ts",
           ],
           use: { ...devices["Desktop Chrome"], viewport },
         },
