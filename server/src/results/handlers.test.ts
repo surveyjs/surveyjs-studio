@@ -6,7 +6,12 @@ import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
 import type { SurveyRecord } from "../domain/types.js";
 import { createProviders } from "../providers/index.js";
-import { ResponseTooLargeError, type ProviderSet, type ResultStore } from "../providers/types.js";
+import {
+  ResponseTooLargeError,
+  type FileStore,
+  type ProviderSet,
+  type ResultStore,
+} from "../providers/types.js";
 
 const NOW = "2026-10-15T08:30:00.000Z";
 const OWNER = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -32,6 +37,7 @@ async function start(
   options: {
     env?: Record<string, string>;
     results?: (store: ResultStore) => ResultStore;
+    files?: (store: FileStore) => FileStore;
     logLines?: string[];
   } = {},
 ): Promise<Started> {
@@ -46,6 +52,7 @@ async function start(
   const providers: ProviderSet = {
     ...memory,
     results: options.results ? options.results(memory.results) : memory.results,
+    files: options.files ? options.files(memory.files) : memory.files,
   };
   const { logLines } = options;
   const server = await buildApp(config, providers, {
@@ -272,5 +279,83 @@ describe("listResults page size and cursor", () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: "bad-request", detail: "Invalid cursor." });
+  });
+});
+
+describe("exportResults, deleteResults and getPublicResults", () => {
+  const OLIVIA = "11111111-0000-4000-8000-a00000000001";
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+
+  it("sends the export as a no-store, nosniff attachment of the negotiated type", async () => {
+    const { server } = await start();
+    const { headers } = await signIn(server, OLIVIA);
+    const json = await server.inject({
+      url: `/api/v1/surveys/${FEEDBACK}/results/export`,
+      headers,
+    });
+    expect(json.statusCode).toBe(200);
+    expect(json.headers["cache-control"]).toBe("no-store");
+    expect(json.headers["x-content-type-options"]).toBe("nosniff");
+    expect(json.headers["content-type"]).toBe("application/json; charset=utf-8");
+    const csv = await server.inject({
+      url: `/api/v1/surveys/${FEEDBACK}/results/export?format=csv`,
+      headers,
+    });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.headers["content-type"]).toBe("text/csv; charset=utf-8");
+    expect(csv.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("answers 500 when the first page cannot be read, and logs no answer", async () => {
+    const logLines: string[] = [];
+    const { server } = await start({
+      logLines,
+      results: (store) => ({
+        ...store,
+        listResponsePage: () => Promise.reject(new Error("store down")),
+      }),
+    });
+    const { headers } = await signIn(server, OLIVIA);
+    const stored = await server.inject({
+      method: "POST",
+      url: `/api/v1/public/surveys/${FEEDBACK}/responses`,
+      payload: { data: { satisfaction: "secret-answer" } },
+    });
+    expect(stored.statusCode).toBe(201);
+    const res = await server.inject({ url: `/api/v1/surveys/${FEEDBACK}/results/export`, headers });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toMatchObject({ code: "internal-error", status: 500 });
+    expect(logLines.some((line) => line.includes("store down"))).toBe(true);
+    expect(logLines.join("\n")).not.toContain("secret-answer");
+  });
+
+  it("answers 500 and keeps the responses when the respondent files cannot be deleted", async () => {
+    const { server } = await start({
+      files: (store) => ({
+        ...store,
+        deleteSurveyFiles: () => Promise.reject(new Error("files down")),
+      }),
+    });
+    const { headers } = await signIn(server, OLIVIA);
+    const stats = () =>
+      server.inject({ url: `/api/v1/surveys/${FEEDBACK}/results/stats`, headers });
+    const before = (await stats()).json();
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/surveys/${FEEDBACK}/results`,
+      headers,
+    });
+    expect(res.statusCode).toBe(500);
+    expect((await stats()).json()).toStrictEqual(before);
+  });
+
+  it("serves public results as no-store, without the private question", async () => {
+    const { server } = await start();
+    const res = await server.inject({ url: `/api/v1/public/surveys/${FEEDBACK}/results` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    const body = res.json<{ items: { data: Record<string, unknown> }[] }>();
+    expect(body.items).toHaveLength(5);
+    for (const item of body.items) expect(item.data).not.toHaveProperty("receipt");
   });
 });
