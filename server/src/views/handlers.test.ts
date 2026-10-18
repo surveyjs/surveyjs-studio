@@ -7,7 +7,6 @@ import { createProviders } from "../providers/index.js";
 import type { ProviderSet } from "../providers/types.js";
 
 const OLIVIA = "11111111-0000-4000-8000-a00000000001";
-const LARGE = "22222222-0000-4000-8000-a00000000008";
 
 let app: FastifyInstance | undefined;
 
@@ -29,13 +28,22 @@ async function start(wrap: (providers: ProviderSet) => ProviderSet, logLines: st
   });
   app = server;
   const { headers } = await signIn(server, OLIVIA);
-  return { server, providers, headers };
+  // A survey of the test's own: no view is written to a fixture survey (R23).
+  const created = await server.inject({
+    method: "POST",
+    url: "/api/v1/surveys",
+    headers,
+    payload: { name: "Views test" },
+  });
+  expect(created.statusCode).toBe(201);
+  const surveyId = (created.json() as { id: string }).id;
+  return { server, providers, headers, surveyId };
 }
 
 describe("saveResultsView", () => {
   it("answers 500 when the store fails and logs no layout text", async () => {
     const logLines: string[] = [];
-    const { server, headers } = await start(
+    const { server, headers, surveyId } = await start(
       (providers) => ({
         ...providers,
         views: { ...providers.views, saveView: () => Promise.reject(new Error("boom")) },
@@ -44,7 +52,7 @@ describe("saveResultsView", () => {
     );
     const res = await server.inject({
       method: "PUT",
-      url: `/api/v1/surveys/${LARGE}/views/summary`,
+      url: `/api/v1/surveys/${surveyId}/views/summary`,
       headers,
       payload: { text: "secret-layout" },
     });
@@ -54,14 +62,13 @@ describe("saveResultsView", () => {
   });
 
   it("leaves the survey record unchanged", async () => {
-    const { server, providers, headers } = await start((p) => p);
-    const before = await providers.surveys.getSurvey(LARGE);
-    // …a08 is read only for tests, so the save goes to a view the user then resets.
-    const url = `/api/v1/surveys/${LARGE}/views/table`;
+    const { server, providers, headers, surveyId } = await start((p) => p);
+    const before = await providers.surveys.getSurvey(surveyId);
+    const url = `/api/v1/surveys/${surveyId}/views/table`;
     expect(
       (await server.inject({ method: "PUT", url, headers, payload: { a: 1 } })).statusCode,
     ).toBe(204);
     expect((await server.inject({ method: "DELETE", url, headers })).statusCode).toBe(204);
-    expect(await providers.surveys.getSurvey(LARGE)).toStrictEqual(before);
+    expect(await providers.surveys.getSurvey(surveyId)).toStrictEqual(before);
   });
 });
