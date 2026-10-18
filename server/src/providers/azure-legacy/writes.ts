@@ -1215,33 +1215,116 @@ interface TransactionEnd<T> {
   readonly commit: boolean;
 }
 
+/** Tries of a transaction that SQL Server chose as a deadlock victim, the first included. */
+const DEADLOCK_ATTEMPTS = 3;
+
+const sqlErrorNumber = (error: unknown): unknown =>
+  typeof error === "object" && error !== null ? (error as { number?: unknown }).number : undefined;
+
 /**
- * Runs `body` in one SQL transaction. `request` makes a request on the transaction; the body runs
- * them one at a time (a transaction takes one request at a time). The transaction commits when the
- * body says so, else it rolls back. On any error it rolls back (a failing rollback is ignored: the
- * transaction was not begun or has already ended) and rejects with LegacyStoreError(operation).
+ * Whether the error is SQL Server's "chosen as deadlock victim" (error 1205), on the driver error
+ * or on its original error. The server has then rolled the whole transaction back.
+ */
+export function isDeadlockVictim(error: unknown): boolean {
+  const original =
+    typeof error === "object" && error !== null
+      ? (error as { originalError?: unknown }).originalError
+      : undefined;
+  return sqlErrorNumber(error) === 1205 || sqlErrorNumber(original) === 1205;
+}
+
+/** Wait before try `attempt + 1`: attempt × a random 20–60 ms, so two victims do not meet again. */
+const deadlockBackOff = (attempt: number): Promise<void> =>
+  setTimeout(attempt * (20 + Math.random() * 40));
+
+/**
+ * Runs `run(attempt)` and runs it again, after `wait(attempt)`, while it fails as a deadlock victim,
+ * up to `attempts` tries in all. Any other error, and the error of the last try, rejects at once.
+ */
+export async function withDeadlockRetry<T>(
+  run: (attempt: number) => Promise<T>,
+  attempts = DEADLOCK_ATTEMPTS,
+  wait: (attempt: number) => Promise<void> = deadlockBackOff,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run(attempt);
+    } catch (error) {
+      if (attempt >= attempts || !isDeadlockVictim(error)) throw error;
+      await wait(attempt);
+    }
+  }
+}
+
+/** A commit that failed: its outcome is unknown, so it is never tried again. */
+class CommitFailedError extends Error {
+  constructor(readonly driverError: unknown) {
+    super("The commit failed");
+    this.name = "CommitFailedError";
+  }
+}
+
+/**
+ * One try of `body` in a new SQL transaction. The body runs its requests one at a time (a
+ * transaction takes one request at a time). The transaction commits when the body says so, else
+ * it rolls back. On any error it rolls back (a failing rollback is ignored: the transaction was
+ * not begun or has already ended) and rethrows; a failed commit rethrows as CommitFailedError.
+ */
+async function transactionAttempt<T>(
+  pool: sql.ConnectionPool,
+  body: (request: () => sql.Request) => Promise<TransactionEnd<T>>,
+): Promise<T> {
+  const transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    const end = await body(() => new sql.Request(transaction));
+    if (!end.commit) {
+      await transaction.rollback();
+      return end.value;
+    }
+    try {
+      await transaction.commit();
+    } catch (error) {
+      throw new CommitFailedError(error);
+    }
+    return end.value;
+  } catch (error) {
+    try {
+      await transaction.rollback();
+    } catch {
+      // Not begun, already ended, or aborted by the server: nothing is kept either way.
+    }
+    throw error;
+  }
+}
+
+/**
+ * Runs `body` in one SQL transaction (transactionAttempt). A deadlock victim is run again in a new
+ * transaction, up to DEADLOCK_ATTEMPTS tries (the bodies have no effect outside the transaction);
+ * each retry is logged with the operation and the try only. The final failure rejects with
+ * LegacyStoreError(operation).
  */
 async function inTransaction<T>(
   targets: LegacyWriteTargets,
   operation: string,
   body: (request: () => sql.Request) => Promise<TransactionEnd<T>>,
 ): Promise<T> {
-  let transaction: sql.Transaction | undefined;
   try {
-    const open = new sql.Transaction(await targets.pool());
-    transaction = open;
-    await open.begin();
-    const end = await body(() => new sql.Request(open));
-    if (end.commit) await open.commit();
-    else await open.rollback();
-    return end.value;
+    const pool = await targets.pool();
+    return await withDeadlockRetry(
+      () => transactionAttempt(pool, body),
+      DEADLOCK_ATTEMPTS,
+      (attempt) => {
+        targets.logger.warn(
+          { operation, attempt: String(attempt) },
+          "Retrying a transaction chosen as deadlock victim.",
+        );
+        return deadlockBackOff(attempt);
+      },
+    );
   } catch (error) {
-    try {
-      await transaction?.rollback();
-    } catch {
-      // Not begun, already ended, or aborted by the server: nothing is kept either way.
-    }
-    throw new LegacyStoreError(operation, error);
+    const driverError = error instanceof CommitFailedError ? error.driverError : error;
+    throw new LegacyStoreError(operation, driverError);
   }
 }
 

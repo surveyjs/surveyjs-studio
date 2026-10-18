@@ -2055,6 +2055,28 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect((await memberRows(project.id)).map((row) => row.userid)).toEqual([ADMIN_ID]);
     });
 
+    it("rolls the project row back when the creator row fails after it", async () => {
+      // A creator without a `Users` row: PROJECT_INSERT succeeds, CREATOR_INSERT fails on the FK.
+      const id = randomUUID();
+      onTestFinished(async () => {
+        await store().directory.deleteProject(id, { receiverId: ADMIN_ID, now: NOW });
+      });
+      const project: NewProject = {
+        id,
+        name: "Rolled back project",
+        creatorId: randomUUID(),
+        createdAt: CREATED_AT,
+      };
+      const error: unknown = await store()
+        .directory.createProject(project)
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(LegacyStoreError);
+      expect(String(error)).toMatch(/project create/);
+      expect(String(error)).not.toMatch(/Rolled back project/);
+      expect(await projectRow(id)).toBeUndefined();
+      expect(await memberRows(id)).toEqual([]);
+    });
+
     it("renames: name and timestamp only, the creator row's name stays", async () => {
       const { id } = await ownProject();
       const before = await projectRow(id);
