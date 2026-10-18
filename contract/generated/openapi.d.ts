@@ -164,11 +164,12 @@ export interface paths {
         post?: never;
         /**
          * Delete a project
-         * @description Admins only. The project's surveys, with their results, files and history,
-         *     are not deleted. They move to the project owner (`ownerId`) as personal
-         *     surveys (`projectId: null`) and keep their IDs, published state and
-         *     settings. If the owner is no longer a member, they move to the admin who
-         *     deletes the project.
+         * @description Admins only. The project's surveys, archived ones included, with their
+         *     results, files and history, are not deleted. They move to the project owner
+         *     (`ownerId`) as personal surveys (`projectId: null`) and keep their IDs,
+         *     published state and settings; who created each survey does not change.
+         *     When `ownerId` is `null` (the owner has left the project), they move to the
+         *     admin who deletes the project.
          */
         delete: operations["deleteProject"];
         options?: never;
@@ -189,7 +190,12 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** List project members */
+        /**
+         * List project members
+         * @description Any member of the project may list its members; for anyone else the
+         *     project does not exist (`404`). Members are ordered by display name,
+         *     ignoring case, then by user ID.
+         */
         get: operations["listMembers"];
         put?: never;
         /**
@@ -220,14 +226,18 @@ export interface paths {
         /**
          * Remove a member
          * @description Admins may remove anyone; any member may remove themselves (leave the
-         *     project). Removing the last admin fails with `409 last-admin`.
+         *     project). Removing the last admin fails with `409 last-admin`, also when the
+         *     last admin leaves. The only member of a project cannot leave it; they delete
+         *     the project instead.
          */
         delete: operations["removeMember"];
         options?: never;
         head?: never;
         /**
          * Change a member's role
-         * @description Admins only. Demoting the last admin fails with `409 last-admin`.
+         * @description Admins only. Demoting the last admin fails with `409 last-admin`, also when
+         *     admins demote themselves. Setting the role a member already has changes
+         *     nothing and answers `200`.
          */
         patch: operations["updateMember"];
         trace?: never;
@@ -836,8 +846,13 @@ export interface components {
         Project: {
             id: components["schemas"]["Id"];
             name: components["schemas"]["ProjectName"];
-            /** @description The user who created the project. Receives its surveys when the project is deleted. */
-            ownerId: components["schemas"]["Id"];
+            /**
+             * @description The user who created the project, while they are still a member. `null` once the creator has
+             *     left the project, or when the store no longer knows who created it (for example after the
+             *     creator's role was changed in another application). Receives the project's surveys when the
+             *     project is deleted; when `null`, the admin who deletes the project receives them.
+             */
+            ownerId: components["schemas"]["Id"] | null;
             /** @description The current user's role in this project. */
             role: components["schemas"]["ProjectRole"];
             memberCount?: number;
@@ -1509,6 +1524,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
@@ -1557,6 +1573,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1587,6 +1604,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1618,6 +1636,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1647,6 +1666,7 @@ export interface operations {
                     "application/json": components["schemas"]["Member"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1673,6 +1693,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1705,6 +1726,7 @@ export interface operations {
                     "application/json": components["schemas"]["Member"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

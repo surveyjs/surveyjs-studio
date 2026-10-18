@@ -247,6 +247,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
@@ -288,6 +289,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -297,17 +299,19 @@ paths:
       operationId: deleteProject
       summary: Delete a project
       description: |
-        Admins only. The project's surveys, with their results, files and history,
-        are not deleted. They move to the project owner (`ownerId`) as personal
-        surveys (`projectId: null`) and keep their IDs, published state and
-        settings. If the owner is no longer a member, they move to the admin who
-        deletes the project.
+        Admins only. The project's surveys, archived ones included, with their
+        results, files and history, are not deleted. They move to the project owner
+        (`ownerId`) as personal surveys (`projectId: null`) and keep their IDs,
+        published state and settings; who created each survey does not change.
+        When `ownerId` is `null` (the owner has left the project), they move to the
+        admin who deletes the project.
       security:
         - cookieAuth: []
           csrfToken: []
         - bearerAuth: []
       responses:
         '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -320,6 +324,10 @@ paths:
       tags: [Members]
       operationId: listMembers
       summary: List project members
+      description: |
+        Any member of the project may list its members; for anyone else the
+        project does not exist (`404`). Members are ordered by display name,
+        ignoring case, then by user ID.
       parameters:
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Cursor' }
@@ -329,6 +337,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MemberPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
@@ -355,6 +364,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -368,7 +378,10 @@ paths:
       tags: [Members]
       operationId: updateMember
       summary: Change a member's role
-      description: Admins only. Demoting the last admin fails with `409 last-admin`.
+      description: |
+        Admins only. Demoting the last admin fails with `409 last-admin`, also when
+        admins demote themselves. Setting the role a member already has changes
+        nothing and answers `200`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -386,6 +399,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -397,13 +411,16 @@ paths:
       summary: Remove a member
       description: |
         Admins may remove anyone; any member may remove themselves (leave the
-        project). Removing the last admin fails with `409 last-admin`.
+        project). Removing the last admin fails with `409 last-admin`, also when the
+        last admin leaves. The only member of a project cannot leave it; they delete
+        the project instead.
       security:
         - cookieAuth: []
           csrfToken: []
         - bearerAuth: []
       responses:
         '204': { description: Removed. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1512,8 +1529,14 @@ components:
         id: { $ref: '#/components/schemas/Id' }
         name: { $ref: '#/components/schemas/ProjectName' }
         ownerId:
-          $ref: '#/components/schemas/Id'
-          description: The user who created the project. Receives its surveys when the project is deleted.
+          description: |
+            The user who created the project, while they are still a member. `null` once the creator has
+            left the project, or when the store no longer knows who created it (for example after the
+            creator's role was changed in another application). Receives the project's surveys when the
+            project is deleted; when `null`, the admin who deletes the project receives them.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
         role:
           $ref: '#/components/schemas/ProjectRole'
           description: The current user's role in this project.

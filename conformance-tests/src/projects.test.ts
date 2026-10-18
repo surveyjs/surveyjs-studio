@@ -1,6 +1,9 @@
 /**
- * `listProjects` and `getProject` against the legacy fixtures. Step 4 creates no projects, so the
- * lists are exact.
+ * `listProjects` and `getProject` against the legacy fixtures.
+ *
+ * Other test files create (and delete) projects of their own while this one runs, and a crashed run
+ * may leave some behind, so the lists are checked through the fixture projects only: Marketing and
+ * Engineering must be present, in list order, with the user's role. Each list is walked to the end.
  */
 import { describe, expect, it, type TestContext } from "vitest";
 import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
@@ -15,7 +18,7 @@ const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
 interface Project {
   id: string;
   name: string;
-  ownerId: string;
+  ownerId: string | null;
   role: string;
   memberCount: number;
   createdAt: string;
@@ -67,43 +70,61 @@ async function page(headers: Record<string, string>, query = ""): Promise<Projec
   return (await response.json()) as ProjectPage;
 }
 
+/** Every project of the user, following `nextCursor` to the end. */
+async function walk(headers: Record<string, string>, limit?: number): Promise<Project[]> {
+  const items: Project[] = [];
+  let cursor: string | null = null;
+  do {
+    const query = new URLSearchParams();
+    if (limit !== undefined) query.set("limit", String(limit));
+    if (cursor !== null) query.set("cursor", cursor);
+    const next = await page(headers, `?${query.toString()}`);
+    items.push(...next.items);
+    cursor = next.nextCursor;
+  } while (cursor !== null);
+  return items;
+}
+
+const FIXTURE_PROJECTS = new Set([MARKETING, ENGINEERING]);
+
+/** The fixture projects of a list, in list order. */
+const fixtureProjectsOf = (items: readonly Project[]): Project[] =>
+  items.filter((project) => FIXTURE_PROJECTS.has(project.id));
+
 describe("listProjects", () => {
   it("answers 401 unauthenticated when signed out", async () => {
     expect((await list({})).status).toBe(401);
   });
 
   it("lists the owner's projects by name with the owner's role in each", async (ctx) => {
-    expect(await page(await as(ctx, owner))).toEqual({
-      items: [engineering("user"), marketing("admin")],
-      nextCursor: null,
-    });
+    expect(fixtureProjectsOf(await walk(await as(ctx, owner)))).toEqual([
+      engineering("user"),
+      marketing("admin"),
+    ]);
   });
 
   it("lists both projects as admin to the admin", async (ctx) => {
-    expect(await page(await as(ctx, admin))).toEqual({
-      items: [engineering("admin"), marketing("admin")],
-      nextCursor: null,
-    });
+    expect(fixtureProjectsOf(await walk(await as(ctx, admin)))).toEqual([
+      engineering("admin"),
+      marketing("admin"),
+    ]);
   });
 
   it("lists only Marketing to the member", async (ctx) => {
-    expect(await page(await as(ctx, member))).toEqual({
-      items: [marketing("user")],
-      nextCursor: null,
-    });
+    expect(fixtureProjectsOf(await walk(await as(ctx, member)))).toEqual([marketing("user")]);
   });
 
-  it("lists nothing for a user without projects", async (ctx) => {
-    expect(await page(await as(ctx, outsider))).toEqual({ items: [], nextCursor: null });
+  it("lists no fixture project for a user without one", async (ctx) => {
+    expect(fixtureProjectsOf(await walk(await as(ctx, outsider)))).toEqual([]);
   });
 
   it("pages with limit and cursor in list order", async (ctx) => {
     const headers = await as(ctx, owner);
     const first = await page(headers, "?limit=1");
-    expect(first.items).toEqual([engineering("user")]);
-    expect(first.nextCursor).toEqual(expect.any(String));
-    const second = await page(headers, `?limit=1&cursor=${String(first.nextCursor)}`);
-    expect(second).toEqual({ items: [marketing("admin")], nextCursor: null });
+    expect(first.items).toHaveLength(1);
+    const items = await walk(headers, 1);
+    expect(new Set(items.map((project) => project.id)).size).toBe(items.length);
+    expect(fixtureProjectsOf(items)).toEqual([engineering("user"), marketing("admin")]);
   });
 
   it("answers 400 bad-request for an invalid cursor, a survey cursor or a limit of 0", async (ctx) => {

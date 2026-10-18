@@ -146,7 +146,10 @@ export async function buildApp(
         notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),
-      ...createProjectHandlers({ directory: providers.directory }),
+      ...createProjectHandlers({
+        directory: providers.directory,
+        ...(options.now && { now: options.now }),
+      }),
       ...createContentHandlers({
         surveys: providers.surveys,
         directory: providers.directory,
