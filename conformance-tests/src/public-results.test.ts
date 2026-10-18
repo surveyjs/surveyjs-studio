@@ -206,8 +206,10 @@ describe("getPublicResults", () => {
     const one = await patchBoth();
     const other = await patchBoth();
     const page = (await (await results(one, "?limit=1")).json()) as PublicPage;
+    expect(page.nextCursor).not.toBeNull();
     const crossed = await results(other, `?cursor=${page.nextCursor ?? ""}`);
     expect(crossed.status).toBe(400);
+    expect(await crossed.json()).toMatchObject({ detail: "Invalid cursor." });
 
     const tooLong = await results("x".repeat(65));
     expect(tooLong.status).toBe(400);

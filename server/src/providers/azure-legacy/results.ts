@@ -19,9 +19,9 @@ export interface AzureResultStoreOptions {
   readonly targets: LegacyWriteTargets;
   /** `Surveys.publishid` of the survey, lower case; null when it has none or the row is gone. */
   readonly publishIdOf: (surveyId: string) => Promise<string | null>;
-  /** Maps each row; one the domain cannot represent is skipped and reported by its ids. */
   /** Clock for the delete-all audit row. */
   readonly now: () => number;
+  /** Maps each row; one the domain cannot represent is skipped and reported by its ids. */
   readonly mapRows: <R, T>(rows: readonly R[], map: (row: R) => T) => T[];
 }
 
