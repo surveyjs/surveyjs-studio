@@ -6,7 +6,7 @@ import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import { rewriteFileIds } from "../files/rewrite.js";
-import type { Directory, FileStore, SurveyStore } from "../providers/types.js";
+import type { Directory, FileStore, SurveyStore, ViewStore } from "../providers/types.js";
 import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
@@ -24,6 +24,8 @@ export interface SurveysServiceOptions {
   readonly directory: Directory;
   /** The files of surveys: deleted with a survey, copied with a clone (R10, R11). */
   readonly files: FileStore;
+  /** The private-question lists. */
+  readonly views: ViewStore;
   /** The clock for creation times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -108,7 +110,7 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 
 /** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
-  const { surveys, directory, files, now = Date.now } = options;
+  const { surveys, directory, files, views, now = Date.now } = options;
   const { visible, modifiable } = createSurveyAccess({ surveys, directory });
 
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
@@ -173,12 +175,16 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         },
         definition,
       );
-      return surveyJson(stored, canModify(stored, user, scope.membership));
+      return surveyJson(stored, canModify(stored, user, scope.membership), []);
     },
 
     async get(user, surveyId) {
       const { survey, membership } = await visible(user, surveyId);
-      return surveyJson(survey, canModify(survey, user, membership));
+      return surveyJson(
+        survey,
+        canModify(survey, user, membership),
+        await views.getPrivateQuestions(survey.id),
+      );
     },
 
     async update(user, surveyId, patch) {
@@ -189,6 +195,8 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         patch.projectId === undefined
           ? undefined
           : (await targetScope(user, patch.projectId)).owner;
+      const names = patch.settings?.privateResultQuestions;
+      if (names !== undefined) await views.savePrivateQuestions(survey.id, names);
       const stored = await surveys.updateSurvey(
         survey.id,
         surveyChangesFromPatch(survey, patch, {
@@ -203,7 +211,11 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         stored.owner.kind === "project"
           ? await directory.getUserProject(user.id, stored.owner.projectId)
           : null;
-      return surveyJson(stored, canModify(stored, user, membership));
+      return surveyJson(
+        stored,
+        canModify(stored, user, membership),
+        names ?? (await views.getPrivateQuestions(stored.id)),
+      );
     },
 
     async delete(user, surveyId) {
@@ -268,7 +280,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         await discardCopiedFiles();
         throw notFound();
       }
-      return surveyJson(stored, canModify(stored, user, scope.membership));
+      return surveyJson(stored, canModify(stored, user, scope.membership), []);
     },
   };
 }
