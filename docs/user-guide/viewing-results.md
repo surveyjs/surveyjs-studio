@@ -39,7 +39,8 @@ The Summary is the SurveyJS Dashboard. It shows one chart for each question of t
 order of the survey.
 
 - **All questions** are shown. The old page charted only the first 15.
-- **Choose question to show...** lists the questions that are hidden or not shown. Pick one to add it.
+- **Choose question to show...** lists every question, with a check mark on the ones shown. Pick a
+  hidden one to show it again.
 - **Hide** on a chart removes it from the page. It stays in the list of the chooser.
 - **Drag** a chart by its header to put it in another place.
 - **Click a bar or a slice** to filter: the other charts then count only the responses that chose that
@@ -99,9 +100,10 @@ no longer used for you) or reset the layout. The old layouts are only read: this
 changes them, so the old site still shows its own. The old site's own list of table columns
 (`surveyresultcolumns`) and its "public" marks are not used.
 
-**A question added later.** If you add a question to the survey after you saved a Summary layout, the
-chart of the new question is not shown. Open **Choose question to show...** and add it. A Table
-layout does not have this problem: new questions are added as columns.
+**A question added or removed later.** If you add a question to the survey after you saved a layout, its
+chart (on the Summary) or its column (on the Table) is shown at the end of your layout. A question you
+remove from the survey is dropped from the layout. The rest of the layout stays as you saved it. This
+also holds for an old-site layout.
 
 ## Details: reset a layout
 

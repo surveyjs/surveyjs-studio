@@ -7,7 +7,7 @@ import type { ViewState } from "../api/views";
 import { loadExportLibrary } from "./exportLibraries";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { extraTableColumns, tableRows } from "./tableRows";
-import { reconcileTableState, type TableState } from "./tableState";
+import { type ElementsState, reconcileElementsState } from "./elementsState";
 
 type TableViewState = Tabulator["state"];
 
@@ -16,8 +16,8 @@ type TableViewState = Tabulator["state"];
  * The library sorts columns it adds from `columnsData` by their index in that list, which puts them
  * among the answer columns, so the page fixes their place itself.
  */
-function defaultState(table: Tabulator, extraNames: ReadonlySet<string>): TableState {
-  const state = table.state as unknown as TableState;
+function defaultState(table: Tabulator, extraNames: ReadonlySet<string>): ElementsState {
+  const state = table.state as unknown as ElementsState;
   const answers = state.elements.filter((element) => !extraNames.has(element.name));
   const extras = state.elements.filter((element) => extraNames.has(element.name));
   return { ...state, elements: [...answers, ...extras] };
@@ -63,7 +63,7 @@ export function TableView({
     const defaults = defaultState(table, new Set(extras.map((column) => column.name)));
     // Always set before render (no onStateChanged then): it also fills the extra columns' cells,
     // which the library leaves empty for columns it adds after reading the data.
-    const state = reconcileTableState(initialState.current, defaults) ?? defaults;
+    const state = reconcileElementsState(initialState.current, defaults) ?? defaults;
     table.lockStateChanged();
     table.state = state as unknown as TableViewState;
     table.unlockStateChanged();

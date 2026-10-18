@@ -256,5 +256,5 @@ pnpm demo:azurite:down
   Result". There is no operation to delete one response.
 - A word cloud for text questions (the old page has none either) and the `isPublic` marks of public results.
 - The old `#summary`, `#table` and `#info` links (Step 12) and the old page's look (Step 13).
-- A question added to a survey after you saved a Summary layout is not in that layout: add it with **Choose
-  question to show...**.
+- A place of its own for a question added after a layout was saved: it is shown at the end of that layout
+  (Summary and Table), and you drag it where you want it. A removed question is dropped from the layout.

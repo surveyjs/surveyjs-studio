@@ -3,6 +3,7 @@ import { Dashboard, VisualizationManager, WordCloud } from "survey-analytics";
 import "survey-analytics/survey.analytics.css";
 import { Model } from "survey-core";
 import type { ViewState } from "../api/views";
+import { type ElementsState, reconcileElementsState } from "./elementsState";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { summaryData } from "./tableRows";
 
@@ -44,8 +45,12 @@ export function SummaryView({
       showToolbar: true,
       allowMakeQuestionsPrivate: false,
     });
+    // Reconciled against the default state, as the Table does: the setter keeps only the elements
+    // it is given, so a question added after the save would otherwise be neither drawn nor offered.
     // Before render: the setter does not raise onStateChanged, and the first render shows it.
-    if (initialState.current !== null) dashboard.state = initialState.current as Dashboard["state"];
+    const defaults = dashboard.state as unknown as ElementsState;
+    const state = reconcileElementsState(initialState.current, defaults);
+    if (state !== null) dashboard.state = state as unknown as Dashboard["state"];
     dashboard.render(target);
     dashboard.onStateChanged.add((_, state: ViewState) => stateCallback.current(state));
     return () => {

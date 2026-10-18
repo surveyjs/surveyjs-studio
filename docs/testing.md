@@ -72,7 +72,7 @@ Run with Vitest from the root. Scope:
 - `web/` (Step 9): `api/results.ts` (`loadAllResults` over several pages, a failing page, the same cursor
   twice) and `api/views.ts` (`404 view-not-found` as `null`, any other failure rejected, and `keepalive`
   counted in UTF-8 **bytes**: a body of 25,000 euro signs is under 60,000 characters but 75,000 bytes and is
-  sent without it), the pure modules of `results/` (`search.ts`, `viewSaver.ts` with fake timers, `tableState.ts`,
+  sent without it), the pure modules of `results/` (`search.ts`, `viewSaver.ts` with fake timers, `elementsState.ts`,
   `tableRows.ts`), and the page rendered through the router (`resultsRoutes.test.tsx`, `privateRoutes.test.tsx`:
   the tabs and links, results read from two pages, saving once with its body, the quiet message, retry after a failed
   read, both resets with their confirm texts). **`SummaryView.tsx` and `TableView.tsx` have no real unit
