@@ -22,7 +22,7 @@ import {
 } from "./support/survey-list.js";
 import { expect, test, watchConsole } from "./support/test.js";
 
-// The Projects page (US 59, 61-69). Runs in memory mode on three browsers and in Azurite mode on the
+// The Projects page (US 59, 61-67, 69). Runs in memory mode on three browsers and in Azurite mode on the
 // replica. Marketing, Engineering and the fixture memberships are read only: every test works on its
 // own project, created by Adam Admin and deleted in `finally`. The only member added is Mia Member,
 // never Oscar or Olivia. Surveys that move out of a deleted project land in Adam's Personal scope
@@ -39,7 +39,7 @@ const projectSelector = (page: Page) =>
 test.describe("create, add, promote, demote and remove", () => {
   test.use({ expectedErrorResponses: [MEMBERS_404] });
 
-  test("an admin creates a project and manages its members (US 59, 61, 62, 63, 65)", async ({
+  test("an admin creates a project and manages its members (US 59, 61, 62, 63, 65, 69)", async ({
     page,
     browserName,
   }) => {
@@ -144,18 +144,13 @@ test("a member leaves a project (US 66)", async ({ page, browser, browserName })
   }
 });
 
-test("deleting a project moves its surveys to the owner (US 67, 69)", async ({
-  page,
-  browserName,
-}) => {
+test("deleting a project moves its surveys to the owner (US 67)", async ({ page, browserName }) => {
   await signInAt(page, "/", "admin");
   const project = await createProjectViaApi(page, uniqueProjectName("Delete", browserName));
-  const survey = await createSurveyViaApi(
-    page,
-    uniqueProjectName("Moved survey", browserName),
-    project.id,
-  );
+  const surveyName = uniqueProjectName("Moved survey", browserName);
+  let surveyId: string | undefined;
   try {
+    surveyId = (await createSurveyViaApi(page, surveyName, project.id)).id;
     await page.reload();
     const selector = projectSelector(page);
     await selector.getByRole("button").click();
@@ -170,9 +165,9 @@ test("deleting a project moves its surveys to the owner (US 67, 69)", async ({
 
     await page.goto("/");
     await loadAllPages(page);
-    await expect(surveysNamed(page, survey.name)).toHaveCount(1);
+    await expect(surveysNamed(page, surveyName)).toHaveCount(1);
   } finally {
-    await discardSurveyViaApi(page, survey.id);
+    if (surveyId) await discardSurveyViaApi(page, surveyId);
     await deleteProjectViaApi(page, project.id);
   }
 });
