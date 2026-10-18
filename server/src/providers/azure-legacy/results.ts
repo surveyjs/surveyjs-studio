@@ -5,7 +5,7 @@ import type { ResponsePosition, ResultStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { UnmappableLegacyRowError, isGuid, responseFromLegacy } from "./mapping.js";
 import type { LegacyResultEntity } from "./rows.js";
-import { writeResponse, type LegacyWriteTargets } from "./writes.js";
+import { writeResponse, writeResultsDeletion, type LegacyWriteTargets } from "./writes.js";
 
 /**
  * Results in the results account (layout sections 3.6 and 3.7): rows of `post{postId}` and
@@ -20,6 +20,8 @@ export interface AzureResultStoreOptions {
   /** `Surveys.publishid` of the survey, lower case; null when it has none or the row is gone. */
   readonly publishIdOf: (surveyId: string) => Promise<string | null>;
   /** Maps each row; one the domain cannot represent is skipped and reported by its ids. */
+  /** Clock for the delete-all audit row. */
+  readonly now: () => number;
   readonly mapRows: <R, T>(rows: readonly R[], map: (row: R) => T) => T[];
 }
 
@@ -48,7 +50,7 @@ function legacyEntity(row: TableEntityResult<Record<string, unknown>>): LegacyRe
 }
 
 export function createAzureResultStore(options: AzureResultStoreOptions): ResultStore {
-  const { targets, publishIdOf, mapRows } = options;
+  const { targets, publishIdOf, mapRows, now } = options;
   const rows = (survey: SurveyRecord): TableClient =>
     targets.resultTable(`post${dashless(survey.postId)}`);
   const markers = (survey: SurveyRecord): TableClient =>
@@ -153,6 +155,6 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
       };
     },
 
-    deleteAll: () => Promise.reject(new Error("not implemented until Task 2")),
+    deleteAll: (survey) => writeResultsDeletion(targets, survey, new Date(now()).toISOString()),
   };
 }

@@ -661,7 +661,7 @@ export function createAzureLegacyProviders(
       container: options.filesContainer ?? FILES_CONTAINER,
     }),
 
-    results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows }),
+    results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
 

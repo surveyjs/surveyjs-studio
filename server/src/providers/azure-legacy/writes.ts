@@ -10,6 +10,7 @@ import type {
 import sql from "mssql";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
+  FileKind,
   NewResponse,
   NewSurvey,
   SaveOutcome,
@@ -22,14 +23,14 @@ import type {
 import { ResponseTooLargeError, type AppendOutcome } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { fileRecordFromBlob, isGuid } from "./mapping.js";
+import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy } from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
  * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
  * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
  * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
- * our own. Each
+ * our own; Step 10: deleting all results and the public-question list. Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -922,18 +923,29 @@ export async function writeFileDeletion(
 }
 
 /**
- * Deletes every blob under `{container}/{surveyId}/`, of every kind (R3); returns how many were
- * deleted. A missing container holds none.
+ * Deletes every blob under `{container}/{surveyId}/` (R3), or only those whose metadata `kind` is
+ * `kind` when given (Step 10); returns how many were deleted. A missing container holds none.
  */
 export async function writeSurveyFilesDeletion(
   blobs: BlobServiceClient,
   container: string,
   surveyId: string,
+  kind?: FileKind,
 ): Promise<number> {
   const id = checkedId("file delete", surveyId);
   try {
+    const names: string[] = [];
+    await ignoringNotFound(async () => {
+      const listing = blobs.getContainerClient(container).listBlobsFlat({
+        prefix: `${id}/`,
+        includeMetadata: kind !== undefined,
+      });
+      for await (const blob of listing) {
+        if (kind === undefined || blob.metadata?.kind === kind) names.push(blob.name);
+      }
+    });
     let deleted = 0;
-    for (const name of await blobNames(blobs, container, `${id}/`)) {
+    for (const name of names) {
       try {
         await blobs.getContainerClient(container).getBlobClient(name).delete({
           deleteSnapshots: "include",
@@ -1053,5 +1065,92 @@ export async function writeViewReset(
     await uploadView(blobs, name, Buffer.alloc(0));
   } catch (error) {
     throw new LegacyStoreError("view reset", error);
+  }
+}
+
+/** Rows of one transaction: the Table service accepts at most 100. */
+const TRANSACTION_ROWS = 100;
+
+/** Deletes every row of `table` (keys only listed), 100 per transaction; a missing table is fine. */
+async function deleteAllRows(table: TableClient): Promise<void> {
+  const keys = new Map<string, string[]>();
+  try {
+    const listing = table.listEntities({ queryOptions: { select: ["PartitionKey", "RowKey"] } });
+    for await (const { partitionKey, rowKey } of listing) {
+      if (partitionKey === undefined || rowKey === undefined) continue;
+      const rows = keys.get(partitionKey) ?? [];
+      rows.push(rowKey);
+      keys.set(partitionKey, rows);
+    }
+  } catch (error) {
+    if (statusOf(error) === 404) return;
+    throw error;
+  }
+  for (const [partitionKey, rowKeys] of keys) {
+    for (let from = 0; from < rowKeys.length; from += TRANSACTION_ROWS) {
+      const batch = rowKeys.slice(from, from + TRANSACTION_ROWS);
+      try {
+        await table.submitTransaction(
+          batch.map((rowKey): ["delete", { partitionKey: string; rowKey: string }] => [
+            "delete",
+            { partitionKey, rowKey },
+          ]),
+        );
+      } catch (error) {
+        if (statusOf(error) !== 404) throw error;
+        // A row was deleted meanwhile: the batch fails as a whole, so go row by row.
+        for (const rowKey of batch) {
+          await ignoringNotFound(() => table.deleteEntity(partitionKey, rowKey));
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Deletes every response row of `post{postKey}` and every marker of `SurveyCompletion{surveyKey}`
+ * in batches (Step 10, R7). The tables stay, so the next response is stored as before, and
+ * `postdelete{postKey}` is not touched. Then a best-effort `SURVEY_DELETEALLRESULTS` audit row at
+ * `deletedAt`. Store failures reject with LegacyStoreError.
+ */
+export async function writeResultsDeletion(
+  targets: LegacyWriteTargets,
+  survey: SurveyRecord,
+  deletedAt: string,
+): Promise<void> {
+  const id = checkedId("results delete", survey.id);
+  const postKey = checkedId("results delete", survey.postId).replaceAll("-", "");
+  try {
+    await deleteAllRows(targets.resultTable(`post${postKey}`));
+    await deleteAllRows(targets.resultTable(`SurveyCompletion${id.replaceAll("-", "")}`));
+  } catch (error) {
+    throw new LegacyStoreError("results delete", error);
+  }
+  const event = surveyEvent("SURVEY_DELETEALLRESULTS", id, deletedAt);
+  await appendEventBestEffort(targets, id, event, "the results are deleted.");
+}
+
+/**
+ * Replaces the survey's public-question list: append blob `surveyresultpermissions/{surveyId}`, as
+ * the legacy writers do (layout section 10). No SQL change and no audit row.
+ */
+export async function writePrivateQuestions(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  names: readonly string[],
+): Promise<void> {
+  const id = checkedId("public questions save", surveyId);
+  const container = "surveyresultpermissions";
+  const content = Buffer.from(privateQuestionsToLegacy(names), "utf8");
+  try {
+    try {
+      await replaceAppendBlob(blobs, container, id, content);
+    } catch (error) {
+      if (statusOf(error) !== 404) throw error;
+      await blobs.getContainerClient(container).createIfNotExists();
+      await replaceAppendBlob(blobs, container, id, content);
+    }
+  } catch (error) {
+    throw new LegacyStoreError("public questions save", error);
   }
 }

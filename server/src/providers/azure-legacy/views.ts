@@ -3,8 +3,8 @@ import type { ViewName, ViewState } from "../../domain/types.js";
 import type { ViewStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { isGuid } from "./mapping.js";
-import { VIEWS_CONTAINER, writeView, writeViewReset } from "./writes.js";
+import { isGuid, privateQuestionsFromLegacy } from "./mapping.js";
+import { VIEWS_CONTAINER, writePrivateQuestions, writeView, writeViewReset } from "./writes.js";
 
 /**
  * Saved results layouts (Step 9, R4 to R7): block blob `{surveyId}/{userId}/{view}` (lower case) in
@@ -76,8 +76,22 @@ export function createAzureViewStore(options: {
 
     resetView: (surveyId, userId, view) => writeViewReset(blobs, surveyId, userId, view),
 
-    getPrivateQuestions: () => Promise.reject(new Error("not implemented until Task 2")),
+    async getPrivateQuestions(surveyId) {
+      if (!isGuid(surveyId)) return [];
+      const survey = surveyId.toLowerCase();
+      const text = await textOf(blobs, "surveyresultpermissions", survey);
+      if (text === undefined) return [];
+      const names = privateQuestionsFromLegacy(text);
+      if (names === null) {
+        logger.warn(
+          { surveyId: survey },
+          "Ignored a public-question list that is not a JSON array.",
+        );
+        return [];
+      }
+      return names;
+    },
 
-    savePrivateQuestions: () => Promise.reject(new Error("not implemented until Task 2")),
+    savePrivateQuestions: (surveyId, names) => writePrivateQuestions(blobs, surveyId, names),
   };
 }

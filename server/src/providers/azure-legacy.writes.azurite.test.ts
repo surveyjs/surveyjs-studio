@@ -824,7 +824,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         await putViewBlob(`${survey.id}/${user}/${view}`, text);
         const before = warnings.length;
         expect(await store().views.getView(survey.id, user, view)).toBeNull();
-        const added = warnings.slice(before);
+        const added = warnings.splice(before); // later tests expect no warnings
         expect(added).toHaveLength(1);
         expect(added[0]!.details).toEqual({ surveyId: survey.id, userId: user, view });
         expect(JSON.stringify(added)).not.toContain(text);
@@ -1131,6 +1131,160 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       } finally {
         await store().files.deleteSurveyFiles(survey.id);
       }
+    });
+  });
+
+  describe("results deletion", () => {
+    const RESULTS_ACCOUNT = "LEGACY_RESULTS_STORAGE_CONNECTION_STRING";
+    const compact = (id: string) => id.replaceAll("-", "");
+    const table = (name: string) =>
+      localTableClient(config.resultsStorageConnectionString, name, RESULTS_ACCOUNT);
+
+    async function entityCount(name: string): Promise<number> {
+      let count = 0;
+      for await (const entity of table(name).listEntities({
+        queryOptions: { select: ["RowKey"] },
+      })) {
+        expect(entity.rowKey).toBeDefined();
+        count += 1;
+      }
+      return count;
+    }
+
+    const freshSurvey = (): Promise<SurveyRecord> =>
+      store().surveys.createSurvey(newSurvey(personal()));
+
+    it("empties post{postId} and SurveyCompletion{surveyId} in batches, keeps the tables and postdelete, and writes one audit row", async () => {
+      const survey = await freshSurvey();
+      const postName = `post${compact(survey.postId)}`;
+      const markerName = `SurveyCompletion${compact(survey.id)}`;
+      const deletedName = `postdelete${compact(survey.postId)}`;
+      for (let from = 0; from < 150; from += 25) {
+        await Promise.all(
+          Array.from({ length: 25 }, (_, offset) => {
+            const n = from + offset;
+            return store().results.appendResponse(survey, {
+              id: randomUUID(),
+              submittedAt: new Date(Date.UTC(2026, 8, 10, 8, 0, 0, n)).toISOString(),
+              data: { q1: `answer ${String(n)}` },
+              ...(n % 5 === 0 && { clientId: `client-del-${String(n)}` }),
+            });
+          }),
+        );
+      }
+      await table(deletedName).createTable();
+      const keptKey = randomUUID();
+      await table(deletedName).createEntity({ partitionKey: "*", rowKey: keptKey });
+      expect(await entityCount(postName)).toBe(150);
+      expect(await entityCount(markerName)).toBe(30);
+      const before = await rawRow(survey.id);
+
+      await store().results.deleteAll(survey);
+
+      expect(await entityCount(postName)).toBe(0);
+      expect(await entityCount(markerName)).toBe(0);
+      expect(await entityCount(deletedName)).toBe(1);
+      expect(await table(deletedName).getEntity("*", keptKey)).toBeDefined();
+      expect(await store().results.completion(survey, "client-del-0")).toBe("none");
+      expect(
+        await store().results.appendResponse(survey, {
+          id: randomUUID(),
+          submittedAt: "2026-09-11T08:00:00.000Z",
+          data: { q1: "after" },
+        }),
+      ).toBe("stored");
+      expect(await entityCount(postName)).toBe(1);
+
+      const audit = (await auditRows(survey.id)).filter(
+        (row) => typeOf(row) === "SURVEY_DELETEALLRESULTS",
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0]?.surveyid).toEqual({ type: "Guid", value: survey.id });
+      expect((await rawRow(survey.id))?.timestamp).toEqual(before?.timestamp);
+    });
+
+    it("resolves for a survey that never had a results table", async () => {
+      const survey = await freshSurvey();
+      await expect(store().results.deleteAll(survey)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("kind-limited file deletion", () => {
+    it("deletes only the files of one kind", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      const make = (kind: "asset" | "response"): StoredFileRecord => ({
+        id: newFileId(survey.id),
+        surveyId: survey.id,
+        kind,
+        name: "f.bin",
+        contentType: "application/octet-stream",
+        size: 2,
+        createdAt: "2026-09-10T08:30:15.250Z",
+      });
+      const asset = make("asset");
+      const response = make("response");
+      const container = blobs.getContainerClient("my-surveys-files");
+      try {
+        await store().files.putFile(asset, Buffer.from([1, 2]));
+        await store().files.putFile(response, Buffer.from([1, 2]));
+
+        expect(await store().files.deleteSurveyFiles(survey.id, "response")).toBe(1);
+
+        expect(await container.getBlobClient(`${survey.id}/${asset.id}`).exists()).toBe(true);
+        expect(await container.getBlobClient(`${survey.id}/${response.id}`).exists()).toBe(false);
+      } finally {
+        await store().files.deleteSurveyFiles(survey.id);
+      }
+    });
+  });
+
+  describe("public questions", () => {
+    const CONTAINER = "surveyresultpermissions";
+
+    it("writes an append blob with the legacy JSON, and no SQL or audit change", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      const before = await rawRow(survey.id);
+      const auditBefore = (await auditRows(survey.id)).length;
+
+      await store().views.savePrivateQuestions(survey.id, ["q2", "q1"]);
+
+      expect(await blobType(CONTAINER, survey.id)).toBe("AppendBlob");
+      expect(await blobText(CONTAINER, survey.id)).toBe(
+        '[{"name":"q2","isPublic":false},{"name":"q1","isPublic":false}]',
+      );
+      expect(await store().views.getPrivateQuestions(survey.id)).toEqual(["q2", "q1"]);
+      await store().views.savePrivateQuestions(survey.id, []);
+      expect(await blobText(CONTAINER, survey.id)).toBe("[]");
+      expect(await rawRow(survey.id)).toEqual(before);
+      expect(await auditRows(survey.id)).toHaveLength(auditBefore);
+    });
+
+    it("reads the legacy defaults and warns with ids only for a list that is not an array", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      const client = blobs.getContainerClient(CONTAINER);
+      await client.createIfNotExists();
+      const put = async (text: string) =>
+        client.getBlockBlobClient(survey.id).upload(text, Buffer.byteLength(text));
+
+      await put('[{"name":"a"},{"name":"b","isPublic":false}]');
+      expect(await store().views.getPrivateQuestions(survey.id)).toEqual(["b"]);
+
+      const before = warnings.length;
+      await put('{"name":"b"}');
+      expect(await store().views.getPrivateQuestions(survey.id)).toEqual([]);
+      const added = warnings.splice(before); // later tests expect no warnings
+      expect(added).toHaveLength(1);
+      expect(Object.keys(added[0]!.details)).toEqual(["surveyId"]);
+      expect(added[0]!.details.surveyId).toBe(survey.id);
+    });
+
+    it("removes the blob with the survey", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      await store().views.savePrivateQuestions(survey.id, ["q1"]);
+      expect(await store().surveys.deleteSurvey(survey.id)).toBe(true);
+      expect(await blobs.getContainerClient(CONTAINER).getBlobClient(survey.id).exists()).toBe(
+        false,
+      );
     });
   });
 

@@ -71,11 +71,9 @@ export function createAzureFileStore(
     deleteFile: (id) => writeFileDeletion(blobs, container, id),
 
     deleteSurveyFiles: (surveyId, kind) =>
-      kind !== undefined
-        ? Promise.reject(new Error("not implemented until Task 2"))
-        : isGuid(surveyId)
-          ? writeSurveyFilesDeletion(blobs, container, surveyId)
-          : Promise.resolve(0),
+      isGuid(surveyId)
+        ? writeSurveyFilesDeletion(blobs, container, surveyId, kind)
+        : Promise.resolve(0),
 
     copySurveyAssets: (fromSurveyId, toSurveyId, copiedAt) =>
       writeSurveyAssetsCopy(blobs, container, fromSurveyId, toSurveyId, copiedAt),
