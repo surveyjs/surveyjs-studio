@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TableClient } from "@azure/data-tables";
 import { BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
@@ -24,6 +25,23 @@ describe("legacy fixture loader against the local replica", () => {
   it("gives the same counts when loaded twice", () => {
     expect(second).toEqual(first);
   });
+
+  it("loads the large survey's 1500 rows, and loading again gives equal summaries", () => {
+    expect(first.tableEntities["post33333333000040008000a00000000008"]).toBe(1500);
+    expect(second).toEqual(first);
+  });
+
+  it("clears the views container on load", async () => {
+    const blobs = BlobServiceClient.fromConnectionString(
+      env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING ?? "",
+    );
+    const container = blobs.getContainerClient("my-surveys-views");
+    await container.createIfNotExists();
+    const name = `22222222-0000-4000-8000-a00000000001/${randomUUID()}/summary`;
+    await container.getBlockBlobClient(name).upload("{}", 2);
+    await loadLegacyFixtures(env, { log: () => undefined });
+    expect(await container.getBlobClient(name).exists()).toBe(false);
+  }, 120_000);
 
   it("keeps Edm.Guid and Edm.DateTime on result entities", async () => {
     const fixtures = await readLegacyFixtures();

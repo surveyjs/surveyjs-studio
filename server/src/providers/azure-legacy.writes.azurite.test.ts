@@ -759,6 +759,174 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     });
   });
 
+  describe("views", () => {
+    const VIEWS = "my-surveys-views";
+    const RESULTS_ACCOUNT = "LEGACY_RESULTS_STORAGE_CONNECTION_STRING";
+    const FIXTURE_SURVEY = "22222222-0000-4000-8000-a00000000001";
+    const compact = (id: string) => id.replaceAll("-", "");
+    const freshSurvey = (): Promise<SurveyRecord> =>
+      store().surveys.createSurvey(newSurvey(personal()));
+
+    async function viewNames(surveyId: string): Promise<string[]> {
+      const names: string[] = [];
+      try {
+        for await (const blob of blobs
+          .getContainerClient(VIEWS)
+          .listBlobsFlat({ prefix: `${surveyId}/` })) {
+          names.push(blob.name);
+        }
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode !== 404) throw error;
+      }
+      return names;
+    }
+
+    async function putViewBlob(name: string, text: string): Promise<void> {
+      const client = blobs.getContainerClient(VIEWS);
+      await client.createIfNotExists();
+      await client.getBlockBlobClient(name).upload(text, Buffer.byteLength(text));
+    }
+
+    it("saves a block blob of JSON at {survey}/{user}/{view}, all lower case", async () => {
+      const survey = await freshSurvey();
+      const user = randomUUID();
+      await store().views.saveView(survey.id.toUpperCase(), user.toUpperCase(), "summary", {
+        a: 1,
+      });
+      const name = `${survey.id}/${user}/summary`;
+      const properties = await blobs.getContainerClient(VIEWS).getBlobClient(name).getProperties();
+      expect(properties.blobType).toBe("BlockBlob");
+      expect(properties.contentType).toBe("application/json");
+      expect(await blobText(VIEWS, name)).toBe('{"a":1}');
+      expect(await store().views.getView(survey.id, user, "summary")).toEqual({ a: 1 });
+    });
+
+    it("leaves a zero-byte blob on reset, and a later save replaces it", async () => {
+      const survey = await freshSurvey();
+      const user = randomUUID();
+      const name = `${survey.id}/${user}/table`;
+      await store().views.saveView(survey.id, user, "table", { a: 1 });
+      await store().views.resetView(survey.id, user, "table");
+      const properties = await blobs.getContainerClient(VIEWS).getBlobClient(name).getProperties();
+      expect(properties.contentLength).toBe(0);
+      expect(await store().views.getView(survey.id, user, "table")).toBeNull();
+      await store().views.saveView(survey.id, user, "table", { b: 2 });
+      expect(await blobText(VIEWS, name)).toBe('{"b":2}');
+    });
+
+    it("answers null for a stored blob that is not a JSON object, warning with ids only", async () => {
+      const survey = await freshSurvey();
+      const user = randomUUID();
+      for (const [view, text] of [
+        ["summary", "[1]"],
+        ["table", "not json"],
+      ] as const) {
+        await putViewBlob(`${survey.id}/${user}/${view}`, text);
+        const before = warnings.length;
+        expect(await store().views.getView(survey.id, user, view)).toBeNull();
+        const added = warnings.slice(before);
+        expect(added).toHaveLength(1);
+        expect(added[0]!.details).toEqual({ surveyId: survey.id, userId: user, view });
+        expect(JSON.stringify(added)).not.toContain(text);
+        warnings.length = before; // later tests assert on an empty log
+      }
+    });
+
+    it("removes every view of the survey with it, and deleting one without views works", async () => {
+      const survey = await freshSurvey();
+      const [first, second] = [randomUUID(), randomUUID()];
+      for (const user of [first, second]) {
+        await store().views.saveView(survey.id, user, "summary", { a: 1 });
+        await store().views.saveView(survey.id, user, "table", { a: 2 });
+      }
+      expect(await viewNames(survey.id)).toHaveLength(4);
+      expect(await store().surveys.deleteSurvey(survey.id)).toBe(true);
+      expect(await viewNames(survey.id)).toEqual([]);
+
+      const plain = await freshSurvey();
+      expect(await store().surveys.deleteSurvey(plain.id)).toBe(true);
+    });
+
+    it("never changes the legacy layout blobs of a fixture survey", async () => {
+      const user = randomUUID();
+      const containers = ["surveyresultsummarystate", "surveyresulttablestate"];
+      const read = async (container: string) => {
+        const client = blobs.getContainerClient(container).getBlobClient(FIXTURE_SURVEY);
+        const properties = await client.getProperties();
+        return { etag: properties.etag, text: await blobText(container, FIXTURE_SURVEY) };
+      };
+      const before = await Promise.all(containers.map(read));
+      await store().views.saveView(FIXTURE_SURVEY, user, "summary", { a: 1 });
+      await store().views.saveView(FIXTURE_SURVEY, user, "table", { a: 1 });
+      await store().views.resetView(FIXTURE_SURVEY, user, "summary");
+      await store().views.resetView(FIXTURE_SURVEY, user, "table");
+      expect(await Promise.all(containers.map(read))).toEqual(before);
+      const views = blobs.getContainerClient(VIEWS);
+      await views.getBlobClient(`${FIXTURE_SURVEY}/${user}/summary`).delete();
+      await views.getBlobClient(`${FIXTURE_SURVEY}/${user}/table`).delete();
+    });
+
+    it("writes no audit row and does not touch Surveys.timestamp", async () => {
+      const survey = await freshSurvey();
+      const user = randomUUID();
+      const before = await rawRow(survey.id);
+      const auditBefore = (await auditRows(survey.id)).length;
+      await store().views.saveView(survey.id, user, "summary", { a: 1 });
+      await store().views.resetView(survey.id, user, "summary");
+      const after = await rawRow(survey.id);
+      expect((after!.timestamp as Date).getTime()).toBe((before!.timestamp as Date).getTime());
+      expect(await auditRows(survey.id)).toHaveLength(auditBefore);
+    });
+
+    it("skips a broken row while paging, never repeating a good one", async () => {
+      const survey = await freshSurvey();
+      const warned = warnings.length;
+      const good: string[] = [];
+      for (let n = 0; n < 5; n++) {
+        const id = randomUUID();
+        good.push(id);
+        await store().results.appendResponse(survey, {
+          id,
+          submittedAt: new Date(Date.UTC(2026, 8, 10, 8, 0, n)).toISOString(),
+          data: { q1: n },
+        });
+      }
+      const table = localTableClient(
+        config.resultsStorageConnectionString,
+        `post${compact(survey.postId)}`,
+        RESULTS_ACCOUNT,
+      );
+      const addBroken = (over: Record<string, unknown>) => {
+        const id = randomUUID();
+        return table.createEntity({
+          partitionKey: "*",
+          rowKey: id,
+          id: { type: "Guid", value: id },
+          happendat: new Date(Date.UTC(2026, 8, 10, 8, 0, 2, 500)),
+          result: "{}",
+          ...over,
+        } as never);
+      };
+      await addBroken({ result: "not json" });
+      await addBroken({ happendat: { type: "String", value: "2026-09-10T08:00:03.500Z" } });
+
+      const seen: string[] = [];
+      let after;
+      let guard = 0;
+      do {
+        const page = await store().results.listResponsePage(survey, {
+          limit: 2,
+          ...(after && { after }),
+        });
+        expect(page.items.length).toBeLessThanOrEqual(2);
+        seen.push(...page.items.map((item) => item.id));
+        after = page.next ?? undefined;
+      } while (after && ++guard < 20);
+      expect(seen).toEqual(good);
+      warnings.length = warned; // the skipped rows were reported by id; later tests expect none
+    });
+  });
+
   describe("results", () => {
     const RESULTS_ACCOUNT = "LEGACY_RESULTS_STORAGE_CONNECTION_STRING";
     const SUBMITTED_AT = "2026-09-10T08:30:15.250Z";

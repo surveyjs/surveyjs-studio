@@ -28,7 +28,8 @@ import { fileRecordFromBlob, isGuid } from "./mapping.js";
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
  * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
  * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
- * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers. Each
+ * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
+ * our own. Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -666,7 +667,8 @@ export async function writeClonedSurvey(
  * 1. Results account tables `post{postId}`, `SurveyCompletion{surveyId}` and `postdelete{postId}`
  *    (ids without dashes; layout sections 3.6 to 3.8).
  * 2. Surveys account blobs `surveyjson/{id}`, `surveytext/{id}`, every `surveyjsonhistory/{id}/…`
- *    point and the four results-layout blobs `{container}/{id}` (layout sections 3.2, 3.4, 3.10).
+ *    point, the four results-layout blobs `{container}/{id}` (layout sections 3.2, 3.4, 3.10) and
+ *    every saved view under `my-surveys-views/{id}/` (Step 9).
  * 3. The `Surveys` row, which holds the theme.
  * 4. A best-effort `SURVEY_DELETE` audit row at `deletedAt`.
  *
@@ -695,6 +697,9 @@ export async function writeSurveyDeletion(
     }
     for (const container of LAYOUT_CONTAINERS) {
       await deleteBlobIfPresent(targets.blobs, container, id);
+    }
+    for (const name of await blobNames(targets.blobs, VIEWS_CONTAINER, `${id}/`)) {
+      await deleteBlobIfPresent(targets.blobs, VIEWS_CONTAINER, name);
     }
     const result = await (
       await targets.pool()
@@ -987,5 +992,66 @@ export async function writeSurveyAssetsCopy(
       await writeFileDeletion(blobs, container, id).catch(() => false);
     }
     throw new LegacyStoreError("file copy", error);
+  }
+}
+
+/** Container of the saved results layouts (Step 9, R4): invisible to legacy code. */
+export const VIEWS_CONTAINER = "my-surveys-views";
+
+/**
+ * Put Blob of block blob `{surveyId}/{userId}/{view}` in the views container, replacing any blob.
+ * A missing container is created (private) and the upload tried once more.
+ */
+async function uploadView(blobs: BlobServiceClient, name: string, content: Buffer): Promise<void> {
+  const views = blobs.getContainerClient(VIEWS_CONTAINER);
+  const upload = () =>
+    views.getBlockBlobClient(name).uploadData(content, {
+      blobHTTPHeaders: { blobContentType: "application/json" },
+    });
+  try {
+    await upload();
+  } catch (error) {
+    if (statusOf(error) !== 404) throw error;
+    await views.createIfNotExists();
+    await upload();
+  }
+}
+
+/** The blob name of a user's view, every part in lower case; refuses ids that are not GUIDs. */
+function viewBlobName(operation: string, surveyId: string, userId: string, view: string): string {
+  return `${checkedId(operation, surveyId)}/${checkedId(operation, userId)}/${view}`;
+}
+
+/**
+ * Stores the user's state of a view as JSON (UTF-8) in `my-surveys-views/{surveyId}/{userId}/{view}`,
+ * the latest save wins. No audit row, no change of the survey record (R7).
+ */
+export async function writeView(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  userId: string,
+  view: string,
+  state: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const name = viewBlobName("view save", surveyId, userId, view);
+  try {
+    await uploadView(blobs, name, Buffer.from(JSON.stringify(state), "utf8"));
+  } catch (error) {
+    throw new LegacyStoreError("view save", error);
+  }
+}
+
+/** Replaces the user's view blob with zero bytes, the reset marker (R5). */
+export async function writeViewReset(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  userId: string,
+  view: string,
+): Promise<void> {
+  const name = viewBlobName("view reset", surveyId, userId, view);
+  try {
+    await uploadView(blobs, name, Buffer.alloc(0));
+  } catch (error) {
+    throw new LegacyStoreError("view reset", error);
   }
 }

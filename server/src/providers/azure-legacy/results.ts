@@ -1,6 +1,7 @@
-import type { TableClient, TableEntityResult } from "@azure/data-tables";
-import type { SurveyRecord, SurveyResponse } from "../../domain/types.js";
-import type { ResultStore } from "../types.js";
+import { odata, type TableClient, type TableEntityResult } from "@azure/data-tables";
+import type { SurveyRecord } from "../../domain/types.js";
+import { isAfterResponse, responseOrder } from "../ordering.js";
+import type { ResponsePosition, ResultStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { UnmappableLegacyRowError, isGuid, responseFromLegacy } from "./mapping.js";
 import type { LegacyResultEntity } from "./rows.js";
@@ -46,17 +47,6 @@ function legacyEntity(row: TableEntityResult<Record<string, unknown>>): LegacyRe
   };
 }
 
-const responseOrder = (a: SurveyResponse, b: SurveyResponse): number =>
-  a.submittedAt < b.submittedAt
-    ? -1
-    : a.submittedAt > b.submittedAt
-      ? 1
-      : a.id < b.id
-        ? -1
-        : a.id > b.id
-          ? 1
-          : 0;
-
 export function createAzureResultStore(options: AzureResultStoreOptions): ResultStore {
   const { targets, publishIdOf, mapRows } = options;
   const rows = (survey: SurveyRecord): TableClient =>
@@ -69,11 +59,14 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
     operation: string,
     table: TableClient,
     select?: string[],
+    filter?: string,
   ): Promise<TableEntityResult<Record<string, unknown>>[]> {
     const found: TableEntityResult<Record<string, unknown>>[] = [];
     try {
       for await (const entity of table.listEntities<Record<string, unknown>>(
-        select ? { queryOptions: { select } } : undefined,
+        select || filter
+          ? { queryOptions: { ...(select && { select }), ...(filter && { filter }) } }
+          : undefined,
       )) {
         found.push(entity);
       }
@@ -136,8 +129,28 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
       return marker.ispartialcompleted === true ? "partial" : "completed";
     },
 
-    listResponsePage() {
-      return Promise.reject(new Error("not implemented until Task 2"));
+    async listResponsePage(survey, { after, limit }) {
+      // Rows before the cursor time are left out by the store; the cursor row itself and rows of
+      // the same instant are cut by position below. A row with an unexpected column type may or
+      // may not match the filter; either way it never reaches a page.
+      const filter = after && odata`happendat ge ${new Date(after.submittedAt)}`;
+      const found = await entitiesOf("response page", rows(survey), undefined, filter);
+      const positioned = mapRows(found, (row) => {
+        const entity = legacyEntity(row);
+        const position: ResponsePosition = {
+          submittedAt: entity.happendat.toISOString(),
+          id: entity.id.toLowerCase(),
+        };
+        return { entity, position };
+      })
+        .filter(({ position }) => !after || isAfterResponse(position, after))
+        .sort((a, b) => responseOrder(a.position, b.position));
+      const taken = positioned.slice(0, limit);
+      const last = taken.at(-1);
+      return {
+        items: mapRows(taken, ({ entity }) => responseFromLegacy(entity)),
+        next: positioned.length > taken.length && last ? last.position : null,
+      };
     },
   };
 }
