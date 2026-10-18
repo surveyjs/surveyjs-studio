@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileElementsState } from "./elementsState";
+import { reconcileElementsState, withoutElements } from "./elementsState";
 
 const defaults = { elements: [{ name: "a" }, { name: "b" }, { name: "c" }] };
 
@@ -100,5 +100,16 @@ describe("reconcileElementsState for a Summary state", () => {
     };
     const result = reconcileElementsState(saved, summaryDefaults);
     expect(result?.elements.map((e) => e.name)).toEqual(["q3", "q1", "q2"]);
+  });
+});
+
+describe("withoutElements", () => {
+  it("drops the named elements and keeps the rest of the state", () => {
+    const state = { pageSize: 10, elements: [{ name: "a" }, { name: "b", width: 3 }] };
+    expect(withoutElements(state, ["a"])).toEqual({
+      pageSize: 10,
+      elements: [{ name: "b", width: 3 }],
+    });
+    expect(state.elements).toHaveLength(2);
   });
 });

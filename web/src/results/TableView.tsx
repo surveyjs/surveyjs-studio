@@ -7,7 +7,7 @@ import type { ViewState } from "../api/views";
 import { loadExportLibrary } from "./exportLibraries";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { extraTableColumns, tableRows } from "./tableRows";
-import { type ElementsState, reconcileElementsState } from "./elementsState";
+import { type ElementsState, reconcileElementsState, withoutElements } from "./elementsState";
 
 type TableViewState = Tabulator["state"];
 
@@ -68,14 +68,7 @@ export function TableView({
     // which the library leaves empty for columns it adds after reading the data.
     const reconciled = reconcileElementsState(initialState.current, defaults) ?? defaults;
     // The public page keeps the private questions' columns out: a private question has no answers there.
-    const state = publicView
-      ? {
-          ...reconciled,
-          elements: reconciled.elements.filter(
-            (element) => !privateAtMount.current.includes(element.name),
-          ),
-        }
-      : reconciled;
+    const state = publicView ? withoutElements(reconciled, privateAtMount.current) : reconciled;
     table.lockStateChanged();
     table.state = state as unknown as TableViewState;
     table.unlockStateChanged();
@@ -101,6 +94,9 @@ export function TableView({
 
     table.render(target);
     rendered = true;
+    // The library has no option to leave the "Export as" menu out: an empty `downloadButtons`
+    // list still builds it, so the public page removes it (render adds it synchronously).
+    if (publicView) target.querySelector(".sa-tabulator__downloads-bar")?.remove();
     if (stateCallback.current !== undefined) {
       table.onStateChanged.add((_, changed: ViewState) => stateCallback.current?.(changed));
     }

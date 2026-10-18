@@ -41,3 +41,8 @@ export function reconcileElementsState(
   const added = defaults.elements.filter((element) => !present.has(element.name));
   return { ...saved, elements: [...kept, ...added] };
 }
+
+/** A copy of `state` without the elements named in `names` (the public Table's private columns). */
+export function withoutElements(state: ElementsState, names: readonly string[]): ElementsState {
+  return { ...state, elements: state.elements.filter((element) => !names.includes(element.name)) };
+}
