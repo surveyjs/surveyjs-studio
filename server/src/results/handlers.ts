@@ -26,6 +26,15 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
       return reply.code(201).send(stored);
     },
 
+    listResults: (request) => {
+      const { surveyId } = request.params as { surveyId: string };
+      const query = request.query as { limit: number; cursor?: string };
+      return service.list(requireUser(request), surveyId, {
+        limit: query.limit,
+        ...(query.cursor !== undefined && { cursor: query.cursor }),
+      });
+    },
+
     getResultStats: (request) => {
       const { surveyId } = request.params as { surveyId: string };
       return service.stats(requireUser(request), surveyId);

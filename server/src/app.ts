@@ -19,6 +19,7 @@ import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
 import { createResultHandlers } from "./results/handlers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
+import { createViewHandlers } from "./views/handlers.js";
 
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
@@ -161,6 +162,11 @@ export async function buildApp(
         directory: providers.directory,
         results: providers.results,
         ...(options.now && { now: options.now }),
+      }),
+      ...createViewHandlers({
+        surveys: providers.surveys,
+        directory: providers.directory,
+        views: providers.views,
       }),
       ...createFileHandlers({
         surveys: providers.surveys,

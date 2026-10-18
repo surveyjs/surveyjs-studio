@@ -275,7 +275,7 @@ export interface paths {
         /**
          * Delete a survey permanently
          * @description Only archived surveys can be deleted; otherwise `409 survey-not-archived`.
-         *     Deletes the definition, theme, results, files and history.
+         *     Deletes the definition, theme, results, files, history and every user's saved results layouts.
          */
         delete: operations["deleteSurvey"];
         options?: never;
@@ -311,7 +311,7 @@ export interface paths {
          *     project (or Personal), unless `projectId` is given (`null` = the caller's
          *     Personal surveys; a project requires membership). The caller becomes the
          *     copy's creator. The default name is `Copy of {name}`, cut to 200 characters.
-         *     Results, history and settings are not copied.
+         *     Results, saved results layouts, history and settings are not copied.
          */
         post: operations["cloneSurvey"];
         delete?: never;
@@ -439,8 +439,13 @@ export interface paths {
         };
         /**
          * List responses
-         * @description Oldest first. The dashboard loads every page; there is no 1,000-response
-         *     cap. For whole-dataset downloads use `GET /surveys/{surveyId}/results/export`.
+         * @description Every stored response, oldest first (by `submittedAt`, then `id`). Each stored
+         *     row is one item: responses that one client sent are not merged. The dashboard
+         *     loads every page; there is no 1,000-response cap. For whole-dataset downloads
+         *     use `GET /surveys/{surveyId}/results/export`.
+         *
+         *     A cursor belongs to the survey it was returned for: using it for another
+         *     survey is `400 bad-request`.
          */
         get: operations["listResults"];
         put?: never;
@@ -511,13 +516,34 @@ export interface paths {
         };
         /**
          * Get the saved layout
-         * @description `404 view-not-found` means the default layout is used.
+         * @description The caller's own saved layout of this view. Layouts are kept per user and
+         *     survey: saving or resetting one changes nothing for other users. Anyone who
+         *     can see the survey may read, save and reset their own layout.
+         *
+         *     A server that took over the per-survey layouts of an older system returns
+         *     that layout until the user saves or resets their own.
+         *
+         *     `404 not-found`: the survey is unknown or not visible to the caller.
+         *     `404 view-not-found`: no layout is saved, and the default layout is used.
          */
         get: operations["getResultsView"];
-        /** Save the layout */
+        /**
+         * Save the layout
+         * @description Saves the caller's layout of this view, replacing the previous one or a
+         *     reset. Any JSON object is accepted and stored as sent. Bodies larger than
+         *     `limits.maxResponseBytes` are rejected with `413 payload-too-large`. Saving
+         *     a layout does not change the survey (its `updatedAt` stays). `403` means a
+         *     missing or wrong CSRF token.
+         */
         put: operations["saveResultsView"];
         post?: never;
-        /** Reset the layout to the default */
+        /**
+         * Reset the layout to the default
+         * @description Deletes the caller's layout of this view. Afterwards `getResultsView` answers
+         *     `404 view-not-found`, also where an older per-survey layout exists, until the
+         *     next save. Resetting a view without a saved layout also answers `204`. `403`
+         *     means a missing or wrong CSRF token.
+         */
         delete: operations["resetResultsView"];
         options?: never;
         head?: never;
@@ -958,9 +984,11 @@ export interface components {
             data: {
                 [key: string]: unknown;
             };
-            clientId?: components["schemas"]["ClientId"];
+            /** @description The client id sent with the response, as stored. Responses stored by an older system may hold any string. */
+            clientId?: string;
             /** @description Present only when `storeRespondentIp` was on at submission time. */
             respondentIp?: string;
+            /** @description A partial save from an older client. Not returned in Phase 1. */
             partial?: boolean;
         };
         ResponsePage: {
@@ -2018,7 +2046,7 @@ export interface operations {
     listResults: {
         parameters: {
             query?: {
-                /** @description Page size. */
+                /** @description Page size, 1 to 1000. */
                 limit?: number;
                 /** @description The `nextCursor` value from the previous page. */
                 cursor?: components["parameters"]["Cursor"];
@@ -2040,6 +2068,7 @@ export interface operations {
                     "application/json": components["schemas"]["ResponsePage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -2142,6 +2171,7 @@ export interface operations {
                     "application/json": components["schemas"]["ViewState"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -2170,10 +2200,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     resetResultsView: {
@@ -2196,6 +2229,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
