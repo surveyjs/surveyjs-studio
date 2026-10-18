@@ -27,3 +27,22 @@ export function privateNamesOf(
       .map((permission) => permission.name),
   ];
 }
+
+/**
+ * The private list of one Summary session: it starts as the survey setting and each permissions
+ * change is applied to the latest list, so a private question the dashboard no longer lists (a
+ * hidden chart) stays private.
+ */
+export function createPrivateList(initial: readonly string[]): {
+  update(permissions: readonly { name: string; isPublic: boolean }[]): string[];
+  current(): readonly string[];
+} {
+  let latest: readonly string[] = initial;
+  return {
+    update(permissions) {
+      latest = privateNamesOf(permissions, latest);
+      return [...latest];
+    },
+    current: () => latest,
+  };
+}

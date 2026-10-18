@@ -4,7 +4,7 @@ import "survey-analytics/survey.analytics.css";
 import { Model } from "survey-core";
 import type { ViewState } from "../api/views";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
-import { privateNamesOf, withPrivacy } from "./privacy";
+import { createPrivateList, withPrivacy } from "./privacy";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { summaryData } from "./tableRows";
 
@@ -36,8 +36,10 @@ export function SummaryView({
     stateCallback.current = onStateChange;
     privacyCallback.current = onPrivateQuestionsChange;
   }, [onStateChange, onPrivateQuestionsChange]);
-  // The private questions at mount: later changes of the prop come from this widget itself.
-  const initialPrivate = useRef(privateQuestions);
+  // The latest private list, from the survey setting at mount: later changes of the prop come from
+  // this widget itself, and a hidden private chart stays in it.
+  const privateList = useRef<ReturnType<typeof createPrivateList> | null>(null);
+  privateList.current ??= createPrivateList(privateQuestions);
   const allowPrivacy = onPrivateQuestionsChange !== undefined;
 
   // Built in the effect, not during render: Strict Mode runs effects twice, and the Dashboard
@@ -60,7 +62,7 @@ export function SummaryView({
     const reconciled = reconcileElementsState(initialState.current, defaults);
     // With the toggle on, every element carries the survey private flag, also without a saved state.
     const state = allowPrivacy
-      ? withPrivacy(reconciled ?? defaults, initialPrivate.current)
+      ? withPrivacy(reconciled ?? defaults, privateList.current!.current())
       : reconciled;
     if (state !== null) dashboard.state = state as unknown as Dashboard["state"];
     dashboard.render(target);
@@ -71,7 +73,7 @@ export function SummaryView({
       // The library calls this after "Make private" / "Make public".
       dashboard.onPermissionsChangedCallback = (panel: {
         permissions: readonly { name: string; isPublic: boolean }[];
-      }) => privacyCallback.current?.(privateNamesOf(panel.permissions, initialPrivate.current));
+      }) => privacyCallback.current?.(privateList.current!.update(panel.permissions));
     }
     return () => {
       dashboard.destroy();
