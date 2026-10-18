@@ -30,18 +30,24 @@ export async function getResultsView(
   return data;
 }
 
-/** Below this size a save is sent with `keepalive`, so one started on `pagehide` survives the page. */
-const KEEPALIVE_LIMIT = 60_000;
+/**
+ * Below this many UTF-8 bytes a save is sent with `keepalive`, so one started on `pagehide`
+ * survives the page. Browsers cap a keepalive body at 64 KiB of bytes (not characters), and a
+ * fetch over the cap rejects, so the size is measured in bytes.
+ */
+const KEEPALIVE_LIMIT_BYTES = 60_000;
 
 export async function saveResultsView(
   surveyId: string,
   view: ViewName,
   state: ViewState,
 ): Promise<void> {
+  const json = JSON.stringify(state);
   const { error, response } = await client.PUT("/surveys/{surveyId}/views/{view}", {
     params: { path: { surveyId, view } },
     body: state,
-    keepalive: JSON.stringify(state).length < KEEPALIVE_LIMIT,
+    bodySerializer: () => json,
+    keepalive: new TextEncoder().encode(json).length < KEEPALIVE_LIMIT_BYTES,
   });
   if (!response.ok) throw toApiError(error, response);
 }
