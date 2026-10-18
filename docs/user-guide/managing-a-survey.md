@@ -51,7 +51,7 @@ Items are shown in this order. "Modify" means you can modify the survey.
 | **Unpublish**         | Modify, and published         | Unpublishes it. **Run** disappears                                                          |
 | (separator)           | Always                        |                                                                                             |
 | **Survey IDs** >      | Always                        | A submenu: **Copy ID**, **Copy Result ID** and **Copy Post ID**                             |
-| **View Results**      | Always                        | Opens `/surveys/<survey id>/results` (a placeholder page for now)                           |
+| **View Results**      | Always                        | Opens `/surveys/<survey id>/results` ([Viewing results](viewing-results.md))                |
 | **View History**      | Always                        | Opens `/surveys/<survey id>/history` ([Survey history](survey-history.md))                  |
 | (separator)           | Modify                        |                                                                                             |
 | **Move to Project** > | Modify, and you have projects | A submenu: **Personal Surveys** and your projects. Asks first (see below)                   |
@@ -59,14 +59,14 @@ Items are shown in this order. "Modify" means you can modify the survey.
 
 ### Archived view
 
-| Item             | Shown when | What it does                                        |
-| ---------------- | ---------- | --------------------------------------------------- |
-| **Clone**        | Always     | Makes a copy (see below)                            |
-| (separator)      | Modify     |                                                     |
-| **View Results** | Always     | Opens the results placeholder                       |
-| (separator)      | Modify     |                                                     |
-| **Delete**       | Modify     | Deletes the survey for good. Asks first (see below) |
-| **Restore**      | Modify     | Moves the survey back to the Active view            |
+| Item             | Shown when | What it does                                                   |
+| ---------------- | ---------- | -------------------------------------------------------------- |
+| **Clone**        | Always     | Makes a copy (see below)                                       |
+| (separator)      | Modify     |                                                                |
+| **View Results** | Always     | Opens the results page ([Viewing results](viewing-results.md)) |
+| (separator)      | Modify     |                                                                |
+| **Delete**       | Modify     | Deletes the survey for good. Asks first (see below)            |
+| **Restore**      | Modify     | Moves the survey back to the Active view                       |
 
 There is no pencil in the Archived view.
 
@@ -156,23 +156,20 @@ even when the new value is the same as the old one. The survey then moves to the
 A failed action shows one message above the list, such as "Could not archive the survey. Please try
 again.". The next action clears it. The list stays as it was.
 
-## The placeholder page
+## The other pages
 
-One address opens a page that is not built yet. It shows only a line of text:
+Every page of a survey needs you to be signed in and has a **Back to My Surveys** link. It says "This
+survey is not available." for a survey that does not exist or that you cannot see.
 
-| Address                 | Opened by    | Shows                                                           |
-| ----------------------- | ------------ | --------------------------------------------------------------- |
-| `/surveys/<id>/results` | View Results | The survey name and "Survey results arrive in a later version." |
-
-The results page needs you to be signed in and has a **Back to My Surveys** link. It says "This survey
-is not available." for a survey that does not exist or that you cannot see. The run page (**Run**) is
-built: see [Publishing and collecting responses](publishing-and-collecting-responses.md).
-
-The editor (**Edit**) and the history page (**View History**) are described in
-[Designing a survey](designing-a-survey.md) and [Survey history](survey-history.md).
+| Item             | Page                                                                          |
+| ---------------- | ----------------------------------------------------------------------------- |
+| **Run**          | [Publishing and collecting responses](publishing-and-collecting-responses.md) |
+| **Edit**         | [Designing a survey](designing-a-survey.md)                                   |
+| **View Results** | [Viewing results: Summary and Table](viewing-results.md)                      |
+| **View History** | [Survey history](survey-history.md)                                           |
 
 ## Not here yet
 
 - The survey settings "Grant Access" and "Save Respondent IP" can be changed through the API only;
-  their switches arrive with the results page. "Save Respondent IP" is explained in [Publishing and
+  their switches arrive with the Details tab of the results page (Step 10). "Save Respondent IP" is explained in [Publishing and
   collecting responses](publishing-and-collecting-responses.md#save-respondent-ip).

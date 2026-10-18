@@ -549,6 +549,21 @@ Synthetic `surveyresulttablestate/22222222-0000-4000-8000-000000000001`:
 }
 ```
 
+**Implemented in Step 9** ([ADR 0015](../adr/0015-results-summary-table-and-views.md); the writes are in
+[ADR 0010](../adr/0010-writing-to-the-legacy-stores.md#step-9-results-layouts)). Layouts are now **per user
+and survey**, in a new container `my-surveys-views` (section 5.3), and the two legacy layout blobs above
+are **read only**:
+
+- A user's view is the block blob `{surveyId}/{userId}/{summary|table}` (lower case). A save overwrites it.
+- With no own blob, the read falls back to the survey's blob (`surveyresultsummarystate/{id}` or
+  `surveyresulttablestate/{id}`), returned as stored. There is no conversion of `surveyresultcolumns` and
+  no `isPublic` overlay (`surveyresultpermissions` stays unread).
+- A reset overwrites the user's blob with a **zero-byte marker**. A zero-byte blob means "reset": the
+  read answers "no layout" and does not fall back. The next save replaces the marker.
+- The legacy layout blobs are never written or deleted by views. A survey deletion removes the survey's
+  prefix in the new container, besides the four legacy blobs as before.
+- Neither a save nor a reset writes an audit row or moves `Surveys.timestamp`.
+
 The last selected project is a browser cookie `organizationId` (24 hours), not stored data. **[C]**
 `the site's code` (`MySurveys`)
 
@@ -889,9 +904,15 @@ is listed here with how it is done:
 and delete in the new container `my-surveys-files` (section 3.9), and a clone that rewrites the file links in
 the copy's definition text and theme.
 
-All of these set `timestamp` to the time the server's clock gives, once per request, and an update that
-changes no value still rewrites it. Every audit row is best effort (a failure is logged with the survey
-id and the type only). Still to build: the settings `usecookies`, and the result and layout rows.
+**Implemented in Step 9** (`writes.ts`; [ADR 0015](../adr/0015-results-summary-table-and-views.md)): the
+per-user layout save and reset in the new container `my-surveys-views` (section 3.10). They write **no**
+audit row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them: the
+old per-survey blobs are read only.
+
+All of these (but not the layout writes of Step 9) set `timestamp` to the time the server's clock gives,
+once per request, and an update that changes no value still rewrites it. Every audit row is best effort (a
+failure is logged with the survey id and the type only). Still to build: the settings `usecookies` and
+the delete-all-responses row.
 
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
@@ -924,7 +945,8 @@ New concepts can be added without breaking readers:
   `the site's code` (`site code`, `site code`);
   **[I]** for "harmless".
 - New **blob containers** (history snapshots with metadata, per-user views, respondent files) are
-  invisible to legacy code. **[C]** (legacy code addresses containers by fixed names only)
+  invisible to legacy code. **[C]** (legacy code addresses containers by fixed names only) So far the
+  new containers are `my-surveys-files` (section 3.9) and `my-surveys-views` (section 3.10, Step 9).
 
 ## 6. Directory (D12)
 
@@ -1076,41 +1098,41 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 
 ### 9.1 Survey (`Survey`)
 
-| Legacy                                                               | Domain                           | Rule                                                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `Surveys.id`                                                         | `id`                             | As is.                                                                                                                                    |
-| `Surveys.name`                                                       | `name`                           | As is (max 200 in SQL).                                                                                                                   |
-| `Surveys.userid`                                                     | `projectId`                      | The project ID when `userid` is an `Organizations.id`; `null` when it is a user ID (Personal).                                            |
-| `Surveys.userid` (Personal)                                          | owner (internal)                 | The owning user for Personal surveys.                                                                                                     |
-| `Surveys.creatorid`                                                  | (internal)                       | Needed for the legacy `canModify` rule.                                                                                                   |
-| `Surveys.ispublished`                                                | `published`                      | `true` only when 1. `NULL` → `false` (the list hides "Run"), even though the old run page still shows the survey.                         |
-| `Surveys.isarchived`                                                 | `archived`                       | 1 → `true`.                                                                                                                               |
-| `Surveys.createdat`                                                  | `createdAt`                      | Treat as UTC **[I]**: written from `DateTime.Now` with no conversion, so it is UTC only on a UTC server (App Service default); see gap 9. |
-| `Surveys.timestamp`                                                  | `updatedAt`                      | UTC.                                                                                                                                      |
-| `Surveys.postid`                                                     | `postId`                         | As is.                                                                                                                                    |
-| `Surveys.resultid`                                                   | `resultId`                       | As is.                                                                                                                                    |
-| `Surveys.allowaccessresult`                                          | `settings.publicResults`         | 1 → `true`.                                                                                                                               |
-| `Surveys.storeipaddress`                                             | `settings.storeRespondentIp`     | `1` → `true`.                                                                                                                             |
-| role + `creatorid`                                                   | `permissions.canModify`          | Legacy: `admin` in scope, or user is `creatorid` (section 6).                                                                             |
-| blob `surveyjson/{id}`                                               | `SurveyDefinition`               | Parse JSON; `{}` when missing.                                                                                                            |
-| `Surveys.theme`                                                      | `SurveyTheme`                    | Parse JSON; `{}` when empty.                                                                                                              |
-| `Surveys.usecookies`                                                 | (none yet)                       | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                       |
-| blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                | `user` = `null` for all legacy entries.                                                                                                   |
-| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`) | Legacy state is per survey; the contract's views are per user. Seed a user's view from the survey's blob.                                 |
+| Legacy                                                               | Domain                           | Rule                                                                                                                                                                                   |
+| -------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Surveys.id`                                                         | `id`                             | As is.                                                                                                                                                                                 |
+| `Surveys.name`                                                       | `name`                           | As is (max 200 in SQL).                                                                                                                                                                |
+| `Surveys.userid`                                                     | `projectId`                      | The project ID when `userid` is an `Organizations.id`; `null` when it is a user ID (Personal).                                                                                         |
+| `Surveys.userid` (Personal)                                          | owner (internal)                 | The owning user for Personal surveys.                                                                                                                                                  |
+| `Surveys.creatorid`                                                  | (internal)                       | Needed for the legacy `canModify` rule.                                                                                                                                                |
+| `Surveys.ispublished`                                                | `published`                      | `true` only when 1. `NULL` → `false` (the list hides "Run"), even though the old run page still shows the survey.                                                                      |
+| `Surveys.isarchived`                                                 | `archived`                       | 1 → `true`.                                                                                                                                                                            |
+| `Surveys.createdat`                                                  | `createdAt`                      | Treat as UTC **[I]**: written from `DateTime.Now` with no conversion, so it is UTC only on a UTC server (App Service default); see gap 9.                                              |
+| `Surveys.timestamp`                                                  | `updatedAt`                      | UTC.                                                                                                                                                                                   |
+| `Surveys.postid`                                                     | `postId`                         | As is.                                                                                                                                                                                 |
+| `Surveys.resultid`                                                   | `resultId`                       | As is.                                                                                                                                                                                 |
+| `Surveys.allowaccessresult`                                          | `settings.publicResults`         | 1 → `true`.                                                                                                                                                                            |
+| `Surveys.storeipaddress`                                             | `settings.storeRespondentIp`     | `1` → `true`.                                                                                                                                                                          |
+| role + `creatorid`                                                   | `permissions.canModify`          | Legacy: `admin` in scope, or user is `creatorid` (section 6).                                                                                                                          |
+| blob `surveyjson/{id}`                                               | `SurveyDefinition`               | Parse JSON; `{}` when missing.                                                                                                                                                         |
+| `Surveys.theme`                                                      | `SurveyTheme`                    | Parse JSON; `{}` when empty.                                                                                                                                                           |
+| `Surveys.usecookies`                                                 | (none yet)                       | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                                                                    |
+| blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                | `user` = `null` for all legacy entries.                                                                                                                                                |
+| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`) | **Decided in Step 9** (per user): a user's view is read from the container `my-surveys-views`; until the user saves or resets, the survey's blob is returned as stored (section 3.10). |
 
 ### 9.2 Response (`SurveyResponse`, `ResultStats`)
 
-| Legacy (`post{postId}` row)      | Domain                                                     | Rule                                                                                                                                                                                                                    |
-| -------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id` / `RowKey` (InstanceId)     | `id`                                                       | As is.                                                                                                                                                                                                                  |
-| `happendat` (HappendAt)          | `submittedAt`                                              | UTC (the Table writer converts to UTC). **[C]**                                                                                                                                                                         |
-| `result`                         | `data`                                                     | `JSON.parse`; may contain HTML entities from the sanitizer (section 11).                                                                                                                                                |
-| `clientid`                       | `clientId`                                                 | Optional.                                                                                                                                                                                                               |
-| `ipaddress`                      | `respondentIp`                                             | Optional; present only on rows written while the setting was on (and by pre-port code).                                                                                                                                 |
-| `ispartialcompleted`             | `partial`                                                  | Missing → `false`.                                                                                                                                                                                                      |
-| count / min / max `happendat`    | `ResultStats.count`, `firstSubmittedAt`, `lastSubmittedAt` | Full scan of the table; legacy merges rows with the same client ID before counting (merge rules differ by path, see 3.6). **Step 8:** `count` is the number of rows, with no merging; Step 9 decides the reading rules. |
-| new row (Step 8)                 | `NewResponse`                                              | `id` is the response id, `submittedAt` the server clock, `data` is stored as compact JSON text (at most 32,768 UTF-16 code units), `clientId` and `respondentIp` only when given. See 3.6.                              |
-| `SurveyCompletion{surveyId}` row | `CompletionState` (`none`, `partial`, `completed`)         | No row: `none`. `ispartialcompleted` true: `partial`. Otherwise `completed`. Written on every response with a client ID. See 3.7.                                                                                       |
+| Legacy (`post{postId}` row)      | Domain                                                     | Rule                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id` / `RowKey` (InstanceId)     | `id`                                                       | As is.                                                                                                                                                                                                                                                                                                                                     |
+| `happendat` (HappendAt)          | `submittedAt`                                              | UTC (the Table writer converts to UTC). **[C]**                                                                                                                                                                                                                                                                                            |
+| `result`                         | `data`                                                     | `JSON.parse`; may contain HTML entities from the sanitizer (section 11).                                                                                                                                                                                                                                                                   |
+| `clientid`                       | `clientId`                                                 | Optional.                                                                                                                                                                                                                                                                                                                                  |
+| `ipaddress`                      | `respondentIp`                                             | Optional; present only on rows written while the setting was on (and by pre-port code).                                                                                                                                                                                                                                                    |
+| `ispartialcompleted`             | `partial`                                                  | Missing → `false`.                                                                                                                                                                                                                                                                                                                         |
+| count / min / max `happendat`    | `ResultStats.count`, `firstSubmittedAt`, `lastSubmittedAt` | Full scan of the table; legacy merges rows with the same client ID before counting (merge rules differ by path, see 3.6). **Step 8:** `count` is the number of rows, with no merging. **Step 9 decided: no merging** in `listResults` either, one stored row is one response ([ADR 0015](../adr/0015-results-summary-table-and-views.md)). |
+| new row (Step 8)                 | `NewResponse`                                              | `id` is the response id, `submittedAt` the server clock, `data` is stored as compact JSON text (at most 32,768 UTF-16 code units), `clientId` and `respondentIp` only when given. See 3.6.                                                                                                                                                 |
+| `SurveyCompletion{surveyId}` row | `CompletionState` (`none`, `partial`, `completed`)         | No row: `none`. `ispartialcompleted` true: `partial`. Otherwise `completed`. Written on every response with a client ID. See 3.7.                                                                                                                                                                                                          |
 
 ### 9.3 Project (`Project`)
 

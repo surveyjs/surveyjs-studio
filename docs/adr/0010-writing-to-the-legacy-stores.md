@@ -296,6 +296,67 @@ operation and the driver's codes only.
 - A table is deleted with its survey (`writeSurveyDeletion` already drops both).
 - A response of more than 32,768 characters is refused with `413` on this provider and accepted by `memory`.
 
+## Step 9: results layouts
+
+Step 9 adds the writes of the saved results layouts (the Summary and the Table of a user and a survey), under the
+same rules: they are in `writes.ts`, with the ESLint `ignores` comment extended by "Step 9: results layouts
+(views) in a container of our own". The rulings behind them (per user, the legacy fallback, no side effects) are
+in [ADR 0015](0015-results-summary-table-and-views.md). The format is
+[layout, 3.10](../architecture/legacy-data-layout.md#310-results-layouts-the-only-saved-ui-state).
+
+### Where a layout is stored
+
+- **A new container.** `my-surveys-views` in the surveys account (`VIEWS_CONTAINER`), private, created on the
+  first save: a `404` on the upload runs `createIfNotExists()` and the upload once more, as `uploadNewFile` does.
+  Legacy code never reads it (layout 5.3).
+- **One block blob for each user, survey and view**: `{surveyId}/{userId}/{view}`, every part in lower case, with
+  `view` `summary` or `table`. The content is `JSON.stringify(state)` in UTF-8, content type `application/json`.
+  A save is an unconditional overwrite: the latest save wins, and there is no ETag, because a layout has no
+  conflict to detect.
+- **The reset marker is the same blob with zero bytes.** A reset overwrites the user's blob with an empty one
+  instead of deleting it. A blob of zero bytes means "reset"; any other blob holds a state. So a view is always
+  one blob, a save and a reset are single overwrites, and there is no second name to keep in step. The reader
+  answers "no layout" for the marker and does not look at the legacy blob (ADR 0015, R4).
+- **The legacy layout blobs are never written or deleted by a view** (`surveyresultsummarystate/{id}`,
+  `surveyresulttablestate/{id}`). They are read as the fallback when a user has no blob of their own.
+
+### The writes
+
+- `writeView(blobs, surveyId, userId, view, state)`: the overwrite above. The ids go through `checkedId` (a
+  non-GUID is refused before any call). A failure is `LegacyStoreError("view save")`.
+- `writeViewReset(blobs, surveyId, userId, view)`: the zero-byte overwrite. A failure is
+  `LegacyStoreError("view reset")`.
+- **The survey deletion** (`writeSurveyDeletion`, step 2) also lists and deletes every blob under
+  `my-surveys-views/{surveyId}/` (a missing container holds none). The four legacy layout blobs are deleted as
+  before.
+- **A clone does not copy layouts**, and copying nothing needs no write.
+- **No audit row, no `Surveys.timestamp` change, no history entry.** Moving a survey to the top of the list on
+  every chart drag would surprise users. The legacy save did bump `timestamp` and wrote the layout into the audit
+  row; this one does neither (layout 5.3 notes the departure).
+- Errors and logs carry the operation name, the driver's codes and ids, never a connection string or the
+  layout's content. A layout text that is not a JSON object is ignored by the reader with a warning that
+  carries the ids only.
+
+### Outside the read-only folder
+
+The read side (`providers/azure-legacy/views.ts`, `listResponsePage` in `results.ts`) lives in the folder the
+ESLint rule keeps read only, and calls the two functions above for the writes. Two more things touch the
+stores and sit **outside** that folder: the fixture loader (`server/src/legacy/load-fixtures.ts`), which now
+writes result rows in **batches** (table transactions of at most 100 actions, the deletes and the creates in
+separate transactions, because a transaction takes one action for each entity) and **clears the views
+container** on every load, so a layout saved by hand in a demo does not leak into the test runs. Like the rest of
+the loader, it refuses an endpoint that is not local.
+
+### Consequences of Step 9
+
+- A user's first save creates the container. The credentials of a production deployment need the right to create
+  containers in the surveys account (as for `my-surveys-files`).
+- A layout is at most as large as the request body limit (`LIMIT_MAX_RESPONSE_BYTES`, 1 MB by default); the
+  service adds no limit of its own.
+- A layout of a survey that is deleted by the legacy site is not deleted (legacy code does not know the
+  container). It is invisible and small, as the orphan blobs of Step 4.
+- A reset leaves a blob (zero bytes) behind until the survey is deleted.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

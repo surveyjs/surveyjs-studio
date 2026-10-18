@@ -114,8 +114,8 @@ http://localhost:5173/s/<survey id>?locale=de&name=Ann&satisfaction=4
 
 ## Count the responses now
 
-The results page arrives in Step 9; **View Results** still opens a placeholder. Until then, a signed-in user
-who can see the survey can read the count through the API:
+The answers are on the results page ([Viewing results](viewing-results.md)); the count of the Details tab
+arrives with Step 10. A signed-in user who can see the survey can read the count through the API now:
 
 ```sh
 curl -s http://localhost:5173/api/v1/surveys/<survey id>/results/stats -b "msid=<cookie value>"

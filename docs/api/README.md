@@ -72,6 +72,7 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | Step 6 | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
 | Step 7 | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
 | Step 8 | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                          |
+| Step 9 | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                  |
 
 ### Step 4: surveys and projects
 
@@ -333,10 +334,64 @@ deleting a survey deletes its files. A clone copies them. Everything is in
 A survey runs while it is published, archived or not. The three public operations are rate limited per
 address. The rules, `curl` examples, the idempotency scheme, the `cookieName` convention, `TRUST_PROXY` and
 the error table are in [Public endpoints, rate limits and idempotency](public-endpoints.md).
-`getResultStats` is built early, because it is the only way to see that a response was stored; Step 9 adds
-the other results operations.
+`getResultStats` was built early, because it was the only way to see that a response was stored; the
+other results operations came with Step 9.
 
-Every other operation (the results, views and exports of Steps 9 and 10, the project and member writes)
+### Step 9: results and views
+
+All four need a session. `saveResultsView` and `resetResultsView` also need the CSRF header. `{view}` is
+`summary` (the Dashboard) or `table`.
+
+| Operation          | Behaviour                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `listResults`      | `GET /surveys/{surveyId}/results`, query `limit` (1 to 1000, default 500) and `cursor`. `200 { items, nextCursor }`, oldest first. `404 not-found` for an unknown survey or one the user cannot see |
+| `getResultsView`   | `GET /surveys/{surveyId}/views/{view}`. `200` the caller's saved layout, any JSON object. `404 view-not-found` (title "View not found") when there is none                                          |
+| `saveResultsView`  | `PUT /surveys/{surveyId}/views/{view}`, a JSON object. `204`. Replaces an earlier layout or a reset                                                                                                 |
+| `resetResultsView` | `DELETE /surveys/{surveyId}/views/{view}`. `204`, also when nothing was saved                                                                                                                       |
+
+Rules for `listResults`:
+
+- Every stored response is one item `{ id, submittedAt, data, clientId?, respondentIp? }`, **oldest first**
+  (`submittedAt`, then `id`). Rows of one client are **not merged**, and `partial` is not returned. There
+  is no cap on the total; the dashboard walks every page. Paging and the cursor are in
+  [Paging](paging.md#results-oldest-first-one-survey); the `curl` walk there uses a survey with 1,500
+  responses.
+- `clientId` is returned as stored. A survey of the old site may hold any string there.
+- The answers are the respondents' data: they are never written to a log.
+- The user needs to see the survey (the same rule as `getSurvey`). A member of the survey's project reads
+  its results. Other users get `404`.
+- `limit` outside 1 to 1000, a bad cursor, or a cursor of another survey: `400 bad-request`.
+
+Rules for the views:
+
+- **Per user.** A layout belongs to the caller and the survey. Saving or resetting one changes nothing for
+  anyone else. Anyone who can see the survey (not only users who may modify it) reads, saves and resets
+  their own layout. A survey that is unknown or not visible answers `404 not-found`; a visible survey
+  with no layout answers `404 view-not-found` on `GET`.
+- **Legacy fallback.** On the `azure-legacy` provider (and the memory provider with the fixtures), a user
+  with no layout of their own and no reset gets the survey's old per-survey layout, as stored. After
+  `resetResultsView`, `getResultsView` answers `404 view-not-found` **even when an old layout exists**,
+  until the next save. The old layouts are never written or deleted by these operations
+  ([legacy data layout](../architecture/legacy-data-layout.md#310-results-layouts-the-only-saved-ui-state)).
+- **Body.** `saveResultsView` accepts any JSON object and stores it as sent. An array, a string or
+  `null` is `422 validation-failed`; another media type is `415`; a body over `limits.maxResponseBytes`
+  is `413 payload-too-large`. There is no limit of its own and no new variable.
+- **No side effects.** A save or reset does not change the survey: `updatedAt` stays, and there is no
+  history entry. A survey deletion deletes every user's layouts; a clone does not copy them.
+- A missing or wrong CSRF token on the two writes is `403 csrf-token-invalid`.
+
+Read and save a layout with `curl` (the cookie jar and `$CSRF` as in the Step 5 section):
+
+```sh
+curl -s -b cookies.txt "$API/surveys/$ID/views/summary"
+# {"type":"…/problems/view-not-found","title":"View not found","status":404,"code":"view-not-found"}
+curl -i -b cookies.txt -X PUT "$API/surveys/$ID/views/summary" -H "X-CSRF-Token: $CSRF"   -H "Content-Type: application/json" -d '{"elements":[{"name":"q1","isVisible":false}]}'
+# HTTP/1.1 204 No Content
+curl -s -b cookies.txt "$API/surveys/$ID/views/summary"
+# {"elements":[{"name":"q1","isVisible":false}]}
+```
+
+Every other operation (the exports and public results of Step 10, the project and member writes)
 answers `501` with a Problem Details body (`code: not-implemented`), after
 authentication: a private operation called without a session answers `401`. `passwordLogin` stays
 `501` until P1.

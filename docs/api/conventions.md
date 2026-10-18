@@ -58,9 +58,13 @@ The `Problem` schema in the contract holds the full list of codes.
 
 ## Paging
 
-List endpoints use opaque cursors: `?limit=&cursor=` (`limit` 1-200, default 50). The response is
+List endpoints use opaque cursors: `?limit=&cursor=` (`limit` 1-200, default 50; `listResults` 1-1000,
+default 500). The response is
 `{ "items": [...], "nextCursor": "..." }`. `nextCursor` is `null` on the last page. Pass it back
 as `cursor` to get the next page. Do not parse it. More in [Paging](paging.md).
+
+`404 view-not-found` (title "View not found") is a saved results layout that does not exist, as opposed to
+`404 not-found` for a survey that is unknown or not visible ([Step 9](README.md#step-9-results-and-views)).
 
 ## Partial updates (Merge Patch)
 
