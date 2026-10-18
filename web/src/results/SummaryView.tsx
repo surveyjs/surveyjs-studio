@@ -4,7 +4,7 @@ import "survey-analytics/survey.analytics.css";
 import { Model } from "survey-core";
 import type { ViewState } from "../api/views";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
-import { createPrivateList, withPrivacy } from "./privacy";
+import { createPrivacyTracker, withPrivacy } from "./privacy";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { summaryData } from "./tableRows";
 
@@ -37,10 +37,11 @@ export function SummaryView({
     stateCallback.current = onStateChange;
     privacyCallback.current = onPrivateQuestionsChange;
   }, [onStateChange, onPrivateQuestionsChange]);
-  // The latest private list, from the survey setting at mount: later changes of the prop come from
-  // this widget itself, and a hidden private chart stays in it.
-  const privateList = useRef<ReturnType<typeof createPrivateList> | null>(null);
-  privateList.current ??= createPrivateList(privateQuestions);
+  // This session's private list, from the survey setting at mount, and what each "Make private /
+  // Make public" flips: the page saves only those names, onto a fresh read of the setting. A hidden
+  // private chart is in no change, so it stays private.
+  const privateList = useRef<ReturnType<typeof createPrivacyTracker> | null>(null);
+  privateList.current ??= createPrivacyTracker(privateQuestions);
   const allowPrivacy = onPrivateQuestionsChange !== undefined;
 
   // Built in the effect, not during render: Strict Mode runs effects twice, and the Dashboard
@@ -79,7 +80,7 @@ export function SummaryView({
       // The library calls this after "Make private" / "Make public".
       dashboard.onPermissionsChangedCallback = (panel: {
         permissions: readonly { name: string; isPublic: boolean }[];
-      }) => privacyCallback.current?.(privateList.current!.update(panel.permissions));
+      }) => privacyCallback.current?.(privateList.current!.change(panel.permissions));
     }
     return () => {
       dashboard.destroy();

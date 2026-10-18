@@ -14,6 +14,7 @@ import { surveyListSearch } from "../surveyList/search";
 import { PlaceholderFrame } from "../surveyList/surveyPlaceholder";
 import { useLicenceApplied } from "../surveyjs/useLicenceApplied";
 import { DetailsTab } from "./DetailsTab";
+import type { PrivacyChange } from "./privacy";
 import styles from "./results.module.css";
 import { resultsSearch, type ResultsTab } from "./search";
 import type { ResultItem } from "./tableRows";
@@ -32,8 +33,11 @@ export interface ResultsWidgetProps {
   readonly onStateChange?: (state: ViewState) => void;
   /** The survey private questions when the widget mounts (`settings.privateResultQuestions ?? []`). */
   readonly privateQuestions: readonly string[];
-  /** Private Summary, callers who may modify: the "Make private / Make public" toggle; the new full list. */
-  readonly onPrivateQuestionsChange?: (names: string[]) => void;
+  /**
+   * Private Summary, callers who may modify, while the list could be read: the "Make private / Make
+   * public" toggle; each call names the questions whose privacy the user just changed.
+   */
+  readonly onPrivateQuestionsChange?: (change: PrivacyChange) => void;
   /** The public page: private questions not shown at all; the Table offers no downloads. */
   readonly publicView?: boolean;
 }
@@ -141,7 +145,11 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
         savedState: view.data,
         onStateChange: stateChange(tab),
         privateQuestions: survey.settings.privateResultQuestions ?? [],
-        ...(tab === "summary" && survey.permissions.canModify
+        // Without a readable list (the field is absent) nothing may save one built from an
+        // unknown state, so the toggle is not offered.
+        ...(tab === "summary" &&
+        survey.permissions.canModify &&
+        survey.settings.privateResultQuestions !== undefined
           ? { onPrivateQuestionsChange: privacy.change }
           : {}),
       };

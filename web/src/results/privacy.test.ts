@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createPrivateList, privateNamesOf, withPrivacy } from "./privacy";
+import {
+  applyPrivacyChange,
+  combinePrivacyChanges,
+  createPrivacyTracker,
+  withPrivacy,
+} from "./privacy";
 
 describe("withPrivacy", () => {
   it("sets isPublic from the private names and keeps everything else", () => {
@@ -23,44 +28,62 @@ describe("withPrivacy", () => {
   });
 });
 
-describe("privateNamesOf", () => {
-  it("keeps previous names no permission names, then lists the private ones", () => {
+describe("applyPrivacyChange", () => {
+  it("removes the names made public, appends the ones made private and keeps the rest", () => {
     expect(
-      privateNamesOf(
-        [
-          { name: "a", isPublic: true },
-          { name: "b", isPublic: false },
-          { name: "c", isPublic: false },
-        ],
-        ["gone", "a"],
-      ),
-    ).toEqual(["gone", "b", "c"]);
+      applyPrivacyChange(["other", "a", "b"], { madePrivate: ["c", "b"], madePublic: ["a"] }),
+    ).toEqual(["other", "b", "c"]);
   });
 
-  it("starts from the previous names when there are no permissions", () => {
-    expect(privateNamesOf([], ["x"])).toEqual(["x"]);
+  it("leaves the input alone", () => {
+    const names = ["a"];
+    applyPrivacyChange(names, { madePrivate: ["b"], madePublic: ["a"] });
+    expect(names).toEqual(["a"]);
   });
 });
 
-describe("createPrivateList", () => {
+describe("combinePrivacyChanges", () => {
+  it("lets the newer change win for a name both touch", () => {
+    expect(
+      combinePrivacyChanges(
+        { madePrivate: ["a", "b"], madePublic: ["c"] },
+        { madePrivate: ["c"], madePublic: ["a"] },
+      ),
+    ).toEqual({ madePrivate: ["b", "c"], madePublic: ["a"] });
+  });
+});
+
+describe("createPrivacyTracker", () => {
   const panel = (...entries: [string, boolean][]) =>
     entries.map(([name, isPublic]) => ({ name, isPublic }));
 
+  it("reports only the names whose isPublic flipped", () => {
+    const tracker = createPrivacyTracker(["a"]);
+    expect(tracker.change(panel(["a", false], ["b", false], ["c", true]))).toEqual({
+      madePrivate: ["b"],
+      madePublic: [],
+    });
+    expect(tracker.change(panel(["a", true], ["b", false], ["c", true]))).toEqual({
+      madePrivate: [],
+      madePublic: ["a"],
+    });
+    expect(tracker.current()).toEqual(["b"]);
+  });
+
   it("keeps a private question that was hidden after it was made private", () => {
-    const list = createPrivateList([]);
-    expect(list.update(panel(["a", false], ["b", true]))).toEqual(["a"]);
+    const tracker = createPrivacyTracker([]);
+    expect(tracker.change(panel(["a", false], ["b", true]))).toEqual({
+      madePrivate: ["a"],
+      madePublic: [],
+    });
     // "a" is hidden: the panel no longer lists it; "b" is made private next.
-    expect(list.update(panel(["b", false]))).toEqual(["a", "b"]);
-    expect(list.current()).toEqual(["a", "b"]);
+    expect(tracker.change(panel(["b", false]))).toEqual({ madePrivate: ["b"], madePublic: [] });
+    expect(tracker.current()).toEqual(["a", "b"]);
   });
 
   it("starts from the list at mount and keeps names the panel never knew", () => {
-    const list = createPrivateList(["gone"]);
-    expect(list.update(panel(["a", false]))).toEqual(["gone", "a"]);
-  });
-
-  it("makes a question public again when the panel says so", () => {
-    const list = createPrivateList(["a"]);
-    expect(list.update(panel(["a", true], ["b", true]))).toEqual([]);
+    const tracker = createPrivacyTracker(["gone"]);
+    tracker.change(panel(["a", false]));
+    expect(tracker.current()).toEqual(["gone", "a"]);
   });
 });

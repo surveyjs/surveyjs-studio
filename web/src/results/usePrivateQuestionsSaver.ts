@@ -1,19 +1,29 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { surveyKeys, useUpdateSurvey, type Survey } from "../api/surveys";
+import { surveyQueryOptions, useUpdateSurvey } from "../api/surveys";
+import {
+  applyPrivacyChange,
+  combinePrivacyChanges,
+  isNoPrivacyChange,
+  NO_PRIVACY_CHANGE,
+  type PrivacyChange,
+} from "./privacy";
 import { createViewSaver, type ViewSaver } from "./viewSaver";
 
 export interface PrivateQuestionsSaver {
-  /** The new full list of private questions: one save at a time, the latest list wins. */
-  change(names: string[]): void;
+  /** A change the Summary made: one save at a time; changes made meanwhile go out together next. */
+  change(change: PrivacyChange): void;
   /** The last save failed (until a later one succeeds). */
   failed: boolean;
 }
 
 /**
- * Saves the survey's private-question list (`settings.privateResultQuestions`) as the Summary
- * changes it. Built on the layout saver without a delay: one PATCH is in flight, and changes made
- * meanwhile collapse into the newest list.
+ * Saves the user's changes of the survey's private-question list (`settings.privateResultQuestions`).
+ * Each save reads the list again, applies only the names this user changed and sends the result, so
+ * a Summary opened earlier (another tab, another editor) never undoes what someone else saved.
+ * When the read fails or answers without a list (the server could not read it), nothing is sent:
+ * the save fails, and its changes go out again with the next one. Built on the layout saver without
+ * a delay: one save is in flight, and changes made meanwhile wait and are combined.
  */
 export function usePrivateQuestionsSaver(surveyId: string): PrivateQuestionsSaver {
   const queryClient = useQueryClient();
@@ -24,16 +34,34 @@ export function usePrivateQuestionsSaver(surveyId: string): PrivateQuestionsSave
   }, [mutateAsync]);
   const [failed, setFailed] = useState(false);
   const saver = useRef<ViewSaver | null>(null);
+  /** The changes not sent yet (the newest wins for a name changed twice). */
+  const unsent = useRef<PrivacyChange>(NO_PRIVACY_CHANGE);
 
   // Built in the effect: Strict Mode runs it twice, and the first saver is closed on cleanup.
   useEffect(() => {
+    unsent.current = NO_PRIVACY_CHANGE;
     const created = createViewSaver({
       delayMs: 0,
-      save: async ({ names }) => {
-        await mutate.current({
-          survey: queryClient.getQueryData<Survey>(surveyKeys.detail(surveyId))!,
-          patch: { settings: { privateResultQuestions: names as string[] } },
-        });
+      save: async () => {
+        const change = unsent.current;
+        unsent.current = NO_PRIVACY_CHANGE;
+        if (isNoPrivacyChange(change)) return;
+        try {
+          const fresh = await queryClient.fetchQuery({
+            ...surveyQueryOptions(surveyId),
+            staleTime: 0,
+          });
+          const names = fresh.settings.privateResultQuestions;
+          if (names === undefined) throw new Error("The private-question list cannot be read.");
+          await mutate.current({
+            survey: fresh,
+            patch: { settings: { privateResultQuestions: applyPrivacyChange(names, change) } },
+          });
+        } catch (error) {
+          // Sent again with the next change, under any newer change of the same names.
+          unsent.current = combinePrivacyChanges(change, unsent.current);
+          throw error;
+        }
       },
       onError: () => setFailed(true),
       onSaved: () => setFailed(false),
@@ -45,6 +73,10 @@ export function usePrivateQuestionsSaver(surveyId: string): PrivateQuestionsSave
     };
   }, [surveyId, queryClient]);
 
-  const change = useCallback((names: string[]) => saver.current?.change({ names }), []);
+  const change = useCallback((next: PrivacyChange) => {
+    if (isNoPrivacyChange(next)) return;
+    unsent.current = combinePrivacyChanges(unsent.current, next);
+    saver.current?.change({});
+  }, []);
   return { change, failed };
 }

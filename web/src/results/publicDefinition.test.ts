@@ -44,6 +44,34 @@ describe("withoutQuestions", () => {
     expect(definition).toEqual(copy);
   });
 
+  it("drops them from the legacy `questions` key of pages and panels too", () => {
+    const definition = {
+      pages: [
+        {
+          name: "p1",
+          questions: [
+            { type: "text", name: "q1" },
+            { type: "text", name: "q2" },
+            { type: "panel", name: "box", questions: [{ type: "text", name: "q2" }] },
+          ],
+        },
+      ],
+      questions: [{ type: "text", name: "q2" }],
+    };
+    expect(withoutQuestions(definition, ["q2"])).toEqual({
+      pages: [
+        {
+          name: "p1",
+          questions: [
+            { type: "text", name: "q1" },
+            { type: "panel", name: "box", questions: [] },
+          ],
+        },
+      ],
+      questions: [],
+    });
+  });
+
   it("returns the definition as is when nothing is private", () => {
     const definition = { elements: [{ type: "text", name: "q1" }] };
     expect(withoutQuestions(definition, [])).toEqual(definition);

@@ -3,10 +3,17 @@ import type { ResultsWidgetProps } from "../results/ResultsPage";
 /** The layout change the fakes' "Change layout" button reports. */
 export const changedLayout = { elements: [{ name: "q1", isVisible: false }] };
 
+/** The privacy changes the fakes' buttons report, by button label. */
+const PRIVACY_BUTTONS = [
+  ["Make q1 private", { madePrivate: ["q1"], madePublic: [] }],
+  ["Make q2 private", { madePrivate: ["q2"], madePublic: [] }],
+  ["Make q2 public", { madePrivate: [], madePublic: ["q2"] }],
+] as const;
+
 /**
  * A stand-in for the Summary or the Table (jsdom runs neither the charts nor Tabulator): it shows
  * how many responses, which saved state, private questions and view the page passed, and reports
- * `changedLayout` (when it may) and a new private list (when it may).
+ * `changedLayout` (when it may) and privacy changes (when it may).
  */
 export function fakeResultsWidget(testId: string) {
   return function FakeResultsWidget({
@@ -28,11 +35,12 @@ export function fakeResultsWidget(testId: string) {
             Change layout
           </button>
         )}
-        {onPrivateQuestionsChange !== undefined && (
-          <button type="button" onClick={() => onPrivateQuestionsChange(["q1"])}>
-            Make q1 private
-          </button>
-        )}
+        {onPrivateQuestionsChange !== undefined &&
+          PRIVACY_BUTTONS.map(([label, change]) => (
+            <button key={label} type="button" onClick={() => onPrivateQuestionsChange(change)}>
+              {label}
+            </button>
+          ))}
       </div>
     );
   };

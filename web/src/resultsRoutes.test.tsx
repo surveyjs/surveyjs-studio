@@ -576,6 +576,85 @@ describe("the Details tab: Delete Results", () => {
 });
 
 describe("the Summary's private questions", () => {
+  /** sampleSurvey with a readable private-question list. */
+  const withList = (names: string[]): Survey => ({
+    ...sampleSurvey,
+    settings: { ...sampleSurvey.settings, privateResultQuestions: names },
+  });
+
+  /** The server's list: the survey read answers it, a PATCH replaces it and is recorded. */
+  function storedList(initial: string[]) {
+    const store = { names: initial, patches: [] as unknown[] };
+    const handlers = [
+      mswHttp.get(`*${surveyPath}`, () => HttpResponse.json(withList(store.names))),
+      mswHttp.patch(`*${surveyPath}`, async ({ request }) => {
+        const body = (await request.json()) as { settings: { privateResultQuestions: string[] } };
+        store.patches.push(body);
+        store.names = body.settings.privateResultQuestions;
+        return HttpResponse.json(withList(store.names));
+      }),
+    ];
+    return { store, handlers };
+  }
+
+  it("applies each change to a fresh read, so another writer's names stay", async () => {
+    const { store, handlers } = storedList([]);
+    server.use(...handlers, ...pageHandlers({ survey: withList([]) }));
+    renderApp(path);
+    await screen.findByTestId("fake-summary");
+
+    // Someone else makes q1 private after this Summary was opened.
+    store.names = ["q1"];
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 private" }));
+    await waitFor(() => expect(store.patches).toHaveLength(1));
+    expect(store.patches[0]).toEqual({ settings: { privateResultQuestions: ["q1", "q2"] } });
+
+    store.names = ["q1", "q2", "q3"];
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 public" }));
+    await waitFor(() => expect(store.patches).toHaveLength(2));
+    expect(store.patches[1]).toEqual({ settings: { privateResultQuestions: ["q1", "q3"] } });
+  });
+
+  it("does not save when the fresh read fails or has no list", async () => {
+    const seen: { body: unknown; contentType: string | null }[] = [];
+    let answer: () => Response = () => HttpResponse.json(withList([]));
+    server.use(
+      mswHttp.get(`*${surveyPath}`, () => answer()),
+      patchHandler(seen, () => HttpResponse.json(withList(["q1"]))),
+      ...pageHandlers({ survey: withList([]) }),
+    );
+    renderApp(path);
+    await screen.findByTestId("fake-summary");
+
+    answer = failing;
+    fireEvent.click(screen.getByRole("button", { name: "Make q1 private" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The list of private questions could not be saved. Please try again.",
+    );
+    expect(seen).toEqual([]);
+
+    // A list the server cannot read right now: no save, and the toggle goes away.
+    answer = () => HttpResponse.json(sampleSurvey);
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 private" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Make q2 private" })).toBeNull(),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The list of private questions could not be saved. Please try again.",
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it("offers no toggle while the survey answers without the list", async () => {
+    server.use(...pageHandlers({ survey: sampleSurvey }));
+
+    renderApp(path);
+
+    await screen.findByTestId("fake-summary");
+    expect(screen.queryByRole("button", { name: "Make q1 private" })).toBeNull();
+    expect(screen.getByTestId("fake-summary-private").textContent).toBe("[]");
+  });
+
   it("hands the survey's private questions over and saves a new list with one patch", async () => {
     const seen: { body: unknown; contentType: string | null }[] = [];
     const survey = {
@@ -598,7 +677,7 @@ describe("the Summary's private questions", () => {
 
     await waitFor(() => expect(seen).toHaveLength(1));
     expect(seen[0]).toEqual({
-      body: { settings: { privateResultQuestions: ["q1"] } },
+      body: { settings: { privateResultQuestions: ["q2", "q1"] } },
       contentType: "application/merge-patch+json",
     });
   });
@@ -614,7 +693,7 @@ describe("the Summary's private questions", () => {
   });
 
   it("says when the list could not be saved", async () => {
-    server.use(patchHandler([], failing), ...pageHandlers());
+    server.use(patchHandler([], failing), ...pageHandlers({ survey: withList([]) }));
     renderApp(path);
 
     fireEvent.click(await screen.findByRole("button", { name: "Make q1 private" }));
