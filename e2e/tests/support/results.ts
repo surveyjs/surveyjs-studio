@@ -105,3 +105,26 @@ export function tableHeaders(page: Page): Locator {
 export function tableCells(page: Page, field: string): Locator {
   return page.locator(`.tabulator-row .tabulator-cell[tabulator-field="${field}"]`);
 }
+
+/** The public results of a survey that is not shared (or not published) answer 404, which browsers log. */
+export const PUBLIC_RESULTS_404: ExpectedErrorResponse = {
+  path: /^\/api\/v1\/public\/surveys\/[0-9a-f-]+\/results$/,
+  status: 404,
+};
+
+/** Whether a request changes the survey's settings (`PATCH /surveys/{id}`). */
+export function isSettingsPatch(request: Request, surveyId: string): boolean {
+  return (
+    request.method() === "PATCH" &&
+    new URL(request.url()).pathname === `/api/v1/surveys/${surveyId}`
+  );
+}
+
+/** Whether a response answers `DELETE /surveys/{id}/results` with `204`. */
+export function isResultsDelete(response: Response, surveyId: string): boolean {
+  return (
+    response.request().method() === "DELETE" &&
+    new URL(response.url()).pathname === `/api/v1/surveys/${surveyId}/results` &&
+    response.status() === 204
+  );
+}
