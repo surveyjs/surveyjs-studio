@@ -250,44 +250,26 @@ export function userFromLegacy(row: LegacyUserRow): User {
   return { id: guid(row.id), email, displayName, blocked: flag(row.blocked) };
 }
 
-/** Code-point order, as in ordering.ts. */
-const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-/** Earliest `happendat` first (NULL last), then the smaller user id, then the smaller row id. */
-function earliest(
-  rows: readonly LegacyOrganizationUserRow[],
-): LegacyOrganizationUserRow | undefined {
-  const time = (row: LegacyOrganizationUserRow) => row.happendat?.getTime() ?? Infinity;
-  return [...rows].sort(
-    (a, b) =>
-      time(a) - time(b) ||
-      compareText(guid(a.userid), guid(b.userid)) ||
-      compareText(guid(a.id), guid(b.id)),
-  )[0];
-}
-
 /**
  * A project from its `Organizations` row and every `OrganizationUsers` row of it. Legacy has no
- * owner or creation column (layout 3.12, 9.3), so both are inferred: the creator's membership row
- * (its id equals the project id) decides; without it the earliest admin owns the project, else the
- * earliest member. The creation time is the creator row's `happendat`, else the project's
- * `happendat` (which moves on rename), else the epoch.
+ * owner or creation column (layout 3.12, 9.3). The owner is the creator while still a member (R2):
+ * the user of the creator's membership row (its id equals the project id), else null; no other
+ * member is promoted to owner. The creation time is the creator row's `happendat`, else the
+ * project's `happendat` (which moves on a legacy rename), else the epoch.
  */
 export function projectFromLegacy(
   org: LegacyOrganizationRow,
   members: readonly LegacyOrganizationUserRow[],
 ): ProjectRecord {
   const id = guid(org.id);
+  if (members.length === 0) {
+    throw new UnmappableLegacyRowError({ organizationId: id }, "project without members");
+  }
   const creator = members.find((row) => guid(row.id) === id);
-  const owner =
-    creator ??
-    earliest(members.filter((row) => row.role?.toLowerCase() === "admin")) ??
-    earliest(members);
-  if (!owner) throw new UnmappableLegacyRowError({ organizationId: id }, "project without members");
   return {
     id,
     name: org.name ?? "",
-    ownerId: guid(owner.userid),
+    ownerId: creator ? guid(creator.userid) : null,
     createdAt: (creator?.happendat ?? org.happendat ?? EPOCH).toISOString(),
     memberCount: members.length,
   };

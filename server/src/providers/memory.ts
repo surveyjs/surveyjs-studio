@@ -1,6 +1,7 @@
 import type { AccountNoticesSetting } from "../config.js";
 import type {
   NewSurvey,
+  ProjectMember,
   ProjectMembership,
   ProjectRecord,
   ProjectRole,
@@ -19,9 +20,16 @@ import { contentVersion } from "../domain/content-version.js";
 import { applySurveyChanges } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
 import {
+  decideRemoval,
+  decideRoleChange,
+  isAdminRole,
+  type MembershipFacts,
+} from "../projects/rules.js";
+import {
   historyOrder,
   isAfter,
   isAfterHistory,
+  memberListOrder,
   projectListOrder,
   surveyListOrder,
 } from "./ordering.js";
@@ -30,11 +38,21 @@ import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
 import type { ProviderSet } from "./types.js";
 
+/**
+ * A stored project. `ownerId` and `memberCount` are worked out from `memberships` at read time:
+ * the owner is `creatorId` while that user still has a membership (R2), else null.
+ */
+export interface MemorySeedProject {
+  id: string;
+  name: string;
+  creatorId: string | null;
+  createdAt: string;
+}
+
 export interface MemorySeed {
   users: User[];
   surveys: SurveyRecord[];
-  /** `memberCount` is counted from `memberships` at read time. */
-  projects: Omit<ProjectRecord, "memberCount">[];
+  projects: MemorySeedProject[];
   memberships: { userId: string; projectId: string; role: ProjectRole }[];
   /** Survey definitions by survey id. */
   definitions?: Record<string, SurveyDefinition>;
@@ -70,6 +88,8 @@ export interface MemoryOptions {
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
 const lower = (id: string): string => id.toLowerCase();
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const lowerOwner = (owner: SurveyOwner): SurveyOwner =>
   owner.kind === "personal"
@@ -110,10 +130,13 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
   const notices = demoAccountNotices(accountNotices);
   const surveys = (seed?.surveys ?? []).map(copySurvey);
   const users = (seed?.users ?? []).map(copyUser);
-  const projects = new Map(
-    (seed?.projects ?? []).map((p) => [lower(p.id), { ...p, id: lower(p.id) }] as const),
+  const projects = new Map<string, MemorySeedProject>(
+    (seed?.projects ?? []).map((p) => [
+      lower(p.id),
+      { ...p, id: lower(p.id), creatorId: p.creatorId === null ? null : lower(p.creatorId) },
+    ]),
   );
-  const memberships = (seed?.memberships ?? []).map((m) => {
+  let memberships = (seed?.memberships ?? []).map((m) => {
     if (!projects.has(lower(m.projectId))) {
       throw new Error(`Membership refers to unknown project ${m.projectId}`);
     }
@@ -196,12 +219,31 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     return { kind: "saved", version: versionOf(stored) };
   };
 
-  /** A fresh membership with the project's current member count. */
-  const membershipOf = (m: (typeof memberships)[number]): ProjectMembership => {
-    const project = projects.get(m.projectId)!;
-    const memberCount = memberships.filter((other) => other.projectId === m.projectId).length;
-    return { project: { ...project, memberCount }, role: m.role };
+  const membershipsOf = (projectId: string) => memberships.filter((m) => m.projectId === projectId);
+
+  /** The project as stored now: the owner while the creator is a member (R2), every row counted. */
+  const projectRecord = (projectId: string): ProjectRecord => {
+    const { id, name, creatorId, createdAt } = projects.get(projectId)!;
+    const rows = membershipsOf(projectId);
+    const ownerId = rows.some((m) => m.userId === creatorId) ? creatorId : null;
+    return { id, name, ownerId, createdAt, memberCount: rows.length };
   };
+
+  /** A fresh membership with the project's current owner and member count. */
+  const membershipOf = (m: (typeof memberships)[number]): ProjectMembership => ({
+    project: projectRecord(m.projectId),
+    role: m.role,
+  });
+
+  const findUser = (id: string) => users.find((u) => u.id === lower(id));
+
+  /** The project's rows as the last-admin rule sees them (R8, R11). */
+  const factsOf = (projectId: string): MembershipFacts[] =>
+    membershipsOf(projectId).map((m) => ({
+      userId: m.userId,
+      role: m.role,
+      userExists: findUser(m.userId) !== undefined,
+    }));
 
   return {
     name: "memory",
@@ -311,7 +353,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     views: views.store,
     directory: {
       getUser: (id) => {
-        const found = users.find((u) => u.id === lower(id));
+        const found = findUser(id);
         return Promise.resolve(found ? copyUser(found) : null);
       },
       findUserByEmail: (email) => {
@@ -333,6 +375,82 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
           (m) => m.userId === lower(userId) && m.projectId === lower(projectId),
         );
         return Promise.resolve(found ? membershipOf(found) : null);
+      },
+      listMembers: (projectId) => {
+        const byUser = new Map<string, ProjectMember>();
+        for (const m of membershipsOf(lower(projectId))) {
+          const user = findUser(m.userId);
+          if (!user) continue; // an orphan row is not shown (R11)
+          const admin = isAdminRole(m.role) || byUser.get(user.id)?.role === "admin";
+          byUser.set(user.id, { user: copyUser(user), role: admin ? "admin" : "user" });
+        }
+        return Promise.resolve([...byUser.values()].sort(memberListOrder));
+      },
+      createProject: ({ id, name, creatorId, createdAt }) => {
+        const key = lower(id);
+        if (!GUID.test(key)) return Promise.reject(new Error("Project ids must be GUIDs"));
+        if (projects.has(key)) return Promise.reject(new Error(`project ${key} already exists`));
+        const creator = { userId: lower(creatorId), projectId: key, role: "admin" as const };
+        projects.set(key, { id: key, name, creatorId: creator.userId, createdAt });
+        memberships.push(creator);
+        return Promise.resolve(membershipOf(creator));
+      },
+      renameProject: (projectId, name) => {
+        const project = projects.get(lower(projectId));
+        if (!project) return Promise.resolve(false);
+        projects.set(project.id, { ...project, name });
+        return Promise.resolve(true);
+      },
+      deleteProject: (projectId, { receiverId, now }) => {
+        const key = lower(projectId);
+        if (!projects.has(key)) return Promise.resolve(null);
+        const moved: string[] = [];
+        surveys.forEach((survey, index) => {
+          if (survey.owner.kind !== "project" || survey.owner.projectId !== key) return;
+          // Not applySurveyChanges: its move makes the mover the creator; the cascade keeps it (R9).
+          const owner: SurveyOwner = { kind: "personal", userId: lower(receiverId) };
+          surveys[index] = { ...survey, owner, updatedAt: now };
+          moved.push(survey.id);
+        });
+        memberships = memberships.filter((m) => m.projectId !== key);
+        projects.delete(key);
+        return Promise.resolve(moved.sort());
+      },
+      addMember: (projectId, userId, role) => {
+        const key = lower(projectId);
+        if (!projects.has(key)) return Promise.resolve("not-found");
+        const user = lower(userId);
+        if (membershipsOf(key).some((m) => m.userId === user)) {
+          return Promise.resolve("already-member");
+        }
+        memberships.push({ userId: user, projectId: key, role });
+        return Promise.resolve("added");
+      },
+      setMemberRole: (projectId, userId, role) => {
+        const key = lower(projectId);
+        if (!projects.has(key)) return Promise.resolve("not-found");
+        const outcome = decideRoleChange(factsOf(key), userId, role);
+        if (outcome === "changed") {
+          const user = lower(userId);
+          memberships = memberships.map((m) =>
+            m.projectId === key && m.userId === user ? { ...m, role } : m,
+          );
+        }
+        return Promise.resolve(outcome);
+      },
+      removeMember: (projectId, userId) => {
+        const key = lower(projectId);
+        const project = projects.get(key);
+        if (!project) return Promise.resolve("not-found");
+        const outcome = decideRemoval(factsOf(key), userId);
+        if (outcome === "removed") {
+          const user = lower(userId);
+          memberships = memberships.filter((m) => !(m.projectId === key && m.userId === user));
+          // The creator marker goes with the creator, as the legacy creator row does: a creator
+          // who is added again is not the owner again (R2).
+          if (project.creatorId === user) projects.set(key, { ...project, creatorId: null });
+        }
+        return Promise.resolve(outcome);
       },
     },
     notices,

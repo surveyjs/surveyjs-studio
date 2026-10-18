@@ -30,6 +30,42 @@ describe("memory provider with a user whose legacy email is NULL", () => {
   });
 });
 
+describe("memory provider with orphan memberships", () => {
+  // Only memory can hold a membership whose user does not exist (the replica has an FK).
+  const user = {
+    id: "eeeeeeee-0000-4000-8000-0000000000e3",
+    email: "a@example.com",
+    displayName: "Admin",
+    blocked: false,
+  };
+  const ORPHAN = "eeeeeeee-0000-4000-8000-0000000000e4";
+  const LEFT = "eeeeeeee-0000-4000-8000-0000000000e5";
+  const PROJECT = "eeeeeeee-0000-4000-8000-0000000000f1";
+  const providers = () =>
+    createMemoryProviders({
+      users: [user],
+      surveys: [],
+      // The seeded creator has no membership any more: the project has no owner (R2).
+      projects: [{ id: PROJECT, name: "P", creatorId: LEFT, createdAt: "2025-01-01T00:00:00Z" }],
+      memberships: [
+        { userId: user.id, projectId: PROJECT, role: "admin" },
+        { userId: ORPHAN, projectId: PROJECT, role: "admin" },
+      ],
+    });
+
+  it("counts an orphan row but neither shows it nor counts it as an admin (R11)", async () => {
+    const { directory } = providers();
+    expect(await directory.getUserProject(user.id, PROJECT)).toMatchObject({
+      project: { ownerId: null, memberCount: 2 },
+    });
+    expect(await directory.listMembers(PROJECT)).toEqual([{ user, role: "admin" }]);
+    expect(await directory.setMemberRole(PROJECT, user.id, "user", { now: "" })).toBe("last-admin");
+    expect(await directory.removeMember(PROJECT, user.id)).toBe("last-admin");
+    expect(await directory.removeMember(PROJECT, ORPHAN)).toBe("not-found");
+    expect(await directory.setMemberRole(PROJECT, ORPHAN, "user", { now: "" })).toBe("not-found");
+  });
+});
+
 describe("memory provider isolation", () => {
   const owner = { kind: "personal", userId: "eeeeeeee-0000-4000-8000-0000000000e2" } as const;
   const newSurvey = {

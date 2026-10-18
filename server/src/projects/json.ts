@@ -8,7 +8,8 @@ export function projectJson({ project, role }: ProjectMembership): ProjectJson {
   return {
     id: project.id,
     name: project.name,
-    ownerId: project.ownerId,
+    // Until C2 (Task 3) the contract's ownerId cannot be null.
+    ownerId: project.ownerId as string,
     role,
     memberCount: project.memberCount,
     createdAt: project.createdAt,

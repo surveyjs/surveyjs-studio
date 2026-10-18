@@ -3,9 +3,12 @@ import type {
   CompletionState,
   FileKind,
   HistoryEntryRecord,
+  NewProject,
   NewResponse,
   NewSurvey,
+  ProjectMember,
   ProjectMembership,
+  ProjectRole,
   SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
@@ -282,6 +285,10 @@ export interface SurveyStore {
   deleteSurvey(id: string): Promise<boolean>;
 }
 
+export type AddMemberOutcome = "added" | "already-member" | "not-found";
+export type RoleChangeOutcome = "changed" | "unchanged" | "last-admin" | "not-found";
+export type RemovalOutcome = "removed" | "last-admin" | "not-found";
+
 export interface Directory {
   getUser(id: string): Promise<User | null>;
   /** Case-insensitive match on email. A blank email matches no user (a NULL legacy email is ""). */
@@ -293,6 +300,53 @@ export interface Directory {
   listUserProjects(userId: string): Promise<ProjectMembership[]>;
   /** The user's membership of that project; null when not a member or no such project. */
   getUserProject(userId: string, projectId: string): Promise<ProjectMembership | null>;
+  /**
+   * The project's visible members (R11: rows whose user is missing are skipped), one entry per user,
+   * ordered by display name ignoring case (lower-cased, code-point order), then user id (R16). [] for
+   * an unknown project or a non-GUID id.
+   */
+  listMembers(projectId: string): Promise<ProjectMember[]>;
+  /**
+   * Stores the project and the creator's membership as admin, atomically (R4), and returns the
+   * creator's membership as `getUserProject` would. Rejects (nothing stored) for a non-GUID id or an
+   * id in use.
+   */
+  createProject(project: NewProject): Promise<ProjectMembership>;
+  /** Sets the name (R5); `createdAt` and `ownerId` do not move. false: no such project (or non-GUID). */
+  renameProject(
+    projectId: string,
+    name: string,
+    options: { readonly now: string },
+  ): Promise<boolean>;
+  /**
+   * Atomically (R9): moves every survey of the project, archived ones included, to the personal scope
+   * of `receiverId` (`updatedAt` = `now`; id, creator, published, archived and settings unchanged),
+   * deletes every membership and the project. Returns the moved survey ids in ascending code-point
+   * order; null when no such project (nothing written). The caller chose the receiver (rules.ts).
+   */
+  deleteProject(
+    projectId: string,
+    options: { readonly receiverId: string; readonly now: string },
+  ): Promise<string[] | null>;
+  /**
+   * Adds the user (R6). `already-member` when the user has any row in the project; `not-found` for
+   * an unknown project. The caller passes an existing user (found by email).
+   */
+  addMember(
+    projectId: string,
+    userId: string,
+    role: ProjectRole,
+    options: { readonly now: string },
+  ): Promise<AddMemberOutcome>;
+  /** Sets the role of every row of the user, in place (R3), unless `decideRoleChange` refuses (R8). */
+  setMemberRole(
+    projectId: string,
+    userId: string,
+    role: ProjectRole,
+    options: { readonly now: string },
+  ): Promise<RoleChangeOutcome>;
+  /** Deletes every row of the user (R7), unless `decideRemoval` refuses (R8). */
+  removeMember(projectId: string, userId: string): Promise<RemovalOutcome>;
 }
 
 export interface ProviderSet {

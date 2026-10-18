@@ -526,32 +526,22 @@ describe("projectFromLegacy", () => {
     expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a3");
   });
 
-  it("falls back to the earliest admin, any role case, when the creator's row is missing", () => {
+  it("has no owner without the creator's row, whatever the roles and times of the others", () => {
     const rows = [
       member(USER_3, "2024-01-01T00:00:00.000Z"),
       admin(USER_2, "2025-02-01T00:00:00.000Z"),
       row("CCCCCCCC-0000-4000-8000-000000000001", USER_1, "ADMIN", "2025-01-01T00:00:00.000Z"),
+      admin(USER_3, null),
     ];
-    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a1");
+    expect(projectFromLegacy(org(), rows).ownerId).toBeNull();
   });
 
-  it("breaks a tie between admins by the smaller user id", () => {
-    const at = "2025-01-01T00:00:00.000Z";
-    const rows = [admin(USER_2, at), admin(USER_1, at)];
-    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a1");
-  });
-
-  it("puts admins with a NULL happendat after dated ones", () => {
-    const rows = [admin(USER_1, null), admin(USER_2, "2025-05-01T00:00:00.000Z")];
-    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a2");
-  });
-
-  it("falls back to the earliest member of any role when there is no admin", () => {
+  it("has no owner without the creator's row when no member is an admin", () => {
     const rows = [
       member(USER_1, "2025-02-01T00:00:00.000Z"),
-      row("CCCCCCCC-0000-4000-8000-000000000001", USER_2, null, "2025-01-01T00:00:00.000Z"),
+      row("CCCCCCCC-0000-4000-8000-000000000001", USER_2, null, null),
     ];
-    expect(projectFromLegacy(org(), rows).ownerId).toBe("11111111-0000-4000-8000-0000000000a2");
+    expect(projectFromLegacy(org(), rows).ownerId).toBeNull();
   });
 
   it("uses Organizations.happendat when there is no creator's row", () => {

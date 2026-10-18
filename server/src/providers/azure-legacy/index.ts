@@ -161,6 +161,10 @@ type ProjectMemberQueryRow = LegacyOrganizationUserRow & {
 const ownerIdOf = (owner: SurveyOwner): string =>
   owner.kind === "personal" ? owner.userId : owner.projectId;
 
+/** The Step 11 project and member operations until Task 2 implements them. */
+const notYetImplemented = (): Promise<never> =>
+  Promise.reject(new Error("not implemented until Task 2"));
+
 /** The list position of a raw row, with the mapping's `updatedAt` fallback. */
 const positionOfRow = (row: LegacySurveyRow): SurveyPosition => ({
   updatedAt: (row.timestamp ?? row.createdat ?? EPOCH).toISOString(),
@@ -715,6 +719,15 @@ export function createAzureLegacyProviders(
         );
         return membershipsFromRows(rows, userId)[0] ?? null;
       },
+
+      // Step 11 Task 2 replaces these stubs.
+      listMembers: notYetImplemented,
+      createProject: notYetImplemented,
+      renameProject: notYetImplemented,
+      deleteProject: notYetImplemented,
+      addMember: notYetImplemented,
+      setMemberRole: notYetImplemented,
+      removeMember: notYetImplemented,
     },
 
     notices,

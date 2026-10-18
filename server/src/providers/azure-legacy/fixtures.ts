@@ -360,11 +360,12 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     surveys: fixtures.surveys.map((row) =>
       surveyFromLegacy(row, orgs.has((row.userid ?? "").toLowerCase()) ? "project" : "personal"),
     ),
-    // The memory store counts the members itself.
+    // The memory store counts the members and works out the owner itself; the creator is the
+    // owner the legacy mapping found (the user of the creator row, R2).
     projects: [...projects.values()].map(({ id, name, ownerId, createdAt }) => ({
       id,
       name,
-      ownerId,
+      creatorId: ownerId,
       createdAt,
     })),
     memberships: fixtures.organizationUsers.map((member) => {

@@ -1,4 +1,5 @@
 import type {
+  ProjectMember,
   ProjectMembership,
   ProjectRecord,
   SurveyDefinition,
@@ -297,7 +298,8 @@ export const surveysWithoutDefinition: readonly SurveyRecord[] = [
 
 /**
  * Owner and creation time come from the creator's membership row (its id equals the project
- * id). The member count counts every OrganizationUsers row of the project.
+ * id). The owner is the creator while still a member (R2): without that row it is null, never
+ * another member. The member count counts every OrganizationUsers row of the project.
  */
 export const projectA: ProjectRecord = {
   id: PROJECT_A_ID,
@@ -324,6 +326,25 @@ export const adminProjects: readonly ProjectMembership[] = [
   { project: projectA, role: "admin" }, // stored as "Admin" after a role change
 ];
 export const memberProjects: readonly ProjectMembership[] = [{ project: projectA, role: "user" }];
+
+/**
+ * Only the fixture projects of a list, in list order. Tests create and delete their own projects
+ * with fixture users as members, and the Azurite replica keeps any a failed run left behind, so
+ * the project lists of fixture users are checked by membership (R25).
+ */
+export const fixtureProjectsOnly = (list: readonly ProjectMembership[]): ProjectMembership[] =>
+  list.filter(({ project }) => project.id === PROJECT_A_ID || project.id === PROJECT_B_ID);
+
+/** By display name ignoring case, then user id; one entry per user. */
+export const projectAMembers: readonly ProjectMember[] = [
+  { user: adminUser, role: "admin" }, // stored as "Admin"
+  { user: memberUser, role: "user" },
+  { user: ownerUser, role: "admin" }, // the creator
+];
+export const projectBMembers: readonly ProjectMember[] = [
+  { user: adminUser, role: "admin" }, // the creator
+  { user: ownerUser, role: "user" },
+];
 
 // ---- Licence notices (ACCOUNT_NOTICES=surveyjs-licenses), fixtures sql/UserLicenses.json and
 // sql/LicenseTransfers.json ----

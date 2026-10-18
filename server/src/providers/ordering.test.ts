@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { HistoryEntryRecord, ProjectMembership, SurveyRecord } from "../domain/types.js";
+import type {
+  HistoryEntryRecord,
+  ProjectMember,
+  ProjectMembership,
+  SurveyRecord,
+} from "../domain/types.js";
 import {
   historyOrder,
   isAfter,
   isAfterHistory,
+  memberListOrder,
   projectListOrder,
   surveyListOrder,
 } from "./ordering.js";
@@ -25,6 +31,25 @@ describe("projectListOrder", () => {
   it("breaks a tie that differs only in case by project id", () => {
     const list = [membership("b", "news"), membership("a", "News"), membership("c", "")];
     expect(names(list)).toEqual(["/c", "News/a", "news/b"]);
+  });
+});
+
+describe("memberListOrder", () => {
+  const member = (id: string, displayName: string): ProjectMember => ({
+    user: { id, email: `${id}@example.com`, displayName, blocked: false },
+    role: "user",
+  });
+  const order = (list: ProjectMember[]) =>
+    [...list].sort(memberListOrder).map((m) => `${m.user.displayName}/${m.user.id}`);
+
+  it("orders display names case-insensitively, then by user id", () => {
+    const list = [
+      member("1", "Mia"),
+      member("3", "blocked@example.com"),
+      member("4", "adam"),
+      member("2", "Adam"),
+    ];
+    expect(order(list)).toEqual(["Adam/2", "adam/4", "blocked@example.com/3", "Mia/1"]);
   });
 });
 
