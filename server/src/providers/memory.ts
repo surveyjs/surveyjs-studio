@@ -48,6 +48,8 @@ export interface MemorySeed {
   completions?: Record<string, Record<string, { partial: boolean }>>;
   /** The legacy per-survey layouts by survey id, the fallback of `getView` (Step 9). */
   legacyViews?: Record<string, Partial<Record<ViewName, Record<string, unknown>>>>;
+  /** The names of the questions hidden from public results, by survey id (Step 10). */
+  privateResultQuestions?: Record<string, string[]>;
 }
 
 interface StoredHistoryEntry {
@@ -144,6 +146,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
 
   const views = createMemoryViewStore({
     ...(seed?.legacyViews && { legacyViews: seed.legacyViews }),
+    ...(seed?.privateResultQuestions && { privateResultQuestions: seed.privateResultQuestions }),
   });
 
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));

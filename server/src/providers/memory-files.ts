@@ -48,8 +48,8 @@ export function createMemoryFileStore(): FileStore {
           .reduce((sum, s) => sum + s.file.size, 0),
       ),
     deleteFile: (id) => Promise.resolve(files.delete(id.toLowerCase())),
-    deleteSurveyFiles: (surveyId) => {
-      const found = ofSurvey(surveyId);
+    deleteSurveyFiles: (surveyId, kind) => {
+      const found = ofSurvey(surveyId).filter((s) => kind === undefined || s.file.kind === kind);
       for (const s of found) files.delete(s.file.id);
       return Promise.resolve(found.length);
     },

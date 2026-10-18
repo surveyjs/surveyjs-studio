@@ -21,6 +21,7 @@ import {
   adminProjects,
   campaignResponses,
   feedbackHistoryIds,
+  feedbackPrivateQuestions,
   feedbackResponses,
   feedbackHistorySnapshots,
   feedbackTheme,
@@ -1167,6 +1168,60 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(await providers.results.hasResponse(survey, id)).toBe(false);
       });
 
+      describe("delete all", () => {
+        it("forgets the survey's responses and markers and keeps the others and the record", async () => {
+          const a = await freshSurvey();
+          const b = await freshSurvey();
+          await append(a, sid(1), { clientId: "c-1" });
+          await append(a, sid(2), { clientId: "c-2" });
+          await append(a, sid(3));
+          await append(b, sid(4));
+          const before = await providers.surveys.getSurvey(a.id);
+
+          await providers.results.deleteAll(a);
+
+          expect(await providers.results.listResponses(a)).toStrictEqual([]);
+          expect(await providers.results.stats(a)).toEqual(emptyStats);
+          expect(await providers.results.completion(a, "c-1")).toBe("none");
+          expect(await providers.results.hasResponse(a, sid(1))).toBe(false);
+          expect(await providers.results.listResponsePage(a, { limit: 10 })).toEqual({
+            items: [],
+            next: null,
+          });
+          expect(await providers.results.listResponses(b)).toHaveLength(1);
+          expect((await providers.results.stats(b)).count).toBe(1);
+          expect(await providers.surveys.getSurvey(a.id)).toEqual(before);
+        });
+
+        it("resolves for a survey without responses, and again", async () => {
+          const survey = await freshSurvey();
+          await providers.results.deleteAll(survey);
+          await providers.results.deleteAll(survey);
+          expect(await providers.results.stats(survey)).toEqual(emptyStats);
+        });
+
+        it("stores a response appended right afterwards", async () => {
+          const survey = await freshSurvey();
+          await append(survey, sid(5), { clientId: "c-5" });
+          await providers.results.deleteAll(survey);
+          expect(await append(survey, sid(6), { clientId: "c-5" })).toBe("stored");
+          expect((await providers.results.stats(survey)).count).toBe(1);
+          expect(await providers.results.completion(survey, "c-5")).toBe("completed");
+        });
+
+        it("keeps the saved views and the private-question list", async () => {
+          const survey = await freshSurvey();
+          const user = randomUUID();
+          const layout = { elements: [{ name: "q1" }] };
+          await providers.views.saveView(survey.id, user, "summary", layout);
+          await providers.views.savePrivateQuestions(survey.id, ["q1"]);
+          await append(survey, sid(7));
+          await providers.results.deleteAll(survey);
+          expect(await providers.views.getView(survey.id, user, "summary")).toEqual(layout);
+          expect(await providers.views.getPrivateQuestions(survey.id)).toEqual(["q1"]);
+        });
+      });
+
       describe("results paging", () => {
         type Page = Awaited<ReturnType<ProviderSet["results"]["listResponsePage"]>>;
 
@@ -1406,6 +1461,47 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           providers.views.resetView(surveyFeedback.id, "x", "summary"),
         ).rejects.toThrow();
       });
+
+      describe("private questions", () => {
+        const names = ["q2", "q1", "Ünïcødé 😀"];
+        const fresh = () => providers.surveys.createSurvey(newSurvey(freshScope()));
+
+        it("reads the fixture list and an empty one elsewhere", async () => {
+          expect(await providers.views.getPrivateQuestions(surveyFeedback.id)).toEqual(
+            feedbackPrivateQuestions,
+          );
+          expect(await providers.views.getPrivateQuestions(surveyCampaign.id)).toEqual([]);
+          expect(await providers.views.getPrivateQuestions((await fresh()).id)).toEqual([]);
+        });
+
+        it("saves, reads back in order, in any id case, and replaces", async () => {
+          const survey = await fresh();
+          const other = await fresh();
+          const before = await providers.surveys.getSurvey(survey.id);
+          await providers.views.savePrivateQuestions(survey.id, names);
+          expect(await providers.views.getPrivateQuestions(survey.id)).toEqual(names);
+          expect(await providers.views.getPrivateQuestions(survey.id.toUpperCase())).toEqual(names);
+          expect(await providers.views.getPrivateQuestions(other.id)).toEqual([]);
+          await providers.views.savePrivateQuestions(survey.id, []);
+          expect(await providers.views.getPrivateQuestions(survey.id)).toEqual([]);
+          expect(await providers.surveys.getSurvey(survey.id)).toEqual(before);
+        });
+
+        it("is deleted with the survey and not copied by a clone", async () => {
+          const survey = await fresh();
+          await providers.views.savePrivateQuestions(survey.id, ["q1"]);
+          const copy = await providers.surveys.cloneSurvey(survey.id, newSurvey(freshScope()));
+          expect(await providers.views.getPrivateQuestions(copy!.id)).toEqual([]);
+          expect(await providers.views.getPrivateQuestions(survey.id)).toEqual(["q1"]);
+          expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+          expect(await providers.views.getPrivateQuestions(survey.id)).toEqual([]);
+        });
+
+        it("answers [] for a non-GUID id and rejects a save for one", async () => {
+          expect(await providers.views.getPrivateQuestions("not-a-guid")).toEqual([]);
+          await expect(providers.views.savePrivateQuestions("not-a-guid", [])).rejects.toThrow();
+        });
+      });
     });
 
     describe("files", () => {
@@ -1537,6 +1633,26 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect([...map.keys()]).toEqual([asset.id]);
         expect(await providers.files.usage(target, "response")).toBe(0);
         expect(await providers.files.deleteSurveyFiles(surveyId)).toBe(3);
+      });
+
+      it("deletes only the files of one kind", async () => {
+        const surveyId = freshSurveyId();
+        const other = freshSurveyId();
+        const responses = [
+          await put(surveyId, PNG, { kind: "response" }),
+          await put(surveyId, PNG, { kind: "response" }),
+        ];
+        const asset = await put(surveyId);
+        const theirs = await put(other, PNG, { kind: "response" });
+        expect(await providers.files.deleteSurveyFiles(surveyId, "response")).toBe(2);
+        for (const file of responses) expect(await providers.files.getFile(file.id)).toBeNull();
+        expect((await read(asset.id))?.file).toEqual(asset);
+        expect(await providers.files.usage(surveyId, "asset")).toBe(PNG.length);
+        expect(await providers.files.usage(surveyId, "response")).toBe(0);
+        expect((await read(theirs.id))?.file).toEqual(theirs);
+        expect(await providers.files.deleteSurveyFiles(surveyId, "response")).toBe(0);
+        expect(await providers.files.deleteSurveyFiles(surveyId)).toBe(1);
+        expect(await providers.files.deleteSurveyFiles("not-a-guid", "response")).toBe(0);
       });
 
       it("copies a survey's assets under new ids of the target survey", async () => {

@@ -7,6 +7,8 @@ import {
   isGuid,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
+  privateQuestionsFromLegacy,
+  privateQuestionsToLegacy,
   projectFromLegacy,
   responseFromLegacy,
   surveyFromLegacy,
@@ -678,5 +680,42 @@ describe("licenceExpiriesFromLegacy", () => {
     expect(() => licenceExpiriesFromLegacy([orphan])).toThrow(
       expect.objectContaining({ ids: { licenceId: "bbbbbbbb-0000-4000-8000-000000000001" } }),
     );
+  });
+});
+
+describe("privateQuestionsFromLegacy", () => {
+  it("reads the fixture text", () => {
+    expect(
+      privateQuestionsFromLegacy(
+        '[{"name":"satisfaction","isPublic":true},{"name":"receipt","isPublic":false}]',
+      ),
+    ).toEqual(["receipt"]);
+  });
+
+  it("keeps the first occurrence of each name that is exactly private, in order", () => {
+    const text =
+      '[{"name":"a"},{"name":"b","isPublic":false},{"name":"c","isPublic":true},{"isPublic":false},{"name":"","isPublic":false},"x",{"name":"b","isPublic":false},{"name":"d","isPublic":"false"}]';
+    expect(privateQuestionsFromLegacy(text)).toEqual(["b"]);
+  });
+
+  it("strips one leading byte-order mark", () => {
+    expect(privateQuestionsFromLegacy('﻿[{"name":"q","isPublic":false}]')).toEqual(["q"]);
+  });
+
+  it("reads an empty array as no private question", () => {
+    expect(privateQuestionsFromLegacy("[]")).toEqual([]);
+  });
+
+  it.each(["{}", '"x"', "not json", ""])("answers null for %j", (text) => {
+    expect(privateQuestionsFromLegacy(text)).toBeNull();
+  });
+});
+
+describe("privateQuestionsToLegacy", () => {
+  it("writes each name as a private element, in order", () => {
+    expect(privateQuestionsToLegacy(["q2", "q1"])).toBe(
+      '[{"name":"q2","isPublic":false},{"name":"q1","isPublic":false}]',
+    );
+    expect(privateQuestionsToLegacy([])).toBe("[]");
   });
 });

@@ -314,3 +314,12 @@ describe("legacyFixtureSeed views", () => {
     });
   });
 });
+
+describe("legacyFixtureSeed private questions", () => {
+  it("holds the private list of the first survey, by survey id", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(seed.privateResultQuestions).toEqual({
+      "22222222-0000-4000-8000-a00000000001": ["receipt"],
+    });
+  });
+});

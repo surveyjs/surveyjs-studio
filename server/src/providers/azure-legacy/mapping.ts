@@ -327,3 +327,33 @@ export function licenceExpiriesFromLegacy(rows: readonly LegacyLicenceRow[]): (D
     return row.parentexpirationdate;
   });
 }
+
+/**
+ * The names of the questions a legacy `surveyresultpermissions` blob hides from public results: the
+ * `name` of each element that is a plain object with a non-empty string `name` and `isPublic` exactly
+ * `false`, first occurrence only, in array order. Anything else counts as public. Strips one leading
+ * byte-order mark; null when the text is not a JSON array.
+ */
+export function privateQuestionsFromLegacy(text: string): string[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(value)) return null;
+  const names: string[] = [];
+  for (const element of value as unknown[]) {
+    if (typeof element !== "object" || element === null || Array.isArray(element)) continue;
+    const { name, isPublic } = element as Record<string, unknown>;
+    if (typeof name === "string" && name !== "" && isPublic === false && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/** The blob text for a list of private question names. */
+export function privateQuestionsToLegacy(names: readonly string[]): string {
+  return JSON.stringify(names.map((name) => ({ name, isPublic: false })));
+}

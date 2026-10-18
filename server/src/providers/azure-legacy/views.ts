@@ -75,5 +75,9 @@ export function createAzureViewStore(options: {
     saveView: (surveyId, userId, view, state) => writeView(blobs, surveyId, userId, view, state),
 
     resetView: (surveyId, userId, view) => writeViewReset(blobs, surveyId, userId, view),
+
+    getPrivateQuestions: () => Promise.reject(new Error("not implemented until Task 2")),
+
+    savePrivateQuestions: () => Promise.reject(new Error("not implemented until Task 2")),
   };
 }

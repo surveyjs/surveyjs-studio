@@ -43,6 +43,11 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
     markers.set(key, byClient);
   };
 
+  const forget = (surveyId: string): void => {
+    responses.delete(surveyId.toLowerCase());
+    markers.delete(surveyId.toLowerCase());
+  };
+
   const store: ResultStore = {
     appendResponse: (survey, response) => {
       if (!GUID.test(response.id)) {
@@ -97,13 +102,14 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
         found === undefined ? "none" : found.partial ? "partial" : "completed",
       );
     },
+    deleteAll: (survey) => {
+      forget(survey.id);
+      return Promise.resolve();
+    },
   };
 
   return {
     store,
-    dropSurvey: (surveyId) => {
-      responses.delete(surveyId.toLowerCase());
-      markers.delete(surveyId.toLowerCase());
-    },
+    dropSurvey: forget,
   };
 }

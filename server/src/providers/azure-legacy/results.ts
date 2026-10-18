@@ -152,5 +152,7 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
         next: positioned.length > taken.length && last ? last.position : null,
       };
     },
+
+    deleteAll: () => Promise.reject(new Error("not implemented until Task 2")),
   };
 }
