@@ -703,8 +703,9 @@ export interface paths {
          *     `404 survey-not-available`, the same answer as for an unknown survey.
          *
          *     Every stored response, oldest first, paged as `listResults` (a cursor belongs to its
-         *     survey). Items carry `submittedAt` and `data` only: no id, client id or IP address. The
-         *     answers and comments of the questions in `settings.privateResultQuestions` are left out;
+         *     survey). The cursor carries the last item's submission time and response id: it is opaque
+         *     to clients, and response ids are random. Items carry `submittedAt` and `data` only: no id,
+         *     client id or IP address. The answers and comments of the questions in `settings.privateResultQuestions` are left out;
          *     `survey.privateQuestions` names them. Each page includes the survey definition so a
          *     dashboard can render it.
          *
@@ -883,7 +884,9 @@ export interface components {
              * @description Names of the questions hidden from public results: `getPublicResults` leaves their answers
              *     (and comments) out, and the public dashboard does not show them. Empty means every question
              *     is public. A patch replaces the whole list. `getSurvey`, `updateSurvey`, `createSurvey` and
-             *     `cloneSurvey` return it; `listSurveys` items leave it out.
+             *     `cloneSurvey` return it; `listSurveys` items leave it out. On `getSurvey` and `updateSurvey`
+             *     it is absent when the list cannot be read right now: a client must then not offer to
+             *     change it, as a list built from an unknown state could make private questions public.
              */
             privateResultQuestions?: string[];
         };

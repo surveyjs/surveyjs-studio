@@ -81,11 +81,14 @@ const MAX_AUDIT_THEME_LENGTH = 32_000;
 /** Azure Table strings hold 64 KiB = 32,768 UTF-16 code units: the longest `result` we store. */
 const MAX_RESULT_LENGTH = 32_768;
 
+/** Container of the public-question lists (layout section 10), each blob named by the survey id. */
+export const PERMISSIONS_CONTAINER = "surveyresultpermissions";
+
 /** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
 const LAYOUT_CONTAINERS = [
   "surveyresulttablestate",
   "surveyresultsummarystate",
-  "surveyresultpermissions",
+  PERMISSIONS_CONTAINER,
   "surveyresultcolumns",
 ] as const;
 
@@ -1140,7 +1143,7 @@ export async function writePrivateQuestions(
   names: readonly string[],
 ): Promise<void> {
   const id = checkedId("public questions save", surveyId);
-  const container = "surveyresultpermissions";
+  const container = PERMISSIONS_CONTAINER;
   const content = Buffer.from(privateQuestionsToLegacy(names), "utf8");
   try {
     try {

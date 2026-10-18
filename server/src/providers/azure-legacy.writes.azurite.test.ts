@@ -1259,7 +1259,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect(await auditRows(survey.id)).toHaveLength(auditBefore);
     });
 
-    it("reads the legacy defaults and warns with ids only for a list that is not an array", async () => {
+    it("reads the legacy defaults, and fails closed for a list it cannot read", async () => {
       const survey = await store().surveys.createSurvey(newSurvey(personal()));
       const client = blobs.getContainerClient(CONTAINER);
       await client.createIfNotExists();
@@ -1269,13 +1269,20 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       await put('[{"name":"a"},{"name":"b","isPublic":false}]');
       expect(await store().views.getPrivateQuestions(survey.id)).toEqual(["b"]);
 
+      // Zero bytes (an append blob between its create and its append), text that is no JSON and
+      // JSON that is no array: never "every question public".
       const before = warnings.length;
-      await put('{"name":"b"}');
-      expect(await store().views.getPrivateQuestions(survey.id)).toEqual([]);
-      const added = warnings.splice(before); // later tests expect no warnings
-      expect(added).toHaveLength(1);
-      expect(Object.keys(added[0]!.details)).toEqual(["surveyId"]);
-      expect(added[0]!.details.surveyId).toBe(survey.id);
+      for (const text of ["", "[{", '{"name":"b"}']) {
+        await put(text);
+        const read = store().views.getPrivateQuestions(survey.id);
+        await expect(read, JSON.stringify(text)).rejects.toThrow(LegacyStoreError);
+        await expect(read).rejects.toThrow("Legacy store public questions read failed");
+      }
+      const empty = client.getAppendBlobClient(survey.id);
+      await empty.deleteIfExists();
+      await empty.create();
+      await expect(store().views.getPrivateQuestions(survey.id)).rejects.toThrow(LegacyStoreError);
+      expect(warnings.slice(before)).toEqual([]);
     });
 
     it("removes the blob with the survey", async () => {

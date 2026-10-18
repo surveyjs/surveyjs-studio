@@ -39,11 +39,26 @@ export interface SurveyListQuery {
   readonly cursor?: string;
 }
 
+/** Where a request's warnings go (the request's logger). */
+export interface WarningLog {
+  warn(details: Readonly<Record<string, string>>, message: string): void;
+}
+
 export interface SurveysService {
   list(user: RequestUser, query: SurveyListQuery): Promise<SurveyPage>;
   create(user: RequestUser, body: SurveyCreate | undefined): Promise<SurveyJson>;
-  get(user: RequestUser, surveyId: string): Promise<SurveyJson>;
-  update(user: RequestUser, surveyId: string, patch: SurveyPatch): Promise<SurveyJson>;
+  /** Answers without `settings.privateResultQuestions` when the list cannot be read (C1). */
+  get(user: RequestUser, surveyId: string, log: WarningLog): Promise<SurveyJson>;
+  /**
+   * Saves the private-question list only after the survey update succeeded, so a failed update
+   * leaves the old list. Answers the saved list, else the stored one as `get` does.
+   */
+  update(
+    user: RequestUser,
+    surveyId: string,
+    patch: SurveyPatch,
+    log: WarningLog,
+  ): Promise<SurveyJson>;
   delete(user: RequestUser, surveyId: string): Promise<void>;
   clone(user: RequestUser, surveyId: string, body: SurveyClone | undefined): Promise<SurveyJson>;
 }
@@ -113,6 +128,23 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
   const { surveys, directory, files, views, now = Date.now } = options;
   const { visible, modifiable } = createSurveyAccess({ surveys, directory });
 
+  /**
+   * The survey's private-question list for an answer; undefined (and a warning with the survey id
+   * only) when the store cannot read it right now. The answer then leaves the field out (C1), so the
+   * Summary cannot save a list built from an unknown state.
+   */
+  async function privateQuestionsFor(
+    surveyId: string,
+    log: WarningLog,
+  ): Promise<readonly string[] | undefined> {
+    try {
+      return await views.getPrivateQuestions(surveyId);
+    } catch {
+      log.warn({ surveyId }, "The private-question list cannot be read; answered without it.");
+      return undefined;
+    }
+  }
+
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
     if (projectId === null) return personalScope(user);
@@ -178,16 +210,16 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       return surveyJson(stored, canModify(stored, user, scope.membership), []);
     },
 
-    async get(user, surveyId) {
+    async get(user, surveyId, log) {
       const { survey, membership } = await visible(user, surveyId);
       return surveyJson(
         survey,
         canModify(survey, user, membership),
-        await views.getPrivateQuestions(survey.id),
+        await privateQuestionsFor(survey.id, log),
       );
     },
 
-    async update(user, surveyId, patch) {
+    async update(user, surveyId, patch, log) {
       const invalid = nameProblem(patch.name);
       if (invalid) throw invalid;
       const { survey } = await modifiable(user, surveyId);
@@ -196,7 +228,6 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
           ? undefined
           : (await targetScope(user, patch.projectId)).owner;
       const names = patch.settings?.privateResultQuestions;
-      if (names !== undefined) await views.savePrivateQuestions(survey.id, names);
       const stored = await surveys.updateSurvey(
         survey.id,
         surveyChangesFromPatch(survey, patch, {
@@ -206,6 +237,8 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         }),
       );
       if (!stored) throw notFound();
+      // After the update: a failed update leaves the old list.
+      if (names !== undefined) await views.savePrivateQuestions(stored.id, names);
       // The rights follow the stored scope: a move changes the scope and the creator.
       const membership =
         stored.owner.kind === "project"
@@ -214,7 +247,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       return surveyJson(
         stored,
         canModify(stored, user, membership),
-        names ?? (await views.getPrivateQuestions(stored.id)),
+        names ?? (await privateQuestionsFor(stored.id, log)),
       );
     },
 

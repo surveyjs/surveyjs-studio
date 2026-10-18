@@ -11,6 +11,7 @@ import {
   type FileStore,
   type ProviderSet,
   type ResultStore,
+  type ViewStore,
 } from "../providers/types.js";
 
 const NOW = "2026-10-15T08:30:00.000Z";
@@ -38,6 +39,7 @@ async function start(
     env?: Record<string, string>;
     results?: (store: ResultStore) => ResultStore;
     files?: (store: FileStore) => FileStore;
+    views?: (store: ViewStore) => ViewStore;
     logLines?: string[];
   } = {},
 ): Promise<Started> {
@@ -53,6 +55,7 @@ async function start(
     ...memory,
     results: options.results ? options.results(memory.results) : memory.results,
     files: options.files ? options.files(memory.files) : memory.files,
+    views: options.views ? options.views(memory.views) : memory.views,
   };
   const { logLines } = options;
   const server = await buildApp(config, providers, {
@@ -347,6 +350,28 @@ describe("exportResults, deleteResults and getPublicResults", () => {
     });
     expect(res.statusCode).toBe(500);
     expect((await stats()).json()).toStrictEqual(before);
+  });
+
+  it("answers 500 for public results when the private-question list cannot be read", async () => {
+    const logLines: string[] = [];
+    const { server } = await start({
+      logLines,
+      views: (store) => ({
+        ...store,
+        getPrivateQuestions: () => Promise.reject(new Error("list unreadable")),
+      }),
+    });
+    const stored = await server.inject({
+      method: "POST",
+      url: `/api/v1/public/surveys/${FEEDBACK}/responses`,
+      payload: { data: { receipt: "secret-answer" } },
+    });
+    expect(stored.statusCode).toBe(201);
+    const res = await server.inject({ url: `/api/v1/public/surveys/${FEEDBACK}/results` });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toMatchObject({ code: "internal-error", status: 500 });
+    expect(res.body).not.toContain("secret-answer");
+    expect(logLines.join("\n")).not.toContain("secret-answer");
   });
 
   it("serves public results as no-store, without the private question", async () => {

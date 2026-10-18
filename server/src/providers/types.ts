@@ -207,7 +207,11 @@ export interface ViewStore {
    * The names of the survey's questions hidden from public results (R1), in stored order, no
    * duplicates; [] when none are stored, for an unknown survey and for a non-GUID id. Ids match
    * case-insensitively. azure-legacy: blob `surveyresultpermissions/{surveyId}` read with the legacy
-   * defaults (`privateQuestionsFromLegacy`); memory: the seed's `privateResultQuestions`, then saves.
+   * defaults (`privateQuestionsFromLegacy`); no blob is []. It fails closed: a blob that is empty or
+   * not a JSON array (a save between its create and its append, or one that failed half way) is
+   * read once more, then rejects with a LegacyStoreError (operation name and codes only), so callers
+   * never take an unreadable list for "every question public". memory: the seed's
+   * `privateResultQuestions`, then saves; it never rejects for this.
    */
   getPrivateQuestions(surveyId: string): Promise<string[]>;
   /**

@@ -28,12 +28,17 @@ export function createSurveyHandlers(options: SurveysServiceOptions): Handlers {
 
     getSurvey: (request) => {
       const { surveyId } = request.params as { surveyId: string };
-      return service.get(requireUser(request), surveyId);
+      return service.get(requireUser(request), surveyId, request.log);
     },
 
     updateSurvey: (request) => {
       const { surveyId } = request.params as { surveyId: string };
-      return service.update(requireUser(request), surveyId, request.body as SurveyPatch);
+      return service.update(
+        requireUser(request),
+        surveyId,
+        request.body as SurveyPatch,
+        request.log,
+      );
     },
 
     deleteSurvey: async (request, reply) => {
