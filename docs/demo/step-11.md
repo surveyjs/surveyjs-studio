@@ -46,7 +46,7 @@ Open the account menu (your name in the header) and click **Projects**. The page
 Marketing and Engineering, so two cards show. Click **Create a Project**, type `Demo project` in "Enter a project
 name..." and click **Save**.
 
-Expected: a third card, **Demo project**, in the list by name. Click it to open it. The members are **Adam
+Expected: a new card, **Demo project**, first in the list (the cards are sorted by name). Click it to open it. The members are **Adam
 Admin** with the badge **Admin**, and nothing else. The card has **Rename** and **Remove** in its header and the
 button **Add a New Member**.
 
@@ -87,7 +87,7 @@ Back in the list, open the "…" menu, **Move to Project** and click **Demo proj
 now shows the project's surveys, with your survey in it.
 
 Sign out (account menu, **Sign Out**) and sign in as **Mia Member** (or use another browser profile). Expected: the
-drop-down next to **Create a Survey** lists **Marketing** and **Demo project**; choosing **Demo project** shows
+drop-down next to **Create a Survey** lists **Demo project** and **Marketing** (by name); choosing **Demo project** shows
 **New Survey 1**. Because she is an admin, she can open it in the editor (**Edit** in the "…" menu) or use the
 pencil to rename the survey to `Shared survey`. (Had she stayed a plain member, the survey would open and run, but
 the pencil, **Publish** and the other items that change it would be missing.)
@@ -129,7 +129,7 @@ pnpm inspect:legacy --user member@example.com --env-file docker/azurite.env
 
 Expected:
 
-- After part 1, Adam's report has a line `Project Demo project (<id>, role admin)` after Marketing and Engineering.
+- After part 1, Adam's report has a line `Project Demo project (<id>, role admin)` before Engineering and Marketing (the report is sorted by project name).
 - After part 2, Mia's report has the same project line with `role user`.
 - After **Make Admin**, Mia's line says `role admin`; after **Remove Admin Rights**, `role user` (the row is
   changed in place, with no new row).
