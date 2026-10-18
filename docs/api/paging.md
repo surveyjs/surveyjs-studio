@@ -1,14 +1,14 @@
 # Paging
 
-The list operations (`listSurveys`, `listProjects`, `listSurveyHistory` and `listResults`) return one page
+The list operations (`listSurveys`, `listProjects`, `listSurveyHistory`, `listResults` and `getPublicResults`) return one page
 at a time. They use opaque cursors, not page numbers.
 
 ## Request and response
 
-| Query parameter | Meaning                                                                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limit`         | The most items in one page. Surveys, projects and history: 1 to 200, default 50. `listResults`: 1 to 1000, default 500. Out of range: `400 bad-request` |
-| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page                                                                                  |
+| Query parameter | Meaning                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `limit`         | The most items in one page. Surveys, projects and history: 1 to 200, default 50. `listResults` and `getPublicResults`: 1 to 1000, default 500. Out of range: `400 bad-request` |
+| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page                                                                                                         |
 
 ```json
 {
@@ -61,6 +61,12 @@ it starts over.
   (see the note about short pages above).
 - `limit` is 1 to 1000, default 500. The results page of the web app asks for 1000 at a time and walks to
   the end. There is no cap on the total (the old page stopped at 1,000 responses).
+- **Public results use the same cursor.** `getPublicResults` (`GET /public/surveys/{surveyId}/results`) pages
+  through the survey the same way: the same order, the same `limit` and default, the same cursor (bound to
+  one survey, so a `listResults` cursor of that survey works there too). Its items have no `id`, but the
+  cursor still holds the last row's id. [Public endpoints](public-endpoints.md#public-results) has the rest.
+- **The export reads the same pages.** `exportResults` walks the survey in pages of 1,000 on the server and
+  streams them as one file, so it has the cost described below ([Exporting results](exporting-results.md)).
 
 **Cost on the old site's stores.** The `azure-legacy` provider cannot ask Azure Tables for submission
 order: the row keys are random GUIDs. Each page therefore reads the survey's rows from the cursor's time

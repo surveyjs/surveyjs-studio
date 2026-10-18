@@ -94,9 +94,16 @@ Files are sent as `multipart/form-data`, with the part named `file`. See [Upload
 
 ## Downloads
 
-The file format comes from the `Accept` header. A browser download link cannot set headers, so a
-`format` query parameter is accepted as an alias and takes precedence. Responses carry
-`Content-Disposition`. An unsupported format gives `406 not-acceptable`.
+The file format comes from the `format` query parameter or the `Accept` header. A browser download link
+cannot set headers, so `format` is accepted as an alias and **takes precedence** over `Accept`. Responses
+carry `Content-Disposition`, always `attachment`, with a file name in an ASCII form and an RFC 5987 form.
+
+`Accept` is read with q-values: the range with the highest `q` that the operation serves wins, equal values
+keep the header's order, and `q=0` or an unreadable `q` skips a range. The defaults are fixed per operation.
+For `exportResults`: no `format` and no `Accept`, `application/json`, `application/*` and `*/*` give JSON,
+and `text/csv` and `text/*` give CSV. An `Accept` that allows no format the operation offers gives
+`406 not-acceptable`, and a `format` that is not in the operation's list gives `400 bad-request`. The
+rules, the file names and the CSV columns are in [Exporting results](exporting-results.md).
 
 ## Authentication, sessions and CSRF
 

@@ -357,6 +357,67 @@ the loader, it refuses an endpoint that is not local.
   container). It is invisible and small, as the orphan blobs of Step 4.
 - A reset leaves a blob (zero bytes) behind until the survey is deleted.
 
+## Step 10: deleting all results and the public-question list
+
+Step 10 adds three writes, under the same rules: they are in `writes.ts`, with the ESLint `ignores` comment
+extended by "Step 10: deleting all results and the public-question list". The rulings behind them (what is
+deleted, the tables kept, the private list in the old blob) are in
+[ADR 0016](0016-results-details-exports-and-public-results.md). The formats are
+[layout, 3.10](../architecture/legacy-data-layout.md#310-results-layouts-the-only-saved-ui-state).
+
+### The three writes
+
+- **Delete all results** (`writeResultsDeletion(targets, survey, deletedAt)`). The ids go through `checkedId`. It
+  lists every row of `post{postId}` and of `SurveyCompletion{surveyId}` (keys only, `select`) and deletes them in
+  Table transactions of at most 100 rows (`TRANSACTION_ROWS`), one partition at a time, because a transaction
+  holds one partition and one action for each row. A transaction that fails with `404` (a row was deleted
+  meanwhile) is redone row by row, ignoring `404`. A missing table is fine. A failure is
+  `LegacyStoreError("results delete")`.
+- **The kind-limited file delete.** `writeSurveyFilesDeletion(blobs, container, surveyId, kind?)` deletes the blobs
+  under `{surveyId}/` and, with a `kind`, only those whose metadata `kind` matches. The service calls it with
+  `response` before the rows are deleted; the editor's assets stay. The survey deletion still passes no kind.
+- **The public-question list** (`writePrivateQuestions(blobs, surveyId, names)`). It writes the append blob
+  `surveyresultpermissions/{surveyId}` with the old JSON, `[{ "name": "…", "isPublic": false }]`, **one element for
+  each private question** and none for public ones (`privateQuestionsToLegacy`). The blob is replaced as the other
+  append blobs are (`replaceAppendBlob`); a `404` for the container runs `createIfNotExists()` and the write once
+  more. A failure is `LegacyStoreError("public questions save")`.
+
+### Rulings
+
+- **Batched deletes, no dropped tables.** The old code dropped both tables. Azure then refuses to create a table of
+  that name for about 40 seconds (`TableBeingDeleted`), so a response sent right after **Delete Results** would fail.
+  Deleting the rows has no such window. The cost is a longer delete on a very large survey and the row keys held in
+  memory while it runs (a Step 14 point).
+- **`postdelete{postId}` stays.** It holds copies of results deleted one by one, a feature that does not exist
+  yet; delete all never wrote to it in the old code either.
+- **The audit row.** After the rows are gone, a best-effort `SURVEY_DELETEALLRESULTS` row (survey id, the
+  provider's clock) is appended to the `surveys` table, as the old delete wrote one. A failure of that row is a
+  warning with ids only and the delete stays done. The row holds no answer. `Surveys.timestamp` and the
+  history are not touched: a delete of results is not an edit of the survey.
+- **The permissions blob format.** Read with the old defaults: one leading U+FEFF is removed; text that is not a
+  JSON array is "no list" (a warning with ids only, every question public); of an array, only an object with a
+  non-empty string `name` and `isPublic` equal to the boolean `false` is private, first occurrence only; a missing
+  `isPublic`, `true`, `"false"` and non-objects are public. Written for the private names only, so the public
+  entries of an older blob are dropped on the first save. For an old reader that reads a missing entry as public
+  this means the same.
+- **No audit row for the list.** A save of the list writes no event (the old layout save put the permissions
+  into its `SURVEY_UPDATE` row). It leaves `timestamp` alone in the write; `updateSurvey` moves `updatedAt` as
+  for any patch (Step 9 R7 precedent for the layouts).
+- **The survey deletion** already removed `surveyresultpermissions/{surveyId}` as one of the four legacy layout
+  blobs, so the list goes with its survey. A clone does not copy it.
+- Errors and logs carry the operation name, the driver's codes and ids, never a connection string, an answer, a
+  file name, a client id or an address.
+
+### Consequences of Step 10
+
+- **Delete Results** needs the right to delete table entities in the results account and blobs in the surveys
+  account (as the survey deletion does).
+- A deletion that fails part-way leaves part of the rows and markers; calling it again finishes it. The
+  respondent files are deleted first, so after a failure the remaining rows may point at deleted files.
+- The permissions blob written here is read by the old site as a list of private columns; an old reader that
+  expected a public entry for every question treats a missing entry as public, so it is safe.
+- Two writers of the list at the same moment overwrite each other: the latest save wins.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

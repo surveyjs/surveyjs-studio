@@ -1,18 +1,22 @@
 # Public endpoints, rate limits and idempotency
 
-Four operations serve respondents and embeds: the three of Step 8 and `downloadFile` of Step 7. They need **no session and no CSRF token**, so they are
-rate limited. A fifth, `getResultStats`, needs a session and is listed because it is the way to count
-responses until the results page (Step 9). The reasons for each rule are in
-[ADR 0014](../adr/0014-run-page-and-response-collection.md). The people-facing description is
-[Publishing and collecting responses](../user-guide/publishing-and-collecting-responses.md).
+Five operations serve respondents, embeds and readers of shared results: the three of Step 8,
+`downloadFile` of Step 7 and `getPublicResults` of Step 10. They need **no session and no CSRF token**, so they are
+rate limited. A sixth, `getResultStats`, needs a session and is listed because it is the way to count
+responses without loading them. The reasons for each rule are in
+[ADR 0014](../adr/0014-run-page-and-response-collection.md) (the run operations) and
+[ADR 0016](../adr/0016-results-details-exports-and-public-results.md) (public results). The people-facing
+descriptions are [Publishing and collecting responses](../user-guide/publishing-and-collecting-responses.md) and
+[Downloading, sharing and deleting results](../user-guide/downloading-sharing-and-deleting-results.md).
 
-| Operation            | Request                                                 | Who                | Answer                                   |
-| -------------------- | ------------------------------------------------------- | ------------------ | ---------------------------------------- |
-| `getPublishedSurvey` | `GET /public/surveys/{surveyId}`, optional `?clientId=` | Anyone             | `200` the survey, its theme, `completed` |
-| `submitResponse`     | `POST /public/surveys/{surveyId}/responses`, JSON       | Anyone             | `201` `{ "id" }`                         |
-| `uploadResponseFile` | `POST /public/surveys/{surveyId}/files`, multipart      | Anyone             | `201`, `Location` and the stored file    |
-| `downloadFile`       | `GET /public/files/{fileId}` ([Uploads](uploads.md))    | Anyone             | `200` and the file                       |
-| `getResultStats`     | `GET /surveys/{surveyId}/results/stats`                 | A user who can see | `200` `{ count, firstSubmittedAt, ... }` |
+| Operation            | Request                                                 | Who                     | Answer                                   |
+| -------------------- | ------------------------------------------------------- | ----------------------- | ---------------------------------------- |
+| `getPublishedSurvey` | `GET /public/surveys/{surveyId}`, optional `?clientId=` | Anyone                  | `200` the survey, its theme, `completed` |
+| `submitResponse`     | `POST /public/surveys/{surveyId}/responses`, JSON       | Anyone                  | `201` `{ "id" }`                         |
+| `uploadResponseFile` | `POST /public/surveys/{surveyId}/files`, multipart      | Anyone                  | `201`, `Location` and the stored file    |
+| `downloadFile`       | `GET /public/files/{fileId}` ([Uploads](uploads.md))    | Anyone                  | `200` and the file                       |
+| `getPublicResults`   | `GET /public/surveys/{surveyId}/results`                | Anyone, Grant Access on | `200` a page of results and the survey   |
+| `getResultStats`     | `GET /surveys/{surveyId}/results/stats`                 | A user who can see      | `200` `{ count, firstSubmittedAt, ... }` |
 
 The examples use this setup (the server of `pnpm demo` is on port 3000; the web app proxies `/api` on 5173):
 
@@ -189,11 +193,11 @@ The `memory` provider has no limit besides the body. Both limits are read from `
 The public operations are limited **per client IP address, per operation, per minute** (a fixed window of 60
 seconds). Each operation has its own counter.
 
-| Operations                                                   | Setting                  | Default per minute |
-| ------------------------------------------------------------ | ------------------------ | ------------------ |
-| `getPublishedSurvey`, `submitResponse`, `uploadResponseFile` | `PUBLIC_RATE_LIMIT`      | 60                 |
-| `downloadFile`                                               | `PUBLIC_FILE_RATE_LIMIT` | 600                |
-| `login`, `loginCallback`, `passwordLogin`                    | `SIGN_IN_RATE_LIMIT`     | 30                 |
+| Operations                                                                       | Setting                  | Default per minute |
+| -------------------------------------------------------------------------------- | ------------------------ | ------------------ |
+| `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getPublicResults` | `PUBLIC_RATE_LIMIT`      | 60                 |
+| `downloadFile`                                                                   | `PUBLIC_FILE_RATE_LIMIT` | 600                |
+| `login`, `loginCallback`, `passwordLogin`                                        | `SIGN_IN_RATE_LIMIT`     | 30                 |
 
 The check runs first, before the body is read, so a refused request costs the server little. A request over
 the limit answers `429` with `Retry-After` in seconds:
@@ -265,30 +269,92 @@ curl -s -b cookies.txt "$API/surveys/$ID/results/stats"
 `count` is the number of stored rows. Rows of one client are **not** merged: Step 9 decides the reading
 rules. A survey with no responses has `count` 0 and `null` times.
 
+## Public results
+
+`getPublicResults` serves the results of a survey whose **Grant Access** setting (`settings.publicResults`)
+is on. It needs no session. The people-facing description is
+[Grant Access and the public link](../user-guide/downloading-sharing-and-deleting-results.md#grant-access-and-the-public-link).
+
+```sh
+curl -s "$API/public/surveys/$ID/results?limit=2"
+```
+
+```json
+{
+  "survey": {
+    "id": "22222222-0000-4000-8000-a00000000001",
+    "name": "Customer feedback",
+    "definition": { "title": "Customer feedback", "pages": [] },
+    "privateQuestions": ["receipt"]
+  },
+  "items": [
+    { "submittedAt": "2026-04-02T09:30:00.000Z", "data": { "satisfaction": 5 } },
+    { "submittedAt": "2026-04-03T11:00:00.000Z", "data": { "satisfaction": 3 } }
+  ],
+  "nextCursor": "eyJ2IjoxLCJrIjoicmVzdWx0cyIs…"
+}
+```
+
+- **The rule.** The survey exists **and** `publicResults` is on. Nothing else: `published` and `archived` are
+  **not** looked at, because Grant Access is the owner's own choice. For an unknown survey and for one with
+  Grant Access off the answer is the same `404 survey-not-available` (the Problem shown
+  [above](#who-can-run-a-survey)), so a caller cannot tell them apart. Turning Grant Access off closes the
+  endpoint at once, because every call checks the setting.
+- **The page.** Every stored response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
+  and `cursor`, with the cursor of [`listResults`](paging.md#results-oldest-first-one-survey). A cursor
+  belongs to its survey. Rows are not merged. Each page repeats the `survey` member, so a client can read it
+  from the first page.
+- **`survey`.** `id`, `name` (may be empty), the stored `definition` (so a Dashboard can draw the charts) and
+  `privateQuestions`, the names of the questions left out (below). It has no theme and no permissions.
+- **What an item holds.** `submittedAt` and `data` only. **No response id, no client id and no IP address**,
+  whatever the survey's settings are. (The `nextCursor` of a page does hold the id of the page's last row,
+  inside its encoding; no public operation takes a response id.)
+- **Private questions are stripped on the server.** The survey's list `settings.privateResultQuestions`
+  names questions; the server removes their answers from every item's `data` **before** it answers. It also
+  removes their comments (the key plus the comment suffix of the definition) and, when the question has a
+  `valueName`, the answer stored under it. A private question is thus not in the answer at all, and
+  `privateQuestions` names it so that a client does not draw an empty chart. The default list is empty:
+  every question is public. Authors change it with `updateSurvey`
+  ([Step 10](README.md#step-10-exports-deleting-and-public-results)).
+- **No cache.** `Cache-Control: no-store`, so a browser or a proxy does not keep results after Grant Access
+  is turned off.
+- **Rate limit.** The operation is limited by `PUBLIC_RATE_LIMIT` (60 a minute per address, with a counter of
+  its own, see [Rate limits](#rate-limits)). The web page reads the results in pages of
+  1,000, so it uses one request for each 1,000 responses; a survey of more than 60,000 responses cannot be
+  read at once from one address and the page shows "Try again".
+- **Large surveys on the old site's stores** cost what `listResults` costs
+  ([Paging](paging.md#results-oldest-first-one-survey)).
+- **Compared with the old site.** The old public data call returned the first 1,000 rows in storage order and
+  filtered the columns only when an old column list existed, so the IP address and client id could leak. This
+  endpoint always leaves them out and pages all rows. The old links (`/Results/Survey/<result id>`) are Step 12.
+
 ## Errors
 
-| Operation            | Status | `code`                   | When                                                                                          |
-| -------------------- | ------ | ------------------------ | --------------------------------------------------------------------------------------------- |
-| `getPublishedSurvey` | `400`  | `bad-request`            | The id is over 64 characters, or `clientId` is not valid                                      |
-|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                 |
-|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                      |
-| `submitResponse`     | `400`  | `bad-request`            | Malformed JSON, a bad survey id, or an `Idempotency-Key` that is empty or over 128 characters |
-|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                 |
-|                      | `409`  | `already-completed`      | The limit is on and this `clientId` has completed the survey                                  |
-|                      | `413`  | `payload-too-large`      | The body is over `limits.maxResponseBytes`, or the store cannot hold the answers              |
-|                      | `415`  | `unsupported-media-type` | The body is not JSON                                                                          |
-|                      | `422`  | `validation-failed`      | No body, or a body that is not `{ "data": { ... } }` (see `errors`)                           |
-|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                      |
-| `uploadResponseFile` | `400`  | `bad-request`            | A bad survey id, or the multipart body is malformed or cut short                              |
-|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                 |
-|                      | `413`  | `payload-too-large`      | The file is over `limits.maxFileBytes`                                                        |
-|                      | `415`  | `unsupported-media-type` | The request is not `multipart/form-data`                                                      |
-|                      | `422`  | `validation-failed`      | No part named `file`, or the file is empty (pointer `/file`)                                  |
-|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                      |
-| `downloadFile`       | `404`  | `not-found`              | See [Uploads](uploads.md#download-a-file)                                                     |
-|                      | `429`  | `rate-limited`           | Over `PUBLIC_FILE_RATE_LIMIT`                                                                 |
-| `getResultStats`     | `401`  | `unauthenticated`        | No session                                                                                    |
-|                      | `404`  | `not-found`              | Unknown survey, or one the user cannot see                                                    |
+| Operation            | Status | `code`                   | When                                                                                                      |
+| -------------------- | ------ | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `getPublishedSurvey` | `400`  | `bad-request`            | The id is over 64 characters, or `clientId` is not valid                                                  |
+|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                             |
+|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                                  |
+| `submitResponse`     | `400`  | `bad-request`            | Malformed JSON, a bad survey id, or an `Idempotency-Key` that is empty or over 128 characters             |
+|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                             |
+|                      | `409`  | `already-completed`      | The limit is on and this `clientId` has completed the survey                                              |
+|                      | `413`  | `payload-too-large`      | The body is over `limits.maxResponseBytes`, or the store cannot hold the answers                          |
+|                      | `415`  | `unsupported-media-type` | The body is not JSON                                                                                      |
+|                      | `422`  | `validation-failed`      | No body, or a body that is not `{ "data": { ... } }` (see `errors`)                                       |
+|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                                  |
+| `uploadResponseFile` | `400`  | `bad-request`            | A bad survey id, or the multipart body is malformed or cut short                                          |
+|                      | `404`  | `survey-not-available`   | Unknown or unpublished survey                                                                             |
+|                      | `413`  | `payload-too-large`      | The file is over `limits.maxFileBytes`                                                                    |
+|                      | `415`  | `unsupported-media-type` | The request is not `multipart/form-data`                                                                  |
+|                      | `422`  | `validation-failed`      | No part named `file`, or the file is empty (pointer `/file`)                                              |
+|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                                  |
+| `downloadFile`       | `404`  | `not-found`              | See [Uploads](uploads.md#download-a-file)                                                                 |
+|                      | `429`  | `rate-limited`           | Over `PUBLIC_FILE_RATE_LIMIT`                                                                             |
+| `getPublicResults`   | `400`  | `bad-request`            | The id is over 64 characters, `limit` is outside 1 to 1000, or the cursor is damaged or of another survey |
+|                      | `404`  | `survey-not-available`   | Unknown survey, or Grant Access is off                                                                    |
+|                      | `429`  | `rate-limited`           | Over `PUBLIC_RATE_LIMIT`                                                                                  |
+| `getResultStats`     | `401`  | `unauthenticated`        | No session                                                                                                |
+|                      | `404`  | `not-found`              | Unknown survey, or one the user cannot see                                                                |
 
 A failure of the store is `500 internal-error` with no detail. The logs of such a failure carry the survey
 id and the operation, never the answers.

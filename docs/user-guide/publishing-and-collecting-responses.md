@@ -96,8 +96,8 @@ large to send.".
 The survey setting **Save Respondent IP** is **off** by default. When it is on at the moment a response is
 sent, the server stores the respondent's IP address with the response. It is the address of the connection;
 behind a reverse proxy the server needs to know the proxy ([Public
-endpoints](../api/public-endpoints.md#the-respondents-ip-address)). The setting is changed through the API
-for now ([Not here yet](managing-a-survey.md#not-here-yet)). Request logs never hold the full address (the last
+endpoints](../api/public-endpoints.md#the-respondents-ip-address)). The setting is switched in the Details tab of the results page
+([Save Respondent IP](downloading-sharing-and-deleting-results.md#save-respondent-ip)). Request logs never hold the full address (the last
 part is cut) and never hold answers.
 
 ## Pre-filling answers and the language
@@ -116,8 +116,9 @@ http://localhost:5173/s/<survey id>?locale=de&name=Ann&satisfaction=4
 
 ## Count the responses now
 
-The answers are on the results page ([Viewing results](viewing-results.md)); the count of the Details tab
-arrives with Step 10. A signed-in user who can see the survey can read the count through the API now:
+The answers are on the results page ([Viewing results](viewing-results.md)); the count is in the Details tab
+([Totals and dates](downloading-sharing-and-deleting-results.md#totals-and-dates)). A signed-in user who can see the
+survey can also read the count through the API:
 
 ```sh
 curl -s http://localhost:5173/api/v1/surveys/<survey id>/results/stats -b "msid=<cookie value>"

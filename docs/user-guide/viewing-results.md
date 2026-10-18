@@ -20,11 +20,11 @@ archived one and one you cannot modify. The address is `/surveys/<survey id>/res
 
 ## The three tabs
 
-| Tab         | Address                             | Shows                                                   |
-| ----------- | ----------------------------------- | ------------------------------------------------------- |
-| **Summary** | `/surveys/<id>/results`             | A chart for each question                               |
-| **Table**   | `/surveys/<id>/results?tab=table`   | The responses as a table                                |
-| **Details** | `/surveys/<id>/results?tab=details` | The two **Reset** buttons (the rest arrives in Step 10) |
+| Tab         | Address                             | Shows                                                                                                                                                     |
+| ----------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Summary** | `/surveys/<id>/results`             | A chart for each question                                                                                                                                 |
+| **Table**   | `/surveys/<id>/results?tab=table`   | The responses as a table                                                                                                                                  |
+| **Details** | `/surveys/<id>/results?tab=details` | The totals, the downloads, the access settings, **Delete Results** and the two **Reset** buttons ([Details](downloading-sharing-and-deleting-results.md)) |
 
 The address after `?tab=` names the tab, so you can bookmark or share a link to one. A link without
 `tab`, or with a value other than `summary`, `table` or `details`, opens the Summary. The Summary tab's own
@@ -115,8 +115,9 @@ deleted, and the tab shows its default layout from then on. The page then says "
 A reset also hides an old-site layout from you: after **Reset Summary State** you see the default
 Summary, also for a survey that had an old-site layout. Other users are not affected.
 
-The rest of the Details tab (the response count, public results, the download of the data and deleting
-all responses) arrives with Step 10.
+The rest of the Details tab (the response count, the download of all the data, public results, the IP
+setting and deleting all responses) is described in [Downloading, sharing and deleting
+results](downloading-sharing-and-deleting-results.md).
 
 ## The licence banner
 
@@ -127,7 +128,6 @@ usable. The key is set with `SURVEYJS_LICENSE_KEY` (see
 
 ## Not here yet
 
-- The rest of the **Details** tab, sharing results publicly and downloading the whole data set (Step 10).
 - The locale picker of the old table ("Choose locale...").
 - The table's row actions of the old page, **Show in Survey** and **Delete Result**. There is no way yet to
   delete one response.
