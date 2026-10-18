@@ -270,4 +270,4 @@ pnpm demo:azurite:down
 - Changing the survey settings ("Grant Access", "Save Respondent IP") in the page: Step 10 (done, see [the Step 10
   demo](step-10.md)). The API supports them now (`PATCH` with `settings`).
 - Deleting files with a survey: Step 7 (done, see [the Step 7 demo](step-07.md#5-delete-the-survey-its-files-go-checklist-3)).
-- Creating projects and members: Step 11.
+- Creating projects and members: Step 11, done (see [the Step 11 demo](step-11.md)).

@@ -265,6 +265,30 @@ differs by mode, and where to try each part:
 - **No new variable.** The public results use the existing `PUBLIC_RATE_LIMIT`.
 - **The Step 10 demo script** walks through it ([demo](demo/step-10.md)).
 
+### Projects and members in both modes (Step 11)
+
+The **Projects** page (`/projects`) works in both demo modes. Open it from the account menu (**Projects**) or from
+the project drop-down of the survey list (**Manage Projects**). The user's view is
+[Projects and team members](user-guide/projects-and-team-members.md). What differs by mode:
+
+| Part                 | Memory mode (`pnpm demo`)                                       | Azurite mode (`pnpm demo:azurite`)                                                                                                                               |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects and members | Held in the server's memory. A restart forgets what you created | Rows of `Organizations` and `OrganizationUsers` in the replica's SQL Server, written in transactions. `pnpm legacy:load` restores the fixtures                   |
+| Deleting a project   | Moves the surveys in one step                                   | Moves the surveys (`Surveys.userid`), deletes the member rows and the project row in one transaction, then appends a `SURVEY_TRANSFER` row for each moved survey |
+
+- **Do not change Marketing or Engineering.** The test suites read them and their memberships. Create a project
+  of your own as Adam Admin, add Mia Member (`member@example.com`) and delete the project at the end. Do not add
+  Oscar Outsider or Olivia Owner to a project you leave behind.
+- **Only registered users can be added.** `member@example.com` works; any other address that is not a seed user
+  gives "… is not a registered surveyjs.io user …". On the replica the seed users are the registered ones.
+- **See the rows change** on the replica with the inspector (read only), once for each user, between the steps:
+  `pnpm inspect:legacy --user admin@example.com --env-file docker/azurite.env` and the same with
+  `member@example.com`. The line `Project <name> (<id>, role admin|user)` appears when a user joins, changes role
+  when you use **Make Admin** or **Remove Admin Rights** (the same row, changed in place), and disappears when the
+  user is removed or the project is deleted. After a delete the project's surveys are listed under `Personal`.
+- **No new variable.** Step 11 adds no environment variable.
+- **The Step 11 demo script** walks through it ([demo](demo/step-11.md)).
+
 ## Azurite mode
 
 Azurite mode runs the server and the tools against a local replica of the legacy stores, and signs

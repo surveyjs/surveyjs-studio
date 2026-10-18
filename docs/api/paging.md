@@ -1,14 +1,14 @@
 # Paging
 
-The list operations (`listSurveys`, `listProjects`, `listSurveyHistory`, `listResults` and `getPublicResults`) return one page
+The list operations (`listSurveys`, `listProjects`, `listMembers`, `listSurveyHistory`, `listResults` and `getPublicResults`) return one page
 at a time. They use opaque cursors, not page numbers.
 
 ## Request and response
 
-| Query parameter | Meaning                                                                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `limit`         | The most items in one page. Surveys, projects and history: 1 to 200, default 50. `listResults` and `getPublicResults`: 1 to 1000, default 500. Out of range: `400 bad-request` |
-| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page                                                                                                         |
+| Query parameter | Meaning                                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit`         | The most items in one page. Surveys, projects, members and history: 1 to 200, default 50. `listResults` and `getPublicResults`: 1 to 1000, default 500. Out of range: `400 bad-request` |
+| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page                                                                                                                  |
 
 ```json
 {
@@ -45,6 +45,11 @@ walk moves to the top, so a client that has already passed its old place does no
 it starts over.
 
 `listProjects` orders by project name ignoring case, then by id, and its cursors work the same way.
+
+`listMembers` (`GET /projects/{projectId}/members`) orders by display name ignoring case, then by user id. Its
+cursor is **bound to its project**: a members cursor used with another project, or a projects or surveys cursor
+used with `listMembers`, is `400 bad-request` ("Invalid cursor."). The server checks that the caller is a member
+(`404` otherwise) before it reads the cursor, so a non-member always gets `404`.
 
 ## Results: oldest first, one survey
 
@@ -145,23 +150,24 @@ format is not part of the contract, and any server may use another. A port is fr
 own, as long as it keeps the behaviour above. The reference server (`server/src/paging/cursor.ts`)
 builds a cursor as the **base64url encoding, without padding, of a UTF-8 JSON object**:
 
-| List     | JSON payload                                                                      |
-| -------- | --------------------------------------------------------------------------------- |
-| Surveys  | `{"v":1,"k":"surveys","p":"<scope>","a":<archived>,"u":"<updatedAt>","i":"<id>"}` |
-| Projects | `{"v":1,"k":"projects","n":"<lower-cased name>","i":"<id>"}`                      |
-| History  | `{"v":1,"k":"history","u":"<at>","i":"<entry id>"}`                               |
-| Results  | `{"v":1,"k":"results","s":"<survey id>","u":"<submittedAt>","i":"<id>"}`          |
+| List     | JSON payload                                                                        |
+| -------- | ----------------------------------------------------------------------------------- |
+| Surveys  | `{"v":1,"k":"surveys","p":"<scope>","a":<archived>,"u":"<updatedAt>","i":"<id>"}`   |
+| Projects | `{"v":1,"k":"projects","n":"<lower-cased name>","i":"<id>"}`                        |
+| Members  | `{"v":1,"k":"members","p":"<project id>","n":"<lower-cased name>","i":"<user id>"}` |
+| History  | `{"v":1,"k":"history","u":"<at>","i":"<entry id>"}`                                 |
+| Results  | `{"v":1,"k":"results","s":"<survey id>","u":"<submittedAt>","i":"<id>"}`            |
 
 | Member | Meaning                                                                                                                               |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `v`    | Format version, `1`                                                                                                                   |
-| `k`    | The kind of list: `surveys`, `projects`, `history` or `results`                                                                       |
-| `p`    | Surveys: `personal`, or the lower-case project id                                                                                     |
+| `k`    | The kind of list: `surveys`, `projects`, `members`, `history` or `results`                                                            |
+| `p`    | Surveys: `personal`, or the lower-case project id; members: the lower-case project id                                                 |
 | `a`    | Surveys: the `archived` flag of the request, `true` or `false`                                                                        |
 | `s`    | Results: the lower-case id of the survey the cursor belongs to                                                                        |
 | `u`    | Surveys: `updatedAt`; history: `at`; results: `submittedAt` of the last item of the page (ISO 8601 UTC, as `Date#toISOString` writes) |
 | `i`    | The id of the last item of the page (for history, the entry id), lower case, 1 to 64 characters                                       |
-| `n`    | Projects: the name of the last item, lower-cased                                                                                      |
+| `n`    | Projects: the name of the last item, lower-cased; members: its display name, lower-cased                                              |
 
 A decoder also rejects a timestamp `u` whose year is not four digits between 1753 and 9999 (the range of
 SQL `datetime`), so the answer is `400` and not a database error.
@@ -180,8 +186,8 @@ The reference server rejects a cursor with `400 bad-request` ("Invalid cursor.")
 - has another `v` or `k`, or a missing or wrongly typed member;
 - has a `u` that is not an ISO 8601 UTC timestamp written as `Date#toISOString` writes it;
 - has an empty `i`, or an `i` longer than 64 characters;
-- belongs to another list: `p` or `a` differ from the request's `project` and `archived`, or `s` is not the
-  survey of the request;
+- belongs to another list: `p` or `a` differ from the request's `project` and `archived` (for members, `p` is not
+  the project of the request), or `s` is not the survey of the request;
 - is not the **canonical** encoding: a value that does not encode back to itself (padding, extra
   members, spaces, upper-case ids, loose timestamps) is invalid.
 

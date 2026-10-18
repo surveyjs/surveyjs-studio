@@ -325,4 +325,4 @@ pnpm demo:azurite:down
   follow a change made in another tab.
 - Special handling of the old `dxsimage:` and `dxsfile:` texts and of data URLs in answers, and the old site's file
   share files on **Delete Results**.
-- Project and member writes (Step 11): `listMembers` is now the operation that still answers `501`.
+- Project and member writes: Step 11 ([demo](step-11.md)). Only `passwordLogin` still answers `501`.

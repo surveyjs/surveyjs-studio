@@ -251,7 +251,7 @@ pnpm demo:azurite:down
 ## What is not in Step 9
 
 - The rest of the **Details** tab (the response count, the data download, public results, **Delete Results**) and
-  the other exports: Step 10 ([demo](step-10.md)). `listMembers` still answers `501`.
+  the other exports: Step 10 ([demo](step-10.md)). The project operations came with Step 11 ([demo](step-11.md)); only `passwordLogin` still answers `501`.
 - The old page's locale picker ("Choose locale...") and the table's row actions "Show in Survey" and "Delete
   Result". There is no operation to delete one response.
 - A word cloud for text questions (the old page has none either) and the `isPublic` marks of public results.

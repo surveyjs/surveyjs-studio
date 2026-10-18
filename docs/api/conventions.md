@@ -132,8 +132,9 @@ Operations and properties marked `x-phase: P1` belong to phase 2 (API tokens, pa
 partial responses). They are part of the contract now. Until they are implemented, a server
 answers those operations with `501 not-implemented` and ignores the marked properties.
 
-Any operation that no handler exists for also answers `501`, after authentication. This is the case
-for every operation that a step has not built yet, and the conformance suite accepts it.
+Any operation that no handler exists for also answers `501`, after authentication. This was the case for
+every operation that a step had not built yet. Since Step 11 every operation has a handler except `passwordLogin`,
+the one that answers `501` until P1.
 
 ## Limits
 

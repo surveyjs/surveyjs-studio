@@ -423,6 +423,69 @@ deleted, the tables kept, the private list in the old blob) are in
 - The web saves only the names a user changed, onto a fresh read of the list, so writers on different pages keep
   each other's changes; two saves at the very same moment can still race, and then the later write wins.
 
+## Step 11: projects and members
+
+Step 11 adds the six writes of projects and members, under the same rules: they are in `writes.ts`, with the
+ESLint `ignores` comment extended by "Step 11: projects and members (Organizations and OrganizationUsers rows,
+project deletion)". The rulings behind them (the owner, the last admin, the survey move) are in
+[ADR 0017](0017-projects-and-members.md); the tables are
+[layout, 3.12 and 3.13](../architecture/legacy-data-layout.md).
+
+### The six writes
+
+| Write                  | What it does                                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `writeProjectCreation` | One transaction, two rows: `Organizations` (`ORGANIZATION_CREATE`) and the creator's `OrganizationUsers` row (`id` = the project id, role `admin`). No audit row                                                                                        |
+| `writeProjectRename`   | One `UPDATE` of `name` and `timestamp`; `type` and `happendat` stay (legacy rewrites them)                                                                                                                                                              |
+| `writeMemberAddition`  | A transaction: lock, refuse when the user already has a row, else insert a row (new id, `ORGANIZATION_JOIN`, role in lower case, no name)                                                                                                               |
+| `writeMemberRole`      | A transaction: lock, decide with the last-admin rule, then `UPDATE` the role and `timestamp` of the user's rows **in place**. Legacy deletes the row and inserts a new one (new id, `ORGANIZATION_LEAVE`); the in-place update keeps the creator marker |
+| `writeMemberRemoval`   | A transaction: lock, decide, then delete every row of the user in the project                                                                                                                                                                           |
+| `writeProjectDeletion` | A transaction in the order below, then one best-effort `SURVEY_TRANSFER` row for each moved survey                                                                                                                                                      |
+
+### Transactions and their lock order
+
+These are the first SQL transactions in the repository. `inTransaction` runs the body one request at a time (a
+transaction takes one request at a time), commits when the body says so, rolls back on every other path (a failing
+rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
+
+- **Lock order.** Every membership and delete transaction first locks the project's `Organizations` row
+  (`UPDLOCK, HOLDLOCK`), then reads and locks the project's `OrganizationUsers` rows, in this order every time. Writes to
+  one project therefore run one after the other and cannot deadlock each other. The same lock makes the double
+  add safe: the second adder waits, then finds the row and answers `already-member`. A missing project row means
+  "no such project" and writes nothing.
+- **Deadlock retry.** A transaction that SQL Server picks as a deadlock victim (error 1205) is run again, at
+  most 3 attempts in all, after a short jittered wait (`attempt` times 20 to 60 ms), and each retry is logged
+  with the operation and the attempt only (`isDeadlockVictim`, `withDeadlockRetry`). A failed commit is never
+  retried, because its outcome is unknown, and no other error is. The bodies have no effect outside the
+  transaction, so running them again is safe. The reason: the `OrganizationUsers` tables of the replica are tiny
+  and are scanned, so locks taken by writes to different projects can still collide under parallel load. The
+  implementer measured about 6 deadlock victims in 160 writes under parallel load (the conformance suite runs its files in parallel).
+- **Delete order.** One transaction: (1) `UPDATE Surveys SET userid = @receiver, timestamp` for every survey whose
+  `userid` is the project id, archived ones too, with `OUTPUT` of the id and the creator; (2) delete the
+  project's `OrganizationUsers` rows; (3) delete the `Organizations` row. The surveys and the directory share one
+  SQL database ([layout, 2.2](../architecture/legacy-data-layout.md)), so one transaction covers all three. Legacy
+  does none of the first step and orphans the surveys.
+- **`SURVEY_TRANSFER` rows.** After the commit, for each moved survey (sorted by id) one row goes to the
+  `surveys` events table, as `appendEventBestEffort` writes it: `userid` is the receiver and `creatorid` is the
+  survey's **unchanged** creator. When the creator is `NULL` the row leaves `creatorid` out (no legacy convention
+  is known). A failed append is a warning with ids only and the delete stays done.
+- **No audit rows for project writes.** Legacy writes none for create, rename, add, role change, remove or
+  delete, and this application writes none either. Only the survey move of a delete leaves its
+  `SURVEY_TRANSFER` rows.
+- Errors and logs name the operation, the driver's codes and ids, never a project name, a display name or an
+  email. Every id is checked to be a GUID before any SQL is built; the values go in as parameters.
+
+### Consequences of Step 11
+
+- A role change no longer replaces the row, so the legacy site, which reads `role` only, shows the same
+  result, and the project's `createdAt` and creator marker survive.
+- A survey created or moved into a project can race a delete of that project on Azure: under `READ COMMITTED` a
+  survey inserted while the delete runs would keep the deleted project id. The memory provider does both in one
+  step. Open (Step 14).
+- The `SURVEY_TRANSFER` rows are appended one after the other, so a slow audit table stretches the delete.
+- SQL `datetime` rounds the `createdAt` of a new project to about 3 ms; the service answers the value it reads
+  back, so one answer stays consistent, but memory and Azure differ in the last digit.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

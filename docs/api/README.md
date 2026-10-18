@@ -65,17 +65,18 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 
 ## What is implemented
 
-| Since   | Operations                                                                                                          |
-| ------- | ------------------------------------------------------------------------------------------------------------------- |
-| Step 1  | `getConfig`                                                                                                         |
-| Step 3  | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md))                          |
-| Step 4  | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                |
-| Step 5  | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
-| Step 6  | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
-| Step 7  | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
-| Step 8  | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                          |
-| Step 9  | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                  |
-| Step 10 | `exportResults`, `deleteResults`, `getPublicResults` (see below)                                                    |
+| Since   | Operations                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Step 1  | `getConfig`                                                                                                               |
+| Step 3  | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md))                                |
+| Step 4  | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                      |
+| Step 5  | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                                 |
+| Step 6  | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below)       |
+| Step 7  | `uploadSurveyAsset`, `downloadFile` (see below)                                                                           |
+| Step 8  | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                                |
+| Step 9  | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                        |
+| Step 10 | `exportResults`, `deleteResults`, `getPublicResults` (see below)                                                          |
+| Step 11 | `createProject`, `updateProject`, `deleteProject`, `listMembers`, `addMember`, `updateMember`, `removeMember` (see below) |
 
 ### Step 4: surveys and projects
 
@@ -422,8 +423,82 @@ The export, the CSV rules, the file names, a failure part way and the delete are
 [Public endpoints](public-endpoints.md#public-results). The reasons are in
 [ADR 0016](../adr/0016-results-details-exports-and-public-results.md).
 
-Every other operation (the project and member writes of Step 11: `createProject`, `updateProject`,
-`deleteProject`, `listMembers`, `addMember`, `updateMember` and `removeMember`) answers `501` with a Problem
-Details body (`code: not-implemented`), after authentication: a private operation called without a session
-answers `401`. `passwordLogin` stays `501` until P1. The conformance suite and the server tests use
-`listMembers` as their example of an operation that is not built.
+### Step 11: projects and members
+
+All seven need a session. The six that change data also need the CSRF header. Paging of `listMembers`:
+[Paging](paging.md).
+
+| Operation       | Behaviour                                                                                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createProject` | `POST /projects`, `{ name }`. Any signed-in user. `201`, `Location` and the project: `role` `admin`, `memberCount` 1, `ownerId` the caller          |
+| `updateProject` | `PATCH /projects/{projectId}`, `{ name }` as a merge patch. Admins only. `200` and the project. A patch without `name` changes nothing              |
+| `deleteProject` | `DELETE /projects/{projectId}`. Admins only. `204`. The surveys move to the owner's personal scope, or to the admin who deletes                     |
+| `listMembers`   | `GET /projects/{projectId}/members`, `limit` and `cursor`. Any member. `200 { items, nextCursor }` with `{ userId, displayName, email, role }`      |
+| `addMember`     | `POST /projects/{projectId}/members`, `{ email, role? }`. Admins only. `201`, `Location` and the member. `404 user-not-found`, `409 already-member` |
+| `updateMember`  | `PATCH /projects/{projectId}/members/{userId}`, `{ role }` (`admin` or `user`). Admins only. `200` and the member. `409 last-admin`                 |
+| `removeMember`  | `DELETE /projects/{projectId}/members/{userId}`. An admin removes anyone; any member removes themselves (leaves). `204`. `409 last-admin`           |
+
+Rules:
+
+- **Who may do what.** An unknown project and a project the caller does not belong to both answer
+  `404 not-found`, for every operation (the same as `getProject`). A member who is not an admin gets
+  `403 forbidden` for rename, delete, add, change role and removing someone else. Any member may list the members
+  and remove themselves. A target that is not a member of the project (or whose account no longer exists)
+  is `404 not-found`.
+- **Names.** A project name has 1 to 128 characters (the contract). A blank name is `422 validation-failed`
+  with the pointer `/name`, checked before access, so it is the answer for a non-member too. Two projects may
+  have the same name.
+- **Add a member.** The `email` is found without regard to case. The `role` is `user` when left out. The admin
+  check comes **before** the address lookup, so only admins can learn whether an address is registered. A user
+  who is blocked can be added.
+- **The last admin.** Demoting the only admin, removing them, or their leaving is `409 last-admin`. The only
+  member of a project cannot leave, whatever their role: they delete the project. Setting the role a member
+  already has is a `200` and writes nothing. The check and the write are one step, so two admins who demote
+  each other at the same moment cannot leave the project without an admin.
+- **The owner.** `Project.ownerId` is the creator of the project while the creator is still a member, else `null`.
+  A role change of the creator made in another application can replace their row and make it `null`.
+- **Deleting a project.** The surveys, archived ones too, with their results, files and history, are not
+  deleted. They move to the owner's personal scope; when `ownerId` is `null`, to the admin who deletes the
+  project. Their ids, published state and settings stay, and so does each survey's creator.
+- **Members.** `listMembers` orders by display name ignoring case, then user id. A member whose account no
+  longer exists is left out. A cursor of another project is `400 bad-request`.
+
+The answers to `createProject` and `addMember` are the `Project` and the `Member` objects. Examples (the cookies `msid` and
+`msid_csrf` come from the browser's developer tools, and the CSRF header carries the value of `msid_csrf`; the
+demo uses the same calls, see [the Step 11 demo](../demo/step-11.md#7-the-api-view)):
+
+```sh
+API=http://localhost:5173/api/v1
+AUTH=(-b "msid=<cookie>; msid_csrf=<csrf>" -H "X-CSRF-Token: <csrf>")
+
+# Create a project
+curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"name":"Research"}' "$API/projects"
+# {"id":"…","name":"Research","ownerId":"11111111-0000-4000-8000-a00000000002","role":"admin","memberCount":1,"createdAt":"…"}
+P=<the id>
+
+# Rename it with a merge patch
+curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/merge-patch+json" -d '{"name":"Research team"}' "$API/projects/$P"
+
+# Add a member, then make them an admin
+curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"email":"member@example.com"}' "$API/projects/$P/members"
+# {"userId":"11111111-0000-4000-8000-a00000000003","displayName":"Mia Member","email":"member@example.com","role":"user"}
+curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" -d '{"role":"admin"}' "$API/projects/$P/members/<user id>"
+
+# Leave: the caller removes their own user id (a plain member can do this)
+curl -i -X DELETE "${AUTH[@]}" "$API/projects/$P/members/<own user id>"
+# HTTP/1.1 204 No Content
+
+# Delete the project (admins only)
+curl -i -X DELETE "${AUTH[@]}" "$API/projects/$P"
+# HTTP/1.1 204 No Content
+```
+
+An address nobody registered answers `404` with `"code":"user-not-found"`; adding a member twice answers `409`
+with `"code":"already-member"`; the last admin leaving answers `409` with `"code":"last-admin"`. The reasons are
+in [ADR 0017](../adr/0017-projects-and-members.md); for users the page is
+[Projects and team members](../user-guide/projects-and-team-members.md).
+
+Since Step 11 only `passwordLogin` answers `501` with a Problem Details body (`code: not-implemented`). It stays
+`501` until P1. A private operation called without a session answers `401`. The conformance suite has one `501`
+test (`passwordLogin`, which is public); the server tests build the routes with no handler at all to check the
+`501` of an operation without one.

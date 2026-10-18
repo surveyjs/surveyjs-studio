@@ -174,17 +174,19 @@ A port is accepted when this suite passes against it.
 
 ### Files and the shared harness
 
-| File                     | Checks                                                                                                                                                                                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `harness.ts`             | The helpers all test files share: `call` (a request whose response must conform to the contract), `codeOf`, `signedIn` and `sessionHeaders` (cookies and CSRF header)                                                                                                                                                      |
-| `conformance.test.ts`    | `getConfig`, errors, the sign-in flow (below), the session, and `501` for operations that are not built                                                                                                                                                                                                                    |
-| `sign-in.test.ts`        | The cookie jar of the sign-in driver (a unit test of the suite itself)                                                                                                                                                                                                                                                     |
-| `surveys.test.ts`        | `listSurveys` (filters, order, visibility, paging), `createSurvey` (defaults, naming, validation, scopes) and `getSurvey` (a stranger's survey is `404`)                                                                                                                                                                   |
-| `projects.test.ts`       | `listProjects` and `getProject` (roles, order, paging, a non-member gets `404`)                                                                                                                                                                                                                                            |
-| `files.test.ts`          | `uploadSurveyAsset` and `downloadFile` (below)                                                                                                                                                                                                                                                                             |
-| `public.test.ts`         | `getPublishedSurvey`, `submitResponse` and `getResultStats` (below)                                                                                                                                                                                                                                                        |
-| `public-files.test.ts`   | `uploadResponseFile` (below)                                                                                                                                                                                                                                                                                               |
-| `survey-actions.test.ts` | `updateSurvey` (every field and the combinations, `projectId: null`, `updatedAt` on every patch, `422`, `403`, `404`, a move to a project the user is not in), `deleteSurvey` (`409`, then `204`, then `404`; the `403` and `404` refusals) and `cloneSurvey` (contents, name, target scope, creator, `404`, `403`, `422`) |
+| File                     | Checks                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `harness.ts`             | The helpers all test files share: `call` (a request whose response must conform to the contract), `codeOf`, `signedIn` and `sessionHeaders` (cookies and CSRF header)                                                                                                                                                                                        |
+| `conformance.test.ts`    | `getConfig`, errors, the sign-in flow (below), the session, and `501` for `passwordLogin`, the one operation left that is not built                                                                                                                                                                                                                          |
+| `sign-in.test.ts`        | The cookie jar of the sign-in driver (a unit test of the suite itself)                                                                                                                                                                                                                                                                                       |
+| `surveys.test.ts`        | `listSurveys` (filters, order, visibility, paging), `createSurvey` (defaults, naming, validation, scopes) and `getSurvey` (a stranger's survey is `404`)                                                                                                                                                                                                     |
+| `projects.test.ts`       | `listProjects` and `getProject` (roles, order, paging, a non-member gets `404`); the checks on a fixture user's list are **membership based**: the fixture projects are present, in order, and other projects may be there                                                                                                                                   |
+| `project-writes.test.ts` | `createProject`, `updateProject` and `deleteProject` (Step 11): the creator as first member, admin and owner, duplicate names, 128 and 129 characters, `422`, merge patch and plain JSON, `403` for a plain member, `404`, `400`; deleting moves every survey to the owner with its ids, state and results, or to the deleting admin once the owner has left |
+| `members.test.ts`        | `listMembers`, `addMember`, `updateMember` and `removeMember` (Step 11): order and the project-bound cursor, add by email in any case, `404 user-not-found`, `409 already-member`, promote and demote, the last admin, leaving, `403` and `404`                                                                                                              |
+| `files.test.ts`          | `uploadSurveyAsset` and `downloadFile` (below)                                                                                                                                                                                                                                                                                                               |
+| `public.test.ts`         | `getPublishedSurvey`, `submitResponse` and `getResultStats` (below)                                                                                                                                                                                                                                                                                          |
+| `public-files.test.ts`   | `uploadResponseFile` (below)                                                                                                                                                                                                                                                                                                                                 |
+| `survey-actions.test.ts` | `updateSurvey` (every field and the combinations, `projectId: null`, `updatedAt` on every patch, `422`, `403`, `404`, a move to a project the user is not in), `deleteSurvey` (`409`, then `204`, then `404`; the `403` and `404` refusals) and `cloneSurvey` (contents, name, target scope, creator, `404`, `403`, `422`)                                   |
 
 `fixtureUsers` in `sign-in.ts` holds the owner, the admin, the member, the outsider and the blocked
 user: the same people as the [seed accounts](development.md#golden-fixtures).
@@ -334,6 +336,29 @@ costs the shared counters nothing and writes nothing. A deletion test **never ta
 survey**: a deleted `…a08` would break the end-to-end spec that counts its 1,500 responses on a replica that
 keeps its data between runs.
 
+### Projects and members on the conformance server
+
+`project-writes.test.ts` and `members.test.ts` (Step 11) follow the data rules below, which are stricter than
+for surveys because the Azurite replica keeps what a test leaves:
+
+- **Marketing, Engineering and every fixture membership are read only.** No test adds, removes or promotes a
+  member of a fixture project, and no test renames or deletes one.
+- **Every test creates its own project**, named `Conformance <purpose> <random>`, as Adam Admin (Mia Member in the
+  fallback case), and deletes it at the end, also when the test fails (`onTestFinished`, registered right after
+  the project is created; the deletion is done by whichever of the test's users is still an admin).
+- **Only Mia and the blocked user are added** to such a project, never Olivia Owner or Oscar Outsider (only the
+  five fixture users can be members on Azurite, because `OrganizationUsers.userid` has a foreign key, and an
+  end-to-end spec asserts that Oscar has no project).
+- **Surveys a deletion moves land in Adam's Personal scope**, which is writable, never in Olivia's, which is
+  fixture-only. Both delete tests make Adam the receiver: Mia deletes Adam's project, or, in the fallback, Mia
+  creates it, adds Adam as admin, leaves, and Adam deletes it.
+- Assertions about the list of a fixture user are **membership based** (`projects.test.ts`, the provider suite
+  and the null-rows test through `fixtureProjectsOnly`): the fixture projects are present, in order, and nothing
+  else is asserted, because a crashed run can leave test projects of the fixture users on the replica.
+
+The two files are split so that Vitest runs them in parallel; the Azurite run also exercises the lock order of
+the SQL transactions ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md#step-11-projects-and-members)).
+
 ### Test data
 
 Tests that write (create, update, clone, move and delete surveys) do so in only a few scopes, and
@@ -351,6 +376,8 @@ only in surveys they created themselves. No test changes a fixture survey: the c
 | Step 9 conformance  | The admin's Personal scope and Engineering (`results.test.ts`, `views.test.ts`), each test with its own survey                                                                                                                                       |
 | Step 10 e2e spec    | The admin's Personal scope only (`results-details.spec.ts`): the tests that toggle, make private, submit or delete create, publish, answer and remove their own survey. The tests on `…a08` read the Details tab and the downloads and write nothing |
 | Step 10 conformance | The admin's Personal scope and Engineering (`results-details.test.ts`, `public-results.test.ts`), each test with its own survey; no setting, private list, response or deletion on `…a01`, `…a04` or `…a08`                                          |
+| Step 11 conformance | Own projects only (`project-writes.test.ts`, `members.test.ts`): Marketing, Engineering and every fixture membership are read only; Adam's Personal scope receives the surveys moved by a deletion                                                   |
+| Step 11 e2e spec    | Own projects only, created by the admin and deleted in `finally` (`projects.spec.ts`); the only member added is Mia; moved surveys land in the admin's Personal scope and are discarded                                                              |
 | Other e2e specs     | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering                                                                                                                                      |
 
 The owner's Personal scope, the Marketing project and every fixture survey are **fixture-only** (the large survey
@@ -499,6 +526,23 @@ Helpers are in `e2e/tests/support/results.ts` (`isSettingsPatch`, `isResultsDele
 Details tab of a caller who cannot modify the survey (no toggles, no delete) is covered by the route tests of
 `web` only.
 
+`projects.spec.ts` (Step 11) checks the Projects page in three browsers and, on Chromium, in Azurite mode. The
+console guard stays on, and the tests that load a member list allow the `404` of a project that is gone
+(`MEMBERS_404`). Marketing, Engineering and the fixture memberships are **read only**: every test creates a
+project with a unique name as Adam Admin, deletes it in `finally`, and adds only Mia Member (never Oscar or
+Olivia).
+
+| Test                                 | Checks                                                                                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Create, add, promote, demote, remove | Account menu **Projects**, **Create a Project**, the card; **Add a New Member** (Mia, and an address nobody registered), **Make Admin**, **Remove Admin Rights**, the remove "x" (US 59, 61, 62, 63, 65, 69) |
+| The last admin                       | An admin cannot demote themselves while they are the only admin: the server's text shows (US 64)                                                                                                             |
+| A member leaves                      | Mia, in another browser context, opens the page, uses **Leave Project** with its confirm; the card is gone and the selector no longer lists the project (US 66)                                              |
+| Deleting a project                   | The selector's **Manage Projects** opens the page; **Remove** and the confirm: the project's survey is then in Adam's Personal Surveys (US 67)                                                               |
+
+Helpers are in `e2e/tests/support/projects.ts` (`createProjectViaApi`, `addMemberViaApi`, `deleteProjectViaApi`,
+`findProjectIdViaApi`, `projectCard`, `openProjectCard`, `memberRow`, `adminBadge`, `uniqueProjectName`,
+`MEMBERS_404`, `MEMBER_409`).
+
 Helpers (`e2e/tests/support/`):
 
 - `sign-in.ts`: `users` (owner, admin, member and outsider) and `signInAt(page, path, user)`, which signs in
@@ -608,7 +652,17 @@ It covers:
   layouts and the suite cannot write one through the interface. It is the only write to a fixture survey, and
   `pnpm legacy:load` clears the marker (the memory provider is rebuilt for each run);
 - `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
-  project record, unknown user or project, a non-member;
+  project record, unknown user or project, a non-member (the exact lists go through `fixtureProjectsOnly`, so a
+  crashed run's leftover projects do not fail them);
+- `directory.listMembers` (Step 11): the members of the two fixture projects by display name, ids in upper case,
+  `[]` for an unknown project and for a non-GUID id;
+- `directory writes` (Step 11): `createProject` (the creator as the only member and an admin, an upper-case id
+  stored in lower case, an id in use or a non-GUID refused with nothing stored), `renameProject` (only the name
+  changes, `false` for an unknown project), `addMember` (once, a blocked user too, `not-found`), `setMemberRole`
+  (in place, and an admin always remains), `removeMember` (never the last admin or the sole member; a creator who
+  is removed leaves the project without an owner for good) and `deleteProject` (every survey moves to the
+  receiver's personal scope, changing only scope and time; `[]` for a project without surveys, `null` for an
+  unknown one). Each test creates its own project and deletes it;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
 
 Where it runs:
@@ -665,7 +719,7 @@ deletion with the survey, no copy on a clone, `[]` for a non-GUID id and a rejec
 tables and `postdelete{postId}` stay, one `SURVEY_DELETEALLRESULTS` audit row is written, a survey that never
 had a results table is fine; the private list is an append blob with the old JSON (`[{ "name", "isPublic":
 false }]`) and no SQL or audit change; the old defaults, and a rejected read (fail closed, no warning) for a zero-byte blob, text that is not
-JSON, JSON that is not an array and an empty append blob; and the blob goes with the survey. The loader tests (`load-fixtures.azurite.test.ts`) check
+JSON, JSON that is not an array and an empty append blob; and the blob goes with the survey. For Step 11 the writes test checks the SQL rows directly (the created rows with their types and the creator's id equal to the project id, a rename that leaves `type` and `happendat`, a role change in place that keeps the row id, the `SURVEY_TRANSFER` rows of a delete with the unchanged creator, a transaction that fails half way leaving nothing), two concurrent demotions of the two admins (only one passes) and the lock order of parallel writes; `writes.test.ts` has the unit tests of the deadlock retry (`isDeadlockVictim`, `withDeadlockRetry`: at most 3 tries, never another error). The loader tests (`load-fixtures.azurite.test.ts`) check
 that the 1,500 generated rows load and that loading again gives equal summaries, and that the views container is
 cleared by a load. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
