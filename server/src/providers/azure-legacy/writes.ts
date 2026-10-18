@@ -1198,8 +1198,10 @@ const MEMBER_DELETE =
   "DELETE FROM OrganizationUsers WHERE organizationid = @project AND userid = @user";
 /** Moves every survey of the project, archived ones too; `creatorid` stays (R9). */
 const PROJECT_SURVEYS_MOVE =
+  "DECLARE @moved TABLE (id uniqueidentifier, creatorid uniqueidentifier); " +
   "UPDATE Surveys SET userid = @receiver, [timestamp] = @now " +
-  "OUTPUT inserted.id, inserted.creatorid WHERE userid = @project";
+  "OUTPUT inserted.id, inserted.creatorid INTO @moved WHERE userid = @project; " +
+  "SELECT id, creatorid FROM @moved";
 const PROJECT_MEMBERS_DELETE = "DELETE FROM OrganizationUsers WHERE organizationid = @project";
 const PROJECT_DELETE = "DELETE FROM Organizations WHERE id = @project";
 

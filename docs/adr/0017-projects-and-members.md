@@ -272,6 +272,13 @@ written.
 
 ## Open
 
+- **The receiver of a deleted project's surveys is chosen before the delete transaction takes its lock**
+  (`server/src/projects/service.ts`: `listMembers` and `surveyReceiver`, then `deleteProject`). If the owner leaves
+  in that window, the surveys go to a user who just left. A fix would pass the owner and the deleting user to the
+  store and decide under the lock.
+- **On Azure, a member whose only rows have a role other than `admin` or `user` (or NULL) is hidden by
+  `listMembers`** but still counted by the rules (`visibleMembersOf`) for "sole member" and as a target of a role
+  change or a removal. The memory provider cannot hold such rows. A fix would make visibility require a known role.
 - **A survey created or moved into a project can race a delete of that project on Azure.** Under `READ COMMITTED` a
   survey inserted while the delete runs would keep the deleted project id and be orphaned. The memory provider
   does both in one step. To measure and decide in Step 14, with the scan cost of the other large tables.

@@ -470,6 +470,7 @@ demo uses the same calls, see [the Step 11 demo](../demo/step-11.md#7-the-api-vi
 ```sh
 API=http://localhost:5173/api/v1
 AUTH=(-b "msid=<cookie>; msid_csrf=<csrf>" -H "X-CSRF-Token: <csrf>")
+MIA_AUTH=(-b "msid=<Mia cookie>; msid_csrf=<Mia csrf>" -H "X-CSRF-Token: <Mia csrf>")
 
 # Create a project
 curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"name":"Research"}' "$API/projects"
@@ -484,11 +485,11 @@ curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"email":"m
 # {"userId":"11111111-0000-4000-8000-a00000000003","displayName":"Mia Member","email":"member@example.com","role":"user"}
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" -d '{"role":"admin"}' "$API/projects/$P/members/<user id>"
 
-# Leave: the caller removes their own user id (a plain member can do this)
-curl -i -X DELETE "${AUTH[@]}" "$API/projects/$P/members/<own user id>"
+# Leave: a member removes their own user id (here Mia, with her own cookie; a plain member can do this)
+curl -i -X DELETE "${MIA_AUTH[@]}" "$API/projects/$P/members/<Mia's user id>"
 # HTTP/1.1 204 No Content
 
-# Delete the project (admins only)
+# Delete the project (admins only; the caller is still a member, so this is not a 404)
 curl -i -X DELETE "${AUTH[@]}" "$API/projects/$P"
 # HTTP/1.1 204 No Content
 ```

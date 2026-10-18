@@ -2206,13 +2206,17 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       await store().surveys.createSurvey(archived);
       await store().surveys.updateSurvey(archived.id, { archived: true, updatedAt: CREATED_AT });
       const ids = [active.id, archived.id].sort();
+      const receiverId = randomUUID();
+      onTestFinished(async () => {
+        for (const survey of [active, archived]) await store().surveys.deleteSurvey(survey.id);
+      });
 
-      const moved = await store().directory.deleteProject(id, { receiverId: ADMIN_ID, now: NOW });
+      const moved = await store().directory.deleteProject(id, { receiverId, now: NOW });
 
       expect(moved).toEqual(ids);
       for (const survey of [active, archived]) {
         const row = await rawRow(survey.id);
-        expect(lower(row!.userid)).toBe(ADMIN_ID);
+        expect(lower(row!.userid)).toBe(receiverId);
         expect(lower(row!.creatorid)).toBe(survey.creatorId);
         expect(row!.timestamp).toEqual(new Date(NOW));
         const transfers = (await laterAuditRows(survey.id)).filter(
@@ -2220,14 +2224,14 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         );
         expect(transfers).toHaveLength(1);
         expect(payloadOf(transfers[0]!, survey.id, "SURVEY_TRANSFER", NOW)).toEqual({
-          userid: { type: "Guid", value: ADMIN_ID },
+          userid: { type: "Guid", value: receiverId },
           creatorid: { type: "Guid", value: survey.creatorId },
         });
       }
       expect(await memberRows(id)).toEqual([]);
       expect(await projectRow(id)).toBeUndefined();
       const personalIds = (
-        await store().surveys.listSurveys({ kind: "personal", userId: ADMIN_ID })
+        await store().surveys.listSurveys({ kind: "personal", userId: receiverId })
       ).map((survey) => survey.id);
       expect(personalIds).toEqual(expect.arrayContaining(ids));
     });

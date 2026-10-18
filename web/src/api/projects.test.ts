@@ -163,18 +163,15 @@ describe("forgetProject", () => {
     expect(state(surveyKeys.list({ project: "p2", archived: false }))?.isInvalidated).toBe(false);
   });
 
-  it("leaves the personal entries alone when the user only left", async () => {
+  it("refreshes the cached survey details but not the personal lists when the user only left", async () => {
     const queryClient = seededClient();
 
     await forgetProject(queryClient, "p1", { deleted: false });
 
-    for (const key of [
-      surveyKeys.list(personalList),
-      surveyKeys.hasArchived("personal"),
-      surveyKeys.detail("s1"),
-    ]) {
+    for (const key of [surveyKeys.list(personalList), surveyKeys.hasArchived("personal")]) {
       expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
     }
+    expect(queryClient.getQueryState(surveyKeys.detail("s1"))?.isInvalidated).toBe(true);
   });
 });
 

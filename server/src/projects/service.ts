@@ -25,7 +25,7 @@ type MemberPatch = components["schemas"]["MemberPatch"];
 
 /**
  * The `addMember` body after contract validation. The generated type marks `role` required because
- * of its default; the server does not fill defaults into bodies.
+ * of its default; validation fills the default (`useDefaults`), and the service keeps its own fallback.
  */
 export interface MemberCreate {
   readonly email: string;

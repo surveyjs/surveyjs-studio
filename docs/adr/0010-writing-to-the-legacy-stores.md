@@ -477,6 +477,9 @@ rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
 
 ### Consequences of Step 11
 
+- The survey move of a project delete collects its ids with `OUTPUT … INTO` a table variable, because SQL Server
+  refuses a bare `OUTPUT` on a table with enabled triggers and the production `Surveys` table may have some.
+
 - A role change no longer replaces the row, so the legacy site, which reads `role` only, shows the same
   result, and the project's `createdAt` and creator marker survive.
 - A survey created or moved into a project can race a delete of that project on Azure: under `READ COMMITTED` a

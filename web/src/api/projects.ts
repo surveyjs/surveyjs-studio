@@ -98,11 +98,12 @@ export async function forgetProject(
   ]) {
     queryClient.removeQueries({ queryKey });
   }
+  // The user may have lost access to surveys of the project, so cached details go on a leave too.
+  await queryClient.invalidateQueries({ queryKey: ["surveys", "detail"] });
   if (deleted) {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: surveyKeys.listsOf("personal") }),
       queryClient.invalidateQueries({ queryKey: surveyKeys.hasArchived("personal") }),
-      queryClient.invalidateQueries({ queryKey: ["surveys", "detail"] }),
     ]);
   }
 }
