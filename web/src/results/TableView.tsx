@@ -7,7 +7,8 @@ import type { ViewState } from "../api/views";
 import { loadExportLibrary } from "./exportLibraries";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { extraTableColumns, tableRows } from "./tableRows";
-import { type ElementsState, reconcileElementsState, withoutElements } from "./elementsState";
+import { type ElementsState, reconcileElementsState } from "./elementsState";
+import { withoutQuestions } from "./publicDefinition";
 
 type TableViewState = Tabulator["state"];
 
@@ -54,7 +55,10 @@ export function TableView({
     if (target === null) return;
     let active = true;
     let rendered = false;
-    const survey = new Model(definition);
+    // The public Table is built without the private questions (see withoutQuestions).
+    const survey = new Model(
+      publicView ? withoutQuestions(definition, privateAtMount.current) : definition,
+    );
     const names = new Set(survey.getAllQuestions().map((question) => question.name));
     const extras = extraTableColumns(responses, names);
     const table = new Tabulator(
@@ -66,9 +70,7 @@ export function TableView({
     const defaults = defaultState(table, new Set(extras.map((column) => column.name)));
     // Always set before render (no onStateChanged then): it also fills the extra columns' cells,
     // which the library leaves empty for columns it adds after reading the data.
-    const reconciled = reconcileElementsState(initialState.current, defaults) ?? defaults;
-    // The public page keeps the private questions' columns out: a private question has no answers there.
-    const state = publicView ? withoutElements(reconciled, privateAtMount.current) : reconciled;
+    const state = reconcileElementsState(initialState.current, defaults) ?? defaults;
     table.lockStateChanged();
     table.state = state as unknown as TableViewState;
     table.unlockStateChanged();

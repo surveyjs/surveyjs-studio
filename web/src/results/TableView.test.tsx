@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { TableView } from "./TableView";
 
 // Tabulator builds no columns in jsdom (no layout), so the private columns are covered by
-// `withoutElements` (elementsState.test.ts) and the browser tests; the menu is built at render.
+// `withoutQuestions` (publicDefinition.test.ts) and the browser tests; the menu is built at render.
 // jsdom has no canvas; the library only measures text with it.
 beforeAll(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
