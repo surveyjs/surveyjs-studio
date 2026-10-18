@@ -89,7 +89,9 @@ export function TableView({
 
     table.render(target);
     rendered = true;
-    table.onStateChanged.add((_, changed: ViewState) => stateCallback.current(changed));
+    if (stateCallback.current !== undefined) {
+      table.onStateChanged.add((_, changed: ViewState) => stateCallback.current?.(changed));
+    }
     return () => {
       active = false;
       // The table cannot be destroyed before it rendered.

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-quer
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { definitionQueryOptions, type SurveyDefinition } from "../api/content";
-import { allResultsQueryOptions, type SurveyResponse } from "../api/results";
+import { allResultsQueryOptions } from "../api/results";
 import { surveyQueryOptions } from "../api/surveys";
 import {
   resetResultsView,
@@ -16,6 +16,8 @@ import { useLicenceApplied } from "../surveyjs/useLicenceApplied";
 import { DetailsTab } from "./DetailsTab";
 import styles from "./results.module.css";
 import { resultsSearch, type ResultsTab } from "./search";
+import type { ResultItem } from "./tableRows";
+import { usePrivateQuestionsSaver } from "./usePrivateQuestionsSaver";
 import { useViewSaver } from "./useViewSaver";
 
 /** What the Summary and the Table get from the page. */
@@ -23,11 +25,17 @@ export interface ResultsWidgetProps {
   readonly surveyId: string;
   readonly definition: SurveyDefinition;
   /** Every response, oldest first. */
-  readonly responses: readonly SurveyResponse[];
+  readonly responses: readonly ResultItem[];
   /** The state when the widget mounts (later changes of the prop are ignored); null = default layout. */
   readonly savedState: ViewState | null;
-  /** Each state the user makes; the page saves it (debounced). */
-  readonly onStateChange: (state: ViewState) => void;
+  /** Each state the user makes; the page saves it (debounced). Absent on the public page. */
+  readonly onStateChange?: (state: ViewState) => void;
+  /** The survey private questions when the widget mounts (`settings.privateResultQuestions ?? []`). */
+  readonly privateQuestions: readonly string[];
+  /** Private Summary, callers who may modify: the "Make private / Make public" toggle; the new full list. */
+  readonly onPrivateQuestionsChange?: (names: string[]) => void;
+  /** The public page: private questions not shown at all; the Table offers no downloads. */
+  readonly publicView?: boolean;
 }
 
 // The Dashboard and the table load only here, each on demand: nothing the survey list or this
@@ -68,6 +76,7 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
   const tableView = useQuery(resultsViewQueryOptions(surveyId, "table"));
   const summarySaver = useViewSaver(surveyId, "summary");
   const tableSaver = useViewSaver(surveyId, "table");
+  const privacy = usePrivateQuestionsSaver(surveyId);
   const saverOf = (view: ViewName) => (view === "summary" ? summarySaver : tableSaver);
 
   // Leaving a tab sends what its widget still holds for the debounce delay.
@@ -99,7 +108,7 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
 
   let content: ReactNode;
   if (tab === "details") {
-    content = <DetailsTab onReset={reset} />;
+    content = <DetailsTab survey={survey} onReset={reset} />;
   } else {
     const view = tab === "summary" ? summaryView : tableView;
     // Only first reads that failed and are not being retried.
@@ -131,6 +140,10 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
         responses: results.data,
         savedState: view.data,
         onStateChange: stateChange(tab),
+        privateQuestions: survey.settings.privateResultQuestions ?? [],
+        ...(tab === "summary" && survey.permissions.canModify
+          ? { onPrivateQuestionsChange: privacy.change }
+          : {}),
       };
       content = (
         <Suspense fallback={LOADING}>
@@ -182,6 +195,11 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
           <p className="v2-class---paragraph">{SAVE_FAILED_TEXT}</p>
         )}
       </div>
+      {privacy.failed && (
+        <p className="v2-class---paragraph" role="alert">
+          The list of private questions could not be saved. Please try again.
+        </p>
+      )}
       <p className="v2-class---paragraph">
         <Link className="v2-class---paragraph-link" to="/" search={back}>
           Back to My Surveys
