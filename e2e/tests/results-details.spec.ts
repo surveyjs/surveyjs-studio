@@ -188,8 +188,8 @@ test("Grant Access opens the results to signed-out visitors and Disable Access c
       await expect(tableHeaders(visitor).filter({ hasText: "Score" })).toHaveCount(1);
       await expect(visitor.locator(".sa-tabulator__downloads-bar")).toHaveCount(0);
       await expect(visitor.getByText("Export As...")).toHaveCount(0);
-      // Soft: the private question's column must not show (the rest of the scenario goes on).
-      await expect.soft(tableHeaders(visitor).filter({ hasText: "Agree" })).toHaveCount(0);
+      await expect(tableHeaders(visitor).filter({ hasText: "Submitted" })).toHaveCount(1);
+      await expect(tableHeaders(visitor).filter({ hasText: "Agree" })).toHaveCount(0);
 
       // Disable Access closes the page.
       await openResultsTab(page, "Details");
