@@ -18,13 +18,24 @@ import {
   surveyListPageHandlers,
   unauthenticatedHandler,
 } from "./test/server";
+import { definitionHandler } from "./test/content-handlers";
 import { publishedSurveyHandler, samplePublishedSurvey } from "./test/public-handlers";
+import { resultPagesHandler, sampleResponses, viewHandler } from "./test/results-handlers";
 
 vi.mock("./navigation", () => ({ navigateTo: vi.fn() }));
 // jsdom does not run the Form Library here (src/runRoutes.test.tsx tests the run page).
 vi.mock("./run/RunSurvey", () => ({
   RunSurvey: ({ data }: RunSurveyProps) => <p data-testid="fake-survey">{data.survey.name}</p>,
 }));
+// Nor the Dashboard and Tabulator (src/resultsRoutes.test.tsx tests the results page).
+vi.mock("./results/SummaryView", async () => {
+  const { fakeResultsWidget } = await import("./test/fakeResultsWidget");
+  return { SummaryView: fakeResultsWidget("fake-summary") };
+});
+vi.mock("./results/TableView", async () => {
+  const { fakeResultsWidget } = await import("./test/fakeResultsWidget");
+  return { TableView: fakeResultsWidget("fake-table") };
+});
 
 function renderAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -196,21 +207,27 @@ function logoutHandler(status: number, code: string, title: string) {
   );
 }
 
-describe("survey placeholder routes", () => {
-  it.each([["results", "Survey results arrive in a later version."]])(
-    "/surveys/<id>/%s shows the survey name and its text",
-    async (page, text) => {
-      server.use(configHandler(), meHandler(), surveyHandler());
+describe("survey pages", () => {
+  it("the results page shows the survey name and the Summary, Table and Details tabs", async () => {
+    server.use(
+      configHandler(),
+      meHandler(),
+      surveyHandler(),
+      definitionHandler({ elements: [{ type: "rating", name: "q1" }] }),
+      resultPagesHandler([sampleResponses(1)]),
+      viewHandler("summary", null),
+      viewHandler("table", null),
+    );
 
-      renderAt(`/surveys/${sampleSurvey.id}/${page}`);
+    renderAt(`/surveys/${sampleSurvey.id}/results`);
 
-      expect(
-        await screen.findByRole("heading", { level: 1, name: sampleSurvey.name }),
-      ).toBeTruthy();
-      expect(screen.getByText(text)).toBeTruthy();
-      expect(screen.getByRole("link", { name: "Back to My Surveys" })).toBeTruthy();
-    },
-  );
+    expect(await screen.findByRole("heading", { level: 1, name: sampleSurvey.name })).toBeTruthy();
+    for (const name of ["Summary", "Table", "Details"]) {
+      expect(screen.getByRole("link", { name })).toBeTruthy();
+    }
+    expect(await screen.findByTestId("fake-summary")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to My Surveys" })).toBeTruthy();
+  });
 
   it.each(["results", "history"])(
     "/surveys/<unknown>/%s says the survey is not available",

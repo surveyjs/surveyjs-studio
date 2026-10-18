@@ -1,0 +1,14 @@
+/* Only what the results page needs to be usable; visual parity with surveyjs.io is Step 13. */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.tabContent {
+  min-height: 250px;
+}
