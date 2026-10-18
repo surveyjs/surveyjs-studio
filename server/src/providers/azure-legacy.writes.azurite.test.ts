@@ -8,9 +8,10 @@ import {
   type WebResource,
 } from "@azure/storage-blob";
 import sql from "mssql";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { newFileId } from "../domain/file-id.js";
 import type {
+  NewProject,
   NewResponse,
   NewSurvey,
   StoredFileRecord,
@@ -21,7 +22,15 @@ import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { localBlobServiceClient, localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
-import { ADMIN_ID, PROJECT_B_ID, surveyDraft, surveyFeedback } from "./suite/expected.js";
+import {
+  ADMIN_ID,
+  MEMBER_ID,
+  PROJECT_B_ID,
+  adminUser,
+  memberUser,
+  surveyDraft,
+  surveyFeedback,
+} from "./suite/expected.js";
 import { ResponseTooLargeError, type AppendOutcome, type ProviderSet } from "./types.js";
 import {
   writeDefinitionSave,
@@ -32,8 +41,10 @@ import {
 // Runs in the `providers-azurite` Vitest project. Checks that survey create, update, clone,
 // delete and the definition and theme saves write exactly the legacy format (layout section 5.3),
 // and that editor files go to their own container only (Step 7, R2), by reading the replica
-// directly.
-// Writes go to fresh personal scopes and to Engineering (project B) only; fixture surveys are only
+// directly, and that project and member writes change exactly the Organizations and
+// OrganizationUsers columns the Step 11 rulings name.
+// Writes go to fresh personal scopes, to Engineering (project B) and to projects the tests create
+// and delete; fixture projects and memberships are never written; fixture surveys are only
 // read (as clone sources), and afterAll restores the golden fixtures.
 
 const SURVEYS_ACCOUNT = "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING";
@@ -1906,6 +1917,297 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       for (const item of items) {
         expect(item).toEqual({ id: item.id, at: modified.get(item.id), userId: null });
       }
+    });
+  });
+
+  describe("projects and members", () => {
+    // Marketing, Engineering and the fixture memberships are read only (R25): each test creates its
+    // own project and deletes it when it finishes. Only fixture users can be members (FK).
+    const CREATED_AT = "2026-08-01T10:00:00.000Z";
+    const NOW = "2026-08-02T10:00:00.000Z";
+    const LATER = "2026-08-03T10:00:00.000Z";
+    const lower = (value: unknown) => String(value).toLowerCase();
+
+    /** Creates a project of `creatorId` (Adam by default), deleted when the test finishes. */
+    async function ownProject(over: Partial<NewProject> = {}): Promise<NewProject> {
+      const id = randomUUID();
+      const project: NewProject = {
+        id,
+        name: `Writes test project ${id}`,
+        creatorId: ADMIN_ID,
+        createdAt: CREATED_AT,
+        ...over,
+      };
+      onTestFinished(async () => {
+        await store().directory.deleteProject(project.id, { receiverId: ADMIN_ID, now: NOW });
+      });
+      await store().directory.createProject(project);
+      return project;
+    }
+
+    async function sqlRows(text: string, id: string): Promise<Record<string, unknown>[]> {
+      if (!pool) throw new Error("beforeAll did not connect");
+      const result = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, id)
+        .query<Record<string, unknown>>(text);
+      return result.recordset;
+    }
+
+    /** The `Organizations` row with a lower-case id. */
+    async function projectRow(id: string): Promise<Record<string, unknown> | undefined> {
+      const [row] = await sqlRows("SELECT * FROM Organizations WHERE id = @id", id);
+      return row && { ...row, id: lower(row.id) };
+    }
+
+    /** The project's `OrganizationUsers` rows with lower-case ids, the creator's row first. */
+    async function memberRows(projectId: string): Promise<Record<string, unknown>[]> {
+      const rows = await sqlRows(
+        "SELECT * FROM OrganizationUsers WHERE organizationid = @id ORDER BY happendat, id",
+        projectId,
+      );
+      return rows
+        .map((row) => ({
+          ...row,
+          id: lower(row.id),
+          organizationid: lower(row.organizationid),
+          userid: lower(row.userid),
+        }))
+        .sort((a, b) => Number(b.id === projectId) - Number(a.id === projectId));
+    }
+
+    const rowsOf = async (projectId: string, userId: string) =>
+      (await memberRows(projectId)).filter((row) => row.userid === userId);
+
+    /** A membership row written as another writer (or an old site version) may have left it. */
+    async function insertRawMember(projectId: string, userId: string, role: string) {
+      if (!pool) throw new Error("beforeAll did not connect");
+      await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, randomUUID())
+        .input("project", sql.UniqueIdentifier, projectId)
+        .input("user", sql.UniqueIdentifier, userId)
+        .input("role", sql.VarChar(sql.MAX), role)
+        .input("at", sql.DateTime, new Date(CREATED_AT))
+        .query(
+          "INSERT INTO OrganizationUsers (id, organizationid, userid, role, type, happendat, " +
+            "[timestamp]) VALUES (@id, @project, @user, @role, 'ORGANIZATION_JOIN', @at, @at)",
+        );
+    }
+
+    /** Event rows of the surveys table that name `id` as survey or user. */
+    async function eventsNaming(id: string): Promise<Record<string, unknown>[]> {
+      const rows: Record<string, unknown>[] = [];
+      for await (const entity of events.listEntities({
+        queryOptions: { filter: `surveyid eq guid'${id}' or userid eq guid'${id}'` },
+      })) {
+        rows.push(entity as Record<string, unknown>);
+      }
+      return rows;
+    }
+
+    /** Two parallel reads, so the provider's pool holds two connections and two writes overlap. */
+    async function twoConnections(projectId: string): Promise<void> {
+      await Promise.all([
+        store().directory.listMembers(projectId),
+        store().directory.listMembers(projectId),
+      ]);
+    }
+
+    it("creates the project row and the creator's admin row, and no audit row", async () => {
+      const project = await ownProject();
+      const { id, name } = project;
+      const at = new Date(CREATED_AT);
+      expect(await projectRow(id)).toEqual({
+        id,
+        name,
+        type: "ORGANIZATION_CREATE",
+        happendat: at,
+        timestamp: at,
+        ipaddress: null,
+      });
+      expect(await memberRows(id)).toEqual([
+        {
+          id,
+          organizationid: id,
+          userid: ADMIN_ID,
+          role: "admin",
+          type: "ORGANIZATION_CREATE",
+          name,
+          happendat: at,
+          timestamp: at,
+          ipaddress: null,
+        },
+      ]);
+      expect(await eventsNaming(id)).toEqual([]);
+    });
+
+    it("rejects an id in use with a LegacyStoreError and rolls the creator row back", async () => {
+      const project = await ownProject();
+      const before = await projectRow(project.id);
+      const duplicate = { ...project, name: "Second project", creatorId: MEMBER_ID };
+      const error: unknown = await store()
+        .directory.createProject(duplicate)
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(LegacyStoreError);
+      expect(String(error)).not.toMatch(/Second project|Writes test project/);
+      expect(await projectRow(project.id)).toEqual(before);
+      expect((await memberRows(project.id)).map((row) => row.userid)).toEqual([ADMIN_ID]);
+    });
+
+    it("renames: name and timestamp only, the creator row's name stays", async () => {
+      const { id } = await ownProject();
+      const before = await projectRow(id);
+      const members = await memberRows(id);
+      const name = `Renamed Ünïcødé 😀 ${randomUUID()}`;
+      expect(await store().directory.renameProject(id, name, { now: NOW })).toBe(true);
+      expect(await projectRow(id)).toEqual({ ...before, name, timestamp: new Date(NOW) });
+      expect(await memberRows(id)).toEqual(members);
+    });
+
+    it("adds a member with a new row of its own", async () => {
+      const { id } = await ownProject();
+      const [creator] = await memberRows(id);
+      expect(await store().directory.addMember(id, MEMBER_ID, "user", { now: NOW })).toBe("added");
+      const rows = await memberRows(id);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual(creator);
+      const added = rows[1]!;
+      expect(added.id).toMatch(GUID);
+      expect(added.id).not.toBe(id);
+      expect(added).toEqual({
+        id: added.id,
+        organizationid: id,
+        userid: MEMBER_ID,
+        role: "user",
+        type: "ORGANIZATION_JOIN",
+        name: null,
+        happendat: new Date(NOW),
+        timestamp: new Date(NOW),
+        ipaddress: null,
+      });
+    });
+
+    it("changes a role in place, the creator's row included", async () => {
+      const { id } = await ownProject();
+      await store().directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      const [creator, member] = await memberRows(id);
+      expect(await store().directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe(
+        "changed",
+      );
+      expect(await memberRows(id)).toEqual([
+        { ...creator, role: "user", timestamp: new Date(LATER) },
+        member,
+      ]);
+    });
+
+    it("changes and removes every row of a member with duplicate rows", async () => {
+      const { id } = await ownProject();
+      await store().directory.addMember(id, MEMBER_ID, "user", { now: NOW });
+      await insertRawMember(id, MEMBER_ID, "user");
+      expect(await rowsOf(id, MEMBER_ID)).toHaveLength(2);
+
+      expect(await store().directory.setMemberRole(id, MEMBER_ID, "admin", { now: LATER })).toBe(
+        "changed",
+      );
+      const changed = await rowsOf(id, MEMBER_ID);
+      expect(changed.map((row) => [row.role, row.timestamp])).toEqual([
+        ["admin", new Date(LATER)],
+        ["admin", new Date(LATER)],
+      ]);
+
+      expect(await store().directory.removeMember(id, MEMBER_ID)).toBe("removed");
+      expect(await rowsOf(id, MEMBER_ID)).toEqual([]);
+      expect((await memberRows(id)).map((row) => row.userid)).toEqual([ADMIN_ID]);
+    });
+
+    it("lets only one of two concurrent demotions of the two admins pass", async () => {
+      const { id } = await ownProject();
+      const directory = store().directory;
+      await directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      await twoConnections(id);
+      const outcomes = await Promise.all([
+        directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER }),
+        directory.setMemberRole(id, MEMBER_ID, "user", { now: LATER }),
+      ]);
+      expect([...outcomes].sort()).toEqual(["changed", "last-admin"]);
+      const admins = (await memberRows(id)).filter((row) => row.role === "admin");
+      expect(admins).toHaveLength(1);
+    });
+
+    it("adds a user once when two adds run at the same time", async () => {
+      const { id } = await ownProject();
+      const directory = store().directory;
+      await twoConnections(id);
+      const outcomes = await Promise.all([
+        directory.addMember(id, MEMBER_ID, "user", { now: NOW }),
+        directory.addMember(id, MEMBER_ID, "user", { now: NOW }),
+      ]);
+      expect([...outcomes].sort()).toEqual(["added", "already-member"]);
+      expect(await rowsOf(id, MEMBER_ID)).toHaveLength(1);
+    });
+
+    it("counts a user with two admin rows (one stored as Admin) as one admin", async () => {
+      const { id } = await ownProject();
+      const directory = store().directory;
+      await directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      await insertRawMember(id, ADMIN_ID, "Admin");
+      expect(await directory.listMembers(id)).toEqual([
+        { user: adminUser, role: "admin" },
+        { user: memberUser, role: "admin" },
+      ]);
+      expect(await directory.setMemberRole(id, MEMBER_ID, "user", { now: LATER })).toBe("changed");
+      expect(await directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe(
+        "last-admin",
+      );
+    });
+
+    it("skips a member whose only role is unknown and warns with ids only", async () => {
+      const { id } = await ownProject();
+      await insertRawMember(id, MEMBER_ID, "guest");
+      warnings.length = 0;
+      expect(await store().directory.listMembers(id)).toEqual([{ user: adminUser, role: "admin" }]);
+      expect(warnings).toEqual([
+        {
+          details: { projectId: id, userId: MEMBER_ID },
+          message: "Skipped a project member whose role is unknown.",
+        },
+      ]);
+    });
+
+    it("deletes a project: its surveys, archived ones too, move to the receiver with their creators", async () => {
+      const { id } = await ownProject();
+      const scope: SurveyOwner = { kind: "project", projectId: id };
+      const active = newSurvey(scope, { creatorId: MEMBER_ID });
+      const archived = newSurvey(scope, { creatorId: ADMIN_ID });
+      await store().surveys.createSurvey(active);
+      await store().surveys.createSurvey(archived);
+      await store().surveys.updateSurvey(archived.id, { archived: true, updatedAt: CREATED_AT });
+      const ids = [active.id, archived.id].sort();
+
+      const moved = await store().directory.deleteProject(id, { receiverId: ADMIN_ID, now: NOW });
+
+      expect(moved).toEqual(ids);
+      for (const survey of [active, archived]) {
+        const row = await rawRow(survey.id);
+        expect(lower(row!.userid)).toBe(ADMIN_ID);
+        expect(lower(row!.creatorid)).toBe(survey.creatorId);
+        expect(row!.timestamp).toEqual(new Date(NOW));
+        const transfers = (await laterAuditRows(survey.id)).filter(
+          (event) => typeOf(event) === "SURVEY_TRANSFER",
+        );
+        expect(transfers).toHaveLength(1);
+        expect(payloadOf(transfers[0]!, survey.id, "SURVEY_TRANSFER", NOW)).toEqual({
+          userid: { type: "Guid", value: ADMIN_ID },
+          creatorid: { type: "Guid", value: survey.creatorId },
+        });
+      }
+      expect(await memberRows(id)).toEqual([]);
+      expect(await projectRow(id)).toBeUndefined();
+      const personalIds = (
+        await store().surveys.listSurveys({ kind: "personal", userId: ADMIN_ID })
+      ).map((survey) => survey.id);
+      expect(personalIds).toEqual(expect.arrayContaining(ids));
     });
   });
 
