@@ -416,7 +416,12 @@ deleted, the tables kept, the private list in the old blob) are in
   respondent files are deleted first, so after a failure the remaining rows may point at deleted files.
 - The permissions blob written here is read by the old site as a list of private columns; an old reader that
   expected a public entry for every question treats a missing entry as public, so it is safe.
-- Two writers of the list at the same moment overwrite each other: the latest save wins.
+- Replacing the append blob creates an empty blob before it appends the text, so a read can find it empty (or
+  find it so after a failed append). The read side fails closed: it reads once more and then rejects, and never
+  takes an unreadable list for "every question public" (ADR 0016, R1). `updateSurvey` writes the list only after
+  the survey update succeeded.
+- The web saves only the names a user changed, onto a fresh read of the list, so writers on different pages keep
+  each other's changes; two saves at the very same moment can still race, and then the later write wins.
 
 ## Consequences
 

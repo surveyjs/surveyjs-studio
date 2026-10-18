@@ -407,7 +407,9 @@ curl -s -b cookies.txt "$API/surveys/$ID/views/summary"
 from public results (an array of strings, `[]` for none). A patch **replaces** the whole list. It is returned by
 `getSurvey`, `updateSurvey`, `createSurvey` and `cloneSurvey`, and **left out of `listSurveys` items** (reading
 it from a list would mean one blob read for each survey on the old stores; call `getSurvey`). A clone starts
-with `[]`.
+with `[]`. `getSurvey` and `updateSurvey` leave it out when the server cannot read the list right now: do not
+offer to change it then, and read it again before you patch, so that you change only the names you mean to.
+`updateSurvey` saves the list after the rest of the patch; a failed update leaves the old list.
 
 ```sh
 # $API, $ID and $CSRF as in Step 5
@@ -415,7 +417,7 @@ curl -s -X PATCH -b cookies.txt -H "X-CSRF-Token: $CSRF" -H "Content-Type: appli
   -d '{"settings":{"privateResultQuestions":["receipt"]}}' "$API/surveys/$ID"
 ```
 
-The export, the CSV rules, the file names, the short-file case and the delete are in
+The export, the CSV rules, the file names, a failure part way and the delete are in
 [Exporting results](exporting-results.md). The public results page of a survey is in
 [Public endpoints](public-endpoints.md#public-results). The reasons are in
 [ADR 0016](../adr/0016-results-details-exports-and-public-results.md).

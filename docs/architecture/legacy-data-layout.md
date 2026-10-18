@@ -570,9 +570,11 @@ The blob `surveyresultpermissions/{surveyId}` is now **read and written**, as th
 public results leave out (the setting `privateResultQuestions`). It is per survey, as in the old site, and not
 per user:
 
-- **Read** with the old defaults: the text is parsed as JSON after one leading U+FEFF is removed; a value that
-  is not an array, or text that does not parse, counts as "no list" (a warning with ids only is logged, and every
-  question is public); of an array, each element that is an object with a non-empty string `name` and
+- **Read** with the old defaults: the text is parsed as JSON after one leading U+FEFF is removed. The read
+  **fails closed**: an empty blob (an append blob between its create and its append, or after a failed append),
+  a value that is not an array, or text that does not parse is read once more and then fails (an error with
+  the operation name only), never "every question public"; public results then answer `500`, and
+  `getSurvey` leaves the setting out. Of an array, each element that is an object with a non-empty string `name` and
   `isPublic` equal to the boolean `false` is a private question (first occurrence only, in array order). An
   element without `isPublic`, with `true`, with `"false"` or that is not an object is **public**, as in the old
   code. A missing blob means every question is public.

@@ -115,6 +115,8 @@ What a visitor sees:
   loads the page says "Loading the results…". If it cannot be loaded it says "The results could not be loaded.
   Check your connection and try again." with **Try again**.
 - **No IP addresses, client ids or response ids**, and no answers to the questions you made private (below).
+  The only trace of a response id is inside the page's "next page" marker, which the page uses to load more
+  rows; response ids are random and say nothing about the respondent.
 - The layout is the default one, not yours. A visitor cannot save a layout.
 - The address ends in the survey's id. Anyone who has the address can read the results until you click
   **Disable Access**. Do not share it with people who must not see the answers.
@@ -136,8 +138,12 @@ By default the visitors see the answers to every question. To hide one:
 2. Click it. The button on that chart changes to **Make public**. Click **Make public** to show the question
    again.
 
-The change is saved at once, for the survey. If it cannot be saved, the page says "The list of private
-questions could not be saved. Please try again." A private question:
+The change is saved at once, for the survey. The page reads the survey's list again just before it saves and
+changes only the questions you clicked, so it never undoes what another user (or you, in another tab) saved
+in the meantime. If it cannot be saved, the page says "The list of private questions could not be saved.
+Please try again." If the server cannot read the list right now, the Summary shows no **Make private** button
+at all, and the public page says the results could not be loaded: no question is ever shown just because the list
+could not be read. A private question:
 
 - is not in the public **Summary** and not a column of the public **Table**;
 - has its answers (and its comment) left out of the data the server sends to the public page, not only

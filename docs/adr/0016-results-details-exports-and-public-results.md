@@ -6,8 +6,9 @@ Date: 2026-10-18
 
 Accepted. The product owner has not confirmed R1 (a per-survey list of private questions), R3 (CSV headers are
 question names, and the formula guard), R9 (public results are served whatever the published and archived
-flags say), R14 (deleting results asks for the survey name, then a browser confirm) and the choice to leave the
-list out of `listSurveys` items (see "To confirm").
+flags say), R14 (deleting results asks for the survey name, then a browser confirm), leaving the legacy
+`postdelete` table to Delete Results, and the choice to leave the list out of `listSurveys` items (see "To
+confirm").
 
 ## Context
 
@@ -52,9 +53,27 @@ survey of every list page. For the same reason it is left out of `listSurveys` i
 (the old readers treat a missing entry as public, so nothing changes for them) and no audit row (Step 9 R7
 precedent).
 
+The list **fails closed**. On Azure a save replaces the append blob: it creates an empty blob, then appends the
+text, so a read in between (or after a failed append) finds an empty blob. A list blob that exists but is empty
+or not a JSON array is read once more, and if it is still unreadable the read fails; only a missing blob means
+"no private questions". `getPublicResults` then answers `500` and never serves answers without a readable
+list. `getSurvey` and `updateSurvey` answer without `settings.privateResultQuestions` (the contract says the
+field is absent when the list cannot be read right now) and log a warning with the survey id only; without the
+field the private Summary does not offer **Make private / Make public**, so no list built from an unknown state
+is saved. `updateSurvey` saves the list **after** the survey update succeeded, so a failed update leaves the old
+list.
+
+Saves are **change based**. The Summary reports only the questions whose mark the user flipped. Before each
+`PATCH` the page reads the survey again, applies those names to the fresh list (made private: added; made
+public: removed; every other name untouched) and sends the result. A Summary opened earlier, in another tab or
+by another editor, therefore never undoes what someone else saved meanwhile. When that read fails or has no
+list, nothing is sent and the page shows its privacy error.
+
 Why R9: Grant Access is the owner's explicit choice. Tying it to **Publish** would make a survey that stopped
 collecting unreadable, and the old site did not do that either. The answer for "off" and for "unknown" is the
-same so that a visitor cannot probe for ids. The public rate limit protects the endpoint; a public page loads
+same so that a visitor cannot probe for ids. The page cursor carries the last item's submission time and
+response id, as the `listResults` cursor does: it is opaque to clients, response ids are random, and no public
+operation takes one. The public rate limit protects the endpoint; a public page loads
 one request for each 1,000 responses, so a survey of more than 60,000 responses cannot be read at once from one
 address with the default limit.
 
@@ -65,7 +84,7 @@ address with the default limit.
 | R2  | Choosing the format | The contract's `format` enum stays: `json` or `csv`, anything else (`xlsx`) is `400`. `format` wins over `Accept`. `Accept` is read with q-values: `*/*` and `application/*` give JSON, `text/*` gives CSV, no `Accept` gives JSON, and an `Accept` that names neither gives `406`, decided before the survey is looked up. A range with `q=0` or an unreadable `q` is skipped, there is no specificity ranking                                                                                                                                                                          | Departs: any `format` other than `csv` gave JSON, and the link carried the user's access key. Keeps the two links                                                                                                                                     |
 | R3  | The CSV             | UTF-8 with a byte order mark, commas, CRLF after every record, RFC 4180 quoting. The header always exists. Columns: `Submitted` (ISO 8601 UTC), `IPAddress` only while `storeRespondentIp` is on, one column per question **name** in definition order (a `<name>-Comment` column after a question with a comment or "other" area), `ClientId` last and always. Values: text as it is, numbers and booleans as text, arrays and objects as JSON text, empty for null. **Formula guard:** a text that starts with `=`, `+`, `-`, `@`, a tab or a CR gets a leading `'` (header names too) | Keeps the order (Submitted, IP while on, questions, client id). Departs: titles as headers, host-dependent line ends, culture dependent numbers and dates, fields that were not quoted, an empty file for no responses, and no guard against formulas |
 | R4  | The JSON            | A bare array of `SurveyResponse` items (the items of `listResults`), with everything the owner may read (`clientId`, `respondentIp` where stored)                                                                                                                                                                                                                                                                                                                                                                                                                                        | Departs: `{ "ResultCount", "Data" }`, merged rows and columns that depended on the old column blob                                                                                                                                                    |
-| R5  | Order and streaming | Submission order, read page by page through the existing `listResponsePage` (1,000 rows a page) and written to the response as it goes. The first page is read **before** the headers are sent, so most failures are a clean `500`; a failure on a later page ends the stream and the client sees a short file. No new store method                                                                                                                                                                                                                                                      | Departs: the old code built the file in memory, JSON in storage order and CSV newest first                                                                                                                                                            |
+| R5  | Order and streaming | Submission order, read page by page through the existing `listResponsePage` (1,000 rows a page) and written to the response as it goes. The first page is read **before** the headers are sent, so most failures are a clean `500`; a failure on a later page aborts the transfer (most clients report an incomplete or failed download). No new store method                                                                                                                                                                                                                            | Departs: the old code built the file in memory, JSON in storage order and CSV newest first                                                                                                                                                            |
 | R6  | The file name       | `Content-Disposition: attachment` with the survey name and `.json` or `.csv` (`results` for a blank name), an ASCII fallback `filename` and an RFC 5987 `filename*`. `Cache-Control: no-store` and `nosniff`                                                                                                                                                                                                                                                                                                                                                                             | Keeps the name `<survey name>.json` and `.csv`. Departs: an unsanitised name                                                                                                                                                                          |
 
 Why R3: a CSV that a spreadsheet opens must be a valid CSV. The byte order mark is what makes Excel read UTF-8,
@@ -84,8 +103,8 @@ definition without `pages` is read as one page. A stored address is not in the C
 
 Why R5: reusing the paged reader is the smallest change, and the order matches the Table and `listResults`. On
 Azure it inherits the cost of paging (each page scans the rows from its cursor on), which Step 14 measures. A
-store failure after the first page cannot change the status; the guide says how a client checks for a short
-file.
+store failure after the first page cannot change the status: the server aborts the transfer, which most
+clients report as an incomplete or failed download, and the guide says how a client checks a file it kept.
 
 ### Deleting all results (R7, R8)
 
@@ -96,7 +115,9 @@ file.
 
 Why R7: spec › Data protection says deleting results is permanent and includes files, and a file link that stays
 alive after "delete all" would be a leak. The respondent files go first, then the rows and markers, so a
-failure part-way can be repeated. The tables are kept because Azure refuses to create a table that is still
+failure part-way can be repeated. The window between the two is narrow but real: a file uploaded after the
+file delete and before the row delete is not deleted, and once its response row is gone nothing points to it
+(an orphaned file). The tables are kept because Azure refuses to create a table that is still
 being deleted for about 40 seconds (`TableBeingDeleted`), so a response sent right after the old delete
 failed; deleting rows has no such window and costs a longer delete on a huge survey. A respondent's browser may
 still hold the completion cookie of the Form Library; the server cannot clear it. The old `postdelete` audit
@@ -136,14 +157,18 @@ support address, which is not copied.
 
 - A private question is **private** only for the public page. The owner's Summary, Table and both downloads still
   hold it.
-- The list of private questions has one writer per survey, no history and no audit row. Two users who change it
-  at the same moment overwrite each other (the latest save wins), as the layouts do.
+- The list of private questions has no history and no audit row. Each save reads the list again and changes only
+  the names the user flipped, so users who change it from different pages keep each other's changes. Two saves
+  at the very same moment can still race (the read and the write are separate requests), and then the later
+  write wins.
+- While the Azure list blob cannot be read (a save half way, or a damaged blob), the public page answers an
+  error and the private Summary offers no toggle, until the next save or a retry finds it readable.
 - A response with the setting `storeRespondentIp` on holds an address that the JSON export and the Table show, and
   that stays when the setting is turned off.
 - The CSV guard changes text answers that start with `=`, `+`, `-` or `@`, so a program that reads the CSV and
   expects the text as typed must remove the `'`. The JSON is the unchanged source.
 - A long export on Azure scans the survey once for each page, as `listResults` does (about N²/2,000 rows read for N
-  responses), and a failure after the first page gives a short file. A client that needs a complete file checks
+  responses), and a failure after the first page aborts the transfer. A client that needs a complete file checks
   the end of the JSON and the row count against `getResultStats`.
 - Public results of a survey over 60,000 responses cannot be read at once from one address with the default
   `PUBLIC_RATE_LIMIT`; the page says "Try again".
@@ -168,6 +193,10 @@ written.
 - **R9: public results ignore `published` and `archived`.** Grant Access alone decides. The owner may want a
   survey that is unpublished or archived to close its public page.
 - **R14: two-step delete confirmation.** The survey name, then the browser's confirm, as the old page intended.
+- **The legacy `postdelete{postId}` table.** The old site copies each response it deletes one by one into this
+  table. **Delete Results** leaves the table and its copies, so personal data of responses deleted on the old
+  site stays there. US 55 asks to "remove personal data"; the owner may want Delete Results to empty that table
+  too.
 - **The setting `privateResultQuestions` is not in `listSurveys` items.** R1 calls it a setting like the two
   others, which are always present. Reading it for every row of a list would cost one blob read for each survey
   on Azure, so it is left out of lists. The owner may rule that lists carry it.
@@ -185,8 +214,8 @@ written.
   uses the survey id.
 - **The legacy file-share files on delete.** The old site's `files` and `tempfiles` shares are not touched by
   **Delete Results**.
-- **The private-list tracker across tabs.** The open Summary reads the list at mount and does not resync, so a
-  change made in another tab can be overwritten by the next toggle here.
+- **The private-list marks across tabs.** Saves no longer overwrite another tab's changes, but an open Summary
+  does not redraw them: its marks show the list at mount plus its own changes until it mounts again.
 - **The scan of large tables on Azure** (the cost of export and of public results, layout gap 8): measure on real
   volumes (Step 14).
 - **A locale picker and a visual match** with the old results page: Steps 13 and later.

@@ -307,8 +307,9 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
 - **`survey`.** `id`, `name` (may be empty), the stored `definition` (so a Dashboard can draw the charts) and
   `privateQuestions`, the names of the questions left out (below). It has no theme and no permissions.
 - **What an item holds.** `submittedAt` and `data` only. **No response id, no client id and no IP address**,
-  whatever the survey's settings are. (The `nextCursor` of a page does hold the id of the page's last row,
-  inside its encoding; no public operation takes a response id.)
+  whatever the survey's settings are. (The `nextCursor` of a page does carry the submission time and the
+  response id of the page's last item, inside its encoding. Treat it as opaque: response ids are random, and
+  no public operation takes one.)
 - **Private questions are stripped on the server.** The survey's list `settings.privateResultQuestions`
   names questions; the server removes their answers from every item's `data` **before** it answers. It also
   removes their comments (the key plus the comment suffix of the definition) and, when the question has a

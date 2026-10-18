@@ -170,7 +170,7 @@ A few cases to know:
 - The comment of a question is the text of its comment or "other" area. It is a separate column only for the
   questions the list above names.
 
-### Streaming and a short file
+### Streaming and a failure part way
 
 The server reads the responses one page of 1,000 at a time and writes each page before it reads the next.
 It never holds the whole file.
@@ -179,10 +179,11 @@ It never holds the whole file.
   survey, or one the user cannot see; for CSV also a survey with no definition), then the first page is
   read. A store failure on that first page is still a clean `500 internal-error` Problem Details answer.
 - **A failure after the first page cannot change the status**, because `200` and the headers are already
-  sent. The server ends the stream early and logs the error (the log has no answers). The client sees a
-  **short file**: a JSON file that is not complete, or a CSV file with fewer rows than the survey has. Check
-  the end of a JSON file (it must close with `]`) and compare the number of rows with `getResultStats`
-  (`count`) when the file must be complete.
+  sent. The server **aborts the transfer** and logs the error (the log has no answers). The body ends
+  without its last chunk, so most clients (browsers, `curl`, HTTP libraries) report an incomplete or failed
+  download. A client that keeps what it received anyway has a JSON file that is not complete, or a CSV file
+  with fewer rows than the survey has. Check the end of a JSON file (it must close with `]`) and compare the
+  number of rows with `getResultStats` (`count`) when the file must be complete.
 - Nothing is cached (`no-store`), and a second download reads the store again.
 
 ### Cost on the old site's stores

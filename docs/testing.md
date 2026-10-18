@@ -87,16 +87,20 @@ Run with Vitest from the root. Scope:
   `export.test.ts`: the paging of `storedResponses`, a failing first page, the JSON and CSV streams, the header
   alone for no responses), the handlers through `inject` (`results/handlers.test.ts`: the `no-store`, `nosniff`
   attachment headers, a `500` that logs no answer when the first page fails, a failed file delete that keeps
-  the rows, and public results without the private question), the legacy mapping of the private-question blob
+  the rows, public results without the private question, and a `500` without answers when the private list
+  cannot be read; `surveys/handlers.test.ts`: `getSurvey` and `updateSurvey` without the list and one warning
+  with the survey id when it cannot be read, and the old list kept when the survey update fails), the legacy mapping of the private-question blob
   (`mapping.test.ts`: the defaults for a missing `isPublic`, a BOM, a damaged blob, order and duplicates), the
   fixture seed's private list, and the public rate limit (`rate-limits.test.ts`: its own counter).
 - `web/` (Step 10): `api/results.ts` (statistics under a key outside the results prefix, the delete with its
   CSRF token and its `403`, the cache after a deletion, and nothing changed when it fails), `api/public.ts`
   (every page joined, the survey of page 1, `survey-not-available`, a repeated cursor), the pure modules of
-  `results/` (`details.ts`, `downloadUrl.ts`, `privacy.ts` with the "hidden but still private" rule,
-  `publicDefinition.ts`, `publicResultsState.ts`), the Details tab through the router (`resultsRoutes.test.tsx`:
+  `results/` (`details.ts`, `downloadUrl.ts`, `privacy.ts` with the "hidden but still private" rule and
+  the change-based helpers, `publicDefinition.ts` with the legacy `questions` key, `publicResultsState.ts`), the Details tab through the router (`resultsRoutes.test.tsx`:
   totals, no dates for an empty survey, no toggle for a caller who cannot modify, one merge patch per toggle,
-  the IP toggle that refetches nothing, the failures, the two delete steps) and the public page
+  the IP toggle that refetches nothing, the failures, the two delete steps; the private-question saves applied to
+  a fresh read so another writer's names stay, no save when that read fails or has no list, and no toggle for a
+  survey without the list) and the public page
   (`publicResultsRoutes.test.tsx`: Summary and Table without sign-in, the page name, **Try again**). The two
   widgets are still the stand-in `fakeResultsWidget.tsx`, so a real **Make private** is covered by the
   end-to-end spec.
@@ -660,8 +664,8 @@ deletion with the survey, no copy on a clone, `[]` for a non-GUID id and a rejec
 `post{postId}` and `SurveyCompletion{surveyId}` are emptied in batches (150 rows take two transactions), both
 tables and `postdelete{postId}` stay, one `SURVEY_DELETEALLRESULTS` audit row is written, a survey that never
 had a results table is fine; the private list is an append blob with the old JSON (`[{ "name", "isPublic":
-false }]`) and no SQL or audit change; the old defaults and a warning with ids only for a blob that is not an
-array; and the blob goes with the survey. The loader tests (`load-fixtures.azurite.test.ts`) check
+false }]`) and no SQL or audit change; the old defaults, and a rejected read (fail closed, no warning) for a zero-byte blob, text that is not
+JSON, JSON that is not an array and an empty append blob; and the blob goes with the survey. The loader tests (`load-fixtures.azurite.test.ts`) check
 that the 1,500 generated rows load and that loading again gives equal summaries, and that the views container is
 cleared by a load. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on

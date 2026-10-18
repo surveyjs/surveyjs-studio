@@ -448,8 +448,8 @@ the reasons for each ruling (R1 to R20) are in
   `]`; `csvExport` yields the BOM and header, then one record per response. The handler sends
   `Readable.from(body, { objectMode: false })` with `content-type`, `content-disposition` (the
   `contentDisposition` helper of `files/file-type.ts`), `cache-control: no-store` and
-  `x-content-type-options: nosniff`. A store failure after the first page ends the stream (the client gets a
-  short file) and the log carries the error only.
+  `x-content-type-options: nosniff`. A store failure after the first page aborts the transfer (most clients report an
+  incomplete or failed download) and the log carries the error only.
 - **CSV** (`results/csv.ts`, `results/definition.ts`, pure). `questionsOf(definition)` lists the questions in
   order (pages, panels flattened, `html` and `image` skipped, a repeated name once, `valueName` as the answer
   key, comment flags); `csvColumns` builds `Submitted`, `IPAddress` (only while `storeRespondentIp` is on),
@@ -471,8 +471,13 @@ the reasons for each ruling (R1 to R20) are in
 - **azure-legacy provider.** `deleteAll` calls `writeResultsDeletion` (below). `getPrivateQuestions` reads the
   blob `surveyresultpermissions/{surveyId}` through `privateQuestionsFromLegacy` (`mapping.ts`) with the legacy
   defaults: a missing blob, or an element without `isPublic` or with another value than the boolean `false`, is
-  public. Text that is not a JSON array is ignored with a warning that carries ids only.
-  `savePrivateQuestions` calls `writePrivateQuestions`.
+  public. It **fails closed**: a blob that is empty (a save between its create and its append, or a failed
+  append) or not a JSON array is read once more, then the read rejects with
+  `LegacyStoreError("public questions read")`. `getPublicResults` lets that become a `500`; `getSurvey` and
+  `updateSurvey` (`surveys/service.ts`) catch it, log a warning with `{ surveyId }` only and answer without
+  `settings.privateResultQuestions`. `savePrivateQuestions` calls `writePrivateQuestions`; `updateSurvey`
+  calls it only after `surveys.updateSurvey` succeeded, so a failed update keeps the old list. The container
+  name is `PERMISSIONS_CONTAINER` of `writes.ts`.
 - **Rate limit and headers.** `PUBLIC_OPERATIONS` in `app.ts` gains `getPublicResults`, so it shares the
   setting `PUBLIC_RATE_LIMIT` with its own counter. `exportResults` and `getPublicResults` answer
   `Cache-Control: no-store`.
@@ -1149,15 +1154,21 @@ The results page is `/surveys/$surveyId/results?tab=summary|table|details`.
   are read again, so an open Summary and Table are empty without a reload. The Reset sections show to everyone.
   The texts and classes are copied from surveyjs.io (D14) and listed in
   `web/src/shell/surveyjs-site/assets/README.md`.
-- **Private questions** (`privacy.ts`, `usePrivateQuestionsSaver.ts`). For callers who may modify the survey, the
-  private Summary turns on `allowMakeQuestionsPrivate` (the library's **Make private** / **Make public**).
-  `createPrivateList` starts from the survey setting at mount; each permissions change goes through
-  `privateNamesOf`, which keeps the names of questions the Dashboard no longer lists (a chart hidden with
-  **Hide** stays private), so no change silently makes a question public. The new full list is saved through
-  `createViewSaver` with `delayMs: 0`, so one `PATCH` is in flight and the latest list wins; a failure shows
-  "The list of private questions could not be saved. Please try again." The survey setting is the source of
-  truth on every mount (`withPrivacy` overlays it on the saved Summary state, and a toggle also changes
-  `isPublic` in the user's saved layout). The list is not resynced from the survey after mount.
+- **Private questions** (`privacy.ts`, `usePrivateQuestionsSaver.ts`). For callers who may modify the survey,
+  and only while the survey answers with `settings.privateResultQuestions` (the server leaves it out when it
+  cannot read the list), the private Summary turns on `allowMakeQuestionsPrivate` (the library's **Make
+  private** / **Make public**). `createPrivacyTracker` starts from the survey setting at mount and turns each
+  permissions change into a `PrivacyChange`: the names whose `isPublic` flipped. A question the Dashboard no
+  longer lists (a chart hidden with **Hide**) is in no change, so it keeps its mark. Saves are change based:
+  the saver combines the changes not sent yet (`combinePrivacyChanges`, the newest wins for a name), reads
+  the survey again (`fetchQuery` with `staleTime: 0`), applies them to the fresh list
+  (`applyPrivacyChange`: made private added, made public removed, other names untouched) and sends that list.
+  A Summary opened earlier therefore never undoes another writer's names. A failed read, a survey without
+  the list and a failed `PATCH` send nothing more and show "The list of private questions could not be
+  saved. Please try again."; their changes go out again with the next one. It runs on `createViewSaver` with
+  `delayMs: 0`, so one save is in flight. The survey setting is the source of truth on every mount
+  (`withPrivacy` overlays it on the saved Summary state, and a toggle also changes `isPublic` in the user's
+  saved layout); an open Summary does not redraw other writers' marks until it mounts again.
 - **Reset** (`DetailsTab.tsx`): `window.confirm`, then the page cancels the saver's waiting state, sends the
   `DELETE`, cancels reads of that view still in flight and sets the view's query data to `null`. The
   widget then shows the default layout when the tab opens. There is no page reload. The texts, classes and the
