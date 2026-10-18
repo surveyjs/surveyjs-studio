@@ -128,6 +128,114 @@ describe("the view saver", () => {
     expect(done).toBe(true);
   });
 
+  it("cancel drops a pending state while a save is in flight", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    await vi.advanceTimersByTimeAsync(500);
+    let done = false;
+    const cancelled = saver.cancel().then(() => (done = true));
+    calls[0]!.resolve();
+    await cancelled;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(done).toBe(true);
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }]);
+  });
+
+  it("flush with a save in flight and a pending state resolves after both", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    let done = false;
+    const flushed = saver.flush().then(() => (done = true));
+    await settle();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }]);
+    calls[0]!.resolve();
+    await settle();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }, { n: 2 }]);
+    expect(done).toBe(false);
+    calls[1]!.resolve();
+    await flushed;
+    expect(done).toBe(true);
+  });
+
+  it("sends the pending state after a failed save", async () => {
+    const { saver, calls, errors } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    await vi.advanceTimersByTimeAsync(500);
+    const failure = new Error("down");
+    calls[0]!.reject(failure);
+    await settle();
+    expect(errors).toEqual([failure]);
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }, { n: 2 }]);
+  });
+
+  it("sendNow sends a waiting state at once, also while a save is in flight", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    saver.sendNow();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }, { n: 2 }]);
+    // The timer of { n: 2 } was stopped: nothing more goes out.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("sendNow sends a pending state at once", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.sendNow();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }, { n: 2 }]);
+  });
+
+  it("sendNow beside a flight sends the newest state again after it, so it is the last save", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.change({ n: 2 });
+    saver.sendNow();
+    let done = false;
+    const flushed = saver.flush().then(() => (done = true));
+    calls[1]!.resolve();
+    await settle();
+    expect(done).toBe(false);
+    // The older save ends after the newer one: the newer state goes out once more.
+    calls[0]!.resolve();
+    await settle();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }, { n: 2 }, { n: 2 }]);
+    expect(done).toBe(false);
+    calls[2]!.resolve();
+    await flushed;
+    expect(done).toBe(true);
+  });
+
+  it("sendNow with no save in flight sends once", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    saver.sendNow();
+    expect(calls.map((c) => c.state)).toEqual([{ n: 1 }]);
+    calls[0]!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("sendNow with nothing waiting sends nothing", async () => {
+    const { saver, calls } = setup();
+    saver.change({ n: 1 });
+    await vi.advanceTimersByTimeAsync(500);
+    saver.sendNow();
+    expect(calls).toHaveLength(1);
+  });
+
   it("ignores changes after close", async () => {
     const { saver, calls } = setup();
     await saver.close();

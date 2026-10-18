@@ -152,9 +152,10 @@ download after the `await` was not blocked in Chromium, Firefox or WebKit, so th
 | R17 | When and how | A change is sent **500 ms** after the last one, with one request in flight and a latest-wins pending slot. A waiting change is sent at once on a tab switch, on unmount and on `pagehide` (with `keepalive` for a body under 60,000 **bytes**, counted in UTF-8). The saved state is applied **before** the listeners attach (the table: before `render`, under `lockStateChanged()`), so loading never echoes a save. A failed save shows a quiet, non-blocking line; the next change tries again. Reset: confirm, `DELETE`, then the widget shows its default layout, with no page reload | Departs: a save on every event, no debounce, failures ignored, a summary listener that may save the loaded state back, and a page reload after a reset |
 
 Why: a drag fires many events, and a request for each is noise and can arrive out of order. The `pagehide` flush
-is what keeps the last change when a tab closes, and `keepalive` is what keeps that request alive (browsers cap
-such a body at 64 KB, so the page counts bytes, not characters). The quiet line follows the editor's rule that
-a failure never blocks work.
+is what keeps the last change when a tab closes; it does not wait for a save in flight, which would usually end
+after the page is gone (the newest state is sent beside it and, if the page lives on, once more after it), and
+`keepalive` is what keeps that request alive (browsers cap such a body at 64 KB, so the page counts bytes, not
+characters). The quiet line follows the editor's rule that a failure never blocks work.
 
 ### The large fixture survey (R9, R10)
 

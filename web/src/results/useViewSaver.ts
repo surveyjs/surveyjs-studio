@@ -16,7 +16,8 @@ export interface ViewSaverHandle {
 /**
  * Saves one view of the survey for the user while the page is open: debounced, one request at a
  * time (`createViewSaver`). A waiting state is sent when the component unmounts and when the page
- * is hidden (`pagehide`: the tab closes, reloads or goes to another site).
+ * is hidden (`pagehide`: the tab closes, reloads or goes to another site); then it goes out at once,
+ * also while an earlier save is in flight, since the page may be gone before that one ends.
  */
 export function useViewSaver(surveyId: string, view: ViewName): ViewSaverHandle {
   const [failed, setFailed] = useState(false);
@@ -30,7 +31,7 @@ export function useViewSaver(surveyId: string, view: ViewName): ViewSaverHandle 
       onSaved: () => setFailed(false),
     });
     saver.current = created;
-    const sendWaiting = () => void created.flush();
+    const sendWaiting = () => created.sendNow();
     window.addEventListener("pagehide", sendWaiting);
     return () => {
       window.removeEventListener("pagehide", sendWaiting);

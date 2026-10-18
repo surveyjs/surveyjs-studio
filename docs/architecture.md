@@ -1040,7 +1040,10 @@ The results page is `/surveys/$surveyId/results?tab=summary|table|details`.
   `TableView` both apply the result before `render`, so a question added after the save is shown at the end.
 - **Saving** (`results/viewSaver.ts`, wired by `useViewSaver`): a change is sent 500 ms after the last one, with
   one request in flight and a latest-wins pending slot. A waiting state is sent at once when the tab changes,
-  when the page unmounts and on `pagehide`. The saved state is applied before the listeners attach, so loading
+  when the page unmounts and on `pagehide`. On `pagehide` the newest state goes out at once even while an
+  earlier save is in flight (`sendNow`); it also stays pending and is sent once more when that save ends, so
+  if the page lives on it is the last save whatever order the server finishes the two in. If the page is gone,
+  the older request started first. The saved state is applied before the listeners attach, so loading
   a layout never saves it. `saveResultsView` sets `keepalive` when the body is under 60,000 **bytes** (counted
   in UTF-8), so a save started on `pagehide` survives the page; a larger body is sent without it. A failed
   save shows the quiet line "Your layout could not be saved. It is saved again with your next change." and the
