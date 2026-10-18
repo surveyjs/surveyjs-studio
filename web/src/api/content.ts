@@ -36,7 +36,7 @@ function etagOf(response: Response): string {
  * The editor reads a document once per open: a cached older version would conflict at the first
  * save, and a refetch under the editor would replace what the user is typing into.
  */
-const freshReadOnce = {
+export const freshReadOnce = {
   staleTime: Infinity,
   refetchOnWindowFocus: false,
   refetchOnReconnect: false,
