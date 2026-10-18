@@ -71,6 +71,15 @@ describe("privateKeysOf", () => {
     );
   });
 
+  it("also strips the default and the older suffixes, which old responses keep", () => {
+    const renamed = { ...definition, commentSuffix: "_note", commentPrefix: "-other" };
+    expect(privateKeysOf(renamed, ["a"])).toStrictEqual(
+      new Set(["a", "a_note", "a-Comment", "a-other"]),
+    );
+    const older = { ...definition, commentPrefix: "-other" };
+    expect(privateKeysOf(older, ["a"])).toStrictEqual(new Set(["a", "a-other", "a-Comment"]));
+  });
+
   it("is empty when no question is private", () => {
     expect(privateKeysOf(definition, [])).toStrictEqual(new Set());
   });

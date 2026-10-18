@@ -62,7 +62,9 @@ export function questionsOf(definition: SurveyDefinition): DefinitionQuestion[] 
 
 /**
  * The data keys public results leave out for these private questions (R1): each name and, when the
- * definition gives the question a `valueName`, that key too, each with and without the comment suffix.
+ * definition gives the question a `valueName`, that key too, each without and with a comment suffix.
+ * Every suffix counts (the current one, the library's `-Comment` and a set `commentPrefix`): older
+ * responses keep the suffix they were stored with.
  */
 export function privateKeysOf(
   definition: SurveyDefinition,
@@ -70,12 +72,14 @@ export function privateKeysOf(
 ): ReadonlySet<string> {
   const keys = new Set<string>();
   if (privateNames.length === 0) return keys;
-  const suffix = commentSuffixOf(definition);
+  const { commentPrefix } = definition;
+  const suffixes = new Set([commentSuffixOf(definition), "-Comment"]);
+  if (typeof commentPrefix === "string" && commentPrefix !== "") suffixes.add(commentPrefix);
   const keyOf = new Map(questionsOf(definition).map((question) => [question.name, question.key]));
   for (const name of privateNames) {
     for (const key of [name, keyOf.get(name) ?? name]) {
       keys.add(key);
-      keys.add(key + suffix);
+      for (const suffix of suffixes) keys.add(key + suffix);
     }
   }
   return keys;
