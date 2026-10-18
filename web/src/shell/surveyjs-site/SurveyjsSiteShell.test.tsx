@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentUser } from "../../test/server";
 import type { ShellNotice } from "../types";
 import { SurveyjsSiteShell } from "./SurveyjsSiteShell";
@@ -73,6 +73,32 @@ describe("SurveyjsSiteShell", () => {
       "Olivia Owner",
     ]);
     for (const trigger of menus) expect(trigger.tabIndex).toBe(0);
+  });
+
+  it("lists Projects in the mobile account menu; a click closes the menu and navigates", () => {
+    const navigate = vi.fn();
+    const { container } = render(
+      <SurveyjsSiteShell
+        user={currentUser}
+        notices={[]}
+        links={links}
+        onSignOut={() => {}}
+        projectsLink={{ href: "/projects", navigate }}
+      >
+        <p>page content</p>
+      </SurveyjsSiteShell>,
+    );
+    const mobileAccount = () =>
+      container.querySelector<HTMLElement>('[data-mobile-menu="account"]')!;
+
+    fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Account" }));
+    const link = within(mobileAccount()).getByRole("link", { name: "Projects" });
+    expect(link.getAttribute("href")).toBe("/projects");
+    fireEvent.click(link);
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(mobileAccount().classList.contains("v2-class---mobile-menu--opened")).toBe(false);
+    expect(within(mobileAccount()).queryByRole("link", { name: "Projects" })).toBeNull();
   });
 
   it("shows no licence dialog without a notice", () => {

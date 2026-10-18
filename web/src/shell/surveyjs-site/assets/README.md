@@ -251,3 +251,37 @@ Changes and additions:
   statistics…", "The statistics could not be loaded. Check your connection and try again.") and the
   private-question failure ("The list of private questions could not be saved. Please try again.") are the
   app's own. "Make private" and "Make public" come from survey-analytics.
+
+Step 11 (the Projects page, `src/projects/`) added these copies, from commit `adeaa47cbd`
+(2026-10-16; the copied files last changed in `a1fd364fb4`, 2026-10-02). `surveyjs-site.scss` imports
+the three style files in the order of `app.scss`, just before `pages/my-surveys.scss`. None of them is
+changed.
+
+| Copy                                                              | Used by                                                                                                                                                              |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/Content/Styles/pages/account/index.scss`                    | the page frame (`v2-class---account-page`, `__section-container`), the `Section-Size--Account` mixin, `__actions-footer`, `--not-for-mobile` and `--for-mobile-only` |
+| `site/Content/Styles/pages/account/sections/license-manager.scss` | the "Add a New Member" button (`v2-class---add-assignment__button`, `__button-text`)                                                                                 |
+| `site/Content/Styles/pages/account/sections/projects.scss`        | the section, the cards, the member rows, the Admin badge, the pills and the editors                                                                                  |
+| `site/Views/Shared/V2/_icons/pages/account/{Add,Remove}.svg`      | the plus of Create a Project and Add a New Member, and the remove "x" of a member row (`the site's page markup` → `.svg`, byte-order mark removed)                                  |
+
+The page reproduces the markup of `the site's page markup` (structure, class names
+and texts) in `ProjectsPage.tsx`, `ProjectCard.tsx`, `ProjectNameEditor.tsx`, `MemberRow.tsx` and
+`AddMemberForm.tsx`, with the partials it uses (`V2/components/{Header,Button,Expand-Collapse-Button}`).
+Changes to the markup:
+
+- The heading is **Projects**, an `h1` like the My Surveys page's, instead of the section's "Manage
+  MySurveys" `h3`. The page is the section alone, in the account page's `article` and selected section
+  container, without the account page's sidebar.
+- The intro's link "the Free Survey Tool" goes to `/`, the app's My Surveys page.
+- Knockout bindings and the `data-details` toggles are React state: the `<details>` card opens and
+  closes through its state (a click on the summary), and the members are read when it first opens.
+- New: the "Leave Project" link for plain members (an admin leaves through the "x" on their own
+  row), the confirm questions (the site asks "Are you sure?"), the error messages in the card or
+  under the editor (the site shows none, or an `alert`), and "Loading the members…". Their texts are
+  in `src/projects/messages.ts`. Glue for the error text is in `ProjectsPage.module.css`, with a
+  focus outline for the card's summary (`account/index.scss` removes it).
+- The controls are focusable: Create a Project, Add a New Member and the remove "x" are
+  `role="button"` with `tabIndex` (Enter and Space activate them); the links have `href="#"`. The "x"
+  is named "Remove {name}". The inputs have an `aria-label`.
+- The summary's links (Rename, Remove, Leave Project) do not open or close the card.
+- The plus icons sit in a `span` (the site puts the partial's `<svg>` straight in the `div`).

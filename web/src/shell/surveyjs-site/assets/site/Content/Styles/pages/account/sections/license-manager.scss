@@ -1,0 +1,602 @@
+.v2-class---account-page__license-manager-section {
+    @include Section-Size--Account;
+    padding-bottom: size(12);
+
+    @include media(Mobile) {
+        padding-bottom: size(6);
+    }
+
+    .v2-class---header--level-3 {
+        padding-top: 0;
+        margin-bottom: size(2);
+    }
+}
+.v2-class---account-page__license-unallocated {
+    background: $Special--Blue-15;
+    border-radius: size(1);
+    margin: 0 size(-3) size(3);
+    padding: size(3) size(3) size(1);
+}
+
+.v2-class---account-page__licenses-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: size(4) size(4) size(8) size(4);
+    text-align: center;
+
+    @include media(Mobile) {
+        padding: size(4) size(4) size(3) size(4);
+    }
+}
+
+.v2-class---license-manager-header {
+    padding-top: size(2);
+    display: flex;
+    justify-content: flex-end;
+}
+.v2-class---licenese-manager-buttons {
+    padding-top: size(2);
+    display: flex;
+    gap: size(2);
+    justify-content: center;
+}
+.v2-class---license-manager-table {
+    padding-top: size(2);
+    flex-direction: column;
+    gap: size(2);
+    border-spacing: 0;
+    width: 100%;
+
+    td {
+        padding: 0;
+        vertical-align: top;
+    }
+
+    .v2-class---license-manager-table__header {
+        @include media(Mobile) {
+            display: none;
+        }
+
+        .v2-class---license-manager-license__info-label {
+            vertical-align: bottom;
+            padding-bottom: size(1.5);
+            padding-right: size(4);
+
+            svg {
+                vertical-align: text-bottom;
+            }
+
+            a {
+                color: $General--Forecolor-50;
+            }
+        }
+    }
+
+
+
+    .v2-class---license-manager-license__info-label--header {
+        padding-left: size(8);
+    }
+}
+
+
+
+.v2-class---license-manager-info-panel {
+    background-color: $Primary--Primary-10;
+    border-radius: size(1);
+    padding: size(3) size(4);
+    margin-bottom: size(2);
+}
+
+.v2-class---license-manager-info-panel--center {
+    display: flex;
+    flex-direction: column;
+    gap: size(1);
+    text-align: center;
+    word-wrap: break-word;
+}
+
+.v2-class---license-manager-need-more-panel {
+    background-color: $Secondary--Secondary-10;
+    border-radius: size(1);
+    padding: size(3) size(4);
+    margin-top: size(2);
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: size(2);
+
+    @include media(Mobile){
+        flex-direction: column;
+        align-items: center;
+    }
+
+    & > p {
+        display: flex;
+        flex-grow: 1;
+    }
+}
+
+.v2-class---license-manager-info-panel.v2-class---license-manager-info-panel--yellow {
+    background-color: $Secondary--Secondary-10;
+
+    .v2-class---paragraph {
+        color: $General--Forecolor-75;
+    }
+}
+
+
+.v2-class---license-manager-license {
+    background-color: $General--Backcolor-Gray;
+    border-radius: size(1);
+}
+
+.v2-class---license-manager-license-link {
+    @include No-Spacing--Small-Underline;
+    color: $General--Forecolor-75;
+    cursor: pointer;
+}
+.v2-class---license-manager-license-link--disabled {
+    @include No-Spacing--Small;
+    color: $General--Forecolor-75;
+    cursor: default;
+    height: size(5);
+    line-height: size(5);
+}
+.v2-class---license-manager-license-link-disabled-label {
+    display: inline-block;
+    vertical-align: middle;
+    height: auto;
+    margin-left: size(0.5);
+    svg {
+        display: block;
+        fill: $Secondary--Secondary;
+    }
+}
+
+.v2-class---license-manager-license-recieved-label {
+    color: $Secondary--Secondary;
+    background-color: $Secondary--Secondary-15;
+    @include No-Spacing--XX-Small-UC;
+    border-radius: size(0.5);
+    padding: size(1) size(1.5);
+    width: fit-content;
+    text-wrap: nowrap;
+    margin-top: calc(1.5*8px);
+    margin-left: calc(2*8px);
+}
+.v2-class---license-manager-license-recieved-label-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    overflow: visible;
+    max-width: 100%;
+    width: fit-content;
+}
+
+.v2-class---license-manager-obsolete-label {
+    color: $General--Forecolor-50;
+    @include No-Spacing--X-Small;
+    border-radius: size(0.5);
+    width: fit-content;
+    display: flex;
+    gap: size(0.25);
+    justify-content: center;
+    align-items: center;
+    white-space: nowrap;
+
+    svg {
+        fill: $General--Forecolor-50;
+        height: size(1.5);
+        width: size(1.5);
+    }
+}
+
+.v2-class---license-manager-license__expand-collapse-button {
+    margin-right: size(2);
+    margin-top: size(1.5);
+    border-radius: size(4);
+
+    &:hover {
+        background-color: $General--Line;
+    }
+
+    .v2-class---expand-collapse-button {
+        transform: rotate(-90deg);
+
+        &:hover {
+            background-color: $General--Line;
+        }
+    }
+}
+
+.v2-class---license-manager-license__expand-collapse-button--open {
+    .v2-class---expand-collapse-button {
+        transform: initial;
+    }
+}
+
+.v2-class---license-manager-license__summary {
+    box-sizing: border-box;
+    height: size(9);
+
+    @include media(Mobile) {
+        height: auto;
+        min-height: size(9);
+
+        .v2-class---license-manager-license__info--header {
+            padding-bottom: size(1.5);
+        }
+    }
+
+    td:first-child {
+        border-top-left-radius: size(1);
+    }
+
+    td:last-child {
+        border-top-right-radius: size(1);
+    }
+}
+
+.v2-class---license-manager-license__summary--recieved {
+    cursor: initial;
+}
+
+.v2-class---license-manager-license__hidden-content-wrapper {
+    margin-bottom: size(2);
+    background-color: $General--Backcolor-Gray;
+    border-radius: 0 0 size(1) size(1);
+    padding-bottom: size(1);
+}
+
+.v2-class---license-manager-license__hidden-content {
+    display: none;
+    padding: size(1) size(4) size(2) size(3);
+
+    @include media(Vertical-Tablet, Mobile) {
+        padding-left: size(3);
+    }
+}
+
+.v2-class---license-assignment-list {
+    @include media(Vertical-Tablet, Mobile) {
+        padding-left: size(5);
+    }
+}
+
+.v2-class---license-manager-license__hidden-content--mobile {
+    @include media(Vertical-Tablet, Mobile) {
+        padding-left: size(8);
+    }
+}
+
+.v2-class---license-assignment__actions {
+    display: flex;
+}
+
+.v2-class---license-manager-license__hidden-content--assignments-empty {
+    justify-content: center;
+}
+
+.v2-class---license-manager-license__hidden-content--has-assignments {
+    flex-direction: column;
+    gap: size(3);
+
+    @include media(Mobile) {
+        .v2-class---license-assignment__actions {
+            padding-top: size(0.5);
+        }
+
+        .v2-class---license-assignment__email {
+            margin-left: 0;
+        }
+
+        .v2-class---license-assignment {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .v2-class---license-assignment__button {
+            width: fit-content;
+        }
+    }
+}
+
+.v2-class---license-manager-detail-row--visible {
+    .v2-class---license-manager-license__hidden-content {
+        display: flex;
+    }
+}
+
+.v2-class---license-manager-license__hidden-content--mobile {
+    flex-direction: column;
+    gap: size(2);
+
+    .v2-class---license-manager-license__info--qty {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        padding: 0;
+    }
+
+    .v2-class---license-manager-license__info--exp-date {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        padding: 0;
+    }
+
+    .v2-class---license-manager-license__info--toolbar {
+        justify-content: flex-start;
+        padding: 0;
+    }
+
+    .v2-class---license-manager-license-recieved-label {
+        text-align: center;
+        margin: 0;
+    }
+}
+
+.v2-class---account-page__licenses-first-assign-container {
+    width: 100%;
+}
+
+.v2-class---license-manager-license__info {
+    display: flex;
+    align-items: center;
+    padding: size(1.5) size(4) 0 0;
+}
+
+.v2-class---license-manager-license__info--header {
+    justify-content: flex-start;
+    align-items: flex-start;
+    display: flex;
+    flex-grow: 1;
+    padding: size(1.5) size(2) 0;
+}
+
+.v2-class---license-manager-license__upgrade-button {
+    margin-top: size(1.5);
+    margin-left: size(2);
+}
+
+.v2-class---license-manager-license__renew-button {
+    margin-top: size(1.5);
+    margin-left: auto;
+    padding-left: size(2);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.v2-class---license-manager-license__title-exp-date {
+    @include No-Spacing--X-Small;
+    color: $General--Forecolor-50;
+    padding-top: size(0.5);
+    white-space: nowrap;
+
+    &.v2-class---license-manager-license__info-value--expired {
+        color: $Special--Red;
+    }
+
+    &.v2-class---license-manager-license__info-value--expired-soon {
+        color: $Secondary--Secondary;
+    }
+}
+
+
+.v2-class---license-manager-license__title {
+    @include No-Spacing--Medium;
+    color: $General--Forecolor;
+
+    padding-top: size(2);
+
+    @include media(Mobile) {
+        padding-left: size(0);
+        &.v2-class---license-manager-license__title--recieved-mode {
+            padding-left: size(0);
+        }
+    }
+}
+
+.v2-class---license-manager-license__title--recieved-mode {
+        padding-left: size(6);
+}
+
+.v2-class---license-manager-license__info--qty,
+.v2-class---license-manager-license__info--exp-date {
+    flex-direction: row;
+    gap: size(2);
+    box-sizing: border-box;
+    /*
+    min-width: size(25);
+    @include media(Tablet, Vertical-Tablet) {
+        width: size(23);
+        min-width: size(18);
+    }
+    */
+}
+
+/*
+.v2-class---license-manager-license__info--qty {
+    padding-right: size(2);
+
+    @include media(Tablet) {
+        min-width: size(22);
+        max-width: size(22);
+    }
+
+    @include media(Vertical-Tablet) {
+        min-width: size(10);
+        width: 30%;
+    }
+}
+
+.v2-class---license-manager-license__info--exp-date {
+    @include media(Large-Desktop, Desktop) {
+        min-width: size(26);
+        max-width: size(26);
+    }
+
+    @include media(Tablet) {
+        min-width: size(14);
+        max-width: size(14);
+    }
+
+    @include media(Vertical-Tablet) {
+        min-width: size(14);
+        max-width: size(14);
+    }
+}
+*/
+
+.v2-class---license-manager-license__info-label {
+    color: $General--Forecolor-50;
+    @include No-Spacing--X-Small;
+    text-align: left;
+    text-transform: none;
+}
+
+.v2-class---license-manager-license__info-value {
+    color: $General--Forecolor;
+    @include No-Spacing--Medium;
+    text-transform: uppercase;
+    padding: size(2) 0;
+    text-wrap: nowrap;
+
+    @include media(Mobile) {
+        padding: 0;
+    }
+}
+
+.v2-class---license-manager-license__info-value--expired {
+    color: $Special--Red;
+}
+
+.v2-class---license-manager-license__info-value--expired-soon {
+    color: $Secondary--Secondary;
+}
+
+.v2-class---account-page__assign-license-form {
+    width: 100%;
+    display: flex;
+    gap: size(5);
+
+    .v2-class---text-edit {
+        width: 100%;
+    }
+
+    .v2-class---text-edit__input {
+        background-color: transparent;
+    }
+
+    .v2-class---account-page__actions-footer--edit-mode {
+        padding-top: 0;
+
+        @include media(Vertical-Tablet, Mobile) {
+            padding-left: size(5);
+        }
+    }
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .v2-class---text-edit__input {
+        &:focus {
+            &::placeholder {
+                color: $General--Forecolor-50;
+            }
+        }
+    }
+}
+
+
+.v2-class---license-assignment-list {
+    padding-top: size(1);
+    gap: size(2);
+    display: flex;
+    flex-direction: column;
+}
+
+.v2-class---license-assignment {
+    display: flex;
+    gap: size(2);
+    align-items: center;
+
+    @include media(Mobile) {
+        gap: 0;
+    }
+}
+
+.v2-class---license-assignment__email {
+    color: $General--Forecolor;
+    @include No-Spacing--Small;
+    margin-left: size(5);
+    display: flex;
+    gap: size(2);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+
+
+.v2-class---license-assignment__button {
+    color: $General--Forecolor-50;
+    background-color: $General--Backcolor;
+    border-radius: size(10);
+    @include No-Spacing--X-Small-Bold;
+    border: 1px solid $General--Line;
+    padding: size(0.5) size(1.5);
+    cursor: pointer;
+}
+
+.v2-class---license-assignment__button--red {
+    color: $Special--Red;
+}
+.v2-class---add-assignment__button {
+    display: flex;
+    gap: size(1);
+    justify-content: flex-start;
+    align-items: center;
+    cursor: pointer;
+    padding: size(1) 0;
+}
+
+.v2-class---add-assignment__button-text {
+    color: $General--Forecolor-50;
+    @include No-Spacing--Small;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.v2-class---license-key {
+    overflow-wrap: break-word;
+    word-break: break-all;
+    font-size: 16px;
+}
+
+.v2-class---license-manager-license__license-id {
+    gap: size(2);
+    padding: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    padding-left: 40px;
+
+    @include media(Vertical-Tablet, Mobile) {
+        padding-left: size(5);
+    }
+}
+
+.v2-class---license-manager-license__license-id-value {
+    display: flex;
+    gap: size(1);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.v2-class---license-manager-license__copy-button {
+    white-space: nowrap;
+}

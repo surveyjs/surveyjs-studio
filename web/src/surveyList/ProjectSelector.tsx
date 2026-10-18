@@ -11,9 +11,10 @@ const SELECTED_ITEM_LINK = `${ITEM_LINK} v2-class---drop-down-menu-item__link--s
 
 /**
  * The project drop-down of `the site's page markup`: the selected scope, and a menu of
- * links to Personal Surveys and each project's active list. A click on the button toggles the menu
- * (as on the site); for the keyboard, the button is focusable and Enter, Space or ArrowDown open
- * it. Escape, a click outside and focus leaving close it.
+ * links to Personal Surveys and each project's active list, then Manage Projects (the app's own
+ * item, to the Projects page). A click on the button toggles the menu (as on the site); for the
+ * keyboard, the button is focusable and Enter, Space or ArrowDown open it. Escape, a click outside
+ * and focus leaving close it.
  */
 export function ProjectSelector({
   projects,
@@ -120,6 +121,11 @@ export function ProjectSelector({
               onSelect={() => setOpen(false)}
             />
           ))}
+          <li className="v2-class---drop-down-menu-item">
+            <Link className={ITEM_LINK} to="/projects" onClick={() => setOpen(false)}>
+              <span className="v2-class---drop-down-menu-item__text">Manage Projects</span>
+            </Link>
+          </li>
         </ul>
       </div>
     </div>

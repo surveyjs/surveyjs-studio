@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ShellProps } from "./types";
+import { followAppLink, type ShellProps } from "./types";
 
 /** Minimal shell: app name, links, the user with a Sign Out button, notices, main, footer. */
 export function PlainShell({
@@ -9,12 +9,18 @@ export function PlainShell({
   onSignOut,
   signingOut,
   signOutError,
+  projectsLink,
   children,
 }: ShellProps) {
   return (
     <ShellFrame>
       <header>
         <strong>My Surveys</strong>
+        {projectsLink && (
+          <a href={projectsLink.href} onClick={followAppLink(projectsLink)}>
+            Projects
+          </a>
+        )}
         {Object.keys(links).length > 0 && (
           <nav>
             {Object.entries(links).map(([name, href]) => (

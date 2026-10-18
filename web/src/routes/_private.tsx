@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, getRouteApi } from "@tanstack/react-router";
+import { Outlet, createFileRoute, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { ApiError } from "../api/client";
 import { currentUserQueryOptions, useSignOut } from "../api/session";
 import { navigateTo } from "../navigation";
@@ -29,6 +29,7 @@ function PrivateLayout() {
   const { user } = Route.useRouteContext();
   const config = rootRoute.useLoaderData();
   const { signOut, pending, error } = useSignOut();
+  const navigate = useNavigate();
   return renderShell(config.shell, {
     user,
     notices: user.notices ?? [],
@@ -36,6 +37,8 @@ function PrivateLayout() {
     onSignOut: signOut,
     signingOut: pending,
     signOutError: error,
+    // The shells render without the router: they get the link and a function that follows it.
+    projectsLink: { href: "/projects", navigate: () => void navigate({ to: "/projects" }) },
     children: <Outlet />,
   });
 }

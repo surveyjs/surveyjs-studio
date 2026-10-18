@@ -103,6 +103,59 @@ describe("AccountMenu", () => {
     ).not.toBeNull();
   });
 
+  describe("Projects", () => {
+    function renderWithProjects() {
+      const navigate = vi.fn();
+      renderMenu({ projectsLink: { href: "/projects", navigate } });
+      return { navigate, link: screen.getByRole("link", { name: "Projects" }) };
+    }
+
+    it("follows Settings and links to the app's Projects page", () => {
+      const { link } = renderWithProjects();
+
+      expect(link.getAttribute("href")).toBe("/projects");
+      expect(link.getAttribute("target")).toBeNull();
+      const items = screen.getByRole("navigation").querySelectorAll("a");
+      const names = Array.from(items, (item) => item.textContent.trim());
+      expect(names).toEqual(["Settings", "Projects", "Help Desk", "Billing", "Sign Out"]);
+    });
+
+    it("navigates in the app on a plain click instead of loading the page", () => {
+      const { navigate, link } = renderWithProjects();
+
+      const notPrevented = fireEvent.click(link);
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(notPrevented).toBe(false);
+    });
+
+    it("leaves a ctrl-click or a middle click to the browser", () => {
+      const { navigate, link } = renderWithProjects();
+      // Records whether the app prevented the default, then stops jsdom from following the link.
+      const prevented: boolean[] = [];
+      const record = (event: Event) => {
+        prevented.push(event.defaultPrevented);
+        event.preventDefault();
+      };
+      document.addEventListener("click", record);
+      try {
+        fireEvent.click(link, { ctrlKey: true });
+        fireEvent.click(link, { button: 1 });
+      } finally {
+        document.removeEventListener("click", record);
+      }
+
+      expect(prevented).toEqual([false, false]);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it("is left out without a link", () => {
+      renderMenu();
+
+      expect(screen.queryByRole("link", { name: "Projects" })).toBeNull();
+    });
+  });
+
   describe("keyboard", () => {
     const trigger = () => screen.getByRole("button", { name: "Olivia Owner" });
 

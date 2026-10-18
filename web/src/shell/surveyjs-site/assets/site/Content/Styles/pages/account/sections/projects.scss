@@ -1,0 +1,250 @@
+.v2-class---account-page__projects-section {
+    @include Section-Size--Account;
+    padding-bottom: size(12);
+
+    @include media(Mobile) {
+        padding-bottom: size(6);
+    }
+
+    .v2-class---text-edit__input {
+        min-width: size(40); //TODO
+    }
+
+    .v2-class---header--level-3 {
+        padding-top: 0;
+    }
+
+    .v2-class---account-page__actions-footer {
+        padding-top: 0;
+    }
+
+    .v2-class---text-edit {
+        width: 100%;
+    }
+
+    .v2-class---text-edit__input {
+        &:focus {
+            &::placeholder {
+                color: $General--Forecolor-50;
+            }
+        }
+    }
+}
+
+.v2-class---account-page__add-project-button {
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: size(1);
+    @include No-Spacing--Small;
+    color: $General--Forecolor-50;
+    padding: size(3.5) size(4) size(3.5) size(3);
+    border-radius: size(1);
+    background-color: $General--Backcolor-Gray;
+}
+
+.v2-class---account-page__add-project {
+    display: flex;
+    gap: size(5);
+    justify-content: center;
+    align-items: center;
+    padding: size(3) size(4) size(3) size(3);
+    border-radius: size(1);
+    background-color: $General--Backcolor-Gray;
+
+    .v2-class---text-edit__input {
+        background-color: transparent;
+    }
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+        .v2-class---text-edit__input {
+            min-width: initial;
+        }
+    }
+}
+
+.v2-class---account-page__projects {
+    display: flex;
+    flex-direction: column;
+    gap: size(2);
+    margin-bottom: size(2);
+    padding-top: size(2);
+}
+
+.v2-class---account-page__project {
+    border-radius: size(1);
+    background-color: $General--Backcolor-Gray;
+}
+
+.v2-class---account-page__project[open] {
+    .v2-class---expand-collapse-button {
+        transform: initial;
+    }
+}
+
+.v2-class---account-page__project__expand-collapse-button {
+    .v2-class---expand-collapse-button {
+        transform: rotate(-90deg);
+    }
+}
+
+.v2-class---account-page__project-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: size(3) size(4) size(3) size(3);
+    cursor: pointer;
+}
+
+.v2-class---account-page__project-summary-left {
+    min-height: size(5);
+    display: flex;
+    gap: size(1);
+    align-items: center;
+    justify-content: center;
+}
+
+.v2-class---account-page__project-title {
+    @include No-Spacing--Large;
+    color: $General--Forecolor;
+}
+
+.v2-class---account-page__project-link {
+    @include No-Spacing--Small-Underline;
+    color: $General--Forecolor-75;
+    cursor: pointer;
+}
+
+.v2-class---account-page__project-link--red {
+    color: $Special--Red;
+}
+
+.v2-class---account-page__project-summary-right {
+    display: flex;
+    gap: size(4);
+    align-items: center;
+    justify-content: center;
+
+    @include media(Vertical-Tablet, Mobile) {
+        justify-content: start;
+    }
+}
+
+.v2-class---account-page__project-hidden-content {
+    display: flex;
+    flex-direction: column;
+    gap: size(3);
+    padding: size(1) size(4) size(3) size(3);
+}
+
+.v2-class---account-page__project-users-list {
+    display: flex;
+    flex-direction: column;
+    gap: size(2);
+
+    @include media(Vertical-Tablet, Mobile) {
+        gap: size(4);
+    }
+}
+
+.v2-class---account-page__project-user {
+    margin-left: size(0.5);
+    display: flex;
+    gap: size(2);
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+        align-items: flex-start;
+        margin-left: 0;
+        gap: size(1);
+    }
+
+    &:hover {
+        .v2-class---account-page__project-user-action {
+            visibility: visible;
+        }
+    }
+}
+
+.v2-class---account-page__project-user--not-admin {
+    margin-left: size(5);
+}
+
+.v2-class---account-page__project-button {
+    color: $Special--Red;
+    background-color: $General--Backcolor;
+    border-radius: size(10);
+    @include No-Spacing--X-Small-Bold;
+    border: 1px solid $General--Line;
+    padding: size(0.5) size(1.5);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.v2-class---account-page__project-button--make-admin {
+    color: $General--Forecolor-75;
+}
+
+.v2-class---account-page__project-user-left {
+    display: flex;
+    gap: size(1);
+    align-items: center;
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: size(0);
+    }
+}
+
+.v2-class---account-page__project-user-display-name {
+    @include No-Spacing--Small;
+    color: $General--Forecolor;
+}
+
+.v2-class---account-page__project-user-remove-button {
+    cursor: pointer;
+    padding-right: size(0.5);
+    display: flex;
+}
+
+.v2-class---account-page__project-user-admin-label {
+    background-color: $Primary--Primary;
+    border-radius: size(0.25);
+    padding: size(0.25) size(0.75);
+    @include No-Spacing--X-Small-Bold;
+    color: $Primary--Forecolor;
+    height: size(2.5);
+    box-sizing: border-box;
+    width: fit-content;
+}
+
+.v2-class---account-page__project-user-right {
+    display: flex;
+    gap: size(4);
+    align-items: center;
+}
+
+.v2-class---account-page__project-add-user-container {
+    display: flex;
+    gap: size(5);
+    justify-content: center;
+    align-items: center;
+    background-color: $General--Backcolor-Gray;
+    width: 100%;
+
+    .v2-class---text-edit__input {
+        background-color: transparent;
+    }
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+
+        .v2-class---text-edit__input {
+            min-width: initial;
+        }
+    }
+}

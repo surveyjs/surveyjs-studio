@@ -1,4 +1,5 @@
 import type { MouseEventHandler, ReactNode } from "react";
+import { followAppLink, type ShellAppLink } from "../types";
 import { iconHtml } from "./icons";
 import { isExternal, siteUrl } from "./site";
 import { CircleIcon } from "./SiteIcon";
@@ -71,6 +72,24 @@ export function DropDownMenuItem({
             />
           )}
         </span>
+      </a>
+    </li>
+  );
+}
+
+/**
+ * A drop-down menu item that opens a page of the app: the markup of `DropDownMenuItem` with the
+ * link's `href`, navigating in the app on a plain left click.
+ */
+export function AppMenuItem({ text, link }: { text: string; link: ShellAppLink }) {
+  return (
+    <li className="v2-class---drop-down-menu-item" data-text={text}>
+      <a
+        href={link.href}
+        className="v2-class---drop-down-menu-item__link v2-class---drop-down-menu-item__link--no-wrap"
+        onClick={followAppLink(link)}
+      >
+        <span className="v2-class---drop-down-menu-item__text">{text}</span>
       </a>
     </li>
   );
