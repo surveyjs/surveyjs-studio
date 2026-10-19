@@ -1,5 +1,5 @@
-import type { ShellProps, ShellUser } from "../types";
-import { DropDownMenuItem, DropDownMenuSeparator } from "./DropDownMenuItem";
+import type { ShellAppLink, ShellProps, ShellUser } from "../types";
+import { AppMenuItem, DropDownMenuItem, DropDownMenuSeparator } from "./DropDownMenuItem";
 import { DropDownTopMenuItem } from "./DropDownTopMenuItem";
 import { iconHtml } from "./icons";
 import { Icon } from "./SiteIcon";
@@ -12,17 +12,21 @@ export interface AccountMenuItemsProps {
   signingOut?: boolean;
   /** Marks Settings with the site's licence warning (a licence expired or expires soon). */
   licenceWarning?: boolean;
+  /** The app's Projects page, listed after Settings (the site has no such item). */
+  projectsLink?: ShellAppLink;
 }
 
 /**
  * The items of the site's Account menu (`the site's page markup`): Settings,
- * Help Desk, Billing, a separator and Sign Out. An item whose link is not configured is left out.
+ * the app's Projects, Help Desk, Billing, a separator and Sign Out. An item whose link is not
+ * configured is left out.
  */
 export function AccountMenuItems({
   links,
   onSignOut,
   signingOut,
   licenceWarning,
+  projectsLink,
 }: AccountMenuItemsProps) {
   const link = (name: string) => (Object.hasOwn(links, name) ? links[name] : undefined);
   const settings = link("settings");
@@ -42,6 +46,7 @@ export function AccountMenuItems({
           />
         </div>
       )}
+      {projectsLink && <AppMenuItem text="Projects" link={projectsLink} />}
       {helpDesk !== undefined && <DropDownMenuItem text="Help Desk" url={helpDesk} external />}
       {billing !== undefined && <DropDownMenuItem text="Billing" url={billing} external={false} />}
       <DropDownMenuSeparator />

@@ -128,7 +128,7 @@ table is only for deleting one response and is not touched.
 | #   | Question          | Ruling                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Legacy |
 | --- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | R10 | Contract changes  | C1 `settings.privateResultQuestions`; C2 `PublicResultPage.survey.privateQuestions`; C3 `400` on `getPublicResults`; C4 `Content-Disposition` required on the export and `400` for `exportResults` (R2 makes `xlsx` a validation error); C5 the export and delete descriptions; C6 `PublicResultPage.survey.name` takes the same schema as `Survey.name`, so a legacy survey with an empty name has a conforming page. `Cache-Control: no-store` is asserted in server tests only | None   |
-| R11 | The `501` example | The tests that need an operation that answers `501` use `listMembers`, which Step 11 will implement (`exportResults` was the example in Step 9)                                                                                                                                                                                                                                                                                                                                   | None   |
+| R11 | The `501` example | The tests that need an operation that answers `501` use `passwordLogin`, the one operation left that answers `501` after Step 11 (`listMembers` was the example in Step 10, `exportResults` in Step 9)                                                                                                                                                                                                                                                                            | None   |
 | R12 | The address       | Conformance checks that a response sent while `storeRespondentIp` is on shows `respondentIp` in `listResults` and the JSON export, and never in public results                                                                                                                                                                                                                                                                                                                    | None   |
 
 ### The web (R13 to R20)
@@ -176,8 +176,8 @@ support address, which is not copied.
   memory (Step 14 scale).
 - The legacy file-share files of the old site are not deleted by **Delete Results**, as before: only the new
   container's respondent files are.
-- `listMembers` is the example of an operation that answers `501`; the tests move again when Step 11 implements
-  it.
+- `passwordLogin` is the example of an operation that answers `501`; Step 11 moved the tests off `listMembers`
+  ([ADR 0017](0017-projects-and-members.md)).
 
 ## To confirm
 

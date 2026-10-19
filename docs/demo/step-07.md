@@ -257,7 +257,7 @@ pnpm demo:azurite:down
 ## What is not in Step 7
 
 - Respondent files (a file question in a survey that someone fills in) and the run page: Step 8
-  ([demo](step-08.md)). Of the operations of later steps, `listMembers` still answers `501` (`listResults` came with Step 9, `exportResults` with Step 10).
+  ([demo](step-08.md)). `listResults` came with Step 9, `exportResults` with Step 10 and the project operations with Step 11 ([demo](step-11.md)); only `passwordLogin` still answers `501`.
 - Deleting one file, or getting space back when an image is replaced: there is no API for it yet.
 - Videos that need `Range` requests (Safari), and conditional downloads (`ETag`, `304`).
 - A separate web address for uploaded files.

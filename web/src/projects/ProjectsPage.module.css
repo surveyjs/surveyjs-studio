@@ -1,0 +1,25 @@
+/* Glue for what the copied surveyjs.io styles do not cover (the site's Projects section shows no
+   error messages: it ignores failures or shows a browser alert). Colours and type are the site's
+   (color-styles.scss, text-styles.scss). */
+
+/* A failed action, in its card or under its editor. */
+.error {
+  margin: 0 0 16px;
+  color: #e60a3e; /* $Special--Red */
+  font-family: "Lato", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* An inline icon in a flex row, without the line box of an inline <svg>. */
+.icon {
+  display: flex;
+}
+
+/* The site's account styles remove the outline of a card's summary (`account/index.scss`), so the
+   keyboard focus would not show: it shows here, in the site's primary colour. */
+:global(.v2-class---account-page__project) > summary:focus-visible {
+  outline: 2px solid #19b394; /* $Primary--Primary */
+  outline-offset: 2px;
+}

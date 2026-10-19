@@ -56,11 +56,11 @@ const seed: MemorySeed = {
     survey("Colleague poll", project, true, "aaaaaaaa-0000-4000-8000-000000000009"),
   ],
   projects: [
-    { id: PROJECT_ID, name: "Team", ownerId: USER.id, createdAt: "2025-01-01T00:00:00.000Z" },
+    { id: PROJECT_ID, name: "Team", creatorId: USER.id, createdAt: "2025-01-01T00:00:00.000Z" },
     {
       id: OTHER_PROJECT_ID,
       name: "Others",
-      ownerId: "aaaaaaaa-0000-4000-8000-000000000009",
+      creatorId: "aaaaaaaa-0000-4000-8000-000000000009",
       createdAt: "2025-01-01T00:00:00.000Z",
     },
   ],

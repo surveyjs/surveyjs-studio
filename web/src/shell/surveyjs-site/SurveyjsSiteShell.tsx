@@ -22,6 +22,7 @@ export function SurveyjsSiteShell({
   onSignOut,
   signingOut,
   signOutError,
+  projectsLink,
   children,
 }: ShellProps) {
   const licence = useLicenceNotice(notices);
@@ -39,6 +40,7 @@ export function SurveyjsSiteShell({
         links={links}
         onSignOut={onSignOut}
         signingOut={signingOut}
+        projectsLink={projectsLink}
         licenceWarning={licence.notice !== undefined}
         twinkling={licence.open}
         mobileMenu={mobileMenu}

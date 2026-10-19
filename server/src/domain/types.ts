@@ -62,14 +62,34 @@ export type ProjectRole = "admin" | "user";
 export interface ProjectRecord {
   readonly id: string;
   readonly name: string;
-  readonly ownerId: string;
+  /**
+   * The creator while they are still a member (R2): azure-legacy reads the user of the
+   * `OrganizationUsers` row whose id equals the project id; memory a stored creator id that still has
+   * a membership. null once the creator has left (or the creator row was replaced elsewhere).
+   */
+  readonly ownerId: string | null;
   readonly createdAt: string; // ISO 8601 UTC
-  readonly memberCount: number; // >= 1
+  readonly memberCount: number; // every membership row, orphans included (Step 4, R11)
 }
 
 export interface ProjectMembership {
   readonly project: ProjectRecord;
   readonly role: ProjectRole;
+}
+
+/** A visible member of a project: a membership whose user exists (R11). */
+export interface ProjectMember {
+  readonly user: User;
+  /** `admin` when any of the user's membership rows is admin (case-insensitive), else `user`. */
+  readonly role: ProjectRole;
+}
+
+/** What the service decides for a new project; the store writes it (R4). */
+export interface NewProject {
+  readonly id: string; // lower-case GUID (randomUUID in the service)
+  readonly name: string; // as the caller sent it (R14)
+  readonly creatorId: string; // the signed-in user: first member, as admin
+  readonly createdAt: string; // ISO 8601 UTC
 }
 
 export interface SurveyResponse {

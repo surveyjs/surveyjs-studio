@@ -11,6 +11,7 @@ import {
   MEMBER_ID,
   OWNER_ID,
   PROJECT_B_ID,
+  fixtureProjectsOnly,
   memberProjects,
   ownerPersonalActiveSurveys,
   ownerPersonalSurveys,
@@ -195,7 +196,9 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
 
   it("skips a membership with a NULL role and reports its ids", async () => {
     warnings.length = 0;
-    expect(await store().directory.listUserProjects(MEMBER_ID)).toEqual(memberProjects);
+    expect(fixtureProjectsOnly(await store().directory.listUserProjects(MEMBER_ID))).toEqual(
+      memberProjects,
+    );
     expect(warnings.map((w) => w.details)).toEqual([
       { membershipId: NULL_ROLE_MEMBERSHIP, organizationId: PROJECT_B_ID },
     ]);

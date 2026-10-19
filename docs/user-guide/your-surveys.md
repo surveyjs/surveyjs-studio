@@ -34,8 +34,9 @@ The drop-down next to **Create a Survey** chooses whose surveys you see:
 The drop-down is shown only when you belong to at least one project. A project you are not a member
 of cannot be opened: its address sends you back to Personal Surveys.
 
-You cannot create or manage projects here yet. The projects you see are the ones you already belong
-to on surveyjs.io.
+The drop-down ends with **Manage Projects**, which opens the Projects page. You create and manage projects
+there, not in this list: see [Projects and team members](projects-and-team-members.md). The projects you see
+are the ones you belong to, on this site and on surveyjs.io alike.
 
 ## Active and Archived
 

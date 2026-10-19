@@ -58,6 +58,15 @@ export function Header(props: HeaderProps) {
   // As on the site, an open mobile menu hides the fixed bar.
   const fixedShown = scrolledAway && mobileMenu === null;
   const close = () => onMobileMenu(null);
+  // The page changes under the mobile menu, so the menu closes first.
+  const { projectsLink } = props;
+  const mobileProjectsLink = projectsLink && {
+    href: projectsLink.href,
+    navigate: () => {
+      close();
+      projectsLink.navigate();
+    },
+  };
 
   return (
     <>
@@ -95,6 +104,7 @@ export function Header(props: HeaderProps) {
                   onSignOut={props.onSignOut}
                   signingOut={props.signingOut}
                   licenceWarning={props.licenceWarning}
+                  projectsLink={mobileProjectsLink}
                 />
               </ul>
             </div>
@@ -195,6 +205,7 @@ function TopBarMenu(props: HeaderProps) {
             onSignOut={props.onSignOut}
             signingOut={props.signingOut}
             licenceWarning={props.licenceWarning}
+            projectsLink={props.projectsLink}
             twinkling={twinkling}
           />
 

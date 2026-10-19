@@ -3,15 +3,18 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openapiPath } from "@my-surveys/contract";
-import type { FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import { parse } from "yaml";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { apiRoutes } from "./api.js";
 import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
+import { loadContract } from "./contract.js";
 import { newFileId } from "./domain/file-id.js";
+import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
-import { ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
+import { MEMBER_ID, ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
@@ -158,11 +161,12 @@ describe("request validation", () => {
     const { server, headers } = await startSignedIn();
     const res = await server.inject({
       method: "PATCH",
-      url: "/api/v1/projects/p1",
+      url: `/api/v1/projects/${PROJECT_A_ID}`,
       headers: { ...headers, "content-type": "application/merge-patch+json; charset=utf-8" },
       payload: JSON.stringify({ name: "Renamed" }),
     });
-    expect(res.statusCode).toBe(501);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: PROJECT_A_ID, name: "Renamed" });
   });
 
   it("a missing required body answers 422 validation-failed", async () => {
@@ -212,9 +216,25 @@ describe("request validation", () => {
 });
 
 describe("operations without a handler", () => {
+  /** The API routes of the contract without any handler, on a bare Fastify. */
+  async function startBare(): Promise<FastifyInstance> {
+    const bare = Fastify();
+    bare.setErrorHandler((error, _request, reply) => {
+      const body = toProblem(error);
+      return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
+    });
+    await bare.register(apiRoutes, {
+      prefix: "/api/v1",
+      contract: await loadContract(openapiPath),
+      handlers: {},
+      authentication: { sessionSecret: loadConfig(testEnv).sessionSecret },
+    });
+    app = bare;
+    return bare;
+  }
+
   it("answer 501 not-implemented naming the operationId", async () => {
-    const { server, headers } = await startSignedIn();
-    const res = await server.inject({ url: "/api/v1/projects/p1/members", headers });
+    const res = await (await startBare()).inject("/api/v1/config");
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
@@ -222,8 +242,14 @@ describe("operations without a handler", () => {
       title: "Not implemented",
       status: 501,
       code: "not-implemented",
-      detail: expect.stringContaining("listMembers") as string,
+      detail: expect.stringContaining("getConfig") as string,
     });
+  });
+
+  it("still authenticate first", async () => {
+    const res = await (await startBare()).inject("/api/v1/projects/p1/members");
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ code: "unauthenticated" });
   });
 
   it("multipart uploads reach the operation instead of answering 415", async () => {
@@ -290,6 +316,7 @@ function contractOperations(): ContractOperation[] {
   const pathValues: Record<string, string> = {
     surveyId: surveyFeedback.id,
     projectId: PROJECT_A_ID,
+    userId: MEMBER_ID,
     fileId: STORED_FILE.id,
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];

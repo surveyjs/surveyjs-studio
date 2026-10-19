@@ -11,8 +11,10 @@ import sql from "mssql";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
+  NewProject,
   NewResponse,
   NewSurvey,
+  ProjectRole,
   SaveOutcome,
   SurveyChanges,
   SurveyDefinition,
@@ -20,7 +22,14 @@ import type {
   SurveyRecord,
   StoredFileRecord,
 } from "../../domain/types.js";
-import { ResponseTooLargeError, type AppendOutcome } from "../types.js";
+import { decideRemoval, decideRoleChange, type MembershipFacts } from "../../projects/rules.js";
+import {
+  ResponseTooLargeError,
+  type AddMemberOutcome,
+  type AppendOutcome,
+  type RemovalOutcome,
+  type RoleChangeOutcome,
+} from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
 import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy } from "./mapping.js";
@@ -30,7 +39,8 @@ import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy } from "./mapping.
  * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete;
  * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
  * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
- * our own; Step 10: deleting all results and the public-question list. Each
+ * our own; Step 10: deleting all results and the public-question list; Step 11: projects and
+ * members (Organizations and OrganizationUsers rows, project deletion), in SQL transactions. Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -1156,4 +1166,386 @@ export async function writePrivateQuestions(
   } catch (error) {
     throw new LegacyStoreError("public questions save", error);
   }
+}
+
+// Step 11: projects and members (layout sections 3.12 and 3.13). Every write that reads before it
+// writes runs in one SQL transaction that first locks the project's `Organizations` row, so two
+// writes to one project run one after the other and always take their locks in the same order.
+
+/** Locks the project row until the transaction ends; no row: no such project. */
+const PROJECT_LOCK = "SELECT id FROM Organizations WITH (UPDLOCK, HOLDLOCK) WHERE id = @project";
+const PROJECT_INSERT =
+  "INSERT INTO Organizations (id, name, type, happendat, [timestamp]) " +
+  "VALUES (@project, @name, 'ORGANIZATION_CREATE', @now, @now)";
+/** The creator's row: its id equals the project id, the marker of the creator (R2). */
+const CREATOR_INSERT =
+  "INSERT INTO OrganizationUsers (id, organizationid, userid, role, type, name, happendat, [timestamp]) " +
+  "VALUES (@project, @project, @user, 'admin', 'ORGANIZATION_CREATE', @name, @now, @now)";
+const PROJECT_RENAME =
+  "UPDATE Organizations SET name = @name, [timestamp] = @now WHERE id = @project";
+/** Every membership row of the project, locked until the transaction ends, and whether its user exists. */
+const MEMBER_ROWS =
+  "SELECT m.userid, m.role, CASE WHEN u.id IS NULL THEN 0 ELSE 1 END AS userexists " +
+  "FROM OrganizationUsers m WITH (UPDLOCK, HOLDLOCK) LEFT JOIN Users u ON u.id = m.userid " +
+  "WHERE m.organizationid = @project";
+const MEMBER_INSERT =
+  "INSERT INTO OrganizationUsers (id, organizationid, userid, role, type, happendat, [timestamp]) " +
+  "VALUES (@id, @project, @user, @role, 'ORGANIZATION_JOIN', @now, @now)";
+const MEMBER_ROLE_UPDATE =
+  "UPDATE OrganizationUsers SET role = @role, [timestamp] = @now " +
+  "WHERE organizationid = @project AND userid = @user";
+const MEMBER_DELETE =
+  "DELETE FROM OrganizationUsers WHERE organizationid = @project AND userid = @user";
+/** Moves every survey of the project, archived ones too; `creatorid` stays (R9). */
+const PROJECT_SURVEYS_MOVE =
+  "DECLARE @moved TABLE (id uniqueidentifier, creatorid uniqueidentifier); " +
+  "UPDATE Surveys SET userid = @receiver, [timestamp] = @now " +
+  "OUTPUT inserted.id, inserted.creatorid INTO @moved WHERE userid = @project; " +
+  "SELECT id, creatorid FROM @moved";
+const PROJECT_MEMBERS_DELETE = "DELETE FROM OrganizationUsers WHERE organizationid = @project";
+const PROJECT_DELETE = "DELETE FROM Organizations WHERE id = @project";
+
+/** The id in lower case; refuses anything but a GUID before a project or member write. */
+function checkedProjectId(operation: string, value: string): string {
+  if (!isGuid(value)) throw new Error(`Project ${operation} refused: every id must be a GUID`);
+  return value.toLowerCase();
+}
+
+/** What a transaction body found: the value to return, and whether its writes are kept. */
+interface TransactionEnd<T> {
+  readonly value: T;
+  readonly commit: boolean;
+}
+
+/** Tries of a transaction that SQL Server chose as a deadlock victim, the first included. */
+const DEADLOCK_ATTEMPTS = 3;
+
+const sqlErrorNumber = (error: unknown): unknown =>
+  typeof error === "object" && error !== null ? (error as { number?: unknown }).number : undefined;
+
+/**
+ * Whether the error is SQL Server's "chosen as deadlock victim" (error 1205), on the driver error
+ * or on its original error. The server has then rolled the whole transaction back.
+ */
+export function isDeadlockVictim(error: unknown): boolean {
+  const original =
+    typeof error === "object" && error !== null
+      ? (error as { originalError?: unknown }).originalError
+      : undefined;
+  return sqlErrorNumber(error) === 1205 || sqlErrorNumber(original) === 1205;
+}
+
+/** Wait before try `attempt + 1`: attempt × a random 20–60 ms, so two victims do not meet again. */
+const deadlockBackOff = (attempt: number): Promise<void> =>
+  setTimeout(attempt * (20 + Math.random() * 40));
+
+/**
+ * Runs `run(attempt)` and runs it again, after `wait(attempt)`, while it fails as a deadlock victim,
+ * up to `attempts` tries in all. Any other error, and the error of the last try, rejects at once.
+ */
+export async function withDeadlockRetry<T>(
+  run: (attempt: number) => Promise<T>,
+  attempts = DEADLOCK_ATTEMPTS,
+  wait: (attempt: number) => Promise<void> = deadlockBackOff,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run(attempt);
+    } catch (error) {
+      if (attempt >= attempts || !isDeadlockVictim(error)) throw error;
+      await wait(attempt);
+    }
+  }
+}
+
+/** A commit that failed: its outcome is unknown, so it is never tried again. */
+class CommitFailedError extends Error {
+  constructor(readonly driverError: unknown) {
+    super("The commit failed");
+    this.name = "CommitFailedError";
+  }
+}
+
+/**
+ * One try of `body` in a new SQL transaction. The body runs its requests one at a time (a
+ * transaction takes one request at a time). The transaction commits when the body says so, else
+ * it rolls back. On any error it rolls back (a failing rollback is ignored: the transaction was
+ * not begun or has already ended) and rethrows; a failed commit rethrows as CommitFailedError.
+ */
+async function transactionAttempt<T>(
+  pool: sql.ConnectionPool,
+  body: (request: () => sql.Request) => Promise<TransactionEnd<T>>,
+): Promise<T> {
+  const transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    const end = await body(() => new sql.Request(transaction));
+    if (!end.commit) {
+      await transaction.rollback();
+      return end.value;
+    }
+    try {
+      await transaction.commit();
+    } catch (error) {
+      throw new CommitFailedError(error);
+    }
+    return end.value;
+  } catch (error) {
+    try {
+      await transaction.rollback();
+    } catch {
+      // Not begun, already ended, or aborted by the server: nothing is kept either way.
+    }
+    throw error;
+  }
+}
+
+/**
+ * Runs `body` in one SQL transaction (transactionAttempt). A deadlock victim is run again in a new
+ * transaction, up to DEADLOCK_ATTEMPTS tries (the bodies have no effect outside the transaction);
+ * each retry is logged with the operation and the try only. The final failure rejects with
+ * LegacyStoreError(operation).
+ */
+async function inTransaction<T>(
+  targets: LegacyWriteTargets,
+  operation: string,
+  body: (request: () => sql.Request) => Promise<TransactionEnd<T>>,
+): Promise<T> {
+  try {
+    const pool = await targets.pool();
+    return await withDeadlockRetry(
+      () => transactionAttempt(pool, body),
+      DEADLOCK_ATTEMPTS,
+      (attempt) => {
+        targets.logger.warn(
+          { operation, attempt: String(attempt) },
+          "Retrying a transaction chosen as deadlock victim.",
+        );
+        return deadlockBackOff(attempt);
+      },
+    );
+  } catch (error) {
+    const driverError = error instanceof CommitFailedError ? error.driverError : error;
+    throw new LegacyStoreError(operation, driverError);
+  }
+}
+
+/** Locks the project row (PROJECT_LOCK); false when there is no such project. */
+async function lockProject(request: () => sql.Request, projectId: string): Promise<boolean> {
+  const locked = await request()
+    .input("project", sql.UniqueIdentifier, projectId)
+    .query(PROJECT_LOCK);
+  return locked.recordset.length > 0;
+}
+
+/**
+ * Locks the project row, then reads and locks its membership rows (in this order in every
+ * transaction). null when there is no such project.
+ */
+async function lockedMembers(
+  request: () => sql.Request,
+  projectId: string,
+): Promise<MembershipFacts[] | null> {
+  if (!(await lockProject(request, projectId))) return null;
+  const rows = await request()
+    .input("project", sql.UniqueIdentifier, projectId)
+    .query<{ userid: string; role: string | null; userexists: number }>(MEMBER_ROWS);
+  return rows.recordset.map((row) => ({
+    userId: row.userid.toLowerCase(),
+    role: row.role,
+    userExists: row.userexists === 1,
+  }));
+}
+
+/**
+ * Stores a new project as the legacy create does (R4), in one transaction: the `Organizations`
+ * row (`ORGANIZATION_CREATE`, `happendat` = `timestamp` = `createdAt`), then the creator's
+ * `OrganizationUsers` row (id = project id, role `admin`, the project name). An id in use fails on
+ * the primary key and nothing is stored. No audit row (legacy writes none).
+ */
+export async function writeProjectCreation(
+  targets: LegacyWriteTargets,
+  project: NewProject,
+): Promise<void> {
+  const id = checkedProjectId("create", project.id);
+  const creatorId = checkedProjectId("create", project.creatorId);
+  const at = new Date(project.createdAt);
+  await inTransaction(targets, "project create", async (request) => {
+    await request()
+      .input("project", sql.UniqueIdentifier, id)
+      .input("name", sql.NVarChar(sql.MAX), project.name)
+      .input("now", sql.DateTime, at)
+      .query(PROJECT_INSERT);
+    await request()
+      .input("project", sql.UniqueIdentifier, id)
+      .input("user", sql.UniqueIdentifier, creatorId)
+      .input("name", sql.NVarChar(sql.MAX), project.name)
+      .input("now", sql.DateTime, at)
+      .query(CREATOR_INSERT);
+    return { value: undefined, commit: true };
+  });
+}
+
+/**
+ * Renames a project (R5): `name` and `timestamp` only; `type`, `happendat` and the creator row's
+ * `name` stay. false when no project has this id.
+ */
+export async function writeProjectRename(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  name: string,
+  now: string,
+): Promise<boolean> {
+  const id = checkedProjectId("rename", projectId);
+  try {
+    const result = await (
+      await targets.pool()
+    )
+      .request()
+      .input("project", sql.UniqueIdentifier, id)
+      .input("name", sql.NVarChar(sql.MAX), name)
+      .input("now", sql.DateTime, new Date(now))
+      .query(PROJECT_RENAME);
+    return (result.rowsAffected[0] ?? 0) > 0;
+  } catch (error) {
+    throw new LegacyStoreError("project rename", error);
+  }
+}
+
+/**
+ * Adds a member (R6) in one transaction: `already-member` when the user has any row in the
+ * project, else a new row (random id, `ORGANIZATION_JOIN`, the role in lower case, no name).
+ */
+export async function writeMemberAddition(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  userId: string,
+  role: ProjectRole,
+  now: string,
+): Promise<AddMemberOutcome> {
+  const project = checkedProjectId("member add", projectId);
+  const user = checkedProjectId("member add", userId);
+  return inTransaction<AddMemberOutcome>(targets, "member add", async (request) => {
+    const members = await lockedMembers(request, project);
+    if (members === null) return { value: "not-found", commit: false };
+    if (members.some((member) => member.userId === user)) {
+      return { value: "already-member", commit: false };
+    }
+    await request()
+      .input("id", sql.UniqueIdentifier, randomUUID())
+      .input("project", sql.UniqueIdentifier, project)
+      .input("user", sql.UniqueIdentifier, user)
+      .input("role", sql.VarChar(sql.MAX), role.toLowerCase())
+      .input("now", sql.DateTime, new Date(now))
+      .query(MEMBER_INSERT);
+    return { value: "added", commit: true };
+  });
+}
+
+/**
+ * Sets the role of every row of the member in place (R3) when decideRoleChange allows it (R8):
+ * only `role` and `timestamp` change, so the row's id (the creator marker), `type`, `happendat`
+ * and `name` stay. The check and the write are one transaction.
+ */
+export async function writeMemberRole(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  userId: string,
+  role: ProjectRole,
+  now: string,
+): Promise<RoleChangeOutcome> {
+  const project = checkedProjectId("member role", projectId);
+  const user = checkedProjectId("member role", userId);
+  return inTransaction<RoleChangeOutcome>(targets, "member role", async (request) => {
+    const members = await lockedMembers(request, project);
+    if (members === null) return { value: "not-found", commit: false };
+    const outcome = decideRoleChange(members, user, role);
+    if (outcome !== "changed") return { value: outcome, commit: false };
+    await request()
+      .input("project", sql.UniqueIdentifier, project)
+      .input("user", sql.UniqueIdentifier, user)
+      .input("role", sql.VarChar(sql.MAX), role.toLowerCase())
+      .input("now", sql.DateTime, new Date(now))
+      .query(MEMBER_ROLE_UPDATE);
+    return { value: outcome, commit: true };
+  });
+}
+
+/**
+ * Deletes every row of the member, duplicates included (R7), when decideRemoval allows it (R8).
+ * The check and the write are one transaction.
+ */
+export async function writeMemberRemoval(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  userId: string,
+): Promise<RemovalOutcome> {
+  const project = checkedProjectId("member remove", projectId);
+  const user = checkedProjectId("member remove", userId);
+  return inTransaction<RemovalOutcome>(targets, "member remove", async (request) => {
+    const members = await lockedMembers(request, project);
+    if (members === null) return { value: "not-found", commit: false };
+    const outcome = decideRemoval(members, user);
+    if (outcome !== "removed") return { value: outcome, commit: false };
+    await request()
+      .input("project", sql.UniqueIdentifier, project)
+      .input("user", sql.UniqueIdentifier, user)
+      .query(MEMBER_DELETE);
+    return { value: outcome, commit: true };
+  });
+}
+
+/** A survey moved out of a deleted project, with its unchanged creator. */
+interface MovedSurvey {
+  readonly id: string;
+  readonly creatorId: string | null;
+}
+
+/**
+ * Deletes a project (R9) in one transaction: every survey of the project, archived ones included,
+ * moves to the personal scope of `receiverId` (`userid` and `timestamp` change, `creatorid`
+ * stays), then the membership rows and the `Organizations` row are deleted. Then, best effort, a
+ * `SURVEY_TRANSFER` audit row per moved survey with the receiver and the unchanged creator.
+ *
+ * Returns the moved survey ids in lower case, sorted; null when no project has this id (nothing
+ * is written).
+ */
+export async function writeProjectDeletion(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  receiverId: string,
+  now: string,
+): Promise<string[] | null> {
+  const project = checkedProjectId("delete", projectId);
+  const receiver = checkedProjectId("delete", receiverId);
+  const moved = await inTransaction<MovedSurvey[] | null>(
+    targets,
+    "project delete",
+    async (request) => {
+      if (!(await lockProject(request, project))) return { value: null, commit: false };
+      const surveys = await request()
+        .input("receiver", sql.UniqueIdentifier, receiver)
+        .input("now", sql.DateTime, new Date(now))
+        .input("project", sql.UniqueIdentifier, project)
+        .query<{ id: string; creatorid: string | null }>(PROJECT_SURVEYS_MOVE);
+      await request().input("project", sql.UniqueIdentifier, project).query(PROJECT_MEMBERS_DELETE);
+      await request().input("project", sql.UniqueIdentifier, project).query(PROJECT_DELETE);
+      const value = surveys.recordset.map((row) => ({
+        id: row.id.toLowerCase(),
+        creatorId: row.creatorid === null ? null : row.creatorid.toLowerCase(),
+      }));
+      return { value, commit: true };
+    },
+  );
+  if (moved === null) return null;
+
+  moved.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const survey of moved) {
+    const event = surveyEvent("SURVEY_TRANSFER", survey.id, now, {
+      userid: guid(receiver),
+      ...(survey.creatorId !== null && { creatorid: guid(survey.creatorId) }),
+    });
+    await appendEventBestEffort(targets, survey.id, event, "the project is deleted.");
+  }
+  return moved.map((survey) => survey.id);
 }

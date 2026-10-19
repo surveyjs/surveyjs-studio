@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
 import {
   decodeHistoryCursor,
+  decodeMembersCursor,
   decodeProjectCursor,
   decodeResultsCursor,
   decodeSurveyCursor,
   encodeHistoryCursor,
+  encodeMembersCursor,
   encodeProjectCursor,
   encodeResultsCursor,
   encodeSurveyCursor,
@@ -251,5 +253,50 @@ describe("results cursors", () => {
     ["padding", `${raw(resultsPayload)}=`],
   ])("rejects %s", (_name, cursor) => {
     expectInvalid(() => decodeResultsCursor(cursor, survey));
+  });
+});
+
+describe("members cursors", () => {
+  const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+  const member = { name: "mia member", id: "11111111-0000-4000-8000-a00000000003" };
+  const membersPayload = { v: 1, k: "members", p: MARKETING, n: member.name, i: member.id };
+
+  it("round-trip a position of the project, with the name lower-cased", () => {
+    const cursor = encodeMembersCursor({ ...member, name: "Mia Member" }, MARKETING);
+    expect(cursor).toBe(raw(membersPayload));
+    expect(decodeMembersCursor(cursor, MARKETING)).toEqual(member);
+  });
+
+  it("belong to the project in any case of its id", () => {
+    const cursor = encodeMembersCursor(member, MARKETING.toUpperCase());
+    expect(cursor).toBe(raw(membersPayload));
+    expect(decodeMembersCursor(cursor, MARKETING.toUpperCase())).toEqual(member);
+  });
+
+  it("keep names with any characters", () => {
+    const named = { name: "été — 2026 «q3»", id: member.id };
+    expect(decodeMembersCursor(encodeMembersCursor(named, MARKETING), MARKETING)).toEqual(named);
+  });
+
+  it.each([
+    ["another project's cursor", encodeMembersCursor(member, ENGINEERING)],
+    ["a project cursor", encodeProjectCursor({ name: "marketing", id: MARKETING })],
+    ["a survey cursor", encodeSurveyCursor(position, personalActive)],
+    ["text that is not base64url", "***"],
+    ["the wrong version", raw({ ...membersPayload, v: 2 })],
+    ["the wrong kind", raw({ ...membersPayload, k: "projects" })],
+    ["a missing project", raw({ v: 1, k: "members", n: member.name, i: member.id })],
+    ["a name that is not a string", raw({ ...membersPayload, n: 5 })],
+    ["a name that is not lower-case", raw({ ...membersPayload, n: "Mia Member" })],
+    ["an empty id", raw({ ...membersPayload, i: "" })],
+    ["an upper-case id", raw({ ...membersPayload, i: member.id.toUpperCase() })],
+    ["an id longer than 64 characters", raw({ ...membersPayload, i: "a".repeat(65) })],
+    ["an extra member", raw({ ...membersPayload, x: 1 })],
+    ["members in another order", raw(Object.fromEntries(Object.entries(membersPayload).reverse()))],
+    ["padding", `${raw({ ...membersPayload, n: "ab" })}=`],
+    ["non-canonical trailing bits", nonCanonical(membersPayload)],
+    ["a value over 1024 characters", raw({ ...membersPayload, n: "n".repeat(1024) })],
+  ])("reject %s", (_name, cursor) => {
+    expectInvalid(() => decodeMembersCursor(cursor, MARKETING));
   });
 });

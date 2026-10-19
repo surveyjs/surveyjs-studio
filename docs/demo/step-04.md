@@ -215,6 +215,6 @@ pnpm demo:azurite:down
   permission (`canModify` is returned but not used yet): Step 5.
 - Opening a survey from its row, and the real survey editor, definition and theme: Step 6 (a row
   does nothing yet; the editor is a placeholder).
-- Creating projects and managing members (the `/projects` page): Step 11.
+- Creating projects and managing members (the `/projects` page): Step 11, done (see [the Step 11 demo](step-11.md)).
 - The legacy `/service/mysurveys` addresses and pixel-level parity: Steps 12 and 13.
 - Reading a survey definition over HTTP (`getSurveyDefinition` still answers `501`).

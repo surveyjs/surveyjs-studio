@@ -1,0 +1,391 @@
+@mixin Section-Size--Account {
+    text-align: left;
+
+    @include media(Large-Desktop, Desktop) {
+        width: size(100);
+    }
+}
+
+.v2-class---account-page {
+    display: flex;
+    gap: size(6);
+    max-width: size(135);
+    margin: auto;
+    padding: size(6) size(6) size(12) size(3);
+    align-items: stretch;
+
+    @include media(Vertical-Tablet) {
+        padding: size(6) size(6) size(12) size(6);
+    }
+
+    @include media(Mobile) {
+        padding: size(6) size(3) size(6) size(3);
+    }
+
+    @include media(Vertical-Tablet, Mobile) {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
+.v2-class---account-page {
+    .v2-class---sidebar {
+        width: size(37);
+        min-width: size(37);
+        max-width: size(37);
+        flex-shrink: 0;
+
+        @include media(Tablet) {
+            flex-shrink: 1;
+        }
+
+        @include media(Vertical-Tablet, Mobile) {
+            display: none;
+        }
+    }
+
+    .v2-class---sidebar__scroller {
+        height: 100%;
+        max-height: calc(100vh - 176px);
+    }
+}
+
+.v2-class---account-page__section-container {
+    display: none;
+
+    @include media(Vertical-Tablet, Mobile) {
+        display: block;
+    }
+}
+
+.v2-class---account-page__section-container--selected {
+    display: block;
+    flex-grow: 1;
+}
+
+.v2-class---account-page__title-section {
+    @include Section-Size--Account;
+    padding-top: size(12);
+    padding-bottom: size(6);
+
+    @include media(Mobile) {
+        padding-top: size(5);
+        padding-bottom: size(3);
+    }
+}
+
+.v2-class---account-page__title-section--center {
+    text-align: center;
+    padding-bottom: size(24);
+
+    .v2-class---account-page__actions-footer {
+        padding-top: size(6);
+        display: flex;
+        justify-content: center;
+    }
+}
+
+.v2-class---account-page__title-section--alert-banner-page {
+    padding-top: 0;
+    padding-bottom: size(24);
+
+    @include media(Mobile) {
+        padding-bottom: size(3);
+    }
+}
+
+.v2-class---account-page__actions-footer--alert-banner-page {
+    display: flex;
+    justify-content: center;
+    padding-top: size(6);
+}
+
+.v2-class---account-page__email-section {
+    @include Section-Size--Account;
+    padding-bottom: size(6);
+}
+
+.v2-class---account-page__password-section {
+    @include Section-Size--Account;
+    padding-bottom: size(12);
+
+    @include media(Mobile) {
+        padding-bottom: size(6);
+    }
+}
+
+.v2-class---account-page__separator {
+    @include Section-Size--Account;
+    width: 100%;
+    height: 1px;
+    background-color: $General--Line-10-proc;
+    margin-bottom: size(12);
+
+    @include media(Mobile) {
+        margin-bottom: size(6);
+    }
+}
+
+.v2-class---account-page__actions-footer {
+    display: flex;
+    align-items: center;
+    gap: size(4);
+    padding-top: size(2);
+}
+
+.v2-class---account-page__actions-footer--edit-mode {
+    padding-top: size(0);
+
+    @include media(Mobile) {
+        padding-top: 0;
+        justify-content: flex-end;
+
+        .v2-class---button {
+            width: initial;
+            justify-content: center;
+        }
+
+        .v2-class---paragraph-link {
+            text-align: center;
+        }
+    }
+}
+
+[data-details-edit-mode]:not(.v2-class---license-allocate) {
+    display: none;
+}
+
+.v2-class---delete-account-page {
+    @include media(Large-Desktop, Desktop) {
+        max-width: size(100);
+        margin: auto;
+    }
+
+    @include media(Vertical-Tablet, Tablet) {
+        padding: size(6);
+    }
+
+    @include media(Mobile) {
+        padding: size(3);
+    }
+
+    padding-bottom: size(24);
+
+    .v2-class---account-page__title-section .v2-class---header--level-1 {
+        gap: size(4);
+
+        @include media(Mobile) {
+            align-items: center;
+            text-align: center;
+        }
+    }
+}
+
+.v2-class---account-page__section-narrow-mode.v2-class---account-page__section-narrow-mode {
+    @include media(Large-Desktop, Desktop) {
+        width: size(100);
+    }
+}
+
+.v2-class---delete-account-page__delete-section {
+    @include Section-Size--Account;
+    padding-top: size(0);
+    padding-bottom: size(0);
+    display: flex;
+    flex-direction: column;
+    gap: size(8);
+
+    .v2-class---account-page__actions-footer {
+        padding-top: 0;
+        display: flex;
+        gap: size(6);
+
+        @include media(Mobile) {
+            .v2-class---paragraph-link {
+                display: none;
+            }
+
+            .v2-class---button {
+                width: 100%;
+                text-align: center;
+                justify-content: center;
+            }
+        }
+    }
+}
+
+.v2-class---account-page--not-for-mobile.v2-class---account-page--not-for-mobile.v2-class---account-page--not-for-mobile {
+    @include media(Mobile) {
+        display: none;
+    }
+}
+
+.v2-class---account-page--for-mobile-only.v2-class---account-page--for-mobile-only.v2-class---account-page--for-mobile-only {
+    @include media(Large-Desktop, Desktop, Tablet, Vertical-Tablet) {
+        display: none;
+    }
+}
+
+.v2-class---account-page--not-for-desktop.v2-class---account-page--not-for-desktop.v2-class---account-page--not-for-desktop {
+    @include media(Large-Desktop, Desktop) {
+        display: none;
+    }
+}
+
+.v2-class---account-page--for-desktop-only.v2-class---account-page--for-desktop-only.v2-class---account-page--for-desktop-only {
+    @include media(Tablet, Vertical-Tablet, Mobile) {
+        display: none;
+    }
+}
+
+.v2-class---account-page {
+    .v2-class---text-edit__input:placeholder-shown:not(:focus) + label.v2-class---text-edit__label {
+        visibility: hidden;
+    }
+
+    .v2-class---button {
+        outline: none;
+    }
+
+    summary {
+        outline: none;
+    }
+
+    .v2-class---header--reduced.v2-class---header--reduced .v2-class---header__title--level-1 {
+        @include media(Large-Desktop) {
+            @include Article--Titles--X-Large;
+        }
+    }
+
+    .v2-class---signup-page__social-link-panel-link-name {
+        @include media(Vertical-Tablet, Mobile) {
+            display: initial;
+        }
+    }
+}
+
+.v2-class---account-page_gap {
+    height: size(4);
+}
+
+
+.v2-class---account-page--instructions {
+    flex-direction: column;
+    gap: 0;
+    padding: 0 size(6);
+    max-width: 100%;
+    box-sizing: border-box;
+
+    @include media(Large-Desktop, Desktop) {
+        padding: 0;
+    }
+
+    @include media(Mobile) {
+        padding: 0 size(3);
+    }
+
+
+    .v2-class---account-page__title-section {
+        @include media(Large-Desktop, Desktop) {
+            width: size(100);
+            margin: auto;
+        }
+
+        @include media(Mobile) {
+            width: 100%;
+        }
+    }
+
+    pre[class*=language-].v2-class---code {
+        outline: none;
+        padding: size(1) size(2);
+    }
+}
+
+.v2-class---key-generator {
+    margin: size(2) 0 size(4);
+    padding: size(3) size(4) size(4);
+    display: flex;
+    flex-direction: column;
+    gap: size(2);
+    border-radius: size(0.5);
+    background-color: $Secondary--Secondary-10;
+}
+.v2-class---domain-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: size(2);
+
+    .v2-class---domain-selector__combobox {
+        flex-grow: 1;
+        width: 0;
+
+        &.v2-class---drop-down-button.v2-class---drop-down-button--open > .v2-class---drop-down-menu--popup-menu {
+            width: 100%;
+            top: size(4);
+        }
+
+        .v2-class---drop-down-button__selected-item-button {
+            max-width: 100%;
+            flex-grow: 1;
+            box-sizing: border-box;
+        }
+
+        .v2-class---drop-down-menu-item__link {
+            cursor: default;
+
+            .v2-class---drop-down-menu-item__action {
+                display: none;
+                cursor: pointer;
+                margin: size(-1) 0;
+
+                svg {
+                    fill: $General--Forecolor-50;
+                    display: block;
+                }
+
+                &.v2-class---drop-down-menu-item__action--delete:hover {
+                    svg {
+                        fill: $Special--Red;
+                    }
+                }
+
+                &.v2-class---drop-down-menu-item__action--edit:hover {
+                    svg {
+                        fill: $Primary--Primary;
+                    }
+                }
+            }
+
+            &:hover, &.v2-class---drop-down-menu-item__link--selected {
+                .v2-class---drop-down-menu-item__action {
+                    display: inline-block;
+                }
+            }
+        }
+
+        li.v2-class---drop-down-menu-item:first-child {
+            .v2-class---drop-down-menu-item__link {
+                .v2-class---drop-down-menu-item__action {
+                    display: none;
+                }
+            }
+        }
+    }
+}
+
+.v2-class---popup__content--domain {
+    display: flex;
+    flex-direction: column;
+
+    .v2-class---editor-calc {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+
+        .v2-class---editor-calc__editor {
+            flex-grow: 1;
+            padding: size(1.5) size(2) size(12) size(2);
+        }
+    }
+}

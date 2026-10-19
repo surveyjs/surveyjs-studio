@@ -14,7 +14,13 @@ import {
 import { signInAt } from "./support/sign-in.js";
 import { createSurveyViaApi, csrfHeaders } from "./support/survey-list.js";
 import { expect, test } from "./support/test.js";
-import { creatorNotification, paddedPng, PNG_1X1, uploadViaApi } from "./support/uploads.js";
+import {
+  chooseFile,
+  creatorNotification,
+  paddedPng,
+  PNG_1X1,
+  uploadViaApi,
+} from "./support/uploads.js";
 
 // Editor uploads and file serving (US 31, 32; files are removed with their survey). Runs in memory
 // mode on three browsers and in Azurite mode. The writable scope is the admin's Personal scope:
@@ -37,7 +43,7 @@ test.beforeEach(async ({ page }) => {
 async function chooseImage(page: Page, bytes: Buffer, name: string): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
   await creator(page).locator(".sd-file__choose-btn").first().click();
-  await (await chooser).setFiles({ name, mimeType: "image/png", buffer: bytes });
+  await chooseFile(await chooser, name, bytes);
 }
 
 test("an image chosen in the editor is uploaded, shown, saved, served, and removed with the survey", async ({

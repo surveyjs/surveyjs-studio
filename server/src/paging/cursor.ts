@@ -7,6 +7,8 @@ import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../provi
  * - Surveys: `{"v":1,"k":"surveys","p":<scope>,"a":<archived>,"u":<updatedAt>,"i":<id>}`, where the
  *   scope is `personal` or the lower-case project id. A cursor belongs to one list (scope and archived).
  * - Projects: `{"v":1,"k":"projects","n":<lower-cased name>,"i":<id>}`.
+ * - Members: `{"v":1,"k":"members","p":<project id, lower-case>,"n":<lower-cased display name>,
+ *   "i":<user id>}`. A cursor belongs to one project.
  * - History: `{"v":1,"k":"history","u":<at>,"i":<entry id>}`.
  * - Results: `{"v":1,"k":"results","s":<survey id, lower-case>,"u":<submittedAt>,"i":<response id>}`.
  *   A cursor belongs to one survey.
@@ -25,6 +27,13 @@ export interface SurveyList {
 /** A place in the project list order (name ignoring case, then id). */
 export interface ProjectPosition {
   /** The project name, lower-cased. */
+  readonly name: string;
+  readonly id: string;
+}
+
+/** A place in the member list order (display name ignoring case, then user id). */
+export interface MemberPosition {
+  /** The display name, lower-cased. */
   readonly name: string;
   readonly id: string;
 }
@@ -128,6 +137,31 @@ export function decodeProjectCursor(value: string): ProjectPosition {
   }
   const position = { name: n.toLowerCase(), id: i.toLowerCase() };
   return canonical(value, position, encodeProjectCursor(position));
+}
+
+const membersPayload = (position: MemberPosition, projectId: string) => ({
+  v: VERSION,
+  k: "members",
+  p: projectId.toLowerCase(),
+  n: position.name.toLowerCase(),
+  i: position.id,
+});
+
+/** The name is lower-cased, as the member list order compares it. */
+export function encodeMembersCursor(position: MemberPosition, projectId: string): string {
+  return encode(membersPayload(position, projectId));
+}
+
+/**
+ * The position of a members cursor of `projectId`. Throws `400 bad-request` ("Invalid cursor.") for
+ * anything else, including a cursor of another project.
+ */
+export function decodeMembersCursor(value: string, projectId: string): MemberPosition {
+  const { v, k, p, n, i } = decode(value);
+  if (v !== VERSION || k !== "members" || p !== projectId.toLowerCase()) throw invalidCursor();
+  if (typeof n !== "string" || !isId(i)) throw invalidCursor();
+  const position = { name: n.toLowerCase(), id: i.toLowerCase() };
+  return canonical(value, position, encodeMembersCursor(position, projectId));
 }
 
 const historyPayload = (position: HistoryPosition) => ({

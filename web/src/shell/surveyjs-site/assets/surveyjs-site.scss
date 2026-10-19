@@ -1,7 +1,7 @@
 // The surveyjs.io design-system styles the shell needs: the partials of the site's
 // `the site's source` that style the top bar, the menus, the footer, the cookie
-// banner, the licence dialogs and the My Surveys page, imported in the site's order. The partials
-// under `site/` are copies; see README.md for their origin and the one change.
+// banner, the licence dialogs, the My Surveys page and the Projects page, imported in the site's
+// order. The partials under `site/` are copies; see README.md for their origin and the one change.
 
 @import "site/Content/Styles/fonts.scss";
 @import "site/Content/Styles/sizes.scss";
@@ -51,6 +51,12 @@
     transform: rotate(359deg);
   }
 }
+
+// The Projects page (`src/projects/`): the account page's layout and helpers, the "Add a New
+// Member" button of the licence manager and the Projects section, in the order of `app.scss`.
+@import "site/Content/Styles/pages/account/index.scss";
+@import "site/Content/Styles/pages/account/sections/license-manager.scss";
+@import "site/Content/Styles/pages/account/sections/projects.scss";
 
 @import "site/Content/Styles/pages/my-surveys.scss";
 

@@ -12,7 +12,7 @@ import {
 import { signInAt } from "./support/sign-in.js";
 import { createSurveyViaApi, openRowMenu, pickMenuItem, surveyRow } from "./support/survey-list.js";
 import { expect, test, watchConsole } from "./support/test.js";
-import { paddedPng } from "./support/uploads.js";
+import { chooseFile, paddedPng } from "./support/uploads.js";
 
 // The run page (US 18, 37-41, 44): publish and run, single submission, respondent files, the
 // not-available page and surveyjs.io's old run link. Runs in memory mode on three browsers and in
@@ -127,7 +127,7 @@ test("a file answer is uploaded to the server and the response keeps its URL", a
     // file goes through the native file chooser (which sets that input's files).
     const chooser = page.waitForEvent("filechooser");
     await page.locator(".sd-file__choose-btn").first().click();
-    await (await chooser).setFiles({ name: "doc.png", mimeType: "image/png", buffer: bytes });
+    await chooseFile(await chooser, "doc.png", bytes);
     expect((await uploaded).status()).toBe(201);
 
     const submitted = page.waitForRequest((request) => isSubmit(request, survey.id));

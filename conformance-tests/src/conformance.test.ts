@@ -194,16 +194,6 @@ describe(`server at ${baseUrl}`, () => {
       expect(response.status).toBe(403);
       expect(await codeOf(response)).toBe("csrf-token-invalid");
     });
-
-    it("an unimplemented operation answers 501 not-implemented", async (ctx) => {
-      const session = await signedIn(ctx);
-      const members = await call("GET", "/projects/{projectId}/members", {
-        path: "/projects/55555555-0000-4000-8000-a00000000002/members",
-        headers: sessionHeaders(session),
-      });
-      expect(members.status).toBe(501);
-      expect(await codeOf(members)).toBe("not-implemented");
-    });
   });
 
   it("an unknown route answers 404 not-found", async () => {

@@ -20,7 +20,7 @@ import { FILE_DEFINITION, publishViaApi, routeBrandImage } from "./support/run.j
 import { signInAt } from "./support/sign-in.js";
 import { answerNextConfirm, createSurveyViaApi } from "./support/survey-list.js";
 import { expect, test, watchConsole } from "./support/test.js";
-import { paddedPng } from "./support/uploads.js";
+import { chooseFile, paddedPng } from "./support/uploads.js";
 
 // The results page's Details tab and the public results page (US 50-56): totals and dates,
 // downloads, Grant Access and the public page, IP capture, Delete Results and file links. Runs in
@@ -239,13 +239,7 @@ test("Delete Results removes the responses and their file links", async ({ page,
     );
     const chooser = page.waitForEvent("filechooser");
     await page.locator(".sd-file__choose-btn").first().click();
-    await (
-      await chooser
-    ).setFiles({
-      name: "doc.png",
-      mimeType: "image/png",
-      buffer: paddedPng(2_000),
-    });
+    await chooseFile(await chooser, "doc.png", paddedPng(2_000));
     expect((await uploaded).status()).toBe(201);
     await page.getByRole("button", { name: "Complete", exact: true }).click();
     await expect(page.getByText("Thank you for completing the survey")).toBeVisible();

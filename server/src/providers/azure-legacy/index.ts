@@ -6,6 +6,7 @@ import type { AccountNoticesSetting, LegacyConfig } from "../../config.js";
 import type {
   HistoryEntryRecord,
   NewSurvey,
+  ProjectMember,
   ProjectMembership,
   SaveOutcome,
   SurveyChanges,
@@ -18,7 +19,13 @@ import { contentVersion } from "../../domain/content-version.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
 import { licenceNotices } from "../../notices/licence-rule.js";
-import { historyOrder, isAfterHistory, projectListOrder, surveyListOrder } from "../ordering.js";
+import {
+  historyOrder,
+  isAfterHistory,
+  memberListOrder,
+  projectListOrder,
+  surveyListOrder,
+} from "../ordering.js";
 import type {
   CloneOptions,
   HistoryPage,
@@ -53,7 +60,13 @@ import type {
 import {
   writeClonedSurvey,
   writeDefinitionSave,
+  writeMemberAddition,
+  writeMemberRemoval,
+  writeMemberRole,
   writeNewSurvey,
+  writeProjectCreation,
+  writeProjectDeletion,
+  writeProjectRename,
   writeSurveyChanges,
   writeSurveyDeletion,
   writeThemeSave,
@@ -67,8 +80,9 @@ import {
  * tables in the same database.
  *
  * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
- * folder): survey creation, update, clone, delete and the definition and theme saves call the
- * writers of writes.ts. Editor files live in a container of their own (files.ts).
+ * folder): survey creation, update, clone, delete, the definition and theme saves and the
+ * project and member writes call the writers of writes.ts. Editor files live in a container of
+ * their own (files.ts).
  * Connection strings are secrets: no error or log line built here holds one.
  */
 
@@ -152,7 +166,13 @@ const PROJECT_MEMBERS_SELECT =
   "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid " +
   "WHERE m.organizationid IN (SELECT organizationid FROM OrganizationUsers WHERE userid = @user)";
 
+/** The membership rows of one project whose user exists, with the user's columns (R11). */
+const PROJECT_MEMBER_USERS_SELECT =
+  "SELECT m.userid, m.role, u.email, u.displayname, u.blocked " +
+  "FROM OrganizationUsers m JOIN Users u ON u.id = m.userid WHERE m.organizationid = @project";
+
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
+type MemberUserQueryRow = Omit<LegacyUserRow, "id"> & { userid: string; role: string | null };
 type ProjectMemberQueryRow = LegacyOrganizationUserRow & {
   name: string | null;
   orghappendat: Date | null;
@@ -329,6 +349,47 @@ export function createAzureLegacyProviders(
       memberships.push(...mapRows(own, (row) => membershipFromLegacy(project, row)));
     }
     return memberships.sort(projectListOrder);
+  }
+
+  /**
+   * One member per user among the rows of PROJECT_MEMBER_USERS_SELECT, `admin` when any of the
+   * user's rows is admin (any case), in list order (R16). Rows whose role is neither `admin` nor
+   * `user` are ignored; a user with only such rows is skipped and reported by ids.
+   */
+  function membersFromRows(
+    projectId: string,
+    rows: readonly MemberUserQueryRow[],
+  ): ProjectMember[] {
+    const userOf = (row: MemberUserQueryRow) => row.userid.toLowerCase();
+    const members: ProjectMember[] = [];
+    for (const userId of new Set(rows.map(userOf))) {
+      const own = rows.filter((row) => userOf(row) === userId);
+      const roles = own.map((row) => row.role?.toLowerCase());
+      if (!roles.some((role) => role === "admin" || role === "user")) {
+        logger.warn({ projectId, userId }, "Skipped a project member whose role is unknown.");
+        continue;
+      }
+      // Never empty: userId comes from rows.
+      const { userid, email, displayname, blocked } = own[0]!;
+      members.push({
+        user: userFromLegacy({ id: userid, email, displayname, blocked }),
+        role: roles.includes("admin") ? "admin" : "user",
+      });
+    }
+    return members.sort(memberListOrder);
+  }
+
+  async function getUserProject(userId: string, projectId: string) {
+    if (!isGuid(userId) || !isGuid(projectId)) return null;
+    const rows = await select<ProjectMemberQueryRow>(
+      "project lookup",
+      `${PROJECT_MEMBERS_SELECT} AND m.organizationid = @project`,
+      (request) =>
+        request
+          .input("user", sql.UniqueIdentifier, userId)
+          .input("project", sql.UniqueIdentifier, projectId),
+    );
+    return membershipsFromRows(rows, userId)[0] ?? null;
   }
 
   async function getSurvey(id: string) {
@@ -703,17 +764,50 @@ export function createAzureLegacyProviders(
         return membershipsFromRows(rows, userId);
       },
 
-      async getUserProject(userId, projectId) {
-        if (!isGuid(userId) || !isGuid(projectId)) return null;
-        const rows = await select<ProjectMemberQueryRow>(
-          "project lookup",
-          `${PROJECT_MEMBERS_SELECT} AND m.organizationid = @project`,
-          (request) =>
-            request
-              .input("user", sql.UniqueIdentifier, userId)
-              .input("project", sql.UniqueIdentifier, projectId),
+      getUserProject,
+
+      async listMembers(projectId) {
+        if (!isGuid(projectId)) return [];
+        const rows = await select<MemberUserQueryRow>(
+          "member list",
+          PROJECT_MEMBER_USERS_SELECT,
+          (request) => request.input("project", sql.UniqueIdentifier, projectId),
         );
-        return membershipsFromRows(rows, userId)[0] ?? null;
+        return membersFromRows(projectId.toLowerCase(), rows);
+      },
+
+      async createProject(project) {
+        await writeProjectCreation(writeTargets, project);
+        const id = project.id.toLowerCase();
+        const membership = await getUserProject(project.creatorId, id);
+        if (!membership) throw new Error(`Project ${id} cannot be read back after it was stored`);
+        return membership;
+      },
+
+      async renameProject(projectId, name, { now: at }) {
+        if (!isGuid(projectId)) return false;
+        return writeProjectRename(writeTargets, projectId, name, at);
+      },
+
+      async deleteProject(projectId, { receiverId, now: at }) {
+        if (!isGuid(projectId)) return null;
+        return writeProjectDeletion(writeTargets, projectId, receiverId, at);
+      },
+
+      async addMember(projectId, userId, role, { now: at }) {
+        if (!isGuid(projectId)) return "not-found";
+        return writeMemberAddition(writeTargets, projectId, userId, role, at);
+      },
+
+      async setMemberRole(projectId, userId, role, { now: at }) {
+        // A user id that is not a GUID has no row (decideRoleChange's not-found).
+        if (!isGuid(projectId) || !isGuid(userId)) return "not-found";
+        return writeMemberRole(writeTargets, projectId, userId, role, at);
+      },
+
+      async removeMember(projectId, userId) {
+        if (!isGuid(projectId) || !isGuid(userId)) return "not-found";
+        return writeMemberRemoval(writeTargets, projectId, userId);
       },
     },
 
