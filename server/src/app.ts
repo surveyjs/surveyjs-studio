@@ -16,6 +16,7 @@ import { serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createContentHandlers } from "./content/handlers.js";
+import { createFileHandlers } from "./files/handlers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 
 export interface BuildOptions {
@@ -131,6 +132,15 @@ export async function buildApp(
       ...createSurveyHandlers({
         surveys: providers.surveys,
         directory: providers.directory,
+        files: providers.files,
+        ...(options.now && { now: options.now }),
+      }),
+      ...createFileHandlers({
+        surveys: providers.surveys,
+        directory: providers.directory,
+        files: providers.files,
+        publicBaseUrl: config.publicBaseUrl,
+        maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
         ...(options.now && { now: options.now }),
       }),
     },

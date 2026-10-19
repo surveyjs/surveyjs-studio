@@ -88,6 +88,7 @@ or the same project). The copy:
 - is **unpublished** and active, with every setting off, even when the original is published;
 - has **you** as its creator, so you can modify it, even when you could not modify the original;
 - gets new IDs;
+- gets its own copies of the survey's uploaded files ([Images and files](images-and-files.md#copies-of-a-survey));
 - does not get results or history.
 
 You can clone any survey you can see, also from the Archived view. The copy is always created
@@ -139,7 +140,8 @@ brings the survey back. Neither asks anything. An archived survey keeps its data
 
 > Do you really want to delete this survey? This operation can't be undone.
 
-On **OK** the survey is deleted **for good**, with its definition, theme, history and results. There
+On **OK** the survey is deleted **for good**, with its definition, theme, history, results and uploaded
+files ([Images and files](images-and-files.md#when-you-delete-a-survey)). There
 is no way to bring it back. **Cancel** keeps it.
 
 ## Updated dates

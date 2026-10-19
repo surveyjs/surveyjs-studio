@@ -469,6 +469,19 @@ Facts that matter for the new app:
 - Deleting a survey or its results deletes no files. **[C]** `the site's code`
   (`site code`), `the site's code` (`site code`)
 
+**Implemented in Step 7** ([ADR 0013](../adr/0013-editor-uploads-and-files.md)):
+
+- New uploads go to a **new blob container `my-surveys-files`** of the surveys account, as block blobs
+  `{surveyId}/{fileId}` (the file id is 64 hex digits: the survey's GUID without dashes, then 128 random
+  bits). The blob's content type is the detected type; the metadata is `kind` (`asset`), `name`
+  (URI-encoded) and `createdat` (ISO 8601 UTC). The container is created on the first upload.
+- The legacy share `surveyfiles` and every blob container the legacy code uses are **untouched**: never
+  read, written or listed. Legacy code does not know the new container.
+- Legacy links (`https://api.surveyjs.io/private/Surveys/files?name={guid}`) in survey JSON are **left in
+  place**. They are not counted against the quota, not copied by a clone and not deleted with the survey.
+  They stop working when `api.surveyjs.io` is retired; a migration belongs to the rollout.
+- Deleting a survey now deletes its files in the new container. A clone copies them.
+
 ### 3.10 Results layouts (the only saved UI state)
 
 The Summary and Table layouts are saved **per survey, not per user**. **[C]**
@@ -846,8 +859,13 @@ is listed here with how it is done:
 - **Save theme:** `UPDATE Surveys SET theme, [timestamp] ... OUTPUT inserted.theme` with a `WHERE` that
   compares the old theme text exactly (the compare-and-set); audit row `SURVEY_THEME_CHANGE` with `theme`
   (`Edm.String`), or without `theme` when it is longer than 32,000 UTF-16 code units. No history entry.
-- Not done: deleting the editor preview image from the `surveyfiles` share (the rows above say "if we keep
-  that behaviour"); it waits for the file store in Step 7.
+- Not done, and not planned: deleting the editor preview image from the `surveyfiles` share (the rows above
+  say "if we keep that behaviour"). Nothing in the legacy repository writes such a file, and Azurite cannot
+  emulate the share. See [ADR 0013](../adr/0013-editor-uploads-and-files.md) (R4).
+
+**Implemented in Step 7** (`writes.ts`; [ADR 0013](../adr/0013-editor-uploads-and-files.md)): the file put
+and delete in the new container `my-surveys-files` (section 3.9), and a clone that rewrites the file links in
+the copy's definition text and theme.
 
 All of these set `timestamp` to the time the server's clock gives, once per request, and an update that
 changes no value still rewrites it. Every audit row is best effort (a failure is logged with the survey
@@ -1097,11 +1115,11 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 
 ### 9.5 Files (`StoredFile`)
 
-| Legacy                             | Domain                                | Rule                                                            |
-| ---------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
-| Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored. |
-| Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                     |
-| New blob container (our choice)    | `StoredFile` for new uploads          | Store content type, name, size and survey ID as blob metadata.  |
+| Legacy                             | Domain                                | Rule                                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored.                                                                                                              |
+| Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                                                                                                                                  |
+| Container `my-surveys-files`       | `StoredFile` for new uploads          | Blob `{surveyId}/{fileId}`: the survey ID is in the name, the content type is the blob's own, the size is its length; metadata `kind`, `name` (URI-encoded) and `createdat`. |
 
 ## 10. Replica plan
 

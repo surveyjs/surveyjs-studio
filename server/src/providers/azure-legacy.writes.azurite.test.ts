@@ -9,7 +9,8 @@ import {
 } from "@azure/storage-blob";
 import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { NewSurvey, SurveyOwner } from "../domain/types.js";
+import { newFileId } from "../domain/file-id.js";
+import type { NewSurvey, StoredFileRecord, SurveyOwner } from "../domain/types.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { localBlobServiceClient, localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
@@ -24,7 +25,8 @@ import {
 
 // Runs in the `providers-azurite` Vitest project. Checks that survey create, update, clone,
 // delete and the definition and theme saves write exactly the legacy format (layout section 5.3),
-// by reading the replica directly.
+// and that editor files go to their own container only (Step 7, R2), by reading the replica
+// directly.
 // Writes go to fresh personal scopes and to Engineering (project B) only; fixture surveys are only
 // read (as clone sources), and afterAll restores the golden fixtures.
 
@@ -589,6 +591,56 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       });
     });
 
+    it("stores the rewritten definition and theme text for the copy only", async () => {
+      const definition = { title: "Größe OLD-ID ✓", logo: "https://x/api/v1/public/files/OLD-ID" };
+      const theme = { cssVariables: { "--logo": "url(https://x/OLD-ID)" } };
+      const source = await store().surveys.createSurvey(newSurvey(personal()), definition);
+      const themeVersion = (await store().surveys.getTheme(source.id))!.version;
+      await store().surveys.saveTheme(source.id, theme, {
+        ifVersion: themeVersion,
+        savedAt: "2026-09-02T08:00:00.000Z",
+      });
+      const sourceRow = await rawRow(source.id);
+      const [sourcePoint] = (await historyNames(source.id)) as [string];
+      const sourceBlobs = async () => [
+        await blobBytes("surveyjson", source.id),
+        await blobBytes("surveytext", source.id),
+        await blobBytes("surveyjsonhistory", sourcePoint),
+      ];
+      const sourceBefore = await sourceBlobs();
+      const copy = copyOf(personal());
+
+      const rewriteText = (text: string) => text.replaceAll("OLD-ID", "NEW-ID");
+      await store().surveys.cloneSurvey(source.id, copy, { rewriteText });
+
+      const expected = Buffer.from(rewriteText(JSON.stringify(definition)), "utf8");
+      const history = await historyNames(copy.id);
+      expect(history).toHaveLength(1);
+      const copyBlobs: [string, string][] = [
+        ["surveyjson", copy.id],
+        ["surveytext", copy.id],
+        ["surveyjsonhistory", history[0]!],
+      ];
+      for (const [container, name] of copyBlobs) {
+        expect(await blobType(container, name), container).toBe("AppendBlob");
+        const bytes = await blobBytes(container, name);
+        expect(bytes.equals(expected), container).toBe(true);
+        expect([...bytes.subarray(0, 3)], container).not.toEqual([0xef, 0xbb, 0xbf]);
+      }
+      const rewrittenTheme = rewriteText(String(sourceRow!.theme));
+      expect(rewrittenTheme).toContain("NEW-ID");
+      expect((await rawRow(copy.id))!.theme).toBe(rewrittenTheme);
+      const audit = await auditRows(copy.id);
+      const themeChange = audit.find((entity) => typeOf(entity) === "SURVEY_THEME_CHANGE")!;
+      expect(payloadOf(themeChange, copy.id, "SURVEY_THEME_CHANGE", CLONED_AT)).toEqual({
+        theme: { type: "String", value: rewrittenTheme },
+      });
+
+      expect(await rawRow(source.id)).toEqual(sourceRow);
+      expect(await historyNames(source.id)).toEqual([sourcePoint]);
+      expect(await sourceBlobs()).toEqual(sourceBefore);
+    });
+
     it("copies a source without blob or theme as a row without blobs and a NULL theme", async () => {
       const copy = copyOf(personal());
       await store().surveys.cloneSurvey(surveyDraft.id, copy);
@@ -605,6 +657,99 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect(await historyNames(copy.id)).toEqual([]);
       const audit = await auditRows(copy.id);
       expect(audit.map(typeOf)).toEqual(["SURVEY_CREATE"]);
+    });
+  });
+
+  describe("files", () => {
+    const FILES_CONTAINER = "my-surveys-files";
+    const LEGACY_CONTAINERS = ["surveyjson", "surveytext", "surveyjsonhistory"];
+    /** A minimal valid 1x1 PNG. */
+    const PNG = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const fileOf = (surveyId: string, over: Partial<StoredFileRecord> = {}): StoredFileRecord => ({
+      id: newFileId(surveyId),
+      surveyId,
+      kind: "asset",
+      name: "logo.png",
+      contentType: "image/png",
+      size: PNG.length,
+      createdAt: "2026-09-01T10:00:00.000Z",
+      ...over,
+    });
+    /** Fresh survey ids (the store does not need the survey); their files are removed at the end. */
+    const surveyIds: string[] = [];
+    const freshSurveyId = (): string => {
+      const id = randomUUID();
+      surveyIds.push(id);
+      return id;
+    };
+    afterAll(async () => {
+      for (const id of surveyIds) await store().files.deleteSurveyFiles(id);
+    });
+
+    async function namesUnder(container: string, prefix: string): Promise<string[]> {
+      const names: string[] = [];
+      const client = blobs.getContainerClient(container);
+      if (!(await client.exists())) return names;
+      for await (const blob of client.listBlobsFlat({ prefix })) names.push(blob.name);
+      return names.sort();
+    }
+
+    it("stores a block blob {surveyId}/{id} with the type, the metadata and the bytes, and no legacy blob", async () => {
+      const surveyId = freshSurveyId();
+      const name = 'Логотип "ü" 1.png';
+      const file = fileOf(surveyId, { name });
+      await store().files.putFile(file, PNG);
+
+      const blob = blobs
+        .getContainerClient(FILES_CONTAINER)
+        .getBlobClient(`${surveyId}/${file.id}`);
+      const properties = await blob.getProperties();
+      expect(properties.blobType).toBe("BlockBlob");
+      expect(properties.contentType).toBe("image/png");
+      expect(properties.metadata).toEqual({
+        kind: "asset",
+        name: encodeURIComponent(name),
+        createdat: "2026-09-01T10:00:00.000Z",
+      });
+      expect((await blob.downloadToBuffer()).equals(PNG)).toBe(true);
+
+      for (const container of LEGACY_CONTAINERS) {
+        expect(await namesUnder(container, surveyId), container).toEqual([]);
+        expect(await namesUnder(container, file.id), container).toEqual([]);
+      }
+    });
+
+    it("creates its container on the first upload", async () => {
+      const container = `files-test-${randomUUID()}`;
+      const client = blobs.getContainerClient(container);
+      expect(await client.exists()).toBe(false);
+      const own = createAzureLegacyProviders(config, { filesContainer: container });
+      try {
+        const file = fileOf(randomUUID());
+        await own.files.putFile(file, PNG);
+        expect(await client.exists()).toBe(true);
+        expect(await namesUnder(container, "")).toEqual([`${file.surveyId}/${file.id}`]);
+        expect((await own.files.getFile(file.id))?.file).toEqual(file);
+      } finally {
+        await own.close();
+        await client.deleteIfExists();
+      }
+    });
+
+    it("deletes exactly the survey's blobs", async () => {
+      const surveyId = freshSurveyId();
+      const other = freshSurveyId();
+      const mine = [fileOf(surveyId), fileOf(surveyId)];
+      const theirs = fileOf(other);
+      for (const file of [...mine, theirs]) await store().files.putFile(file, PNG);
+
+      expect(await store().files.deleteSurveyFiles(surveyId)).toBe(2);
+
+      expect(await namesUnder(FILES_CONTAINER, `${surveyId}/`)).toEqual([]);
+      expect(await namesUnder(FILES_CONTAINER, `${other}/`)).toEqual([`${other}/${theirs.id}`]);
     });
   });
 

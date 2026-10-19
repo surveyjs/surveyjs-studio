@@ -101,3 +101,22 @@ export type SaveOutcome =
   | { readonly kind: "saved"; readonly version: string }
   | { readonly kind: "conflict" }
   | { readonly kind: "not-found" };
+
+/** What a stored file is for (R3). Step 8 adds "response". */
+export type FileKind = "asset";
+
+export interface StoredFileRecord {
+  /** 64 lower-case hex digits (R1). */
+  readonly id: string;
+  /** Lower-case GUID of the owning survey (equals surveyIdOfFile(id)). */
+  readonly surveyId: string;
+  readonly kind: FileKind;
+  /** The uploaded name (R12), any Unicode, 1–255 UTF-16 code units. */
+  readonly name: string;
+  /** One of the allowed types (R6). */
+  readonly contentType: string;
+  /** Bytes. */
+  readonly size: number;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+}

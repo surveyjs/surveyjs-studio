@@ -697,6 +697,14 @@ paths:
         Images and other files placed into the survey from Survey Creator. Each
         survey has a total quota (see `AppConfig.limits`); exceeding it returns
         `413 quota-exceeded`.
+
+        Send one file as the multipart part `file`. Its type is detected from its
+        content (the declared type and the file name are ignored); allowed are PNG,
+        JPEG, GIF, WebP, AVIF, BMP and SVG images and MP4, WebM and Ogg videos,
+        anything else is `415`. A survey's files count towards
+        `limits.maxAssetBytesPerSurvey` until the survey is deleted; an upload that
+        would go over it is `413 quota-exceeded`. Copies of a survey get copies of
+        its files.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -708,17 +716,19 @@ paths:
             schema: { $ref: '#/components/schemas/FileUpload' }
       responses:
         '201':
-          description: Stored.
+          description: Stored. `Location` is the file's download path.
           headers:
             Location: { $ref: '#/components/headers/Location' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StoredFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
 
   # ---------------------------------------------------------------- History
   /surveys/{surveyId}/history:
@@ -986,17 +996,56 @@ paths:
       tags: [Public]
       operationId: downloadFile
       summary: Download a stored file
+      description: |
+        Public: the unguessable URL is the permission. Images are served `inline`,
+        other files as `attachment`. Deleting the survey deletes its files (`404`
+        afterwards; caches may keep a copy for up to an hour).
       security: []
       responses:
         '200':
           description: The file content.
           headers:
-            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+            Content-Disposition:
+              description: '`inline` for images, else `attachment`, with `filename` and `filename*`.'
+              required: true
+              schema: { type: string, pattern: '^(inline|attachment); ' }
             Cache-Control:
+              description: Public, cacheable for up to an hour.
+              required: true
               schema: { type: string }
+            X-Content-Type-Options:
+              description: Always `nosniff`; the served type matches the content.
+              required: true
+              schema: { type: string, enum: [nosniff] }
+            Content-Security-Policy:
+              description: A sandboxing policy, so a file opened directly runs no script.
+              required: true
+              schema: { type: string }
+            Cross-Origin-Resource-Policy:
+              description: Always `cross-origin`, so surveys embedded on other sites show the files.
+              required: true
+              schema: { type: string, enum: [cross-origin] }
           content:
-            application/octet-stream:
-              schema: { type: string, contentMediaType: application/octet-stream }
+            image/png:
+              schema: { type: string, contentMediaType: image/png }
+            image/jpeg:
+              schema: { type: string, contentMediaType: image/jpeg }
+            image/gif:
+              schema: { type: string, contentMediaType: image/gif }
+            image/webp:
+              schema: { type: string, contentMediaType: image/webp }
+            image/avif:
+              schema: { type: string, contentMediaType: image/avif }
+            image/bmp:
+              schema: { type: string, contentMediaType: image/bmp }
+            image/svg+xml:
+              schema: { type: string, contentMediaType: image/svg+xml }
+            video/mp4:
+              schema: { type: string, contentMediaType: video/mp4 }
+            video/webm:
+              schema: { type: string, contentMediaType: video/webm }
+            video/ogg:
+              schema: { type: string, contentMediaType: video/ogg }
         '404': { $ref: '#/components/responses/NotFound' }
   /public/surveys/{surveyId}/results:
     parameters:
@@ -1339,8 +1388,12 @@ components:
           type: object
           required: [maxAssetBytesPerSurvey, maxFileBytes, maxResponseBytes, maxDocumentBytes]
           properties:
-            maxAssetBytesPerSurvey: { type: integer }
-            maxFileBytes: { type: integer }
+            maxAssetBytesPerSurvey:
+              type: integer
+              description: Total bytes of editor uploads one survey may hold.
+            maxFileBytes:
+              type: integer
+              description: Largest respondent file, in bytes.
             maxResponseBytes: { type: integer }
             maxDocumentBytes:
               type: integer
@@ -1532,6 +1585,7 @@ components:
     # -------------------------------------------------------------- Files
     FileUpload:
       type: object
+      description: One file in the multipart part `file`.
       required: [file]
       properties:
         file:
@@ -1541,13 +1595,22 @@ components:
       type: object
       required: [id, url, name, contentType, size]
       properties:
-        id: { type: string }
+        id:
+          type: string
+          description: Opaque; at least 128 bits of randomness.
         url:
           type: string
           description: Absolute URL of `GET /public/files/{fileId}`; this is what goes into the survey JSON or response.
-        name: { type: string }
-        contentType: { type: string }
-        size: { type: integer, minimum: 0 }
+        name:
+          type: string
+          description: The uploaded file name, without any folder part.
+        contentType:
+          type: string
+          description: Detected from the file's content.
+        size:
+          type: integer
+          minimum: 0
+          description: Bytes.
 
     # ------------------------------------------------------------ History
     HistoryEntry:

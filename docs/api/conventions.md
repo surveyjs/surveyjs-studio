@@ -84,6 +84,10 @@ meaning of `*`, and a `curl` loop are in [Concurrent editing with ETags](concurr
 
 `201 Created` with a `Location` header and the created resource in the body.
 
+## Uploads
+
+Files are sent as `multipart/form-data`, with the part named `file`. See [Uploads and files](uploads.md).
+
 ## Downloads
 
 The file format comes from the `Accept` header. A browser download link cannot set headers, so a
@@ -122,3 +126,4 @@ for every operation that a step has not built yet, and the conformance suite acc
 Configured on the server and returned by `GET /api/v1/config` as `limits`:
 `maxAssetBytesPerSurvey` (50 MB), `maxFileBytes` (10 MB), `maxResponseBytes` (1 MB) and `maxDocumentBytes` (30 MB). The last one is the
 body limit of the survey definition and theme saves; the others follow [ADR 0004](../adr/0004-body-limit.md).
+`maxAssetBytesPerSurvey` is the total of editor uploads one survey may hold ([Uploads and files](uploads.md#the-quota)).

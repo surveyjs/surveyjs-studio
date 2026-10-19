@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
+  fileRecordFromBlob,
   historyEntryFromBlob,
   isGuid,
   licenceExpiriesFromLegacy,
@@ -284,6 +285,76 @@ describe("historyEntryFromBlob", () => {
       `${SURVEY.toLowerCase()}${POINT.toLowerCase()}`,
     ]) {
       expect(historyEntryFromBlob(SURVEY, blob, undefined, modified), blob).toBeNull();
+    }
+  });
+});
+
+describe("fileRecordFromBlob", () => {
+  const SURVEY = "22222222-0000-4000-8000-a00000000001";
+  const ID = `22222222000040008000a00000000001${"ab".repeat(16)}`;
+  const name = `${SURVEY}/${ID}`;
+  const properties = { contentType: "image/png", contentLength: 1234 };
+  const metadata = {
+    kind: "asset",
+    name: encodeURIComponent('Логотип "ü" 1.png'),
+    createdat: "2026-09-01T10:00:05.123Z",
+  };
+
+  it("reads the record from the name, the properties and the metadata, decoding the name", () => {
+    expect(fileRecordFromBlob(name, properties, metadata)).toEqual({
+      id: ID,
+      surveyId: SURVEY,
+      kind: "asset",
+      name: 'Логотип "ü" 1.png',
+      contentType: "image/png",
+      size: 1234,
+      createdAt: "2026-09-01T10:00:05.123Z",
+    });
+  });
+
+  it("ignores names outside {surveyId}/{64 hex digits} and a survey part that is not the id's", () => {
+    const other = "22222222-0000-4000-8000-a00000000002";
+    for (const blob of [
+      ID,
+      `${other}/${ID}`,
+      `${SURVEY}/${ID}/extra`,
+      `${SURVEY}/${ID.slice(1)}`,
+      `${SURVEY}/${ID}0`,
+      `${SURVEY}/${ID.toUpperCase()}`,
+      `${SURVEY.toUpperCase()}/${ID}`,
+      `${SURVEY}/${"g".repeat(64)}`,
+      `${SURVEY}/`,
+      `${SURVEY}${ID}`,
+      "",
+    ]) {
+      expect(fileRecordFromBlob(blob, properties, metadata), blob).toBeNull();
+    }
+  });
+
+  it("ignores a blob of an unknown or missing kind", () => {
+    for (const kind of ["", "response", "Asset", undefined]) {
+      expect(fileRecordFromBlob(name, properties, { ...metadata, kind }), String(kind)).toBeNull();
+    }
+    expect(fileRecordFromBlob(name, properties, undefined)).toBeNull();
+  });
+
+  it("ignores a blob without a content type or length", () => {
+    expect(fileRecordFromBlob(name, { contentLength: 1234 }, metadata)).toBeNull();
+    expect(fileRecordFromBlob(name, { contentType: "", contentLength: 1234 }, metadata)).toBeNull();
+    expect(fileRecordFromBlob(name, { contentType: "image/png" }, metadata)).toBeNull();
+  });
+
+  it("names a file without a readable name by its id", () => {
+    for (const value of [undefined, "", "%E0%A4%A"]) {
+      expect(fileRecordFromBlob(name, properties, { ...metadata, name: value })?.name).toBe(ID);
+    }
+  });
+
+  it("dates a file without an ISO 8601 UTC createdat at the epoch", () => {
+    for (const createdat of [undefined, "", "yesterday", "2026-09-01T10:00:05+02:00"]) {
+      expect(fileRecordFromBlob(name, properties, { ...metadata, createdat })?.createdAt).toBe(
+        "1970-01-01T00:00:00.000Z",
+      );
     }
   });
 });

@@ -98,6 +98,20 @@ describe("validator (fixture contract)", () => {
     expect(await v.check("GET", "/files", ok)).toEqual([]);
   });
 
+  it("checks only the media type of a body that is not JSON", async () => {
+    const png = new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]), {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+    expect(await v.check("GET", "/images", png)).toEqual([]);
+    const text = respond(418, "teapot", { "content-type": "text/plain" });
+    expect(await v.check("GET", "/things/{id}", text)).toEqual([]);
+    const wrongType = respond(200, "x", { "content-type": "image/gif" });
+    expect(await v.check("GET", "/images", wrongType)).toEqual([
+      expect.stringContaining("content type"),
+    ]);
+  });
+
   it("validates documented and undocumented 501 as Problems", async () => {
     const nope = problem({ status: 501, code: "not-implemented" });
     expect(await v.check("DELETE", "/things/{id}", respond(501, nope, PROBLEM_TYPE))).toEqual([]);

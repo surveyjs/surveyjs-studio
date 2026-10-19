@@ -33,6 +33,15 @@ paths:
           description: A file.
           content:
             text/csv: {}
+  /images:
+    get:
+      operationId: getImage
+      responses:
+        "200":
+          description: An image.
+          content:
+            image/png:
+              schema: { type: string, contentMediaType: image/png }
   /empty:
     get:
       operationId: getEmpty

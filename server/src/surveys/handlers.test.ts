@@ -4,9 +4,10 @@ import { buildApp } from "../app.js";
 import { createDevIdentityProvider } from "../auth/providers/dev.js";
 import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
-import type { SurveyRecord, User } from "../domain/types.js";
+import { newFileId } from "../domain/file-id.js";
+import type { StoredFileRecord, SurveyRecord, User } from "../domain/types.js";
 import { createMemoryProviders, type MemorySeed } from "../providers/memory.js";
-import type { ProviderSet } from "../providers/types.js";
+import type { FileStore, ProviderSet } from "../providers/types.js";
 
 const NOW = "2026-10-15T08:30:00.000Z";
 const USER: User = {
@@ -74,13 +75,13 @@ afterEach(async () => {
 });
 
 /** The app on a memory store with the seed above, its clock fixed at NOW, signed in as USER. */
-async function start(): Promise<{
+async function start(wrap: (providers: ProviderSet) => ProviderSet = (p) => p): Promise<{
   server: FastifyInstance;
   providers: ProviderSet;
   headers: Record<string, string>;
 }> {
   const config = loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev" });
-  const providers = createMemoryProviders(seed);
+  const providers = wrap(createMemoryProviders(seed));
   app = await buildApp(config, providers, {
     identity: createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users: seed.users }),
     now: () => Date.parse(NOW),
@@ -336,5 +337,186 @@ describe("cloneSurvey", () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ detail: "You are not a member of this project." });
+  });
+});
+
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const PADDED = Buffer.concat([PNG, Buffer.from("pad")]);
+
+/** Stores a file of `surveyId` through the provider; returns its id. */
+async function putAsset(providers: ProviderSet, surveyId: string, bytes: Buffer): Promise<string> {
+  const id = newFileId(surveyId);
+  const file: StoredFileRecord = {
+    id,
+    surveyId,
+    kind: "asset",
+    name: "a.png",
+    contentType: "image/png",
+    size: bytes.length,
+    createdAt: NOW,
+  };
+  await providers.files.putFile(file, bytes);
+  return id;
+}
+
+async function readAll(files: FileStore, id: string): Promise<Buffer | null> {
+  const found = await files.getFile(id);
+  if (!found) return null;
+  const chunks: Buffer[] = [];
+  for await (const chunk of found.content) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
+const fileUrl = (id: string): string => `http://localhost/api/v1/public/files/${id}`;
+
+/** The id in a `/public/files/` URL of `value`, or null. */
+const fileIdIn = (value: unknown): string | null =>
+  /\/public\/files\/([0-9a-f]{64})/.exec(JSON.stringify(value))?.[1] ?? null;
+
+describe("files of a deleted survey", () => {
+  const archived = seed.surveys[1];
+
+  function remove(server: FastifyInstance, headers: Record<string, string>, id?: string) {
+    return server.inject({ method: "DELETE", url: `/api/v1/surveys/${id}`, headers });
+  }
+
+  it("deleting an archived survey deletes all its files", async () => {
+    const { server, providers, headers } = await start();
+    const ids = [
+      await putAsset(providers, archived?.id ?? "", PNG),
+      await putAsset(providers, archived?.id ?? "", PADDED),
+    ];
+    const res = await remove(server, headers, archived?.id);
+    expect(res.statusCode).toBe(204);
+    for (const id of ids) expect(await providers.files.getFile(id)).toBeNull();
+  });
+
+  it("keeps the files when the delete is refused with 409", async () => {
+    const { server, providers, headers } = await start();
+    const id = await putAsset(providers, ownPersonal?.id ?? "", PNG);
+    const res = await remove(server, headers, ownPersonal?.id);
+    expect(res.statusCode).toBe(409);
+    expect(await readAll(providers.files, id)).toEqual(PNG);
+  });
+
+  it("keeps the files when the delete is refused with 403", async () => {
+    const { server, providers, headers } = await start();
+    const id = await putAsset(providers, colleaguePoll?.id ?? "", PNG);
+    const res = await remove(server, headers, colleaguePoll?.id);
+    expect(res.statusCode).toBe(403);
+    expect(await readAll(providers.files, id)).toEqual(PNG);
+  });
+});
+
+describe("files of a cloned survey", () => {
+  const clone = (server: FastifyInstance, headers: Record<string, string>, id?: string) =>
+    server.inject({ method: "POST", url: `/api/v1/surveys/${id}/clones`, headers });
+
+  /** Saves a definition (and a theme when given) as the source survey's documents. */
+  async function saveDocuments(
+    providers: ProviderSet,
+    id: string,
+    definition: Record<string, unknown>,
+    theme?: Record<string, unknown>,
+  ) {
+    const current = await providers.surveys.getDefinition(id);
+    await providers.surveys.saveDefinition(id, definition, {
+      userId: USER.id,
+      savedAt: NOW,
+      ifVersion: current?.version ?? "",
+    });
+    if (!theme) return;
+    const currentTheme = await providers.surveys.getTheme(id);
+    await providers.surveys.saveTheme(id, theme, {
+      savedAt: NOW,
+      ifVersion: currentTheme?.version ?? "",
+    });
+  }
+
+  it("gives the copy its own files and rewrites their URLs in the definition and theme", async () => {
+    const { server, providers, headers } = await start();
+    const sourceId = ownPersonal?.id ?? "";
+    const logoId = await putAsset(providers, sourceId, PNG);
+    const backgroundId = await putAsset(providers, sourceId, PADDED);
+    const definition = { title: "T", logo: fileUrl(logoId) };
+    const theme = { themeName: "x", backgroundImage: fileUrl(backgroundId) };
+    await saveDocuments(providers, sourceId, definition, theme);
+
+    const res = await clone(server, headers, sourceId);
+    expect(res.statusCode).toBe(201);
+    const copyId = res.json<{ id: string }>().id;
+    const copyDefinition = (await providers.surveys.getDefinition(copyId))?.content;
+    const copyTheme = (await providers.surveys.getTheme(copyId))?.content;
+    const newLogo = fileIdIn(copyDefinition) ?? "";
+    const newBackground = fileIdIn(copyTheme) ?? "";
+    const copyPrefix = copyId.replaceAll("-", "");
+    expect(newLogo.startsWith(copyPrefix)).toBe(true);
+    expect(newBackground.startsWith(copyPrefix)).toBe(true);
+    expect(copyDefinition).toEqual({ title: "T", logo: fileUrl(newLogo) });
+    expect(copyTheme).toEqual({ themeName: "x", backgroundImage: fileUrl(newBackground) });
+    expect(await readAll(providers.files, newLogo)).toEqual(PNG);
+    expect(await readAll(providers.files, newBackground)).toEqual(PADDED);
+    // The source is unchanged.
+    expect((await providers.surveys.getDefinition(sourceId))?.content).toEqual(definition);
+    expect((await providers.surveys.getTheme(sourceId))?.content).toEqual(theme);
+    expect(await readAll(providers.files, logoId)).toEqual(PNG);
+  });
+
+  it("copies a definition and theme without files as they are", async () => {
+    const { server, providers, headers } = await start();
+    const sourceId = ownPersonal?.id ?? "";
+    const definition = { title: "Plain", pages: [] };
+    await saveDocuments(providers, sourceId, definition);
+    const res = await clone(server, headers, sourceId);
+    const copyId = res.json<{ id: string }>().id;
+    expect((await providers.surveys.getDefinition(copyId))?.content).toEqual(definition);
+    expect((await providers.surveys.getTheme(copyId))?.content).toEqual(
+      (await providers.surveys.getTheme(sourceId))?.content,
+    );
+  });
+
+  it("leaves no files under the copy's id when the store call fails", async () => {
+    let copyId = "";
+    const { server, providers, headers } = await start((base) => ({
+      ...base,
+      files: {
+        ...base.files,
+        copySurveyAssets: (from, to, at) => {
+          copyId = to;
+          return base.files.copySurveyAssets(from, to, at);
+        },
+      },
+      surveys: {
+        ...base.surveys,
+        cloneSurvey: () => Promise.reject(new Error("store down")),
+      },
+    }));
+    await putAsset(providers, ownPersonal?.id ?? "", PNG);
+    const res = await clone(server, headers, ownPersonal?.id);
+    expect(res.statusCode).toBe(500);
+    expect(copyId).not.toBe("");
+    expect(await providers.files.usage(copyId, "asset")).toBe(0);
+  });
+
+  it("leaves no files under the copy's id when copying the files itself fails", async () => {
+    let copyId = "";
+    const { server, providers, headers } = await start((base) => ({
+      ...base,
+      files: {
+        ...base.files,
+        copySurveyAssets: async (_from, to) => {
+          copyId = to;
+          await putAsset(base, to, PNG);
+          throw new Error("copy failed");
+        },
+      },
+    }));
+    const res = await clone(server, headers, ownPersonal?.id);
+    expect(res.statusCode).toBe(500);
+    expect(copyId).not.toBe("");
+    expect(await providers.files.usage(copyId, "asset")).toBe(0);
   });
 });

@@ -12,6 +12,7 @@
   "dependencies": {
     "@azure/data-tables": "13.3.2",
     "@azure/storage-blob": "12.34.0",
+    "@fastify/multipart": "10.1.2",
     "@fastify/rate-limit": "11.2.0",
     "@my-surveys/contract": "workspace:*",
     "ajv": "8.20.0",

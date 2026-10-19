@@ -5,7 +5,8 @@ import type { Clock } from "../auth/session.js";
 import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
-import type { Directory, SurveyStore } from "../providers/types.js";
+import { rewriteFileIds } from "../files/rewrite.js";
+import type { Directory, FileStore, SurveyStore } from "../providers/types.js";
 import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
@@ -21,6 +22,8 @@ type SurveyClone = { name?: string; projectId?: string | null };
 export interface SurveysServiceOptions {
   readonly surveys: SurveyStore;
   readonly directory: Directory;
+  /** The files of surveys: deleted with a survey, copied with a clone (R10, R11). */
+  readonly files: FileStore;
   /** The clock for creation times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -105,7 +108,7 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 
 /** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
-  const { surveys, directory, now = Date.now } = options;
+  const { surveys, directory, files, now = Date.now } = options;
   const { visible, modifiable } = createSurveyAccess({ surveys, directory });
 
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
@@ -212,6 +215,8 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
           title: "Archive the survey before deleting it",
         });
       }
+      // Children first (ADR 0010): a failure here leaves the survey intact, and a retry finishes.
+      await files.deleteSurveyFiles(survey.id);
       if (!(await surveys.deleteSurvey(survey.id))) throw notFound();
     },
 
@@ -228,17 +233,41 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
             ? projectScope(membership)
             : personalScope(user);
       const createdAt = new Date(now()).toISOString();
-      const stored = await surveys.cloneSurvey(survey.id, {
-        id: randomUUID(),
-        name: name ?? cloneName(survey.name),
-        owner: scope.owner,
-        creatorId: user.id,
-        postId: randomUUID(),
-        resultId: randomUUID(),
-        createdAt,
-        updatedAt: createdAt,
-      });
-      if (!stored) throw notFound();
+      const copyId = randomUUID();
+      const discardCopiedFiles = (): Promise<unknown> =>
+        files.deleteSurveyFiles(copyId).catch(() => undefined);
+      let ids: ReadonlyMap<string, string>;
+      try {
+        ids = await files.copySurveyAssets(survey.id, copyId, createdAt);
+      } catch (error) {
+        // The copy may have been committed before the failure was reported.
+        await discardCopiedFiles();
+        throw error;
+      }
+      let stored;
+      try {
+        stored = await surveys.cloneSurvey(
+          survey.id,
+          {
+            id: copyId,
+            name: name ?? cloneName(survey.name),
+            owner: scope.owner,
+            creatorId: user.id,
+            postId: randomUUID(),
+            resultId: randomUUID(),
+            createdAt,
+            updatedAt: createdAt,
+          },
+          ids.size > 0 ? { rewriteText: (text) => rewriteFileIds(text, ids) } : undefined,
+        );
+      } catch (error) {
+        await discardCopiedFiles();
+        throw error;
+      }
+      if (!stored) {
+        await discardCopiedFiles();
+        throw notFound();
+      }
       return surveyJson(stored, canModify(stored, user, scope.membership));
     },
   };

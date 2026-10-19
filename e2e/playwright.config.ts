@@ -19,7 +19,7 @@ const reuseExistingServer = !process.env["CI"];
 // - memory (default): the dev identity provider; all specs on Chromium, Firefox and WebKit.
 // - azurite (E2E_MODE=azurite, `pnpm e2e:azurite`): the azure-legacy provider on the local replica
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,
-//   editor and history specs, on Chromium.
+//   editor, history and uploads specs, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 
 const serverEnv = {
@@ -32,6 +32,8 @@ const serverEnv = {
   LOG_LEVEL: "warn",
   // All browsers and workers sign in from one IP; the limit itself is covered by server tests.
   SIGN_IN_RATE_LIMIT: "100000",
+  // Small, so the quota test sends little.
+  LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "1048576",
 };
 
 const memoryServerEnv = {
@@ -131,6 +133,7 @@ export default defineConfig({
             "survey-actions.spec.ts",
             "editor.spec.ts",
             "history.spec.ts",
+            "uploads.spec.ts",
           ],
           use: { ...devices["Desktop Chrome"], viewport },
         },

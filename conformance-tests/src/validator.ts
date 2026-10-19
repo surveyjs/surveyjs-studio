@@ -84,6 +84,10 @@ function coerceHeader(value: string, schema: unknown): unknown {
 const mediaTypeOf = (header: string | null): string =>
   (header ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
 
+/** `application/json` and `application/*+json`: the media types whose body is parsed and validated. */
+const isJsonMediaType = (mediaType: string): boolean =>
+  mediaType === "application/json" || /^application\/[^/]+\+json$/.test(mediaType);
+
 export async function createValidator(openapiPath: string): Promise<Validator> {
   const doc: unknown = parse(await readFile(openapiPath, "utf8"));
   if (!isObject(doc) || !isObject(doc.paths)) throw new Error(`${openapiPath} has no paths`);
@@ -213,7 +217,8 @@ export async function createValidator(openapiPath: string): Promise<Validator> {
       }
       const entry = media[contentType];
       const schema = isObject(entry) ? entry.schema : undefined;
-      if (schema === undefined) return headerProblems;
+      // Other media types (images, CSV, …) are checked by media type only.
+      if (schema === undefined || !isJsonMediaType(contentType)) return headerProblems;
       return [...headerProblems, ...(await checkBody(response, contentType, compile(schema)))];
     },
   };

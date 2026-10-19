@@ -16,21 +16,21 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 ## Run everything
 
-| Command                 | Runs                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                           |
-| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                  |
-| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                  |
-| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                               |
-| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor and history specs in Azurite mode (needs Docker) |
+| Command                 | Runs                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                                    |
+| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                           |
+| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                           |
+| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                                        |
+| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor, history and uploads specs in Azurite mode (needs Docker) |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
 
-| Command                         | Runs                                                                                                                                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey write tests (create, update, clone, delete, definition and theme saves) and the fixture loader tests |
-| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                                                       |
+| Command                         | Runs                                                                                                                                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey and file write tests (create, update, clone, delete, definition and theme saves, files) and the fixture loader tests |
+| `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                                                                       |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -51,7 +51,12 @@ Run with Vitest from the root. Scope:
   mapping of projects, and the in-memory provider. For the survey actions: `cloneName`, the record
   changes of a patch (`patch.ts`) and `applySurveyChanges` as pure functions, the update, delete and
   clone handlers through `inject` (check order, `updatedAt`, `Location`), and the theme reading of the
-  legacy mapping.
+  legacy mapping. For files: `detectFileType` (every type, near misses, a lying declared type, SVG
+  prologs and the internal-subset refusal), `contentDisposition` and `fileNameOf`, `formatBytes`,
+  `rewriteFileIds` and the file id helpers as pure functions; the upload and download handlers through
+  `inject` (`files/handlers.test.ts`: the check order, the quota checks including an over-limit byte in a
+  chunk of its own, the headers); the delete cascade and the clone copies in `surveys/handlers.test.ts`;
+  and the blob metadata mapping.
 - `web/`: the API client and config loader (with `msw` and `openapi-msw` mocks typed by the
   contract), the licence loader, the CSRF middleware, the route guard and sign-out, shell selection,
   the surveyjs.io shell (account menu, notice dialogs, cookie banner), and the app rendered with React
@@ -60,7 +65,13 @@ Run with Vitest from the root. Scope:
   mutations, the retry policy, the menu items per view and permission (`menuItems.ts`, pure), and the
   whole app rendered at `/` for the row: the "…" menu (open, close, keyboard, every action with its
   confirmation, the copy items with a stubbed clipboard, the error message), the inline rename
-  and the placeholder pages.
+  and the placeholder pages. For uploads: `api/files.ts` (the multipart request and its CSRF header),
+  `editor/uploads.ts` (every message, the pre-check, the closed editor) and `editor/creatorAutosave.ts`
+  (the closed session and the reload ordering) as modules with no Creator, and the editor page (the upload
+  settings, and saving again only once the reloaded documents are in the editor). **The unit-test setup encodes `FormData` itself**: under jsdom, `FormData` and `File` are
+  not Node's, and Node's own conversion fails on them, so `web/src/test/setup.ts` turns a `FormData`
+  request body into a `multipart/form-data` body (keeping the file names) before it reaches the mock
+  server. `web/src/test/file-handlers.ts` holds the `msw` handler that reads such a body back.
 
 `pnpm test:unit` leaves out the `providers-azurite` project, which needs Docker.
 
@@ -108,6 +119,7 @@ A port is accepted when this suite passes against it.
 | `sign-in.test.ts`        | The cookie jar of the sign-in driver (a unit test of the suite itself)                                                                                                                                                                                                                                                     |
 | `surveys.test.ts`        | `listSurveys` (filters, order, visibility, paging), `createSurvey` (defaults, naming, validation, scopes) and `getSurvey` (a stranger's survey is `404`)                                                                                                                                                                   |
 | `projects.test.ts`       | `listProjects` and `getProject` (roles, order, paging, a non-member gets `404`)                                                                                                                                                                                                                                            |
+| `files.test.ts`          | `uploadSurveyAsset` and `downloadFile` (below)                                                                                                                                                                                                                                                                             |
 | `survey-actions.test.ts` | `updateSurvey` (every field and the combinations, `projectId: null`, `updatedAt` on every patch, `422`, `403`, `404`, a move to a project the user is not in), `deleteSurvey` (`409`, then `204`, then `404`; the `403` and `404` refusals) and `cloneSurvey` (contents, name, target scope, creator, `404`, `403`, `422`) |
 
 `fixtureUsers` in `sign-in.ts` holds the owner, the admin, the member, the outsider and the blocked
@@ -162,6 +174,30 @@ is `401` even when it is not built, and a change without the CSRF token is `403`
 against a small fixture contract (`conformance-tests/src/fixtures/things.yaml`), so a broken
 validator cannot give false passes.
 
+### Files and the quota on the conformance server
+
+`files.test.ts` uploads through the harness's multipart call (`upload`), which the validator accepts for
+`multipart/form-data` requests. It checks: a PNG is stored and served to anyone (the `201` answer,
+`Location`, the download headers); a WebM is an attachment and an SVG inline; the type comes from the bytes
+and not from the declared type or the name; the quota is kept (a file over the whole quota, a file that
+exactly fills what is left and one byte more, a survey with nothing left); the refusals (`422` for a form
+without a file part and for an empty file; `400` for a cut body; `415` for a JSON body); the callers who may not change the survey (`401`,
+`403` without the CSRF token, `403` for Olivia on Engineering retro, `404` for Oscar and for an unknown
+survey); `404` for unknown and malformed ids; deleting a survey deletes its files; and a clone has its own
+files, with rewritten links, that stay when the source is deleted.
+
+The suite starts the reference server with `LIMIT_MAX_ASSET_BYTES_PER_SURVEY=65536` (in
+`conformance-tests/src/global-setup.ts`), so the quota tests do not send 50 MB. They read the quota from
+`GET /config` (`limits.maxAssetBytesPerSurvey`), so they also work against a server with another limit. A
+server under test only has to report a limit that it really enforces. All uploads go to surveys the tests
+create in the admin's Personal scope; no fixture survey gets a file.
+
+**The validator checks non-JSON bodies by media type only.** The body of a response is parsed and checked
+against its schema only for `application/json` and `application/*+json`. For another documented media type
+(the images and videos of `downloadFile`) the validator checks that the response has one of the documented
+types, the required headers, and nothing else, so it never reads binary content as text.
+(`validator.test.ts` covers this.)
+
 ### The body limit on the conformance server
 
 The suite starts the reference server with `LIMIT_MAX_DOCUMENT_BYTES=262144` (set in
@@ -181,6 +217,7 @@ only in surveys they created themselves. No test changes a fixture survey: the c
 | Conformance      | The outsider's Personal scope, **Engineering** and the **admin's Personal scope**                               |
 | Step 5 e2e spec  | The admin's Personal scope and **Engineering** only (`survey-actions.spec.ts`)                                  |
 | Step 6 e2e specs | The admin's Personal scope only (`editor.spec.ts`, `history.spec.ts`), each test with its own survey            |
+| Step 7 e2e spec  | The admin's Personal scope only (`uploads.spec.ts`), each test with its own survey, removed at its end          |
 | Other e2e specs  | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering |
 
 The owner's Personal scope, the Marketing project and every fixture survey are **fixture-only**:
@@ -199,6 +236,12 @@ create their own surveys, save definitions and themes (with a stale, a missing, 
 definition save, none for a theme save, paging, an invalid cursor, and the two legacy entries of Customer
 feedback (read, never written). Olivia's `PUT`s on Engineering retro are refusals (`403`) and write
 nothing.
+
+The file tests of Step 7 (`conformance-tests/src/files.test.ts`) work in the admin's Personal scope too.
+Every test that uploads creates its own surveys and uploads only to those, and removes them at the end
+(archive, then delete). The shared stores, including the new file container, are never emptied, so
+assertions are about the files a test created, never "the container holds N blobs". Olivia's upload to
+Engineering retro and Oscar's upload to Campaign survey are refusals (`403`, `404`) and store nothing.
 
 Who can modify what on the fixtures (the read-only checks of Step 5 and Step 6 rely on it): Olivia cannot modify
 "Engineering retro" (created by Adam, she is a plain member there), so her `PATCH` and `DELETE` are
@@ -248,6 +291,16 @@ The specs (`e2e/tests/`):
 | `history.spec.ts`            | The history page of a new survey (first "No edits yet.", then two saves give two rows, newest first, with the user and the time zone; Back returns to the list), and of Customer feedback (two legacy entries without a user)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | memory, Azurite                      |
 | `survey-actions.spec.ts`     | One scenario per row action: rename (Esc, Enter, reload), publish, Run in a new tab and unpublish, clone, the three copy items against the API values, Edit, View Results and View History, Move (the confirmation, to Engineering and back to Personal), Archive, Restore and Delete; and the two "no modify rights" views (Olivia on Engineering retro, Mia on Archived campaign)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | memory, Azurite                      |
 
+`uploads.spec.ts` (Step 7) has two tests. The first chooses an image for an Image question through the
+file chooser and checks the upload (`POST` answers `201`), the picture shown in the Creator, the saved
+definition (it holds the file link, not a data URL), the download (`200`, the type and the bytes), and that the file answers `404`
+after the survey is archived and deleted. The second, the quota test, shows the message for a file over the
+whole quota (before any request) and for one that the server refuses (`413`), and that nothing is saved.
+The e2e servers run with `LIMIT_MAX_ASSET_BYTES_PER_SURVEY=1048576` (1 MB, set in
+`e2e/playwright.config.ts`), so the test needs only a file of a little over 1 MB. Helpers are in
+`e2e/tests/support/uploads.ts` (`PNG_1X1`, `paddedPng`, `uploadViaApi`, `creatorNotification`). The spec
+runs in three browsers in memory mode and on Chromium in Azurite mode.
+
 Helpers (`e2e/tests/support/`):
 
 - `sign-in.ts`: `users` (owner, admin, member and outsider) and `signInAt(page, path, user)`, which signs in
@@ -292,7 +345,7 @@ Helpers (`e2e/tests/support/`):
   cannot hide an error that never came from the listed response.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
-actions, editor and history specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+actions, editor, history and uploads specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
@@ -330,6 +383,13 @@ It covers:
   snapshot, newest first, ties by id, cursor paging (a walk), ids in upper case, the entries that create
   and clone add, the two legacy entries of Customer feedback (no user), delete removes the history, and
   an unknown survey gives an empty page;
+- `files` (the `FileStore`): a file is stored and read back with its record and bytes (ids in any letter
+  case); an unknown or malformed id is `null`; a second put of the same id is rejected and keeps the first
+  file; a name with non-ASCII characters, spaces and quotes survives; a 5 MiB file round-trips byte for
+  byte; `usage` counts a survey's assets only; `deleteSurveyFiles` removes one survey's files and leaves
+  another's; `copySurveyAssets` copies under new ids of the target survey with the same bytes, name and
+  type, and `cloneSurvey` with `rewriteText` stores the rewritten definition and theme. The tests use
+  fresh random survey ids (a file store does not need a survey) and delete what they stored;
 - `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
   project record, unknown user or project, a non-member;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
@@ -361,7 +421,12 @@ that writes nothing** (blobs, ETags, history names, row and audit rows unchanged
 survey without a blob (`"none"`), the theme save (the text, `timestamp`, one `SURVEY_THEME_CHANGE`, no
 history point; a 40,000-character theme saves and its audit row has no `theme`; a non-ASCII theme gets a
 version that the next save accepts), the SQL compare-and-set alone (a different case or a trailing
-space is a conflict), and the metadata on create and clone points. The **create tests
+space is a conflict), and the metadata on create and clone points. For Step 7 it checks a stored file
+directly in the replica (a block blob `{surveyId}/{fileId}` in `my-surveys-files` with the type as its
+content type, the metadata `kind`, `name` and `createdat`, the bytes, and no blob in the legacy containers),
+that the container is created by the first upload (a test uses a container name of its own through the
+`filesContainer` option), that a survey's files are deleted and no others, and that a clone with a rewrite
+stores the rewritten text equally in `surveyjson`, `surveytext` and the history point. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
 earlier runs and leave nothing that another test could see.
 

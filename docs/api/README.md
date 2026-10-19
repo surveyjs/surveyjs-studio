@@ -12,6 +12,8 @@ committed.
 - [Concurrent editing with ETags](concurrency.md): `ETag`, `If-Match`, `412` and `428`, with a `curl` loop.
 - [Authentication, sessions and CSRF](authentication.md): the sign-in flow, `returnTo`, the cookies,
   the CSRF header, sign-out and rate limiting.
+- [Uploads and files](uploads.md): editor uploads, the allowed types, the quota, the download headers and
+  file ids.
 
 ## View the API reference
 
@@ -65,6 +67,7 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | Step 4 | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                |
 | Step 5 | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
 | Step 6 | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
+| Step 7 | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
 
 ### Step 4: surveys and projects
 
@@ -137,7 +140,7 @@ Rules for `updateSurvey` and `deleteSurvey`:
   before deleting it"). It deletes the survey and everything stored for it: the definition, the theme,
   the history, the results and the completion markers, the deleted-result audit and the saved results
   layouts. It is safe to call again after a failure while the survey is still listed. Files join this
-  list when uploads exist (Step 7).
+  list since Step 7 (see [Uploads and files](uploads.md#deleting)).
 
 Rules for `cloneSurvey`:
 
@@ -302,6 +305,17 @@ curl -b cookies.txt "$API/surveys/$ID/history?limit=2"
   "nextCursor": null
 }
 ```
+
+### Step 7: uploads and files
+
+| Operation           | Behaviour                                                                                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uploadSurveyAsset` | `POST /surveys/{surveyId}/assets`, multipart with one part `file`. Needs a session, the CSRF header and the right to modify the survey. `201`, `Location` and the stored file |
+| `downloadFile`      | `GET /public/files/{fileId}`. No session. `200` and the file, `inline` for images, with the security headers; `404` for an unknown id                                         |
+
+The type is found from the content, a survey's files are limited by `limits.maxAssetBytesPerSurvey`, and
+deleting a survey deletes its files. A clone copies them. Everything is in
+[Uploads and files](uploads.md). `uploadResponseFile` still answers `501` (Step 8).
 
 Every other operation answers `501` with a Problem Details body (`code: not-implemented`), after
 authentication: a private operation called without a session answers `401`. `passwordLogin` stays
