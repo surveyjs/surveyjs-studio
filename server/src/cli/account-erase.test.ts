@@ -3,7 +3,7 @@ import type { SurveyRecord, User } from "../domain/types.js";
 import { LegacyStoreError } from "../providers/azure-legacy/index.js";
 import { createMemoryProviders } from "../providers/memory.js";
 import type { ProviderSet } from "../providers/types.js";
-import { run, USAGE } from "./account-erase.js";
+import { formatPlan, run, USAGE } from "./account-erase.js";
 
 const ERIN: User = {
   id: "11111111-0000-4000-8000-a00000000006",
@@ -228,5 +228,22 @@ describe("account:erase", () => {
     const r = await erase(["--user", ERIN.id], { providers: failing });
     expect(r.code).toBe(1);
     expect(r.err).toBe("Error: unexpected failure (TypeError, code ESOCKET)\n");
+  });
+});
+
+describe("formatPlan", () => {
+  it("names a project whose membership cannot be read, and lists an unreadable survey by id", () => {
+    const plan = formatPlan(null, {
+      userId: ERIN.id,
+      personalSurveys: [{ id: S1.id, name: "" }],
+      projects: [{ id: SHARED, name: "", decision: { kind: "remove" }, surveyCount: 0 }],
+    });
+    expect(plan).toBe(
+      `Account ${ERIN.id} (not in the user directory)\n` +
+        "Personal surveys to delete: 1\n" +
+        `  ${S1.id}  \n` +
+        "Projects: 1\n" +
+        `  ${SHARED}  (membership not readable): leaves the project\n`,
+    );
   });
 });

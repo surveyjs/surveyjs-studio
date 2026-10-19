@@ -39,6 +39,15 @@ const CHUNK = 100;
 const isTimeout = (error: unknown): boolean =>
   error instanceof Error && error.name === "TimeoutError";
 
+/**
+ * Releases an answer's body that is not read, so its connection is not held until GC. Not
+ * awaited: a cancel can wait on a reader that never comes (a tee'd body), and the call has its
+ * answer already. A failed cancel means nothing is held.
+ */
+function discardBody(response: Response): void {
+  void response.body?.cancel().catch(() => undefined);
+}
+
 export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   readonly users: UserDirectory;
   readonly notices: AccountNotices;
@@ -61,6 +70,8 @@ export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
     const init: RequestInit = {
       method: body === undefined ? "GET" : "POST",
       headers,
+      // A redirect is a failure (a network error): the bearer token never goes to another address.
+      redirect: "error",
       signal: AbortSignal.timeout(timeoutMs),
     };
     if (body !== undefined) {
@@ -73,8 +84,12 @@ export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
     } catch (error) {
       throw new UserApiError(operation, null, isTimeout(error) ? "timeout" : "network error");
     }
-    if (response.status === 404) return null;
+    if (response.status === 404) {
+      discardBody(response);
+      return null;
+    }
     if (response.status !== 200) {
+      discardBody(response);
       throw new UserApiError(operation, response.status, `status ${response.status}`);
     }
     try {

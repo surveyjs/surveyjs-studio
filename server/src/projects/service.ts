@@ -242,6 +242,9 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const outcome = await projects.setMemberRole(project.id, userId, role, { now: isoNow() });
       if (outcome === "not-found") throw notFound();
       if (outcome === "last-admin") throw lastAdmin();
+      // The user is read after the write, for the answer only. If the user directory fails here
+      // (surveyjs-api down), the role change is already stored and the client gets a 500; a retry
+      // finds the role `unchanged` and answers with the member. Low impact, so the order stays.
       const target = await users.getUser(userId);
       if (!target) throw notFound();
       return memberJson({ user: target, role });

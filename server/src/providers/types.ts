@@ -289,6 +289,13 @@ export interface SurveyStore {
    * ascending. NULL owners, the all-zero GUID and values that are not GUIDs are left out.
    */
   listPersonalOwnerIds(): Promise<string[]>;
+  /**
+   * R11: the id of every survey of the owner, archived ones included, also rows `listSurveys`
+   * skips because the domain cannot represent them (azure-legacy: a NULL `postid` or `resultid`).
+   * Lower-case, ascending. A personal scope never holds a project's surveys. [] for a non-GUID id.
+   * Erasure reads this, so it reaches every row `listPersonalOwnerIds` sees.
+   */
+  listSurveyIds(owner: SurveyOwner): Promise<string[]>;
 }
 
 export type AddMemberOutcome = "added" | "already-member" | "not-found";
@@ -392,8 +399,10 @@ export interface ProjectStore {
    * R11: atomically, decides with `decideMemberErasure` over the project's rows and writes the
    * decision. `promote`: deletes every row of the user (orphan or not) and sets every row of the
    * successor to `admin`; `remove`: deletes every row of the user; `not-member` and `last-member`
-   * write nothing. An unknown project or a non-GUID id gives `not-member`. Erasing the creator
-   * clears the project's owner (as `removeMember` does). Does not check whether the user still exists.
+   * write nothing. An unknown project or a non-GUID id gives `not-member`, except that rows of the
+   * user left under a project whose row is gone (azure-legacy only) are deleted and give `remove`.
+   * Erasing the creator clears the project's owner (as `removeMember` does). Does not check whether
+   * the user still exists.
    */
   eraseMember(
     projectId: string,
@@ -402,6 +411,12 @@ export interface ProjectStore {
   ): Promise<MemberErasure>;
   /** R12: every user id with a membership row (orphans included): distinct, lower-case, ascending. */
   listMemberUserIds(): Promise<string[]>;
+  /**
+   * R11: the id of every project in which the user has a membership row, whatever its role and
+   * also when the project row is gone (azure-legacy): distinct, lower-case, ascending. [] for a
+   * non-GUID id. Erasure reads this, so it reaches every row `listMemberUserIds` sees.
+   */
+  listUserProjectIds(userId: string): Promise<string[]>;
 }
 
 export interface ProviderSet {

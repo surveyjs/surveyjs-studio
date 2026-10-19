@@ -200,6 +200,17 @@ describe("missingUsers", () => {
     expect(error.status).toBe(503);
   });
 
+  it("rejects a 404, so a wrong base URL never reports every id as missing", async () => {
+    const error = await failure(harness(json({}, 404)).users.missingUsers([guid(1)]));
+    expect(error.operation).toBe("user batch lookup");
+    expect(error.status).toBe(404);
+  });
+
+  it("rejects a malformed answer", async () => {
+    const error = await failure(harness(json({})).users.missingUsers([guid(1)]));
+    expect(error.message).toContain("malformed answer");
+  });
+
   it("makes no request when no id is a GUID", async () => {
     const { users, requests } = harness(json({ users: [] }));
     expect(await users.missingUsers(["x"])).toEqual([]);
@@ -249,5 +260,38 @@ describe("notices", () => {
 
   it("defaults to no notices", async () => {
     expect(await harness(json({})).notices.noticesFor(OWNER)).toEqual([]);
+  });
+});
+
+describe("every call", () => {
+  it("refuses to follow a redirect, so the token never goes to another address", async () => {
+    const seen: RequestInit["redirect"][] = [];
+    const { users } = harness((request, init) => {
+      seen.push(init.redirect);
+      return request.url.endsWith("/users/lookup") ? json({ users: [] }) : json(apiUser());
+    });
+    await users.getUser(OWNER);
+    await users.findUserByEmail("owner@example.com");
+    await users.missingUsers([OWNER]);
+    expect(seen).toEqual(["error", "error", "error"]);
+  });
+
+  it("reads a redirect it refused as a network error", async () => {
+    const error = await failure(
+      harness(new TypeError("fetch failed: unexpected redirect")).users.getUser(OWNER),
+    );
+    expect(error.message).toContain("network error");
+  });
+
+  it("releases the body of an answer it does not read", async () => {
+    const answers: Response[] = [];
+    const answer = (status: number) => () => {
+      const response = new Response("an error page", { status });
+      answers.push(response);
+      return response;
+    };
+    await failure(harness(answer(503)).users.getUser(OWNER));
+    expect(await harness(answer(404)).users.getUser(OWNER)).toBeNull();
+    expect(answers.map((response) => response.bodyUsed)).toEqual([true, true]);
   });
 });

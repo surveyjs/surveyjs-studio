@@ -178,6 +178,12 @@ const PROJECT_MEMBER_USERS_SELECT =
 const PERSONAL_OWNERS_SELECT = `SELECT DISTINCT s.userid FROM Surveys s WHERE s.userid IS NOT NULL AND NOT ${IS_PROJECT_SURVEY}`;
 /** R12: every user with a membership row, orphans included. */
 const MEMBER_USERS_SELECT = "SELECT DISTINCT userid FROM OrganizationUsers";
+/**
+ * R11: every project in which the user has a row, raw: whatever the role, and also when the
+ * `Organizations` row is gone, so erasure reaches every row MEMBER_USERS_SELECT sees.
+ */
+const USER_PROJECT_IDS_SELECT =
+  "SELECT DISTINCT organizationid FROM OrganizationUsers WHERE userid = @user";
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
@@ -688,11 +694,24 @@ export function createAzureLegacyProviders(
     }
   }
 
+  /**
+   * Reads the row raw, not through the mapping, so a survey the domain cannot represent (a NULL
+   * `postid` or `resultid`) can be deleted too: erasure must reach every row (R11). The post id
+   * names the results tables; without one there are none to delete.
+   */
   async function deleteSurvey(id: string): Promise<boolean> {
-    // The record names the children: the results tables are keyed by its post id.
-    const survey = await getSurvey(id);
-    if (!survey) return false;
-    return writeSurveyDeletion(writeTargets, survey, new Date(now()).toISOString());
+    if (!isGuid(id)) return false;
+    const [row] = await select<{ id: string; postid: string | null }>(
+      "survey lookup",
+      "SELECT id, postid FROM Surveys WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
+    );
+    if (!row) return false;
+    return writeSurveyDeletion(
+      writeTargets,
+      { id: row.id, postId: row.postid },
+      new Date(now()).toISOString(),
+    );
   }
 
   /** The ids of a one-column `userid` SELECT: GUIDs only, lower-case, all-zero left out, distinct, sorted. */
@@ -747,6 +766,18 @@ export function createAzureLegacyProviders(
 
       async listPersonalOwnerIds() {
         return userIds("personal owner list", PERSONAL_OWNERS_SELECT);
+      },
+
+      async listSurveyIds(owner: SurveyOwner) {
+        const ownerId = ownerIdOf(owner);
+        if (!isGuid(ownerId)) return [];
+        const scope = owner.kind === "project" ? IS_PROJECT_SURVEY : `NOT ${IS_PROJECT_SURVEY}`;
+        const rows = await select<{ id: string }>(
+          "survey id list",
+          `SELECT s.id FROM Surveys s WHERE s.userid = @owner AND ${scope}`,
+          (request) => request.input("owner", sql.UniqueIdentifier, ownerId),
+        );
+        return rows.map((row) => row.id.toLowerCase()).sort();
       },
     },
 
@@ -872,6 +903,16 @@ export function createAzureLegacyProviders(
 
       async listMemberUserIds() {
         return userIds("member user list", MEMBER_USERS_SELECT);
+      },
+
+      async listUserProjectIds(userId) {
+        if (!isGuid(userId)) return [];
+        const rows = await select<{ organizationid: string }>(
+          "user project list",
+          USER_PROJECT_IDS_SELECT,
+          (request) => request.input("user", sql.UniqueIdentifier, userId),
+        );
+        return [...new Set(rows.map((row) => row.organizationid.toLowerCase()))].sort();
       },
     },
 

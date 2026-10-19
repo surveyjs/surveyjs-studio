@@ -687,7 +687,8 @@ export async function writeClonedSurvey(
  * failure leaves the survey visible and the delete can run again. Each step accepts "not found":
  *
  * 1. Results account tables `post{postId}`, `SurveyCompletion{surveyId}` and `postdelete{postId}`
- *    (ids without dashes; layout sections 3.6 to 3.8).
+ *    (ids without dashes; layout sections 3.6 to 3.8). A row with a NULL `postid` has no
+ *    `post…` or `postdelete…` table to delete (erasure deletes such rows too, R11).
  * 2. Surveys account blobs `surveyjson/{id}`, `surveytext/{id}`, every `surveyjsonhistory/{id}/…`
  *    point, the four results-layout blobs `{container}/{id}` (layout sections 3.2, 3.4, 3.10) and
  *    every saved view under `my-surveys-views/{id}/` (Step 9).
@@ -698,15 +699,15 @@ export async function writeClonedSurvey(
  */
 export async function writeSurveyDeletion(
   targets: LegacyWriteTargets,
-  survey: SurveyRecord,
+  survey: { readonly id: string; readonly postId: string | null },
   deletedAt: string,
 ): Promise<boolean> {
   const id = checkedId("delete", survey.id);
-  const postKey = checkedId("delete", survey.postId).replaceAll("-", "");
+  const postKey =
+    survey.postId === null ? null : checkedId("delete", survey.postId).replaceAll("-", "");
   const tables = [
-    `post${postKey}`,
     `SurveyCompletion${id.replaceAll("-", "")}`,
-    `postdelete${postKey}`,
+    ...(postKey === null ? [] : [`post${postKey}`, `postdelete${postKey}`]),
   ];
   try {
     for (const table of tables) {
@@ -1571,8 +1572,11 @@ const MEMBER_ROWS_WITH_NAMES =
  * locks its membership rows with the users' names, and decides with decideMemberErasure.
  * `remove`: every row of the user is deleted (orphan or not). `promote`: the same, then every row
  * of the successor gets `admin` and `timestamp` = `now` in place (id, `type`, `happendat` stay).
- * `not-member` (also for no such project) and `last-member` write nothing. No audit row (project
- * writes write none).
+ * `not-member` and `last-member` write nothing. No audit row (project writes write none).
+ *
+ * No such project: rows of the user may still name it (a dangling organization, which the replica's
+ * foreign key forbids but older production rows may hold). They are deleted and the answer is
+ * `remove`, so erasure reaches every row `listMemberUserIds` sees (R11); with none, `not-member`.
  */
 export async function writeMemberErasure(
   targets: LegacyWriteTargets,
@@ -1584,7 +1588,13 @@ export async function writeMemberErasure(
   const user = checkedProjectId("member erase", userId);
   return inTransaction<MemberErasure>(targets, "member erase", async (request) => {
     if (!(await lockProject(request, project))) {
-      return { value: { kind: "not-member" }, commit: false };
+      const dangling = await request()
+        .input("project", sql.UniqueIdentifier, project)
+        .input("user", sql.UniqueIdentifier, user)
+        .query(MEMBER_DELETE);
+      return (dangling.rowsAffected[0] ?? 0) > 0
+        ? { value: { kind: "remove" }, commit: true }
+        : { value: { kind: "not-member" }, commit: false };
     }
     const rows = await request().input("project", sql.UniqueIdentifier, project).query<{
       userid: string;

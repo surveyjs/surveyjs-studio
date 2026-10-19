@@ -71,7 +71,8 @@ export function formatPlan(user: User | null, preview: ErasurePreview): string {
     `Projects: ${preview.projects.length}`,
     ...preview.projects.map(
       (project) =>
-        `  ${project.id}  ${project.name}: ${effect(project.decision, project.surveyCount)}`,
+        `  ${project.id}  ${project.name || "(membership not readable)"}: ` +
+        effect(project.decision, project.surveyCount),
     ),
   ]
     .map((line) => `${line}\n`)

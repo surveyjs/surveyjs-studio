@@ -368,6 +368,16 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
               .filter((id) => GUID.test(id) && id !== ZERO_GUID),
           ),
         ),
+      // Every memory survey maps, so these are the ids of listSurveys.
+      listSurveyIds: (owner) =>
+        Promise.resolve(
+          GUID.test(owner.kind === "personal" ? owner.userId : owner.projectId)
+            ? surveys
+                .filter((s) => sameOwner(s.owner, owner))
+                .map((s) => s.id)
+                .sort()
+            : [],
+        ),
     },
     files: createMemoryFileStore(),
     results: results.store,
@@ -506,6 +516,16 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         return Promise.resolve(decision);
       },
       listMemberUserIds: () => Promise.resolve(distinctSorted(memberships.map((m) => m.userId))),
+      // Memory holds no membership of a missing project: the seed refuses one and deleteProject
+      // drops a project's rows with it.
+      listUserProjectIds: (userId) =>
+        Promise.resolve(
+          GUID.test(userId)
+            ? distinctSorted(
+                memberships.filter((m) => m.userId === lower(userId)).map((m) => m.projectId),
+              )
+            : [],
+        ),
     },
     notices,
     ready: () => Promise.resolve(true),

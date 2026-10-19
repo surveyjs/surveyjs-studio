@@ -1036,6 +1036,47 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("surveys.listSurveyIds", () => {
+      const sortedIds = (surveys: readonly SurveyRecord[]) => surveys.map((s) => s.id).sort();
+
+      it("lists every survey id of a scope, archived ones too, lower-case and ascending", async () => {
+        const scope = freshScope();
+        const first = await providers.surveys.createSurvey(newSurvey(scope));
+        const second = await providers.surveys.createSurvey(newSurvey(scope));
+        onTestFinished(async () => {
+          await providers.surveys.deleteSurvey(first.id);
+          await providers.surveys.deleteSurvey(second.id);
+        });
+        await providers.surveys.updateSurvey(second.id, {
+          archived: true,
+          updatedAt: "2026-08-02T10:00:00.000Z",
+        });
+        const upper = { kind: "personal", userId: scope.userId.toUpperCase() } as const;
+        expect(await providers.surveys.listSurveyIds(upper)).toEqual([first.id, second.id].sort());
+      });
+
+      it("keeps personal and project scopes apart", async () => {
+        const project = { kind: "project", projectId: PROJECT_A_ID } as const;
+        expect(await providers.surveys.listSurveyIds(project)).toEqual(
+          expect.arrayContaining(sortedIds(projectASurveys)),
+        );
+        const ids = await providers.surveys.listSurveyIds({ kind: "personal", userId: OWNER_ID });
+        expect(ids).toEqual(expect.arrayContaining(sortedIds(ownerPersonalSurveys)));
+        expect(ids).toEqual([...ids].sort());
+        // A project id names no personal scope.
+        expect(
+          await providers.surveys.listSurveyIds({ kind: "personal", userId: PROJECT_A_ID }),
+        ).toEqual([]);
+      });
+
+      it("gives [] for an unknown or non-GUID owner", async () => {
+        expect(await providers.surveys.listSurveyIds(freshScope())).toEqual([]);
+        expect(
+          await providers.surveys.listSurveyIds({ kind: "personal", userId: "not-a-guid" }),
+        ).toEqual([]);
+      });
+    });
+
     describe("results", () => {
       const sid = (n: number): string =>
         `66666666-0000-4000-8000-b${n.toString(16).padStart(11, "0")}`;
@@ -1794,6 +1835,21 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect(ids).not.toContain(OUTSIDER_ID);
         expect(ids).toEqual([...new Set(ids)].sort());
         expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+    });
+
+    describe("projects.listUserProjectIds", () => {
+      it("lists the projects of each membership once, lower-case and ascending", async () => {
+        const ids = await providers.projects.listUserProjectIds(MEMBER_ID.toUpperCase());
+        expect(ids).toEqual(expect.arrayContaining(memberProjects.map((m) => m.project.id).sort()));
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+
+      it("gives [] for a user without memberships and for a non-GUID id", async () => {
+        expect(await providers.projects.listUserProjectIds(OUTSIDER_ID)).toEqual([]);
+        expect(await providers.projects.listUserProjectIds(UNKNOWN_ID)).toEqual([]);
+        expect(await providers.projects.listUserProjectIds("not-a-guid")).toEqual([]);
       });
     });
 
