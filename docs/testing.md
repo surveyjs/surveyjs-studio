@@ -745,6 +745,8 @@ It covers:
   files deleted; **Erin Erasable** is previewed and then erased: projects first (promote, remove, last member with
   its surveys), then her personal surveys, and a second erasure finds nothing. Every erasure test creates its own
   data first and erases only Erin or a fresh random id;
+- `surveys.listSurveyIds` and `projects.listUserProjectIds` (Step 12): the raw id reads erasure walks, sorted and
+  distinct, scopes kept apart, `[]` for an unknown or non-GUID id;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
 
 **Orphan rows and the foreign key.** On the replica `OrganizationUsers.userid` has a foreign key to `Users.id`, so
@@ -752,6 +754,14 @@ a membership can be written only for a fixture user (Erin included), and **a mem
 cannot be made there**. The cases that need one (erasing a user the directory no longer has, an orphan row counted
 by `memberCount` but not visible) are tested on the **memory provider only** (`memory.provider.test.ts`).
 `Surveys.userid` has no foreign key, so personal surveys of a fresh id work on both providers.
+
+**Erasing rows the mapping skips** (Step 12 final review). The null-rows suite erases a fresh id whose personal
+surveys have a NULL `postid` or `resultid`, and Erin with NULL-role memberships (a project she leaves, one she was
+the last member of, with a project survey without a `postid`), and checks that the raw rows are gone and the
+reconciliation's reads (`findErasureCandidates`, `listMemberUserIds`, `listPersonalOwnerIds`) no longer list the id.
+A membership of a project whose row is gone needs the `organizationid` foreign key switched off for its one insert;
+the suite's `afterAll` reloads the schema and the fixtures. Memory cannot hold such a row (its seed refuses one), so
+the memory case (`erasure.test.ts`) covers orphan memberships only.
 
 **The `UserDirectory` against the stub.** `directory.stub.test.ts` runs the same `users.*` sections
 (`describeUserDirectorySuite`) on the `surveyjs-api` client against the in-process stub, which serves the fixture

@@ -53,7 +53,9 @@ with a link back to My Surveys.
 
 ## Deleting your surveyjs.io account erases your surveys here
 
-When you delete your surveyjs.io account, My Surveys is told and **erases your data**:
+When you delete your surveyjs.io account, My Surveys is told and **erases your data**. Until the surveyjs.io site sends
+that message, an administrator erases the data of deleted accounts with a check that runs on a schedule, so it can
+take until the next run:
 
 - **Your personal surveys**, archived ones too, with their results, files, saved versions and saved layouts.
 - **Your place in every project.** If you were the only admin, the next member of the project (by name) becomes an

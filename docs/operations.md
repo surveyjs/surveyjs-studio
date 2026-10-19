@@ -95,6 +95,11 @@ with nothing erased and exits 1; a failure is never read as "unknown".
 - **The list can hold more than people.** It names owner ids the directory does not know. When surveys still point at
   a project whose row is gone (a "dangling project id"), that id is listed too, and `--apply` would delete those
   surveys, which nobody could open. The dry run shows them and `--max` covers them: look before you apply.
+- **An erased id is not listed again.** Erasure deletes every row the list is built from, also legacy rows the app
+  cannot show (a membership with no role, a survey without a post id, a membership of a project whose row is gone), so
+  an id that was erased once does not come back on every run and does not count against `--max`. If an id is listed
+  after an `--apply` run, something new was written for it (for example by a browser session that was still open);
+  the next run erases that too.
 - **The first run on 1.1 will find users the legacy site already deleted.** The old site removes the user and the
   personal surveys but leaves memberships, so their ids still appear. Review that first list; apply it once by hand
   with a `--max` that fits it; only then schedule the command.

@@ -142,11 +142,22 @@ atomic `projects.eraseMember`, which applies the pure rule `decideMemberErasure`
 | `promote`     | Other visible members but no other visible admin | The user's rows are deleted and the first other member (by display name ignoring case, then user id) becomes an admin |
 | `remove`      | Otherwise                                        | The user's rows are deleted                                                                                           |
 
+A project whose `Organizations` row is gone but which still has rows of the user (Azure only; the replica's foreign
+key forbids it, older production rows may hold it) also answers `remove`: those rows are deleted.
+
 **Personal surveys last**: for each (archived ones too) the files, then the survey with its results, history, theme
 and layouts. No archive rule and no permission check. It returns and logs ids and counts only, and a second run does
 nothing. Erasure bypasses the last-admin refusal of [ADR 0017](0017-projects-and-members.md), because the erased user
 has to leave; the Azure write is described in [ADR 0010](0010-writing-to-the-legacy-stores.md#step-12-member-erasure).
 A plain member of a project with no visible admin also gives `promote`: it repairs a legacy project without admins.
+
+**Erasure reaches every row the reconciliation sees.** It walks the projects of `projects.listUserProjectIds` (every
+membership row of the user, raw: any role, also a project whose row is gone) and deletes the surveys of
+`surveys.listSurveyIds` (every survey row of the owner, also one with a NULL `postid` or `resultid`), not the mapped
+lists, which skip legacy rows the domain cannot represent. The Azure survey delete reads the row raw and skips the
+results tables of a NULL `postid`. The reconciliation reads raw ids too (`listMemberUserIds`,
+`listPersonalOwnerIds`), so an erased id does not come back on every run and does not count against `--max` for
+ever (Step 12 final review, I1).
 
 The **triggers** all call this one service:
 
@@ -181,7 +192,9 @@ A sixth fixture user, **Erin Erasable** (`11111111-0000-4000-8000-a00000000006`,
 surveys and no memberships in the fixtures. Every erasure test and demo erases only Erin or a fresh random id, and
 creates the data first, so the fixtures that other tests read stay intact. Oscar Outsider is never erased. On the
 replica `OrganizationUsers.userid` has a foreign key, so memberships exist only for fixture users, and orphan
-memberships are tested on the memory provider only.
+memberships are tested on the memory provider only. The unmappable rows (a NULL role, a NULL `postid` or `resultid`)
+are tested on the replica in the null-rows suite; a membership of a missing project is tested there too, with the
+`organizationid` foreign key switched off for that one insert (the suite reloads the schema afterwards).
 
 The contract changes are two: C1, the `AppConfig.authMethods` values, and C2, the webhook operation
 `receiveAccountDeleted`, its `AccountDeletedEvent` schema, the `Integrations` tag and the `invalid-signature` problem
@@ -207,14 +220,21 @@ code. Nothing else changed.
 - **Saved layouts on surveys the user does not own** are not erased (Azure would need a container scan).
 - **History entries that name the user** on project surveys, and **`creatorId` on project surveys**, are kept
   (the entry and the creator are part of the survey).
-- **The legacy `postdelete` copies** of deleted results stay; the hosted track purges them.
+- **The legacy `postdelete` copies** of results deleted on the old site stay on the surveys that are not erased (a
+  shared project's surveys); the hosted track purges them. An erased survey's `postdelete{postId}` table goes with it
+  (the Step 5 survey delete).
 - **No lock between the `last-member` decision and the project delete.** A member who joins in that window
   finds the project deleted with the others. A fix would hold the project lock across both steps.
 - **The dry run of `account:erase` can differ from the store's decision.** `previewErasure` works from the visible
-  members; the store decides again when erasing, so orphan rows can change the outcome. The command says so.
+  members; the store decides again when erasing, so orphan rows can change the outcome. A project whose row is gone
+  shows as `last-member` when the user has its only rows, while the store answers `remove`. Rows that cannot be read
+  are listed by id without a name. The command says so.
 - **`listPersonalOwnerIds` on the real `Surveys` table is a full scan** (an index on `userid` exists). To measure at
   Step 14, with the other large scans.
-- **The user API client follows redirects** with its bearer token. To forbid it before the first real call.
+- **A session outlives its erased account.** The app session is a stateless sealed cookie, so after the webhook
+  erases a user, a browser that is still signed in can create new personal surveys until the session expires. The
+  next reconciliation run finds and erases them. Per-request user checks or session epochs are self-hosted-track
+  scope.
 - **No time-out retry, by-id cache or readiness check of the API** until hosted Step 2.
 - **Billing data** on the surveyjs.io side is not touched by any deletion; whether it must go is a question for the
   surveyjs.io team (in the user API document).

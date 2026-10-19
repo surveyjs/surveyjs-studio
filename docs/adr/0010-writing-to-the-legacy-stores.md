@@ -494,7 +494,8 @@ rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
 Step 12 adds one write, `writeMemberErasure`, in `writes.ts` (the file header and the ESLint `ignores` comment
 gain "Step 12: member erasure"). It is what `projects.eraseMember` does on Azure when an account is erased
 ([ADR 0018](0018-accounts-by-deployment-mode.md)). The `surveyjs-sql` user directory and the new reads
-(`listMemberUserIds`, `listPersonalOwnerIds`, `missingUsers`) are `SELECT`s in `index.ts`.
+(`listMemberUserIds`, `listPersonalOwnerIds`, `missingUsers`, and the raw id reads erasure walks,
+`listUserProjectIds` and `listSurveyIds`) are `SELECT`s in `index.ts`.
 
 - **One transaction, the Step 11 lock order.** It locks the project's `Organizations` row first (`UPDLOCK,
 HOLDLOCK`; no row means "no such project" and nothing is written), then reads and locks the project's
@@ -503,6 +504,13 @@ HOLDLOCK`; no row means "no such project" and nothing is written), then reads an
   too); `promote` deletes them and sets every row of the successor to `admin` in place; `not-member` and
   `last-member` write nothing and roll back (the service deletes the project's surveys and the project itself in
   that case, with the Step 11 delete).
+- **A project whose row is gone.** When the lock finds no `Organizations` row, the user's rows that still name that
+  project (a dangling organization; the replica's foreign key forbids it, older production rows may hold it) are
+  deleted in the same transaction and the answer is `remove`; without such rows it is `not-member` and nothing is
+  written. Erasure must reach every row the reconciliation counts (Step 12 final review).
+- **Surveys the mapping skips.** The survey delete (Step 5) now reads the row raw (`id`, `postid`) instead of through
+  the mapping, so erasure can delete a survey with a NULL `postid` or `resultid`. A NULL `postid` names no
+  `post…` or `postdelete…` table; the rest of the delete is unchanged.
 - **The last-admin refusal does not apply.** The erased user has to leave, so a sole admin is removed and the
   next member is promoted. This is the one place where a project can lose its admin without the rule saying so.
 - **No audit row**, as for every project write. Errors and logs carry the operation name (`member erase`), the

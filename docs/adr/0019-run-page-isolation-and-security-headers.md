@@ -91,6 +91,25 @@ port's logs are not observable over HTTP. **It found a leak**: at trace level `@
 `busboyOptions`, which hold the upload's request headers (the session cookie and the full `X-Forwarded-For` address).
 The logger now redacts `busboyOptions.headers` (`REDACTED_LOG_PATHS` in `server/src/logging.ts`).
 
+### The rate-limiting review (US 45)
+
+Step 12 reviewed which operations are rate limited, against `server/src/app.ts` (`PUBLIC_OPERATIONS`,
+`SIGN_IN_OPERATIONS` and the `rateLimits` map). Nothing changed: every public operation that does work per request
+is limited, and the rest are cheap or reached only by a signed-in user or a signed sender.
+
+| Operations                                                                       | Limit                                           | Why                                                                         |
+| -------------------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getPublicResults` | `PUBLIC_RATE_LIMIT` per minute and address      | Public: respondents and anyone with a link (Step 8, Step 10)                |
+| `downloadFile`                                                                   | `PUBLIC_FILE_RATE_LIMIT` per minute and address | Public: a run page loads many images (Step 8)                               |
+| `login`, `loginCallback`, `passwordLogin`                                        | `SIGN_IN_RATE_LIMIT` per minute and address     | Public sign-in (Step 3)                                                     |
+| `receiveAccountDeleted`                                                          | None                                            | R10: the signature check is cheap and a bulk deletion must not be throttled |
+| `getConfig`, `logout`                                                            | None                                            | Public but cheap: no store is read                                          |
+| Every other operation                                                            | None                                            | Needs a session (and CSRF for writes) or a bearer token                     |
+
+`/healthz` and `/readyz` sit outside `/api` and are not limited; `/readyz` touches the stores, so the reverse proxy
+must not expose it (it forwards `/api` only). The counters live in each process, which Step 14 must replace for
+several instances ([architecture](../architecture.md), "Open for later steps").
+
 ### `/published` removed, `id` no longer reserved (R22)
 
 The `/published` alias of Step 8 (S21 of [ADR 0014](0014-run-page-and-response-collection.md)) is removed: the
@@ -119,6 +138,9 @@ every unknown address.
   run in CI.
 - **`style-src 'unsafe-inline'`** stays until the libraries stop needing it.
 - **A cookie-less run-page origin** (and the CORS and base URL it needs), after the hosted track's Step 3.
+- **The SPA policy in the production image.** Only `vite preview` applies `web/security-headers.ts`. If the server
+  serves the built front-end (plan Step 14), its `onSend` hook would give every page the API policy
+  (`default-src 'none'`) unless the SPA paths get `securityHeaders(pathname)` instead. Carried into plan Step 14.
 
 ## To confirm
 
