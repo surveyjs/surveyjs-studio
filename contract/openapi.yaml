@@ -1490,7 +1490,11 @@ components:
           examples: [surveyjs-site, powered-by-surveyjs]
         authMethods:
           type: array
-          items: { type: string, enum: [surveyjs, password, oidc] }
+          description: |
+            The sign-in methods: `surveyjs` (surveyjs.io accounts), `password` (local accounts), or an
+            OAuth2 provider (`google`, `github`, `facebook`). This version offers `surveyjs` only; the
+            others come with local accounts.
+          items: { type: string, enum: [surveyjs, password, google, github, facebook] }
         surveyjsLicenseKey:
           type: [string, 'null']
           description: |

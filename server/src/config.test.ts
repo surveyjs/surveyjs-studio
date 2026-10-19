@@ -9,6 +9,12 @@ const oidc = {
   OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
 };
 const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
+const WEBHOOK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+const api = {
+  USER_DIRECTORY: "surveyjs-api",
+  USER_API_URL: "https://users.example.com",
+  USER_API_TOKEN: "token-Value-31",
+};
 
 function loadConfig(env: Record<string, string | undefined>) {
   return load({ ...identity, ...env });
@@ -57,6 +63,9 @@ describe("loadConfig", () => {
       publicRateLimitPerMinute: 60,
       publicFileRateLimitPerMinute: 600,
       accountNotices: "none",
+      userDirectory: "memory",
+      userApi: null,
+      accountWebhookSecret: null,
       shellLinks: {},
     });
   });
@@ -75,7 +84,11 @@ describe("loadConfig", () => {
       LOG_LEVEL: "debug",
       APP_EDITION: "hosted",
       APP_SHELL: "acme",
-      AUTH_METHODS: "password, oidc",
+      AUTH_METHODS: " surveyjs ",
+      USER_DIRECTORY: "surveyjs-api",
+      USER_API_URL: "https://users.example.com/api/",
+      USER_API_TOKEN: "token-Value-31",
+      ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
       SURVEYJS_LICENSE_KEY: "key-1",
       STORAGE_PROVIDER: "memory",
       MEMORY_SEED: "legacy-fixtures",
@@ -93,7 +106,10 @@ describe("loadConfig", () => {
       logLevel: "debug",
       edition: "hosted",
       shell: "acme",
-      authMethods: ["password", "oidc"],
+      authMethods: ["surveyjs"],
+      userDirectory: "surveyjs-api",
+      userApi: { url: "https://users.example.com/api", token: "token-Value-31" },
+      accountWebhookSecret: WEBHOOK_SECRET,
       surveyjsLicenseKey: "key-1",
       memorySeed: "legacy-fixtures",
       publicBaseUrl: "https://surveys.example.com",
@@ -130,6 +146,9 @@ describe("loadConfig", () => {
     ["APP_EDITION", "cloud"],
     ["AUTH_METHODS", "magic"],
     ["AUTH_METHODS", ","],
+    ["AUTH_METHODS", "oidc"],
+    ["USER_DIRECTORY", "ldap"],
+    ["USER_API_URL", "not a url"],
     ["STORAGE_PROVIDER", "postgres"],
     ["MEMORY_SEED", "demo"],
     ["PUBLIC_BASE_URL", "not a url"],
@@ -278,6 +297,10 @@ describe("loadConfig", () => {
         OIDC_SCOPES: "",
         SIGN_IN_RATE_LIMIT: "",
         ACCOUNT_NOTICES: "",
+        USER_DIRECTORY: " ",
+        USER_API_URL: "",
+        USER_API_TOKEN: "",
+        ACCOUNT_WEBHOOK_SECRET: " ",
         SHELL_LINKS: " ",
       });
       expect(config).toEqual(loadConfig({}));
@@ -504,9 +527,9 @@ describe("loadConfig", () => {
       expect(() => loadConfig({ ACCOUNT_NOTICES: "banner" })).toThrow(/ACCOUNT_NOTICES/);
     });
 
-    it("accepts surveyjs-licenses only with the azure-legacy provider", () => {
-      expect(() => loadConfig({ ACCOUNT_NOTICES: "surveyjs-licenses" })).toThrow(
-        /ACCOUNT_NOTICES: surveyjs-licenses requires STORAGE_PROVIDER=azure-legacy/,
+    it("accepts surveyjs-licenses only with an SQL or API user directory", () => {
+      expect(messageOf(() => loadConfig({ ACCOUNT_NOTICES: "surveyjs-licenses" }))).toContain(
+        "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql or surveyjs-api",
       );
       const config = load({
         ...oidc,
@@ -517,6 +540,131 @@ describe("loadConfig", () => {
         LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "c",
       });
       expect(config.accountNotices).toBe("surveyjs-licenses");
+      expect(loadConfig({ ...api, ACCOUNT_NOTICES: "surveyjs-licenses" }).accountNotices).toBe(
+        "surveyjs-licenses",
+      );
+    });
+  });
+
+  describe("user directory and account settings", () => {
+    const legacy = {
+      STORAGE_PROVIDER: "azure-legacy",
+      LEGACY_SQL_CONNECTION_STRING: "a",
+      LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: "b",
+      LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "c",
+    };
+
+    it("defaults to the directory that fits the storage provider", () => {
+      expect(load({ ...oidc, ...legacy }).userDirectory).toBe("surveyjs-sql");
+      expect(loadConfig({}).userDirectory).toBe("memory");
+      expect(load({ ...oidc, ...legacy }).userApi).toBeNull();
+    });
+
+    it("accepts the explicit directories that fit", () => {
+      expect(loadConfig({ USER_DIRECTORY: "memory" }).userDirectory).toBe("memory");
+      expect(load({ ...oidc, ...legacy, USER_DIRECTORY: "surveyjs-sql" }).userDirectory).toBe(
+        "surveyjs-sql",
+      );
+      expect(loadConfig(api).userApi).toEqual({
+        url: "https://users.example.com",
+        token: "token-Value-31",
+      });
+    });
+
+    it.each([
+      [
+        { USER_DIRECTORY: "memory", ...legacy },
+        "USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory",
+      ],
+      [
+        { USER_DIRECTORY: "surveyjs-sql" },
+        "USER_DIRECTORY: surveyjs-sql requires STORAGE_PROVIDER=azure-legacy",
+      ],
+      [
+        { USER_DIRECTORY: "local" },
+        "USER_DIRECTORY: local is not available yet (self-hosted track)",
+      ],
+      [
+        { USER_DIRECTORY: "surveyjs-api", USER_API_TOKEN: "t" },
+        "USER_API_URL: required when USER_DIRECTORY=surveyjs-api",
+      ],
+      [
+        { USER_DIRECTORY: "surveyjs-api", USER_API_URL: "https://u.example.com" },
+        "USER_API_TOKEN: required when USER_DIRECTORY=surveyjs-api",
+      ],
+      [
+        { ...api, USER_API_URL: "http://users.example.com" },
+        "USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+      ],
+      [
+        { AUTH_METHODS: "password" },
+        "AUTH_METHODS: password requires USER_DIRECTORY=local, which is not available yet (self-hosted track)",
+      ],
+      [
+        { ACCOUNT_WEBHOOK_SECRET: "whsec_short-Secret-Value-99" },
+        "ACCOUNT_WEBHOOK_SECRET: must be whsec_ followed by the base64 of at least 24 bytes",
+      ],
+    ])("refuses %j with its message", (env, line) => {
+      expect(messageOf(() => load({ ...oidc, ...env }))).toContain(`  - ${line}`);
+    });
+
+    it.each(["http://127.0.0.1:4010", "http://localhost:4010"])(
+      "accepts USER_API_URL=%s",
+      (url) => {
+        expect(loadConfig({ ...api, USER_API_URL: url }).userApi?.url).toBe(url);
+      },
+    );
+
+    it("names every local-directory method on its own line", () => {
+      const message = messageOf(() =>
+        loadConfig({ AUTH_METHODS: "password,github,facebook,google" }),
+      );
+      for (const method of ["password", "github", "facebook", "google"]) {
+        expect(message).toContain(`  - AUTH_METHODS: ${method} requires USER_DIRECTORY=local`);
+      }
+    });
+
+    it("refuses the demo combination on azure-legacy settings with one line", () => {
+      const message = messageOf(() =>
+        load({
+          ...oidc,
+          ...legacy,
+          IDENTITY_PROVIDER: "surveyjs-oidc",
+          USER_DIRECTORY: "surveyjs-sql",
+          AUTH_METHODS: "password",
+        }),
+      );
+      const lines = message.split("\n").slice(1);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("  - AUTH_METHODS: password requires USER_DIRECTORY=local");
+    });
+
+    it("names USER_DIRECTORY and AUTH_METHODS for the demo combination on memory storage", () => {
+      const message = messageOf(() =>
+        loadConfig({ USER_DIRECTORY: "surveyjs-sql", AUTH_METHODS: "password" }),
+      );
+      expect(message).toContain("USER_DIRECTORY: surveyjs-sql requires");
+      expect(message).toContain("AUTH_METHODS: password requires");
+    });
+
+    it("runs the account rules even when the identity rules are skipped", () => {
+      expect(() => load({ USER_DIRECTORY: "local" }, { skipIdentityRules: true })).toThrow(
+        "USER_DIRECTORY: local is not available yet",
+      );
+    });
+
+    it("never echoes the secrets next to other problems", () => {
+      const message = messageOf(() =>
+        loadConfig({
+          ...api,
+          USER_API_TOKEN: "token-Secret-Value-77",
+          ACCOUNT_WEBHOOK_SECRET: "whsec_short-Secret-Value-99",
+          PORT: "99999",
+        }),
+      );
+      expect(message).toContain("PORT");
+      expect(message).not.toContain("token-Secret-Value-77");
+      expect(message).not.toContain("short-Secret-Value-99");
     });
   });
 

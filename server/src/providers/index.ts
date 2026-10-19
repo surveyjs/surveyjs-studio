@@ -45,5 +45,8 @@ export function createProviders(
   config: AppConfig,
   options: ProviderOptions = {},
 ): Promise<ProviderSet> {
+  if (config.userDirectory === "surveyjs-api") {
+    throw new Error("USER_DIRECTORY=surveyjs-api is not built yet");
+  }
   return registry[config.storageProvider](config, options);
 }

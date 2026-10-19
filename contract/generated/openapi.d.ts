@@ -809,7 +809,12 @@ export interface components {
              * @example powered-by-surveyjs
              */
             shell: string;
-            authMethods: ("surveyjs" | "password" | "oidc")[];
+            /**
+             * @description The sign-in methods: `surveyjs` (surveyjs.io accounts), `password` (local accounts), or an
+             *     OAuth2 provider (`google`, `github`, `facebook`). This version offers `surveyjs` only; the
+             *     others come with local accounts.
+             */
+            authMethods: ("surveyjs" | "password" | "google" | "github" | "facebook")[];
             /**
              * @description Licence key for the commercial SurveyJS components (Creator,
              *     Dashboard, PDF), applied by the front-end at start-up. It is public by

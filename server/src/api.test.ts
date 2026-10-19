@@ -79,7 +79,7 @@ describe("getConfig", () => {
         OIDC_CLIENT_ID: "client",
         OIDC_CLIENT_SECRET: "secret",
         APP_SHELL: "powered-by-surveyjs",
-        AUTH_METHODS: "surveyjs,password",
+        AUTH_METHODS: "surveyjs",
         SURVEYJS_LICENSE_KEY: "key-123",
         LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "300",
         LIMIT_MAX_FILE_BYTES: "200",
@@ -95,7 +95,7 @@ describe("getConfig", () => {
     expect(res.json()).toStrictEqual({
       edition: "hosted",
       shell: "powered-by-surveyjs",
-      authMethods: ["surveyjs", "password"],
+      authMethods: ["surveyjs"],
       surveyjsLicenseKey: "key-123",
       limits: {
         maxAssetBytesPerSurvey: 300,
