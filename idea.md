@@ -1,12 +1,14 @@
 # My Surveys: product idea
 
-Status: agreed, ready for the specification · Last updated: 2026-10-14
+Status: agreed, ready for the specification · Last updated: 2026-10-19 (deployment modes, D16–D22)
 
 ## 1. Summary
 
 We will build a standalone web application, with a front-end and a back-end, that does everything the current **My Surveys** section of surveyjs.io does (`https://surveyjs.io/service/mysurveys`) and then goes further.
 
-Rollout happens in three steps:
+The same code runs in four **deployment modes** (§3.0, D16): the hosted service on our subdomain, a free self-hosted image with a hosted sandbox, a base for customers' own development, and a development setup.
+
+Rollout happens in three steps. Since 2026-10-19 the work after step 1 is organised by deployment mode, in two parallel tracks (§3.0, D22):
 
 1. **Replace (parity).** Ship the application at `my-surveys.surveyjs.io` and retire the old section. In this phase the app:
    - looks exactly like surveyjs.io and reproduces the current UI 1:1;
@@ -154,6 +156,26 @@ Since **Form Library v2.0** the built-in service integration has been removed. O
 
 ## 3. Goals and desired result
 
+### 3.0 Deployment modes (2026-10-19)
+
+The modes share one build. Configuration chooses the storage provider, the user directory, the sign-in methods and the shell (D16).
+
+| Mode | What it is | Storage | Users and sign-in | Shell |
+|---|---|---|---|---|
+| **1.1 Hosted, side by side** | `my-surveys.surveyjs.io` on the surveyjs.io data while the old section still runs | Azure legacy provider: the site database and Azure storage | External: surveyjs.io users, sign-in at `auth.surveyjs.io` | surveyjs.io |
+| **1.2 Hosted, replacing** | The My Surveys section, including Settings → Manage MySurveys, is removed from surveyjs.io. The site redirects every old URL to the app (D13, D19) | As 1.1 | As 1.1 | surveyjs.io |
+| **1.3 Hosted, own data** | Surveys, definitions, themes, history, results, files, layouts, projects and members move off Azure and the site database into the app's own stores (D18) | Non-Azure database and file storage, chosen from a shortlist | External: users stay on surveyjs.io, read through a **user API** that surveyjs.io exposes, plus an account-deleted webhook (D17) | surveyjs.io |
+| **2a Hosted sandbox** | `my-surveys.demo.surveyjs.io`, a static site where anyone tries every feature on predefined data (D21) | A separate mock back-end; data stays in the visitor's browser | Pick a listed account; no password | "Powered by SurveyJS" with a demo banner |
+| **2b Free Docker image** | A self-hosted service that can be used in production unchanged: configuration is allowed, code changes are not (D20) | SQL providers (D15) and pluggable file storage | Local accounts: an instance admin invites or creates users and resets passwords; no email. One organisation per instance, with several projects (D17) | "Powered by SurveyJS" |
+| **3 Custom development** | A customer's fork with their own shell, databases, SSO and features. Needs SurveyJS licences for the commercial components | Any provider | Local accounts, external OAuth2 sign-in (Google, GitHub, Facebook, surveyjs.io), or both (D17) | Custom |
+| **4 Development** | Development, debugging and end-to-end tests | Memory, or the Azurite + SQL Server replica | The dev sign-in page, or the mock OIDC server | Any |
+
+**Order (D22).** Phase 1 delivers modes 1.1, 1.2 and 4. After it, two tracks run at the same time:
+- **Hosted migration:** mode 1.3.
+- **Self-hosted:** modes 2a, 2b and 3.
+
+They share the SQL providers and the account seam built in Phase 1 (`plan.md` Step 12).
+
 ### 3.1 Phase 1: parity and replacement
 
 The goal is for `my-surveys.surveyjs.io` to replace the old section without users noticing anything except the new address and the lifted limits.
@@ -168,10 +190,10 @@ The goal is for `my-surveys.surveyjs.io` to replace the old section without user
   - Any related data held in the surveyjs.io site database, such as user profiles, projects and members, is accessed directly as well. The specification maps exactly which entity lives where.
   - No data migration is needed, and IDs stay as they are.
   - Old and new UIs can run side by side during the rollout.
-- **Legacy coexistence.**
+- **Legacy coexistence** (modes 1.1 and 1.2; at 1.3 the compatibility layer of D18 takes over).
   - `api.surveyjs.io` (§2.8) keeps working against the same data.
   - Anything the new app writes must stay readable by the legacy service and the reverse, unless a lifted limit (below) deliberately changes a format.
-- **Redirects.**
+- **Redirects.** The surveyjs.io site makes them; the app itself handles no legacy URLs (D19).
 
   | Old URL | New URL |
   |---|---|
@@ -179,7 +201,7 @@ The goal is for `my-surveys.surveyjs.io` to replace the old section without user
   | `/Service/EditSurvey/{id}` | `/surveys/{id}/edit` |
   | `/Service/SurveyResults/{id}` | `/surveys/{id}/results` |
   | `/Service/History/{id}` | `/surveys/{id}/history` |
-  | `/published?id={id}` | `/s/{id}` (the old URL keeps working) |
+  | `/published?id={id}` | `/s/{id}` (the site's redirect keeps old links working) |
 
   The site's "My Surveys" and "All-in-One Demo" links point to the new app.
 
@@ -198,6 +220,8 @@ The goal is for `my-surveys.surveyjs.io` to replace the old section without user
 - the old section is switched off.
 
 ### 3.2 Phase 2: P1, customer readiness and improvements
+
+Since 2026-10-19 the customer-readiness items are part of the self-hosted track, and the move off Azure is the hosted-migration track (§3.0, D22).
 
 - **Customer readiness**, needed before the code reaches customers:
   - **login/password ("basic") authentication**;
@@ -321,7 +345,7 @@ Roles in a project:
 - The Embed tab generates code for the new service URLs.
 
 **F5 Run page**
-- `/s/{surveyId}`, with `/published?id=` kept as an alias.
+- `/s/{surveyId}`. The surveyjs.io site redirects `/published?id=` to it (D19).
 - Applies the survey's theme and posts complete results.
 - Supports the survey settings that need the server ("Limit to one response", the completed state).
 - Shows a not-available page when the survey is unpublished or deleted.
@@ -358,10 +382,11 @@ Roles in a project:
 ### 6.2 Phase 2: P1
 
 **A. Customer readiness**
-1. **Login/password ("basic") authentication.**
-   - Sign-up and sign-in.
-   - Password hashing with a modern algorithm, password reset by email, email verification and an admin-created users mode.
+1. **Login/password ("basic") authentication** (D17).
+   - An instance admin invites or creates users and resets their passwords. There is no open sign-up and no email.
+   - Password hashing with a modern algorithm.
    - Lockout and rate limiting.
+   - Mode 3 adds OAuth2 sign-in: Google, GitHub, Facebook and surveyjs.io.
 2. **A choice of databases**, through a thin, documented provider interface (D15):
    - **SQLite**, the default, bundled in the single-container image.
    - **PostgreSQL**, the recommended production database. Customers can point the app at a PostgreSQL server they already run.
@@ -430,7 +455,8 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
    |---|---|---|
    | Data | **SurveyJS legacy provider**: the surveyjs.io site database plus Azure storage | P1: SQLite (default), PostgreSQL. Later: MySQL/MariaDB, SQL Server, MongoDB |
    | Files | Azure Blob | S3-compatible, local disk |
-   | Authentication | surveyjs.io OIDC | Login/password, generic OIDC/SAML |
+   | Authentication | surveyjs.io OIDC | Login/password with an instance admin; OAuth2 (Google, GitHub, Facebook, surveyjs.io); SAML later (D17) |
+| User directory | surveyjs.io site database | The surveyjs.io user API (1.3), or local accounts (D17) |
    | Email | — | SMTP, provider APIs |
    | Look and feel (shell) | The surveyjs.io shell, copied from the site; selected through configuration | A neutral "Powered by SurveyJS" shell, or a custom one |
 
@@ -449,6 +475,8 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
    - Least-privilege credentials for the surveyjs.io databases.
 
 ## 8. Editions, licensing, branding and data protection
+
+The table below predates the deployment modes. Its columns map to them: Hosted is mode 1, the open-source repository is mode 3, and the free Docker image is mode 2b. The hosted sandbox (mode 2a) is described in D21, and the image's licence and branding rules in D20.
 
 | | Hosted (`my-surveys.surveyjs.io`) | Open-source repository | Free Docker image |
 |---|---|---|---|
@@ -485,7 +513,8 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
   3. Default: redirects switched on.
   4. The old UI is removed.
 - **Legacy API.** `api.surveyjs.io` remains the legacy service for v1.x and REST clients. The new app does not re-implement it. Its retirement is a separate decision.
-- **Storage roadmap (decided after P1, D10).** Whether and when to move hosted data from Azure storage accounts to another store with compatible functionality, for example PostgreSQL with JSON columns plus Blob/S3 for files.
+- **Storage roadmap.** Decided on 2026-10-19 (D18): the hosted data moves off Azure in mode 1.3. The text below records the reasoning as it stood before that decision.
+- **Storage roadmap (originally "decided after P1", D10).** Whether and when to move hosted data from Azure storage accounts to another store with compatible functionality, for example PostgreSQL with JSON columns plus Blob/S3 for files.
   - **Reasons to move:** querying and aggregating results (crosstabs, filters, version filtering), transactions, using the same provider as customers, and less format coupling with the legacy service.
   - **Reasons to wait:** the legacy `api.surveyjs.io` reads the same storage, so moving means either migrating the legacy service too or keeping the two in sync.
   - **Decision:** decide after P1, once the provider layer and the SQL providers exist. The migration then becomes "copy from the legacy provider to the SQL provider" plus switching the legacy API over.
@@ -523,7 +552,7 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 
 ## 11. Decisions and open questions
 
-**Decisions (2026-10-13; D15 added 2026-10-14)**
+**Decisions (2026-10-13; D15 added 2026-10-14; D16–D22 added and D10, D13 revised 2026-10-19)**
 
 | # | Topic | Decision |
 |---|---|---|
@@ -536,12 +565,19 @@ The aim is a back-end that any team can re-implement in .NET, PHP, Python or ano
 | D7 | UI | Phase 1 reproduces the current UI 1:1, including projects (§2.6), with surveyjs.io styling. |
 | D8 | Analytics and telemetry | Discussed after P1. |
 | D9 | Authentication | surveyjs.io authorization on our site; login/password for customers in P1. |
-| D10 | Storage roadmap | Whether and when to move off Azure storage is decided after P1 (§9). |
+| D10 | Storage roadmap | ~~Decided after P1~~. **Revised 2026-10-19:** the hosted data moves off Azure in mode 1.3 (D18). The database and file storage are chosen from a shortlist of non-Azure options at the start of the hosted-migration track. |
 | D11 | Limits | The Phase 1 proposal in §3.1 stands as written. The check of how legacy endpoints handle file references is done during the specification. |
 | D12 | Access to stores | The app connects directly to Azure storage. There is no intermediate surveyjs.io API. |
-| D13 | Project management | Both exist: the Projects screen in the new app, and Settings → Manage MySurveys on surveyjs.io. They work on the same data. |
+| D13 | Project management | Both exist during mode 1.1: the Projects screen in the new app, and Settings → Manage MySurveys on surveyjs.io. They work on the same data. **Revised 2026-10-19:** in mode 1.2 Manage MySurveys is removed from surveyjs.io with the rest of My Surveys. |
 | D14 | Site shell | Copy the header, footer and design-system styles from surveyjs.io. The shell is a configuration option, so a different shell can be used. |
 | D15 | Databases after Phase 1 | Storage stays behind a thin provider interface. SQLite is the default and is bundled in the Docker image; PostgreSQL is the recommended production database. P1 ships these two. MySQL/MariaDB, SQL Server and MongoDB come after P1 through the same interface. |
+| D16 | Deployment modes (2026-10-19) | One build runs in four modes: 1 hosted (1.1 side by side, 1.2 replacing, 1.3 own data), 2a hosted sandbox, 2b free Docker image, 3 custom development, 4 development (§3.0). Configuration chooses the mode. |
+| D17 | Accounts by mode | Users come from an **external** directory, a **local** one, or both. Mode 1: surveyjs.io users, read through a user API that surveyjs.io exposes (by ID, by email, licence state) and an account-deleted webhook; the site's SQL is read directly until that API exists. Mode 2b: local accounts, one organisation per instance with several projects; an instance admin invites or creates users and resets passwords; no email. Mode 3: local accounts, OAuth2 sign-in (Google, GitHub, Facebook, surveyjs.io), or both. A user is created on first OAuth2 sign-in when invited, when the email domain is allowed, or, if the admin opts in, for anyone (open sign-up is off by default). Adding a member by email works for known users or keeps a pending invitation. |
+| D18 | Hosted migration (mode 1.3) | Everything except users moves into the app's own stores: survey records, definitions, themes, history, results, files, layouts, projects and members, plus the legacy event log and deleted-result copies. Post IDs and Result IDs are kept. Cutover happens in a maintenance window. The app does not call `api.surveyjs.io`. Legacy clients are served by a **thin compatibility layer** in the app on the new stores. API tokens and CORS for the new API are ready before the cutover. After 1.3 the legacy code is removed from the surveyjs.io site. The repository may keep the legacy-layout documents, without secrets. Hosting is most likely Hetzner (Europe or USA). The migrated legacy deleted-result copies are purged 30 days after the cutover. Access keys can be revoked but no longer viewed. The legacy Azure resources are listed for the SurveyJS team, which removes them itself. |
+| D19 | Legacy links | The surveyjs.io site redirects every old My Surveys URL, including `/published?id=` and the public results link, to the app. The app handles no legacy URLs. |
+| D20 | Free image: licence and branding (mode 2b) | Free for anyone, with no limits on users, surveys or responses. A special SurveyJS licence key type is valid only while the "Powered by SurveyJS" branding is shown. A paid licence removes the branding. Configuration is allowed (name, logo, colours, domain, URLs, limits). Code changes make it mode 3, which needs licences. |
+| D21 | Hosted sandbox (mode 2a) | A static site at `my-surveys.demo.surveyjs.io` with a separate mock back-end. Each visitor's data stays in their browser's localStorage, seeded with a small set of predefined users, projects, surveys and results, and a reset button restores it. Sign-in is a pick from the listed accounts, with no password. Public links work only in the same browser. It uses the "Powered by SurveyJS" shell with a demo banner. The Embed tab and the API docs are shown only in the surveyjs.io shell. |
+| D22 | Order after Phase 1 | Phase 1 (modes 1.1, 1.2 and 4) is finished first. Then the hosted-migration track (1.3) and the self-hosted track (2a, 2b, 3) run at the same time, each with its own spec and plan. |
 
 **Open questions**
 

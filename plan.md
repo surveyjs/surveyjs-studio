@@ -1,7 +1,7 @@
 # Implementation plan: My Surveys, Phase 1
 
-Status: draft · 2026-10-13
-Implements: [spec.md](spec.md) (Phase 1), within the brief in [idea.md](idea.md) and the contract [contract/openapi.yaml](contract/openapi.yaml).
+Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0)
+Implements: [spec.md](spec.md) (Phase 1, which is deployment modes 1.1 and 1.2), within the brief in [idea.md](idea.md) and the contract [contract/openapi.yaml](contract/openapi.yaml). The work after Phase 1 runs as two track plans; see [After Phase 1](#after-phase-1).
 
 ## How to use this plan
 
@@ -37,6 +37,8 @@ A step is done only when all of these hold:
 
 Both modes work offline, without real surveyjs.io or Azure. They are introduced in Steps 1–3 and kept working by every later step.
 
+These are the **development configuration** (deployment mode 4, idea §3.0). Don't confuse them with the hosted sandbox at `my-surveys.demo.surveyjs.io` (mode 2a), which the self-hosted track builds.
+
 | Mode | Command (proposed) | Storage | Sign-in | Needs |
 |---|---|---|---|---|
 | **Memory** | `pnpm demo` | In-memory provider, loaded from a seed. Optionally saved to a local JSON file (`DEMO_PERSIST=1`) so data survives restarts. | **Dev identity provider**: a "Sign in as…" page listing the seed users. It is refused at start-up when `NODE_ENV=production` or the edition is hosted. | Node and pnpm only |
@@ -71,18 +73,18 @@ The documentation is created in Step 1 and grown by every step:
 
 | Step | Name | Status |
 |---|---|---|
-| 1 | Foundation and walking skeleton | ☐ |
-| 2 | Legacy storage spike and Azure provider base | ☐ |
-| 3 | Sign-in, session and the surveyjs.io shell | ☐ |
-| 4 | Survey list and survey creation | ☐ |
-| 5 | Survey actions (the "…" menu) | ☐ |
-| 6 | Editor: autosave, conflicts and history | ☐ |
-| 7 | Editor uploads and file serving | ☐ |
-| 8 | Run page and response collection | ☐ |
-| 9 | Results: Summary and Table | ☐ |
-| 10 | Results: Details, downloads and public results | ☐ |
-| 11 | Projects and members | ☐ |
-| 12 | Legacy URLs, data protection and hardening | ☐ |
+| 1 | Foundation and walking skeleton | ☑ |
+| 2 | Legacy storage spike and Azure provider base | ☑ |
+| 3 | Sign-in, session and the surveyjs.io shell | ☑ |
+| 4 | Survey list and survey creation | ☑ |
+| 5 | Survey actions (the "…" menu) | ☑ |
+| 6 | Editor: autosave, conflicts and history | ☑ |
+| 7 | Editor uploads and file serving | ☑ |
+| 8 | Run page and response collection | ☑ |
+| 9 | Results: Summary and Table | ☑ |
+| 10 | Results: Details, downloads and public results | ☑ |
+| 11 | Projects and members | ☑ |
+| 12 | Accounts by deployment mode, data protection and hardening | ☐ |
 | 13 | Visual parity with surveyjs.io | ☐ |
 | 14 | Production readiness and rollout kit | ☐ |
 
@@ -442,7 +444,7 @@ The documentation is created in Step 1 and grown by every step:
   - file questions upload through the endpoint;
   - a "not available" page;
   - today's footer.
-- **The `/published?id=` route** redirects to `/s/{id}`.
+- **The `/published?id=` route** redirects to `/s/{id}`. (Removed in Step 12: the surveyjs.io site makes this redirect, D19.)
 
 **Tests**
 - **Back-end unit:** idempotency key handling; the IP extraction rule (proxy headers).
@@ -599,40 +601,115 @@ The documentation is created in Step 1 and grown by every step:
 
 ---
 
-## Step 12: Legacy URLs, data protection and hardening
+## Step 12: Accounts by deployment mode, data protection and hardening
 
-**Goal:** old bookmarks work, account deletion removes data, and the security behaviours in the spec are verified.
+**Goal:**
+- **Accounts follow the deployment modes** (idea §3.0) through one seam: users come from an **external** directory (mode 1), from **local** accounts (mode 2b), or from both (mode 3).
+- **Mode 1 is complete:**
+  - surveyjs.io users are read through a user directory;
+  - deleting a surveyjs.io account erases the user's data.
+- **The app keeps no legacy URLs.** The surveyjs.io site redirects old links, using a map this step writes.
+- **The spec's security behaviours are verified.**
 
 **References**
-- idea §3.1 *Redirects*; idea §9 (URL redirects and rollout); idea §8 *Erasure* and *Data minimization*; idea §2.9 item 7 (security); idea §5 UC-9.
-- spec › Implementation Decisions › Rollout (the legacy-shaped paths on the app's own domain); › Data protection (account deletion); › Front-end modules 7 (escaping and sanitizing); › Back-end modules 1 (rate limiting review).
-- US 71, 81, 45, 72.
+- idea §3.0 (deployment modes); idea §8 *Erasure* and *Data minimization*; idea §2.9 item 7 (security); idea §9 (rollout); D13, D16–D19.
+- spec › Implementation Decisions › Back-end modules 2 (sign-in) and 4 (provider interfaces: the user directory and the project store); › Rollout (the redirects belong to surveyjs.io); › Data protection (account deletion); › Front-end modules 7 (escaping and sanitizing); › Back-end modules 1 (rate limiting review).
+- US 81, 45, 72. US 44 and 71 are delivered by the surveyjs.io redirects, using the map from this step.
 
 **Build**
-- **Permanent redirects** from `/service/mysurveys*`, `/Service/EditSurvey/{id}`, `/Service/SurveyResults/{id}`, `/Service/History/{id}` and `/published?id=` (already done in Step 8) to the new routes.
+- **Accounts by mode, the seam** (an ADR, "Accounts by deployment mode"):
+  - **Split `Directory`** into two interfaces, each with its own provider-suite section:
+    - **`UserDirectory`:** users by ID and by email, the blocked flag, and the user to sign in from the identity claims.
+    - **`ProjectStore`:** projects, members and roles: today's project operations of `Directory`.
+    - In mode 1 the two come from different owners. Users stay on surveyjs.io, and projects move to the app's own stores at 1.3.
+  - **Two kinds of user directory:**
+    - **external:** the users belong to another system. That is surveyjs.io in mode 1, and a customer's OAuth2 provider in mode 3.
+    - **local:** the app owns the users. They are created or invited by an instance admin, and the admin resets passwords; there is no email. This serves modes 2b and 3.
+  - **How sign-in methods combine with directories:**
+    - mode 1: `surveyjs` sign-in with the surveyjs.io directory;
+    - mode 2b: `password` with the local directory;
+    - mode 3: `password` plus OAuth2 providers (Google, GitHub, Facebook, surveyjs.io), with the local directory. A user is created on first OAuth2 sign-in.
+    - A configuration that cannot work fails at start-up, naming the variable.
+  - **Build now:** the interfaces, the configuration and the start-up rules.
+  - **Built in the self-hosted track:** the local directory, password sign-in, the instance admin, and OAuth2 sign-in.
+- **Mode 1 user directory:**
+  - **The surveyjs.io user API, specified by us.** `docs/integrations/surveyjs-user-api.md` is written for the surveyjs.io team. It covers:
+    - user by ID;
+    - user by email;
+    - licence state, for the account notices;
+    - an **account-deleted webhook** signed with HMAC.
+  - **Two user directories for mode 1:**
+    - `surveyjs-sql`, the current direct read of the site's SQL `Users`, used until the API exists;
+    - `surveyjs-api`, a client of the specified API, tested against a stub server.
+
+    Configuration selects one. `AccountNotices` follows the same choice.
 - **Account erasure:**
-  - an `eraseAccount` service and an operator command (`pnpm account:erase --user`), plus a periodic orphan clean-up job;
-  - the hook from surveyjs.io account deletion calls it, once the surveyjs.io side provides the trigger (spec › Further Notes).
-- **Security headers:** CSP that allows SurveyJS, frame-ancestors for embeds, HSTS and referrer policy.
+  - an `eraseAccount` service. It follows idea §8 *Erasure*: personal surveys, their results and files are deleted, and memberships are removed. A project whose last admin is deleted passes to its next member, or is deleted if no members are left.
+  - **Triggers:**
+    - the account-deleted webhook: a server-to-server endpoint with an HMAC check and a replay window. The ADR decides whether it belongs in the public contract.
+    - an operator command, `pnpm account:erase --user`;
+    - a periodic reconciliation that finds owners the user directory no longer knows and erases their data. This is the safety net when a webhook is lost.
+  - In mode 2b the instance admin's "delete user" will call the same service (self-hosted track).
+- **No legacy URLs in the app:**
+  - remove the `/published` alias route (Step 8) with its tests and documentation mentions. Like `/service/*`, `/Service/*` and `/Results/*`, that path is now an ordinary unknown route.
+  - write **`docs/operations/surveyjs-redirects.md`** for the surveyjs.io team. It maps each old URL to its new one, with the query parameters that must be carried over:
+
+    | Old URL | New URL | Note |
+    |---|---|---|
+    | `/service/mysurveys` | `/` | |
+    | `/Service/MySurveys/{orgId}` | `/?project={orgId}` | |
+    | `/Service/EditSurvey/{id}` | `/surveys/{id}/edit` | |
+    | `/Service/SurveyResults/{id}` | `/surveys/{id}/results` | |
+    | `/Service/History/{id}` | `/surveys/{id}/history` | |
+    | `/published?id={id}` | `/s/{id}` | other query members kept |
+    | `/Results/Survey/{resultId}` | `/results/{surveyId}` | the site looks up the survey ID |
+    | Settings → Manage MySurveys | `/projects` | the section is removed, D13 |
+
+    The fragment `#manage-mysurveys` never reaches a server, so that last case needs a link or a client-side redirect.
+- **Security headers:**
+  - CSP that allows SurveyJS, frame-ancestors for embeds, HSTS and referrer policy.
+  - Settle the Step 8 note: author HTML (HTML questions, the completed page) and URL-prefilled placeholders run on the same origin as the signed-in app. Decide in an ADR between CSP alone and isolating the run page.
+  - The run page's Idempotency-Key must not depend on `crypto.randomUUID`, which is missing on plain HTTP.
 - **A check that no respondent data reaches the logs.**
 - **An e2e case for the "XSS in question name" survey.**
 
 **Tests**
-- **Back-end unit:** the redirect path mapping; the erasure plan (which entities are removed and which are reassigned).
+- **Back-end unit:**
+  - the start-up rules for sign-in methods and directories;
+  - the erasure plan: which entities are removed and which are reassigned;
+  - the webhook signature and replay check;
+  - mapping the user API's answers.
 - **Back-end e2e:**
-  - conformance: every legacy path returns `301` to the right location; security headers are present;
-  - erasure: afterwards, the personal surveys answer `404`, memberships are gone, and project surveys remain;
-  - provider suite: erasure on both providers;
+  - conformance:
+    - after erasure, the personal surveys answer `404`, memberships are gone, and project surveys remain;
+    - the webhook refuses a bad signature;
+    - security headers are present;
+    - `/published?id=…` and `/Service/EditSurvey/{id}` are not redirected.
+  - provider suite:
+    - the `UserDirectory` and `ProjectStore` sections, on memory, Azure legacy and `surveyjs-api` (against the stub);
+    - erasure on every provider;
   - a log capture during a submission contains no answers.
-- **Front-end unit:** none new beyond regression coverage.
-- **Front-end e2e:** old bookmarks land on the right pages; a survey with HTML or script in names and titles renders as text and runs no script.
+- **Front-end unit:** run-page idempotency keys without `crypto.randomUUID`.
+- **Front-end e2e:**
+  - a survey with HTML or script in names and titles renders as text and runs no script;
+  - sign-in still works in both dev modes after the split.
 
-**Documentation:** user guide "Moving from the old My Surveys"; `docs/architecture.md` (the security and data protection section); `docs/operations.md` (first version: erasure command and job); `docs/demo/step-12.md`.
+**Documentation:**
+- the ADR "Accounts by deployment mode", plus the ADR on run-page isolation;
+- `docs/integrations/surveyjs-user-api.md` and `docs/operations/surveyjs-redirects.md`;
+- `docs/architecture.md`: the user directory and project store, and the security and data protection section;
+- `docs/operations.md`, first version: the erasure command, the reconciliation job, the webhook secret;
+- user guide "Moving from the old My Surveys";
+- remove the `/published` alias from the Step 8 documentation, and record in ADR 0014 that it was superseded;
+- `docs/demo/step-12.md`.
 
 **Demo checklist**
-1. Open `/service/mysurveys`, `/Service/EditSurvey/{id}` and `/Service/SurveyResults/{id}` on the local app. Each lands on the matching new page.
-2. Run `pnpm account:erase --user <seed-outsider>`. Signing in as that user shows an empty list, and the other users' data is unaffected.
-3. Open the seeded "XSS in question name" survey in the list, editor and run page. No alert appears, and the names show as plain text.
+1. Run `pnpm account:erase --user <seed-outsider>`. Signing in as that user shows an empty list, and the other users' data is unaffected.
+2. Send a signed account-deleted webhook for a seed user (a script in the demo). Their personal surveys are gone. A wrongly signed call is refused.
+3. Start the server with an impossible combination, such as `USER_DIRECTORY=surveyjs-sql` with `AUTH_METHODS=password`. Start-up fails and names the variable.
+4. Run the conformance suite with `USER_DIRECTORY=surveyjs-api` against the stub. Sign-in, members by email and notices work.
+5. Open `/published?id={id}` on the local app. It is an unknown page now. `docs/operations/surveyjs-redirects.md` lists the redirect the site makes instead.
+6. Open the seeded "XSS in question name" survey in the list, editor and run page. No alert appears, and the names show as plain text.
 
 ---
 
@@ -667,34 +744,71 @@ The documentation is created in Step 1 and grown by every step:
 
 ## Step 14: Production readiness and rollout kit
 
-**Goal:** the app is ready to run on the production data, side by side with the old section, with operational documentation and a rollout runbook.
+**Goal:**
+- **Mode 1.1:** the app is ready to run on the production data, side by side with the old section.
+- **Mode 1.2:** the runbook takes the SurveyJS team through removing My Surveys from surveyjs.io.
+- One production image whose configuration is organised by **deployment mode**, so the track plans add modes 1.3, 2b and 3 as new configurations, not new builds.
 
-**Inputs needed:** the target hosting environment, the OIDC client registration, least-privilege storage credentials and a staging copy of the data (spec › Further Notes).
+**Inputs needed:**
+- the target hosting environment;
+- the OIDC client registration;
+- least-privilege storage credentials;
+- a staging copy of the data (spec › Further Notes);
+- the account-deleted webhook secret.
+- If surveyjs.io has shipped it by then: the user API endpoint and credentials (Step 12).
 
 **References**
-- idea §3.1 *Done when*; idea §6.1 F11; idea §9 (rollout steps, legacy API coexistence).
+- idea §3.0 (deployment modes); idea §3.1 *Done when*; idea §6.1 F11; idea §9 (rollout steps, legacy API coexistence until 1.3); D13, D16–D19.
 - spec › Implementation Decisions › Rollout; › Back-end modules 6 (configuration); › Further Notes (dependencies); › Testing Decisions › CI and prior art (the full pipeline).
 - US 77, 78, 70.
 
 **Build**
-- **A production container image:** the server serves the built front-end. Non-root, with health checks. The base image uses the same pinned Node.js LTS version as `.nvmrc`, and `pnpm check:deps` covers it.
-- **The complete configuration reference** with start-up validation.
-- **Structured logs** with request IDs, and readiness that checks storage reachability.
-- **A staging profile:** read-only first (the inspector and a read-only flag that refuses writes), then read-write against a staging copy.
-- **A compatibility smoke test:** after the new app writes (rename, save definition, submit a response, move a survey), the legacy `api.surveyjs.io` read paths still return correct data. This runs against staging.
-- **A rollout runbook:** internal use → opt-in beta link → switching on the surveyjs.io redirects → removing the old section; rollback by removing the redirects (spec › Rollout).
+- **A production container image:**
+  - the server serves the built front-end;
+  - non-root, with health checks;
+  - the base image uses the same pinned Node.js LTS version as `.nvmrc`, and `pnpm check:deps` covers it;
+  - the same image serves every deployment mode, chosen by configuration.
+- **The complete configuration reference**, with start-up validation, organised by deployment mode:
+  - **Mode 1 (hosted):** storage, user directory (`surveyjs-sql` or `surveyjs-api`), `surveyjs` sign-in, the surveyjs-site shell, the webhook secret.
+  - **Mode 4 (development):** memory with the dev sign-in, and Azurite with the mock OIDC server.
+  - Modes 2b and 3 are listed as "coming with the self-hosted track", with the variables Step 12 already defines.
+- **Structured logs** with request IDs.
+- **Readiness** that checks storage and the user directory are reachable.
+- **A staging profile:** read-only first (the inspector, plus a read-only flag that refuses writes), then read-write against a staging copy.
+- **A compatibility smoke test:** after the new app writes (rename, save definition, submit a response, move a survey, change a project), the legacy `api.surveyjs.io` read paths still return correct data.
+  - It runs against staging.
+  - It protects modes 1.1 and 1.2 only. At 1.3 the hosted-migration track replaces `api.surveyjs.io` with the compatibility layer (D18).
+- **Costs carried over from earlier steps:**
+  - the Azure `listResults` scan reads a whole partition into memory (Step 9). Read keys first, then a time window.
+  - `deleteAllRows` keeps every key in memory (Step 10).
+  - verify the production `Surveys.theme` collation against the compare-and-set (ADR 0012).
+  - conformance hygiene: suites that leave data on Azurite, cleanup helpers that fail silently, duplicated helpers (Step 11).
+- **A rollout runbook**, written for the SurveyJS team and the surveyjs.io site team:
+  1. Internal use on production data, read-only first.
+  2. An opt-in beta link from the old section.
+  3. The surveyjs.io site switches on the redirects in `docs/operations/surveyjs-redirects.md` (Step 12), and the site's "My Surveys" and "All-in-One Demo" links point to the app.
+  4. The site removes My Surveys and **Settings → Manage MySurveys** (D13), and the account-deleted webhook is switched on.
+  5. **Rollback** before step 4 means removing the redirects. After step 4, the old pages exist only in a previous site release, so rollback means redeploying that release.
+  6. **Handover:** a checklist of what the hosted-migration track (1.3) starts from: data stays on the legacy stores, and `api.surveyjs.io` still serves legacy clients.
 
 **Tests**
-- **Back-end e2e:** the full conformance and provider suites against the production image, in CI, on Azurite; the read-only flag refuses writes with a clear Problem.
+- **Back-end e2e:**
+  - the full conformance and provider suites against the production image, in CI, on Azurite;
+  - the read-only flag refuses writes with a clear Problem;
+  - readiness fails while the user directory is unreachable.
 - **Front-end e2e:** the full Playwright suite against the production image.
 - **Staging:** the compatibility smoke test, run manually and documented.
 
-**Documentation:** `docs/operations.md` (deployment, configuration, monitoring, rollout and rollback runbook); `README.md` (production section); `docs/demo/step-14.md`.
+**Documentation:**
+- `docs/operations.md`: deployment, the configuration reference by mode, monitoring, and the rollout and rollback runbook;
+- `README.md`: a production section, with the deployment modes table;
+- `docs/demo/step-14.md`.
 
 **Demo checklist**
-1. `docker compose -f compose.prod-like.yml up` runs the production image with Azurite and the mock OIDC server. The full demo from Steps 3–12 works on it.
+1. `docker compose -f compose.prod-like.yml up` runs the production image with Azurite and the mock OIDC server, in the mode 1 configuration. The full demo from Steps 3–12 works on it.
 2. With `READ_ONLY=1` the app browses data, and any save is refused with a clear message.
-3. Review the runbook. The staging smoke test checklist is ready for the SurveyJS team.
+3. Stop the user directory (the stub, or the SQL container). `/readyz` reports not ready.
+4. Review the runbook and the redirect map with the site team. The staging smoke test checklist is ready for the SurveyJS team.
 
 ---
 
@@ -717,7 +831,7 @@ The documentation is created in Step 1 and grown by every step:
   | 9 | 46–49 |
   | 10 | 50–56 |
   | 11 | 59–69 |
-  | 12 | 45, 71, 72, 81 |
+  | 12 | 45, 72, 81; 44 and 71 through the surveyjs.io redirect map |
   | 13 | 5 |
   | 14 | 70, 77, 78 |
 
@@ -736,7 +850,8 @@ The documentation is created in Step 1 and grown by every step:
 - **Decisions D1–D15:**
   - D1 is honoured: `api.surveyjs.io` is not re-implemented, and the Step 14 smoke test protects it.
   - D11 is handled with the Step 2 verdict and the Step 8 fallback.
-  - D13: Step 11 writes to the legacy location.
+  - D13 (revised 2026-10-19): Step 11 writes to the legacy location, so both UIs agree while they run side by side. Step 14's runbook removes Manage MySurveys from surveyjs.io.
+  - D16–D19 (deployment modes, accounts, the user API, legacy links): Steps 12 and 14.
   - D14: Steps 3 and 13.
   - D10, D8, D15 (the SQLite and PostgreSQL providers) and the P1 items are not planned, which matches spec › Out of Scope. Phase 1 keeps the storage seam that D15 builds on: the provider interfaces and the shared provider suite (Step 2).
 - **spec › Dependencies and upgrades:** set up in Step 1 and enforced in CI from then on.
@@ -755,7 +870,21 @@ The documentation is created in Step 1 and grown by every step:
 
 - **Step 2** needs the legacy storage documentation or source, and samples. A fallback is defined in Step 2.
 - **Step 3:** the shell's header shows the **cart count** and **GitHub stars**, but the spec doesn't say where that data comes from. Proposal: show the cart link without a count, and show the star count as a static value from configuration, until decided.
-- **Step 12:** the account-deletion trigger from surveyjs.io (spec › Data protection).
+- **Step 12:**
+  - the surveyjs.io team must agree to build the user API and the account-deleted webhook that Step 12 specifies. Until then the app reads the site's SQL `Users` directly.
+  - the site must build the redirects from the Step 12 map.
 - **Step 13:** a team member must capture the visual baselines, because that needs a signed-in session.
 - **Step 14:** the hosting environment, OIDC registration, credentials and staging data.
 - **idea §3.1 *Done when*** includes "the old section is switched off". That is an operational action by the SurveyJS team after Step 14, outside this plan's code.
+
+## After Phase 1
+
+Phase 1 (Steps 1–14) delivers deployment modes 1.1 and 1.2 (idea §3.0). The rest of the work runs as **two track plans at the same time**. Each track has its own spec and plan.
+
+| Track | Delivers | Starts with |
+|---|---|---|
+| **Hosted migration** ([spec](spec-hosted.md), [plan](plan-hosted.md)) | Mode 1.3: the surveyjs.io user API in use; survey, result, project and member data moved off Azure and the site database into the app's own stores, in a maintenance window, with Post and Result IDs kept; the thin `api.surveyjs.io` compatibility layer; API tokens and CORS before the cutover | Choosing the hosted database and file storage from the shortlist (D10). Its Step 8 waits for the self-hosted SQL foundation |
+| **Self-hosted** ([spec](spec-self-hosted.md), [plan](plan-self-hosted.md)) | Mode 2b: the Docker image with SQL providers, local accounts, the instance admin, the "Powered by SurveyJS" shell and the branding licence key. Mode 2a: the static sandbox with its separate mock back-end and seeded listed accounts. Mode 3: OAuth2 sign-in (Google, GitHub, Facebook, surveyjs.io) and the developer documentation | The logical data model and the SQL providers, which the hosted track also needs |
+
+Both tracks share the SQL providers and the provider suite. Each plan's "Cross-track dependencies" section says which track builds each shared piece.
+

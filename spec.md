@@ -1,7 +1,9 @@
 # Spec: My Surveys, Phase 1 (parity and replacement)
 
-Status: ready for implementation · 2026-10-14
-Inputs: `idea.md` (product brief and decisions D1–D15), `contract/openapi.yaml` (HTTP contract).
+Status: ready for implementation · 2026-10-14 · revised 2026-10-19 for the deployment modes (idea §3.0, D16–D22)
+Inputs: `idea.md` (product brief and decisions D1–D22), `contract/openapi.yaml` (HTTP contract).
+
+This spec covers deployment modes 1.1 and 1.2 (hosted on the surveyjs.io data) and 4 (development). Modes 1.3, 2a, 2b and 3 get their own specs in the two track plans (D22).
 
 ## Problem Statement
 
@@ -92,7 +94,7 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 41. As a respondent, I want a clear "survey not available" page for unpublished or deleted surveys, so that I'm not confused by an error.
 42. As a survey author, I want "Limit to one response" to work on the run page, so that each respondent answers once.
 43. As a survey owner, I want respondents' IP addresses stored only when I turn that on, so that I collect personal data only when I need it.
-44. As an existing respondent link holder, I want the old `/published?id=` link to keep working, so that links already shared are not broken.
+44. As an existing respondent link holder, I want the old `/published?id=` link to keep working, so that links already shared are not broken. *(The surveyjs.io site's redirect delivers this; D19.)*
 45. As a SurveyJS operator, I want public endpoints to be rate-limited, so that the service can't be flooded.
 
 ### Results
@@ -125,13 +127,13 @@ A standalone application at **`my-surveys.surveyjs.io`** replaces the section. E
 65. As a project admin, I want to remove members after confirming, so that people who leave lose access.
 66. As a project member, I want to leave a project, so that I can remove myself from work I no longer do.
 67. As a project admin, I want to delete a project after confirming, with its surveys moved to the project owner as personal surveys, so that no surveys or results are lost.
-68. As a user, I want to manage projects both in the app and in surveyjs.io Settings → Manage MySurveys, with changes visible in both, so that I can use whichever I reach first.
+68. As a user, I want to manage projects both in the app and in surveyjs.io Settings → Manage MySurveys, with changes visible in both, so that I can use whichever I reach first. *(Mode 1.1 only: in mode 1.2 Manage MySurveys is removed from surveyjs.io; D13.)*
 69. As a project member, I want to see each project's members and who is an admin, so that I know who has access.
 
 ### Integrations and compatibility
 
 70. As an integrator using `api.surveyjs.io`, I want my existing integration to keep working after the switch, so that I don't have to change anything.
-71. As an existing user, I want old My Surveys URLs (list, editor, results, history, run) to redirect to the matching page in the app, so that bookmarks keep working.
+71. As an existing user, I want old My Surveys URLs (list, editor, results, history, run) to redirect to the matching page in the app, so that bookmarks keep working. *(The surveyjs.io site makes the redirects from a map this project provides; D19.)*
 72. As an existing user, I want my surveys, results, themes, history and projects to appear unchanged, so that the switch is invisible.
 73. As a developer, I want the new API documented in OpenAPI with consistent errors, paging and conventions, so that integrating is predictable.
 74. As a developer, I want every error to carry a stable machine-readable code, so that my code can react to specific failures.
@@ -230,6 +232,8 @@ People will fork the repository, so it must always build from a known set of ver
    - **SurveyStore:** survey records, definition and theme with a version token, history entries with snapshots.
    - **ResultStore:** append (respecting an idempotency key), page in submission order, statistics, delete all, "has this client completed".
    - **Directory:** users (by ID and email), projects, members and roles. It hides whether the data lives in the surveyjs.io site database or in Azure storage (D12); that mapping is settled in the first implementation task.
+     - Step 12 splits it in two (D17). **UserDirectory** holds users and the user to sign in from the identity claims; **ProjectStore** holds projects, members and roles. In mode 1 users stay on surveyjs.io while projects move to the app's stores at 1.3.
+     - The mode 1 user directory reads the site's SQL `Users` until surveyjs.io exposes the user API that Step 12 specifies, then switches to it.
    - **ViewStore:** saved layouts.
    - **FileStore:** put, get, delete, usage per survey.
    - **Clock** and **IdGenerator**, so behaviour is deterministic in tests.
@@ -259,7 +263,7 @@ People will fork the repository, so it must always build from a known set of ver
    | `/surveys/$surveyId/history` | | History |
    | `/projects` | | Project management |
    | `/s/$surveyId` | | Run page, without the site chrome other than today's footer |
-   | `/published` | `id` | Alias that redirects to `/s/$surveyId` |
+   | ~~`/published`~~ | ~~`id`~~ | ~~Alias that redirects to `/s/$surveyId`~~. Built in Step 8 and removed in Step 12: the surveyjs.io site makes this redirect (D19) |
    | `/results/$surveyId` | | Public results view |
 
    Unauthenticated access to a private route redirects to the server's sign-in with `returnTo`.
@@ -300,14 +304,14 @@ People will fork the repository, so it must always build from a known set of ver
   3. Redirects from surveyjs.io switched on (a change to the surveyjs.io site, coordinated with this project).
   4. The old section removed.
 - Rolling back means removing the redirects.
-- The app also handles legacy-shaped paths on its own domain (`/service/mysurveys`, `/Service/EditSurvey/{id}`, `/Service/SurveyResults/{id}`, `/Service/History/{id}`) with permanent redirects.
+- The app handles no legacy URLs (D19). The surveyjs.io site redirects every old URL to the app, using the map this project provides (`docs/operations/surveyjs-redirects.md`). In step 4 the site also removes Settings → Manage MySurveys (D13).
 
 ### Data protection (`idea.md` §8)
 
 - IP capture is off by default.
 - No respondent data in logs.
 - Deleting a survey, its results or a project is permanent and includes files. Deleting a project keeps its surveys, which move to the owner.
-- Deleting a surveyjs.io account must delete the user's personal surveys and results and remove their memberships. This needs a hook from surveyjs.io account deletion into the app, or a periodic clean-up of orphaned data.
+- Deleting a surveyjs.io account must delete the user's personal surveys and results and remove their memberships. The trigger is an HMAC-signed **account-deleted webhook** from surveyjs.io, plus a periodic reconciliation against the user directory as a safety net (D17).
 
 ## Testing Decisions
 
@@ -338,7 +342,7 @@ The highest seams were chosen, so there are only three:
 
    It runs against the Node server with the in-memory provider (fast, on every change) and with the Azure legacy provider on Azurite (in CI). A future .NET or PHP port is accepted when this suite passes against it.
 2. **The browser (front-end).** The `e2e` package is a Playwright suite running the built front-end against the real server, Azurite and the mock OIDC server.
-   - It follows the user stories above: sign-in and redirect back, list and project switching, the menu actions, editor autosave and the conflict message, theme save, uploads, run and submit, file questions, results tabs, saved and reset views, downloads, project management and the legacy redirects.
+   - It follows the user stories above: sign-in and redirect back, list and project switching, the menu actions, editor autosave and the conflict message, theme save, uploads, run and submit, file questions, results tabs, saved and reset views, downloads and project management.
    - **Visual parity tests** compare each screen with baseline screenshots of the current surveyjs.io pages, captured once from the live site in fixed states with dynamic content masked. This is how the 1:1 requirement is checked.
    - **Bundle checks** confirm the code splitting: the run page and the survey list load no Creator or Dashboard code.
    - It runs on Chromium, Firefox and WebKit.
@@ -373,10 +377,10 @@ On the front-end, the query layer's cache refresh rules are tested with React Te
   The contract and interfaces leave room for all of them.
 - **Phase 3:** open-source packaging, documentation, the neutral "Powered by SurveyJS" shell, and the free Docker image.
 - **Changes to `api.surveyjs.io`**, and retiring it.
-- **Moving hosted data off Azure storage.** Decided after P1 (D10).
+- **Moving hosted data off Azure storage.** This is mode 1.3, the hosted-migration track (D10 revised, D18).
 - **The surveyjs.io site:**
   - Account features: licences, billing, renewals, external logins.
-  - The Settings → Manage MySurveys section, which stays as it is (D13).
+  - The Settings → Manage MySurveys section. It stays as it is in mode 1.1, and the site removes it in mode 1.2 (D13).
   - The redirect switch on surveyjs.io (only coordinated here).
 - **Product changes:** a visual redesign, UI localization beyond English, analytics and telemetry (D8), payments, e-signatures, workflows, panels, offline or native apps, and AI features.
 
@@ -387,7 +391,7 @@ On the front-end, the query layer's cache refresh rules are tested with React Te
   - least-privilege credentials for the Azure storage accounts and any site data the Directory needs;
   - documentation or source of the legacy storage layout and of how `api.surveyjs.io` reads results;
   - the redirect change on surveyjs.io;
-  - a hook or clean-up for account deletion;
+  - the user API and the account-deleted webhook specified in Step 12 (`docs/integrations/surveyjs-user-api.md`, D17);
   - the current design-system assets (CSS, fonts, icons) to copy.
 - **The first implementation task is a technical spike that maps the legacy data layout:**
   - tables, partition and row keys, blob containers and JSON shapes;
