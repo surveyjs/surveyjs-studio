@@ -1,37 +1,76 @@
 # My Surveys
 
-My Surveys is the survey section of [surveyjs.io](https://surveyjs.io): create surveys with
-Survey Creator, publish them, collect responses and look at the results. This repository is a
-rebuild of that section by the SurveyJS team. It is meant to be forked and run on your own
-server.
+My Surveys is the survey section of [surveyjs.io](https://surveyjs.io). You create surveys with
+Survey Creator, publish them, collect responses and look at the results. This repository is the
+SurveyJS team's rebuild of that section as a standalone application. It will run at
+`my-surveys.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
+free Docker image for running your own copy.
 
 The back end is described by one OpenAPI 3.1 file, [`contract/openapi.yaml`](contract/openapi.yaml).
 The Node.js server in this repository is the reference implementation. A back end in another
 language is accepted when it passes the conformance suite in this repository.
 
+## Deployment modes
+
+The same code is meant to run in several modes. Configuration chooses the storage, the user
+directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)).
+
+| Mode                                       | What it is                                                                                                                                       | State                                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **1.1–1.2 Hosted on the surveyjs.io data** | `my-surveys.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): Steps 1–11 done, 12–14 to go                              |
+| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                          | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
+| **2a Sandbox**                             | `my-surveys.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
+| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                                | Same as 2a                                                                             |
+| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                             | Same as 2a                                                                             |
+| **4 Development**                          | Local modes for development and tests: in memory, or on a replica of the legacy stores                                                           | Available now (see [Quick start](#quick-start))                                        |
+
 ## Status
 
-Phase 1, **Step 4: survey list and survey creation**. Step 4 adds the My Surveys list (personal
-surveys and projects, Active and Archived, loading more pages) and "Create a Survey", the five
-operations behind them, and the first write to the legacy stores (survey creation). Step 3 added
-sign-in and sign-out,
-a stateless session cookie with CSRF protection, private pages that send an anonymous visitor to
-sign-in, `GET /api/v1/me` with account notices, and the surveyjs.io look (header with the account
-menu, footer, cookie banner, licence dialogs). Step 2 added a provider for the current
-surveyjs.io stores, an offline replica of them (Azurite and SQL Server in Docker), golden fixtures,
-a shared provider test suite and an inspector command. What works:
+Phase 1, **Steps 1–11 of 14 are done** ([progress](plan.md#progress)). What works:
 
-- The full API contract, with every operation served by the server. `getConfig`, `login`,
-  `loginCallback`, `logout`, `getCurrentUser`, `listSurveys`, `createSurvey`, `getSurvey`,
-  `listProjects` and `getProject` do real work. Every other operation answers `401` without a
-  session and `501 Not Implemented` (a Problem Details body) with one.
-- A web app that signs you in and shows the surveyjs.io shell around the survey list. Rows do
-  nothing yet; the editor is a placeholder page.
-- Generated API reference at `/api/docs`, health checks, tests (unit, HTTP conformance, browser
-  end-to-end, in memory and Azurite modes), and a CI workflow.
+- **Every screen of the current My Surveys.**
+  - **Survey list:**
+    - personal surveys and projects; Active and Archived;
+    - Create a Survey; inline rename;
+    - the "…" menu: Run, Edit, Clone, Publish/Unpublish, the survey IDs, View Results, View History, Move to Project, Archive, Restore and Delete.
+  - **Editor:**
+    - Survey Creator with autosave of the survey and theme;
+    - a "changed by someone else" notice instead of silent overwrites;
+    - image and file uploads with a per-survey quota;
+    - the Embed tab.
+  - **Run page** at `/s/{id}`:
+    - the survey's theme;
+    - file questions, with files stored outside the response;
+    - "Limit to one response";
+    - respondent IP saved only when the owner turns it on;
+    - submissions that count once even when repeated.
+  - **Results:**
+    - Summary, Table and Details over **all** responses, with no 1,000 cap;
+    - per-user saved layouts;
+    - downloads in JSON and CSV, and Table exports in CSV, Excel and PDF;
+    - Delete Results;
+    - Grant Access, with the public page at `/results/{id}`.
+  - **History page**, and the **Projects page**: create, rename and delete projects; add, remove and change members; leave a project.
+- **Every contract operation.** Only `passwordLogin` answers `501 Not Implemented`; password sign-in arrives with the self-hosted track.
+- **Two storage providers:**
+  - in memory, for development and tests;
+  - `azure-legacy`, which reads and writes the current surveyjs.io stores in their own formats, so the old pages and `api.surveyjs.io` keep working on the same data.
+- **Sign-in** through surveyjs.io (OAuth 2.0), or through a development sign-in page with seed users.
+- **Tests:**
+  - unit tests;
+  - the HTTP conformance suite;
+  - the shared provider suite;
+  - Playwright end-to-end tests in Chromium, Firefox and WebKit.
 
-The survey screens arrive in later steps (see
-[docs/architecture.md](docs/architecture.md#what-later-steps-add)).
+  They run in memory and on the legacy replica, in CI.
+
+**Next:**
+
+- [plan.md](plan.md) Step 12: accounts by deployment mode, data protection and hardening.
+- Step 13: visual parity with surveyjs.io.
+- Step 14: production readiness and the rollout kit.
+
+After that, the hosted-migration and self-hosted tracks run at the same time ([After Phase 1](plan.md#after-phase-1)).
 
 ## Quick start
 
@@ -44,11 +83,16 @@ pnpm install
 pnpm demo
 ```
 
-Then open <http://localhost:5173>. The browser goes to a "Sign in as…" page (development sign-in, no
-password): choose **Olivia Owner**. The home page is then **My Surveys**, inside the surveyjs.io
-header and footer: Olivia's personal surveys, newest first, with a project selector, an
-Active/Archived switch and a **Create a Survey** button. The API
-reference is at <http://localhost:3000/api/docs>.
+Then open <http://localhost:5173>. The browser goes to a "Sign in as…" page: this is the development sign-in, with no password. Choose **Olivia Owner**. You land on **My Surveys**, inside the surveyjs.io header and footer, with Olivia's seeded surveys and projects.
+
+From there you can:
+
+- open a survey in the editor;
+- publish it and run it;
+- look at its results;
+- manage projects through **Projects** in the account menu.
+
+Other seed users show the same data from other roles: Adam Admin, Mia Member and Oscar Outsider. Data is kept in memory and is reset when the server restarts. The API reference is at <http://localhost:3000/api/docs>.
 
 If `corepack enable` is not possible (on Windows it may need an administrator shell), use
 `corepack pnpm <command>` instead of `pnpm <command>`, or install pnpm with
@@ -65,8 +109,7 @@ pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com
 pnpm demo:azurite:down   # stops them and deletes their data
 ```
 
-See [Development](docs/development.md#azurite-mode), the [Step 2 demo](docs/demo/step-02.md) and the
-[Step 3 demo](docs/demo/step-03.md).
+See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/demo/).
 
 ## Repository layout
 
@@ -78,6 +121,7 @@ See [Development](docs/development.md#azurite-mode), the [Step 2 demo](docs/demo
 | `conformance-tests/` | `@my-surveys/conformance-tests` | HTTP suite that checks any server against the contract            |
 | `e2e/`               | `@my-surveys/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
 | `scripts/`           | (root)                          | Repository checks, for example `check:deps`                       |
+| `docker/`            |                                 | The legacy replica and the mock OIDC server for Azurite mode      |
 | `docs/`              |                                 | Documentation                                                     |
 
 ## Scripts
@@ -99,7 +143,7 @@ Run from the repository root.
 | `pnpm test:providers:azurite`   | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
 | `pnpm test:conformance:azurite` | Conformance suite on the `azure-legacy` provider and the replica                                                          |
 | `pnpm e2e`                      | Playwright tests in three browsers (starts server and web app)                                                            |
-| `pnpm e2e:azurite`              | Playwright sign-in and survey list specs on the replica and the mock OIDC server (needs `demo:azurite:up`)                |
+| `pnpm e2e:azurite`              | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
 | `pnpm lint`                     | ESLint                                                                                                                    |
 | `pnpm typecheck`                | `tsc` in every package                                                                                                    |
 | `pnpm format`                   | Prettier, write                                                                                                           |
@@ -109,18 +153,37 @@ Run from the repository root.
 
 ## Documentation
 
+**Product and planning**
+
+- [Product idea](idea.md): the brief, the deployment modes and every decision (D1–D22).
+- Phase 1, modes 1.1, 1.2 and 4: [spec](spec.md) and [plan](plan.md).
+- Hosted migration, mode 1.3: [spec](spec-hosted.md) and [plan](plan-hosted.md).
+- Self-hosted, modes 2a, 2b and 3: [spec](spec-self-hosted.md) and [plan](plan-self-hosted.md).
+
+**For developers**
+
 - [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow, identity and session.
-- [Development](docs/development.md): setup, environment variables, scripts, dependency upgrades.
+- [Development](docs/development.md): setup, demo modes, seed accounts, environment variables, scripts, dependency upgrades.
 - [Testing](docs/testing.md): the test seams and how to run each suite.
-- [User guide](docs/user-guide/README.md): [signing in](docs/user-guide/signing-in.md), the account menu, licence notices and the cookie banner, and [your surveys](docs/user-guide/your-surveys.md), the survey list.
-- [API](docs/api/README.md): [conventions](docs/api/conventions.md), [paging](docs/api/paging.md) and
-  [authentication, sessions and CSRF](docs/api/authentication.md).
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
-- [Step 1 demo script](docs/demo/step-01.md): how to check that Step 1 works.
-- [Step 2 demo script](docs/demo/step-02.md): how to check the legacy storage spike.
-- [Step 3 demo script](docs/demo/step-03.md): how to check sign-in, the session and the shell.
-- [Step 4 demo script](docs/demo/step-04.md): how to check the survey list, paging and survey creation.
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–11.
+
+**For users and integrators**
+
+- [User guide](docs/user-guide/README.md):
+  - [signing in](docs/user-guide/signing-in.md);
+  - [your surveys](docs/user-guide/your-surveys.md) and [managing a survey](docs/user-guide/managing-a-survey.md);
+  - [designing a survey](docs/user-guide/designing-a-survey.md) and [images and files](docs/user-guide/images-and-files.md);
+  - [publishing and collecting responses](docs/user-guide/publishing-and-collecting-responses.md);
+  - [viewing results](docs/user-guide/viewing-results.md) and [downloading, sharing and deleting results](docs/user-guide/downloading-sharing-and-deleting-results.md);
+  - [survey history](docs/user-guide/survey-history.md);
+  - [projects and team members](docs/user-guide/projects-and-team-members.md).
+- [API](docs/api/README.md):
+  - [conventions](docs/api/conventions.md) and [paging](docs/api/paging.md);
+  - [authentication, sessions and CSRF](docs/api/authentication.md);
+  - [concurrent editing](docs/api/concurrency.md) and [uploads](docs/api/uploads.md);
+  - [public endpoints](docs/api/public-endpoints.md) and [exporting results](docs/api/exporting-results.md).
 
 ## Licence
 
