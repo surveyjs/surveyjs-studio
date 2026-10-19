@@ -1,6 +1,7 @@
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import { securityHeaders } from "./security-headers";
 
 // E2E_API_PROXY_TARGET points a second preview at another server (the e2e licence-notice run).
 const backend = process.env["E2E_API_PROXY_TARGET"] ?? "http://127.0.0.1:3000";
@@ -11,6 +12,29 @@ const proxy = {
   "/healthz": backend,
   "/readyz": backend,
 };
+
+/**
+ * R17: the SPA's security headers on `vite preview`; the proxied paths keep the server's own. The
+ * dev server gets none: Vite dev injects inline scripts.
+ */
+function securityHeadersPlugin(): Plugin {
+  const proxied = Object.keys(proxy);
+  return {
+    name: "my-surveys-security-headers",
+    configurePreviewServer(server) {
+      const https = Boolean(server.config.preview.https);
+      server.middlewares.use((req, res, next) => {
+        const pathname = new URL(req.url ?? "/", "http://preview.invalid").pathname;
+        if (!proxied.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+          for (const [name, value] of Object.entries(securityHeaders(pathname, { https }))) {
+            res.setHeader(name, value);
+          }
+        }
+        next();
+      });
+    },
+  };
+}
 
 // The Survey Creator's packages and Ace, plus the survey-core part only the editor uses: the
 // themes (the run page applies a survey's stored theme without them).
@@ -44,7 +68,7 @@ const dashboardExportModules =
 
 export default defineConfig({
   // The router plugin must come before the React plugin.
-  plugins: [tanstackRouter({ target: "react" }), react()],
+  plugins: [tanstackRouter({ target: "react" }), react(), securityHeadersPlugin()],
   server: { port: 5173, strictPort: true, proxy },
   build: {
     // survey-core (see src/surveyjs/license.ts) and the Survey Creator are intentionally big lazy

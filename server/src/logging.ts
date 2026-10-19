@@ -28,6 +28,12 @@ export function redactUrl(url: string): string {
   return `${url.slice(0, at)}?${pairs.join("&")}`;
 }
 
+/**
+ * Log fields replaced by `[redacted]`: at trace level @fastify/multipart logs an upload's request
+ * headers, which carry the session cookie and the respondent's full X-Forwarded-For address (R21).
+ */
+export const REDACTED_LOG_PATHS: readonly string[] = ["busboyOptions.headers"];
+
 /** Fastify's default `req` log serializer, with the URL redacted and the address truncated. */
 export function serializeRequest(request: FastifyRequest) {
   const version = request.headers["accept-version"];

@@ -14,12 +14,13 @@ import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
-import { serializeRequest } from "./logging.js";
+import { REDACTED_LOG_PATHS, serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
 import { createResultHandlers } from "./results/handlers.js";
+import { serverSecurityHeaders } from "./security-headers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 import { createViewHandlers } from "./views/handlers.js";
 
@@ -62,6 +63,7 @@ export async function buildApp(
         : {
             level: config.logLevel,
             serializers: { req: serializeRequest },
+            redact: [...REDACTED_LOG_PATHS],
             ...(options.logStream && { stream: options.logStream }),
           },
     genReqId: (req) => {
@@ -80,8 +82,13 @@ export async function buildApp(
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
 
+  const https = new URL(config.publicBaseUrl).protocol === "https:";
   app.addHook("onSend", (request, reply, payload, done) => {
     void reply.header("x-request-id", request.id);
+    // A route's own header wins: the dev sign-in page and file downloads set a CSP of their own.
+    for (const [name, value] of Object.entries(serverSecurityHeaders(request.url, { https }))) {
+      if (!reply.hasHeader(name)) void reply.header(name, value);
+    }
     done(null, payload);
   });
 

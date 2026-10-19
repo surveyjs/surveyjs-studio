@@ -1,7 +1,11 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp, type BuildOptions } from "./app.js";
 import { loadConfig } from "./config.js";
+import { newFileId } from "./domain/file-id.js";
 import { AppError } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { createMemoryProviders } from "./providers/memory.js";
@@ -189,5 +193,93 @@ describe("Problem responses", () => {
     });
     expect(res.statusCode).toBe(415);
     expect(res.json()).toMatchObject({ code: "unsupported-media-type" });
+  });
+});
+
+describe("security headers", () => {
+  const API_HEADERS = {
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-content-type-options": "nosniff",
+  };
+
+  /** The app with the dev identity provider and `env` on top. */
+  async function serve(
+    env: Record<string, string> = {},
+    options: BuildOptions = {},
+    providers?: ProviderSet,
+  ): Promise<FastifyInstance> {
+    const own = loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev", ...env });
+    app = await buildApp(own, providers ?? (await createProviders(own)), options);
+    return app;
+  }
+
+  it.each([
+    ["an API answer", "/api/v1/config", 200],
+    ["an unknown path", "/no-such-page", 404],
+    ["the health check", "/healthz", 200],
+    ["a 401 problem", "/api/v1/me", 401],
+  ])("are on %s, without HSTS over http", async (_, url, status) => {
+    const res = await (await serve()).inject(url);
+    expect(res.statusCode).toBe(status);
+    expect(res.headers).toMatchObject(API_HEADERS);
+    expect(res.headers).not.toHaveProperty("strict-transport-security");
+  });
+
+  it("let the API reference run its script but forbid framing it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "my-surveys-headers-"));
+    try {
+      const docsFile = join(dir, "reference.html");
+      await writeFile(docsFile, "<!doctype html><title>API</title>");
+      const res = await (
+        await serve({ API_DOCS: "true" }, { apiDocsPath: docsFile })
+      ).inject("/api/docs");
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-security-policy"]).toBe("frame-ancestors 'none'");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("add HSTS when PUBLIC_BASE_URL is https", async () => {
+    const res = await (
+      await serve({
+        PUBLIC_BASE_URL: "https://surveys.example.com",
+        SESSION_SECRET: "a-test-session-secret-of-32-characters",
+      })
+    ).inject("/api/v1/config");
+    expect(res.headers["strict-transport-security"]).toBe("max-age=31536000");
+  });
+
+  it("keep the dev sign-in page's own CSP and referrer policy", async () => {
+    const res = await (await serve()).inject("/__dev/sign-in?state=abc");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-security-policy"]).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+  });
+
+  it("keep a file download's own CSP", async () => {
+    const providers = createMemoryProviders();
+    const surveyId = "cccccccc-0000-4000-8000-00000000000a";
+    const id = newFileId(surveyId);
+    await providers.files.putFile(
+      {
+        id,
+        surveyId,
+        kind: "response",
+        name: "a.txt",
+        contentType: "application/octet-stream",
+        size: 1,
+        createdAt: "2026-10-15T08:30:00.000Z",
+      },
+      Buffer.from("a"),
+    );
+    const res = await (await serve({}, {}, providers)).inject(`/api/v1/public/files/${id}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-security-policy"]).toBe(
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+    );
   });
 });
