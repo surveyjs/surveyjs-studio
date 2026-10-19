@@ -351,7 +351,8 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     files: createMemoryFileStore(),
     results: results.store,
     views: views.store,
-    directory: {
+    users: {
+      kind: "external",
       getUser: (id) => {
         const found = findUser(id);
         return Promise.resolve(found ? copyUser(found) : null);
@@ -363,6 +364,17 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         const found = users.find((u) => u.email.toLowerCase() === wanted);
         return Promise.resolve(found ? copyUser(found) : null);
       },
+      // An external directory never creates a user: the caller falls back to the claims.
+      signInUser: (claims) => {
+        const found = findUser(claims.sub);
+        return Promise.resolve(found ? copyUser(found) : null);
+      },
+      missingUsers: (ids) => {
+        const asked = [...new Set(ids.filter((id) => GUID.test(id)).map(lower))];
+        return Promise.resolve(asked.filter((id) => findUser(id) === undefined));
+      },
+    },
+    projects: {
       listUserProjects: (userId) =>
         Promise.resolve(
           memberships

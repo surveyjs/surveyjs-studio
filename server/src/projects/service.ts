@@ -12,7 +12,7 @@ import {
   type MemberPosition,
   type ProjectPosition,
 } from "../paging/cursor.js";
-import type { Directory } from "../providers/types.js";
+import type { ProjectStore, UserDirectory } from "../providers/types.js";
 import { notFound } from "../surveys/access.js";
 import { memberJson, projectJson, type MemberJson, type ProjectJson } from "./json.js";
 import { surveyReceiver } from "./rules.js";
@@ -33,7 +33,8 @@ export interface MemberCreate {
 }
 
 export interface ProjectsServiceOptions {
-  readonly directory: Directory;
+  readonly users: UserDirectory;
+  readonly projects: ProjectStore;
   /** The clock for creation and change times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -150,12 +151,12 @@ const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCas
 
 /** The projects of a user, and their members (ADR 0009: access through membership). */
 export function createProjectsService(options: ProjectsServiceOptions): ProjectsService {
-  const { directory, now = Date.now } = options;
+  const { users, projects, now = Date.now } = options;
   const isoNow = (): string => new Date(now()).toISOString();
 
   /** The user's membership of the project; a project of others answers like an unknown one. */
   async function access(user: RequestUser, projectId: string): Promise<ProjectMembership> {
-    const membership = await directory.getUserProject(user.id, projectId);
+    const membership = await projects.getUserProject(user.id, projectId);
     if (!membership) throw notFound();
     return membership;
   }
@@ -170,8 +171,8 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
   return {
     async list(user, { limit, cursor }) {
       const after = cursor === undefined ? undefined : decodeProjectCursor(cursor);
-      // The Directory returns the whole list in project list order; the service cuts the page.
-      const all = await directory.listUserProjects(user.id);
+      // The project store returns the whole list in project list order; the service cuts the page.
+      const all = await projects.listUserProjects(user.id);
       const page = pageOf(all, projectPosition, after, limit, encodeProjectCursor);
       return { items: page.items.map(projectJson), nextCursor: page.nextCursor };
     },
@@ -182,7 +183,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
 
     async create(user, { name }) {
       checkName(name);
-      const membership = await directory.createProject({
+      const membership = await projects.createProject({
         id: randomUUID(),
         name,
         creatorId: user.id,
@@ -196,7 +197,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const { project } = await adminAccess(user, projectId);
       // A patch without a name (only unknown members) changes nothing.
       if (name !== undefined) {
-        const renamed = await directory.renameProject(project.id, name, { now: isoNow() });
+        const renamed = await projects.renameProject(project.id, name, { now: isoNow() });
         if (!renamed) throw notFound();
       }
       return projectJson(await access(user, project.id));
@@ -204,21 +205,21 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
 
     async delete(user, projectId) {
       const { project } = await adminAccess(user, projectId);
-      const members = await directory.listMembers(project.id);
+      const members = await projects.listMembers(project.id);
       const receiverId = surveyReceiver(
         project.ownerId,
         members.map((m) => m.user.id),
         user.id,
       );
-      const moved = await directory.deleteProject(project.id, { receiverId, now: isoNow() });
+      const moved = await projects.deleteProject(project.id, { receiverId, now: isoNow() });
       if (moved === null) throw notFound();
     },
 
     async members(user, projectId, { limit, cursor }) {
       const { project } = await access(user, projectId);
       const after = cursor === undefined ? undefined : decodeMembersCursor(cursor, project.id);
-      // The Directory returns every visible member in member list order; the service cuts the page.
-      const all = await directory.listMembers(project.id);
+      // The project store returns every visible member in member list order; the service cuts the page.
+      const all = await projects.listMembers(project.id);
       const page = pageOf(all, memberPosition, after, limit, (position) =>
         encodeMembersCursor(position, project.id),
       );
@@ -228,9 +229,9 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
     async addMember(user, projectId, { email, role = "user" }) {
       const { project } = await adminAccess(user, projectId);
       // Only admins get this far, so only they learn whether an address is registered.
-      const found = await directory.findUserByEmail(email);
+      const found = await users.findUserByEmail(email);
       if (!found) throw userNotFound();
-      const outcome = await directory.addMember(project.id, found.id, role, { now: isoNow() });
+      const outcome = await projects.addMember(project.id, found.id, role, { now: isoNow() });
       if (outcome === "already-member") throw alreadyMember();
       if (outcome === "not-found") throw notFound();
       return memberJson({ user: found, role });
@@ -238,10 +239,10 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
 
     async changeRole(user, projectId, userId, { role }) {
       const { project } = await adminAccess(user, projectId);
-      const outcome = await directory.setMemberRole(project.id, userId, role, { now: isoNow() });
+      const outcome = await projects.setMemberRole(project.id, userId, role, { now: isoNow() });
       if (outcome === "not-found") throw notFound();
       if (outcome === "last-admin") throw lastAdmin();
-      const target = await directory.getUser(userId);
+      const target = await users.getUser(userId);
       if (!target) throw notFound();
       return memberJson({ user: target, role });
     },
@@ -251,7 +252,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const { project } = same(userId, user.id)
         ? await access(user, projectId)
         : await adminAccess(user, projectId);
-      const outcome = await directory.removeMember(project.id, userId);
+      const outcome = await projects.removeMember(project.id, userId);
       if (outcome === "not-found") throw notFound();
       if (outcome === "last-admin") throw lastAdmin();
     },

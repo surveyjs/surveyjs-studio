@@ -23,6 +23,7 @@ import type {
   ViewName,
   ViewState,
 } from "../domain/types.js";
+import type { IdentityClaims } from "../auth/identity.js";
 import type { AccountNotices } from "../notices/account-notices.js";
 
 /** A place in the survey list order (updatedAt descending, then id ascending). */
@@ -289,13 +290,41 @@ export type AddMemberOutcome = "added" | "already-member" | "not-found";
 export type RoleChangeOutcome = "changed" | "unchanged" | "last-admin" | "not-found";
 export type RemovalOutcome = "removed" | "last-admin" | "not-found";
 
-export interface Directory {
+/** `external`: the users belong to another system and are never created here. `local`: the app owns them (self-hosted track). */
+export type UserDirectoryKind = "external" | "local";
+
+/**
+ * Users (R5): the authority for sign-in, lookup by email, licence notices and erasure detection.
+ * Ids are matched case-insensitively and returned lower-case.
+ */
+export interface UserDirectory {
+  readonly kind: UserDirectoryKind;
+  /** null for an unknown id or an id that is not a GUID (no lookup is made for it). */
   getUser(id: string): Promise<User | null>;
   /** Case-insensitive match on email. A blank email matches no user (a NULL legacy email is ""). */
   findUserByEmail(email: string): Promise<User | null>;
   /**
+   * The user to sign in from the identity claims. An external directory returns `getUser(claims.sub)`
+   * and never creates a user (null when it does not know the user); a local one may create one
+   * (self-hosted track). The caller handles null (claims fallback) and `blocked`.
+   */
+  signInUser(claims: IdentityClaims): Promise<User | null>;
+  /**
+   * The ids among `ids` this directory positively does not know (R12): lower-case, each once, in
+   * the order of their first occurrence. Ids that are not GUIDs are never reported. Rejects on any
+   * failure; a failure is never read as "missing".
+   */
+  missingUsers(ids: readonly string[]): Promise<string[]>;
+}
+
+/**
+ * Projects, members and roles (R5): today's project operations of Directory, unchanged in names and
+ * semantics. Member users are resolved from the provider's own user rows (R6).
+ */
+export interface ProjectStore {
+  /**
    * Projects the user is a member of, ordered by project name ignoring case (lower-cased, code
-   * point order), then project id.
+   * point order), then project id. Works for a user the directory no longer knows (orphan rows).
    */
   listUserProjects(userId: string): Promise<ProjectMembership[]>;
   /** The user's membership of that project; null when not a member or no such project. */
@@ -352,7 +381,10 @@ export interface Directory {
 export interface ProviderSet {
   readonly name: string;
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  /** R5: the user directory. */
+  readonly users: UserDirectory;
+  /** R5: projects, members and roles. */
+  readonly projects: ProjectStore;
   readonly files: FileStore;
   readonly results: ResultStore;
   readonly views: ViewStore;

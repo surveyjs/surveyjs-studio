@@ -4,7 +4,7 @@ import type { Clock } from "../auth/session.js";
 import type { SaveOutcome, SurveyDefinition, SurveyTheme, User } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeHistoryCursor, encodeHistoryCursor } from "../paging/cursor.js";
-import type { Directory, SurveyStore } from "../providers/types.js";
+import type { ProjectStore, SurveyStore, UserDirectory } from "../providers/types.js";
 import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { ifMatchAllows } from "./etag.js";
 
@@ -12,7 +12,8 @@ type HistoryPage = components["schemas"]["HistoryPage"];
 
 export interface ContentServiceOptions {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly users: UserDirectory;
+  readonly projects: ProjectStore;
   /** The clock for save times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -79,8 +80,8 @@ function savedVersion(outcome: SaveOutcome): string {
 
 /** The rules of the survey documents: definition, theme and history. */
 export function createContentService(options: ContentServiceOptions): ContentService {
-  const { surveys, directory, now = Date.now } = options;
-  const access = createSurveyAccess({ surveys, directory });
+  const { surveys, users, projects, now = Date.now } = options;
+  const access = createSurveyAccess({ surveys, projects });
 
   return {
     async getDefinition(user, surveyId) {
@@ -134,16 +135,16 @@ export function createContentService(options: ContentServiceOptions): ContentSer
         ...(cursor !== undefined && { after: decodeHistoryCursor(cursor) }),
       });
       // One lookup per distinct user on the page; null when nobody has that id.
-      const users = new Map<string, User | null>();
+      const found = new Map<string, User | null>();
       for (const { userId } of page.items) {
-        if (userId !== null && !users.has(userId)) {
-          users.set(userId, await directory.getUser(userId));
+        if (userId !== null && !found.has(userId)) {
+          found.set(userId, await users.getUser(userId));
         }
       }
       return {
         items: page.items.map(({ at, userId }) => {
-          const found = userId === null ? null : (users.get(userId) ?? null);
-          return { at, user: found && { id: found.id, displayName: found.displayName } };
+          const author = userId === null ? null : (found.get(userId) ?? null);
+          return { at, user: author && { id: author.id, displayName: author.displayName } };
         }),
         nextCursor: page.next ? encodeHistoryCursor(page.next) : null,
       };

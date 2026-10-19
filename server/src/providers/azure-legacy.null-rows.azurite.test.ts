@@ -126,14 +126,14 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
   };
 
   it('maps a NULL email to "" and never finds that user by a blank email', async () => {
-    expect(await store().directory.getUser(NULL_EMAIL_USER)).toEqual({
+    expect(await store().users.getUser(NULL_EMAIL_USER)).toEqual({
       id: NULL_EMAIL_USER,
       email: "",
       displayName: "",
       blocked: false,
     });
-    expect(await store().directory.findUserByEmail("")).toBeNull();
-    expect(await store().directory.findUserByEmail(" ")).toBeNull();
+    expect(await store().users.findUserByEmail("")).toBeNull();
+    expect(await store().users.findUserByEmail(" ")).toBeNull();
   });
 
   it("lists a survey with NULL name, creatorid and createdat using the defaults", async () => {
@@ -196,7 +196,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
 
   it("skips a membership with a NULL role and reports its ids", async () => {
     warnings.length = 0;
-    expect(fixtureProjectsOnly(await store().directory.listUserProjects(MEMBER_ID))).toEqual(
+    expect(fixtureProjectsOnly(await store().projects.listUserProjects(MEMBER_ID))).toEqual(
       memberProjects,
     );
     expect(warnings.map((w) => w.details)).toEqual([
@@ -217,7 +217,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     warnings.length = 0;
     await store().surveys.listSurveys({ kind: "personal", userId: OWNER_ID });
     await store().surveys.getSurvey(NULL_POSTID_SURVEY);
-    await store().directory.listUserProjects(MEMBER_ID);
+    await store().projects.listUserProjects(MEMBER_ID);
     expect(warnings).toHaveLength(3);
     for (const { details, message } of warnings) {
       for (const value of Object.values(details)) expect(value).toMatch(GUID);

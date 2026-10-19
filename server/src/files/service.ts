@@ -5,7 +5,12 @@ import type { Clock } from "../auth/session.js";
 import { newFileId } from "../domain/file-id.js";
 import type { StoredFileRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
-import type { Directory, FileStore, StoredFileContent, SurveyStore } from "../providers/types.js";
+import type {
+  ProjectStore,
+  FileStore,
+  StoredFileContent,
+  SurveyStore,
+} from "../providers/types.js";
 import { availableSurvey } from "../results/availability.js";
 import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { ALLOWED_TYPES_TEXT, detectFileType, fileNameOf } from "./file-type.js";
@@ -15,7 +20,7 @@ export type StoredFileJson = components["schemas"]["StoredFile"];
 
 export interface FilesServiceOptions {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly projects: ProjectStore;
   readonly files: FileStore;
   /** The origin the `url` of a stored file starts with. */
   readonly publicBaseUrl: string;
@@ -102,10 +107,10 @@ const unsupportedType = (): AppError =>
 
 /** Editor uploads, respondent uploads and public downloads of stored files. */
 export function createFilesService(options: FilesServiceOptions): FilesService {
-  const { surveys, directory, files, publicBaseUrl, now = Date.now } = options;
+  const { surveys, projects, files, publicBaseUrl, now = Date.now } = options;
   const quota = options.maxAssetBytesPerSurvey;
   const { maxFileBytes } = options;
-  const access = createSurveyAccess({ surveys, directory });
+  const access = createSurveyAccess({ surveys, projects });
 
   return {
     async uploadAsset(user, surveyId, read) {

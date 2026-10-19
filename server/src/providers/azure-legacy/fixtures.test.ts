@@ -85,7 +85,7 @@ describe("readLegacyFixtures", () => {
   it("reads every SQL table into typed rows with Date columns", async () => {
     const fixtures = await readLegacyFixtures();
     expect(fixtures.surveys).toHaveLength(8);
-    expect(fixtures.users).toHaveLength(5);
+    expect(fixtures.users).toHaveLength(6);
     expect(fixtures.organizations).toHaveLength(2);
     expect(fixtures.organizationUsers).toHaveLength(5);
     const old = fixtures.surveys.find((s) => s.name === "Old poll");
@@ -220,7 +220,7 @@ describe("legacyFixtureSeed", () => {
     const seed = await legacyFixtureSeed();
     expect(seed.memberships).toHaveLength(5);
     expect(seed.projects).toHaveLength(2);
-    expect(seed.users).toHaveLength(5);
+    expect(seed.users).toHaveLength(6);
     expect(seed.surveys).toHaveLength(8);
   });
 

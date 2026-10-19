@@ -22,6 +22,9 @@ export const ADMIN_ID = "11111111-0000-4000-8000-a00000000002";
 export const MEMBER_ID = "11111111-0000-4000-8000-a00000000003";
 export const OUTSIDER_ID = "11111111-0000-4000-8000-a00000000004";
 export const BLOCKED_ID = "11111111-0000-4000-8000-a00000000005";
+export const ERASABLE_ID = "11111111-0000-4000-8000-a00000000006";
+/** A well-formed id no fixture row uses. */
+export const UNKNOWN_ID = "99999999-9999-4999-8999-999999999999";
 
 export const PROJECT_A_ID = "55555555-0000-4000-8000-a00000000001";
 export const PROJECT_B_ID = "55555555-0000-4000-8000-a00000000002";
@@ -68,12 +71,21 @@ export const blockedUser: User = {
   blocked: true,
 };
 
+/** Has no data at all: the erasure tests erase only this user (and fresh ids). */
+export const erasableUser: User = {
+  id: ERASABLE_ID,
+  email: "erasable@example.com",
+  displayName: "Erin Erasable",
+  blocked: false,
+};
+
 export const fixtureUsers: readonly User[] = [
   ownerUser,
   adminUser,
   memberUser,
   outsiderUser,
   blockedUser,
+  erasableUser,
 ];
 
 // ---- Surveys ----
@@ -380,6 +392,7 @@ export const licenceNoticesAtClock: readonly (readonly [string, string, Notice[]
   ["the member (seat of a valid licence)", MEMBER_ID, []],
   ["the outsider (no date, valid transfer)", OUTSIDER_ID, []],
   ["the blocked user (no licences)", BLOCKED_ID, []],
+  ["the erasure user (no licences)", ERASABLE_ID, []],
 ];
 
 /** 7 days before the owner's 2027-06-01 licence expires: the seat and the transfer follow it. */
@@ -391,6 +404,7 @@ export const licenceNoticesAtLaterClock: readonly (readonly [string, string, Not
   ["the member (seat)", MEMBER_ID, [expiresSoonNotice]],
   ["the outsider (transfer)", OUTSIDER_ID, [expiresSoonNotice]],
   ["the blocked user", BLOCKED_ID, []],
+  ["the erasure user (no licences)", ERASABLE_ID, []],
 ];
 
 /** The admin's licence expires at 2026-09-10T00:00:00Z; "soon" starts exactly 15 days earlier. */

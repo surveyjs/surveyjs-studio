@@ -23,6 +23,11 @@ export const users = {
     email: "outsider@example.com",
     name: "Oscar Outsider",
   },
+  erasable: {
+    id: "11111111-0000-4000-8000-a00000000006",
+    email: "erasable@example.com",
+    name: "Erin Erasable",
+  },
 } as const;
 
 export type UserKey = keyof typeof users;

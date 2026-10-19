@@ -166,14 +166,14 @@ export async function run(
       },
     });
     const user = GUID.test(args.user)
-      ? await providers.directory.getUser(args.user)
-      : await providers.directory.findUserByEmail(args.user);
+      ? await providers.users.getUser(args.user)
+      : await providers.users.findUserByEmail(args.user);
     if (user === null) {
       io.err(`User not found in the ${providers.name} store: ${args.user}\n`);
       return 1;
     }
     const personal = await providers.surveys.listSurveys({ kind: "personal", userId: user.id });
-    const memberships = await providers.directory.listUserProjects(user.id);
+    const memberships = await providers.projects.listUserProjects(user.id);
     const projects = [];
     for (const membership of memberships) {
       const surveys = await providers.surveys.listSurveys({

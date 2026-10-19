@@ -48,6 +48,15 @@
             "sub": "11111111-0000-4000-8000-a00000000005",
             "email": "blocked@example.com"
           }
+        },
+        {
+          "requestParam": "subject",
+          "match": "erasable|11111111-0000-4000-8000-a00000000006",
+          "claims": {
+            "sub": "11111111-0000-4000-8000-a00000000006",
+            "email": "erasable@example.com",
+            "name": "Erin Erasable"
+          }
         }
       ]
     }

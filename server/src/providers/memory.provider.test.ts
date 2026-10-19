@@ -24,9 +24,9 @@ describe("memory provider with a user whose legacy email is NULL", () => {
   });
 
   it("finds the user by id but not by a blank email", async () => {
-    expect(await providers.directory.getUser(user.id)).toEqual(user);
-    expect(await providers.directory.findUserByEmail("")).toBeNull();
-    expect(await providers.directory.findUserByEmail(" ")).toBeNull();
+    expect(await providers.users.getUser(user.id)).toEqual(user);
+    expect(await providers.users.findUserByEmail("")).toBeNull();
+    expect(await providers.users.findUserByEmail(" ")).toBeNull();
   });
 });
 
@@ -54,15 +54,15 @@ describe("memory provider with orphan memberships", () => {
     });
 
   it("counts an orphan row but neither shows it nor counts it as an admin (R11)", async () => {
-    const { directory } = providers();
-    expect(await directory.getUserProject(user.id, PROJECT)).toMatchObject({
+    const { projects } = providers();
+    expect(await projects.getUserProject(user.id, PROJECT)).toMatchObject({
       project: { ownerId: null, memberCount: 2 },
     });
-    expect(await directory.listMembers(PROJECT)).toEqual([{ user, role: "admin" }]);
-    expect(await directory.setMemberRole(PROJECT, user.id, "user", { now: "" })).toBe("last-admin");
-    expect(await directory.removeMember(PROJECT, user.id)).toBe("last-admin");
-    expect(await directory.removeMember(PROJECT, ORPHAN)).toBe("not-found");
-    expect(await directory.setMemberRole(PROJECT, ORPHAN, "user", { now: "" })).toBe("not-found");
+    expect(await projects.listMembers(PROJECT)).toEqual([{ user, role: "admin" }]);
+    expect(await projects.setMemberRole(PROJECT, user.id, "user", { now: "" })).toBe("last-admin");
+    expect(await projects.removeMember(PROJECT, user.id)).toBe("last-admin");
+    expect(await projects.removeMember(PROJECT, ORPHAN)).toBe("not-found");
+    expect(await projects.setMemberRole(PROJECT, ORPHAN, "user", { now: "" })).toBe("not-found");
   });
 });
 

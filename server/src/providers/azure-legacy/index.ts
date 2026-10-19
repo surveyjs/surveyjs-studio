@@ -121,6 +121,8 @@ const FILES_CONTAINER = "my-surveys-files";
 
 /** Users.email is varchar(200) (layout section 3.11). */
 const MAX_EMAIL_LENGTH = 200;
+/** Ids per `missingUsers` query. */
+const MISSING_USERS_CHUNK = 100;
 const EPOCH = new Date(0);
 
 const SURVEY_COLUMNS =
@@ -390,6 +392,16 @@ export function createAzureLegacyProviders(
           .input("project", sql.UniqueIdentifier, projectId),
     );
     return membershipsFromRows(rows, userId)[0] ?? null;
+  }
+
+  async function getUserById(id: string) {
+    if (!isGuid(id)) return null;
+    const rows = await select<LegacyUserRow>(
+      "user lookup",
+      "SELECT id, email, displayname, blocked FROM Users WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
+    );
+    return rows[0] ? userFromLegacy(rows[0]) : null;
   }
 
   async function getSurvey(id: string) {
@@ -726,16 +738,9 @@ export function createAzureLegacyProviders(
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
 
-    directory: {
-      async getUser(id) {
-        if (!isGuid(id)) return null;
-        const rows = await select<LegacyUserRow>(
-          "user lookup",
-          "SELECT id, email, displayname, blocked FROM Users WHERE id = @id",
-          (request) => request.input("id", sql.UniqueIdentifier, id),
-        );
-        return rows[0] ? userFromLegacy(rows[0]) : null;
-      },
+    users: {
+      kind: "external",
+      getUser: getUserById,
 
       async findUserByEmail(email) {
         // The legacy site stores and looks up lower-cased emails, and the database collation
@@ -754,6 +759,35 @@ export function createAzureLegacyProviders(
         return found ? userFromLegacy(found) : null;
       },
 
+      // An external directory never creates a user: the caller falls back to the claims.
+      async signInUser(claims) {
+        return getUserById(claims.sub);
+      },
+
+      async missingUsers(ids) {
+        const asked = [...new Set(ids.filter((id) => isGuid(id)).map((id) => id.toLowerCase()))];
+        const missing: string[] = [];
+        for (let start = 0; start < asked.length; start += MISSING_USERS_CHUNK) {
+          const chunk = asked.slice(start, start + MISSING_USERS_CHUNK);
+          const names = chunk.map((_, index) => `@id${String(index)}`);
+          const rows = await select<{ id: string }>(
+            "user existence check",
+            `SELECT id FROM Users WHERE id IN (${names.join(", ")})`,
+            (request) => {
+              chunk.forEach((id, index) =>
+                request.input(`id${String(index)}`, sql.UniqueIdentifier, id),
+              );
+              return request;
+            },
+          );
+          const found = new Set(rows.map((row) => row.id.toLowerCase()));
+          missing.push(...chunk.filter((id) => !found.has(id)));
+        }
+        return missing;
+      },
+    },
+
+    projects: {
       async listUserProjects(userId) {
         if (!isGuid(userId)) return [];
         const rows = await select<ProjectMemberQueryRow>(

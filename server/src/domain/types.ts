@@ -58,7 +58,7 @@ export interface User {
 
 export type ProjectRole = "admin" | "user";
 
-/** A project as the Directory returns it (contract `Project` minus the caller's `role`). */
+/** A project as the project store returns it (contract `Project` minus the caller's `role`). */
 export interface ProjectRecord {
   readonly id: string;
   readonly name: string;
