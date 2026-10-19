@@ -42,7 +42,12 @@ interface Survey {
   postId: string;
   resultId: string;
   permissions: { canModify: boolean };
-  settings: { publicResults: boolean; storeRespondentIp: boolean };
+  settings: {
+    publicResults: boolean;
+    storeRespondentIp: boolean;
+    /** Present on create, get, update and clone; `listSurveys` items leave it out. */
+    privateResultQuestions?: string[];
+  };
 }
 
 interface SurveyPage {
@@ -198,14 +203,89 @@ describe("updateSurvey", () => {
     const survey = await created(headers, { name: "Actions: settings" });
     await tick();
     const first = await patched(headers, survey.id, { settings: { publicResults: true } });
-    expect(first.settings).toEqual({ publicResults: true, storeRespondentIp: false });
+    expect(first.settings).toEqual({
+      publicResults: true,
+      storeRespondentIp: false,
+      privateResultQuestions: [],
+    });
     await tick();
     const second = await patched(headers, survey.id, { settings: { storeRespondentIp: true } });
-    expect(second.settings).toEqual({ publicResults: true, storeRespondentIp: true });
+    expect(second.settings).toEqual({
+      publicResults: true,
+      storeRespondentIp: true,
+      privateResultQuestions: [],
+    });
     await tick();
     const third = await patched(headers, survey.id, { settings: { publicResults: false } });
-    expect(third.settings).toEqual({ publicResults: false, storeRespondentIp: true });
+    expect(third.settings).toEqual({
+      publicResults: false,
+      storeRespondentIp: true,
+      privateResultQuestions: [],
+    });
     expect(Date.parse(third.updatedAt)).toBeGreaterThan(Date.parse(first.updatedAt));
+  });
+
+  it("replaces the private-question list, keeps it across other patches and clears it", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { name: "Actions: private questions" });
+    expect(survey.settings.privateResultQuestions).toEqual([]);
+    await tick();
+    const first = await patched(headers, survey.id, {
+      settings: { privateResultQuestions: ["q2", "q1"] },
+    });
+    expect(first.settings).toEqual({
+      publicResults: false,
+      storeRespondentIp: false,
+      privateResultQuestions: ["q2", "q1"],
+    });
+    expect(Date.parse(first.updatedAt)).toBeGreaterThan(Date.parse(survey.updatedAt));
+    expect(await read(headers, survey.id)).toEqual(first);
+
+    const second = await patched(headers, survey.id, { settings: { publicResults: true } });
+    expect(second.settings).toEqual({
+      publicResults: true,
+      storeRespondentIp: false,
+      privateResultQuestions: ["q2", "q1"],
+    });
+
+    // The list belongs to getSurvey and the writes; the list items leave it out.
+    const listed = await call("GET", "/surveys", {
+      path: "/surveys?project=personal&limit=200",
+      headers,
+    });
+    const items = ((await listed.json()) as SurveyPage).items;
+    const item = items.find(({ id }) => id === survey.id);
+    expect(item).toBeDefined();
+    expect(item?.settings).toEqual({ publicResults: true, storeRespondentIp: false });
+
+    const cleared = await patched(headers, survey.id, { settings: { privateResultQuestions: [] } });
+    expect(cleared.settings.privateResultQuestions).toEqual([]);
+    expect((await read(headers, survey.id)).settings.privateResultQuestions).toEqual([]);
+  });
+
+  it("refuses an invalid private-question list with 422 validation-failed", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { name: "Actions: bad private questions" });
+    const invalid: unknown[] = [
+      [""],
+      [1],
+      ["a", "a"],
+      "q1",
+      Array.from({ length: 1001 }, (_, i) => `q${i}`),
+    ];
+    for (const list of invalid) {
+      const response = await patch(headers, survey.id, {
+        settings: { privateResultQuestions: list },
+      });
+      expect(response.status).toBe(422);
+      expect(await codeOf(response)).toBe("validation-failed");
+    }
+    expect((await read(headers, survey.id)).settings.privateResultQuestions).toEqual([]);
+  });
+
+  it("returns the fixture survey's private questions from getSurvey", async (ctx) => {
+    const survey = await read(await as(ctx, owner), "22222222-0000-4000-8000-a00000000001");
+    expect(survey.settings.privateResultQuestions).toEqual(["receipt"]);
   });
 
   it("applies a combined patch at once, sent as application/json", async (ctx) => {

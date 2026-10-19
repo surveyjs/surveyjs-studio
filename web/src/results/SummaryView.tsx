@@ -4,6 +4,7 @@ import "survey-analytics/survey.analytics.css";
 import { Model } from "survey-core";
 import type { ViewState } from "../api/views";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
+import { createPrivacyTracker, withPrivacy } from "./privacy";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { summaryData } from "./tableRows";
 
@@ -23,14 +24,25 @@ export function SummaryView({
   responses,
   savedState,
   onStateChange,
+  privateQuestions,
+  onPrivateQuestionsChange,
+  publicView = false,
 }: ResultsWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
   // The state at mount: later changes of the prop come from this widget itself.
   const initialState = useRef(savedState);
   const stateCallback = useRef(onStateChange);
+  const privacyCallback = useRef(onPrivateQuestionsChange);
   useEffect(() => {
     stateCallback.current = onStateChange;
-  }, [onStateChange]);
+    privacyCallback.current = onPrivateQuestionsChange;
+  }, [onStateChange, onPrivateQuestionsChange]);
+  // This session's private list, from the survey setting at mount, and what each "Make private /
+  // Make public" flips: the page saves only those names, onto a fresh read of the setting. A hidden
+  // private chart is in no change, so it stays private.
+  const privateList = useRef<ReturnType<typeof createPrivacyTracker> | null>(null);
+  privateList.current ??= createPrivacyTracker(privateQuestions);
+  const allowPrivacy = onPrivateQuestionsChange !== undefined;
 
   // Built in the effect, not during render: Strict Mode runs effects twice, and the Dashboard
   // holds a layout engine and listeners that only `destroy` releases.
@@ -39,25 +51,42 @@ export function SummaryView({
     if (target === null) return;
     const survey = new Model(definition);
     const dashboard = new Dashboard({
-      questions: survey.getAllQuestions(),
+      // The public page leaves the private questions out altogether.
+      questions: survey
+        .getAllQuestions()
+        .filter(
+          (question) => !publicView || !privateList.current!.current().includes(question.name),
+        ),
       data: summaryData(responses),
       survey,
       showToolbar: true,
-      allowMakeQuestionsPrivate: false,
+      allowMakeQuestionsPrivate: allowPrivacy,
     });
     // Reconciled against the default state, as the Table does: the setter keeps only the elements
     // it is given, so a question added after the save would otherwise be neither drawn nor offered.
     // Before render: the setter does not raise onStateChanged, and the first render shows it.
     const defaults = dashboard.state as unknown as ElementsState;
-    const state = reconcileElementsState(initialState.current, defaults);
+    const reconciled = reconcileElementsState(initialState.current, defaults);
+    // With the toggle on, every element carries the survey private flag, also without a saved state.
+    const state = allowPrivacy
+      ? withPrivacy(reconciled ?? defaults, privateList.current!.current())
+      : reconciled;
     if (state !== null) dashboard.state = state as unknown as Dashboard["state"];
     dashboard.render(target);
-    dashboard.onStateChanged.add((_, state: ViewState) => stateCallback.current(state));
+    if (stateCallback.current !== undefined) {
+      dashboard.onStateChanged.add((_, changed: ViewState) => stateCallback.current?.(changed));
+    }
+    if (allowPrivacy) {
+      // The library calls this after "Make private" / "Make public".
+      dashboard.onPermissionsChangedCallback = (panel: {
+        permissions: readonly { name: string; isPublic: boolean }[];
+      }) => privacyCallback.current?.(privateList.current!.change(panel.permissions));
+    }
     return () => {
       dashboard.destroy();
       survey.dispose();
     };
-  }, [definition, responses]);
+  }, [definition, responses, allowPrivacy, publicView]);
 
   return <div ref={container} />;
 }

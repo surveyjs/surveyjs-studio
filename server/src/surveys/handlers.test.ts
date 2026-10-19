@@ -75,7 +75,10 @@ afterEach(async () => {
 });
 
 /** The app on a memory store with the seed above, its clock fixed at NOW, signed in as USER. */
-async function start(wrap: (providers: ProviderSet) => ProviderSet = (p) => p): Promise<{
+async function start(
+  wrap: (providers: ProviderSet) => ProviderSet = (p) => p,
+  logLines?: string[],
+): Promise<{
   server: FastifyInstance;
   providers: ProviderSet;
   headers: Record<string, string>;
@@ -85,6 +88,7 @@ async function start(wrap: (providers: ProviderSet) => ProviderSet = (p) => p): 
   app = await buildApp(config, providers, {
     identity: createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users: seed.users }),
     now: () => Date.parse(NOW),
+    ...(logLines && { logStream: { write: (line: string) => logLines.push(line) } }),
   });
   const { headers } = await signIn(app, USER.id);
   return { server: app, providers, headers };
@@ -251,6 +255,61 @@ describe("updateSurvey", () => {
     const { server, headers } = await start();
     const res = await patch(server, headers, seed.surveys[3]?.id, { name: "x" });
     expect(res.statusCode).toBe(404);
+  });
+
+  it("keeps the private-question list when the survey update fails", async () => {
+    const { server, headers, providers } = await start((p) => ({
+      ...p,
+      surveys: { ...p.surveys, updateSurvey: () => Promise.reject(new Error("store down")) },
+    }));
+    const id = ownPersonal?.id ?? "";
+    await providers.views.savePrivateQuestions(id, ["q1"]);
+    const res = await patch(server, headers, id, {
+      settings: { privateResultQuestions: ["q2"] },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(await providers.views.getPrivateQuestions(id)).toEqual(["q1"]);
+  });
+});
+
+describe("a private-question list that cannot be read", () => {
+  const unreadable = (p: ProviderSet): ProviderSet => ({
+    ...p,
+    views: {
+      ...p.views,
+      getPrivateQuestions: () => Promise.reject(new Error("list unreadable")),
+    },
+  });
+
+  /** The warnings logged, as parsed JSON lines. */
+  const warningsOf = (lines: string[]) =>
+    lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.level === 40);
+
+  it("answers getSurvey without the list and logs a warning with the survey id only", async () => {
+    const logLines: string[] = [];
+    const { server, headers } = await start(unreadable, logLines);
+    const id = ownPersonal?.id ?? "";
+    const res = await server.inject({ url: `/api/v1/surveys/${id}`, headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ settings: Record<string, unknown> }>();
+    expect(body.settings).not.toHaveProperty("privateResultQuestions");
+    const warnings = warningsOf(logLines);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ surveyId: id });
+    expect(logLines.join("\n")).not.toContain("list unreadable");
+  });
+
+  it("answers updateSurvey without the list when it is not part of the change", async () => {
+    const logLines: string[] = [];
+    const { server, headers } = await start(unreadable, logLines);
+    const res = await patch(server, headers, ownPersonal?.id, { name: "Renamed" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ name: string; settings: Record<string, unknown> }>();
+    expect(body.name).toBe("Renamed");
+    expect(body.settings).not.toHaveProperty("privateResultQuestions");
+    expect(warningsOf(logLines)).toHaveLength(1);
   });
 });
 

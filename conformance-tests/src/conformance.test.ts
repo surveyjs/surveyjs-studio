@@ -197,12 +197,12 @@ describe(`server at ${baseUrl}`, () => {
 
     it("an unimplemented operation answers 501 not-implemented", async (ctx) => {
       const session = await signedIn(ctx);
-      const results = await call("GET", "/surveys/{surveyId}/results/export", {
-        path: `/surveys/${SURVEY_ID}/results/export`,
+      const members = await call("GET", "/projects/{projectId}/members", {
+        path: "/projects/55555555-0000-4000-8000-a00000000002/members",
         headers: sessionHeaders(session),
       });
-      expect(results.status).toBe(501);
-      expect(await codeOf(results)).toBe("not-implemented");
+      expect(members.status).toBe(501);
+      expect(await codeOf(members)).toBe("not-implemented");
     });
   });
 

@@ -557,12 +557,46 @@ are **read only**:
 - A user's view is the block blob `{surveyId}/{userId}/{summary|table}` (lower case). A save overwrites it.
 - With no own blob, the read falls back to the survey's blob (`surveyresultsummarystate/{id}` or
   `surveyresulttablestate/{id}`), returned as stored. There is no conversion of `surveyresultcolumns` and
-  no `isPublic` overlay (`surveyresultpermissions` stays unread).
+  no `isPublic` overlay (`surveyresultpermissions` stayed unread until Step 10, below).
 - A reset overwrites the user's blob with a **zero-byte marker**. A zero-byte blob means "reset": the
   read answers "no layout" and does not fall back. The next save replaces the marker.
 - The legacy layout blobs are never written or deleted by views. A survey deletion removes the survey's
   prefix in the new container, besides the four legacy blobs as before.
 - Neither a save nor a reset writes an audit row or moves `Surveys.timestamp`.
+
+**Implemented in Step 10** ([ADR 0016](../adr/0016-results-details-exports-and-public-results.md); the writes are in
+[ADR 0010](../adr/0010-writing-to-the-legacy-stores.md#step-10-deleting-all-results-and-the-public-question-list)).
+The blob `surveyresultpermissions/{surveyId}` is now **read and written**, as the survey's list of questions that
+public results leave out (the setting `privateResultQuestions`). It is per survey, as in the old site, and not
+per user:
+
+- **Read** with the old defaults: the text is parsed as JSON after one leading U+FEFF is removed. The read
+  **fails closed**: an empty blob (an append blob between its create and its append, or after a failed append),
+  a value that is not an array, or text that does not parse is read once more and then fails (an error with
+  the operation name only), never "every question public"; public results then answer `500`, and
+  `getSurvey` leaves the setting out. Of an array, each element that is an object with a non-empty string `name` and
+  `isPublic` equal to the boolean `false` is a private question (first occurrence only, in array order). An
+  element without `isPublic`, with `true`, with `"false"` or that is not an object is **public**, as in the old
+  code. A missing blob means every question is public.
+- **Written** as the old JSON, one element for each **private** question only:
+  `[{ "name": "receipt", "isPublic": false }]`; no list is `[]`. The public entries an older blob held are not
+  written again: for the old readers a question with no entry is public too. The blob is an append blob in the
+  existing container and is replaced as the other append blobs are. A `404` for the container creates it and
+  tries once more. No SQL change, no `timestamp` change and no audit row (a save of the list is not an event of
+  its own here; the old code put it into the `SURVEY_UPDATE` row of a layout save).
+- **The public overlay is not used.** The old code copied the list into the `isPublic` marks of the saved
+  layouts; this application keeps the list as the setting and sets the marks in the user's own layout when the
+  Summary mounts. The old `surveyresultcolumns` blob stays unread.
+- The survey deletion already removed this blob (one of the four layout blobs). A clone does not copy it.
+
+**Deleting all results (Step 10).** The old code deletes the tables `post{postId}` and `SurveyCompletion{surveyId}`
+as a whole. This application deletes **the rows**, in table transactions of at most 100 rows each (one
+partition at a time), and **keeps both tables**, so a response that is sent right after is stored at once and
+does not meet the 40 seconds of `TableBeingDeleted` (section 5.1). `postdelete{postId}` is not touched. It then
+appends a best-effort `SURVEY_DELETEALLRESULTS` row to the `surveys` table with the survey id (section 5.1), as the
+old code did. Respondent files in `my-surveys-files` of kind `response` are deleted first; the editor's assets
+stay. The saved layouts, the permissions blob and the survey record stay (the old delete left them too, and left
+the files).
 
 The last selected project is a browser cookie `organizationId` (24 hours), not stored data. **[C]**
 `the site's code` (`MySurveys`)
@@ -827,7 +861,7 @@ Clone itself writes no `SURVEY_CLONE` row: it runs with `Perform()` (no save), a
 
 Deleting a whole Azure table and posting to the same table name soon after can fail while Azure
 finishes the delete (about 40 seconds, HTTP 409). This affects "Delete Results" followed by a new
-submission. **[I]** (Azure Table behaviour) `the site's code`
+submission, which is why Step 10 deletes the rows and keeps the tables (section 3.10). **[I]** (Azure Table behaviour) `the site's code`
 (`site code`)
 
 ### 5.2 Result events (results account)
@@ -909,10 +943,14 @@ per-user layout save and reset in the new container `my-surveys-views` (section 
 audit row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them: the
 old per-survey blobs are read only.
 
+**Implemented in Step 10** (`writes.ts`; [ADR 0016](../adr/0016-results-details-exports-and-public-results.md)): the
+delete-all-results rows (batched, tables kept, with the `SURVEY_DELETEALLRESULTS` audit row of this section's
+table), the kind-limited delete of respondent files and the public-question list in
+`surveyresultpermissions/{id}` (section 3.10; no audit row).
+
 All of these (but not the layout writes of Step 9) set `timestamp` to the time the server's clock gives,
 once per request, and an update that changes no value still rewrites it. Every audit row is best effort (a
-failure is logged with the survey id and the type only). Still to build: the settings `usecookies` and
-the delete-all-responses row.
+failure is logged with the survey id and the type only). Still to build: the setting `usecookies`.
 
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
@@ -926,7 +964,7 @@ the delete-all-responses row.
 | Delete survey                     | Delete tables `post{postId}` and `SurveyCompletion{surveyId}`, blobs `surveyjson/{id}` and `surveytext/{id}`, then the `Surveys` row.                                                                                                                                                                                                                                                                                                    | `SURVEY_DELETE`               |
 | Settings                          | `allowaccessresult`, `storeipaddress` (`1`/`0`), `usecookies`.                                                                                                                                                                                                                                                                                                                                                                           | as in 5.1                     |
 | Submit response                   | Insert into `post{postId}` (create the table if missing) with the properties of 3.6, `PartitionKey` `*`, `RowKey` = new GUID; `id`, `postid`, `surveyid` as `Edm.Guid`, `happendat` as `Edm.DateTime`, `ispartialcompleted` as `Edm.Boolean`, the rest `Edm.String`. When a client ID is given, upsert `SurveyCompletion{surveyId}` row `RowKey` = client ID with `ispartialcompleted` as `Edm.Boolean` and `publishid` as `Edm.String`. | none (the row is the event)   |
-| Delete all responses              | Delete both tables.                                                                                                                                                                                                                                                                                                                                                                                                                      | `SURVEY_DELETEALLRESULTS`     |
+| Delete all responses              | Delete both tables. **Step 10 deletes the rows in batches and keeps the tables** (section 3.10), then appends `SURVEY_DELETEALLRESULTS`.                                                                                                                                                                                                                                                                                                 | `SURVEY_DELETEALLRESULTS`     |
 | Save / reset layouts              | Overwrite or delete `surveyresulttablestate/{id}` / `surveyresultsummarystate/{id}` / `surveyresultpermissions/{id}`.                                                                                                                                                                                                                                                                                                                    | `SURVEY_UPDATE` / `_DELETE_…` |
 | Create project                    | INSERT `Organizations` (`id`, `name`, `type`, `happendat`, `timestamp`); INSERT `OrganizationUsers` for the creator (`role` = `admin`).                                                                                                                                                                                                                                                                                                  | none (not persisted today)    |
 | Add member / change role / remove | INSERT / DELETE+INSERT / DELETE `OrganizationUsers` rows.                                                                                                                                                                                                                                                                                                                                                                                | none                          |
@@ -1098,27 +1136,28 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 
 ### 9.1 Survey (`Survey`)
 
-| Legacy                                                               | Domain                           | Rule                                                                                                                                                                                   |
-| -------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Surveys.id`                                                         | `id`                             | As is.                                                                                                                                                                                 |
-| `Surveys.name`                                                       | `name`                           | As is (max 200 in SQL).                                                                                                                                                                |
-| `Surveys.userid`                                                     | `projectId`                      | The project ID when `userid` is an `Organizations.id`; `null` when it is a user ID (Personal).                                                                                         |
-| `Surveys.userid` (Personal)                                          | owner (internal)                 | The owning user for Personal surveys.                                                                                                                                                  |
-| `Surveys.creatorid`                                                  | (internal)                       | Needed for the legacy `canModify` rule.                                                                                                                                                |
-| `Surveys.ispublished`                                                | `published`                      | `true` only when 1. `NULL` → `false` (the list hides "Run"), even though the old run page still shows the survey.                                                                      |
-| `Surveys.isarchived`                                                 | `archived`                       | 1 → `true`.                                                                                                                                                                            |
-| `Surveys.createdat`                                                  | `createdAt`                      | Treat as UTC **[I]**: written from `DateTime.Now` with no conversion, so it is UTC only on a UTC server (App Service default); see gap 9.                                              |
-| `Surveys.timestamp`                                                  | `updatedAt`                      | UTC.                                                                                                                                                                                   |
-| `Surveys.postid`                                                     | `postId`                         | As is.                                                                                                                                                                                 |
-| `Surveys.resultid`                                                   | `resultId`                       | As is.                                                                                                                                                                                 |
-| `Surveys.allowaccessresult`                                          | `settings.publicResults`         | 1 → `true`.                                                                                                                                                                            |
-| `Surveys.storeipaddress`                                             | `settings.storeRespondentIp`     | `1` → `true`.                                                                                                                                                                          |
-| role + `creatorid`                                                   | `permissions.canModify`          | Legacy: `admin` in scope, or user is `creatorid` (section 6).                                                                                                                          |
-| blob `surveyjson/{id}`                                               | `SurveyDefinition`               | Parse JSON; `{}` when missing.                                                                                                                                                         |
-| `Surveys.theme`                                                      | `SurveyTheme`                    | Parse JSON; `{}` when empty.                                                                                                                                                           |
-| `Surveys.usecookies`                                                 | (none yet)                       | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                                                                    |
-| blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                | `user` = `null` for all legacy entries.                                                                                                                                                |
-| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`) | **Decided in Step 9** (per user): a user's view is read from the container `my-surveys-views`; until the user saves or resets, the survey's blob is returned as stored (section 3.10). |
+| Legacy                                                               | Domain                            | Rule                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Surveys.id`                                                         | `id`                              | As is.                                                                                                                                                                                                                                                                                       |
+| `Surveys.name`                                                       | `name`                            | As is (max 200 in SQL).                                                                                                                                                                                                                                                                      |
+| `Surveys.userid`                                                     | `projectId`                       | The project ID when `userid` is an `Organizations.id`; `null` when it is a user ID (Personal).                                                                                                                                                                                               |
+| `Surveys.userid` (Personal)                                          | owner (internal)                  | The owning user for Personal surveys.                                                                                                                                                                                                                                                        |
+| `Surveys.creatorid`                                                  | (internal)                        | Needed for the legacy `canModify` rule.                                                                                                                                                                                                                                                      |
+| `Surveys.ispublished`                                                | `published`                       | `true` only when 1. `NULL` → `false` (the list hides "Run"), even though the old run page still shows the survey.                                                                                                                                                                            |
+| `Surveys.isarchived`                                                 | `archived`                        | 1 → `true`.                                                                                                                                                                                                                                                                                  |
+| `Surveys.createdat`                                                  | `createdAt`                       | Treat as UTC **[I]**: written from `DateTime.Now` with no conversion, so it is UTC only on a UTC server (App Service default); see gap 9.                                                                                                                                                    |
+| `Surveys.timestamp`                                                  | `updatedAt`                       | UTC.                                                                                                                                                                                                                                                                                         |
+| `Surveys.postid`                                                     | `postId`                          | As is.                                                                                                                                                                                                                                                                                       |
+| `Surveys.resultid`                                                   | `resultId`                        | As is.                                                                                                                                                                                                                                                                                       |
+| `Surveys.allowaccessresult`                                          | `settings.publicResults`          | 1 → `true`.                                                                                                                                                                                                                                                                                  |
+| `Surveys.storeipaddress`                                             | `settings.storeRespondentIp`      | `1` → `true`.                                                                                                                                                                                                                                                                                |
+| role + `creatorid`                                                   | `permissions.canModify`           | Legacy: `admin` in scope, or user is `creatorid` (section 6).                                                                                                                                                                                                                                |
+| blob `surveyjson/{id}`                                               | `SurveyDefinition`                | Parse JSON; `{}` when missing.                                                                                                                                                                                                                                                               |
+| `Surveys.theme`                                                      | `SurveyTheme`                     | Parse JSON; `{}` when empty.                                                                                                                                                                                                                                                                 |
+| `Surveys.usecookies`                                                 | (none yet)                        | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                                                                                                                                                                          |
+| blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                 | `user` = `null` for all legacy entries.                                                                                                                                                                                                                                                      |
+| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`)  | **Decided in Step 9** (per user): a user's view is read from the container `my-surveys-views`; until the user saves or resets, the survey's blob is returned as stored (section 3.10).                                                                                                       |
+| blob `surveyresultpermissions/{id}`                                  | `settings.privateResultQuestions` | **Decided in Step 10 (R1):** the names of the elements with `isPublic` false; any other element is public. Read with the old defaults, written for the private ones only (section 3.10). `getSurvey`, `updateSurvey`, `createSurvey` and `cloneSurvey` carry it; `listSurveys` items do not. |
 
 ### 9.2 Response (`SurveyResponse`, `ResultStats`)
 

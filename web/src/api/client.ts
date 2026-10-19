@@ -37,8 +37,11 @@ export function toApiError(body: unknown, response: Response): ApiError {
   });
 }
 
+/** Where the API lives; the download links use it too. */
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+
 export const client = createClient<paths>({
-  baseUrl: import.meta.env.VITE_API_BASE_URL ?? "/api/v1",
+  baseUrl: API_BASE_URL,
   credentials: "include",
 });
 

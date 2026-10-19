@@ -1,9 +1,12 @@
 // The respondent's endpoints (`/public/surveys/…`): no session, used by the run page.
+import { queryOptions } from "@tanstack/react-query";
 import type { components } from "@my-surveys/contract/types";
 import { client, toApiError } from "./client";
 import type { StoredFile } from "./files";
+import { RESULTS_PAGE_SIZE } from "./results";
 
 export type PublishedSurvey = components["schemas"]["PublishedSurvey"];
+export type PublicResultPage = components["schemas"]["PublicResultPage"];
 type ResponseSubmission = components["schemas"]["ResponseSubmission"];
 
 /** A response as the run page sends it (`partial` and `lastPageIndex` are Phase 1 and unused). */
@@ -68,3 +71,48 @@ export async function uploadResponseFile(surveyId: string, file: File): Promise<
   if (!response.ok || data === undefined) throw toApiError(error, response);
   return data;
 }
+
+/** Every response of a survey with public results, and the survey (from the first page). */
+export interface PublicResults {
+  readonly survey: PublicResultPage["survey"];
+  readonly items: PublicResultPage["items"];
+}
+
+export const publicResultKeys = {
+  all: (surveyId: string) => ["public-results", surveyId.toLowerCase()] as const,
+};
+
+/**
+ * Reads the public results page after page (`GET /public/surveys/{id}/results`, 1000 each) until the
+ * server sends no cursor. Rejects with `ApiError` (`404 survey-not-available` while Grant Access is off).
+ */
+export async function loadPublicResults(
+  surveyId: string,
+  signal?: AbortSignal,
+): Promise<PublicResults> {
+  const items: PublicResultPage["items"] = [];
+  let survey: PublicResultPage["survey"] | undefined;
+  let cursor: string | undefined;
+  for (;;) {
+    const { data, error, response } = await client.GET("/public/surveys/{surveyId}/results", {
+      params: { path: { surveyId }, query: { limit: RESULTS_PAGE_SIZE, cursor } },
+      signal,
+    });
+    if (!response.ok || data === undefined) throw toApiError(error, response);
+    survey ??= data.survey;
+    items.push(...data.items);
+    if (data.nextCursor === null) return { survey, items };
+    if (data.nextCursor === cursor) throw new Error("The server sent the same cursor twice.");
+    cursor = data.nextCursor;
+  }
+}
+
+/** Loaded once per page visit: a public page does not refresh behind the reader. */
+export const publicResultsQueryOptions = (surveyId: string) =>
+  queryOptions({
+    queryKey: publicResultKeys.all(surveyId),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: ({ signal }) => loadPublicResults(surveyId, signal),
+  });

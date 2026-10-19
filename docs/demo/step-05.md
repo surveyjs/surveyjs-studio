@@ -267,7 +267,7 @@ pnpm demo:azurite:down
 
 - The real editor and the history page: Step 6 (done; see [the Step 6 demo](step-06.md)). **View
   Results** and **Run** open placeholders until Steps 9 and 8.
-- Changing the survey settings ("Grant Access", "Save Respondent IP") in the page: Step 10. The API
-  supports them now (`PATCH` with `settings`).
+- Changing the survey settings ("Grant Access", "Save Respondent IP") in the page: Step 10 (done, see [the Step 10
+  demo](step-10.md)). The API supports them now (`PATCH` with `settings`).
 - Deleting files with a survey: Step 7 (done, see [the Step 7 demo](step-07.md#5-delete-the-survey-its-files-go-checklist-3)).
 - Creating projects and members: Step 11.

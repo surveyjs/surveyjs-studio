@@ -37,6 +37,7 @@ const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getPublishedSurvey",
   "submitResponse",
   "uploadResponseFile",
+  "getPublicResults",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = ["login", "loginCallback", "passwordLogin"];
@@ -155,12 +156,15 @@ export async function buildApp(
         surveys: providers.surveys,
         directory: providers.directory,
         files: providers.files,
+        views: providers.views,
         ...(options.now && { now: options.now }),
       }),
       ...createResultHandlers({
         surveys: providers.surveys,
         directory: providers.directory,
         results: providers.results,
+        files: providers.files,
+        views: providers.views,
         ...(options.now && { now: options.now }),
       }),
       ...createViewHandlers({

@@ -4,11 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { definitionHandler } from "./test/content-handlers";
 import { changedLayout } from "./test/fakeResultsWidget";
 import { renderApp } from "./test/renderApp";
+import type { components } from "@my-surveys/contract/types";
 import {
+  deleteResultsHandler,
   resetViewHandler,
   resultPagesHandler,
   sampleResponses,
   saveViewHandler,
+  statsHandler,
   viewHandler,
   viewProblemHandler,
   type SeenViewSave,
@@ -25,7 +28,20 @@ vi.mock("./results/TableView", async () => {
   return { TableView: fakeResultsWidget("fake-table") };
 });
 
+type Survey = components["schemas"]["Survey"];
+type ResultStats = components["schemas"]["ResultStats"];
+
 const surveyId = sampleSurvey.id;
+const STATS: ResultStats = {
+  count: 3,
+  firstSubmittedAt: "2026-01-01T00:01:00.000Z",
+  lastSubmittedAt: "2026-01-01T00:03:00.000Z",
+};
+const NO_STATS: ResultStats = { count: 0, firstSubmittedAt: null, lastSubmittedAt: null };
+const surveyPath = `/api/v1/surveys/${surveyId}`;
+const PATCH_FAILED = "The setting could not be saved. Please try again.";
+const DELETE_WARNING = "Deletes all survey results without the possibility to restore.";
+const DELETE_CONFIRM = "Are you absolutely sure that you want to delete all results ?";
 const path = `/surveys/${surveyId}/results`;
 const RESET_SUMMARY_TEXT =
   "Your custom survey data summary will be reset to its default state. Please be aware that the summary state reset is irreversible.";
@@ -48,11 +64,20 @@ function recordRequests() {
 }
 
 /** The page's usual reads: the survey, two result pages (3 responses) and no saved views. */
-function pageHandlers({ summary = null }: { summary?: Record<string, unknown> | null } = {}) {
+function pageHandlers({
+  summary = null,
+  survey = sampleSurvey,
+  stats = STATS,
+}: {
+  summary?: Record<string, unknown> | null;
+  survey?: Survey;
+  stats?: ResultStats | (() => ResultStats);
+} = {}) {
   return [
     configHandler(),
     meHandler(),
-    surveyHandler(),
+    surveyHandler(survey),
+    statsHandler(stats),
     definitionHandler({ elements: [{ type: "rating", name: "q1" }] }),
     resultPagesHandler([sampleResponses(2), sampleResponses(1, 3)]),
     viewHandler("summary", summary),
@@ -72,6 +97,7 @@ function record() {
 }
 
 afterEach(() => {
+  document.cookie = "msid_csrf=; Max-Age=0";
   recorder?.stop();
   recorder = null;
   vi.restoreAllMocks();
@@ -281,5 +307,408 @@ describe("the Details tab", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "The layout was not reset. Please try again.",
     );
+  });
+});
+
+/** Answers `PATCH /surveys/{id}` with `answer(body)`; `seen` gets the body and content type. */
+function patchHandler(
+  seen: { body: unknown; contentType: string | null }[],
+  answer: (body: Record<string, unknown>) => Response | Promise<Response>,
+  gate?: Promise<void>,
+) {
+  return mswHttp.patch(`*${surveyPath}`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    seen.push({ body, contentType: request.headers.get("Content-Type") });
+    await gate;
+    return answer(body);
+  });
+}
+const surveyWith = (settings: Survey["settings"]): Survey => ({ ...sampleSurvey, settings });
+const failing = () =>
+  HttpResponse.json(
+    { type: "about:blank", title: "Boom", status: 500, code: "internal-error" },
+    { status: 500, headers: { "Content-Type": "application/problem+json" } },
+  );
+const row = (label: string) => screen.getByText(label).parentElement!;
+const ACCESS_OFF = "Toggle if you want to enable access to the survey results with a direct link.";
+
+describe("the Details tab: totals, downloads and toggles", () => {
+  it("shows the totals, the downloads, the toggles, Delete Results and the reset sections", async () => {
+    server.use(...pageHandlers());
+
+    renderApp(`${path}?tab=details`);
+
+    expect(await screen.findByText("Total responses:")).toBeTruthy();
+    expect(within(row("Total responses:")).getByText("3")).toBeTruthy();
+    expect(
+      within(row("First response at:")).getByText(
+        new Date(STATS.firstSubmittedAt!).toLocaleString(),
+      ),
+    ).toBeTruthy();
+    expect(
+      within(row("Last response at:")).getByText(new Date(STATS.lastSubmittedAt!).toLocaleString()),
+    ).toBeTruthy();
+    expect(screen.getByText("Download all results as:")).toBeTruthy();
+    for (const [name, format] of [
+      ["JSON", "json"],
+      ["CSV", "csv"],
+    ] as const) {
+      const link = screen.getByRole("link", { name });
+      expect(link.getAttribute("href")).toBe(`${surveyPath}/results/export?format=${format}`);
+      expect(link.hasAttribute("download")).toBe(true);
+    }
+    expect(screen.getByText(ACCESS_OFF)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Grant Access" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Toggle to store the IP addresses of your respondents along with other answers",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save Respondent IP in Results" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete Results" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Table State" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Summary State" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Go to the results page" })).toBeNull();
+  });
+
+  it("hides the dates and Delete Results when there are no responses", async () => {
+    server.use(...pageHandlers({ stats: NO_STATS }));
+
+    renderApp(`${path}?tab=details`);
+
+    expect(await screen.findByText("Total responses:")).toBeTruthy();
+    expect(within(row("Total responses:")).getByText("0")).toBeTruthy();
+    expect(screen.queryByText("First response at:")).toBeNull();
+    expect(screen.queryByText("Last response at:")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete Results" })).toBeNull();
+    expect(screen.getByRole("link", { name: "JSON" })).toBeTruthy();
+  });
+
+  it("offers no toggles and no Delete Results to a caller who may not modify the survey", async () => {
+    server.use(...pageHandlers({ survey: { ...sampleSurvey, permissions: { canModify: false } } }));
+
+    renderApp(`${path}?tab=details`);
+
+    expect(await screen.findByText("Total responses:")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "JSON" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "CSV" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Table State" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Summary State" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Grant Access" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save Respondent IP in Results" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete Results" })).toBeNull();
+  });
+
+  it("grants access with one merge patch, disabled while it runs, then shows the link", async () => {
+    const seen: { body: unknown; contentType: string | null }[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    server.use(
+      patchHandler(
+        seen,
+        (body) =>
+          HttpResponse.json(
+            surveyWith({
+              publicResults: (body.settings as { publicResults: boolean }).publicResults,
+              storeRespondentIp: false,
+            }),
+          ),
+        gate,
+      ),
+      ...pageHandlers(),
+    );
+    renderApp(`${path}?tab=details`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Grant Access" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Grant Access" }).hasAttribute("disabled")).toBe(
+        true,
+      ),
+    );
+    release();
+    expect(
+      await screen.findByText(/Your Survey results can be accessible via direct Url\./),
+    ).toBeTruthy();
+    expect(seen).toEqual([
+      {
+        body: { settings: { publicResults: true } },
+        contentType: "application/merge-patch+json",
+      },
+    ]);
+    const link = screen.getByRole("link", { name: "Go to the results page" });
+    expect(link.getAttribute("href")).toBe(`${window.location.origin}/results/${surveyId}`);
+    expect(link.getAttribute("target")).toBe("_blank");
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable Access" }));
+    await screen.findByRole("button", { name: "Grant Access" });
+    expect(seen[1]!.body).toEqual({ settings: { publicResults: false } });
+  });
+
+  it("turns the IP setting on without reading the results or statistics again", async () => {
+    const seen: { body: unknown; contentType: string | null }[] = [];
+    server.use(
+      patchHandler(seen, () =>
+        HttpResponse.json(surveyWith({ publicResults: false, storeRespondentIp: true })),
+      ),
+      ...pageHandlers(),
+    );
+    renderApp(`${path}?tab=details`);
+    await screen.findByText("Total responses:");
+    const { requests } = record();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Respondent IP in Results" }));
+
+    expect(
+      await screen.findByText(
+        "The IP addresses of your respondents are stored along with other answers. Toggle not to store.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Do not save Respondent IP in Results" }),
+    ).toBeTruthy();
+    expect(seen[0]!.body).toEqual({ settings: { storeRespondentIp: true } });
+    expect(requests.filter((request) => request.includes("/results"))).toEqual([]);
+  });
+
+  it("says when a setting could not be saved and leaves the button usable", async () => {
+    server.use(patchHandler([], failing), ...pageHandlers());
+    renderApp(`${path}?tab=details`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Grant Access" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(PATCH_FAILED);
+    expect(screen.getByText(ACCESS_OFF)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Grant Access" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
+});
+
+describe("the Details tab: Delete Results", () => {
+  it("asks for the survey name, then the confirm, then deletes and shows 0", async () => {
+    let count = 3;
+    const csrfs: (string | null)[] = [];
+    server.use(
+      deleteResultsHandler((csrf) => {
+        csrfs.push(csrf);
+        count = 0;
+      }),
+      ...pageHandlers({ stats: () => (count === 0 ? NO_STATS : STATS) }),
+    );
+    document.cookie = "msid_csrf=token-1";
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
+    const { count: requestCount } = record();
+    renderApp(`${path}?tab=details`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Results" }));
+
+    expect(screen.getByText(DELETE_WARNING)).toBeTruthy();
+    const clear = screen.getByRole("button", { name: "Clear All Data" });
+    expect(clear.hasAttribute("disabled")).toBe(true);
+    const input = screen.getByPlaceholderText("Type the survey name");
+    fireEvent.change(input, { target: { value: "customer feedback" } });
+    expect(clear.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(input, { target: { value: sampleSurvey.name } });
+    expect(clear.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(clear);
+    expect(confirm).toHaveBeenCalledWith(DELETE_CONFIRM);
+    expect(requestCount(`DELETE ${surveyPath}/results`)).toBe(0);
+
+    fireEvent.click(clear);
+    expect(await screen.findByText("All results are deleted.")).toBeTruthy();
+    await waitFor(() => expect(within(row("Total responses:")).getByText("0")).toBeTruthy());
+    expect(csrfs).toHaveLength(1);
+    expect(csrfs[0]).toBe("token-1");
+    expect(screen.queryByRole("button", { name: "Delete Results" })).toBeNull();
+    expect(screen.queryByText("First response at:")).toBeNull();
+    expect(requestCount(`GET ${surveyPath}/results/stats`)).toBe(2);
+
+    const readsBefore = requestCount(`GET ${surveyPath}/results?limit=1000`);
+    fireEvent.click(tab("Summary"));
+    const summary = await screen.findByTestId("fake-summary");
+    expect(within(summary).getByText("0 responses")).toBeTruthy();
+    expect(requestCount(`GET ${surveyPath}/results?limit=1000`)).toBe(readsBefore);
+  });
+
+  it("says when the results could not be deleted and keeps the responses", async () => {
+    server.use(mswHttp.delete(`*${surveyPath}/results`, failing), ...pageHandlers());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp(`${path}?tab=details`);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Results" }));
+    fireEvent.change(screen.getByPlaceholderText("Type the survey name"), {
+      target: { value: sampleSurvey.name },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear All Data" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The results could not be deleted. Please try again.",
+    );
+    fireEvent.click(tab("Summary"));
+    expect(within(await screen.findByTestId("fake-summary")).getByText("3 responses")).toBeTruthy();
+  });
+
+  it("says when the statistics could not be loaded and tries again", async () => {
+    let attempts = 0;
+    server.use(
+      mswHttp.get(`*${surveyPath}/results/stats`, () => {
+        attempts += 1;
+        return attempts === 1 ? failing() : HttpResponse.json(STATS);
+      }),
+      ...pageHandlers(),
+    );
+    renderApp(`${path}?tab=details`);
+
+    const alert = await screen.findByRole("alert");
+    expect(
+      within(alert).getByText(
+        "The statistics could not be loaded. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("Total responses:")).toBeTruthy();
+    expect(within(row("Total responses:")).getByText("3")).toBeTruthy();
+    expect(attempts).toBe(2);
+  });
+});
+
+describe("the Summary's private questions", () => {
+  /** sampleSurvey with a readable private-question list. */
+  const withList = (names: string[]): Survey => ({
+    ...sampleSurvey,
+    settings: { ...sampleSurvey.settings, privateResultQuestions: names },
+  });
+
+  /** The server's list: the survey read answers it, a PATCH replaces it and is recorded. */
+  function storedList(initial: string[]) {
+    const store = { names: initial, patches: [] as unknown[] };
+    const handlers = [
+      mswHttp.get(`*${surveyPath}`, () => HttpResponse.json(withList(store.names))),
+      mswHttp.patch(`*${surveyPath}`, async ({ request }) => {
+        const body = (await request.json()) as { settings: { privateResultQuestions: string[] } };
+        store.patches.push(body);
+        store.names = body.settings.privateResultQuestions;
+        return HttpResponse.json(withList(store.names));
+      }),
+    ];
+    return { store, handlers };
+  }
+
+  it("applies each change to a fresh read, so another writer's names stay", async () => {
+    const { store, handlers } = storedList([]);
+    server.use(...handlers, ...pageHandlers({ survey: withList([]) }));
+    renderApp(path);
+    await screen.findByTestId("fake-summary");
+
+    // Someone else makes q1 private after this Summary was opened.
+    store.names = ["q1"];
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 private" }));
+    await waitFor(() => expect(store.patches).toHaveLength(1));
+    expect(store.patches[0]).toEqual({ settings: { privateResultQuestions: ["q1", "q2"] } });
+
+    store.names = ["q1", "q2", "q3"];
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 public" }));
+    await waitFor(() => expect(store.patches).toHaveLength(2));
+    expect(store.patches[1]).toEqual({ settings: { privateResultQuestions: ["q1", "q3"] } });
+  });
+
+  it("does not save when the fresh read fails or has no list", async () => {
+    const seen: { body: unknown; contentType: string | null }[] = [];
+    let answer: () => Response = () => HttpResponse.json(withList([]));
+    server.use(
+      mswHttp.get(`*${surveyPath}`, () => answer()),
+      patchHandler(seen, () => HttpResponse.json(withList(["q1"]))),
+      ...pageHandlers({ survey: withList([]) }),
+    );
+    renderApp(path);
+    await screen.findByTestId("fake-summary");
+
+    answer = failing;
+    fireEvent.click(screen.getByRole("button", { name: "Make q1 private" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The list of private questions could not be saved. Please try again.",
+    );
+    expect(seen).toEqual([]);
+
+    // A list the server cannot read right now: no save, and the toggle goes away.
+    answer = () => HttpResponse.json(sampleSurvey);
+    fireEvent.click(screen.getByRole("button", { name: "Make q2 private" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Make q2 private" })).toBeNull(),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The list of private questions could not be saved. Please try again.",
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it("offers no toggle while the survey answers without the list", async () => {
+    server.use(...pageHandlers({ survey: sampleSurvey }));
+
+    renderApp(path);
+
+    await screen.findByTestId("fake-summary");
+    expect(screen.queryByRole("button", { name: "Make q1 private" })).toBeNull();
+    expect(screen.getByTestId("fake-summary-private").textContent).toBe("[]");
+  });
+
+  it("hands the survey's private questions over and saves a new list with one patch", async () => {
+    const seen: { body: unknown; contentType: string | null }[] = [];
+    const survey = {
+      ...sampleSurvey,
+      settings: { ...sampleSurvey.settings, privateResultQuestions: ["q2"] },
+    };
+    server.use(
+      patchHandler(seen, (body) =>
+        HttpResponse.json({
+          ...survey,
+          settings: { ...survey.settings, ...(body.settings as object) },
+        }),
+      ),
+      ...pageHandlers({ survey }),
+    );
+    renderApp(path);
+
+    expect((await screen.findByTestId("fake-summary-private")).textContent).toBe('["q2"]');
+    fireEvent.click(screen.getByRole("button", { name: "Make q1 private" }));
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]).toEqual({
+      body: { settings: { privateResultQuestions: ["q2", "q1"] } },
+      contentType: "application/merge-patch+json",
+    });
+  });
+
+  it("gives a caller who may not modify the survey no toggle", async () => {
+    server.use(...pageHandlers({ survey: { ...sampleSurvey, permissions: { canModify: false } } }));
+
+    renderApp(path);
+
+    await screen.findByTestId("fake-summary");
+    expect(screen.queryByRole("button", { name: "Make q1 private" })).toBeNull();
+    expect(screen.getByTestId("fake-summary-private").textContent).toBe("[]");
+  });
+
+  it("says when the list could not be saved", async () => {
+    server.use(patchHandler([], failing), ...pageHandlers({ survey: withList([]) }));
+    renderApp(path);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Make q1 private" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The list of private questions could not be saved. Please try again.",
+    );
+  });
+
+  it("gives the Table no toggle", async () => {
+    server.use(...pageHandlers());
+
+    renderApp(`${path}?tab=table`);
+
+    await screen.findByTestId("fake-table");
+    expect(screen.queryByRole("button", { name: "Make q1 private" })).toBeNull();
   });
 });

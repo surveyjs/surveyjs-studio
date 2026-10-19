@@ -4,7 +4,11 @@ import type { SurveyRecord } from "../domain/types.js";
 export type SurveyJson = components["schemas"]["Survey"];
 
 /** The contract `Survey` of a record (`useCookies` is not exposed). */
-export function surveyJson(survey: SurveyRecord, canModify: boolean): SurveyJson {
+export function surveyJson(
+  survey: SurveyRecord,
+  canModify: boolean,
+  privateResultQuestions?: readonly string[],
+): SurveyJson {
   return {
     id: survey.id,
     name: survey.name,
@@ -19,6 +23,7 @@ export function surveyJson(survey: SurveyRecord, canModify: boolean): SurveyJson
     settings: {
       publicResults: survey.settings.publicResults,
       storeRespondentIp: survey.settings.storeRespondentIp,
+      ...(privateResultQuestions && { privateResultQuestions: [...privateResultQuestions] }),
     },
   };
 }

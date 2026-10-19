@@ -516,3 +516,6 @@ export const legacyFeedbackTableView: ViewState = {
   ],
   pageSize: 10,
 };
+
+/** The private questions of fixture 01 (legacy blob `surveyresultpermissions`). */
+export const feedbackPrivateQuestions: readonly string[] = ["receipt"];

@@ -1,7 +1,10 @@
+import { HttpResponse, http as mswHttp } from "msw";
 import { describe, expect, it } from "vitest";
 import type { SeenUpload } from "../test/file-handlers";
 import {
   publicProblemHandler,
+  publicResultPagesHandler,
+  publicResultsProblemHandler,
   publishedSurveyHandler,
   sampleResponseFile,
   sampleResponseId,
@@ -12,7 +15,13 @@ import {
 } from "../test/public-handlers";
 import { server } from "../test/server";
 import { ApiError } from "./client";
-import { getPublishedSurvey, submitResponse, uploadResponseFile } from "./public";
+import {
+  getPublishedSurvey,
+  loadPublicResults,
+  publicResultKeys,
+  submitResponse,
+  uploadResponseFile,
+} from "./public";
 
 const surveyId = samplePublishedSurvey.id;
 
@@ -122,5 +131,56 @@ describe("uploadResponseFile", () => {
 
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).problem).toMatchObject({ status: 413, code: "payload-too-large" });
+  });
+});
+
+describe("loadPublicResults", () => {
+  const resultSurvey = { id: surveyId, name: "Customer feedback", definition: {} };
+  const item = (n: number) => ({ submittedAt: `2026-01-01T00:0${n}:00.000Z`, data: { q1: n } });
+
+  it("reads page after page, joins the items and keeps the survey of page 1", async () => {
+    const seen: URL[] = [];
+    server.use(
+      publicResultPagesHandler(resultSurvey, [[item(1), item(2)], [item(3)]], (url) =>
+        seen.push(url),
+      ),
+    );
+
+    await expect(loadPublicResults(surveyId)).resolves.toEqual({
+      survey: resultSurvey,
+      items: [item(1), item(2), item(3)],
+    });
+
+    expect(
+      seen.map((url) => [url.searchParams.get("limit"), url.searchParams.get("cursor")]),
+    ).toEqual([
+      ["1000", null],
+      ["1000", "c1"],
+    ]);
+    expect(publicResultKeys.all("ABC")).toEqual(["public-results", "abc"]);
+  });
+
+  it("rejects survey-not-available with the 404 ApiError", async () => {
+    server.use(publicResultsProblemHandler(404, "survey-not-available"));
+
+    const error = await loadPublicResults(surveyId).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).problem).toMatchObject({
+      status: 404,
+      code: "survey-not-available",
+    });
+  });
+
+  it("rejects when the server repeats the cursor", async () => {
+    server.use(
+      mswHttp.get("*/api/v1/public/surveys/:surveyId/results", () =>
+        HttpResponse.json({ survey: resultSurvey, items: [], nextCursor: "c1" }),
+      ),
+    );
+
+    await expect(loadPublicResults(surveyId)).rejects.toThrow(
+      "The server sent the same cursor twice.",
+    );
   });
 });

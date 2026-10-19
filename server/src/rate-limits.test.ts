@@ -53,6 +53,16 @@ describe("public rate limits", () => {
     expect((await get("203.0.113.10")).statusCode).toBe(200);
   });
 
+  it("limits getPublicResults on its own counter", async () => {
+    const server = await start();
+    const remoteAddress = "203.0.113.20";
+    const results = () => server.inject({ url: `${SURVEY_URL}/results`, remoteAddress });
+    expect((await results()).statusCode).toBe(200);
+    expect((await results()).statusCode).toBe(200);
+    expect((await results()).statusCode).toBe(429);
+    expect((await server.inject({ url: SURVEY_URL, remoteAddress })).statusCode).toBe(200);
+  });
+
   it("limits downloadFile on its own counter", async () => {
     const server = await start();
     const url = "/api/v1/public/files/99999999-0000-4000-8000-a00000000099";

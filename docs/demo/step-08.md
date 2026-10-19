@@ -290,8 +290,9 @@ pnpm demo:azurite:down
 
 ## What is not in Step 8
 
-- The results page, the list of responses, and statistics beyond the count: Steps 9 and 10. `exportResults` still
-  answers `501` (`listResults` came with Step 9, see [the Step 9 demo](step-09.md)).
+- The results page, the list of responses, and statistics beyond the count: Steps 9 and 10 (done: `listResults`
+  came with Step 9, see [the Step 9 demo](step-09.md), and `exportResults` with Step 10, see [the Step 10
+  demo](step-10.md)). Of the later operations, `listMembers` still answers `501`.
 - Partial responses and "continue later": `partial` and `lastPageIndex` are ignored (stored as complete).
 - The "Disclaimer of liability" banner of the old run page: Step 13.
 - A quota for respondent files, expiring file links, and a shared rate-limit store for several servers.

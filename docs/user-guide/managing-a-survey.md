@@ -170,6 +170,7 @@ survey is not available." for a survey that does not exist or that you cannot se
 
 ## Not here yet
 
-- The survey settings "Grant Access" and "Save Respondent IP" can be changed through the API only;
-  their switches arrive with the Details tab of the results page (Step 10). "Save Respondent IP" is explained in [Publishing and
+- The survey settings "Grant Access" and "Save Respondent IP" are switched in the Details tab of the results
+  page ([Downloading, sharing and deleting results](downloading-sharing-and-deleting-results.md)). "Save
+  Respondent IP" is also explained in [Publishing and
   collecting responses](publishing-and-collecting-responses.md#save-respondent-ip).

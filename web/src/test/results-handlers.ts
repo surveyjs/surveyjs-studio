@@ -3,6 +3,7 @@ import type { components } from "@my-surveys/contract/types";
 
 type SurveyResponse = components["schemas"]["SurveyResponse"];
 type ViewState = components["schemas"]["ViewState"];
+type ResultStats = components["schemas"]["ResultStats"];
 
 const PREFIX = "*/api/v1/surveys/:surveyId";
 
@@ -42,6 +43,38 @@ export function resultPagesHandler(pages: SurveyResponse[][], onRequest?: (url: 
       nextCursor: index + 1 < pages.length ? `c${index + 1}` : null,
     });
   });
+}
+
+/**
+ * Answers `GET /surveys/{id}/results/stats` with `stats` (a function is called per request, so a
+ * test can change the answer). `onRequest` sees every request's URL.
+ */
+export function statsHandler(
+  stats: ResultStats | (() => ResultStats),
+  onRequest?: (url: URL) => void,
+) {
+  return mswHttp.get(`${PREFIX}/results/stats`, ({ request }) => {
+    onRequest?.(new URL(request.url));
+    return HttpResponse.json(typeof stats === "function" ? stats() : stats);
+  });
+}
+
+/** Answers `DELETE /surveys/{id}/results` with 204; `onDelete` sees the X-CSRF-Token header. */
+export function deleteResultsHandler(onDelete?: (csrf: string | null) => void) {
+  return mswHttp.delete(`${PREFIX}/results`, ({ request }) => {
+    onDelete?.(request.headers.get("X-CSRF-Token"));
+    return new HttpResponse(null, { status: 204 });
+  });
+}
+
+/** Answers `method` of the results (`results`) or their statistics (`results/stats`) with a Problem. */
+export function resultsProblemHandler(
+  method: "get" | "delete",
+  path: "results" | "results/stats",
+  status: number,
+  code: string,
+) {
+  return mswHttp[method](`${PREFIX}/${path}`, () => problem(status, code));
 }
 
 /** Answers `GET /surveys/{id}/views/{view}`: 200 with `state`, or 404 `view-not-found` when null. */

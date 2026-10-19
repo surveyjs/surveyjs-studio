@@ -3,8 +3,14 @@ import type { ViewName, ViewState } from "../../domain/types.js";
 import type { ViewStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { isGuid } from "./mapping.js";
-import { VIEWS_CONTAINER, writeView, writeViewReset } from "./writes.js";
+import { isGuid, privateQuestionsFromLegacy } from "./mapping.js";
+import {
+  PERMISSIONS_CONTAINER,
+  VIEWS_CONTAINER,
+  writePrivateQuestions,
+  writeView,
+  writeViewReset,
+} from "./writes.js";
 
 /**
  * Saved results layouts (Step 9, R4 to R7): block blob `{surveyId}/{userId}/{view}` (lower case) in
@@ -25,15 +31,18 @@ async function textOf(
   blobs: BlobServiceClient,
   container: string,
   name: string,
+  operation = "view read",
 ): Promise<string | undefined> {
   try {
     const bytes = await blobs.getContainerClient(container).getBlobClient(name).downloadToBuffer();
     return bytes.toString("utf8");
   } catch (error) {
     if (statusOf(error) === 404) return undefined;
-    throw new LegacyStoreError("view read", error);
+    throw new LegacyStoreError(operation, error);
   }
 }
+
+const PERMISSIONS_READ = "public questions read";
 
 /** The JSON object in `text`; null when it is not one. */
 function parseState(text: string): ViewState | null {
@@ -75,5 +84,21 @@ export function createAzureViewStore(options: {
     saveView: (surveyId, userId, view, state) => writeView(blobs, surveyId, userId, view, state),
 
     resetView: (surveyId, userId, view) => writeViewReset(blobs, surveyId, userId, view),
+
+    // Fails closed: a list that exists but cannot be read never means "every question public".
+    // An empty blob is usually a save between its create and its append, so it is read once more.
+    async getPrivateQuestions(surveyId) {
+      if (!isGuid(surveyId)) return [];
+      const survey = surveyId.toLowerCase();
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const text = await textOf(blobs, PERMISSIONS_CONTAINER, survey, PERMISSIONS_READ);
+        if (text === undefined) return [];
+        const names = privateQuestionsFromLegacy(text);
+        if (names !== null) return names;
+      }
+      throw new LegacyStoreError(PERMISSIONS_READ, undefined);
+    },
+
+    savePrivateQuestions: (surveyId, names) => writePrivateQuestions(blobs, surveyId, names),
   };
 }

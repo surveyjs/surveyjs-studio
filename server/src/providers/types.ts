@@ -115,8 +115,11 @@ export interface FileStore {
   usage(surveyId: string, kind: FileKind): Promise<number>;
   /** Deletes one file; false when there was none (or the id is malformed). */
   deleteFile(id: string): Promise<boolean>;
-  /** Deletes every file of the survey, of every kind; returns how many were deleted. */
-  deleteSurveyFiles(surveyId: string): Promise<number>;
+  /**
+   * Deletes the survey's files of `kind`, or of every kind when `kind` is absent; returns how many
+   * were deleted. 0 for a non-GUID id or a survey without files.
+   */
+  deleteSurveyFiles(surveyId: string, kind?: FileKind): Promise<number>;
   /**
    * Copies each asset of `fromSurveyId` to `toSurveyId` under a new id (`newFileId(toSurveyId)`), with the
    * same name, type and bytes and `createdAt` = `copiedAt`. Returns old id → new id (empty when none).
@@ -169,6 +172,13 @@ export interface ResultStore {
    * without responses gives `{ items: [], next: null }`.
    */
   listResponsePage(survey: SurveyRecord, query: ResponsePageQuery): Promise<ResponsePage>;
+  /**
+   * Deletes every stored response of the survey (fixture rows included) and every completion marker,
+   * so `completion` answers "none" afterwards. The survey record, saved views and the private-question
+   * list stay. A survey without responses is fine (resolves). A response appended right afterwards is
+   * stored normally (azure: the tables are kept, never dropped).
+   */
+  deleteAll(survey: SurveyRecord): Promise<void>;
 }
 
 export interface ViewStore {
@@ -193,6 +203,23 @@ export interface ViewStore {
    * Rejects for a non-GUID survey or user id, like `saveView`.
    */
   resetView(surveyId: string, userId: string, view: ViewName): Promise<void>;
+  /**
+   * The names of the survey's questions hidden from public results (R1), in stored order, no
+   * duplicates; [] when none are stored, for an unknown survey and for a non-GUID id. Ids match
+   * case-insensitively. azure-legacy: blob `surveyresultpermissions/{surveyId}` read with the legacy
+   * defaults (`privateQuestionsFromLegacy`); no blob is []. It fails closed: a blob that is empty or
+   * not a JSON array (a save between its create and its append, or one that failed half way) is
+   * read once more, then rejects with a LegacyStoreError (operation name and codes only), so callers
+   * never take an unreadable list for "every question public". memory: the seed's
+   * `privateResultQuestions`, then saves; it never rejects for this.
+   */
+  getPrivateQuestions(surveyId: string): Promise<string[]>;
+  /**
+   * Replaces the list (`[]` makes every question public). Rejects (nothing written) for a non-GUID
+   * id; does not check that the survey exists and does not touch the survey record. Deleted with the
+   * survey, not copied by a clone, kept by `ResultStore.deleteAll`.
+   */
+  savePrivateQuestions(surveyId: string, names: readonly string[]): Promise<void>;
 }
 
 export interface SurveyStore {
@@ -250,7 +277,7 @@ export interface SurveyStore {
   ): Promise<SurveyRecord | null>;
   /**
    * Deletes the survey and everything stored for it, its responses, markers and every user's saved
-   * views and reset markers included; false when no survey has this id. Files are the FileStore's: the service deletes them first (R10).
+   * views and reset markers and the private-question list included; false when no survey has this id. Files are the FileStore's: the service deletes them first (R10).
    */
   deleteSurvey(id: string): Promise<boolean>;
 }

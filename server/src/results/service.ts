@@ -8,17 +8,33 @@ import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
   type Directory,
+  type FileStore,
   type ResultStore,
   type SurveyStore,
+  type ViewStore,
 } from "../providers/types.js";
-import { createSurveyAccess } from "../surveys/access.js";
+import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { availableSurvey, surveyNotAvailable } from "./availability.js";
 import { decodeResultsCursor, encodeResultsCursor } from "../paging/cursor.js";
+import { privateKeysOf, withoutKeys } from "./definition.js";
+import { csvColumns } from "./csv.js";
+import { csvExport, jsonExport, responseJson, storedResponses } from "./export.js";
+import { exportFileName, type ExportFormat } from "./export-format.js";
 import { limitCookieOf, publishedDefinition } from "./one-response.js";
 
 export type PublishedSurveyJson = components["schemas"]["PublishedSurvey"];
 export type ResultStatsJson = components["schemas"]["ResultStats"];
 export type ResponsePageJson = components["schemas"]["ResponsePage"];
+export type PublicResultPageJson = components["schemas"]["PublicResultPage"];
+
+export interface ExportFile {
+  /** `exportFileName(survey.name, format)`. */
+  readonly fileName: string;
+  /** `application/json; charset=utf-8` or `text/csv; charset=utf-8`. */
+  readonly contentType: string;
+  /** The file, produced while it is sent. */
+  readonly body: AsyncIterable<string>;
+}
 
 export interface SubmitRequest {
   readonly data: Record<string, unknown>;
@@ -39,12 +55,25 @@ export interface ResultsService {
     surveyId: string,
     page: { limit: number; cursor?: string },
   ): Promise<ResponsePageJson>;
+  /** Every stored response as a file, by `format`, streamed. */
+  exportResults(user: RequestUser, surveyId: string, format: ExportFormat): Promise<ExportFile>;
+  /** Deletes every response, marker and respondent file; needs modify permission. */
+  deleteResults(user: RequestUser, surveyId: string): Promise<void>;
+  /** One page of public results (Grant Access on); private questions' answers left out. */
+  publicPage(
+    surveyId: string,
+    page: { limit: number; cursor?: string },
+  ): Promise<PublicResultPageJson>;
 }
 
 export interface ResultsServiceOptions {
   readonly surveys: SurveyStore;
   readonly directory: Directory;
   readonly results: ResultStore;
+  /** Respondent files: deleted with the results. */
+  readonly files: FileStore;
+  /** The private-question lists. */
+  readonly views: ViewStore;
   /** The clock for submission times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -69,7 +98,7 @@ const tooLarge = (cause: unknown): AppError =>
 
 /** Loading a published survey, storing responses to it once, and counting them. */
 export function createResultsService(options: ResultsServiceOptions): ResultsService {
-  const { surveys, directory, results, now = Date.now } = options;
+  const { surveys, directory, results, files, views, now = Date.now } = options;
   const access = createSurveyAccess({ surveys, directory });
 
   return {
@@ -139,12 +168,61 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         ...(after && { after }),
       });
       return {
+        items: items.map(responseJson),
+        nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
+      };
+    },
+
+    async exportResults(user, surveyId, format) {
+      const { survey } = await access.visible(user, surveyId);
+      let columns: ReturnType<typeof csvColumns> | undefined;
+      if (format === "csv") {
+        const definition = await surveys.getDefinition(survey.id);
+        if (!definition) throw notFound();
+        columns = csvColumns(definition.content, {
+          storeRespondentIp: survey.settings.storeRespondentIp,
+        });
+      }
+      const responses = await storedResponses(results, survey);
+      return {
+        fileName: exportFileName(survey.name, format),
+        contentType:
+          format === "csv" ? "text/csv; charset=utf-8" : "application/json; charset=utf-8",
+        body: columns ? csvExport(columns, responses) : jsonExport(responses),
+      };
+    },
+
+    async deleteResults(user, surveyId) {
+      const { survey } = await access.modifiable(user, surveyId);
+      await files.deleteSurveyFiles(survey.id, "response");
+      await results.deleteAll(survey);
+    },
+
+    async publicPage(surveyId, page) {
+      const survey = await surveys.getSurvey(surveyId);
+      if (!survey?.settings.publicResults) throw surveyNotAvailable();
+      const after =
+        page.cursor === undefined ? undefined : decodeResultsCursor(page.cursor, survey.id);
+      const [definition, privateQuestions] = await Promise.all([
+        surveys.getDefinition(survey.id),
+        views.getPrivateQuestions(survey.id),
+      ]);
+      if (!definition) throw surveyNotAvailable();
+      const hidden = privateKeysOf(definition.content, privateQuestions);
+      const { items, next } = await results.listResponsePage(survey, {
+        limit: page.limit,
+        ...(after && { after }),
+      });
+      return {
+        survey: {
+          id: survey.id,
+          name: survey.name,
+          definition: definition.content,
+          privateQuestions: [...privateQuestions],
+        },
         items: items.map((response) => ({
-          id: response.id,
           submittedAt: response.submittedAt,
-          data: response.data,
-          ...(response.clientId !== undefined && { clientId: response.clientId }),
-          ...(response.respondentIp !== undefined && { respondentIp: response.respondentIp }),
+          data: withoutKeys(response.data, hidden),
         })),
         nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
       };

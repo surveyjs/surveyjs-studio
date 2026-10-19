@@ -8,6 +8,7 @@ import { loadExportLibrary } from "./exportLibraries";
 import type { ResultsWidgetProps } from "./ResultsPage";
 import { extraTableColumns, tableRows } from "./tableRows";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
+import { withoutQuestions } from "./publicDefinition";
 
 type TableViewState = Tabulator["state"];
 
@@ -34,11 +35,14 @@ export function TableView({
   responses,
   savedState,
   onStateChange,
+  privateQuestions,
+  publicView = false,
 }: ResultsWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
   const [exportFailed, setExportFailed] = useState(false);
   // The state at mount: later changes of the prop come from this widget itself.
   const initialState = useRef(savedState);
+  const privateAtMount = useRef(privateQuestions);
   const stateCallback = useRef(onStateChange);
   useEffect(() => {
     stateCallback.current = onStateChange;
@@ -51,13 +55,16 @@ export function TableView({
     if (target === null) return;
     let active = true;
     let rendered = false;
-    const survey = new Model(definition);
+    // The public Table is built without the private questions (see withoutQuestions).
+    const survey = new Model(
+      publicView ? withoutQuestions(definition, privateAtMount.current) : definition,
+    );
     const names = new Set(survey.getAllQuestions().map((question) => question.name));
     const extras = extraTableColumns(responses, names);
     const table = new Tabulator(
       survey,
       tableRows(responses, names),
-      { downloadButtons: ["pdf", "xlsx", "csv"] },
+      { downloadButtons: publicView ? [] : ["pdf", "xlsx", "csv"] },
       extras as unknown as ConstructorParameters<typeof Tabulator>[3],
     );
     const defaults = defaultState(table, new Set(extras.map((column) => column.name)));
@@ -89,14 +96,19 @@ export function TableView({
 
     table.render(target);
     rendered = true;
-    table.onStateChanged.add((_, changed: ViewState) => stateCallback.current(changed));
+    // The library has no option to leave the "Export as" menu out: an empty `downloadButtons`
+    // list still builds it, so the public page removes it (render adds it synchronously).
+    if (publicView) target.querySelector(".sa-tabulator__downloads-bar")?.remove();
+    if (stateCallback.current !== undefined) {
+      table.onStateChanged.add((_, changed: ViewState) => stateCallback.current?.(changed));
+    }
     return () => {
       active = false;
       // The table cannot be destroyed before it rendered.
       if (rendered) table.destroy();
       survey.dispose();
     };
-  }, [definition, responses]);
+  }, [definition, responses, publicView]);
 
   return (
     <>

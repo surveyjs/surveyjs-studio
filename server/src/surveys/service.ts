@@ -6,7 +6,7 @@ import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import { rewriteFileIds } from "../files/rewrite.js";
-import type { Directory, FileStore, SurveyStore } from "../providers/types.js";
+import type { Directory, FileStore, SurveyStore, ViewStore } from "../providers/types.js";
 import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
@@ -24,6 +24,8 @@ export interface SurveysServiceOptions {
   readonly directory: Directory;
   /** The files of surveys: deleted with a survey, copied with a clone (R10, R11). */
   readonly files: FileStore;
+  /** The private-question lists. */
+  readonly views: ViewStore;
   /** The clock for creation times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -37,11 +39,26 @@ export interface SurveyListQuery {
   readonly cursor?: string;
 }
 
+/** Where a request's warnings go (the request's logger). */
+export interface WarningLog {
+  warn(details: Readonly<Record<string, string>>, message: string): void;
+}
+
 export interface SurveysService {
   list(user: RequestUser, query: SurveyListQuery): Promise<SurveyPage>;
   create(user: RequestUser, body: SurveyCreate | undefined): Promise<SurveyJson>;
-  get(user: RequestUser, surveyId: string): Promise<SurveyJson>;
-  update(user: RequestUser, surveyId: string, patch: SurveyPatch): Promise<SurveyJson>;
+  /** Answers without `settings.privateResultQuestions` when the list cannot be read (C1). */
+  get(user: RequestUser, surveyId: string, log: WarningLog): Promise<SurveyJson>;
+  /**
+   * Saves the private-question list only after the survey update succeeded, so a failed update
+   * leaves the old list. Answers the saved list, else the stored one as `get` does.
+   */
+  update(
+    user: RequestUser,
+    surveyId: string,
+    patch: SurveyPatch,
+    log: WarningLog,
+  ): Promise<SurveyJson>;
   delete(user: RequestUser, surveyId: string): Promise<void>;
   clone(user: RequestUser, surveyId: string, body: SurveyClone | undefined): Promise<SurveyJson>;
 }
@@ -108,8 +125,25 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 
 /** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
-  const { surveys, directory, files, now = Date.now } = options;
+  const { surveys, directory, files, views, now = Date.now } = options;
   const { visible, modifiable } = createSurveyAccess({ surveys, directory });
+
+  /**
+   * The survey's private-question list for an answer; undefined (and a warning with the survey id
+   * only) when the store cannot read it right now. The answer then leaves the field out (C1), so the
+   * Summary cannot save a list built from an unknown state.
+   */
+  async function privateQuestionsFor(
+    surveyId: string,
+    log: WarningLog,
+  ): Promise<readonly string[] | undefined> {
+    try {
+      return await views.getPrivateQuestions(surveyId);
+    } catch {
+      log.warn({ surveyId }, "The private-question list cannot be read; answered without it.");
+      return undefined;
+    }
+  }
 
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
@@ -173,15 +207,19 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         },
         definition,
       );
-      return surveyJson(stored, canModify(stored, user, scope.membership));
+      return surveyJson(stored, canModify(stored, user, scope.membership), []);
     },
 
-    async get(user, surveyId) {
+    async get(user, surveyId, log) {
       const { survey, membership } = await visible(user, surveyId);
-      return surveyJson(survey, canModify(survey, user, membership));
+      return surveyJson(
+        survey,
+        canModify(survey, user, membership),
+        await privateQuestionsFor(survey.id, log),
+      );
     },
 
-    async update(user, surveyId, patch) {
+    async update(user, surveyId, patch, log) {
       const invalid = nameProblem(patch.name);
       if (invalid) throw invalid;
       const { survey } = await modifiable(user, surveyId);
@@ -189,6 +227,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         patch.projectId === undefined
           ? undefined
           : (await targetScope(user, patch.projectId)).owner;
+      const names = patch.settings?.privateResultQuestions;
       const stored = await surveys.updateSurvey(
         survey.id,
         surveyChangesFromPatch(survey, patch, {
@@ -198,12 +237,18 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         }),
       );
       if (!stored) throw notFound();
+      // After the update: a failed update leaves the old list.
+      if (names !== undefined) await views.savePrivateQuestions(stored.id, names);
       // The rights follow the stored scope: a move changes the scope and the creator.
       const membership =
         stored.owner.kind === "project"
           ? await directory.getUserProject(user.id, stored.owner.projectId)
           : null;
-      return surveyJson(stored, canModify(stored, user, membership));
+      return surveyJson(
+        stored,
+        canModify(stored, user, membership),
+        names ?? (await privateQuestionsFor(stored.id, log)),
+      );
     },
 
     async delete(user, surveyId) {
@@ -268,7 +313,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         await discardCopiedFiles();
         throw notFound();
       }
-      return surveyJson(stored, canModify(stored, user, scope.membership));
+      return surveyJson(stored, canModify(stored, user, scope.membership), []);
     },
   };
 }

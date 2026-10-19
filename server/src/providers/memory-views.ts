@@ -9,11 +9,13 @@ const RESET = Symbol("reset");
 export interface MemoryViewsSeed {
   /** The legacy per-survey layouts by survey id: the fallback until a user saves or resets. */
   readonly legacyViews?: Record<string, Partial<Record<ViewName, ViewState>>>;
+  /** The names of the questions hidden from public results, by survey id. */
+  readonly privateResultQuestions?: Record<string, readonly string[]>;
 }
 
 export interface MemoryViewStore {
   readonly store: ViewStore;
-  /** Forgets every user's views and markers of the survey (called by `deleteSurvey`). */
+  /** Forgets every user's views and markers and the private-question list of the survey (called by `deleteSurvey`). */
   dropSurvey(surveyId: string): void;
 }
 
@@ -24,6 +26,13 @@ export function createMemoryViewStore(seed: MemoryViewsSeed = {}): MemoryViewSto
     Object.entries(seed.legacyViews ?? {}).map(([surveyId, views]) => [
       surveyId.toLowerCase(),
       structuredClone(views),
+    ]),
+  );
+
+  const privateQuestions = new Map(
+    Object.entries(seed.privateResultQuestions ?? {}).map(([surveyId, names]) => [
+      surveyId.toLowerCase(),
+      [...names],
     ]),
   );
 
@@ -56,7 +65,20 @@ export function createMemoryViewStore(seed: MemoryViewsSeed = {}): MemoryViewSto
     saveView: (surveyId, userId, view, state) =>
       write(surveyId, userId, view, structuredClone(state)),
     resetView: (surveyId, userId, view) => write(surveyId, userId, view, RESET),
+    getPrivateQuestions: (surveyId) =>
+      Promise.resolve([...(privateQuestions.get(surveyId.toLowerCase()) ?? [])]),
+    savePrivateQuestions: (surveyId, names) => {
+      if (!GUID.test(surveyId)) return Promise.reject(new Error("View ids must be GUIDs"));
+      privateQuestions.set(surveyId.toLowerCase(), [...names]);
+      return Promise.resolve();
+    },
   };
 
-  return { store, dropSurvey: (surveyId) => void saved.delete(surveyId.toLowerCase()) };
+  return {
+    store,
+    dropSurvey: (surveyId) => {
+      saved.delete(surveyId.toLowerCase());
+      privateQuestions.delete(surveyId.toLowerCase());
+    },
+  };
 }

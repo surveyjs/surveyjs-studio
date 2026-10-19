@@ -220,3 +220,34 @@ Changes and additions:
   shows every response.
 - The loading, load-failure, save-failure and export-failure texts are the app's own; the texts inside
   the charts and the table come from survey-analytics.
+
+Step 10 (the Details tab, `src/results/DetailsTab.tsx`) copies markup and texts from the same two files
+(`the site's page markup` and `the site's source`, last changed by
+commit `(a site commit)`). No style file is copied.
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                      | Original                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| The two columns: `div.column-layout` with `div.column-layout__column.survey-results-header-left` and `div.column-layout__column.column-layout__column--float-right.survey-results-header-right`                                                                                                                                                                           | `the site's page markup`, `:120` |
+| The stat lines `div.survey-results-header-line`: "Total responses:", "First response at:", "Last response at:"                                                                                                                                                                                                                                                            | `the site's page markup`     |
+| "Download all results as:" (`div.survey-results-header-line.mod-mt-30`) and the links "JSON" and "CSV" (`div.mod-mt-20 > a.rounded-button`)                                                                                                                                                                                                                               | `the site's page markup`    |
+| Grant Access: `div#resultaccess.survey-results-header-line`, "Toggle if you want to enable access to the survey results with a direct link." and "Grant Access"; on: "Your Survey results can be accessible via direct Url.", `a.action-link` "Go to the results page" and "Disable Access" (`button.rounded-button > span`)                                              | `the site's page markup`    |
+| Save Respondent IP: `div#resultstoreIP.survey-results-header-line`, "Toggle to store the IP addresses of your respondents along with other answers" and "Save Respondent IP in Results"; on: "The IP addresses of your respondents are stored along with other answers. Toggle not to store." and "Do not save Respondent IP in Results" (`button.rounded-button.btn-sm`) | `the site's page markup`    |
+| Delete Results: `div.mod-mt-30`, `button.rounded-button.rounded-button--danger` "Delete Results", "Deletes all survey results without the possibility to restore.", the placeholder "Type the survey name" and "Clear All Data"                                                                                                                                           | `the site's page markup`    |
+| The confirm question before the deletion: "Are you absolutely sure that you want to delete all results ?" (`window.confirm`)                                                                                                                                                                                                                                              | `survey-results.ts:169-171`        |
+
+Changes and additions:
+
+- The site shows the downloads, toggles and Delete Results only for private surveys and reloads the page
+  after a deletion. Here the toggles and Delete Results show to callers who may modify the survey, the
+  downloads to everyone who sees the page, and the page refreshes itself.
+- The link "Go to the results page" points to the app's public page `/results/<survey id>`; the site's
+  link goes to `/Results/Survey/<result id>`. The link is the only place the address shows.
+- The dates are the viewer's `toLocaleString()`. The dates and Delete Results are hidden when there are no
+  responses (as the site's `totalResponses` binding does).
+- The delete warning is `p.v2-class---paragraph` without the site's `role="alert"`; the name field has an
+  `aria-label`. The Delete panel opens and closes with its button.
+- The outcome texts ("All results are deleted.", "The results could not be deleted. Please try again."),
+  the toggle failure ("The setting could not be saved. Please try again."), the statistics texts ("Loading
+  statistics…", "The statistics could not be loaded. Check your connection and try again.") and the
+  private-question failure ("The list of private questions could not be saved. Please try again.") are the
+  app's own. "Make private" and "Make public" come from survey-analytics.

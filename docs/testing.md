@@ -16,13 +16,13 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 ## Run everything
 
-| Command                 | Runs                                                                                                                            |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                                                  |
-| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                                         |
-| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                                         |
-| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                                                      |
-| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor, history, uploads, run and results specs in Azurite mode (needs Docker) |
+| Command                 | Runs                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                   |
+| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                                                          |
+| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                                                          |
+| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                                                                       |
+| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results and results-details specs in Azurite mode (needs Docker) |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
@@ -79,6 +79,31 @@ Run with Vitest from the root. Scope:
   test**, like `RunSurvey.tsx`: the page tests swap them for the stand-in `web/src/test/fakeResultsWidget.tsx`
   (loaded inside the `vi.mock` factories), because jsdom does not draw charts or a Tabulator table; the end-to-end
   spec covers them.
+- `server/` (Step 10): the pure export modules (`results/csv.test.ts`: `csvField` for quoting, the formula guard
+  (`=`, `+`, `-`, `@`, tab and CR; numbers untouched; a `-5` text gains the `'`), Unicode and null, the
+  columns, the guarded header, `valueName`; `definition.test.ts`: `questionsOf` over pages, panels and a root
+  without pages, the comment suffix, `privateKeysOf` and `withoutKeys`; `export-format.test.ts`: `format` over
+  `Accept`, q-values, `*/*`, `text/*`, `406`, file names with Unicode, control characters and a blank name;
+  `export.test.ts`: the paging of `storedResponses`, a failing first page, the JSON and CSV streams, the header
+  alone for no responses), the handlers through `inject` (`results/handlers.test.ts`: the `no-store`, `nosniff`
+  attachment headers, a `500` that logs no answer when the first page fails, a failed file delete that keeps
+  the rows, public results without the private question, and a `500` without answers when the private list
+  cannot be read; `surveys/handlers.test.ts`: `getSurvey` and `updateSurvey` without the list and one warning
+  with the survey id when it cannot be read, and the old list kept when the survey update fails), the legacy mapping of the private-question blob
+  (`mapping.test.ts`: the defaults for a missing `isPublic`, a BOM, a damaged blob, order and duplicates), the
+  fixture seed's private list, and the public rate limit (`rate-limits.test.ts`: its own counter).
+- `web/` (Step 10): `api/results.ts` (statistics under a key outside the results prefix, the delete with its
+  CSRF token and its `403`, the cache after a deletion, and nothing changed when it fails), `api/public.ts`
+  (every page joined, the survey of page 1, `survey-not-available`, a repeated cursor), the pure modules of
+  `results/` (`details.ts`, `downloadUrl.ts`, `privacy.ts` with the "hidden but still private" rule and
+  the change-based helpers, `publicDefinition.ts` with the legacy `questions` key, `publicResultsState.ts`), the Details tab through the router (`resultsRoutes.test.tsx`:
+  totals, no dates for an empty survey, no toggle for a caller who cannot modify, one merge patch per toggle,
+  the IP toggle that refetches nothing, the failures, the two delete steps; the private-question saves applied to
+  a fresh read so another writer's names stay, no save when that read fails or has no list, and no toggle for a
+  survey without the list) and the public page
+  (`publicResultsRoutes.test.tsx`: Summary and Table without sign-in, the page name, **Try again**). The two
+  widgets are still the stand-in `fakeResultsWidget.tsx`, so a real **Make private** is covered by the
+  end-to-end spec.
 - `web/`: the API client and config loader (with `msw` and `openapi-msw` mocks typed by the
   contract), the licence loader, the CSRF middleware, the route guard and sign-out, shell selection,
   the surveyjs.io shell (account menu, notice dialogs, cookie banner), and the app rendered with React
@@ -104,7 +129,8 @@ Run with Vitest from the root. Scope:
   the run route can load Creator, Ace or Dashboard code, or no `survey-form` chunk, and (Step 9) when the
   results route's static imports hold Dashboard, `survey-analytics` or Tabulator code, when its full closure
   lacks one of the three `survey-dashboard*` chunks, or when the table chunk imports the export chunk
-  statically ([Architecture](architecture.md#web-modules-websrc)). **The unit-test setup encodes `FormData` itself**: under jsdom, `FormData` and `File` are
+  statically, and (Step 10) when the public results route holds Dashboard code in its static closure or lacks the
+  `survey-dashboard` or `survey-dashboard-table` chunk ([Architecture](architecture.md#web-modules-websrc)). **The unit-test setup encodes `FormData` itself**: under jsdom, `FormData` and `File` are
   not Node's, and Node's own conversion fails on them, so `web/src/test/setup.ts` turns a `FormData`
   request body into a `multipart/form-data` body (keeping the file names) before it reaches the mock
   server. `web/src/test/file-handlers.ts` holds the `msw` handler that reads such a body back.
@@ -291,22 +317,41 @@ that resets a layout does it on its own survey. The Azurite replica keeps data b
 `pnpm legacy:load` clears the views container, so the fallback read of `…a01` always sees the fixtures'
 own layouts.
 
+### Details, exports and public results on the conformance server
+
+`conformance-tests/src/results-details.test.ts` and `public-results.test.ts` (Step 10) follow the rule above:
+the fixtures are read only and every write goes to a survey the test creates (and removes, archive first).
+
+| Data                                    | What the tests do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Customer feedback" `…a01` (Olivia)     | Reads: its JSON export equals a `listResults` walk, its CSV starts with the byte order mark and has CRLF lines; `getPublicResults` returns it without the private question `receipt` (`privateQuestions: ["receipt"]`), with `no-store`, to a caller with no session                                                                                                                                                                                                                                                                                                             |
+| "API created" `…a08` (Olivia)           | Reads: both exports stream all 1,500 responses (a JSON array of 1,500, a CSV of 1,501 records whose header is `Submitted,color,score,subscribe,channels,comment,ClientId`). Never a deletion                                                                                                                                                                                                                                                                                                                                                                                     |
+| "Campaign survey" `…a04` (Mia)          | A project member downloads; the outsider gets `404`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| The admin's Personal scope, Engineering | Own surveys: format negotiation (`format` over `Accept`, `406`, `400` for `xlsx`), an empty survey (`[]`, a header-only CSV), the file name with an ASCII fallback and the UTF-8 name, the respondent IP in the list and the JSON export and never in public results, **deleting results** (rows, markers and respondent files go; the survey, the editor's assets and the saved layouts stay; `401`, `403`, `404`), Grant Access without publishing, archived surveys, paging of public results, the strip of answers and comments of private questions, bad limits and cursors |
+
+The public rate-limit test uses an `X-Forwarded-For` address of its own and an over-long id, so it
+costs the shared counters nothing and writes nothing. A deletion test **never targets a fixture
+survey**: a deleted `…a08` would break the end-to-end spec that counts its 1,500 responses on a replica that
+keeps its data between runs.
+
 ### Test data
 
 Tests that write (create, update, clone, move and delete surveys) do so in only a few scopes, and
 only in surveys they created themselves. No test changes a fixture survey: the checks on fixtures
 (for example "the owner cannot modify Engineering retro") are refusals, which write nothing.
 
-| Suite              | Writable scopes                                                                                                                                                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Conformance        | The outsider's Personal scope, **Engineering** and the **admin's Personal scope**                                                                                                                                                             |
-| Step 5 e2e spec    | The admin's Personal scope and **Engineering** only (`survey-actions.spec.ts`)                                                                                                                                                                |
-| Step 6 e2e specs   | The admin's Personal scope only (`editor.spec.ts`, `history.spec.ts`), each test with its own survey                                                                                                                                          |
-| Step 7 e2e spec    | The admin's Personal scope only (`uploads.spec.ts`), each test with its own survey, removed at its end                                                                                                                                        |
-| Step 8 e2e spec    | The admin's Personal scope only (`run.spec.ts`): each test creates, publishes, answers and removes its own survey                                                                                                                             |
-| Step 9 e2e spec    | The admin's Personal scope only (`results.spec.ts`): the tests that save or reset a layout create, publish, answer and remove their own survey. The tests on `…a08` and `…a01` write nothing: their layout writes are answered in the browser |
-| Step 9 conformance | The admin's Personal scope and Engineering (`results.test.ts`, `views.test.ts`), each test with its own survey                                                                                                                                |
-| Other e2e specs    | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering                                                                                                                               |
+| Suite               | Writable scopes                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conformance         | The outsider's Personal scope, **Engineering** and the **admin's Personal scope**                                                                                                                                                                    |
+| Step 5 e2e spec     | The admin's Personal scope and **Engineering** only (`survey-actions.spec.ts`)                                                                                                                                                                       |
+| Step 6 e2e specs    | The admin's Personal scope only (`editor.spec.ts`, `history.spec.ts`), each test with its own survey                                                                                                                                                 |
+| Step 7 e2e spec     | The admin's Personal scope only (`uploads.spec.ts`), each test with its own survey, removed at its end                                                                                                                                               |
+| Step 8 e2e spec     | The admin's Personal scope only (`run.spec.ts`): each test creates, publishes, answers and removes its own survey                                                                                                                                    |
+| Step 9 e2e spec     | The admin's Personal scope only (`results.spec.ts`): the tests that save or reset a layout create, publish, answer and remove their own survey. The tests on `…a08` and `…a01` write nothing: their layout writes are answered in the browser        |
+| Step 9 conformance  | The admin's Personal scope and Engineering (`results.test.ts`, `views.test.ts`), each test with its own survey                                                                                                                                       |
+| Step 10 e2e spec    | The admin's Personal scope only (`results-details.spec.ts`): the tests that toggle, make private, submit or delete create, publish, answer and remove their own survey. The tests on `…a08` read the Details tab and the downloads and write nothing |
+| Step 10 conformance | The admin's Personal scope and Engineering (`results-details.test.ts`, `public-results.test.ts`), each test with its own survey; no setting, private list, response or deletion on `…a01`, `…a04` or `…a08`                                          |
+| Other e2e specs     | The Step 4 "Create a Survey" test still writes the outsider's Personal scope; the paging spec fills Engineering                                                                                                                                      |
 
 The owner's Personal scope, the Marketing project and every fixture survey are **fixture-only** (the large survey
 `…a08` included: it holds 1,500 results and no test changes it):
@@ -436,6 +481,24 @@ element is an object as a fixture tuple; and the spec relies on survey-analytics
 `.sa-question__header--draggable`, `.tabulator-page.active`, `.sa-tabulator-column-title-text`), so a library
 upgrade can need new selectors.
 
+`results-details.spec.ts` (Step 10) checks the Details tab and the public page in three browsers and, on Chromium,
+in Azurite mode. The console guard stays on and the spec allows the `404` of a view read. **`…a08` is read
+only**: no `PATCH`, submission, deletion or layout write goes to it. Every writing test uses the admin's own
+published survey and removes it.
+
+| Test                             | Checks                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Totals and dates                 | Olivia, `…a08`: "Total responses:" is `1500`, and the first and last dates equal the browser's own `toLocaleString()` of `2026-05-01T08:00:00.000Z` and `2026-05-01T20:30:00.000Z` (engines format times differently, so the expected text is made in the page)                                                                                                                                 |
+| An empty survey                  | "Total responses:" is `0`, no dates, no **Delete Results**                                                                                                                                                                                                                                                                                                                                      |
+| Downloads                        | **JSON** is `API created.json` with 1,500 items; **CSV** is `API created.csv` with the byte order mark, 1,501 records and the header `Submitted,color,score,subscribe,channels,comment,ClientId`; no layout write                                                                                                                                                                               |
+| Grant Access and the public page | **Grant Access** (the `PATCH` answers `200`, the link `/results/<id>`), **Make private** on `q2` (exactly one `PATCH` with `{ settings: { privateResultQuestions: ["q2"] } }`); a signed-out context sees the heading, the charts `q1` and `q3`, a Table with three rows and no `q2` column and no **Export As...** menu; **Disable Access**, reload: "These survey results are not available." |
+| Save Respondent IP               | The toggle's text changes; after a submission the Table has an **IPAddress** column with a value                                                                                                                                                                                                                                                                                                |
+| Delete Results and file links    | An uploaded file's link in the Table answers `200`; **Delete Results** with the survey name and the confirm text; "All results are deleted.", the total is `0`, the Table is empty and the file's link answers `404`                                                                                                                                                                            |
+
+Helpers are in `e2e/tests/support/results.ts` (`isSettingsPatch`, `isResultsDelete`, `PUBLIC_RESULTS_404`). The
+Details tab of a caller who cannot modify the survey (no toggles, no delete) is covered by the route tests of
+`web` only.
+
 Helpers (`e2e/tests/support/`):
 
 - `sign-in.ts`: `users` (owner, admin, member and outsider) and `signInAt(page, path, user)`, which signs in
@@ -480,7 +543,7 @@ Helpers (`e2e/tests/support/`):
   cannot hide an error that never came from the listed response.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
-actions, editor, history, uploads, run and results specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+actions, editor, history, uploads, run, results and results-details specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
@@ -592,7 +655,17 @@ Step 9 it checks the views in the replica directly (`views`): a save is a block 
 replaces it; a stored blob that is not a JSON object reads `null` with a warning that carries ids only; deleting
 a survey removes its layouts (and deleting one without any works); the legacy layout blobs of a fixture survey
 are never changed; a save or reset writes no audit row and leaves `Surveys.timestamp` alone; and a broken row
-is skipped while paging, never repeating a good one. The loader tests (`load-fixtures.azurite.test.ts`) check
+is skipped while paging, never repeating a good one. For Step 10 it checks, through the interface on both providers, **delete all** (a survey's rows and markers go,
+the other surveys' stay, the record, the saved views and the private list stay, it resolves for a survey
+without responses and again, and a response appended right afterwards is stored), the **private-question list**
+(the fixture list of Customer feedback, `[]` elsewhere, a save read back in order in any id case, a replace,
+deletion with the survey, no copy on a clone, `[]` for a non-GUID id and a rejected save) and the
+**kind-limited file delete** (only the `response` files go). In the replica it checks the rows directly:
+`post{postId}` and `SurveyCompletion{surveyId}` are emptied in batches (150 rows take two transactions), both
+tables and `postdelete{postId}` stay, one `SURVEY_DELETEALLRESULTS` audit row is written, a survey that never
+had a results table is fine; the private list is an append blob with the old JSON (`[{ "name", "isPublic":
+false }]`) and no SQL or audit change; the old defaults, and a rejected read (fail closed, no warning) for a zero-byte blob, text that is not
+JSON, JSON that is not an array and an empty append blob; and the blob goes with the survey. The loader tests (`load-fixtures.azurite.test.ts`) check
 that the 1,500 generated rows load and that loading again gives equal summaries, and that the views container is
 cleared by a load. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
@@ -625,5 +698,5 @@ survey and project tests run on the provider, so on Azurite they read the fixtur
 create surveys in it (only in the scopes named in [Test data](#test-data)).
 
 The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
-actions, editor, history, uploads, run and results specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
+actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
 runs in memory mode only.

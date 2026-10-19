@@ -7,6 +7,7 @@ import type { MemorySeed } from "../memory.js";
 import { LARGE_SURVEY_TABLE, largeSurveyTable } from "./large-survey.js";
 import {
   membershipFromLegacy,
+  privateQuestionsFromLegacy,
   projectFromLegacy,
   responseFromLegacy,
   surveyFromLegacy,
@@ -325,6 +326,19 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     if (typeof state !== "object" || state === null || Array.isArray(state)) continue;
     (legacyViews[surveyId] ??= {})[view] = state as ViewState;
   }
+  const privateResultQuestions: NonNullable<MemorySeed["privateResultQuestions"]> = {};
+  for (const blob of fixtures.blobs) {
+    const surveyId = blob.name.toLowerCase();
+    if (
+      blob.account !== "surveys" ||
+      blob.container !== "surveyresultpermissions" ||
+      !surveyRows.has(surveyId)
+    ) {
+      continue;
+    }
+    const names = privateQuestionsFromLegacy(blob.content.toString("utf8"));
+    if (names !== null) privateResultQuestions[surveyId] = names;
+  }
   const dashless = (id: string): string => id.toLowerCase().replaceAll("-", "");
   const responses: NonNullable<MemorySeed["responses"]> = {};
   const completions: NonNullable<MemorySeed["completions"]> = {};
@@ -370,5 +384,6 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     responses,
     completions,
     legacyViews,
+    privateResultQuestions,
   };
 }

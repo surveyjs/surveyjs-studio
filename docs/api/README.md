@@ -15,8 +15,10 @@ committed.
 - [Uploads and files](uploads.md): editor uploads, the allowed types, the quota, the download headers and
   file ids.
 - [Public endpoints, rate limits and idempotency](public-endpoints.md): loading and answering a published
-  survey, respondent files, `Idempotency-Key`, the one-response rule, `TRUST_PROXY`, payload limits and
-  rate limits.
+  survey, respondent files, `Idempotency-Key`, the one-response rule, `TRUST_PROXY`, payload limits, rate
+  limits and the public results of a survey.
+- [Exporting results](exporting-results.md): downloading every response as JSON or CSV (the format choice,
+  the CSV rules, file names, streaming) and deleting all responses.
 
 ## View the API reference
 
@@ -63,16 +65,17 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 
 ## What is implemented
 
-| Since  | Operations                                                                                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------- |
-| Step 1 | `getConfig`                                                                                                         |
-| Step 3 | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md))                          |
-| Step 4 | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                |
-| Step 5 | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
-| Step 6 | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
-| Step 7 | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
-| Step 8 | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                          |
-| Step 9 | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                  |
+| Since   | Operations                                                                                                          |
+| ------- | ------------------------------------------------------------------------------------------------------------------- |
+| Step 1  | `getConfig`                                                                                                         |
+| Step 3  | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md))                          |
+| Step 4  | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                |
+| Step 5  | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
+| Step 6  | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
+| Step 7  | `uploadSurveyAsset`, `downloadFile` (see below)                                                                     |
+| Step 8  | `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getResultStats` (see below)                          |
+| Step 9  | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                  |
+| Step 10 | `exportResults`, `deleteResults`, `getPublicResults` (see below)                                                    |
 
 ### Step 4: surveys and projects
 
@@ -136,7 +139,8 @@ Rules for `updateSurvey` and `deleteSurvey`:
   After a real move the **caller is the survey's creator**, and `permissions.canModify` in the answer
   is worked out for the new place.
 - **`archived`** and **`published`** are independent. Archiving does not unpublish.
-- **`settings`** takes `publicResults` and `storeRespondentIp`; a key you leave out stays as it is.
+- **`settings`** takes `publicResults`, `storeRespondentIp` and (Step 10) `privateResultQuestions`; a key you
+  leave out stays as it is.
   (`useCookies` is not part of the patch and is never changed.)
 - **`updatedAt`** moves on every successful `PATCH`, also when no value changes (for example
   `{"settings":{}}`), as the legacy site does.
@@ -391,7 +395,35 @@ curl -s -b cookies.txt "$API/surveys/$ID/views/summary"
 # {"elements":[{"name":"q1","isVisible":false}]}
 ```
 
-Every other operation (the exports and public results of Step 10, the project and member writes)
-answers `501` with a Problem Details body (`code: not-implemented`), after
-authentication: a private operation called without a session answers `401`. `passwordLogin` stays
-`501` until P1.
+### Step 10: exports, deleting and public results
+
+| Operation          | Behaviour                                                                                                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exportResults`    | `GET /surveys/{surveyId}/results/export`, `format` `json` or `csv`, or `Accept`. Needs a session. `200` streams every response as an attachment; `400` for another `format`; `406` when `Accept` names neither |
+| `deleteResults`    | `DELETE /surveys/{surveyId}/results`. Needs a session, CSRF and the right to modify. `204`: deletes the responses, the completion markers and the respondent files                                             |
+| `getPublicResults` | `GET /public/surveys/{surveyId}/results`, `limit` and `cursor`. No session. `200 { survey, items, nextCursor }` while Grant Access is on, else `404 survey-not-available`                                      |
+
+`updateSurvey` also takes a new setting, `settings.privateResultQuestions`: the names of the questions hidden
+from public results (an array of strings, `[]` for none). A patch **replaces** the whole list. It is returned by
+`getSurvey`, `updateSurvey`, `createSurvey` and `cloneSurvey`, and **left out of `listSurveys` items** (reading
+it from a list would mean one blob read for each survey on the old stores; call `getSurvey`). A clone starts
+with `[]`. `getSurvey` and `updateSurvey` leave it out when the server cannot read the list right now: do not
+offer to change it then, and read it again before you patch, so that you change only the names you mean to.
+`updateSurvey` saves the list after the rest of the patch; a failed update leaves the old list.
+
+```sh
+# $API, $ID and $CSRF as in Step 5
+curl -s -X PATCH -b cookies.txt -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/merge-patch+json" \
+  -d '{"settings":{"privateResultQuestions":["receipt"]}}' "$API/surveys/$ID"
+```
+
+The export, the CSV rules, the file names, a failure part way and the delete are in
+[Exporting results](exporting-results.md). The public results page of a survey is in
+[Public endpoints](public-endpoints.md#public-results). The reasons are in
+[ADR 0016](../adr/0016-results-details-exports-and-public-results.md).
+
+Every other operation (the project and member writes of Step 11: `createProject`, `updateProject`,
+`deleteProject`, `listMembers`, `addMember`, `updateMember` and `removeMember`) answers `501` with a Problem
+Details body (`code: not-implemented`), after authentication: a private operation called without a session
+answers `401`. `passwordLogin` stays `501` until P1. The conformance suite and the server tests use
+`listMembers` as their example of an operation that is not built.

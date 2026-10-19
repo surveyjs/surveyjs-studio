@@ -1,11 +1,16 @@
-import type { SurveyResponse } from "../api/results";
+/** What the table and the charts read of a response (a `SurveyResponse` is one; so is a public item). */
+export interface ResultItem {
+  readonly submittedAt: string;
+  readonly data: Record<string, unknown>;
+  readonly respondentIp?: string;
+}
 
 export const SUBMITTED_COLUMN = "HappendAt";
 export const IP_COLUMN = "IPAddress";
 
 /** One table row per response: its answers plus the submission time and, when stored, the IP. */
 export function tableRows(
-  responses: readonly SurveyResponse[],
+  responses: readonly ResultItem[],
   questionNames: ReadonlySet<string>,
 ): Record<string, unknown>[] {
   return responses.map((response) => {
@@ -20,7 +25,7 @@ export function tableRows(
 
 /** The columns after the answer columns; a question with the same name keeps its own column. */
 export function extraTableColumns(
-  responses: readonly SurveyResponse[],
+  responses: readonly ResultItem[],
   questionNames: ReadonlySet<string>,
 ) {
   const columns: { name: string; displayName: string; isVisible: boolean }[] = [];
@@ -37,5 +42,5 @@ export function extraTableColumns(
 }
 
 /** What the Summary charts read: the answers only. */
-export const summaryData = (responses: readonly SurveyResponse[]) =>
+export const summaryData = (responses: readonly ResultItem[]) =>
   responses.map((response) => response.data);
