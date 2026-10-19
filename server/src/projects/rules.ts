@@ -1,4 +1,4 @@
-import type { RemovalOutcome, RoleChangeOutcome } from "../providers/types.js";
+import type { MemberErasure, RemovalOutcome, RoleChangeOutcome } from "../providers/types.js";
 
 /** One membership row as the last-admin rule sees it. */
 export interface MembershipFacts {
@@ -58,6 +58,33 @@ export function decideRemoval(rows: readonly MembershipFacts[], userId: string):
   const admins = adminsOf(rows);
   if (members.size === 1 || (admins.has(target) && admins.size === 1)) return "last-admin";
   return "removed";
+}
+
+/** One membership row as the erasure rule sees it: the last-admin facts and the name listMembers shows. */
+export interface ErasureFacts extends MembershipFacts {
+  /** The user's display name as `listMembers` shows it; unused (may be "") for an orphan row. */
+  readonly displayName: string;
+}
+
+const codePoints = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * R11: what erasing `userId` does to one project. not-member: the user has no row (orphan or not).
+ * last-member: no other visible member. remove: another visible admin remains. promote: other
+ * visible members but no other visible admin; the successor is the first of them in listMembers
+ * order (display name ignoring case, code-point order, then user id).
+ */
+export function decideMemberErasure(rows: readonly ErasureFacts[], userId: string): MemberErasure {
+  if (!rows.some((row) => same(row.userId, userId))) return { kind: "not-member" };
+  const others = rows.filter((row) => row.userExists && !same(row.userId, userId));
+  if (others.length === 0) return { kind: "last-member" };
+  if (others.some((row) => isAdminRole(row.role))) return { kind: "remove" };
+  const [successor] = [...others].sort(
+    (a, b) =>
+      codePoints(a.displayName.toLowerCase(), b.displayName.toLowerCase()) ||
+      codePoints(a.userId.toLowerCase(), b.userId.toLowerCase()),
+  );
+  return { kind: "promote", successorId: successor!.userId.toLowerCase() };
 }
 
 /**

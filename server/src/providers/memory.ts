@@ -20,9 +20,11 @@ import { contentVersion } from "../domain/content-version.js";
 import { applySurveyChanges } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
 import {
+  decideMemberErasure,
   decideRemoval,
   decideRoleChange,
   isAdminRole,
+  type ErasureFacts,
   type MembershipFacts,
 } from "../projects/rules.js";
 import {
@@ -90,6 +92,10 @@ export interface MemoryOptions {
 const lower = (id: string): string => id.toLowerCase();
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
+
+/** Distinct values in ascending code-point order. */
+const distinctSorted = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
 const lowerOwner = (owner: SurveyOwner): SurveyOwner =>
   owner.kind === "personal"
@@ -245,6 +251,13 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
       userExists: findUser(m.userId) !== undefined,
     }));
 
+  /** The project's rows as the erasure rule sees them (R11), with the names listMembers shows. */
+  const erasureFactsOf = (projectId: string): ErasureFacts[] =>
+    factsOf(projectId).map((facts) => ({
+      ...facts,
+      displayName: findUser(facts.userId)?.displayName ?? "",
+    }));
+
   return {
     name: "memory",
     surveys: {
@@ -347,6 +360,14 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         views.dropSurvey(removed!.id);
         return Promise.resolve(true);
       },
+      listPersonalOwnerIds: () =>
+        Promise.resolve(
+          distinctSorted(
+            surveys
+              .flatMap((s) => (s.owner.kind === "personal" ? [s.owner.userId] : []))
+              .filter((id) => GUID.test(id) && id !== ZERO_GUID),
+          ),
+        ),
     },
     files: createMemoryFileStore(),
     results: results.store,
@@ -464,6 +485,27 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         }
         return Promise.resolve(outcome);
       },
+      eraseMember: (projectId, userId) => {
+        const key = lower(projectId);
+        const project = projects.get(key);
+        if (!project || !GUID.test(userId)) return Promise.resolve({ kind: "not-member" });
+        const decision = decideMemberErasure(erasureFactsOf(key), userId);
+        if (decision.kind === "remove" || decision.kind === "promote") {
+          const user = lower(userId);
+          memberships = memberships.filter((m) => !(m.projectId === key && m.userId === user));
+          if (decision.kind === "promote") {
+            memberships = memberships.map((m) =>
+              m.projectId === key && m.userId === decision.successorId
+                ? { ...m, role: "admin" }
+                : m,
+            );
+          }
+          // As in removeMember: the owner goes with the creator (R2).
+          if (project.creatorId === user) projects.set(key, { ...project, creatorId: null });
+        }
+        return Promise.resolve(decision);
+      },
+      listMemberUserIds: () => Promise.resolve(distinctSorted(memberships.map((m) => m.userId))),
     },
     notices,
     ready: () => Promise.resolve(true),

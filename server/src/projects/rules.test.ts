@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { decideRemoval, decideRoleChange, surveyReceiver, type MembershipFacts } from "./rules.js";
+import {
+  decideMemberErasure,
+  decideRemoval,
+  decideRoleChange,
+  surveyReceiver,
+  type ErasureFacts,
+  type MembershipFacts,
+} from "./rules.js";
 
 /** Users `a`, `b` and `c` exist; `o` is an orphan (its account is gone). */
 type Row = readonly [userId: string, role: string | null, userExists: boolean];
@@ -103,5 +110,98 @@ describe("surveyReceiver", () => {
   it("answers in lower case", () => {
     expect(surveyReceiver("A", ["a", "B"], "B")).toBe("a");
     expect(surveyReceiver(null, ["A", "B"], "B")).toBe("b");
+  });
+});
+
+describe("decideMemberErasure", () => {
+  /** The erased user is `e`; `a` and `b` exist; `o` is an orphan. */
+  type ErasureRow = readonly [
+    userId: string,
+    role: string | null,
+    userExists: boolean,
+    displayName: string,
+  ];
+  const facts = (...list: ErasureRow[]): ErasureFacts[] =>
+    list.map(([userId, role, userExists, displayName]) => ({
+      userId,
+      role,
+      userExists,
+      displayName,
+    }));
+
+  it("answers not-member when the user has no row", () => {
+    expect(decideMemberErasure(facts(["a", "admin", true, "Ann"]), "e")).toEqual({
+      kind: "not-member",
+    });
+  });
+
+  it("answers last-member when no other visible member remains", () => {
+    expect(decideMemberErasure(facts(["e", "admin", true, "Erin"]), "e")).toEqual({
+      kind: "last-member",
+    });
+    expect(
+      decideMemberErasure(facts(["e", "admin", true, "Erin"], ["o", "admin", false, ""]), "e"),
+    ).toEqual({ kind: "last-member" });
+  });
+
+  it("erases an orphan row of the user and promotes the next visible member", () => {
+    expect(
+      decideMemberErasure(facts(["e", "admin", false, ""], ["a", "user", true, "Ann"]), "e"),
+    ).toEqual({ kind: "promote", successorId: "a" });
+  });
+
+  it("promotes the first member by display name ignoring case", () => {
+    expect(
+      decideMemberErasure(
+        facts(["e", "admin", true, "Erin"], ["a", "user", true, "bob"], ["b", "user", true, "Ann"]),
+        "e",
+      ),
+    ).toEqual({ kind: "promote", successorId: "b" });
+  });
+
+  it("breaks a tie on the name with the lower user id", () => {
+    expect(
+      decideMemberErasure(
+        facts(["e", "admin", true, "Erin"], ["b", "user", true, "Ann"], ["a", "user", true, "ann"]),
+        "e",
+      ),
+    ).toEqual({ kind: "promote", successorId: "a" });
+  });
+
+  it("removes the user while another visible admin remains, whatever its stored case", () => {
+    expect(
+      decideMemberErasure(facts(["e", "user", true, "Erin"], ["a", "admin", true, "Ann"]), "e"),
+    ).toEqual({ kind: "remove" });
+    expect(
+      decideMemberErasure(facts(["e", "admin", true, "Erin"], ["a", "Admin", true, "Ann"]), "e"),
+    ).toEqual({ kind: "remove" });
+  });
+
+  it("promotes a member of a project left without any admin (a repair)", () => {
+    expect(
+      decideMemberErasure(facts(["e", "user", true, "Erin"], ["a", "user", true, "Ann"]), "e"),
+    ).toEqual({ kind: "promote", successorId: "a" });
+  });
+
+  it("treats duplicate rows of the user as one", () => {
+    expect(
+      decideMemberErasure(
+        facts(
+          ["e", "admin", true, "Erin"],
+          ["e", "user", true, "Erin"],
+          ["a", "user", true, "Ann"],
+        ),
+        "e",
+      ),
+    ).toEqual({ kind: "promote", successorId: "a" });
+  });
+
+  it("compares ids ignoring case and answers the successor in lower case", () => {
+    expect(
+      decideMemberErasure(facts(["E", "admin", true, "Erin"], ["A", "user", true, "Ann"]), "e"),
+    ).toEqual({ kind: "promote", successorId: "a" });
+    expect(
+      decideMemberErasure(facts(["e", "admin", true, "Erin"], ["a", "admin", true, "Ann"]), "E"),
+    ).toEqual({ kind: "remove" });
   });
 });

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   NewProject,
@@ -14,6 +15,7 @@ import type { AppendOutcome, ProviderSet, ResponsePosition, SurveyPosition } fro
 import {
   ADMIN_ID,
   BLOCKED_ID,
+  ERASABLE_ID,
   MEMBER_ID,
   OUTSIDER_ID,
   OWNER_ID,
@@ -1015,6 +1017,25 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("surveys.listPersonalOwnerIds", () => {
+      it("lists each personal owner once, lower-case and sorted, and no project", async () => {
+        const ids = await providers.surveys.listPersonalOwnerIds();
+        expect(ids).toEqual(expect.arrayContaining([OWNER_ID, OUTSIDER_ID]));
+        expect(ids).not.toContain(PROJECT_A_ID);
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+
+      it("includes the owner of a new survey", async () => {
+        const scope = freshScope();
+        const survey = await providers.surveys.createSurvey(newSurvey(scope));
+        onTestFinished(async () => {
+          await providers.surveys.deleteSurvey(survey.id);
+        });
+        expect(await providers.surveys.listPersonalOwnerIds()).toContain(scope.userId);
+      });
+    });
+
     describe("results", () => {
       const sid = (n: number): string =>
         `66666666-0000-4000-8000-b${n.toString(16).padStart(11, "0")}`;
@@ -1766,6 +1787,16 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("projects.listMemberUserIds", () => {
+      it("lists each member once, sorted, and no outsider", async () => {
+        const ids = await providers.projects.listMemberUserIds();
+        expect(ids).toEqual(expect.arrayContaining([OWNER_ID, ADMIN_ID, MEMBER_ID]));
+        expect(ids).not.toContain(OUTSIDER_ID);
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+    });
+
     describe("projects writes", () => {
       // Marketing, Engineering and the fixture memberships are read only (R25): every test creates
       // its own project with fixture users as members (the only users the replica accepts, FK) and
@@ -2013,6 +2044,203 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           expect(await providers.projects.deleteProject(id, options)).toEqual([]);
           expect(await providers.projects.getUserProject(ADMIN_ID, id)).toBeNull();
           expect(await providers.projects.deleteProject(UNKNOWN_ID, options)).toBeNull();
+        });
+      });
+
+      describe("eraseMember", () => {
+        // Erin Erasable is the only user erased (R4); Adam and Mia are the members who stay.
+        const options = { now: NOW };
+
+        it("removes a plain member of a project with another admin", async () => {
+          const { id } = await ownProject();
+          await providers.projects.addMember(id, ERASABLE_ID, "user", options);
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "remove",
+          });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+          ]);
+        });
+
+        it("promotes the first member by display name when the creator, the only admin, goes", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          await providers.projects.addMember(id, MEMBER_ID, "user", options);
+          await providers.projects.addMember(id, ADMIN_ID, "user", options);
+          // "Adam Admin" comes before "Mia Member".
+          expect(
+            await providers.projects.eraseMember(id, ERASABLE_ID.toUpperCase(), options),
+          ).toEqual({ kind: "promote", successorId: ADMIN_ID });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+            { user: memberUser, role: "user" },
+          ]);
+          expect(await recordOf(id)).toMatchObject({ ownerId: null, memberCount: 2 });
+        });
+
+        it("removes the creator while another admin remains", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          await providers.projects.addMember(id, ADMIN_ID, "admin", options);
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "remove",
+          });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+          ]);
+          expect(await recordOf(id)).toMatchObject({ ownerId: null, memberCount: 1 });
+        });
+
+        it("writes nothing for the last member", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "last-member",
+          });
+          expect(await providers.projects.getUserProject(ERASABLE_ID, id)).toMatchObject({
+            project: { ownerId: ERASABLE_ID, memberCount: 1 },
+            role: "admin",
+          });
+        });
+
+        it("answers not-member for a non-member, an unknown project and a non-GUID id", async () => {
+          const projects = providers.projects;
+          expect(await projects.eraseMember(PROJECT_A_ID, ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.listMembers(PROJECT_A_ID)).toEqual(projectAMembers);
+          expect(await projects.eraseMember(UNKNOWN_ID, ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.eraseMember("not-a-guid", ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.eraseMember(PROJECT_A_ID, "not-a-guid", options)).toEqual({
+            kind: "not-member",
+          });
+        });
+      });
+
+      describe("erasure (eraseAccount)", () => {
+        const options = { now: NOW };
+        const erin: PersonalScope = { kind: "personal", userId: ERASABLE_ID };
+        const noCounts = {
+          surveysDeleted: 0,
+          projectsLeft: 0,
+          projectsDeleted: 0,
+          adminsPromoted: 0,
+        };
+
+        /** Stores an editor asset of the survey and returns its id. */
+        const putAsset = async (surveyId: string): Promise<string> => {
+          const file: StoredFileRecord = {
+            id: newFileId(surveyId),
+            surveyId,
+            kind: "asset",
+            name: "logo.png",
+            contentType: "image/png",
+            size: PNG.length,
+            createdAt: CREATED_AT,
+          };
+          await providers.files.putFile(file, PNG);
+          return file.id;
+        };
+
+        it("deletes every personal survey of an id without a user, archived ones and files too", async () => {
+          const scope = freshScope();
+          const archived = await providers.surveys.createSurvey(newSurvey(scope));
+          await providers.surveys.updateSurvey(archived.id, { archived: true, updatedAt: NOW });
+          const withFile = await providers.surveys.createSurvey(newSurvey(scope));
+          const fileId = await putAsset(withFile.id);
+          const eraseAccount = createEraseAccount(providers);
+
+          expect(await eraseAccount(scope.userId, options)).toEqual({
+            userId: scope.userId,
+            surveysDeleted: 2,
+            projectsLeft: 0,
+            projectsDeleted: 0,
+            adminsPromoted: 0,
+          });
+          expect(await providers.surveys.listSurveys(scope)).toEqual([]);
+          expect(await providers.surveys.getSurvey(archived.id)).toBeNull();
+          expect(await providers.surveys.getSurvey(withFile.id)).toBeNull();
+          expect(await providers.files.getFile(fileId)).toBeNull();
+          expect(await eraseAccount(scope.userId, options)).toEqual({
+            userId: scope.userId,
+            ...noCounts,
+          });
+        });
+
+        it("previews, then erases Erin: projects first, then her personal surveys", async () => {
+          const eraseAccount = createEraseAccount(providers);
+          // Leftovers of an interrupted earlier run on the replica (R4) would change the counts.
+          await eraseAccount(ERASABLE_ID, options);
+
+          const personal = await providers.surveys.createSurvey(newSurvey(erin));
+          // Named so that listUserProjects returns them in this order.
+          const tag = randomUUID();
+          const p1 = await ownProject({ name: `Erasure 1 ${tag}`, creatorId: ERASABLE_ID });
+          await providers.projects.addMember(p1.id, MEMBER_ID, "user", options);
+          const p1Survey = await providers.surveys.createSurvey(
+            newSurvey(freshScope(), {
+              owner: { kind: "project", projectId: p1.id },
+              creatorId: ERASABLE_ID,
+            }),
+          );
+          onTestFinished(async () => {
+            await providers.surveys.deleteSurvey(p1Survey.id);
+          });
+          const p2 = await ownProject({ name: `Erasure 2 ${tag}`, creatorId: ERASABLE_ID });
+          const p2Survey = await providers.surveys.createSurvey(
+            newSurvey(freshScope(), {
+              owner: { kind: "project", projectId: p2.id },
+              creatorId: ERASABLE_ID,
+            }),
+          );
+          const p2File = await putAsset(p2Survey.id);
+          const p3 = await ownProject({ name: `Erasure 3 ${tag}` });
+          await providers.projects.addMember(p3.id, ERASABLE_ID, "user", options);
+
+          const expectedPreview = {
+            userId: ERASABLE_ID,
+            personalSurveys: [{ id: personal.id, name: personal.name }],
+            projects: [
+              {
+                id: p1.id,
+                name: p1.name,
+                decision: { kind: "promote", successorId: MEMBER_ID },
+                surveyCount: 1,
+              },
+              { id: p2.id, name: p2.name, decision: { kind: "last-member" }, surveyCount: 1 },
+              { id: p3.id, name: p3.name, decision: { kind: "remove" }, surveyCount: 0 },
+            ],
+          };
+          expect(await previewErasure(providers, ERASABLE_ID.toUpperCase())).toEqual(
+            expectedPreview,
+          );
+          // A preview writes nothing: a second one sees the same.
+          expect(await previewErasure(providers, ERASABLE_ID)).toEqual(expectedPreview);
+
+          expect(await eraseAccount(ERASABLE_ID, options)).toEqual({
+            userId: ERASABLE_ID,
+            surveysDeleted: 2,
+            projectsLeft: 2,
+            projectsDeleted: 1,
+            adminsPromoted: 1,
+          });
+          expect(await providers.surveys.getSurvey(personal.id)).toBeNull();
+          expect(await providers.surveys.getSurvey(p1Survey.id)).toEqual(p1Survey);
+          expect((await providers.projects.getUserProject(MEMBER_ID, p1.id))?.role).toBe("admin");
+          expect(await providers.projects.getUserProject(ERASABLE_ID, p2.id)).toBeNull();
+          expect(await providers.projects.listMembers(p2.id)).toEqual([]);
+          expect(await providers.surveys.getSurvey(p2Survey.id)).toBeNull();
+          expect(await providers.files.getFile(p2File)).toBeNull();
+          expect(await recordOf(p3.id)).toMatchObject({ memberCount: 1 });
+          const left = (await providers.projects.listUserProjects(ERASABLE_ID)).map(
+            (membership) => membership.project.id,
+          );
+          expect(left.filter((id) => [p1.id, p2.id, p3.id].includes(id))).toEqual([]);
+          expect(await eraseAccount(ERASABLE_ID, options)).toEqual({
+            userId: ERASABLE_ID,
+            ...noCounts,
+          });
         });
       });
     });

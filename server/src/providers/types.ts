@@ -284,6 +284,11 @@ export interface SurveyStore {
    * views and reset markers and the private-question list included; false when no survey has this id. Files are the FileStore's: the service deletes them first (R10).
    */
   deleteSurvey(id: string): Promise<boolean>;
+  /**
+   * R12: every owner id of a personal survey, archived ones included: distinct, lower-case,
+   * ascending. NULL owners, the all-zero GUID and values that are not GUIDs are left out.
+   */
+  listPersonalOwnerIds(): Promise<string[]>;
 }
 
 export type AddMemberOutcome = "added" | "already-member" | "not-found";
@@ -316,6 +321,13 @@ export interface UserDirectory {
    */
   missingUsers(ids: readonly string[]): Promise<string[]>;
 }
+
+/** What `eraseMember` decided and did (R11). */
+export type MemberErasure =
+  | { readonly kind: "not-member" } // no row of the user (or no such project): nothing written
+  | { readonly kind: "last-member" } // no other visible member: nothing written; the caller deletes the project
+  | { readonly kind: "promote"; readonly successorId: string } // rows deleted, successor made admin
+  | { readonly kind: "remove" }; // rows deleted
 
 /**
  * Projects, members and roles (R5): today's project operations of Directory, unchanged in names and
@@ -376,6 +388,20 @@ export interface ProjectStore {
   ): Promise<RoleChangeOutcome>;
   /** Deletes every row of the user (R7), unless `decideRemoval` refuses (R8). */
   removeMember(projectId: string, userId: string): Promise<RemovalOutcome>;
+  /**
+   * R11: atomically, decides with `decideMemberErasure` over the project's rows and writes the
+   * decision. `promote`: deletes every row of the user (orphan or not) and sets every row of the
+   * successor to `admin`; `remove`: deletes every row of the user; `not-member` and `last-member`
+   * write nothing. An unknown project or a non-GUID id gives `not-member`. Erasing the creator
+   * clears the project's owner (as `removeMember` does). Does not check whether the user still exists.
+   */
+  eraseMember(
+    projectId: string,
+    userId: string,
+    options: { readonly now: string },
+  ): Promise<MemberErasure>;
+  /** R12: every user id with a membership row (orphans included): distinct, lower-case, ascending. */
+  listMemberUserIds(): Promise<string[]>;
 }
 
 export interface ProviderSet {

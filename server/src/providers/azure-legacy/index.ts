@@ -61,6 +61,7 @@ import {
   writeClonedSurvey,
   writeDefinitionSave,
   writeMemberAddition,
+  writeMemberErasure,
   writeMemberRemoval,
   writeMemberRole,
   writeNewSurvey,
@@ -81,8 +82,8 @@ import {
  *
  * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
  * folder): survey creation, update, clone, delete, the definition and theme saves and the
- * project and member writes call the writers of writes.ts. Editor files live in a container of
- * their own (files.ts).
+ * project and member writes (member erasure included) call the writers of writes.ts. Editor
+ * files live in a container of their own (files.ts).
  * Connection strings are secrets: no error or log line built here holds one.
  */
 
@@ -172,6 +173,12 @@ const PROJECT_MEMBERS_SELECT =
 const PROJECT_MEMBER_USERS_SELECT =
   "SELECT m.userid, m.role, u.email, u.displayname, u.blocked " +
   "FROM OrganizationUsers m JOIN Users u ON u.id = m.userid WHERE m.organizationid = @project";
+
+/** R12: every owner of a personal survey, archived ones included. */
+const PERSONAL_OWNERS_SELECT = `SELECT DISTINCT s.userid FROM Surveys s WHERE s.userid IS NOT NULL AND NOT ${IS_PROJECT_SURVEY}`;
+/** R12: every user with a membership row, orphans included. */
+const MEMBER_USERS_SELECT = "SELECT DISTINCT userid FROM OrganizationUsers";
+const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
 type MemberUserQueryRow = Omit<LegacyUserRow, "id"> & { userid: string; role: string | null };
@@ -688,6 +695,15 @@ export function createAzureLegacyProviders(
     return writeSurveyDeletion(writeTargets, survey, new Date(now()).toISOString());
   }
 
+  /** The ids of a one-column `userid` SELECT: GUIDs only, lower-case, all-zero left out, distinct, sorted. */
+  async function userIds(operation: string, text: string): Promise<string[]> {
+    const rows = await select<{ userid: string | null }>(operation, text);
+    const ids = rows
+      .map((row) => row.userid?.toLowerCase() ?? "")
+      .filter((id) => isGuid(id) && id !== ZERO_GUID);
+    return [...new Set(ids)].sort();
+  }
+
   async function sqlReady(): Promise<void> {
     await select("readiness check", "SELECT 1 AS ok");
   }
@@ -728,6 +744,10 @@ export function createAzureLegacyProviders(
       updateSurvey,
       cloneSurvey,
       deleteSurvey,
+
+      async listPersonalOwnerIds() {
+        return userIds("personal owner list", PERSONAL_OWNERS_SELECT);
+      },
     },
 
     files: createAzureFileStore(surveysAccount.blobs, {
@@ -842,6 +862,16 @@ export function createAzureLegacyProviders(
       async removeMember(projectId, userId) {
         if (!isGuid(projectId) || !isGuid(userId)) return "not-found";
         return writeMemberRemoval(writeTargets, projectId, userId);
+      },
+
+      async eraseMember(projectId, userId, { now: at }) {
+        // A user id that is not a GUID has no row (decideMemberErasure's not-member).
+        if (!isGuid(projectId) || !isGuid(userId)) return { kind: "not-member" };
+        return writeMemberErasure(writeTargets, projectId, userId, at);
+      },
+
+      async listMemberUserIds() {
+        return userIds("member user list", MEMBER_USERS_SELECT);
       },
     },
 

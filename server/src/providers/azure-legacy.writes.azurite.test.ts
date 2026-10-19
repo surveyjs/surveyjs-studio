@@ -24,6 +24,7 @@ import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
 import {
   ADMIN_ID,
+  ERASABLE_ID,
   MEMBER_ID,
   PROJECT_B_ID,
   adminUser,
@@ -2193,6 +2194,45 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
           message: "Skipped a project member whose role is unknown.",
         },
       ]);
+    });
+
+    describe("member erasure", () => {
+      // Erin Erasable is the only user erased (R4); the replica's FK allows no orphan rows.
+      it("promotes in place: the erased rows go, the successor's rows change role and timestamp only", async () => {
+        const { id } = await ownProject({ creatorId: ERASABLE_ID });
+        await store().projects.addMember(id, MEMBER_ID, "user", { now: NOW });
+        await insertRawMember(id, MEMBER_ID, "user");
+        await insertRawMember(id, ERASABLE_ID, "user");
+        const successor = await rowsOf(id, MEMBER_ID);
+        expect(successor).toHaveLength(2);
+
+        expect(await store().projects.eraseMember(id, ERASABLE_ID, { now: LATER })).toEqual({
+          kind: "promote",
+          successorId: MEMBER_ID,
+        });
+
+        expect(await rowsOf(id, ERASABLE_ID)).toEqual([]);
+        expect(await rowsOf(id, MEMBER_ID)).toEqual(
+          successor.map((row) => ({ ...row, role: "admin", timestamp: new Date(LATER) })),
+        );
+        expect(await eventsNaming(id)).toEqual([]);
+      });
+
+      it("lets only one of two concurrent erasures of one member write", async () => {
+        const { id } = await ownProject({ creatorId: ERASABLE_ID });
+        const projects = store().projects;
+        await projects.addMember(id, MEMBER_ID, "user", { now: NOW });
+        await twoConnections(id);
+        const outcomes = await Promise.all([
+          projects.eraseMember(id, ERASABLE_ID, { now: LATER }),
+          projects.eraseMember(id, ERASABLE_ID, { now: LATER }),
+        ]);
+        expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(["not-member", "promote"]);
+        expect(await rowsOf(id, ERASABLE_ID)).toEqual([]);
+        expect((await memberRows(id)).map((row) => [row.userid, row.role])).toEqual([
+          [MEMBER_ID, "admin"],
+        ]);
+      });
     });
 
     it("deletes a project: its surveys, archived ones too, move to the receiver with their creators", async () => {
