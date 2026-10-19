@@ -66,6 +66,30 @@ pnpm demo:azurite:down          # stop and wipe the replica
 
 A missing `LEGACY_*` or `OIDC_*` variable stops the run with an error that names it.
 
+## Run against the user-API stub
+
+`CONFORMANCE_USER_DIRECTORY` picks the user directory of the reference server. `default` (unset) is the
+storage provider's own. `surveyjs-api` starts the stand-in for the surveyjs.io user API first
+(`server/src/users/surveyjs-api/stub-cli.ts`, on a free port, with a synthetic token) and runs the
+server with `USER_DIRECTORY=surveyjs-api`, `USER_API_URL` and `USER_API_TOKEN` pointing at it and
+`ACCOUNT_NOTICES=surveyjs-licenses`. Sign-in, members by email and the licence notices then go through
+the API. One extra file, `src/user-directory.test.ts`, runs only in this mode.
+
+```sh
+pnpm test:conformance:user-api   # reads user-api.env
+```
+
+The mode cannot be combined with `CONFORMANCE_BASE_URL`. The stub and the reference server are stopped
+afterwards.
+
+## The account-deleted webhook
+
+The reference server always runs with a fixed, synthetic `ACCOUNT_WEBHOOK_SECRET`, and
+`src/account-deleted.test.ts` signs its calls with it. Against another server
+(`CONFORMANCE_BASE_URL`) set `CONFORMANCE_WEBHOOK_SECRET` to the `whsec_` secret that server was started
+with. Without it the webhook tests are skipped. All erasure cases sit in that one file, because
+conformance files run in parallel and Erin Erasable is the only user the suite may erase.
+
 ## Run against another server
 
 Start the server, then point the suite at its origin (without `/api/v1`, which the suite appends):
@@ -77,3 +101,16 @@ CONFORMANCE_BASE_URL=http://127.0.0.1:3000 pnpm test:conformance
 PowerShell: `$env:CONFORMANCE_BASE_URL = "http://127.0.0.1:3000"; pnpm test:conformance`.
 
 The server must be a fresh, in-memory/empty instance. No child process is started in this mode.
+
+| Variable                     | Meaning                                                                |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `CONFORMANCE_BASE_URL`       | The origin of the server to test                                       |
+| `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped |
+| `CONFORMANCE_PROVIDER`       | `memory` (default) or `azure-legacy`; the reference server only        |
+| `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                 |
+
+Two more files check the server's edge. `src/security-headers.test.ts` expects the headers of
+[ADR 0019](../docs/adr/0019-run-page-isolation-and-security-headers.md) on an API answer, a problem
+answer and an unknown path (HSTS only when the server is reached over https). `src/legacy-urls.test.ts`
+expects `404` with no `Location` for `/published?id=…` and `/Service/EditSurvey/{id}`: the server
+redirects no old address.

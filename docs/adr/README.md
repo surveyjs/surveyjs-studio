@@ -24,3 +24,5 @@ and add each one to this index.
 | [0015](0015-results-summary-table-and-views.md)            | Results: Summary, Table and saved layouts                                       | Accepted |
 | [0016](0016-results-details-exports-and-public-results.md) | Results: Details, exports and public results                                    | Accepted |
 | [0017](0017-projects-and-members.md)                       | Projects and members                                                            | Accepted |
+| [0018](0018-accounts-by-deployment-mode.md)                | Accounts by deployment mode                                                     | Accepted |
+| [0019](0019-run-page-isolation-and-security-headers.md)    | Run page isolation and security headers                                         | Accepted |

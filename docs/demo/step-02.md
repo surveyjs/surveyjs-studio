@@ -76,13 +76,14 @@ Check:
 
 The seed accounts (all in `server/fixtures/legacy/sql/Users.json`, all synthetic):
 
-| Email                  | Name           | Use                                                    |
-| ---------------------- | -------------- | ------------------------------------------------------ |
-| `owner@example.com`    | Olivia Owner   | Personal surveys, admin of Marketing                   |
-| `admin@example.com`    | Adam Admin     | Admin of Engineering (its creator) and Marketing       |
-| `member@example.com`   | Mia Member     | Member of Marketing                                    |
-| `outsider@example.com` | Oscar Outsider | One personal survey, in no project                     |
-| `blocked@example.com`  | (none)         | Blocked user; the display name falls back to the email |
+| Email                  | Name           | Use                                                      |
+| ---------------------- | -------------- | -------------------------------------------------------- |
+| `owner@example.com`    | Olivia Owner   | Personal surveys, admin of Marketing                     |
+| `admin@example.com`    | Adam Admin     | Admin of Engineering (its creator) and Marketing         |
+| `member@example.com`   | Mia Member     | Member of Marketing                                      |
+| `outsider@example.com` | Oscar Outsider | One personal survey, in no project                       |
+| `erasable@example.com` | Erin Erasable  | No data (added in Step 12; erasure demos and tests only) |
+| `blocked@example.com`  | (none)         | Blocked user; the display name falls back to the email   |
 
 Try one more user, and a user that does not exist (the exit code is `1`):
 

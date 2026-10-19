@@ -128,28 +128,34 @@ See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/
 
 Run from the repository root.
 
-| Script                          | What it does                                                                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm demo`                     | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
-| `pnpm build`                    | Builds the API reference and the production web bundle                                                                    |
-| `pnpm test`                     | `test:unit`, then `test:conformance`                                                                                      |
-| `pnpm test:unit`                | Vitest across contract, server, web and repository scripts                                                                |
-| `pnpm test:conformance`         | Conformance suite against a server it starts itself                                                                       |
-| `pnpm demo:azurite:up`          | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
-| `pnpm demo:azurite`             | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
-| `pnpm demo:azurite:down`        | Stops the replica and deletes its data                                                                                    |
-| `pnpm legacy:load`              | Loads the golden fixtures into a running replica                                                                          |
-| `pnpm inspect:legacy`           | Read-only inspector: lists one user's surveys from the configured store                                                   |
-| `pnpm test:providers:azurite`   | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
-| `pnpm test:conformance:azurite` | Conformance suite on the `azure-legacy` provider and the replica                                                          |
-| `pnpm e2e`                      | Playwright tests in three browsers (starts server and web app)                                                            |
-| `pnpm e2e:azurite`              | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
-| `pnpm lint`                     | ESLint                                                                                                                    |
-| `pnpm typecheck`                | `tsc` in every package                                                                                                    |
-| `pnpm format`                   | Prettier, write                                                                                                           |
-| `pnpm format:check`             | Prettier, check only                                                                                                      |
-| `pnpm lint:contract`            | Redocly lint of the contract, and a check that generated types are current                                                |
-| `pnpm check:deps`               | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
+| Script                           | What it does                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm demo`                      | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
+| `pnpm demo:preview`              | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none            |
+| `pnpm build`                     | Builds the API reference and the production web bundle                                                                    |
+| `pnpm test`                      | `test:unit`, then `test:conformance`                                                                                      |
+| `pnpm test:unit`                 | Vitest across contract, server, web and repository scripts                                                                |
+| `pnpm test:conformance`          | Conformance suite against a server it starts itself                                                                       |
+| `pnpm demo:azurite:up`           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
+| `pnpm demo:azurite`              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
+| `pnpm demo:azurite:down`         | Stops the replica and deletes its data                                                                                    |
+| `pnpm legacy:load`               | Loads the golden fixtures into a running replica                                                                          |
+| `pnpm inspect:legacy`            | Read-only inspector: lists one user's surveys from the configured store                                                   |
+| `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
+| `pnpm account:erase`             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
+| `pnpm account:reconcile`         | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
+| `pnpm webhook:account-deleted`   | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
+| `pnpm test:conformance:user-api` | Conformance suite with the server on the user-API stub                                                                    |
+| `pnpm test:providers:azurite`    | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
+| `pnpm test:conformance:azurite`  | Conformance suite on the `azure-legacy` provider and the replica                                                          |
+| `pnpm e2e`                       | Playwright tests in three browsers (starts server and web app)                                                            |
+| `pnpm e2e:azurite`               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
+| `pnpm lint`                      | ESLint                                                                                                                    |
+| `pnpm typecheck`                 | `tsc` in every package                                                                                                    |
+| `pnpm format`                    | Prettier, write                                                                                                           |
+| `pnpm format:check`              | Prettier, check only                                                                                                      |
+| `pnpm lint:contract`             | Redocly lint of the contract, and a check that generated types are current                                                |
+| `pnpm check:deps`                | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
 
 ## Documentation
 
@@ -167,7 +173,9 @@ Run from the repository root.
 - [Testing](docs/testing.md): the test seams and how to run each suite.
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
-- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–11.
+- [Operations](docs/operations.md): configuring accounts, the erase and reconcile commands, the webhook secret, the header policy.
+- Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–12.
 
 **For users and integrators**
 
@@ -178,12 +186,14 @@ Run from the repository root.
   - [publishing and collecting responses](docs/user-guide/publishing-and-collecting-responses.md);
   - [viewing results](docs/user-guide/viewing-results.md) and [downloading, sharing and deleting results](docs/user-guide/downloading-sharing-and-deleting-results.md);
   - [survey history](docs/user-guide/survey-history.md);
-  - [projects and team members](docs/user-guide/projects-and-team-members.md).
+  - [projects and team members](docs/user-guide/projects-and-team-members.md);
+  - [moving from the old My Surveys](docs/user-guide/moving-from-the-old-my-surveys.md).
 - [API](docs/api/README.md):
   - [conventions](docs/api/conventions.md) and [paging](docs/api/paging.md);
   - [authentication, sessions and CSRF](docs/api/authentication.md);
   - [concurrent editing](docs/api/concurrency.md) and [uploads](docs/api/uploads.md);
   - [public endpoints](docs/api/public-endpoints.md) and [exporting results](docs/api/exporting-results.md).
+- For the surveyjs.io team: the [user API and the account-deleted webhook](docs/integrations/surveyjs-user-api.md) and the [redirect map for old My Surveys addresses](docs/operations/surveyjs-redirects.md).
 
 ## Licence
 

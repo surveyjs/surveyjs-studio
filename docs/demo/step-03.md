@@ -18,13 +18,14 @@ Compose, and the ports 10000, 10002, 14333 and 18080 on 127.0.0.1.
 The seed accounts (synthetic; in memory mode they come from `MEMORY_SEED=legacy-fixtures`, in Azurite
 mode from the replica):
 
-| Name           | Email                  | Type in the mock OIDC form | Use                   |
-| -------------- | ---------------------- | -------------------------- | --------------------- |
-| Olivia Owner   | `owner@example.com`    | `owner`                    | The user of this demo |
-| Adam Admin     | `admin@example.com`    | `admin`                    |                       |
-| Mia Member     | `member@example.com`   | `member`                   |                       |
-| Oscar Outsider | `outsider@example.com` | `outsider`                 |                       |
-| (blocked)      | `blocked@example.com`  | `blocked`                  | Sign-in answers `403` |
+| Name           | Email                  | Type in the mock OIDC form | Use                                         |
+| -------------- | ---------------------- | -------------------------- | ------------------------------------------- |
+| Olivia Owner   | `owner@example.com`    | `owner`                    | The user of this demo                       |
+| Adam Admin     | `admin@example.com`    | `admin`                    |                                             |
+| Mia Member     | `member@example.com`   | `member`                   |                                             |
+| Oscar Outsider | `outsider@example.com` | `outsider`                 |                                             |
+| Erin Erasable  | `erasable@example.com` | `erasable`                 | No data; added in Step 12 for erasure demos |
+| (blocked)      | `blocked@example.com`  | `blocked`                  | Sign-in answers `403`                       |
 
 ## 1. Sign in (memory mode)
 

@@ -489,6 +489,27 @@ rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
 - SQL `datetime` rounds the `createdAt` of a new project to about 3 ms; the service answers the value it reads
   back, so one answer stays consistent, but memory and Azure differ in the last digit.
 
+## Step 12: member erasure
+
+Step 12 adds one write, `writeMemberErasure`, in `writes.ts` (the file header and the ESLint `ignores` comment
+gain "Step 12: member erasure"). It is what `projects.eraseMember` does on Azure when an account is erased
+([ADR 0018](0018-accounts-by-deployment-mode.md)). The `surveyjs-sql` user directory and the new reads
+(`listMemberUserIds`, `listPersonalOwnerIds`, `missingUsers`) are `SELECT`s in `index.ts`.
+
+- **One transaction, the Step 11 lock order.** It locks the project's `Organizations` row first (`UPDLOCK,
+HOLDLOCK`; no row means "no such project" and nothing is written), then reads and locks the project's
+  `OrganizationUsers` rows with whether each user exists and the names `listMembers` shows. It decides with the
+  pure rule `decideMemberErasure` and writes the decision: `remove` deletes every row of the user (orphan rows
+  too); `promote` deletes them and sets every row of the successor to `admin` in place; `not-member` and
+  `last-member` write nothing and roll back (the service deletes the project's surveys and the project itself in
+  that case, with the Step 11 delete).
+- **The last-admin refusal does not apply.** The erased user has to leave, so a sole admin is removed and the
+  next member is promoted. This is the one place where a project can lose its admin without the rule saying so.
+- **No audit row**, as for every project write. Errors and logs carry the operation name (`member erase`), the
+  driver's codes and ids only.
+- **Foreign key.** On the replica `OrganizationUsers.userid` references `Users.id`, so the tests write member
+  rows only for fixture users; orphan rows are tested on the memory provider ([testing](../testing.md)).
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

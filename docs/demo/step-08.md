@@ -7,7 +7,7 @@ shell); in PowerShell the same commands work, except where a variable is set or 
 What Step 8 delivers: a published survey can be answered by anyone at `/s/<survey id>`, in its theme, with no
 sign-in. The answers are stored once (a double click or a retry does not make two), a File Upload question sends
 its file to the server and keeps only a link, an unpublished survey shows "This survey is not currently
-available.", and the old `/published?id=` link of surveyjs.io lands on the same page. The public operations are
+available.", and (until Step 12) the old `/published?id=` link of surveyjs.io landed on the same page; Step 12 removed that alias and the site redirects old links instead. The public operations are
 rate limited, and the respondent's IP address is stored only when the survey's setting is on. Behind it are
 four API operations: `getPublishedSurvey`, `submitResponse`, `uploadResponseFile` and `getResultStats` (the
 count; the results page arrives in Step 9). The description for users is [Publishing and collecting
@@ -149,16 +149,11 @@ Expected: `404`. Publish the survey again for part 5.
 
 ## 5. The old link (checklist 5)
 
-Open this address, with your survey id (and a question name for the prefill; `question1` is the name of the
-first question if you did not rename it):
-
-```text
-http://localhost:5173/published?id=<survey id>&question1=Ann
-```
-
-Expected: the address in the bar changes to `http://localhost:5173/s/<survey id>?question1=Ann`, the same run
-page opens, and the first question already holds `Ann`. A link with no `id` (`/published`) shows "This survey is
-not currently available.".
+**Removed in Step 12.** The app no longer redirects `/published?id=<survey id>`: the surveyjs.io site makes that
+redirect (D19, [the redirect map](../operations/surveyjs-redirects.md)). Opening the old address on the app now shows
+"Page not found" ([Step 12 demo](step-12.md)). Step 8 had a route that moved the id into the path and kept the
+other query members; the run page's own prefill (`/s/<survey id>?question1=Ann`) is unchanged, so try that
+address instead: the first question already holds `Ann`.
 
 ## 6. Optional: the rate limit
 
@@ -240,8 +235,8 @@ pnpm e2e
 
 Expected: all pass. `pnpm e2e` runs the new `run.spec.ts` in three browsers: a survey published from the list
 runs in a new tab with its theme and stores one response, a double click on **Complete** stores one, a file
-answer is uploaded and the response keeps its link, an unpublished survey shows the not-available page, the old
-`/published?id=` link redirects with the answer prefilled, and a signed-out respondent loads the Form Library
+answer is uploaded and the response keeps its link, an unpublished survey shows the not-available page, the
+old `/published?id=` link redirected with the answer prefilled (removed in Step 12), and a signed-out respondent loads the Form Library
 and no Creator or Dashboard code. The e2e servers run with the public rate limits raised to 100000, because all
 browsers share one address.
 
@@ -267,7 +262,7 @@ pnpm demo:azurite:down
 | 2   | Completing it shows "Thank you for completing the survey", and `getResultStats` answers `"count":1`; a double click on **Complete** adds only one                             |        |
 | 3   | A File Upload question accepts a 5 MB file, the submission succeeds, `"count"` goes up by one, and the answer holds a `/api/v1/public/files/...` link that downloads the file |        |
 | 4   | After **Unpublish**, reloading the run page shows "This survey is not currently available.", and the API answers `404 survey-not-available` for it and for an unknown id      |        |
-| 5   | `/published?id=<id>` lands on `/s/<id>` with the other query parameters kept and prefilled                                                                                    |        |
+| 5   | (Removed in Step 12) `/s/<id>?question1=Ann` opens the survey with the first question prefilled; the old `/published?id=<id>` address is the surveyjs.io site's redirect now  |        |
 | 6   | (Optional) With `PUBLIC_RATE_LIMIT=5`, the sixth request in a minute answers `429` with `retry-after`                                                                         |        |
 | 7   | On the replica a response is a row in `post<post id>` with the response's id as its row key, and the file is a blob with the kind `response`                                  |        |
 | 8   | `pnpm test:unit`, `pnpm test:conformance`, `pnpm e2e`, and with the replica `pnpm test:providers:azurite`, `pnpm test:conformance:azurite` and `pnpm e2e:azurite` are green   |        |

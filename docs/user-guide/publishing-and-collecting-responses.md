@@ -21,10 +21,11 @@ That address is the **link to give to respondents**. It needs no sign-in.
 
 ## Old links keep working
 
-A link of the old site, `/published?id=<survey id>`, opens the same survey: the address changes to
-`/s/<survey id>`. Anything else in the link (`locale` and prefilled answers, see
-[below](#pre-filling-answers-and-the-language)) is kept. A link without an `id` shows the not-available
-page.
+A link of the old site, `/published?id=<survey id>`, reaches the survey through the surveyjs.io redirect: the site
+sends it to `/s/<survey id>`, and anything else in the link (`locale` and prefilled answers, see
+[below](#pre-filling-answers-and-the-language)) goes along. The app itself knows only `/s/<survey id>`; the old
+address typed straight into the app shows "Page not found"
+([moving from the old My Surveys](moving-from-the-old-my-surveys.md)).
 
 ## What respondents see
 
