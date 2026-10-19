@@ -37,11 +37,11 @@ afterEach(async () => {
 });
 
 /** A signed-in app and the request headers of the owner's browser (cookies and CSRF token). */
-async function startSignedIn(): Promise<{
+async function startSignedIn(env: Record<string, string> = {}): Promise<{
   server: FastifyInstance;
   headers: Record<string, string>;
 }> {
-  const instance = await start();
+  const instance = await start(env);
   const { headers } = await signIn(instance, ownerUser.id);
   return { server: instance, headers };
 }
@@ -347,17 +347,21 @@ const STORED_FILE = {
   createdAt: "2026-01-01T00:00:00.000Z",
 } as const;
 
+/** A synthetic webhook secret (base64 of 24 bytes). */
+const COVERAGE_ENV = { ACCOUNT_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 1).toString("base64")}` };
+
 describe("contract coverage", () => {
   const operations = contractOperations();
 
   it("finds every operation of the contract", () => {
-    expect(operations).toHaveLength(39);
+    expect(operations).toHaveLength(40);
   });
 
   it.each(operations.map((op) => [op.operationId, op] as const))(
     "%s is routed under /api/v1",
     async (_id, op) => {
-      const { server, headers } = await startSignedIn();
+      // With a webhook secret, so that the webhook is routed (without one it answers 404).
+      const { server, headers } = await startSignedIn(COVERAGE_ENV);
       if (op.operationId === "downloadFile") {
         await providers?.files.putFile(STORED_FILE, Buffer.from([0]));
       }
@@ -367,7 +371,12 @@ describe("contract coverage", () => {
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      expect([200, 201, 204, 302, 400, 409, 422, 501]).toContain(res.statusCode);
+      // The webhook is called without a signature.
+      const accepted =
+        op.operationId === "receiveAccountDeleted"
+          ? [401]
+          : [200, 201, 204, 302, 400, 409, 422, 501];
+      expect(accepted).toContain(res.statusCode);
     },
   );
 });

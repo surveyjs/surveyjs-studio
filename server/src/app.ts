@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@my-surveys/contract";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import { createEraseAccount } from "./accounts/erasure.js";
+import { createAccountHandlers } from "./accounts/handlers.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
 import { createIdentityProvider } from "./auth/providers/index.js";
@@ -186,6 +188,14 @@ export async function buildApp(
         maxFileBytes: config.limits.maxFileBytes,
         ...(options.now && { now: options.now }),
       }),
+      ...createAccountHandlers({
+        webhookSecret: config.accountWebhookSecret,
+        eraseAccount: createEraseAccount(
+          { surveys: providers.surveys, projects: providers.projects, files: providers.files },
+          app.log,
+        ),
+        ...(options.now && { now: options.now }),
+      }),
     },
     authentication: {
       sessionSecret: config.sessionSecret,
@@ -200,7 +210,11 @@ export async function buildApp(
     bodyLimits: {
       saveSurveyDefinition: config.limits.maxDocumentBytes,
       saveSurveyTheme: config.limits.maxDocumentBytes,
+      // The account-deleted webhook carries a small event; anything larger is refused unread.
+      receiveAccountDeleted: 65_536,
     },
+    // The webhook's signature covers the body exactly as sent: it is checked before parsing.
+    rawBodyOperations: ["receiveAccountDeleted"],
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);

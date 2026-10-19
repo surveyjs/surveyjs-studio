@@ -730,6 +730,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhooks/account-deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Erase the data of a deleted surveyjs.io account
+         * @description Called by surveyjs.io when a user deletes their account. The server erases the user's
+         *     personal surveys with their results and files, and removes the user from every project.
+         *     A project whose last admin is erased passes to its next member (by display name), who
+         *     becomes an admin; a project without another member is deleted with its surveys. Other
+         *     project surveys stay. The server trusts the signed message: it does not ask the user
+         *     directory whether the account is gone.
+         *
+         *     The call has no session. It is signed as Standard Webhooks (standardwebhooks.com)
+         *     describes, with the secret the server is configured with: `webhook-signature` holds `v1,`
+         *     and the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`. A missing or wrong
+         *     signature, or a timestamp more than five minutes from the server clock, fails with
+         *     `401 invalid-signature` before the body is read. A server without a webhook secret answers
+         *     `404`.
+         *
+         *     `204` means the erasure is finished. Repeating a call is harmless: the second erasure finds
+         *     nothing. Events of another `type` answer `204` and change nothing.
+         */
+        post: operations["receiveAccountDeleted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -762,7 +797,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -1104,6 +1139,17 @@ export interface components {
             }[];
             nextCursor: components["schemas"]["Cursor"];
         };
+        /** @description An account event of surveyjs.io. Only `account.deleted` is acted on. */
+        AccountDeletedEvent: {
+            /**
+             * @description `account.deleted`. Events of other types are accepted and ignored.
+             * @example account.deleted
+             */
+            type: string;
+            data: {
+                userId: components["schemas"]["Id"];
+            };
+        };
     };
     responses: {
         /** @description The request is malformed. */
@@ -1127,6 +1173,23 @@ export interface components {
                  *       "title": "Sign-in required",
                  *       "status": 401,
                  *       "code": "unauthenticated"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The webhook signature is missing, wrong, or older than five minutes (`invalid-signature`). */
+        InvalidSignature: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://my-surveys.surveyjs.io/problems/invalid-signature",
+                 *       "title": "Invalid signature",
+                 *       "status": 401,
+                 *       "code": "invalid-signature"
                  *     }
                  */
                 "application/problem+json": components["schemas"]["Problem"];
@@ -2477,6 +2540,39 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    receiveAccountDeleted: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The message ID; a retry sends the same ID. */
+                "webhook-id": string;
+                /** @description When the message was sent, in Unix seconds. */
+                "webhook-timestamp": string;
+                /** @description Space-separated signatures, each `v1,` and a base64 HMAC-SHA256. */
+                "webhook-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletedEvent"];
+            };
+        };
+        responses: {
+            /** @description The account's data is erased, or the event was ignored. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["InvalidSignature"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
         };
     };
 }

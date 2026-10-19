@@ -74,6 +74,8 @@ tags:
     description: Saved per-user layout of the results dashboard and table. A layout save does not change the survey.
   - name: Public
     description: Endpoints for respondents and public results. No authentication.
+  - name: Integrations
+    description: Server-to-server calls from surveyjs.io. Signed; no session.
 
 security:
   - cookieAuth: []
@@ -1183,6 +1185,59 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  # ----------------------------------------------------------- Integrations
+  /webhooks/account-deleted:
+    post:
+      tags: [Integrations]
+      operationId: receiveAccountDeleted
+      summary: Erase the data of a deleted surveyjs.io account
+      description: |
+        Called by surveyjs.io when a user deletes their account. The server erases the user's
+        personal surveys with their results and files, and removes the user from every project.
+        A project whose last admin is erased passes to its next member (by display name), who
+        becomes an admin; a project without another member is deleted with its surveys. Other
+        project surveys stay. The server trusts the signed message: it does not ask the user
+        directory whether the account is gone.
+
+        The call has no session. It is signed as Standard Webhooks (standardwebhooks.com)
+        describes, with the secret the server is configured with: `webhook-signature` holds `v1,`
+        and the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`. A missing or wrong
+        signature, or a timestamp more than five minutes from the server clock, fails with
+        `401 invalid-signature` before the body is read. A server without a webhook secret answers
+        `404`.
+
+        `204` means the erasure is finished. Repeating a call is harmless: the second erasure finds
+        nothing. Events of another `type` answer `204` and change nothing.
+      security: []
+      parameters:
+        - name: webhook-id
+          in: header
+          required: true
+          description: The message ID; a retry sends the same ID.
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: webhook-timestamp
+          in: header
+          required: true
+          description: When the message was sent, in Unix seconds.
+          schema: { type: string, pattern: '^[0-9]+$' }
+        - name: webhook-signature
+          in: header
+          required: true
+          description: 'Space-separated signatures, each `v1,` and a base64 HMAC-SHA256.'
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountDeletedEvent' }
+      responses:
+        '204':
+          description: The account's data is erased, or the event was ignored.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/InvalidSignature' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+
 components:
   securitySchemes:
     cookieAuth:
@@ -1276,6 +1331,16 @@ components:
             title: Sign-in required
             status: 401
             code: unauthenticated
+    InvalidSignature:
+      description: The webhook signature is missing, wrong, or older than five minutes (`invalid-signature`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/invalid-signature
+            title: Invalid signature
+            status: 401
+            code: invalid-signature
     Forbidden:
       description: Signed in but not allowed (`forbidden`, `csrf-token-invalid`).
       content:
@@ -1419,6 +1484,7 @@ components:
           enum:
             - bad-request
             - unauthenticated
+            - invalid-signature
             - forbidden
             - csrf-token-invalid
             - not-found
@@ -1874,3 +1940,17 @@ components:
               submittedAt: { $ref: '#/components/schemas/Timestamp' }
               data: { type: object, additionalProperties: true }
         nextCursor: { $ref: '#/components/schemas/Cursor' }
+    AccountDeletedEvent:
+      type: object
+      required: [type, data]
+      description: An account event of surveyjs.io. Only `account.deleted` is acted on.
+      properties:
+        type:
+          type: string
+          description: '`account.deleted`. Events of other types are accepted and ignored.'
+          examples: [account.deleted]
+        data:
+          type: object
+          required: [userId]
+          properties:
+            userId: { $ref: '#/components/schemas/Id' }

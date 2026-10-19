@@ -9,6 +9,11 @@ declare module "vitest" {
     baseUrl: string;
     /** `surveyjs-api` when the reference server runs against the user-API stub, else `default`. */
     userDirectory: "default" | "surveyjs-api";
+    /**
+     * The `whsec_` secret the server checks account-deleted webhooks with; null when unknown (an
+     * external server without `CONFORMANCE_WEBHOOK_SECRET`): the webhook tests skip.
+     */
+    webhookSecret: string | null;
   }
 }
 
@@ -16,6 +21,10 @@ const READY_TIMEOUT_MS = 30_000;
 
 // The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
 const USER_API_TOKEN = "conformance-user-api-token";
+
+// The reference server's account-deleted webhook secret: a synthetic test value (the base64 of
+// the 34-byte text `my-surveys-conformance-webhook-key`).
+const WEBHOOK_SECRET = "whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==";
 
 // Every variable of the server's environment table (server/src/config.ts). The reference
 // server must see only the explicit values set below, never the developer's shell.
@@ -142,6 +151,8 @@ function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
     LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",
     // Small, so the 413 test stays cheap (it reads the limit from /config).
     LIMIT_MAX_FILE_BYTES: "65536",
+    // The account-deleted webhook tests sign with the same secret.
+    ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ...providerEnv(),
     ...userDirectoryEnv(stubUrl),
   };
@@ -293,6 +304,7 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
     }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
     project.provide("userDirectory", "default");
+    project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     return;
   }
   const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
@@ -305,6 +317,7 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
   }
   project.provide("baseUrl", server.baseUrl);
   project.provide("userDirectory", mode);
+  project.provide("webhookSecret", WEBHOOK_SECRET);
   return () => {
     server.stop();
     stub?.stop();
