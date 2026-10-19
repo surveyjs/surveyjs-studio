@@ -14,10 +14,10 @@ import { createSurveyViaApi, openRowMenu, pickMenuItem, surveyRow } from "./supp
 import { expect, test, watchConsole } from "./support/test.js";
 import { chooseFile, paddedPng } from "./support/uploads.js";
 
-// The run page (US 18, 37-41, 44): publish and run, single submission, respondent files, the
-// not-available page and surveyjs.io's old run link. Runs in memory mode on three browsers and in
-// Azurite mode. The writable scope is the admin's Personal scope: each test creates its own survey
-// as the admin (who also answers it) and removes it at the end. Fixture surveys are never written.
+// The run page (US 18, 37-41, 44): publish and run, single submission, respondent files and the
+// not-available page. Runs in memory mode on three browsers and in Azurite mode. The writable
+// scope is the admin's Personal scope: each test creates its own survey as the admin (who also
+// answers it) and removes it at the end. Fixture surveys are never written.
 // The brand footer's image host (surveyjs.io) is routed locally, so runs stay offline.
 
 test.describe.configure({ timeout: 60_000 });
@@ -158,19 +158,6 @@ test.describe("not available", () => {
       await page.goto(`/s/${survey.id}`);
       await expect(page.getByText("This survey is not currently available.")).toBeVisible();
     });
-  });
-});
-
-test("the old /published?id= link opens the run page with its answers prefilled", async ({
-  page,
-  browserName,
-}) => {
-  const survey = await adminSurvey(page, "Old link", browserName, QUESTION_DEFINITION);
-  await withCleanup(page, [survey.id], async () => {
-    await publishViaApi(page, survey.id);
-    await page.goto(`/published?id=${survey.id}&q1=Ann`);
-    await expect(page).toHaveURL(new RegExp(`/s/${survey.id}\\?q1=Ann$`));
-    await expect(page.getByRole("textbox", { name: "Your name" })).toHaveValue("Ann");
   });
 });
 

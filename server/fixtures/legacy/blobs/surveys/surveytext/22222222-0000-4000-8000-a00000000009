@@ -1,0 +1,21 @@
+{
+  "title": "XSS in question name <img src=x onerror=alert(1)>",
+  "completedHtml": "<p>Thank you, {q1}.</p><img src=x onerror=alert(5)>",
+  "pages": [
+    {
+      "name": "page1",
+      "elements": [
+        {
+          "type": "text",
+          "name": "<img src=x onerror=alert(2)>",
+          "title": "<script>alert(3)</script>"
+        },
+        {
+          "type": "html",
+          "name": "greeting",
+          "html": "<p>Hello, {q1}.</p><img src=x onerror=alert(4)>"
+        }
+      ]
+    }
+  ]
+}

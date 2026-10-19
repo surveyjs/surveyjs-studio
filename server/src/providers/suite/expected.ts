@@ -210,6 +210,27 @@ export const surveyApiCreated: SurveyRecord = {
   settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
 };
 
+export const XSS_SURVEY_ID = "22222222-0000-4000-8000-a00000000009";
+
+/**
+ * "XSS in question name" (R24): markup in its name, question name and title, HTML and completed
+ * HTML, shown as text by the list, editor and run page. The member's only personal survey; read
+ * only (the e2e answers its submission itself and fails on any definition write).
+ */
+export const surveyXss: SurveyRecord = {
+  id: XSS_SURVEY_ID,
+  name: "XSS in question name <img src=x onerror=alert(1)>",
+  owner: { kind: "personal", userId: MEMBER_ID },
+  creatorId: MEMBER_ID,
+  postId: "33333333-0000-4000-8000-a00000000009",
+  resultId: "44444444-0000-4000-8000-a00000000009",
+  published: true,
+  archived: false,
+  createdAt: "2026-03-01T09:00:00.000Z",
+  updatedAt: "2026-03-01T09:00:00.000Z",
+  settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
+};
+
 export const fixtureSurveys: readonly SurveyRecord[] = [
   surveyFeedback,
   surveyDraft,
@@ -219,6 +240,7 @@ export const fixtureSurveys: readonly SurveyRecord[] = [
   surveyRetro,
   surveyOutsider,
   surveyApiCreated,
+  surveyXss,
 ];
 
 // ---- Survey lists, in the documented order: updatedAt descending, then id ----
@@ -286,12 +308,28 @@ export const largeSurveyDefinition: SurveyDefinition = {
   ],
 };
 
+/** The definition of "XSS in question name" (`…a09`): every piece of markup is meant as text. */
+export const xssDefinition: SurveyDefinition = {
+  title: "XSS in question name <img src=x onerror=alert(1)>",
+  completedHtml: "<p>Thank you, {q1}.</p><img src=x onerror=alert(5)>",
+  pages: [
+    {
+      name: "page1",
+      elements: [
+        { type: "text", name: "<img src=x onerror=alert(2)>", title: "<script>alert(3)</script>" },
+        { type: "html", name: "greeting", html: "<p>Hello, {q1}.</p><img src=x onerror=alert(4)>" },
+      ],
+    },
+  ],
+};
+
 /** Survey -> its stored definition. Every other fixture survey has no surveyjson blob. */
 export const fixtureDefinitions: readonly (readonly [SurveyRecord, SurveyDefinition])[] = [
   [surveyFeedback, fixtureDefinition("Customer feedback")],
   [surveyCampaign, fixtureDefinition("Campaign survey")],
   [surveyRetro, fixtureDefinition("Engineering retro")],
   [surveyApiCreated, largeSurveyDefinition],
+  [surveyXss, xssDefinition],
 ];
 /** The theme of fixture 01 (`Surveys.theme`); no other fixture survey has one. */
 export const feedbackTheme: SurveyTheme = {

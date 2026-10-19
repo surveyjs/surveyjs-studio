@@ -4,8 +4,11 @@
 /** The search as the router parsed it: its default parser already JSON-parses each value. */
 export type RunSearch = Record<string, unknown>;
 
-/** Members that are not answers: `id` is the legacy `/published?id=` survey id. */
-const NOT_ANSWERS = new Set(["id", "locale"]);
+/**
+ * Members that are not answers: only `locale` is reserved. `id` is an ordinary answer: the site's
+ * redirect of its old `/published?id=` links moves the survey id into the path.
+ */
+const NOT_ANSWERS = new Set(["locale"]);
 
 /** Keeps every member as given (a shallow copy): any of them may be an answer. */
 export function validateRunSearch(raw: Record<string, unknown>): RunSearch {
@@ -25,7 +28,7 @@ export function needsLocales(locale: string | undefined): boolean {
   return locale !== undefined && locale.toLowerCase() !== "en";
 }
 
-/** The answers to prefill: every member except `id` and `locale`, in URL order. */
+/** The answers to prefill: every member except `locale`, in URL order. */
 export function prefillValues(search: RunSearch): [string, unknown][] {
   return Object.entries(search).filter(([name]) => !NOT_ANSWERS.has(name));
 }

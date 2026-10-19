@@ -15,6 +15,9 @@ export interface ExpectedErrorResponse {
   readonly status: number;
 }
 
+/** How browsers word a Content Security Policy violation in the console. */
+const CSP_VIOLATION = /Content[- ]Security[- ]Policy/i;
+
 /** The signed-out `/api/v1/me` probe: expected in every test. */
 const ME_401: ExpectedErrorResponse = { path: "/api/v1/me", status: 401 };
 
@@ -24,11 +27,13 @@ const pathMatches = (item: ExpectedErrorResponse, path: string) =>
 /**
  * Watches one page's console and page errors, as the shared `test` does for `page`; the returned
  * function checks what was seen so far. For a second page a test opens itself (another browser
- * context): call the check at the end of the test.
+ * context): call the check at the end of the test. With `allowCspViolations`, the console's
+ * Content Security Policy violations are expected too.
  */
 export function watchConsole(
   page: Page,
   expectedErrorResponses: readonly ExpectedErrorResponse[] = [],
+  { allowCspViolations = false }: { readonly allowCspViolations?: boolean } = {},
 ): () => void {
   const expected = [ME_401, ...expectedErrorResponses];
   const consoleErrors: ConsoleError[] = [];
@@ -56,7 +61,11 @@ export function watchConsole(
       );
     const isFaviconCsp = (error: ConsoleError) =>
       error.text.includes("Content-Security-Policy") && error.text.includes("/favicon.ico");
-    const unexpected = consoleErrors.filter((error) => !matchOf(error) && !isFaviconCsp(error));
+    const isAllowedCsp = (error: ConsoleError) =>
+      allowCspViolations && CSP_VIOLATION.test(error.text);
+    const unexpected = consoleErrors.filter(
+      (error) => !matchOf(error) && !isFaviconCsp(error) && !isAllowedCsp(error),
+    );
     // Each such console error needs its own observed response; the surplus is a problem.
     const unmatched = expected.flatMap((item) =>
       consoleErrors.filter((error) => matchOf(error) === item).slice(observed.get(item) ?? 0),
@@ -80,15 +89,19 @@ export function watchConsole(
  *   with that path and status, and the two are compared only at the end of the test because the
  *   browser does not order the response event before the console message.
  * - Firefox reports the dev sign-in page's CSP blocking its favicon request.
+ * - With the `allowCspViolations` option (`test.use`), every Content Security Policy violation:
+ *   for a spec whose survey holds markup the policy is there to block.
  */
 export const test = base.extend<{
   expectedErrorResponses: ExpectedErrorResponse[];
+  allowCspViolations: boolean;
   consoleGuard: void;
 }>({
   expectedErrorResponses: [[], { option: true }],
+  allowCspViolations: [false, { option: true }],
   consoleGuard: [
-    async ({ page, expectedErrorResponses }, use) => {
-      const check = watchConsole(page, expectedErrorResponses);
+    async ({ page, expectedErrorResponses, allowCspViolations }, use) => {
+      const check = watchConsole(page, expectedErrorResponses, { allowCspViolations });
       await use();
       check();
     },

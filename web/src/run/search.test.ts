@@ -13,11 +13,18 @@ describe("validateRunSearch", () => {
 });
 
 describe("prefillValues", () => {
-  it("lists every member except id and locale, with the parsed values", () => {
-    expect(prefillValues({ id: "x", locale: "de", q1: "Ann", n: 3, list: [1, 2] })).toEqual([
+  it("lists every member except locale, with the parsed values", () => {
+    expect(prefillValues({ locale: "de", q1: "Ann", n: 3, list: [1, 2] })).toEqual([
       ["q1", "Ann"],
       ["n", 3],
       ["list", [1, 2]],
+    ]);
+  });
+
+  it("prefills id like any other answer", () => {
+    expect(prefillValues({ id: "x", locale: "de", q1: "Ann" })).toEqual([
+      ["id", "x"],
+      ["q1", "Ann"],
     ]);
   });
 
