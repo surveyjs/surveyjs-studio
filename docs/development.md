@@ -194,9 +194,10 @@ editor. Where the responses and files go:
 | memory  | In the server's memory. A restart loses them. The fixture surveys start with their legacy responses (Customer feedback has 5), so the count of a fixture survey is not 0                                                                                                                                            |
 | Azurite | Result rows in the table `post{postId}` and completion markers in `SurveyCompletion{surveyId}` of the replica, in the legacy format ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md)); respondent files in the container `my-surveys-files`. They stay until the survey is deleted or `pnpm demo:azurite:down` |
 
-Only a **published** survey runs. Publish it in the list first. Count the responses through the API (the
-results page arrives in Step 9): `GET /api/v1/surveys/<id>/results/stats` in the signed-in browser or with the
-cookie `msid` ([Public endpoints](api/public-endpoints.md#count-the-responses)).
+Only a **published** survey runs. Publish it in the list first. See the responses on the results page
+(**View Results**, [below](#the-results-page-in-both-modes)), or count them through the API:
+`GET /api/v1/surveys/<id>/results/stats` in the signed-in browser or with the cookie `msid`
+([Public endpoints](api/public-endpoints.md#count-the-responses)).
 
 - **The brand footer** loads its logo from `https://surveyjs.io`, so it is a missing image when you are offline.
   It is not an error of the page.
@@ -210,6 +211,32 @@ cookie `msid` ([Public endpoints](api/public-endpoints.md#count-the-responses)).
   `127.0.0.1` (or `::1`). `TRUST_PROXY` matters only behind a real reverse proxy.
 - **The Step 8 demo script** walks through all of it ([demo](demo/step-08.md)).
 
+### The results page in both modes
+
+**View Results** in the survey list opens `/surveys/<survey id>/results`, in both demo modes. Sign in as
+Olivia Owner (Olivia Owner on the memory sign-in page, or `owner` in the mock OIDC form), open the "…" menu of
+**API created** (the first row of her list) and click **View Results**: the Summary shows five charts over
+1,500 responses. [The user's view](user-guide/viewing-results.md) lists what the page does. Where the layouts
+go:
+
+| Mode    | Where the saved layouts of the Summary and the Table go                                                                                                                                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| memory  | In the server's memory, for each user and survey. A restart loses them. Customer feedback starts with the old site's layouts of the fixtures (read-only, until you change or reset one)                                                                                   |
+| Azurite | In the blob container `my-surveys-views` of the replica (created on the first save), as `{surveyId}/{userId}/{view}`, in the format described in [ADR 0010](adr/0010-writing-to-the-legacy-stores.md#step-9-results-layouts). `pnpm legacy:load` **clears** the container |
+
+- **Layouts are per user.** Sign in as another user (for example Adam Admin on a survey of Engineering) to see
+  that your layout is not theirs. Try layouts on surveys you create yourself, and add answers
+  through the run page. A layout saved on a fixture survey is dropped by a restart (memory mode) or by the next
+  `pnpm legacy:load` (Azurite mode), so the test suites never see it.
+- **The licence banner.** The Summary and the Table are SurveyJS Dashboard components. Without
+  `SURVEYJS_LICENSE_KEY` they show the library's banner about a missing licence and stay usable, with no
+  console error. Set the key in your own shell as for the editor, never in a file of this repository.
+- **No new variable.** A layout is limited by the body limit `LIMIT_MAX_RESPONSE_BYTES` only (default 1 MB). A
+  larger layout is refused with `413`, and the page shows its quiet save-failure line.
+- **Exports** (CSV, Excel, PDF) are made in the browser: the server is not involved, and the Excel and PDF
+  code loads on the first such export.
+- **The Step 9 demo script** walks through it ([demo](demo/step-09.md)).
+
 ## Azurite mode
 
 Azurite mode runs the server and the tools against a local replica of the legacy stores, and signs
@@ -222,7 +249,7 @@ and 18080 (mock OIDC server), all on 127.0.0.1.
 | `pnpm demo:azurite:up`   | Starts Azurite, SQL Server and the mock OIDC server, waits until all are healthy, then loads the golden fixtures (`pnpm legacy:load`). Safe to run again |
 | `pnpm demo:azurite`      | Like `pnpm demo`, but the server uses the `azure-legacy` provider on the replica and signs in through the mock OIDC server. Needs `demo:azurite:up`      |
 | `pnpm demo:azurite:down` | Stops the containers and **deletes their volumes**. The next `up` starts empty                                                                           |
-| `pnpm legacy:load`       | Loads the fixtures into a running replica                                                                                                                |
+| `pnpm legacy:load`       | Loads the fixtures into a running replica, and clears the saved results layouts (the container `my-surveys-views`)                                       |
 
 [`docker/azurite.env`](../docker/azurite.env) holds the local-only values: `STORAGE_PROVIDER=azure-legacy`,
 the three `LEGACY_*` connection strings, the SQL Server password, and the `OIDC_*` settings of the
@@ -242,6 +269,15 @@ the command above.) The hosted edition runs too: `APP_EDITION=hosted pnpm demo:a
 `ACCOUNT_NOTICES=surveyjs-licenses pnpm demo:azurite` reads the licence notices from the replica's
 licence tables ([layout, 3.15](architecture/legacy-data-layout.md#315-licences-and-the-licence-expiry-dialogs)).
 The fixtures have fixed expiry dates, so what each user sees depends on today's date.
+
+The loader writes the result rows in **batches**: it deletes the existing rows of a table and creates the
+fixture rows with table transactions of at most 100 actions (Azure Tables allow 100 actions on one partition,
+and a transaction takes one action for each row, so the deletes and the creates go in separate transactions). The
+1,500 generated rows of "API created" made this necessary: loading takes about 3 s instead of about 6 s on a
+warm stack. After the blobs, it deletes every blob of the container `my-surveys-views` (the log line `Views:
+cleared <n> saved layouts`), so a layout saved by hand in a demo does not stay in the fixtures: the
+conformance suite and the end-to-end tests expect the fixtures' own layouts. Running it twice gives the same
+state.
 
 The loader refuses to write to an endpoint that is not local: it checks the
 connection strings, then the URL of every storage client the SDK builds, before any call. Azure Files is
@@ -288,6 +324,19 @@ text signs in a user the directory does not know, with that text as the subject.
 file content (`files/`). Its [README](../server/fixtures/legacy/README.md) lists the layout and what
 each fixture covers. Three things read them: `MEMORY_SEED=legacy-fixtures`, the provider suite,
 and `pnpm legacy:load`.
+
+**The large survey (Step 9).** "API created" (`22222222-0000-4000-8000-a00000000008`, Olivia Owner's Personal
+survey: active, never published) holds **1,500 generated responses** and a definition with five questions
+(`color`, `score`, `subscribe`, `channels`, `comment`). It is for the results page: its Summary counts every
+response, the Table pages through them (300 pages of 5), and `listResults` takes two pages of 1,000 to read
+them. The rows are not a JSON file: `server/src/providers/azure-legacy/large-survey.ts` makes them from a fixed
+rule, so the memory seed and the Azurite loader hold the same rows. Colour is Red, Green or Blue 500 times each;
+`score` 1 to 5, 300 times each; `subscribe` true 375 times; the first response is at
+`2026-05-01T08:00:00.000Z` and the last at `2026-05-01T20:30:00.000Z`, two responses to each minute. The
+definition is the two blobs `server/fixtures/legacy/blobs/surveys/surveyjson/` and `surveytext/` of the survey.
+**Tests only read it:** no response, view or setting is written to it (the end-to-end tests keep their layout
+writes in the browser). The expectations are hand-written in `suite/expected.ts` and not derived from the
+generator.
 
 Seed accounts (all synthetic, in `sql/Users.json`). Use them with the inspector, and to sign in to
 a demo ([Signing in](#signing-in) above):

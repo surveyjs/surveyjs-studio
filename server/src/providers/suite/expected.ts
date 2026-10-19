@@ -6,6 +6,7 @@ import type {
   SurveyResponse,
   SurveyTheme,
   User,
+  ViewState,
 } from "../../domain/types.js";
 import type { Notice } from "../../notices/account-notices.js";
 
@@ -245,11 +246,39 @@ const fixtureDefinition = (title: string): SurveyDefinition => ({
   ],
 });
 
+/** The definition of "API created" (`…a08`), the survey with the 1,500 generated responses. */
+export const largeSurveyDefinition: SurveyDefinition = {
+  title: "API created",
+  pages: [
+    {
+      name: "page1",
+      elements: [
+        {
+          type: "radiogroup",
+          name: "color",
+          title: "Favourite colour",
+          choices: ["Red", "Green", "Blue"],
+        },
+        { type: "rating", name: "score", title: "How likely are you to recommend us?" },
+        { type: "boolean", name: "subscribe", title: "Subscribe to the newsletter?" },
+        {
+          type: "checkbox",
+          name: "channels",
+          title: "Where did you hear about us?",
+          choices: ["Search", "Friend", "Social", "Ad"],
+        },
+        { type: "text", name: "comment", title: "Any comments?" },
+      ],
+    },
+  ],
+};
+
 /** Survey -> its stored definition. Every other fixture survey has no surveyjson blob. */
 export const fixtureDefinitions: readonly (readonly [SurveyRecord, SurveyDefinition])[] = [
   [surveyFeedback, fixtureDefinition("Customer feedback")],
   [surveyCampaign, fixtureDefinition("Campaign survey")],
   [surveyRetro, fixtureDefinition("Engineering retro")],
+  [surveyApiCreated, largeSurveyDefinition],
 ];
 /** The theme of fixture 01 (`Surveys.theme`); no other fixture survey has one. */
 export const feedbackTheme: SurveyTheme = {
@@ -262,7 +291,6 @@ export const surveysWithoutDefinition: readonly SurveyRecord[] = [
   surveyOldPoll,
   surveyArchivedCampaign,
   surveyOutsider,
-  surveyApiCreated,
 ];
 
 // ---- Projects, ordered by project name ("Engineering" before "Marketing") ----
@@ -427,3 +455,64 @@ export const campaignResponses: readonly SurveyResponse[] = fixtureResponses(
   "2026-04-02",
   "client-0002",
 );
+
+// ---- The generated responses of "API created" (`…a08`), see azure-legacy/large-survey.ts ----
+
+/** The id of generated response `n` (1 to 1,500): an independent copy of the generator's rule. */
+export const largeSurveyId = (n: number): string =>
+  `66666666-0000-4000-8000-c${n.toString(16).padStart(11, "0")}`;
+
+/** Generated response 1. */
+export const largeSurveyFirst: SurveyResponse = {
+  id: "66666666-0000-4000-8000-c00000000001",
+  submittedAt: "2026-05-01T08:00:00.000Z",
+  data: { color: "Red", score: 1, subscribe: false, channels: ["Search"] },
+  partial: false,
+};
+
+/** Generated response 500, the last of a 500-row page; ties with 501 at the same minute. */
+export const largeSurvey500: SurveyResponse = {
+  id: "66666666-0000-4000-8000-c000000001f4",
+  submittedAt: "2026-05-01T12:10:00.000Z",
+  data: { color: "Green", score: 5, subscribe: true, channels: ["Ad"], comment: "Comment 500" },
+  partial: false,
+};
+
+/** Generated response 501, the first of the second page. */
+export const largeSurvey501: SurveyResponse = {
+  id: "66666666-0000-4000-8000-c000000001f5",
+  submittedAt: "2026-05-01T12:10:00.000Z",
+  data: { color: "Blue", score: 1, subscribe: false, channels: ["Search"] },
+  partial: false,
+};
+
+/** Generated response 1,500. */
+export const largeSurveyLast: SurveyResponse = {
+  id: "66666666-0000-4000-8000-c000000005dc",
+  submittedAt: "2026-05-01T20:30:00.000Z",
+  data: { color: "Blue", score: 5, subscribe: true, channels: ["Ad"], comment: "Comment 1500" },
+  partial: false,
+};
+
+// ---- Legacy layouts of fixture 01: the blobs in surveyresultsummarystate and surveyresulttablestate ----
+
+export const legacyFeedbackSummaryView: ViewState = {
+  elements: [
+    { name: "satisfaction", isPublic: true },
+    { name: "receipt", isPublic: false },
+  ],
+};
+
+export const legacyFeedbackTableView: ViewState = {
+  locale: "",
+  elements: [
+    {
+      name: "satisfaction",
+      displayName: "How satisfied are you?",
+      isVisible: true,
+      isPublic: true,
+    },
+    { name: "receipt", displayName: "Upload your receipt", isVisible: true, isPublic: false },
+  ],
+  pageSize: 10,
+};

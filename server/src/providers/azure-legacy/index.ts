@@ -31,6 +31,7 @@ import type {
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
 import { createAzureResultStore } from "./results.js";
+import { createAzureViewStore } from "./views.js";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
@@ -661,6 +662,8 @@ export function createAzureLegacyProviders(
     }),
 
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows }),
+
+    views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
 
     directory: {
       async getUser(id) {

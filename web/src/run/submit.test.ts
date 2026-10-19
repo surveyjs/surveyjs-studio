@@ -38,7 +38,7 @@ function setUp(clientId?: string) {
         answer = { resolve: () => resolve({ id: "response-1" }), reject };
       });
     },
-    clientId: () => clientId,
+    clientId: () => Promise.resolve(clientId),
     newKey: () => `key-${++keys}`,
   });
   const setCookie = vi.fn<() => void>();
@@ -49,11 +49,15 @@ function setUp(clientId?: string) {
     deleteCookie,
     send: (options: SaveOptions, data: Record<string, unknown> = { satisfaction: 4 }) =>
       handle({ data, setCookie, deleteCookie }, options),
+    /** Lets the handler read the client id and start its request. */
+    started: settle,
     succeed: async () => {
+      await settle();
       answer!.resolve();
       await settle();
     },
     fail: async (error: unknown) => {
+      await settle();
       answer!.reject(error);
       await settle();
     },
@@ -84,30 +88,33 @@ describe("the submit handler", () => {
     expect(submit.deleteCookie).not.toHaveBeenCalled();
   });
 
-  it("sends the answers, the client id and a key", () => {
+  it("sends the answers, the client id and a key", async () => {
     const submit = setUp("client-1");
 
     submit.send(saveOptions(), { satisfaction: 5 });
+    await submit.started();
 
     expect(submit.requests).toEqual([
       { body: { data: { satisfaction: 5 }, clientId: "client-1" }, key: "key-1" },
     ]);
   });
 
-  it("sends no client id when the limit is off", () => {
+  it("sends no client id when the limit is off", async () => {
     const submit = setUp();
 
     submit.send(saveOptions());
+    await submit.started();
 
     expect(submit.requests).toEqual([{ body: { data: { satisfaction: 4 } }, key: "key-1" }]);
   });
 
-  it("sends nothing more while a request is in flight", () => {
+  it("sends nothing more while a request is in flight", async () => {
     const submit = setUp();
     const second = saveOptions();
 
     submit.send(saveOptions());
     submit.send(second);
+    await submit.started();
 
     expect(submit.requests).toHaveLength(1);
     expect(second.showSaveInProgress).not.toHaveBeenCalled();

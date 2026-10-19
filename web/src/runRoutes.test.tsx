@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CLIENT_ID_KEY } from "./run/clientId";
+import { CLIENT_ID_KEY, perSurveyClientId } from "./run/clientId";
 import type { RunSurveyProps } from "./run/RunSurvey";
 import {
   limitedPublishedSurvey,
@@ -54,11 +54,10 @@ describe("the run page", () => {
   });
 
   it("shows the completed state when this browser has completed a limited survey", async () => {
-    window.localStorage.setItem(CLIENT_ID_KEY, "client-1");
-    server.use(
-      configHandler(),
-      publishedSurveyHandler(limitedPublishedSurvey, { completedFor: "client-1" }),
-    );
+    window.localStorage.setItem(CLIENT_ID_KEY, "browser-1");
+    // The page sends this survey's id, derived from the browser id, never the browser id itself.
+    const completedFor = await perSurveyClientId("browser-1", surveyId);
+    server.use(configHandler(), publishedSurveyHandler(limitedPublishedSurvey, { completedFor }));
 
     renderApp(`/s/${surveyId}`);
 

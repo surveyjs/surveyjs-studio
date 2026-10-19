@@ -71,7 +71,7 @@ tags:
   - name: Results
     description: Collected responses, statistics and exports.
   - name: Views
-    description: Saved per-user layout of the results dashboard and table.
+    description: Saved per-user layout of the results dashboard and table. A layout save does not change the survey.
   - name: Public
     description: Endpoints for respondents and public results. No authentication.
 
@@ -528,7 +528,7 @@ paths:
       summary: Delete a survey permanently
       description: |
         Only archived surveys can be deleted; otherwise `409 survey-not-archived`.
-        Deletes the definition, theme, results, files and history.
+        Deletes the definition, theme, results, files, history and every user's saved results layouts.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -553,7 +553,7 @@ paths:
         project (or Personal), unless `projectId` is given (`null` = the caller's
         Personal surveys; a project requires membership). The caller becomes the
         copy's creator. The default name is `Copy of {name}`, cut to 200 characters.
-        Results, history and settings are not copied.
+        Results, saved results layouts, history and settings are not copied.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -764,12 +764,17 @@ paths:
       operationId: listResults
       summary: List responses
       description: |
-        Oldest first. The dashboard loads every page; there is no 1,000-response
-        cap. For whole-dataset downloads use `GET /surveys/{surveyId}/results/export`.
+        Every stored response, oldest first (by `submittedAt`, then `id`). Each stored
+        row is one item: responses that one client sent are not merged. The dashboard
+        loads every page; there is no 1,000-response cap. For whole-dataset downloads
+        use `GET /surveys/{surveyId}/results/export`.
+
+        A cursor belongs to the survey it was returned for: using it for another
+        survey is `400 bad-request`.
       parameters:
         - name: limit
           in: query
-          description: Page size.
+          description: Page size, 1 to 1000.
           schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
         - { $ref: '#/components/parameters/Cursor' }
       responses:
@@ -778,6 +783,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ResponsePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
@@ -853,19 +859,35 @@ paths:
       tags: [Views]
       operationId: getResultsView
       summary: Get the saved layout
-      description: '`404 view-not-found` means the default layout is used.'
+      description: |
+        The caller's own saved layout of this view. Layouts are kept per user and
+        survey: saving or resetting one changes nothing for other users. Anyone who
+        can see the survey may read, save and reset their own layout.
+
+        A server that took over the per-survey layouts of an older system returns
+        that layout until the user saves or resets their own.
+
+        `404 not-found`: the survey is unknown or not visible to the caller.
+        `404 view-not-found`: no layout is saved, and the default layout is used.
       responses:
         '200':
           description: The saved SurveyJS Dashboard or Table state.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ViewState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [Views]
       operationId: saveResultsView
       summary: Save the layout
+      description: |
+        Saves the caller's layout of this view, replacing the previous one or a
+        reset. Any JSON object is accepted and stored as sent. Bodies larger than
+        `limits.maxResponseBytes` are rejected with `413 payload-too-large`. Saving
+        a layout does not change the survey (its `updatedAt` stays). `403` means a
+        missing or wrong CSRF token.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -877,20 +899,29 @@ paths:
             schema: { $ref: '#/components/schemas/ViewState' }
       responses:
         '204': { description: Saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       tags: [Views]
       operationId: resetResultsView
       summary: Reset the layout to the default
+      description: |
+        Deletes the caller's layout of this view. Afterwards `getResultsView` answers
+        `404 view-not-found`, also where an older per-survey layout exists, until the
+        next save. Resetting a view without a saved layout also answers `204`. `403`
+        means a missing or wrong CSRF token.
       security:
         - cookieAuth: []
           csrfToken: []
         - bearerAuth: []
       responses:
         '204': { description: Reset. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1683,12 +1714,16 @@ components:
           type: object
           description: The respondent's answers keyed by question name, as produced by the Form Library.
           additionalProperties: true
-        clientId: { $ref: '#/components/schemas/ClientId' }
+        clientId:
+          type: string
+          description: The client id sent with the response, as stored. Responses stored by an
+            older system may hold any string.
         respondentIp:
           type: string
           description: Present only when `storeRespondentIp` was on at submission time.
         partial:
           type: boolean
+          description: A partial save from an older client. Not returned in Phase 1.
           x-phase: P1
       examples:
         - id: eb2ed53e-f1ee-4343-a7d4-371d1d689dca

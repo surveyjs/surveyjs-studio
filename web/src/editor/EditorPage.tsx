@@ -19,7 +19,7 @@ import {
 } from "../api/content";
 import { uploadSurveyAsset } from "../api/files";
 import { surveyQueryOptions, type Survey } from "../api/surveys";
-import { applySurveyJSLicense } from "../surveyjs/license";
+import { useLicenceApplied } from "../surveyjs/useLicenceApplied";
 import {
   createDocumentSaver,
   editorStatus,
@@ -278,24 +278,6 @@ function useLeaveGuard(active: boolean): void {
     window.addEventListener("beforeunload", ask);
     return () => window.removeEventListener("beforeunload", ask);
   }, [active]);
-}
-
-/** Applies the SurveyJS licence key before the Creator is built (the Creator reads it then). */
-function useLicenceApplied(key: string | null): boolean {
-  const [applied, setApplied] = useState(key === null);
-  useEffect(() => {
-    if (key === null) return;
-    let active = true;
-    applySurveyJSLicense(key)
-      .catch((error: unknown) => console.warn("Could not apply the SurveyJS licence key", error))
-      .finally(() => {
-        if (active) setApplied(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [key]);
-  return applied;
 }
 
 /** Stands for a save that was not sent because the other document ran into a conflict. */

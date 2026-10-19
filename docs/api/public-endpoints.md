@@ -113,7 +113,11 @@ The convention for an embed that uses the Form Library: take `cookieName` from t
 pass the definition to `new Model(...)`; the library writes and reads that cookie itself. The library writes
 the name into `document.cookie` as it is, so an embed that runs surveys it does not trust should replace a
 `cookieName` that is not an RFC 6265 token (the run page percent-encodes it). For the server side, send the
-same `clientId` on load and on submit:
+same `clientId` on load and on submit. The run page sends a different id for each survey: the lower-case hex
+SHA-256 of `{browser id}:{survey id in lower case}`, where the browser id is a random UUID it keeps in local
+storage and never sends. The authors of two surveys can read the client ids of their responses
+(`listResults`), and this keeps them from matching one browser across their surveys. An embed should do the
+same:
 
 ```sh
 CLIENT=$(uuidgen)

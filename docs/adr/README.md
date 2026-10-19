@@ -21,3 +21,4 @@ and add each one to this index.
 | [0012](0012-editor-content-and-history.md)       | The editor, survey content and history                                          | Accepted |
 | [0013](0013-editor-uploads-and-files.md)         | Editor uploads and file serving                                                 | Accepted |
 | [0014](0014-run-page-and-response-collection.md) | Run page and response collection                                                | Accepted |
+| [0015](0015-results-summary-table-and-views.md)  | Results: Summary, Table and saved layouts                                       | Accepted |

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
+import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
 import type { SurveyRecord } from "../domain/types.js";
 import { createProviders } from "../providers/index.js";
@@ -217,5 +218,59 @@ describe("submitResponse", () => {
       detail:
         "This survey accepts one response per respondent, and this one has already completed it.",
     });
+  });
+});
+
+describe("listResults page size and cursor", () => {
+  const OLIVIA = "11111111-0000-4000-8000-a00000000001";
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+  const LARGE = "22222222-0000-4000-8000-a00000000008";
+
+  async function list(query: string, surveyId = LARGE) {
+    const { server } = await start();
+    const { headers } = await signIn(server, OLIVIA);
+    return server.inject({
+      url: `/api/v1/surveys/${surveyId}/results${query}`,
+      headers,
+    });
+  }
+
+  it("serves 500 items and a cursor without a limit", async () => {
+    const res = await list("");
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ items: unknown[]; nextCursor: string | null }>();
+    expect(body.items).toHaveLength(500);
+    expect(body.nextCursor).toEqual(expect.any(String));
+  });
+
+  it.each([
+    [1000, 1000],
+    [1, 1],
+  ])("serves limit=%i as %i items", async (limit, count) => {
+    const res = await list(`?limit=${limit}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ items: unknown[] }>().items).toHaveLength(count);
+  });
+
+  it.each(["0", "1001", "1.5", "abc"])("refuses limit=%s with 400 at /limit", async (limit) => {
+    const res = await list(`?limit=${limit}`);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: "bad-request", errors: [{ pointer: "/limit" }] });
+  });
+
+  it("refuses a cursor of another survey", async () => {
+    const { server } = await start();
+    const { headers } = await signIn(server, OLIVIA);
+    const first = await server.inject({
+      url: `/api/v1/surveys/${FEEDBACK}/results?limit=1`,
+      headers,
+    });
+    const { nextCursor } = first.json<{ nextCursor: string }>();
+    const res = await server.inject({
+      url: `/api/v1/surveys/${LARGE}/results?cursor=${nextCursor}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: "bad-request", detail: "Invalid cursor." });
   });
 });

@@ -196,3 +196,27 @@ Changes and additions:
 - The footer is the Form Library's own brand block (`showBrandInfo`), as on the site: nothing is
   copied for it. The run page's other texts (loading, load failure, saving and upload messages) are
   the app's own.
+
+Step 9 (the results page, `src/results/`) copies markup and texts from `the site's page markup`
+and `the site's source` (commit `(a site commit)`, the last change of both files,
+2026-10-05). No style file is copied: the classes below come from the stylesheets already copied.
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                                         | In                            | Original                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------- |
+| The tabs: `div.tabs.survey-results-page__tabs` around `ul.tabs__wrapper.my-surveys-page__tabs-wrapper` with three `li.tabs__tab-wrapper > a.tabs__tab`, labelled "Summary", "Table" and "Details" in this order; the active tab adds `tabs__tab--active my-surveys-page__tabs-tab-active`; the tab body is `div.tabs__tab-content.survey-results-page__tab-content`                                                                                          | `src/results/ResultsPage.tsx` | `the site's page markup`, `:54-64` (the list), `:65`, `:71`, `:78` (the bodies) |
+| The two Reset sections, each a `div.mod-mt-30` with its text and a `button.rounded-button.rounded-button--danger` (`type="button"`): "Your custom survey data table will be reset to its default state. Please be aware that the table state reset is irreversible." / "Reset Table State", then "Your custom survey data summary will be reset to its default state. Please be aware that the summary state reset is irreversible." / "Reset Summary State" | `src/results/DetailsTab.tsx`  | `the site's page markup`                                                   |
+| The confirm questions before a reset: "Are you absolutely sure that you want to remove table state ?" and "Are you absolutely sure that you want to remove summary state ?" (`window.confirm`)                                                                                                                                                                                                                                                               | `src/results/DetailsTab.tsx`  | `survey-results.ts:227-250`                                                       |
+
+Changes and additions:
+
+- The tabs are links to `?tab=summary|table|details` (the summary without `tab`), not the site's
+  `#summary`, `#table` and `#info` hash; the active one also has `aria-current="page"`. Only the active
+  tab's body is rendered.
+- The Reset texts are `p.v2-class---paragraph` without the site's `role="alert"` (static text is not a
+  live region). After a reset the page shows "The table layout is reset." or "The summary layout is
+  reset." (or "The layout was not reset. Please try again.") instead of reloading.
+- The page heading stays the survey name (the site's "My Surveys. Results" heading and its locale
+  picker are not copied), and the site's "only the first 1,000 responses" panel is left out: the page
+  shows every response.
+- The loading, load-failure, save-failure and export-failure texts are the app's own; the texts inside
+  the charts and the table come from survey-analytics.

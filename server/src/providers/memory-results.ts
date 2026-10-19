@@ -1,10 +1,8 @@
 import type { CompletionState, SurveyRecord, SurveyResponse } from "../domain/types.js";
+import { isAfterResponse, responseOrder } from "./ordering.js";
 import type { ResultStore } from "./types.js";
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Code-point order, as in ordering.ts. */
-const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export interface MemoryResultsSeed {
   /** Responses by survey id. */
@@ -36,9 +34,7 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
   }
 
   const sorted = (survey: SurveyRecord): SurveyResponse[] =>
-    [...(responses.get(survey.id.toLowerCase())?.values() ?? [])].sort(
-      (a, b) => compareText(a.submittedAt, b.submittedAt) || compareText(a.id, b.id),
-    );
+    [...(responses.get(survey.id.toLowerCase())?.values() ?? [])].sort(responseOrder);
 
   const mark = (survey: SurveyRecord, clientId: string): void => {
     const key = survey.id.toLowerCase();
@@ -81,6 +77,18 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
         count: rows.length,
         firstSubmittedAt: rows[0]?.submittedAt ?? null,
         lastSubmittedAt: rows.at(-1)?.submittedAt ?? null,
+      });
+    },
+    listResponsePage: (survey, { after, limit }) => {
+      const matching = sorted(survey).filter((row) => !after || isAfterResponse(row, after));
+      const items = matching.slice(0, limit);
+      const last = items.at(-1);
+      return Promise.resolve({
+        items: structuredClone(items),
+        next:
+          matching.length > items.length && last
+            ? { submittedAt: last.submittedAt, id: last.id }
+            : null,
       });
     },
     completion: (survey, clientId): Promise<CompletionState> => {

@@ -3,9 +3,11 @@ import { AppError } from "../errors.js";
 import {
   decodeHistoryCursor,
   decodeProjectCursor,
+  decodeResultsCursor,
   decodeSurveyCursor,
   encodeHistoryCursor,
   encodeProjectCursor,
+  encodeResultsCursor,
   encodeSurveyCursor,
 } from "./cursor.js";
 
@@ -207,5 +209,47 @@ describe("history cursors", () => {
     ["padding", `${raw(historyPayload)}=`],
   ])("reject %s", (_name, cursor) => {
     expectInvalid(() => decodeHistoryCursor(cursor));
+  });
+});
+
+describe("results cursors", () => {
+  const survey = "22222222-0000-4000-8000-A00000000008";
+  const place = {
+    submittedAt: "2026-05-01T12:10:00.000Z",
+    id: "66666666-0000-4000-8000-c000000001f4",
+  };
+  const resultsPayload = {
+    v: 1,
+    k: "results",
+    s: "22222222-0000-4000-8000-a00000000008",
+    u: place.submittedAt,
+    i: place.id,
+  };
+
+  it("encodes the canonical payload of the lower-case survey id", () => {
+    const cursor = encodeResultsCursor(place, survey);
+    expect(cursor).toBe(
+      "eyJ2IjoxLCJrIjoicmVzdWx0cyIsInMiOiIyMjIyMjIyMi0wMDAwLTQwMDAtODAwMC1hMDAwMDAwMDAwMDgiLCJ1IjoiMjAyNi0wNS0wMVQxMjoxMDowMC4wMDBaIiwiaSI6IjY2NjY2NjY2LTAwMDAtNDAwMC04MDAwLWMwMDAwMDAwMDFmNCJ9",
+    );
+    expect(cursor).toBe(raw(resultsPayload));
+  });
+
+  it("decodes back for the survey, in any case", () => {
+    const cursor = encodeResultsCursor(place, survey);
+    expect(decodeResultsCursor(cursor, survey)).toEqual(place);
+    expect(decodeResultsCursor(cursor, survey.toLowerCase())).toEqual(place);
+  });
+
+  it.each([
+    ["another survey's cursor", encodeResultsCursor(place, "22222222-0000-4000-8000-a00000000001")],
+    ["a history cursor", raw({ ...resultsPayload, k: "history" })],
+    ["an upper-case id", raw({ ...resultsPayload, i: place.id.toUpperCase() })],
+    ["a loose timestamp", raw({ ...resultsPayload, u: "2026-05-01T12:10:00Z" })],
+    ["an extra member", raw({ ...resultsPayload, x: 1 })],
+    ["a missing survey", raw({ v: 1, k: "results", u: place.submittedAt, i: place.id })],
+    ["an id of 65 characters", raw({ ...resultsPayload, i: "a".repeat(65) })],
+    ["padding", `${raw(resultsPayload)}=`],
+  ])("rejects %s", (_name, cursor) => {
+    expectInvalid(() => decodeResultsCursor(cursor, survey));
   });
 });

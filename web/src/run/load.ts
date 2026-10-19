@@ -24,7 +24,7 @@ export async function loadRunSurvey(
 ): Promise<RunSurveyData> {
   const survey = await getPublishedSurvey(surveyId, undefined, signal);
   const limitCookie = limitCookieOf(survey.definition);
-  const clientId = limitCookie === null ? null : clientIds.stored();
+  const clientId = limitCookie === null ? null : await clientIds.stored();
   if (clientId === null) return { survey, limitCookie, completed: false };
   const checked = await getPublishedSurvey(surveyId, clientId, signal);
   return { survey, limitCookie, completed: checked.completed === true };

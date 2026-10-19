@@ -28,6 +28,20 @@ const surveyLocaleModules = /[\\/]node_modules[\\/]survey-core[\\/]fesm[\\/]i18n
 const surveyCoreModules =
   /[\\/]node_modules[\\/]survey-core[\\/](?!fesm[\\/](i18n|themes)[\\/]).*\.m?js$/;
 
+// The Dashboard's charts (src/results/SummaryView.tsx): survey-analytics without its table entry,
+// Chart.js and its colour helper.
+const dashboardModules =
+  /[\\/]node_modules[\\/](survey-analytics[\\/](?!(fesm[\\/])?survey\.analytics\.tabulator)|chart\.js[\\/]|@kurkle[\\/]color[\\/])/;
+// The Dashboard's table (src/results/TableView.tsx): the table entry and its CSS, Tabulator and its CSS.
+const dashboardTableModules =
+  /[\\/]node_modules[\\/](tabulator-tables[\\/]|survey-analytics[\\/](fesm[\\/])?survey\.analytics\.tabulator)/;
+// The table's PDF and Excel export (src/results/exportLibraries.ts), loaded on the first such
+// export: jsPDF with what it imports statically (fflate; fast-png with iobuffer and pako; Babel's
+// runtime helpers), its AutoTable plugin, and SheetJS. jsPDF's own dynamic imports (html2canvas,
+// DOMPurify, canvg) stay in chunks of their own.
+const dashboardExportModules =
+  /[\\/]node_modules[\\/](jspdf|jspdf-autotable|xlsx|fflate|fast-png|iobuffer|pako|@babel[\\/]runtime)[\\/]/;
+
 export default defineConfig({
   // The router plugin must come before the React plugin.
   plugins: [tanstackRouter({ target: "react" }), react()],
@@ -43,9 +57,12 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             // Chunks with stable names. The e2e tests look for `survey-creator-*` (the editor
-            // page only, src/editor/SurveyEditor.tsx) and `survey-form-*` (the run page and the
-            // editor); the build's chunk check (scripts/check-run-chunks.mjs) keeps the Creator
-            // out of the run page. Each group takes only the modules it names: their shared
+            // page only, src/editor/SurveyEditor.tsx), `survey-form-*` (the run page and the
+            // editor) and `survey-dashboard-*` (the results page only: the Summary, the Table
+            // tab's `survey-dashboard-table-*` and the first PDF or Excel export's
+            // `survey-dashboard-export-*`); the build's chunk check (scripts/check-run-chunks.mjs)
+            // keeps the Creator and the Dashboard out of the run page and the Dashboard out of the
+            // results route's own chunk. Each group takes only the modules it names: their shared
             // dependencies (React, survey-core) stay where they are.
             {
               name: "survey-creator",
@@ -63,6 +80,24 @@ export default defineConfig({
             {
               name: "survey-i18n",
               test: surveyLocaleModules,
+              priority: 3,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "survey-dashboard",
+              test: dashboardModules,
+              priority: 3,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "survey-dashboard-table",
+              test: dashboardTableModules,
+              priority: 3,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "survey-dashboard-export",
+              test: dashboardExportModules,
               priority: 3,
               includeDependenciesRecursively: false,
             },

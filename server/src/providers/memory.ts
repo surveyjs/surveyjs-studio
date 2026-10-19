@@ -12,6 +12,7 @@ import type {
   SurveyTheme,
   User,
   Versioned,
+  ViewName,
 } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
 import { contentVersion } from "../domain/content-version.js";
@@ -26,6 +27,7 @@ import {
 } from "./ordering.js";
 import { createMemoryFileStore } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
+import { createMemoryViewStore } from "./memory-views.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -44,6 +46,8 @@ export interface MemorySeed {
   responses?: Record<string, SurveyResponse[]>;
   /** Completion markers by survey id, then client id (S15). */
   completions?: Record<string, Record<string, { partial: boolean }>>;
+  /** The legacy per-survey layouts by survey id, the fallback of `getView` (Step 9). */
+  legacyViews?: Record<string, Partial<Record<ViewName, Record<string, unknown>>>>;
 }
 
 interface StoredHistoryEntry {
@@ -136,6 +140,10 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
   const results = createMemoryResultStore({
     ...(seed?.responses && { responses: seed.responses }),
     ...(seed?.completions && { completions: seed.completions }),
+  });
+
+  const views = createMemoryViewStore({
+    ...(seed?.legacyViews && { legacyViews: seed.legacyViews }),
   });
 
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
@@ -291,11 +299,13 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         history.delete(removed!.id);
         themes.delete(removed!.id);
         results.dropSurvey(removed!.id);
+        views.dropSurvey(removed!.id);
         return Promise.resolve(true);
       },
     },
     files: createMemoryFileStore(),
     results: results.store,
+    views: views.store,
     directory: {
       getUser: (id) => {
         const found = users.find((u) => u.id === lower(id));

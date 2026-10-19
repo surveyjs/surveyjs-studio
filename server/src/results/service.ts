@@ -13,10 +13,12 @@ import {
 } from "../providers/types.js";
 import { createSurveyAccess } from "../surveys/access.js";
 import { availableSurvey, surveyNotAvailable } from "./availability.js";
+import { decodeResultsCursor, encodeResultsCursor } from "../paging/cursor.js";
 import { limitCookieOf, publishedDefinition } from "./one-response.js";
 
 export type PublishedSurveyJson = components["schemas"]["PublishedSurvey"];
 export type ResultStatsJson = components["schemas"]["ResultStats"];
+export type ResponsePageJson = components["schemas"]["ResponsePage"];
 
 export interface SubmitRequest {
   readonly data: Record<string, unknown>;
@@ -31,6 +33,12 @@ export interface ResultsService {
   getPublished(surveyId: string, clientId: string | undefined): Promise<PublishedSurveyJson>;
   submit(surveyId: string, request: SubmitRequest): Promise<{ id: string }>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
+  /** One page of every stored response, oldest first; answers included. */
+  list(
+    user: RequestUser,
+    surveyId: string,
+    page: { limit: number; cursor?: string },
+  ): Promise<ResponsePageJson>;
 }
 
 export interface ResultsServiceOptions {
@@ -120,6 +128,26 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
     async stats(user, surveyId) {
       const { survey } = await access.visible(user, surveyId);
       return results.stats(survey);
+    },
+
+    async list(user, surveyId, page) {
+      const { survey } = await access.visible(user, surveyId);
+      const after =
+        page.cursor === undefined ? undefined : decodeResultsCursor(page.cursor, survey.id);
+      const { items, next } = await results.listResponsePage(survey, {
+        limit: page.limit,
+        ...(after && { after }),
+      });
+      return {
+        items: items.map((response) => ({
+          id: response.id,
+          submittedAt: response.submittedAt,
+          data: response.data,
+          ...(response.clientId !== undefined && { clientId: response.clientId }),
+          ...(response.respondentIp !== undefined && { respondentIp: response.respondentIp }),
+        })),
+        nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
+      };
     },
   };
 }

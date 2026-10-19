@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Edm, EdmTypes, TableEntity } from "@azure/data-tables";
+import type {
+  Edm,
+  TableClient,
+  EdmTypes,
+  TableEntity,
+  TransactionAction,
+} from "@azure/data-tables";
 import sql from "mssql";
 import {
   DEFAULT_FIXTURE_DIR,
@@ -190,6 +196,28 @@ interface StorageAccount {
   connectionString: string;
 }
 
+/** Azure Tables take at most 100 actions in a transaction, all on one partition. */
+const MAX_TRANSACTION_ACTIONS = 100;
+
+async function submitInBatches(
+  client: TableClient,
+  actions: readonly TransactionAction[],
+  partitionOf: (action: TransactionAction) => string,
+): Promise<void> {
+  const byPartition = new Map<string, TransactionAction[]>();
+  for (const action of actions) {
+    const key = partitionOf(action);
+    const group = byPartition.get(key) ?? [];
+    group.push(action);
+    byPartition.set(key, group);
+  }
+  for (const group of byPartition.values()) {
+    for (let at = 0; at < group.length; at += MAX_TRANSACTION_ACTIONS) {
+      await client.submitTransaction(group.slice(at, at + MAX_TRANSACTION_ACTIONS));
+    }
+  }
+}
+
 async function loadTable(account: StorageAccount, table: LegacyTable): Promise<number> {
   const client = localTableClient(account.connectionString, table.name, account.variable);
   await client.createTable();
@@ -199,8 +227,20 @@ async function loadTable(account: StorageAccount, table: LegacyTable): Promise<n
   })) {
     existing.push({ partitionKey: String(entity.partitionKey), rowKey: String(entity.rowKey) });
   }
-  for (const { partitionKey, rowKey } of existing) await client.deleteEntity(partitionKey, rowKey);
-  for (const raw of table.entities) await client.createEntity(toSdkEntity(raw));
+  // One entity takes part in one action per transaction, so deletes and creates go separately.
+  await submitInBatches(
+    client,
+    existing.map(({ partitionKey, rowKey }): TransactionAction => [
+      "delete",
+      { partitionKey, rowKey },
+    ]),
+    (action) => String((action[1] as { partitionKey: string }).partitionKey),
+  );
+  await submitInBatches(
+    client,
+    table.entities.map((raw): TransactionAction => ["create", toSdkEntity(raw)]),
+    (action) => String((action[1] as { partitionKey: string }).partitionKey),
+  );
   return table.entities.length;
 }
 
@@ -236,6 +276,27 @@ async function loadBlobs(
     }
   }
   return { containers: seen.size, blobs: blobs.length };
+}
+
+/** Container of the saved results layouts of this app (Step 9): emptied on every load. */
+const VIEWS_CONTAINER = "my-surveys-views";
+
+/** Deletes every saved layout, so layouts saved by hand in a demo do not leak into test runs. */
+async function clearViews(account: StorageAccount): Promise<number> {
+  const container = localBlobServiceClient(
+    account.connectionString,
+    account.variable,
+  ).getContainerClient(VIEWS_CONTAINER);
+  let cleared = 0;
+  try {
+    for await (const blob of container.listBlobsFlat()) {
+      await container.deleteBlob(blob.name, { deleteSnapshots: "include" });
+      cleared += 1;
+    }
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode !== 404) throw error;
+  }
+  return cleared;
 }
 
 // --- Entry points ------------------------------------------------------------------------------
@@ -286,6 +347,8 @@ export async function loadLegacyFixtures(
 
   const blobResult = await loadBlobs(accounts, fixtures.blobs);
   log(`Blobs: ${blobResult.blobs} append blobs in ${blobResult.containers} containers`);
+
+  log(`Views: cleared ${await clearViews(accounts.surveys!)} saved layouts`);
 
   if (fixtures.files.length > 0) {
     log(

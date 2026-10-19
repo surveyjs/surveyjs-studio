@@ -1,5 +1,5 @@
 import { AppError } from "../errors.js";
-import type { HistoryPosition, SurveyPosition } from "../providers/types.js";
+import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../providers/types.js";
 
 /**
  * Opaque paging cursors: base64url (no padding) of a UTF-8 JSON payload.
@@ -8,6 +8,8 @@ import type { HistoryPosition, SurveyPosition } from "../providers/types.js";
  *   scope is `personal` or the lower-case project id. A cursor belongs to one list (scope and archived).
  * - Projects: `{"v":1,"k":"projects","n":<lower-cased name>,"i":<id>}`.
  * - History: `{"v":1,"k":"history","u":<at>,"i":<entry id>}`.
+ * - Results: `{"v":1,"k":"results","s":<survey id, lower-case>,"u":<submittedAt>,"i":<response id>}`.
+ *   A cursor belongs to one survey.
  *
  * Only the canonical encoding is accepted: a value is valid when encoding what it decodes to gives
  * the value back (so no padding, no extra members or spaces, upper-case ids or loose timestamps).
@@ -145,4 +147,28 @@ export function decodeHistoryCursor(value: string): HistoryPosition {
   if (v !== VERSION || k !== "history" || !isTimestamp(u) || !isId(i)) throw invalidCursor();
   const position = { at: u, id: i.toLowerCase() };
   return canonical(value, position, encodeHistoryCursor(position));
+}
+
+const resultsPayload = (position: ResponsePosition, surveyId: string) => ({
+  v: VERSION,
+  k: "results",
+  s: surveyId.toLowerCase(),
+  u: position.submittedAt,
+  i: position.id,
+});
+
+export function encodeResultsCursor(position: ResponsePosition, surveyId: string): string {
+  return encode(resultsPayload(position, surveyId));
+}
+
+/**
+ * The position of a results cursor of `surveyId`. Throws `400 bad-request` ("Invalid cursor.") for
+ * anything else, including a cursor of another survey.
+ */
+export function decodeResultsCursor(value: string, surveyId: string): ResponsePosition {
+  const { v, k, s, u, i } = decode(value);
+  if (v !== VERSION || k !== "results" || s !== surveyId.toLowerCase()) throw invalidCursor();
+  if (!isTimestamp(u) || !isId(i)) throw invalidCursor();
+  const position = { submittedAt: u, id: i.toLowerCase() };
+  return canonical(value, position, encodeResultsCursor(position, surveyId));
 }

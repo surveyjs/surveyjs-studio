@@ -143,3 +143,9 @@ export interface StoredFileRecord {
   /** ISO 8601 UTC. */
   readonly createdAt: string;
 }
+
+/** A saved results layout: `summary` (Dashboard) or `table` (Table) (contract `view`). */
+export type ViewName = "summary" | "table";
+
+/** Opaque SurveyJS Dashboard or Table state (contract ViewState): any JSON object. */
+export type ViewState = Record<string, unknown>;

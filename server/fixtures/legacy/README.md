@@ -26,17 +26,17 @@ They serve three jobs:
 
 ## What is in them
 
-| Entity                       | Fixture                                                                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Users                        | owner, admin, member, outsider, and a blocked user with no display name                                                                                                     |
-| Projects                     | Marketing (created by the owner; admin changed role, member joined) and Engineering (created by the admin; the owner joined). One role is stored as `Admin`.                |
-| Surveys                      | 8 surveys: personal, project and private-API (zero creator id); published, never published (NULL), archived                                                                 |
-| Definition and history blobs | `surveyjson` and `surveytext` for three surveys; two history points for the first                                                                                           |
-| Layout blobs                 | all four containers for the first survey (`surveyresultcolumns` in the old format)                                                                                          |
-| Event log                    | `surveys` table audit rows for the main operations                                                                                                                          |
-| Results                      | `post{postId}` for two surveys: plain, client id and partial, IP address, inline file, `dxsimage:` reference; `SurveyCompletion{surveyId}` and one `postdelete{postId}` row |
-| Files                        | one editor asset and one respondent file                                                                                                                                    |
-| Licences                     | owner: expired and valid; admin: expires soon; member: a seat of the owner's valid one; outsider: no date, and a transfer                                                   |
+| Entity                       | Fixture                                                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Users                        | owner, admin, member, outsider, and a blocked user with no display name                                                                                                                                                                          |
+| Projects                     | Marketing (created by the owner; admin changed role, member joined) and Engineering (created by the admin; the owner joined). One role is stored as `Admin`.                                                                                     |
+| Surveys                      | 8 surveys: personal, project and private-API (zero creator id); published, never published (NULL), archived                                                                                                                                      |
+| Definition and history blobs | `surveyjson` and `surveytext` for four surveys; two history points for the first                                                                                                                                                                 |
+| Layout blobs                 | all four containers for the first survey (`surveyresultcolumns` in the old format)                                                                                                                                                               |
+| Event log                    | `surveys` table audit rows for the main operations                                                                                                                                                                                               |
+| Results                      | `post{postId}` for two surveys: plain, client id and partial, IP address, inline file, `dxsimage:` reference, plus 1,500 generated rows for "API created" (see `large-survey.ts`); `SurveyCompletion{surveyId}` and one `postdelete{postId}` row |
+| Files                        | one editor asset and one respondent file                                                                                                                                                                                                         |
+| Licences                     | owner: expired and valid; admin: expires soon; member: a seat of the owner's valid one; outsider: no date, and a transfer                                                                                                                        |
 
 ## Changing them
 
@@ -46,3 +46,5 @@ They serve three jobs:
 3. The expected domain objects in `server/src/providers/suite/expected.ts` are **written by hand**,
    not computed from the mapping. Update them to match, or the provider suite fails.
 4. Run `pnpm test:unit`.
+5. The 1,500 results rows of "API created" are code, not a file: change `src/providers/azure-legacy/large-survey.ts`.
+   Its expectations in `expected.ts` stay hand-written.

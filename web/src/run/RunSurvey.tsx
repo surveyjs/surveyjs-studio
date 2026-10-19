@@ -43,7 +43,7 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
     createSubmitHandler({
       submit: (body, key) => submitResponse(surveyId, body, key),
       // The client id is sent only when the survey limits responses.
-      clientId: () => (limitCookie === null ? undefined : clientIds.ensure()),
+      clientId: () => (limitCookie === null ? Promise.resolve(undefined) : clientIds.ensure()),
     }),
   );
   const upload = createResponseUploadHandler({

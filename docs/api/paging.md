@@ -1,14 +1,14 @@
 # Paging
 
-The list operations (`listSurveys`, `listProjects`) return one page at a time. They use opaque
-cursors, not page numbers.
+The list operations (`listSurveys`, `listProjects`, `listSurveyHistory` and `listResults`) return one page
+at a time. They use opaque cursors, not page numbers.
 
 ## Request and response
 
-| Query parameter | Meaning                                                                           |
-| --------------- | --------------------------------------------------------------------------------- |
-| `limit`         | The most items in one page: 1 to 200, default 50. Out of range: `400 bad-request` |
-| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page            |
+| Query parameter | Meaning                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit`         | The most items in one page. Surveys, projects and history: 1 to 200, default 50. `listResults`: 1 to 1000, default 500. Out of range: `400 bad-request` |
+| `cursor`        | The `nextCursor` of the previous page. Leave it out for the first page                                                                                  |
 
 ```json
 {
@@ -33,7 +33,7 @@ returned it. Using it with another project, or with the other archived state, is
 the list.
 
 A cursor that is damaged, too long (over 1024 characters), or made by hand is `400 bad-request`
-too. So is a `limit` outside 1 to 200.
+too. So is a `limit` outside the range of the operation.
 
 ## Stable while the list changes
 
@@ -45,6 +45,31 @@ walk moves to the top, so a client that has already passed its old place does no
 it starts over.
 
 `listProjects` orders by project name ignoring case, then by id, and its cursors work the same way.
+
+## Results: oldest first, one survey
+
+`listResults` (`GET /surveys/{surveyId}/results`) pages through the responses of one survey.
+
+- **Oldest first.** Items are ordered by `submittedAt` ascending, then by `id`. The order does not change
+  when responses arrive: **new responses land at the end**. A walk that is under way sees a response that
+  arrives later at the end of the walk, exactly once. A response that is older than the cursor's place
+  (a clock that is behind) shows up only on the next walk from the start.
+- **A cursor belongs to one survey.** Using a results cursor with another survey is `400 bad-request`
+  ("Invalid cursor."). Start without a cursor for each survey.
+- **One stored row is one item.** The server does not merge the rows of one client into one response, and
+  `getResultStats` counts rows the same way. Nothing is dropped except a row the server cannot represent
+  (see the note about short pages above).
+- `limit` is 1 to 1000, default 500. The results page of the web app asks for 1000 at a time and walks to
+  the end. There is no cap on the total (the old page stopped at 1,000 responses).
+
+**Cost on the old site's stores.** The `azure-legacy` provider cannot ask Azure Tables for submission
+order: the row keys are random GUIDs. Each page therefore reads the survey's rows from the cursor's time
+on (a filter on the stored time), sorts them in memory and keeps the first `limit`. A page costs about as
+much as the rows that are **not yet paged**, so a walk over a very large survey reads a rising number of
+rows page by page (the first page reads them all). A larger `limit` means fewer pages and less total work.
+An index that avoids this later can replace it behind the same operation
+([legacy data layout, gap 8](../architecture/legacy-data-layout.md#11-gaps-and-open-questions)). The memory
+provider keeps its rows sorted and has no such cost.
 
 ## Example
 
@@ -79,6 +104,34 @@ done
 For a project or the archived list, add `project=<project id>` or `archived=true` to every request
 of the walk, including the first.
 
+### Walk the results of a large survey
+
+The demo data holds a survey "API created" with 1,500 generated responses
+(`22222222-0000-4000-8000-a00000000008`, Olivia Owner's). Signed in as Olivia, count them page by page,
+1000 at a time:
+
+```sh
+SURVEY=22222222-0000-4000-8000-a00000000008
+total=0
+cursor=""
+while : ; do
+  page=$(curl -s -b cookies.txt "$BASE/surveys/$SURVEY/results?limit=1000${cursor:+&cursor=$cursor}")
+  n=$(echo "$page" | jq '.items | length')
+  echo "page of $n"
+  total=$((total + n))
+  cursor=$(echo "$page" | jq -r '.nextCursor // empty')
+  [ -z "$cursor" ] && break
+done
+echo "total $total"
+# page of 1000
+# page of 500
+# total 1500
+```
+
+The first page has `1000` items and a `nextCursor`; the second has `500` and `"nextCursor": null`. Each item
+is `{ id, submittedAt, data, clientId?, respondentIp? }`, oldest first. The cursor works only for this
+survey. Without `limit`, a page holds 500.
+
 ## For ports: the reference cursor format
 
 This section is for people who write another back end. **Clients must not parse cursors**: the
@@ -90,16 +143,19 @@ builds a cursor as the **base64url encoding, without padding, of a UTF-8 JSON ob
 | -------- | --------------------------------------------------------------------------------- |
 | Surveys  | `{"v":1,"k":"surveys","p":"<scope>","a":<archived>,"u":"<updatedAt>","i":"<id>"}` |
 | Projects | `{"v":1,"k":"projects","n":"<lower-cased name>","i":"<id>"}`                      |
+| History  | `{"v":1,"k":"history","u":"<at>","i":"<entry id>"}`                               |
+| Results  | `{"v":1,"k":"results","s":"<survey id>","u":"<submittedAt>","i":"<id>"}`          |
 
-| Member | Meaning                                                                                        |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| `v`    | Format version, `1`                                                                            |
-| `k`    | The kind of list, `surveys` or `projects`                                                      |
-| `p`    | Surveys: `personal`, or the lower-case project id                                              |
-| `a`    | Surveys: the `archived` flag of the request, `true` or `false`                                 |
-| `u`    | Surveys: `updatedAt` of the last item of the page (ISO 8601 UTC, as `Date#toISOString` writes) |
-| `i`    | The id of the last item of the page, lower case, 1 to 64 characters                            |
-| `n`    | Projects: the name of the last item, lower-cased                                               |
+| Member | Meaning                                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `v`    | Format version, `1`                                                                                                                   |
+| `k`    | The kind of list: `surveys`, `projects`, `history` or `results`                                                                       |
+| `p`    | Surveys: `personal`, or the lower-case project id                                                                                     |
+| `a`    | Surveys: the `archived` flag of the request, `true` or `false`                                                                        |
+| `s`    | Results: the lower-case id of the survey the cursor belongs to                                                                        |
+| `u`    | Surveys: `updatedAt`; history: `at`; results: `submittedAt` of the last item of the page (ISO 8601 UTC, as `Date#toISOString` writes) |
+| `i`    | The id of the last item of the page (for history, the entry id), lower case, 1 to 64 characters                                       |
+| `n`    | Projects: the name of the last item, lower-cased                                                                                      |
 
 A decoder also rejects a timestamp `u` whose year is not four digits between 1753 and 9999 (the range of
 SQL `datetime`), so the answer is `400` and not a database error.
@@ -118,10 +174,12 @@ The reference server rejects a cursor with `400 bad-request` ("Invalid cursor.")
 - has another `v` or `k`, or a missing or wrongly typed member;
 - has a `u` that is not an ISO 8601 UTC timestamp written as `Date#toISOString` writes it;
 - has an empty `i`, or an `i` longer than 64 characters;
-- belongs to another list: `p` or `a` differ from the request's `project` and `archived`;
+- belongs to another list: `p` or `a` differ from the request's `project` and `archived`, or `s` is not the
+  survey of the request;
 - is not the **canonical** encoding: a value that does not encode back to itself (padding, extra
   members, spaces, upper-case ids, loose timestamps) is invalid.
 
 After the position, the next page holds the items that come later in list order. For surveys that
-means `updatedAt` older than `u`, or equal to `u` with an `id` greater than `i` (code-point order).
+means `updatedAt` older than `u`, or equal to `u` with an `id` greater than `i` (code-point order). For
+results it means `submittedAt` later than `u`, or equal to `u` with an `id` greater than `i`.
 The store itself keeps no state between requests.

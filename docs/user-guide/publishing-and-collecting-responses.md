@@ -59,7 +59,9 @@ When it is on:
 1. **The browser** remembers the answer. The Form Library sets a cookie with the survey's cookie name when
    the survey is completed, and shows "You have already completed this survey." on the next visit.
 2. **The server** checks too. The run page keeps one random id for this browser (in the browser's local
-   storage) and sends it with the answers. After a completed response, the server refuses a second one
+   storage). It never sends that id: it sends an id made from it and the survey's ID, the same on every
+   visit to this survey and a different one for every other survey. So the authors of two surveys cannot
+   tell that the same browser answered both. After a completed response, the server refuses a second one
    for the same id (`409 already-completed`), and the page shows "You have already completed this survey.".
 
 It is a **courtesy limit, not a lock**. It cannot stop a respondent who clears the browser's data, opens
@@ -114,8 +116,8 @@ http://localhost:5173/s/<survey id>?locale=de&name=Ann&satisfaction=4
 
 ## Count the responses now
 
-The results page arrives in Step 9; **View Results** still opens a placeholder. Until then, a signed-in user
-who can see the survey can read the count through the API:
+The answers are on the results page ([Viewing results](viewing-results.md)); the count of the Details tab
+arrives with Step 10. A signed-in user who can see the survey can read the count through the API now:
 
 ```sh
 curl -s http://localhost:5173/api/v1/surveys/<survey id>/results/stats -b "msid=<cookie value>"

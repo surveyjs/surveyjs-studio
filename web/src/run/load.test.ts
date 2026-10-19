@@ -12,10 +12,8 @@ const surveyId = samplePublishedSurvey.id;
 
 /** Client ids with a fixed stored value; `ensure` must not be needed while loading. */
 const clientIdsWith = (stored: string | null): ClientIds => ({
-  stored: () => stored,
-  ensure: () => {
-    throw new Error("loading must not create a client id");
-  },
+  stored: () => Promise.resolve(stored),
+  ensure: () => Promise.reject(new Error("loading must not create a client id")),
 });
 
 /** Serves `survey` and records the `clientId` of each request (null when absent). */

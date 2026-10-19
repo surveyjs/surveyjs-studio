@@ -201,6 +201,15 @@ can load Creator, Ace or Dashboard code.
 - The brand footer loads its logo from `surveyjs.io`; offline it is a missing image.
 - The run page does not show the old "Disclaimer of liability" banner until Step 13.
 
+**Step 9 change (S18).** Step 9 made `listResults` return each response's `clientId`, so a browser-wide id would
+let the authors of different surveys match one respondent across their surveys. The run page now keeps the
+browser id in local storage as before (same key) but never sends it. It sends a per-survey id: the lower-case
+hex SHA-256 of `{browser id}:{survey id in lower case}` (Web Crypto). The same browser and survey give the same
+id on every visit, so the limit works as before; different surveys get unrelated ids. Without `crypto.subtle`
+(a page outside a secure context) the page sends a random id for this page load, and the stored browser id is
+left alone. Markers written before the change are keyed by the browser id, so the server does not count a browser's
+earlier response to a limited survey; the library's cookie still does. See [ADR 0015](0015-results-summary-table-and-views.md#to-confirm).
+
 ## For the product owner to confirm
 
 These rulings are decisions of the team, not of the product owner. Until the owner confirms them, they stand as

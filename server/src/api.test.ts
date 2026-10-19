@@ -214,7 +214,7 @@ describe("request validation", () => {
 describe("operations without a handler", () => {
   it("answer 501 not-implemented naming the operationId", async () => {
     const { server, headers } = await startSignedIn();
-    const res = await server.inject({ url: "/api/v1/surveys/s1/results", headers });
+    const res = await server.inject({ url: "/api/v1/surveys/s1/results/export", headers });
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
@@ -222,7 +222,7 @@ describe("operations without a handler", () => {
       title: "Not implemented",
       status: 501,
       code: "not-implemented",
-      detail: expect.stringContaining("listResults") as string,
+      detail: expect.stringContaining("exportResults") as string,
     });
   });
 
@@ -340,7 +340,7 @@ describe("contract coverage", () => {
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      expect([200, 201, 302, 400, 409, 422, 501]).toContain(res.statusCode);
+      expect([200, 201, 204, 302, 400, 409, 422, 501]).toContain(res.statusCode);
     },
   );
 });
