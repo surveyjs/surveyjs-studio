@@ -15,7 +15,10 @@ function parseProject(value: unknown): string | undefined {
   const text = typeof value === "number" ? String(value) : value;
   if (typeof text !== "string") return undefined;
   const trimmed = text.trim();
-  return trimmed.length >= 1 && trimmed.length <= MAX_PROJECT_LENGTH ? trimmed : undefined;
+  // Project ids are GUIDs, which are case-insensitive; the server and the cache use lower case.
+  return trimmed.length >= 1 && trimmed.length <= MAX_PROJECT_LENGTH
+    ? trimmed.toLowerCase()
+    : undefined;
 }
 
 function parseArchived(value: unknown): boolean | undefined {

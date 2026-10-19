@@ -203,12 +203,6 @@ describe(`server at ${baseUrl}`, () => {
       });
       expect(history.status).toBe(501);
       expect(await codeOf(history)).toBe("not-implemented");
-      const clone = await call("POST", "/surveys/{surveyId}/clones", {
-        path: `/surveys/${SURVEY_ID}/clones`,
-        headers: sessionHeaders(session),
-        body: {},
-      });
-      expect(clone.status).toBe(501);
     });
   });
 

@@ -4,7 +4,11 @@
  * The Azurite replica keeps data between runs, so tests that create surveys do so only in the
  * outsider's personal scope or in the Engineering project, and assertions never assume the exact
  * size of those scopes: they check membership, relative order and computed expectations, walking
- * every page. The owner's personal scope and the Marketing project are never written.
+ * every page. The owner's personal scope and the Marketing project are never written. Since Step 5
+ * `survey-actions.test.ts` also writes to the admin's personal scope; the same rules apply there.
+ *
+ * Never leave or create an archived survey in the outsider's Personal scope: e2e asserts it has none.
+ * (This file archives nothing; `survey-actions.test.ts` archives only in the admin's scope.)
  */
 import { describe, expect, it, type TestContext } from "vitest";
 import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
@@ -331,8 +335,17 @@ describe("createSurvey", () => {
     expect(read.status).toBe(200);
     expect(await read.json()).toEqual(survey);
 
-    const first = (await page(headers)).items[0];
-    expect(first?.id).toBe(survey.id);
+    // Newest first, but survey-actions.test.ts may patch surveys of this scope concurrently, so
+    // only surveys last updated before this one are required to come after it.
+    const items = await walk(headers);
+    const position = items.findIndex((item) => item.id === survey.id);
+    expect(position, `survey ${survey.id} is listed`).toBeGreaterThanOrEqual(0);
+    for (const [index, item] of items.entries()) {
+      if (Date.parse(item.updatedAt) < Date.parse(survey.updatedAt)) {
+        expect(index, `${item.id} is older, so after the new survey`).toBeGreaterThan(position);
+      }
+    }
+    expect(position).toBeLessThan(items.findIndex((item) => item.id === fixture.outsiderQuiz));
   });
 
   it("names a survey one past the highest New Survey N of the scope", async (ctx) => {

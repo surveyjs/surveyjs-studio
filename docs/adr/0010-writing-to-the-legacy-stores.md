@@ -61,6 +61,92 @@ legacy code reads without trouble
   loader's endpoint guard, which refuses any endpoint that is not local. See
   [ADR 0006](0006-legacy-replica.md).
 
+## Step 5: update, clone and delete
+
+Step 5 adds three writes to the same file, under the same rules (one file, legacy columns only, typed
+parameters, ids checked as GUIDs first, errors without content). Reasons for the product rulings behind
+them are in [ADR 0011](0011-survey-actions.md).
+
+### Update
+
+`writeSurveyChanges(targets, id, changes)` sends **one** parameterised
+`UPDATE Surveys SET <changed columns>, [timestamp] = @timestamp WHERE id = @id`, with only the columns
+that the changes name. All fields of a request are applied by this one statement, so a combined change
+is atomic.
+
+| Change                       | Columns (SQL type)                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `name`                       | `name` (`NVarChar(200)`)                                                             |
+| `move`                       | `userid` (project id, or the user id for Personal), `creatorid` (`UniqueIdentifier`) |
+| `published`                  | `ispublished` (`TinyInt`, 1 or 0)                                                    |
+| `archived`                   | `isarchived` (`TinyInt`, 1 or 0)                                                     |
+| `settings.publicResults`     | `allowaccessresult` (`TinyInt`, 1 or 0)                                              |
+| `settings.storeRespondentIp` | `storeipaddress` (`VarChar(200)`, `"1"` or `"0"`)                                    |
+| always                       | `[timestamp]` (`DateTime`, the request's `updatedAt`)                                |
+
+Zero rows affected means no such survey (the provider answers `null`). A patch that changes no column
+(for example `{ "settings": {} }`) still rewrites `timestamp`, as every legacy action does.
+
+The audit rows follow, **best effort** (each in its own `try`; a failure is a warning with the survey id
+and the event type). They are written to table `surveys` with `PartitionKey` `*`, a new GUID as `RowKey`
+and `id`, `happendat` = `updatedAt` and `surveyid`, one per change present, in this order:
+
+| Change                       | `type`                                      | Payload                            |
+| ---------------------------- | ------------------------------------------- | ---------------------------------- |
+| `name`                       | `SURVEY_UPDATE`                             | `name` (`Edm.String`)              |
+| `move`                       | `SURVEY_TRANSFER`                           | `userid`, `creatorid` (`Edm.Guid`) |
+| `published`                  | `SURVEY_PUBLISHED`                          | `ispublished` (`Edm.Boolean`)      |
+| `archived`                   | `SURVEY_ARCHIVE` (true) or `SURVEY_RESTORE` | none                               |
+| `settings.publicResults`     | `SURVEY_ACCESSRESUTL` (sic)                 | `grantaccess` (`Edm.Boolean`)      |
+| `settings.storeRespondentIp` | `SURVEY_POSTRESUTL` (sic)                   | `storeipaddress` (`Edm.Boolean`)   |
+
+The two misspelt type codes are what the legacy code writes; changing them would make the log
+inconsistent. A move changes `creatorid` to the acting user, as legacy does (ADR 0011, R5). The legacy
+code deletes and rewrites the row for a move; one `UPDATE` gives the same stored result.
+
+### Clone
+
+`writeClonedSurvey(targets, sourceId, copy)` first reads the source row's raw `theme` and the raw
+`surveyjson/{sourceId}` blob (a missing blob means none). With no source row it returns `null` and
+writes nothing. Then it runs the create sequence above (blobs, then the row, then `SURVEY_CREATE`),
+with the definition **text copied unchanged** into `surveyjson`, `surveytext` and one
+`surveyjsonhistory/{copyId}/{newGuid}`. A source without a definition blob gives a copy without blobs.
+When the source theme is not empty it then runs
+`UPDATE Surveys SET theme = @theme WHERE id = @copyId` (`VarChar(max)`, text unchanged, `timestamp`
+untouched) and writes a best-effort `SURVEY_THEME_CHANGE` row with `theme`. The extra empty
+`SURVEY_UPDATE` row of the legacy clone is not written.
+
+The theme `UPDATE` is **not** best effort: if it fails after the row was inserted, the clone fails
+(`500`) and leaves a copy without its theme. There is no rollback. A compensating delete of the copy is
+the natural fix if this ever matters.
+
+### Delete
+
+`writeSurveyDeletion(targets, survey, deletedAt)` deletes **children first**, and each step accepts
+"not found" (a missing child is fine, so the call can be repeated). Any other error fails the call.
+
+1. Results-account tables `post{postId}`, `SurveyCompletion{surveyId}` and `postdelete{postId}` (ids
+   without dashes). `LegacyWriteTargets` gained `resultTables` for them.
+2. Surveys-account blobs: `surveyjson/{id}`, `surveytext/{id}`, every blob under
+   `surveyjsonhistory/{id}/`, and the four results-layout blobs named `{surveyId}` in the containers
+   `surveyresulttablestate`, `surveyresultsummarystate`, `surveyresultpermissions` and
+   `surveyresultcolumns` ([layout, section 3.10](../architecture/legacy-data-layout.md#310-results-layouts-the-only-saved-ui-state)).
+   Legacy leaves the layout blobs behind; a deleted survey should leave nothing.
+3. `DELETE FROM Surveys WHERE id = @id`. Zero rows returns `false`.
+4. The `SURVEY_DELETE` audit row (no payload), best effort. Its `happendat` is `deletedAt`, which the
+   provider takes from its own clock (`now`), so tests and the server share one time source.
+
+The record goes last, so a failure in step 1 or 2 leaves a survey that is still visible (it is archived,
+because only archived surveys can be deleted) and can be deleted again.
+
+### Consequences of Step 5
+
+- A failed delete can leave some children removed and the survey visible. Deleting again finishes it.
+- A failed theme `UPDATE` in a clone leaves a copy without its theme (see above).
+- A survey row that cannot be mapped (a NULL `postid` or `userid`) is invisible to the API and cannot
+  be deleted through it.
+- Files are not deleted: no file store exists yet. Step 7 adds them to the cascade.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

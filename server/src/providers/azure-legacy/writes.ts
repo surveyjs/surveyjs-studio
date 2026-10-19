@@ -1,22 +1,28 @@
 import { randomUUID } from "node:crypto";
-import type { Edm, TableClient, TableEntity } from "@azure/data-tables";
+import type { Edm, TableClient, TableEntity, TableServiceClient } from "@azure/data-tables";
 import type { BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
-import type { NewSurvey, SurveyDefinition } from "../../domain/types.js";
+import type {
+  NewSurvey,
+  SurveyChanges,
+  SurveyDefinition,
+  SurveyOwner,
+  SurveyRecord,
+} from "../../domain/types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
 import { isGuid } from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
- * azure-legacy folder read-only. Step 4: survey creation, in the format the legacy site writes
- * (layout section 5.3, "Create survey").
+ * azure-legacy folder read-only. Step 4: survey creation; Step 5: update, clone and delete. Each
+ * write uses the format the legacy site writes (layout section 5.3).
  *
  * Errors and log lines built here hold operation names, driver codes and row ids only, never row
  * content or a connection string.
  */
 
-/** The stores a survey creation writes to. */
+/** The stores the survey writes go to. */
 export interface LegacyWriteTargets {
   /** The connected pool of the legacy database. */
   readonly pool: () => Promise<sql.ConnectionPool>;
@@ -24,6 +30,8 @@ export interface LegacyWriteTargets {
   readonly blobs: BlobServiceClient;
   /** Table `surveys` of the surveys account: the survey event log (layout section 3.5). */
   readonly events: TableClient;
+  /** Table service of the results account: `post…`, `SurveyCompletion…`, `postdelete…` tables. */
+  readonly resultTables: TableServiceClient;
   readonly logger: LegacyWarningLogger;
 }
 
@@ -35,6 +43,19 @@ const SURVEY_INSERT =
   "INSERT INTO Surveys (id, name, userid, creatorid, postid, resultid, createdat, [timestamp]) " +
   "VALUES (@id, @name, @userid, @creatorid, @postid, @resultid, @createdat, @timestamp)";
 const SURVEY_EXISTS = "SELECT 1 AS found FROM Surveys WHERE id = @id";
+const SURVEY_THEME_SELECT = "SELECT theme FROM Surveys WHERE id = @id";
+const SURVEY_THEME_UPDATE = "UPDATE Surveys SET theme = @theme WHERE id = @id";
+const SURVEY_DELETE = "DELETE FROM Surveys WHERE id = @id";
+
+/** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
+const LAYOUT_CONTAINERS = [
+  "surveyresulttablestate",
+  "surveyresultsummarystate",
+  "surveyresultpermissions",
+  "surveyresultcolumns",
+] as const;
+
+type SqlType = (() => sql.ISqlType) | sql.ISqlType;
 
 /**
  * A survey with this id exists already. It carries SQL Server's primary-key violation number, so
@@ -48,19 +69,36 @@ class DuplicateSurveyIdError extends Error {
   }
 }
 
-const ownerIdOf = (survey: NewSurvey): string =>
-  survey.owner.kind === "personal" ? survey.owner.userId : survey.owner.projectId;
+const ownerIdOf = (owner: SurveyOwner): string =>
+  owner.kind === "personal" ? owner.userId : owner.projectId;
+
+/** The id in lower case; refuses anything but a GUID before a write (ids name blobs and tables). */
+function checkedId(operation: string, value: string): string {
+  if (!isGuid(value)) throw new Error(`Survey ${operation} refused: every id must be a GUID`);
+  return value.toLowerCase();
+}
+
+/** Refuses a name that does not fit `Surveys.name`: a longer one must not be cut. */
+function checkName(operation: string, name: string): void {
+  if (name.length > MAX_NAME_LENGTH) {
+    throw new Error(`Survey ${operation} refused: the name is longer than ${MAX_NAME_LENGTH}`);
+  }
+}
 
 /**
  * The survey with lower-case ids, checked before anything is written: every id must be a GUID
  * (they also name blobs) and the name must fit `Surveys.name` (a longer one must not be cut).
  */
-function checked(survey: NewSurvey): NewSurvey {
-  const ids = [survey.id, ownerIdOf(survey), survey.creatorId, survey.postId, survey.resultId];
-  if (!ids.every(isGuid)) throw new Error("Survey create refused: every id must be a GUID");
-  if (survey.name.length > MAX_NAME_LENGTH) {
-    throw new Error(`Survey create refused: the name is longer than ${MAX_NAME_LENGTH}`);
-  }
+function checked(survey: NewSurvey, operation: "create" | "clone"): NewSurvey {
+  const ids = [
+    survey.id,
+    ownerIdOf(survey.owner),
+    survey.creatorId,
+    survey.postId,
+    survey.resultId,
+  ];
+  if (!ids.every(isGuid)) throw new Error(`Survey ${operation} refused: every id must be a GUID`);
+  checkName(operation, survey.name);
   return {
     ...survey,
     id: survey.id.toLowerCase(),
@@ -72,6 +110,15 @@ function checked(survey: NewSurvey): NewSurvey {
     postId: survey.postId.toLowerCase(),
     resultId: survey.resultId.toLowerCase(),
   };
+}
+
+/** Runs `action`; a "not found" (HTTP 404) answer counts as done. */
+async function ignoringNotFound(action: () => Promise<unknown>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (statusOf(error) !== 404) throw error;
+  }
 }
 
 /**
@@ -92,26 +139,79 @@ async function writeNewAppendBlob(
   }
 }
 
+/** The bytes of blob `{container}/{name}`; undefined when it does not exist. */
+async function readBlob(
+  blobs: BlobServiceClient,
+  container: string,
+  name: string,
+): Promise<Buffer | undefined> {
+  try {
+    return await blobs.getContainerClient(container).getBlobClient(name).downloadToBuffer();
+  } catch (error) {
+    if (statusOf(error) === 404) return undefined;
+    throw error;
+  }
+}
+
+/** Deletes blob `{container}/{name}` with any snapshots; a missing blob or container is fine. */
+async function deleteBlobIfPresent(
+  blobs: BlobServiceClient,
+  container: string,
+  name: string,
+): Promise<void> {
+  const blob = blobs.getContainerClient(container).getBlobClient(name);
+  await ignoringNotFound(() => blob.delete({ deleteSnapshots: "include" }));
+}
+
+/** The names of the blobs in `container` under `prefix`; none when the container is missing. */
+async function blobNames(
+  blobs: BlobServiceClient,
+  container: string,
+  prefix: string,
+): Promise<string[]> {
+  const names: string[] = [];
+  await ignoringNotFound(async () => {
+    for await (const blob of blobs.getContainerClient(container).listBlobsFlat({ prefix })) {
+      names.push(blob.name);
+    }
+  });
+  return names;
+}
+
 const guid = (value: string): Edm<"Guid"> => ({ type: "Guid", value });
 
-/** The `SURVEY_CREATE` event row (layout sections 3.5 and 5.1). */
-function createEvent(survey: NewSurvey): TableEntity {
+/**
+ * A row of the survey event log (layout sections 3.5 and 5.1): `PartitionKey` `*`, a new GUID as
+ * `RowKey` and `id`, the event type, the time and the survey, then the event's own properties.
+ */
+function surveyEvent(
+  type: string,
+  surveyId: string,
+  happenedAt: string,
+  payload: Record<string, unknown> = {},
+): TableEntity {
   const eventId = randomUUID();
   const event: TableEntity<Record<string, unknown>> = {
     partitionKey: "*",
     rowKey: eventId,
     id: guid(eventId),
-    type: "SURVEY_CREATE",
-    happendat: { type: "DateTime", value: survey.createdAt } satisfies Edm<"DateTime">,
-    surveyid: guid(survey.id),
-    postid: guid(survey.postId),
-    resultid: guid(survey.resultId),
-    userid: guid(ownerIdOf(survey)),
-    creatorid: guid(survey.creatorId),
-    name: survey.name,
+    type,
+    happendat: { type: "DateTime", value: happenedAt } satisfies Edm<"DateTime">,
+    surveyid: guid(surveyId),
+    ...payload,
   };
   return event;
 }
+
+/** The `SURVEY_CREATE` event row. */
+const createEvent = (survey: NewSurvey): TableEntity =>
+  surveyEvent("SURVEY_CREATE", survey.id, survey.createdAt, {
+    postid: guid(survey.postId),
+    resultid: guid(survey.resultId),
+    userid: guid(ownerIdOf(survey.owner)),
+    creatorid: guid(survey.creatorId),
+    name: survey.name,
+  });
 
 /** Appends the event row; creates the table when it is missing. */
 async function appendEvent(events: TableClient, event: TableEntity): Promise<void> {
@@ -121,6 +221,26 @@ async function appendEvent(events: TableClient, event: TableEntity): Promise<voi
     if (statusOf(error) !== 404) throw error;
     await events.createTable();
     await events.createEntity(event);
+  }
+}
+
+/**
+ * Appends an audit row, best effort: legacy readers use the projections only (layout section 5),
+ * so a failure is logged with the survey id and the event type, and the write stands.
+ */
+async function appendEventBestEffort(
+  targets: LegacyWriteTargets,
+  surveyId: string,
+  event: TableEntity,
+  outcome: string,
+): Promise<void> {
+  try {
+    await appendEvent(targets.events, event);
+  } catch {
+    targets.logger.warn(
+      { surveyId },
+      `Could not write the ${String(event.type)} audit row; ${outcome}`,
+    );
   }
 }
 
@@ -139,7 +259,26 @@ export async function writeNewSurvey(
   input: NewSurvey,
   definition?: SurveyDefinition,
 ): Promise<string> {
-  const survey = checked(input);
+  const survey = checked(input, "create");
+  const text = definition === undefined ? undefined : JSON.stringify(definition);
+  return storeNewSurvey(
+    targets,
+    survey,
+    text === undefined ? undefined : Buffer.from(text, "utf8"),
+    "create",
+  );
+}
+
+/**
+ * The create sequence of writeNewSurvey for a checked survey. `definition` is the blob content,
+ * written unchanged to `surveyjson`, `surveytext` and one history point.
+ */
+async function storeNewSurvey(
+  targets: LegacyWriteTargets,
+  survey: NewSurvey,
+  definition: Buffer | undefined,
+  operation: "create" | "clone",
+): Promise<string> {
   try {
     const pool = await targets.pool();
     // Before any blob: a duplicate id must not leave blobs that an existing survey would read
@@ -150,18 +289,17 @@ export async function writeNewSurvey(
       .query(SURVEY_EXISTS);
     if (existing.recordset.length > 0) throw new DuplicateSurveyIdError();
     if (definition !== undefined) {
-      const text = Buffer.from(JSON.stringify(definition), "utf8");
-      await writeNewAppendBlob(targets.blobs, "surveyjson", survey.id, text);
-      await writeNewAppendBlob(targets.blobs, "surveytext", survey.id, text);
+      await writeNewAppendBlob(targets.blobs, "surveyjson", survey.id, definition);
+      await writeNewAppendBlob(targets.blobs, "surveytext", survey.id, definition);
       // The legacy definition save also writes a history point.
       const point = `${survey.id}/${randomUUID()}`;
-      await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, text);
+      await writeNewAppendBlob(targets.blobs, "surveyjsonhistory", point, definition);
     }
     await pool
       .request()
       .input("id", sql.UniqueIdentifier, survey.id)
       .input("name", sql.NVarChar(MAX_NAME_LENGTH), survey.name)
-      .input("userid", sql.UniqueIdentifier, ownerIdOf(survey))
+      .input("userid", sql.UniqueIdentifier, ownerIdOf(survey.owner))
       .input("creatorid", sql.UniqueIdentifier, survey.creatorId)
       .input("postid", sql.UniqueIdentifier, survey.postId)
       .input("resultid", sql.UniqueIdentifier, survey.resultId)
@@ -169,16 +307,194 @@ export async function writeNewSurvey(
       .input("timestamp", sql.DateTime, new Date(survey.updatedAt))
       .query(SURVEY_INSERT);
   } catch (error) {
-    throw new LegacyStoreError("survey create", error);
+    throw new LegacyStoreError(`survey ${operation}`, error);
+  }
+
+  await appendEventBestEffort(targets, survey.id, createEvent(survey), "the survey is stored.");
+  return survey.id;
+}
+
+/**
+ * Applies `changes` to the `Surveys` row in one parameterised UPDATE that sets only the columns
+ * the changes name, plus `timestamp` (layout section 5.3: every row write moves it). Then one
+ * best-effort audit row per change, in a fixed order (layout section 5.1). A move stores the
+ * target scope's id in `userid` (the user id for Personal) and the mover in `creatorid`, as the
+ * legacy `SURVEY_TRANSFER` does.
+ *
+ * Returns false when no survey has this id (nothing is written). Store failures reject with
+ * LegacyStoreError.
+ */
+export async function writeSurveyChanges(
+  targets: LegacyWriteTargets,
+  surveyId: string,
+  changes: SurveyChanges,
+): Promise<boolean> {
+  const id = checkedId("update", surveyId);
+  const { name, published, archived, settings = {}, updatedAt } = changes;
+  const move = changes.move && {
+    userId: checkedId("update", ownerIdOf(changes.move.owner)),
+    creatorId: checkedId("update", changes.move.creatorId),
+  };
+  if (name !== undefined) checkName("update", name);
+  const flag = (value: boolean) => (value ? 1 : 0);
+
+  const columns: [column: string, type: SqlType, value: unknown][] = [];
+  const events: TableEntity[] = [];
+  const event = (type: string, payload?: Record<string, unknown>) =>
+    events.push(surveyEvent(type, id, updatedAt, payload));
+  if (name !== undefined) {
+    columns.push(["name", sql.NVarChar(MAX_NAME_LENGTH), name]);
+    event("SURVEY_UPDATE", { name });
+  }
+  if (move) {
+    columns.push(["userid", sql.UniqueIdentifier, move.userId]);
+    columns.push(["creatorid", sql.UniqueIdentifier, move.creatorId]);
+    event("SURVEY_TRANSFER", { userid: guid(move.userId), creatorid: guid(move.creatorId) });
+  }
+  if (published !== undefined) {
+    columns.push(["ispublished", sql.TinyInt, flag(published)]);
+    event("SURVEY_PUBLISHED", { ispublished: published });
+  }
+  if (archived !== undefined) {
+    columns.push(["isarchived", sql.TinyInt, flag(archived)]);
+    event(archived ? "SURVEY_ARCHIVE" : "SURVEY_RESTORE");
+  }
+  if (settings.publicResults !== undefined) {
+    columns.push(["allowaccessresult", sql.TinyInt, flag(settings.publicResults)]);
+    // The legacy type code is misspelt; readers of the log expect it as it is.
+    event("SURVEY_ACCESSRESUTL", { grantaccess: settings.publicResults });
+  }
+  if (settings.storeRespondentIp !== undefined) {
+    // A varchar column: the legacy reader takes only "1" as true.
+    columns.push(["storeipaddress", sql.VarChar(200), String(flag(settings.storeRespondentIp))]);
+    // The type legacy writes for this change (layout section 5.1), misspelling included.
+    event("SURVEY_POSTRESUTL", { storeipaddress: settings.storeRespondentIp });
   }
 
   try {
-    await appendEvent(targets.events, createEvent(survey));
-  } catch {
-    targets.logger.warn(
-      { surveyId: survey.id },
-      "Could not write the SURVEY_CREATE audit row; the survey is stored.",
+    const request = (await targets.pool()).request().input("id", sql.UniqueIdentifier, id);
+    const assignments = columns.map(([column, type, value]) => {
+      request.input(column, type, value);
+      return `${column} = @${column}`;
+    });
+    request.input("timestamp", sql.DateTime, new Date(updatedAt));
+    assignments.push("[timestamp] = @timestamp");
+    const result = await request.query(
+      `UPDATE Surveys SET ${assignments.join(", ")} WHERE id = @id`,
     );
+    if ((result.rowsAffected[0] ?? 0) === 0) return false;
+  } catch (error) {
+    throw new LegacyStoreError("survey update", error);
   }
-  return survey.id;
+
+  for (const row of events) {
+    await appendEventBestEffort(targets, id, row, "the survey is updated.");
+  }
+  return true;
+}
+
+/**
+ * Creates `input` as a copy of survey `sourceId`: the create sequence of writeNewSurvey with the
+ * source's `surveyjson` blob copied byte for byte (no blobs when the source has none), then the
+ * source's raw `theme` text on the copy's row (without moving `timestamp`) and a best-effort
+ * `SURVEY_THEME_CHANGE` audit row. Results, history, layouts and settings are not copied.
+ *
+ * Returns the copy's lower-case id, or null when no survey has `sourceId` (nothing is written).
+ * Store failures reject with LegacyStoreError; a duplicate copy id fails as in writeNewSurvey.
+ */
+export async function writeClonedSurvey(
+  targets: LegacyWriteTargets,
+  sourceId: string,
+  input: NewSurvey,
+): Promise<string | null> {
+  const source = checkedId("clone", sourceId);
+  const copy = checked(input, "clone");
+  let theme: string | null;
+  let definition: Buffer | undefined;
+  try {
+    const rows = await (
+      await targets.pool()
+    )
+      .request()
+      .input("id", sql.UniqueIdentifier, source)
+      .query<{ theme: string | null }>(SURVEY_THEME_SELECT);
+    const [row] = rows.recordset;
+    if (!row) return null;
+    theme = row.theme;
+    // No blob until the first definition save (layout section 3.2).
+    definition = await readBlob(targets.blobs, "surveyjson", source);
+  } catch (error) {
+    throw new LegacyStoreError("survey clone", error);
+  }
+
+  await storeNewSurvey(targets, copy, definition, "clone");
+  if (theme === null || theme === "") return copy.id;
+
+  try {
+    await (
+      await targets.pool()
+    )
+      .request()
+      .input("id", sql.UniqueIdentifier, copy.id)
+      .input("theme", sql.VarChar(sql.MAX), theme)
+      .query(SURVEY_THEME_UPDATE);
+  } catch (error) {
+    throw new LegacyStoreError("survey clone", error);
+  }
+  const event = surveyEvent("SURVEY_THEME_CHANGE", copy.id, copy.updatedAt, { theme });
+  await appendEventBestEffort(targets, copy.id, event, "the survey copy is stored.");
+  return copy.id;
+}
+
+/**
+ * Deletes a survey and everything stored for it, children first and the `Surveys` row last, so a
+ * failure leaves the survey visible and the delete can run again. Each step accepts "not found":
+ *
+ * 1. Results account tables `post{postId}`, `SurveyCompletion{surveyId}` and `postdelete{postId}`
+ *    (ids without dashes; layout sections 3.6 to 3.8).
+ * 2. Surveys account blobs `surveyjson/{id}`, `surveytext/{id}`, every `surveyjsonhistory/{id}/…`
+ *    point and the four results-layout blobs `{container}/{id}` (layout sections 3.2, 3.4, 3.10).
+ * 3. The `Surveys` row, which holds the theme.
+ * 4. A best-effort `SURVEY_DELETE` audit row at `deletedAt`.
+ *
+ * Returns false when the row was already gone. Store failures reject with LegacyStoreError.
+ */
+export async function writeSurveyDeletion(
+  targets: LegacyWriteTargets,
+  survey: SurveyRecord,
+  deletedAt: string,
+): Promise<boolean> {
+  const id = checkedId("delete", survey.id);
+  const postKey = checkedId("delete", survey.postId).replaceAll("-", "");
+  const tables = [
+    `post${postKey}`,
+    `SurveyCompletion${id.replaceAll("-", "")}`,
+    `postdelete${postKey}`,
+  ];
+  try {
+    for (const table of tables) {
+      await ignoringNotFound(() => targets.resultTables.deleteTable(table));
+    }
+    await deleteBlobIfPresent(targets.blobs, "surveyjson", id);
+    await deleteBlobIfPresent(targets.blobs, "surveytext", id);
+    for (const point of await blobNames(targets.blobs, "surveyjsonhistory", `${id}/`)) {
+      await deleteBlobIfPresent(targets.blobs, "surveyjsonhistory", point);
+    }
+    for (const container of LAYOUT_CONTAINERS) {
+      await deleteBlobIfPresent(targets.blobs, container, id);
+    }
+    const result = await (
+      await targets.pool()
+    )
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .query(SURVEY_DELETE);
+    if ((result.rowsAffected[0] ?? 0) === 0) return false;
+  } catch (error) {
+    throw new LegacyStoreError("survey delete", error);
+  }
+
+  const event = surveyEvent("SURVEY_DELETE", id, deletedAt);
+  await appendEventBestEffort(targets, id, event, "the survey is deleted.");
+  return true;
 }

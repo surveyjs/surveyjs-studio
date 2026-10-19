@@ -7,11 +7,15 @@ import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import type { Directory, SurveyStore } from "../providers/types.js";
 import { surveyJson, type SurveyJson } from "./json.js";
-import { nextNewSurveyName } from "./naming.js";
+import { cloneName, nextNewSurveyName } from "./naming.js";
+import { surveyChangesFromPatch } from "./patch.js";
 import { canModify, canSee } from "./permissions.js";
 
 type SurveyCreate = components["schemas"]["SurveyCreate"];
 type SurveyPage = components["schemas"]["SurveyPage"];
+type SurveyPatch = components["schemas"]["SurveyPatch"];
+/** The optional `cloneSurvey` body. */
+type SurveyClone = { name?: string; projectId?: string | null };
 
 export interface SurveysServiceOptions {
   readonly surveys: SurveyStore;
@@ -33,6 +37,9 @@ export interface SurveysService {
   list(user: RequestUser, query: SurveyListQuery): Promise<SurveyPage>;
   create(user: RequestUser, body: SurveyCreate | undefined): Promise<SurveyJson>;
   get(user: RequestUser, surveyId: string): Promise<SurveyJson>;
+  update(user: RequestUser, surveyId: string, patch: SurveyPatch): Promise<SurveyJson>;
+  delete(user: RequestUser, surveyId: string): Promise<void>;
+  clone(user: RequestUser, surveyId: string, body: SurveyClone | undefined): Promise<SurveyJson>;
 }
 
 const PERSONAL = "personal";
@@ -52,6 +59,27 @@ function invalidName(name: string): string | null {
   }
   return null;
 }
+
+/** A 422 for a name `invalidName` rejects, or null. */
+function nameProblem(name: string | undefined): AppError | null {
+  const detail = name === undefined ? null : invalidName(name);
+  return detail === null
+    ? null
+    : new AppError({
+        code: "validation-failed",
+        status: 422,
+        title: "Validation failed",
+        errors: [{ pointer: "/name", detail }],
+      });
+}
+
+const notMember = (): AppError =>
+  new AppError({
+    code: "forbidden",
+    status: 403,
+    title: "Forbidden",
+    detail: "You are not a member of this project.",
+  });
 
 function notFound(): AppError {
   return new AppError({ code: "not-found", status: 404, title: "Not found" });
@@ -78,9 +106,44 @@ const projectScope = (membership: ProjectMembership): Scope => ({
   key: membership.project.id.toLowerCase(),
 });
 
-/** `listSurveys`, `createSurvey` and `getSurvey`: the rules of the survey records. */
+/** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
   const { surveys, directory, now = Date.now } = options;
+
+  /** The survey and the user's membership of its project; 404 when unknown or invisible. */
+  async function visible(user: RequestUser, surveyId: string) {
+    const survey = await surveys.getSurvey(surveyId);
+    if (!survey) throw notFound();
+    const membership =
+      survey.owner.kind === "project"
+        ? await directory.getUserProject(user.id, survey.owner.projectId)
+        : null;
+    // A survey the user cannot see answers like an unknown one.
+    if (!canSee(survey, user, membership)) throw notFound();
+    return { survey, membership };
+  }
+
+  /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
+  async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
+    if (projectId === null) return personalScope(user);
+    const membership = await directory.getUserProject(user.id, projectId);
+    if (!membership) throw notMember();
+    return projectScope(membership);
+  }
+
+  /** `visible`, and the user may modify the survey (403 otherwise). */
+  async function modifiable(user: RequestUser, surveyId: string) {
+    const found = await visible(user, surveyId);
+    if (!canModify(found.survey, user, found.membership)) {
+      throw new AppError({
+        code: "forbidden",
+        status: 403,
+        title: "Forbidden",
+        detail: "You cannot modify this survey.",
+      });
+    }
+    return found;
+  }
 
   return {
     async list(user, { project, archived, limit, cursor }) {
@@ -108,26 +171,12 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
 
     async create(user, body = {}) {
       const { name, projectId, definition } = body;
-      const nameProblem = name === undefined ? null : invalidName(name);
-      if (nameProblem !== null) {
-        throw new AppError({
-          code: "validation-failed",
-          status: 422,
-          title: "Validation failed",
-          errors: [{ pointer: "/name", detail: nameProblem }],
-        });
-      }
+      const invalid = nameProblem(name);
+      if (invalid) throw invalid;
       let scope = personalScope(user);
       if (projectId !== undefined && projectId !== null) {
         const membership = await directory.getUserProject(user.id, projectId);
-        if (!membership) {
-          throw new AppError({
-            code: "forbidden",
-            status: 403,
-            title: "Forbidden",
-            detail: "You are not a member of this project.",
-          });
-        }
+        if (!membership) throw notMember();
         scope = projectScope(membership);
       }
       // As on surveyjs.io, the default name counts only the active surveys of the scope.
@@ -154,15 +203,72 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
     },
 
     async get(user, surveyId) {
-      const survey = await surveys.getSurvey(surveyId);
-      if (!survey) throw notFound();
-      const membership =
-        survey.owner.kind === "project"
-          ? await directory.getUserProject(user.id, survey.owner.projectId)
-          : null;
-      // A survey the user cannot see answers like an unknown one.
-      if (!canSee(survey, user, membership)) throw notFound();
+      const { survey, membership } = await visible(user, surveyId);
       return surveyJson(survey, canModify(survey, user, membership));
+    },
+
+    async update(user, surveyId, patch) {
+      const invalid = nameProblem(patch.name);
+      if (invalid) throw invalid;
+      const { survey } = await modifiable(user, surveyId);
+      const target =
+        patch.projectId === undefined
+          ? undefined
+          : (await targetScope(user, patch.projectId)).owner;
+      const stored = await surveys.updateSurvey(
+        survey.id,
+        surveyChangesFromPatch(survey, patch, {
+          userId: user.id,
+          now: new Date(now()).toISOString(),
+          ...(target !== undefined && { target }),
+        }),
+      );
+      if (!stored) throw notFound();
+      // The rights follow the stored scope: a move changes the scope and the creator.
+      const membership =
+        stored.owner.kind === "project"
+          ? await directory.getUserProject(user.id, stored.owner.projectId)
+          : null;
+      return surveyJson(stored, canModify(stored, user, membership));
+    },
+
+    async delete(user, surveyId) {
+      const { survey } = await modifiable(user, surveyId);
+      if (!survey.archived) {
+        throw new AppError({
+          code: "survey-not-archived",
+          status: 409,
+          title: "Archive the survey before deleting it",
+        });
+      }
+      if (!(await surveys.deleteSurvey(survey.id))) throw notFound();
+    },
+
+    async clone(user, surveyId, body = {}) {
+      const { name, projectId } = body;
+      const invalid = nameProblem(name);
+      if (invalid) throw invalid;
+      const { survey, membership } = await visible(user, surveyId);
+      // Without `projectId` the copy stays in the source's scope.
+      const scope =
+        projectId !== undefined
+          ? await targetScope(user, projectId)
+          : membership
+            ? projectScope(membership)
+            : personalScope(user);
+      const createdAt = new Date(now()).toISOString();
+      const stored = await surveys.cloneSurvey(survey.id, {
+        id: randomUUID(),
+        name: name ?? cloneName(survey.name),
+        owner: scope.owner,
+        creatorId: user.id,
+        postId: randomUUID(),
+        resultId: randomUUID(),
+        createdAt,
+        updatedAt: createdAt,
+      });
+      if (!stored) throw notFound();
+      return surveyJson(stored, canModify(stored, user, scope.membership));
     },
   };
 }

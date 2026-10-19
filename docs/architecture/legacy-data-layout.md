@@ -793,6 +793,38 @@ blobs when a definition is given, and the `SURVEY_CREATE` audit row, written las
 [ADR 0010](../adr/0010-writing-to-the-legacy-stores.md). When a definition is given, it writes the three
 blobs of a definition save before the row. Every other row of the table is still to build.
 
+**Implemented in Step 5** (same file, `writes.ts`; the rules and orders are in
+[ADR 0010](../adr/0010-writing-to-the-legacy-stores.md)). Each row of the table below that Step 5 builds
+is listed here with how it is done:
+
+- **Rename:** `UPDATE Surveys SET name, [timestamp]`; audit row `SURVEY_UPDATE` with `name`
+  (`Edm.String`).
+- **Publish / unpublish:** `ispublished` = 1 / 0 and `timestamp`; audit row `SURVEY_PUBLISHED` with
+  `ispublished` (`Edm.Boolean`).
+- **Archive / restore:** `isarchived` = 1 / 0 and `timestamp`; audit row `SURVEY_ARCHIVE` or
+  `SURVEY_RESTORE`, no payload. Archiving does not touch `ispublished`.
+- **Move:** `userid` (the project id, or the user id for Personal), `creatorid` (the acting user) and
+  `timestamp`, in the same `UPDATE` (no delete and rewrite of the row); audit row `SURVEY_TRANSFER` with
+  `userid` and `creatorid` (`Edm.Guid`). Unlike the legacy code, the server first checks that the acting
+  user belongs to the target project.
+- **Settings:** `allowaccessresult` (1 / 0) and `storeipaddress` (`"1"` / `"0"`, a text column) and
+  `timestamp`; audit rows `SURVEY_ACCESSRESUTL` with `grantaccess` and `SURVEY_POSTRESUTL` with
+  `storeipaddress` (both `Edm.Boolean`; the type codes keep the legacy spelling). `usecookies` is not
+  written.
+- **Delete:** the three results-account tables (`post{postId}`, `SurveyCompletion{surveyId}`,
+  `postdelete{postId}`), the blobs `surveyjson/{id}` and `surveytext/{id}`, every history blob under
+  `surveyjsonhistory/{id}/`, and the four results-layout blobs of section 3.10 (legacy leaves these
+  behind), then the `Surveys` row, then the `SURVEY_DELETE` audit row. The children go first.
+- **Clone** (derived from 5.1): the create sequence of Step 4 with the source's definition text copied
+  unchanged, then `Surveys.theme` set from the source's theme text when it has one, with an audit row
+  `SURVEY_THEME_CHANGE` (`theme`, `Edm.String`). The copy is **not** given the source's creator: the
+  acting user is its creator. Legacy's extra empty `SURVEY_UPDATE` row is not written.
+
+All of these set `timestamp` to the time the server's clock gives, once per request, and an update that
+changes no value still rewrites it. Every audit row is best effort (a failure is logged with the survey
+id and the type only). Still to build: the definition and theme saves, the settings `usecookies`, and the
+result and layout rows.
+
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | Create survey                     | INSERT `Surveys` with `id`, `name`, `userid`, `creatorid`, `postid`, `resultid` (three new GUIDs), `createdat`, `timestamp`. No blob yet.                                                                                                                                                                                                                                                                                                | `SURVEY_CREATE`               |

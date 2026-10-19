@@ -6,8 +6,10 @@ import type { AccountNoticesSetting, LegacyConfig } from "../../config.js";
 import type {
   NewSurvey,
   ProjectMembership,
+  SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
+  SurveyTheme,
 } from "../../domain/types.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
@@ -23,6 +25,7 @@ import {
   membershipFromLegacy,
   projectFromLegacy,
   surveyFromLegacy,
+  themeFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
 import type {
@@ -31,7 +34,13 @@ import type {
   LegacySurveyRow,
   LegacyUserRow,
 } from "./rows.js";
-import { writeNewSurvey } from "./writes.js";
+import {
+  writeClonedSurvey,
+  writeNewSurvey,
+  writeSurveyChanges,
+  writeSurveyDeletion,
+  type LegacyWriteTargets,
+} from "./writes.js";
 
 /**
  * Provider over the legacy surveyjs.io stores (layout: docs/architecture/legacy-data-layout.md).
@@ -39,8 +48,8 @@ import { writeNewSurvey } from "./writes.js";
  * With `ACCOUNT_NOTICES=surveyjs-licenses` the account notices come from the site's licence
  * tables in the same database.
  *
- * Read-only by construction except for survey creation: this file holds SELECT statements and
- * read-only SDK calls only (ESLint enforces it for the folder); every write lives in writes.ts.
+ * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
+ * folder): survey creation, update, clone and delete call the writers of writes.ts.
  * Connection strings are secrets: no error or log line built here holds one.
  */
 
@@ -61,7 +70,7 @@ export interface AzureLegacyOptions {
   readonly logger?: LegacyWarningLogger;
   /** `ACCOUNT_NOTICES`; default `none`. `surveyjs-licenses` reads the legacy licence tables. */
   readonly accountNotices?: AccountNoticesSetting;
-  /** Clock for the licence-expiry rule; default `Date.now`. */
+  /** Clock for the licence-expiry rule and the survey-delete audit row; default `Date.now`. */
   readonly now?: Clock;
 }
 
@@ -360,15 +369,52 @@ export function createAzureLegacyProviders(
     }
   }
 
-  async function createSurvey(survey: NewSurvey, definition?: SurveyDefinition) {
-    const id = await writeNewSurvey(
-      { pool: connected, blobs: surveysAccount.blobs, events: surveyEvents, logger },
-      survey,
-      definition,
+  async function getTheme(id: string): Promise<SurveyTheme | null> {
+    if (!isGuid(id)) return null;
+    const rows = await select<{ id: string; theme: string | null }>(
+      "theme read",
+      "SELECT id, theme FROM Surveys WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
     );
+    const [row] = rows;
+    return row ? themeFromLegacy(row.id, row.theme, logger) : null;
+  }
+
+  const writeTargets: LegacyWriteTargets = {
+    pool: connected,
+    blobs: surveysAccount.blobs,
+    events: surveyEvents,
+    resultTables: resultsAccount.tables,
+    logger,
+  };
+
+  /** The survey as stored, read back after a write that made it. */
+  async function storedSurvey(id: string) {
     const stored = await getSurvey(id);
     if (!stored) throw new Error(`Survey ${id} cannot be read back after it was stored`);
     return stored;
+  }
+
+  async function createSurvey(survey: NewSurvey, definition?: SurveyDefinition) {
+    return storedSurvey(await writeNewSurvey(writeTargets, survey, definition));
+  }
+
+  async function updateSurvey(id: string, changes: SurveyChanges) {
+    if (!isGuid(id)) return null;
+    return (await writeSurveyChanges(writeTargets, id, changes)) ? getSurvey(id) : null;
+  }
+
+  async function cloneSurvey(sourceId: string, copy: NewSurvey) {
+    if (!isGuid(sourceId)) return null;
+    const id = await writeClonedSurvey(writeTargets, sourceId, copy);
+    return id === null ? null : storedSurvey(id);
+  }
+
+  async function deleteSurvey(id: string): Promise<boolean> {
+    // The record names the children: the results tables are keyed by its post id.
+    const survey = await getSurvey(id);
+    if (!survey) return false;
+    return writeSurveyDeletion(writeTargets, survey, new Date(now()).toISOString());
   }
 
   async function sqlReady(): Promise<void> {
@@ -403,6 +449,10 @@ export function createAzureLegacyProviders(
       listSurveyPage,
       createSurvey,
       getDefinition,
+      getTheme,
+      updateSurvey,
+      cloneSurvey,
+      deleteSurvey,
     },
 
     directory: {

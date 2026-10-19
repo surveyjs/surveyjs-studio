@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextNewSurveyName } from "./naming.js";
+import { cloneName, nextNewSurveyName } from "./naming.js";
 
 describe("nextNewSurveyName", () => {
   it.each<[string, readonly string[], string]>([
@@ -24,5 +24,40 @@ describe("nextNewSurveyName", () => {
     ["ignores other names", ["Customer feedback", "New Survey 2", "Poll"], "New Survey 3"],
   ])("%s", (_name, names, expected) => {
     expect(nextNewSurveyName(names)).toBe(expected);
+  });
+});
+
+describe("cloneName", () => {
+  it("prefixes a short name", () => {
+    expect(cloneName("Poll")).toBe("Copy of Poll");
+  });
+
+  it("copes with an empty name", () => {
+    expect(cloneName("")).toBe("Copy of ");
+  });
+
+  it("keeps a name that is exactly 200 units long after the prefix", () => {
+    const name = "a".repeat(200 - "Copy of ".length);
+    expect(cloneName(name)).toBe(`Copy of ${name}`);
+    expect(cloneName(name)).toHaveLength(200);
+  });
+
+  it("cuts a longer name to 200 units", () => {
+    const name = cloneName("a".repeat(201 - "Copy of ".length));
+    expect(name).toHaveLength(200);
+    expect(name.startsWith("Copy of a")).toBe(true);
+  });
+
+  it("does not split a surrogate pair at the cut", () => {
+    // The emoji's high surrogate would be the 200th unit.
+    const name = cloneName(`${"a".repeat(200 - "Copy of ".length - 1)}😀tail`);
+    expect(name).toHaveLength(199);
+    expect(name.endsWith("a")).toBe(true);
+  });
+
+  it("keeps a whole pair that ends exactly at the cut", () => {
+    const name = cloneName(`${"a".repeat(200 - "Copy of ".length - 2)}😀tail`);
+    expect(name).toHaveLength(200);
+    expect(name.endsWith("😀")).toBe(true);
   });
 });

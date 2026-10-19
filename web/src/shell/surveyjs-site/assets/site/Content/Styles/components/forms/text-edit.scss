@@ -1,0 +1,207 @@
+.v2-class---text-edit {
+    position: relative;
+}
+
+.v2-class---text-edit {
+    select {
+        -moz-appearance: none;
+        -webkit-appearance: none;
+        appearance: none;
+        background-repeat: no-repeat;
+        background-position: right;
+    }
+}
+
+.v2-class---text-edit__input {
+    @include No-Spacing--Small;
+
+    &:disabled {
+        background-color: $General--Backcolor;
+        color: $General--Forecolor-50;
+        -webkit-text-fill-color: $General--Forecolor-50;
+    }
+
+    &:focus {
+        outline: none;
+
+        &::placeholder {
+            color: transparent;
+        }
+    }
+
+    &::placeholder {
+        color: $General--Forecolor-50;
+    }
+
+    border: none;
+    border-radius: 0;
+    -webkit-border-radius: 0;
+    border-bottom: 1px solid $General--Line;
+    padding: size(2.5) size(5) size(2);
+    width: 100%;
+    height: size(7.5);
+    box-sizing: border-box;
+    color: $General--Forecolor;
+}
+
+.v2-class---text-edit__label {
+    position: absolute;
+    left: size(5);
+    color: $General--Forecolor-50;
+    @include No-Spacing--X-Small-Bold;
+    top: 0;
+}
+
+.v2-class---text-edit__input:placeholder-shown:not(:focus) + label.v2-class---text-edit__label {
+    visibility: hidden;
+}
+
+.v2-class---text-edit__input--error {
+    border-color: $Special--Red;
+    border-bottom-color: $Special--Red;
+}
+
+.v2-class---text-edit__note {
+    color: $Special--Red;
+    @include No-Spacing--X-Small-Bold;
+    padding: size(1) size(5) 0;
+}
+
+.v2-class---text-edit__description {
+    color: $General--Forecolor-75;
+    @include No-Spacing--X-Small-Bold;
+    padding: size(1) size(5) 0;
+}
+
+.v2-class---text-edit__title {
+    display: flex;
+    gap: size(0.5);
+
+    :nth-child(2) {
+        display: none;
+    }
+
+    position: absolute;
+    padding-left: size(5);
+    padding-top: size(2.5);
+    color: $General--Forecolor-50;
+    @include No-Spacing--Small;
+
+    .v2-class---text-edit__title-required {
+        @include No-Spacing--Medium;
+    }
+}
+
+.v2-class---text-edit:focus-within {
+    .v2-class---text-edit__title {
+        span {
+            visibility: visible;
+        }
+
+        @include No-Spacing--X-Small-Bold;
+        padding-top: 0;
+
+        .v2-class---text-edit__title-required {
+            @include No-Spacing--X-Small-Bold;
+        }
+    }
+}
+
+span.v2-class---text-edit__title-required {
+    color: $Special--Red;
+    visibility: visible;
+}
+
+.v2-class---text-edit--disabled .v2-class---text-edit__title-required {
+    visibility: hidden;
+}
+
+.v2-class---text-edit__title--filled, .v2-class---text-edit__title--error {
+    span {
+        visibility: visible;
+    }
+
+    @include No-Spacing--X-Small-Bold;
+    padding-top: 0;
+
+    .v2-class---text-edit__title-required {
+        @include No-Spacing--X-Small-Bold;
+    }
+}
+.field-validation-error {
+    &.v2-class---text-edit__note {
+        display: block;
+    }
+}
+
+.field-validation-valid {
+    &.v2-class---text-edit__note {
+        display: none;
+    }
+}
+
+.v2-class---text-edit__label {
+    position: absolute;
+    left: size(5);
+    color: $General--Forecolor-50;
+    @include No-Spacing--X-Small-Bold;
+}
+
+.v2-class---editor-calc {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: size(1.5);
+}
+
+.v2-class---editor-calc__label {
+    color: $General--Forecolor-75;
+    @include No-Spacing--Small;
+}
+
+.v2-class---editor-calc__editor {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid $General--Line;
+    border-radius: size(0.5);
+    @include No-Spacing--Small;
+    outline: none;
+    background-color: $General--Backcolor;
+    padding: size(1.5) size(2) size(1.5) size(2);
+    display: flex;
+
+
+    &::placeholder {
+        color: $General--Forecolor-50;
+    }
+
+    svg {
+        padding: size(0.5);
+    }
+
+    input {
+        @include No-Spacing--Small;
+        outline: none;
+        flex-grow: 1;
+        border: none;
+        pointer-events: none;
+        &[disabled] {
+            background: none;
+        }
+    }
+
+    .v2-class---editor-calc__text {
+        flex-grow: 1;
+    }
+}
+
+.v2-class---editor-calc {
+    .v2-class---drop-down-menu {
+        top: initial;
+        left: initial;
+    }
+
+    .v2-class---drop-down-button.v2-class---drop-down-button--open > .v2-class---drop-down-menu--popup-menu {
+        width: 100%;
+    }
+}

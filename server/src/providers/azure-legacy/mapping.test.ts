@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
@@ -8,6 +8,7 @@ import {
   projectFromLegacy,
   responseFromLegacy,
   surveyFromLegacy,
+  themeFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
 import type { ProjectRecord } from "../../domain/types.js";
@@ -174,6 +175,45 @@ describe("definitionFromLegacy", () => {
         surveyId: "aaaaaaaa-0000-4000-8000-000000000001",
       });
       expect((error as Error).message).not.toContain("cut");
+    },
+  );
+});
+
+describe("themeFromLegacy", () => {
+  const SURVEY = "AAAAAAAA-0000-4000-8000-000000000001";
+  const warnings: { details: Readonly<Record<string, string>>; message: string }[] = [];
+  const logger = {
+    warn: (details: Readonly<Record<string, string>>, message: string) => {
+      warnings.push({ details, message });
+    },
+  };
+  beforeEach(() => {
+    warnings.length = 0;
+  });
+
+  it("parses the column text", () => {
+    const theme = { themeName: "default", cssVariables: { "--sjs-primary-backcolor": "#19b394" } };
+    expect(themeFromLegacy(SURVEY, JSON.stringify(theme), logger)).toEqual(theme);
+    expect(warnings).toEqual([]);
+  });
+
+  it.each([null, "", " 	 "])("reads %j as no theme", (text) => {
+    expect(themeFromLegacy(SURVEY, text, logger)).toEqual({});
+    expect(warnings).toEqual([]);
+  });
+
+  it.each(['{"themeName": "cut', "[1, 2]", "null", '"text"', "42"])(
+    "reads %j as no theme and warns with the survey id only",
+    (text) => {
+      expect(themeFromLegacy(SURVEY, text, logger)).toEqual({});
+      expect(warnings).toEqual([
+        {
+          details: { surveyId: "aaaaaaaa-0000-4000-8000-000000000001" },
+          message: expect.any(String),
+        },
+      ]);
+      expect(warnings[0]!.message).not.toContain("cut");
+      expect(warnings[0]!.message).not.toContain(text);
     },
   );
 });

@@ -3,6 +3,7 @@ import type {
   ProjectRecord,
   SurveyDefinition,
   SurveyRecord,
+  SurveyTheme,
   User,
 } from "../../domain/types.js";
 import type { Notice } from "../../notices/account-notices.js";
@@ -249,6 +250,12 @@ export const fixtureDefinitions: readonly (readonly [SurveyRecord, SurveyDefinit
   [surveyCampaign, fixtureDefinition("Campaign survey")],
   [surveyRetro, fixtureDefinition("Engineering retro")],
 ];
+/** The theme of fixture 01 (`Surveys.theme`); no other fixture survey has one. */
+export const feedbackTheme: SurveyTheme = {
+  themeName: "default",
+  colorPalette: "light",
+  cssVariables: { "--sjs-primary-backcolor": "#19b394" },
+};
 export const surveysWithoutDefinition: readonly SurveyRecord[] = [
   surveyDraft,
   surveyOldPoll,

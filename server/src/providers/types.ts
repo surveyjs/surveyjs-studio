@@ -1,9 +1,11 @@
 import type {
   NewSurvey,
   ProjectMembership,
+  SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  SurveyTheme,
   User,
 } from "../domain/types.js";
 import type { AccountNotices } from "../notices/account-notices.js";
@@ -48,6 +50,17 @@ export interface SurveyStore {
   createSurvey(survey: NewSurvey, definition?: SurveyDefinition): Promise<SurveyRecord>;
   /** The definition; `{}` when the survey has none yet; null when no survey has this id. */
   getDefinition(id: string): Promise<SurveyDefinition | null>;
+  /** The theme; `{}` when the survey has none; null when no survey has this id. */
+  getTheme(id: string): Promise<SurveyTheme | null>;
+  /** Applies the changes in one write; returns the record as stored (read back); null when no survey has this id. */
+  updateSurvey(id: string, changes: SurveyChanges): Promise<SurveyRecord | null>;
+  /**
+   * Creates `copy` (legacy defaults, as `createSurvey`) with the source's definition and theme.
+   * Returns the stored copy; null when no survey has `sourceId`. Throws on a duplicate copy id.
+   */
+  cloneSurvey(sourceId: string, copy: NewSurvey): Promise<SurveyRecord | null>;
+  /** Deletes the survey and everything stored for it; false when no survey has this id. */
+  deleteSurvey(id: string): Promise<boolean>;
 }
 
 export interface Directory {

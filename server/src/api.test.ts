@@ -147,7 +147,7 @@ describe("request validation", () => {
     const { server, headers } = await startSignedIn();
     const res = await server.inject({
       method: "PATCH",
-      url: "/api/v1/surveys/s1",
+      url: "/api/v1/projects/p1",
       headers: { ...headers, "content-type": "application/merge-patch+json; charset=utf-8" },
       payload: JSON.stringify({ name: "Renamed" }),
     });
@@ -300,7 +300,7 @@ describe("contract coverage", () => {
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      expect([200, 201, 302, 400, 422, 501]).toContain(res.statusCode);
+      expect([200, 201, 302, 400, 409, 422, 501]).toContain(res.statusCode);
     },
   );
 });

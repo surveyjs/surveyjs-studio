@@ -30,6 +30,16 @@ Step 4 (the My Surveys page) added these copies to the rows above:
 | `site/Content/Styles/pages/my-surveys.scss`                                            | the page, its actions, project drop-down, rows, empty state |
 | `site/Views/Shared/V2/_icons/{16x16/Projects,12x12/Drop-Down-Arrow,64x64/Loading}.svg` | the project drop-down and the loading indicator             |
 
+Step 5 (the row's "…" menu and rename editor) added these copies:
+
+| Copy                                                  | Used by                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/Content/Styles/components/forms/text-edit.scss` | the rename input (`V2/components/forms/Text-Edit`). Change: the `select` rule's `background-image: url(/Content/Images/V2/cart-page/icons/expand.svg)` line is dropped (the image is not copied and the shell has no `select`). |
+| `site/Views/Shared/V2/_icons/16x16/Edit.svg`          | the pencil next to the survey name (`the site's page markup` → `.svg`, byte-order mark removed)                                                                                                                                                |
+
+The "…" button's three dots and the flyout chevron are inline `<svg>` in the site's view, not partials;
+the React row inlines them too.
+
 The React components in `..` reproduce the markup of these Razor views (structure, class names and
 texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page markup`,
 `Views/Shared/V2/components/{Button,Logo,Drop-Down-Menu-Item,FAQ-Question,Expand-Collapse-Button,Badge}the site's page markup`,
@@ -40,14 +50,32 @@ texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page mark
 The My Surveys page (`src/surveyList/`) and the editor stub reproduce `the site's page markup`
 (page structure, actions bar, project drop-down, empty state and the row markup with its two inline
 date icons) and the partials it uses: `V2/components/{Header,Button,Loading}the site's page markup` and
-`the site's page markup`. Left out until Step 5: the "…" menu, the pencil and the
-rename editor. Changes to the markup:
+`the site's page markup`. The "…" menu
+(`the site's page markup`), the pencil and the rename editor are added
+with the row's menu (Step 5); the menu's entries are the pure function `surveyMenuItems` in
+`src/surveyList/menuItems.ts`. Changes to the markup:
 
-- The two date icons repeat the same `clip-path` ids in every row on the site; each row gets its own
-  ids here.
+- The two date icons and the `16x16/Edit` pencil repeat the same `clip-path` ids in every row on the
+  site; each row gets its own ids here.
 - The project drop-down's button is focusable (`role="button"`) and its menu carries `hidden` while
   closed; the switch's checkbox can take focus (glue in `SurveyListPage.module.css`).
-- Glue classes for what the site does not have: the "Load more" button and the create error message.
+- Glue classes for what the site does not have: the "Load more" button and one error message for a
+  failed create or row action.
+- The "…" menu is rendered while it is open (the site clones `#survey-popup` into the button on the
+  first open and keeps it). Its separators are `li` elements (the site puts a `div` directly in the
+  `ul`), and the site's `div.survey-canmodify` wrappers are not rendered: React leaves out the items
+  the user may not use.
+- Keyboard access: the three dots (`…-svg-container`) are a focusable button named "Survey actions"
+  (`aria-haspopup`, `aria-expanded`); Enter or Space toggle the menu, Escape closes it and focuses
+  the dots again, a mouse press outside or focus leaving closes it. The role sits on the dots, not on
+  the site's clickable `div`, because that `div` holds the menu's links. The same goes for the
+  submenus (Survey IDs, Move to Project): their text is a focusable button, and a click or Enter
+  toggles `v2-class---drop-down-menu--open` (the site toggles it on touch). The pencil link is named
+  "Rename survey" and also shows while the focus is in its row (glue).
+- Actions are `<a href="#">` (the site's have no `href`, except Archive), so the keyboard reaches
+  them; Run links to `/s/{id}` and Edit, View Results and View History to the app's routes.
+- "Move to Project" also lists "Personal Surveys" inside a project, as a clickable item (the site
+  shows it only in Personal Surveys, marked and inert, so a survey cannot move back).
 
 ## Which styles, and why not the whole stylesheet
 

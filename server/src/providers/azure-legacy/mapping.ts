@@ -4,8 +4,10 @@ import type {
   SurveyDefinition,
   SurveyRecord,
   SurveyResponse,
+  SurveyTheme,
   User,
 } from "../../domain/types.js";
+import type { LegacyWarningLogger } from "./index.js";
 import type {
   LegacyLicenceRow,
   LegacyOrganizationRow,
@@ -82,25 +84,50 @@ export function surveyFromLegacy(
   };
 }
 
-/**
- * A survey definition from the text of its `surveyjson` blob (layout section 3.2). An empty blob
- * is an empty survey; text that is not a JSON object cannot be represented.
- */
-export function definitionFromLegacy(surveyId: string, text: string): SurveyDefinition {
+/** The JSON object in `text`; empty text is `{}`; anything else throws with the survey id only. */
+function objectFromLegacy(surveyId: string, text: string, what: string): Record<string, unknown> {
   if (text.trim() === "") return {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new UnmappableLegacyRowError({ surveyId: guid(surveyId) }, "definition is not JSON");
+    throw new UnmappableLegacyRowError({ surveyId: guid(surveyId) }, `${what} is not JSON`);
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new UnmappableLegacyRowError(
       { surveyId: guid(surveyId) },
-      "definition is not a JSON object",
+      `${what} is not a JSON object`,
     );
   }
-  return parsed as SurveyDefinition;
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * A survey definition from the text of its `surveyjson` blob (layout section 3.2). An empty blob
+ * is an empty survey; text that is not a JSON object cannot be represented.
+ */
+export function definitionFromLegacy(surveyId: string, text: string): SurveyDefinition {
+  return objectFromLegacy(surveyId, text, "definition");
+}
+
+/**
+ * A survey theme from the `Surveys.theme` column (layout section 3.3). NULL or empty text is no
+ * theme (`{}`). Text that is not a JSON object is reported to `logger` with the survey id only
+ * and read as `{}`, so one damaged theme does not break the survey.
+ */
+export function themeFromLegacy(
+  surveyId: string,
+  text: string | null,
+  logger: LegacyWarningLogger,
+): SurveyTheme {
+  if (text === null) return {};
+  try {
+    return objectFromLegacy(surveyId, text, "theme");
+  } catch (error) {
+    if (!(error instanceof UnmappableLegacyRowError)) throw error;
+    logger.warn({ ...error.ids }, `Ignored a legacy survey theme. ${error.message}`);
+    return {};
+  }
 }
 
 export function responseFromLegacy(entity: LegacyResultEntity): SurveyResponse {

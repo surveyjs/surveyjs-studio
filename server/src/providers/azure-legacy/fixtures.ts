@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SurveyDefinition } from "../../domain/types.js";
+import type { SurveyDefinition, SurveyTheme } from "../../domain/types.js";
 import type { MemorySeed } from "../memory.js";
 import {
   membershipFromLegacy,
@@ -266,7 +266,7 @@ export async function readLegacyFixtures(
 /**
  * Fixtures -> domain through the legacy mapping. A survey whose `userid` is an
  * `Organizations.id` is a project survey, any other is personal. Definitions are the parsed
- * `surveyjson` blobs.
+ * `surveyjson` blobs, themes the parsed `Surveys.theme` columns.
  */
 export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
   const fixtures = await readLegacyFixtures(dir);
@@ -282,6 +282,12 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     definitions[blob.name.toLowerCase()] = JSON.parse(
       blob.content.toString("utf8"),
     ) as SurveyDefinition;
+  }
+  const themes: Record<string, SurveyTheme> = {};
+  for (const row of fixtures.rawSqlRows.Surveys ?? []) {
+    const text = optStr(row, "theme");
+    if (text === null || text.trim() === "") continue;
+    themes[str(row, "id").toLowerCase()] = JSON.parse(text) as SurveyTheme;
   }
   return {
     users: fixtures.users.map(userFromLegacy),
@@ -307,5 +313,6 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
       };
     }),
     definitions,
+    themes,
   };
 }

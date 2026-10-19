@@ -232,4 +232,15 @@ describe("legacyFixtureSeed", () => {
       title: "Engineering retro",
     });
   });
+
+  it("holds the parsed theme column as themes, by survey id", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(seed.themes).toEqual({
+      "22222222-0000-4000-8000-a00000000001": {
+        themeName: "default",
+        colorPalette: "light",
+        cssVariables: { "--sjs-primary-backcolor": "#19b394" },
+      },
+    });
+  });
 });

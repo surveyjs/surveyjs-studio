@@ -235,6 +235,22 @@ Engineering has "Engineering retro" (active). Mia can modify "Campaign survey" (
 not "Archived campaign"; Olivia cannot modify "Engineering retro"
 ([ADR 0009](adr/0009-survey-permissions-follow-legacy.md)).
 
+What each user can and cannot modify (Step 5: without modify rights the row menu hides the modifying
+items, and `PATCH` and `DELETE` answer `403`):
+
+| User           | Can modify                                                   | Cannot modify (sees, can clone)                                           |
+| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Olivia Owner   | Her Personal surveys; Marketing's surveys (she is its admin) | Engineering retro (Adam created it; she is a plain member of Engineering) |
+| Adam Admin     | Every survey of Engineering and Marketing (admin of both)    | Nothing he can see                                                        |
+| Mia Member     | Campaign survey (she created it)                             | Archived campaign (Olivia created it)                                     |
+| Oscar Outsider | His own Personal survey (Outsider quiz)                      | Nothing he can see; surveys of others are invisible to him (`404`)        |
+
+Moving a survey makes the mover its creator, so a move changes who can modify it afterwards.
+
+**Writing demos change the data.** In memory mode a restart resets it. On the Azurite replica
+the changes stay until `pnpm legacy:load`. Do your trying on surveys you create yourself (Create a
+Survey), and keep the fixture surveys unchanged: the test suites read them.
+
 To change them:
 
 1. Edit the files and keep them valid legacy data; check the
