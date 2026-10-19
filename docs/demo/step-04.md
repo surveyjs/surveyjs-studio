@@ -103,18 +103,18 @@ Sign in again as **Olivia Owner**. On the Personal Surveys list click **Create a
 
 Expected:
 
-- The page changes to `/surveys/<id>/edit`. It shows the heading **New Survey 1**, the line "The
-  survey editor arrives in a later version." and a **Back to My Surveys** link. On a fresh demo the
-  owner has no active survey named `New Survey ...`, so the name is **New Survey 1**.
-- **Back to My Surveys** returns to `/`. **New Survey 1** is at the top of the list, with today's date
-  as created and updated.
+- The page changes to `/surveys/<id>/edit`. (Step 4 showed a placeholder here. Since Step 6 it is the
+  survey editor, with the name in its bottom bar. On a fresh demo the owner has no active survey named
+  `New Survey ...`, so the name is **New Survey 1**.)
+- The browser's Back button returns to `/`. **New Survey 1** is at the top of the list, with today's
+  date as created and updated.
 
 Click **Create a Survey** again: **New Survey 2** is at the top. Names count only the **active**
 surveys of the list: "one more than the highest number". The rule in full is in
 [Your surveys](../user-guide/your-surveys.md#create-a-survey).
 
 Create one in a project: choose **Engineering**, click **Create a Survey**. Expected: **New Survey 1**
-in Engineering (the numbering is per list), and **Back to My Surveys** returns to the Engineering list.
+in Engineering (the numbering is per list), and the browser's Back button returns to the Engineering list.
 
 Check the API answer (with the cookie jar of a signed-in session, see
 [Authentication](../api/authentication.md#csrf-the-double-submit-rule); the header is needed because
@@ -196,7 +196,7 @@ pnpm demo:azurite:down
 | 1   | Signed in as the owner, the list shows API created, Customer feedback and Draft idea, newest updated first, with dates like `4/14/2026`                                                  |        |
 | 2   | **Archived** shows only Old poll and the address has `archived=true`; reload and Back keep the view                                                                                      |        |
 | 3   | The drop-down switches to Marketing and Engineering and shows their surveys; the address has `project=<id>`                                                                              |        |
-| 4   | **Create a Survey** opens the editor placeholder named **New Survey 1** (fresh demo); Back shows it at the top of the list                                                               |        |
+| 4   | **Create a Survey** opens the editor named **New Survey 1** (fresh demo; a placeholder in Step 4, the real editor since Step 6); Back shows it at the top of the list                    |        |
 | 5   | On the replica (`pnpm demo:azurite`) the lists equal what `pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com` prints; a created survey appears in the inspector |        |
 | 6   | `pnpm test:unit`, `pnpm test:conformance`, `pnpm e2e`, and with the replica `pnpm test:providers:azurite`, `pnpm test:conformance:azurite` and `pnpm e2e:azurite` are green              |        |
 

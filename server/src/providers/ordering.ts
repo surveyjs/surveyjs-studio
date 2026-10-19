@@ -1,5 +1,5 @@
-import type { ProjectMembership, SurveyRecord } from "../domain/types.js";
-import type { SurveyPosition } from "./types.js";
+import type { HistoryEntryRecord, ProjectMembership, SurveyRecord } from "../domain/types.js";
+import type { HistoryPosition, SurveyPosition } from "./types.js";
 
 /** The list orders of the store interfaces (types.ts), shared so every provider sorts alike. */
 
@@ -28,3 +28,14 @@ export function isAfter(survey: SurveyRecord, position: SurveyPosition): boolean
 export const projectListOrder = (a: ProjectMembership, b: ProjectMembership): number =>
   compare(a.project.name.toLowerCase(), b.project.name.toLowerCase()) ||
   compare(a.project.id, b.project.id);
+
+/** History order: `at` descending, then id descending (code-point order of the lower-case ids). */
+export const historyOrder = (a: HistoryEntryRecord, b: HistoryEntryRecord): number =>
+  Date.parse(b.at) - Date.parse(a.at) || compare(b.id, a.id);
+
+/** Whether the entry comes after the position in `historyOrder` (times compared as instants). */
+export function isAfterHistory(entry: HistoryEntryRecord, position: HistoryPosition): boolean {
+  const at = Date.parse(entry.at);
+  const after = Date.parse(position.at);
+  return at < after || (at === after && entry.id < position.id.toLowerCase());
+}

@@ -6,10 +6,11 @@ import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import type { Directory, SurveyStore } from "../providers/types.js";
+import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
 import { surveyChangesFromPatch } from "./patch.js";
-import { canModify, canSee } from "./permissions.js";
+import { canModify } from "./permissions.js";
 
 type SurveyCreate = components["schemas"]["SurveyCreate"];
 type SurveyPage = components["schemas"]["SurveyPage"];
@@ -81,10 +82,6 @@ const notMember = (): AppError =>
     detail: "You are not a member of this project.",
   });
 
-function notFound(): AppError {
-  return new AppError({ code: "not-found", status: 404, title: "Not found" });
-}
-
 /** A survey scope the user may list and create in. */
 interface Scope {
   readonly owner: SurveyOwner;
@@ -109,19 +106,7 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 /** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
   const { surveys, directory, now = Date.now } = options;
-
-  /** The survey and the user's membership of its project; 404 when unknown or invisible. */
-  async function visible(user: RequestUser, surveyId: string) {
-    const survey = await surveys.getSurvey(surveyId);
-    if (!survey) throw notFound();
-    const membership =
-      survey.owner.kind === "project"
-        ? await directory.getUserProject(user.id, survey.owner.projectId)
-        : null;
-    // A survey the user cannot see answers like an unknown one.
-    if (!canSee(survey, user, membership)) throw notFound();
-    return { survey, membership };
-  }
+  const { visible, modifiable } = createSurveyAccess({ surveys, directory });
 
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
@@ -129,20 +114,6 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
     const membership = await directory.getUserProject(user.id, projectId);
     if (!membership) throw notMember();
     return projectScope(membership);
-  }
-
-  /** `visible`, and the user may modify the survey (403 otherwise). */
-  async function modifiable(user: RequestUser, surveyId: string) {
-    const found = await visible(user, surveyId);
-    if (!canModify(found.survey, user, found.membership)) {
-      throw new AppError({
-        code: "forbidden",
-        status: 403,
-        title: "Forbidden",
-        detail: "You cannot modify this survey.",
-      });
-    }
-    return found;
   }
 
   return {

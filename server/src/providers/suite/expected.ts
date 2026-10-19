@@ -350,3 +350,17 @@ export const adminLicenceBoundary: readonly (readonly [string, string, Notice[]]
   ["2026-09-10T00:00:00.000Z", "expires soon", [expiresSoonNotice]],
   ["2026-09-10T00:00:00.001Z", "expired", [expiredNotice]],
 ];
+
+// ---- History: the points in blobs/surveys/surveyjsonhistory ----
+
+/** The two legacy points of fixture 01; the fixtures carry no time or user for them. */
+export const feedbackHistoryIds: readonly string[] = [
+  "88888888-0000-4000-8000-a00000000001",
+  "88888888-0000-4000-8000-a00000000002",
+];
+
+/** Point id to the definition stored in that point. */
+export const feedbackHistorySnapshots: Readonly<Record<string, SurveyDefinition>> = {
+  "88888888-0000-4000-8000-a00000000001": fixtureDefinition("Customer feedback (draft)"),
+  "88888888-0000-4000-8000-a00000000002": fixtureDefinition("Customer feedback"),
+};

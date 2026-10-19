@@ -72,6 +72,7 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`         | positive integer                                                                  | `52428800` (50 MB)                                                                                                                                                         |
 | `LIMIT_MAX_FILE_BYTES`                     | positive integer                                                                  | `10485760` (10 MB)                                                                                                                                                         |
 | `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                                  | `1048576` (1 MB); also the request body limit                                                                                                                              |
+| `LIMIT_MAX_DOCUMENT_BYTES`                 | positive integer                                                                  | `30000000`; request body limit of the survey definition and theme saves                                                                                                    |
 | `API_DOCS`                                 | `true`, `false`                                                                   | `true`, but `false` when `NODE_ENV=production`                                                                                                                             |
 | `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                            | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory` and is refused in production and hosted                                                                             |
 | `SESSION_SECRET`                           | string, at least 32 characters; **secret**                                        | unset; required in production, and when `PUBLIC_BASE_URL` is https or not on `localhost`, `127.0.0.1` or `[::1]` (a fixed dev constant is used, with a warning, elsewhere) |
@@ -130,6 +131,26 @@ $env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @my-surve
 ```
 
 The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `/api/v1`).
+
+### The editor in both modes
+
+A row click (or **Edit**) opens the survey editor, in both demo modes. The Survey Creator is loaded from a
+separate chunk, so the first open takes a moment; the survey list never loads it. Saves go through
+`PUT /surveys/{id}/definition` and `/theme` with `If-Match` ([API](api/concurrency.md)).
+
+| Mode    | What the editor does                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| memory  | Saves in memory. History entries have the saving user. A restart loses them; the fixture surveys have the two legacy entries of Customer feedback |
+| Azurite | Saves into the replica in the legacy format ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md)); the changes stay until `pnpm legacy:load`     |
+
+**The licence banner.** The Creator is a commercial SurveyJS product. Without `SURVEYJS_LICENSE_KEY` it
+shows its banner about a missing licence and stays usable. That is expected in both demo modes, and no
+console error comes with it. To see the editor without the banner, set the key in your own shell
+(`SURVEYJS_LICENSE_KEY=<your key> pnpm demo`; PowerShell: `$env:SURVEYJS_LICENSE_KEY = "<your key>"; pnpm demo`).
+Never put a key in a file of this repository.
+
+**Body limit.** The definition and theme saves accept up to `LIMIT_MAX_DOCUMENT_BYTES` (default
+30,000,000 bytes); other routes keep `LIMIT_MAX_RESPONSE_BYTES`. The conformance suite lowers it to 262144.
 
 ## Azurite mode
 
@@ -273,6 +294,10 @@ pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com
 | `--user <id or email>` | Required. A user GUID, or an email address                                        |
 | `--env-file <path>`    | Load variables from this file first. Variables already set in the environment win |
 | `--help`               | Print the usage and exit                                                          |
+
+It does not print definitions, themes or history. To see what the editor saved on the replica, use the
+history page, `GET /api/v1/surveys/{id}/history`, or Azure Storage Explorer (see
+[the Step 6 demo](demo/step-06.md#how-to-see-the-history-blobs-and-their-metadata)).
 
 Output: a user line, the personal surveys, then one table per project the user belongs to, with
 id, name, published, archived, created and updated. Warnings about skipped legacy rows go to

@@ -53,6 +53,7 @@ describe("getConfig", () => {
         maxAssetBytesPerSurvey: 52428800,
         maxFileBytes: 10485760,
         maxResponseBytes: 1048576,
+        maxDocumentBytes: 30000000,
       },
       links: {
         settings: "https://surveyjs.io/manage",
@@ -76,6 +77,7 @@ describe("getConfig", () => {
         LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "300",
         LIMIT_MAX_FILE_BYTES: "200",
         LIMIT_MAX_RESPONSE_BYTES: "100",
+        LIMIT_MAX_DOCUMENT_BYTES: "400",
         SHELL_LINKS: JSON.stringify({
           billing: "https://billing.example.com/",
           status: "https://status.example.com/",
@@ -88,7 +90,12 @@ describe("getConfig", () => {
       shell: "powered-by-surveyjs",
       authMethods: ["surveyjs", "password"],
       surveyjsLicenseKey: "key-123",
-      limits: { maxAssetBytesPerSurvey: 300, maxFileBytes: 200, maxResponseBytes: 100 },
+      limits: {
+        maxAssetBytesPerSurvey: 300,
+        maxFileBytes: 200,
+        maxResponseBytes: 100,
+        maxDocumentBytes: 400,
+      },
       // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
       links: {
         settings: "https://surveyjs.io/manage",
@@ -203,7 +210,7 @@ describe("request validation", () => {
 describe("operations without a handler", () => {
   it("answer 501 not-implemented naming the operationId", async () => {
     const { server, headers } = await startSignedIn();
-    const res = await server.inject({ url: "/api/v1/surveys/s1/history", headers });
+    const res = await server.inject({ url: "/api/v1/surveys/s1/results", headers });
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
@@ -211,7 +218,7 @@ describe("operations without a handler", () => {
       title: "Not implemented",
       status: 501,
       code: "not-implemented",
-      detail: expect.stringContaining("listSurveyHistory") as string,
+      detail: expect.stringContaining("listResults") as string,
     });
   });
 

@@ -1,12 +1,15 @@
 import type {
+  HistoryEntryRecord,
   NewSurvey,
   ProjectMembership,
   SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  SaveOutcome,
   SurveyTheme,
   User,
+  Versioned,
 } from "../domain/types.js";
 import type { AccountNotices } from "../notices/account-notices.js";
 
@@ -32,6 +35,25 @@ export interface SurveyPage {
   readonly next: SurveyPosition | null;
 }
 
+/** A place in the history order (at descending, then id descending). */
+export interface HistoryPosition {
+  readonly at: string;
+  readonly id: string;
+}
+
+export interface HistoryQuery {
+  readonly surveyId: string;
+  /** Entries strictly after this one in history order. */
+  readonly after?: HistoryPosition;
+  readonly limit: number;
+}
+
+export interface HistoryPage {
+  readonly items: readonly HistoryEntryRecord[];
+  /** The position of the last item when more entries follow; else null. */
+  readonly next: HistoryPosition | null;
+}
+
 export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
@@ -48,10 +70,30 @@ export interface SurveyStore {
    * can differ from the input in timestamp precision (SQL `datetime`). Throws on a duplicate id.
    */
   createSurvey(survey: NewSurvey, definition?: SurveyDefinition): Promise<SurveyRecord>;
-  /** The definition; `{}` when the survey has none yet; null when no survey has this id. */
-  getDefinition(id: string): Promise<SurveyDefinition | null>;
-  /** The theme; `{}` when the survey has none; null when no survey has this id. */
-  getTheme(id: string): Promise<SurveyTheme | null>;
+  /** The definition (`{}` when none) and its version; null when no survey has this id. */
+  getDefinition(id: string): Promise<Versioned<SurveyDefinition> | null>;
+  /** The theme (`{}` when none) and its version; null when no survey has this id. */
+  getTheme(id: string): Promise<Versioned<SurveyTheme> | null>;
+  /**
+   * Stores the definition when the current version equals `ifVersion`: sets `updatedAt` = `savedAt`
+   * and adds a history entry `{ new id, at: savedAt, userId }` with the definition as its snapshot.
+   * The returned version is the one the next `getDefinition` returns.
+   */
+  saveDefinition(
+    id: string,
+    definition: SurveyDefinition,
+    save: { readonly ifVersion: string; readonly userId: string; readonly savedAt: string },
+  ): Promise<SaveOutcome>;
+  /** As saveDefinition, without a history entry. */
+  saveTheme(
+    id: string,
+    theme: SurveyTheme,
+    save: { readonly ifVersion: string; readonly savedAt: string },
+  ): Promise<SaveOutcome>;
+  /** History, newest first, ties by id descending; an unknown survey gives an empty page. */
+  listHistory(query: HistoryQuery): Promise<HistoryPage>;
+  /** The definition stored with that entry; null when there is no such entry. */
+  getHistorySnapshot(surveyId: string, entryId: string): Promise<SurveyDefinition | null>;
   /** Applies the changes in one write; returns the record as stored (read back); null when no survey has this id. */
   updateSurvey(id: string, changes: SurveyChanges): Promise<SurveyRecord | null>;
   /**

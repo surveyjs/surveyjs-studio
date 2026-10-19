@@ -40,6 +40,49 @@ Step 5 (the row's "…" menu and rename editor) added these copies:
 The "…" button's three dots and the flyout chevron are inline `<svg>` in the site's view, not partials;
 the React row inlines them too.
 
+Step 6 (the survey editor) copies no new style file: the editor page uses rules of the
+`pages/my-surveys.scss` copy above. It copies markup and Creator settings from
+`the site's page markup` and `the site's source` (commit `(a site commit)`):
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                      | In                             | Original                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The Creator container `div#creator.editor-editor.v2-class---my-surveys-edit-survey` and the fixed bottom bar `#edit-survey-change-name-container.v2-class---edit-survey-change-name-container` with the survey name (`…__survey-name-container`, `…__survey-name`)                                                                                                                                                                        | `src/editor/EditorPage.tsx`    | `the site's page markup`; styled by `my-surveys.scss:589-684` (the bar) and `:787-797` (the Creator height)                                         |
+| The hidden site footer (`footer { display: none; }`)                                                                                                                                                                                                                                                                                                                                                                                      | `src/editor/editor.module.css` | the inline style of `the site's page markup`, limited to the page that holds `#creator`                                                              |
+| Creator options: `showTranslationTab`, `showLogicTab`, `showThemeTab`, `generateValidJSON`, auto-save, `settings.layout.allowCollapseSidebar = false`, the hidden `file.storeDataAsText` property, the survey themes registered as survey and Creator themes, Ace for the JSON tab (search box, language tools, JSON mode and worker, `clouds_midnight`), the Creator UI theme kept in `localStorage["OnlineEditorSurveyCreatorThemeV3"]` | `src/editor/creatorSetup.ts`   | `the site's page markup`, `:112-144`; `editor.tsx:128-175`. The site's "Saved to surveyjs.io service" text is not copied (the default "Saved" stays) |
+
+The save status at the left of the bar, the conflict notice above the Creator and the load error are
+the app's own (glue in `src/editor/editor.module.css`); the site has none of them.
+
+The editor's extras (toolbar items, the obfuscated export, the footer rename and the Embed tabs) copy
+these, from the same commit:
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                | In                                                                                                                                                                                                      | Original                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `icons/editor/v1/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy,react,angular,vanilla}.svg`, `icons/editor/v2/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy}.svg`                                                                                                                                                                                                                                                | `src/editor/creatorSetup.ts` (registered as `icon-eud`, `icon-publish`, `icon-embedsurvey`, `icon-embedcreator`, `icon-copyembedded`, `icon-react`, `icon-angular`, `icon-vanillajs`, as the site does) | `the site's source`, `…/v2/` (same names). None changed                                    |
+| `icons/editor/obf-download.svg` (`icon-obf-download`)                                                                                                                                                                                                                                                                                                                                                                               | `src/editor/creatorSetup.ts`                                                                                                                                                                            | the inline `obfIconSvg` string of `the site's source:50`                                         |
+| `site/Content/Styles/pages/create-free-survey/embedded-tab.scss`                                                                                                                                                                                                                                                                                                                                                                    | `src/editor/embed/EmbedTab.tsx` (Creator chunk only)                                                                                                                                                    | the same path under `wwwroot/`. None changed                                                              |
+| Toolbar items: Clear Survey (`clear-survey`, `icon-clear`, its title and confirm text, before `svd-settings` and fifth in the footer toolbar), Help (`goto-eud`, "Read the tool guide", the end-user guide URL), Run (`run-survey`, "Click here to run this survey..."), the JSON tab's `svc-json-export-list` drop-down ("Download JSON", "Download obfuscated JSON", `survey.obf.json`, "Please fix error(s)", the popup options) | `src/editor/creatorSetup.ts`                                                                                                                                                                            | option values and texts of `the site's source:29-127`, `:281-295`                                |
+| The Embed tabs: names (`customembeded`, `customembededcreator`), titles, icons, the component name `svc-tab-customembeded`, the platform choices (texts, icon names, `spg-platform-choice`, default React), "Load Survey JSON from service", the intro text, the Creator licence notice and its two links, the code blocks' markup and class names, "Copy Code"                                                                     | `src/editor/embed/EmbedTab.tsx`, `embedCode.ts`                                                                                                                                                         | `the site's page markup`, `the site's source` (markup and texts only) |
+| The footer name editor: `…__edit-survey-name-container` with the `v2-class---text-edit` input ("Enter a survey name..."), the Save and Cancel buttons (`V2/components/Button`, Brand, Tertiary, Small), the name and the inline pencil `<svg>` in its `<a style="position: relative;">`                                                                                                                                             | `src/editor/FooterNameEditor.tsx`                                                                                                                                                                       | `the site's page markup`; styled by the `my-surveys.scss:589-684` copy above              |
+
+Changes to them:
+
+- Run opens the app's run page `/s/{id}` (the site's is `/published?id=`); Help and Run open with
+  `noopener`.
+- The Embed tabs' settings are inside the tab (glue in `src/editor/embed/EmbedTab.module.css`), not a
+  settings survey in the Creator's sidebar; jQuery is not offered (no SurveyJS 3.1.2 jQuery package),
+  nor the "Display Method" (pop-up) choice; the intro leaves out its last sentence (viewing the
+  example on Plunker or CodeSandbox: the site builds those projects with its own services). The
+  "Get Started" link goes to surveyjs.io. The code is the app's own template (`embedCode.ts`).
+- The links and code headers of `embedded-tab.scss` use a font token that Creator 3.1.2 does not
+  define, and its `--sjs2-color-utility-surface-embed` background is not defined either: glue sets the
+  font to the page's.
+- The pencil's `clip-path` id is unique per page; the pencil link is named "Rename survey". A failed
+  rename shows a notice above the Creator ("Could not rename the survey. Please try again.") instead of
+  the site's `alert`.
+- The obfuscated export's drop-down gets the Creator's download title (the site's has none), and
+  "Please fix error(s)" is a Creator notification instead of an `alert`.
+
 The React components in `..` reproduce the markup of these Razor views (structure, class names and
 texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page markup`,
 `Views/Shared/V2/components/{Button,Logo,Drop-Down-Menu-Item,FAQ-Question,Expand-Collapse-Button,Badge}the site's page markup`,
@@ -47,10 +90,10 @@ texts): `the site's page markup`, `Views/Shared/V2/top-bar/*the site's page mark
 `Views/Shared/V2/components/popups/{Cookies,LicencesExpired,LicencesExpiresSoon}the site's page markup`,
 `Views/Shared/V2/footer/*the site's page markup` and `Views/Shared/V2/mobile-menu/*the site's page markup`.
 
-The My Surveys page (`src/surveyList/`) and the editor stub reproduce `the site's page markup`
-(page structure, actions bar, project drop-down, empty state and the row markup with its two inline
-date icons) and the partials it uses: `V2/components/{Header,Button,Loading}the site's page markup` and
-`the site's page markup`. The "…" menu
+The My Surveys page (`src/surveyList/`) and its placeholder pages reproduce
+`the site's page markup` (page structure, actions bar, project drop-down, empty state
+and the row markup with its two inline date icons) and the partials it uses:
+`V2/components/{Header,Button,Loading}the site's page markup` and `the site's page markup`. The "…" menu
 (`the site's page markup`), the pencil and the rename editor are added
 with the row's menu (Step 5); the menu's entries are the pure function `surveyMenuItems` in
 `src/surveyList/menuItems.ts`. Changes to the markup:
@@ -124,3 +167,13 @@ Helvetica Neue / Helvetica / Arial. Step 13 (visual parity) decides whether to s
   fallback value, `4.7k`.
 - The cart count: the site reads it from its own `/api/Cart/get`; the shell shows the empty cart.
 - The "logged in as another user" badge and the scroll-to-top button.
+
+Step 6 (the History page) copies one more file:
+
+| Copy                                  | Used by                                 | Original                                               |
+| ------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `site/Content/Images/Clock_12x12.svg` | the clock in front of each entry's time | `the site's source`; none changed |
+
+The page uses the `.my-surveys-history-item` and `.my-surveys-page__clock-icon` rules of the
+`pages/my-surveys.scss` copy. It shows the time in the browser's locale and time zone with the zone
+named (the site shows the server's `DateTime.ToString()` without a zone).

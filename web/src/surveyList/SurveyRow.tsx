@@ -1,20 +1,27 @@
-import { useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useNavigate } from "@tanstack/react-router";
+import { useId, useState, type MouseEvent } from "react";
 import type { Project } from "../api/projects";
 import type { Survey } from "../api/surveys";
 import { iconHtml } from "../shell/surveyjs-site/icons";
 import { formatListDate } from "./formatDate";
 import { SurveyMenu } from "./SurveyMenu";
 import { SurveyNameEditor } from "./SurveyNameEditor";
+import { useRenameEditor } from "./useRenameEditor";
 import type { SurveyActions } from "./useSurveyActions";
 
 const classes = (...names: (string | false)[]) => names.filter(Boolean).join(" ");
+
+// Clicks inside these do not open the editor: they belong to the "…" menu and the rename editor.
+const MENU = "v2-class---my-surveys-page__survey-context-menu-button";
+const NAME_EDITOR = "v2-class---my-surveys-page__edit-survey-name-container";
 
 /**
  * One survey of the list, in the row markup of `the site's page markup` (table view):
  * the name with the rename pencil, the two dates and the "…" menu. The pencil shows only in the
  * Active view and when the user may modify the survey. A rename shows the new name at once and the
- * old one again if the request fails (the page shows the error).
+ * old one again if the request fails (the page shows the error). In the Active view a click on the
+ * row opens the editor, as on the site, except on its links (the pencil, the menu) and in the rename
+ * editor.
  */
 export function SurveyRow({
   survey,
@@ -30,28 +37,17 @@ export function SurveyRow({
   actions: SurveyActions;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  // The name sent by a rename that has not been answered yet.
-  const [pendingName, setPendingName] = useState<string | null>(null);
-  const renames = useRef(0);
-  const pencilRef = useRef<HTMLAnchorElement>(null);
-  const name = pendingName ?? survey.name;
+  const { name, editing, pencilRef, startEdit, cancel, save } = useRenameEditor(
+    survey.name,
+    (value) => actions.rename(survey, value),
+  );
   const canRename = !archived && survey.permissions.canModify;
+  const navigate = useNavigate();
 
-  const closeEditor = () => {
-    flushSync(() => setEditing(false));
-    pencilRef.current?.focus();
-  };
-
-  const save = (value: string) => {
-    closeEditor();
-    if (value.trim() === "" || value === name) return;
-    const rename = ++renames.current;
-    setPendingName(value);
-    void actions.rename(survey, value).then(() => {
-      // Success: the cache holds the new name; failure: the old one shows again.
-      if (renames.current === rename) setPendingName(null);
-    });
+  const openEditor = (event: MouseEvent<HTMLDivElement>) => {
+    if (archived || editing) return;
+    if ((event.target as Element).closest(`a, button, input, .${MENU}, .${NAME_EDITOR}`)) return;
+    void navigate({ to: "/surveys/$surveyId/edit", params: { surveyId: survey.id } });
   };
 
   return (
@@ -60,6 +56,7 @@ export function SurveyRow({
         "v2-class---my-surveys-page__list-item",
         menuOpen && "v2-class---my-surveys-page__list-item--dd-open",
       )}
+      onClick={openEditor}
     >
       <div className="v2-class---my-surveys-page__list-item-content">
         <div
@@ -68,7 +65,13 @@ export function SurveyRow({
             editing && "v2-class---my-surveys-page__list-item-header--title-edit-mode",
           )}
         >
-          {editing && <SurveyNameEditor name={name} onSave={save} onCancel={closeEditor} />}
+          {editing && (
+            <SurveyNameEditor
+              name={name}
+              onSave={(value) => save(value)}
+              onCancel={() => cancel()}
+            />
+          )}
 
           <div
             className="v2-class---my-surveys-page__survey-name-container"
@@ -86,7 +89,7 @@ export function SurveyRow({
                 onClick={(event) => {
                   event.preventDefault();
                   setMenuOpen(false);
-                  setEditing(true);
+                  startEdit();
                 }}
               >
                 <EditIcon />

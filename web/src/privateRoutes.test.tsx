@@ -191,18 +191,20 @@ function logoutHandler(status: number, code: string, title: string) {
 }
 
 describe("survey placeholder routes", () => {
-  it.each([
-    ["results", "Survey results arrive in a later version."],
-    ["history", "Survey history arrives in a later version."],
-  ])("/surveys/<id>/%s shows the survey name and its text", async (page, text) => {
-    server.use(configHandler(), meHandler(), surveyHandler());
+  it.each([["results", "Survey results arrive in a later version."]])(
+    "/surveys/<id>/%s shows the survey name and its text",
+    async (page, text) => {
+      server.use(configHandler(), meHandler(), surveyHandler());
 
-    renderAt(`/surveys/${sampleSurvey.id}/${page}`);
+      renderAt(`/surveys/${sampleSurvey.id}/${page}`);
 
-    expect(await screen.findByRole("heading", { level: 1, name: sampleSurvey.name })).toBeTruthy();
-    expect(screen.getByText(text)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Back to My Surveys" })).toBeTruthy();
-  });
+      expect(
+        await screen.findByRole("heading", { level: 1, name: sampleSurvey.name }),
+      ).toBeTruthy();
+      expect(screen.getByText(text)).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Back to My Surveys" })).toBeTruthy();
+    },
+  );
 
   it.each(["results", "history"])(
     "/surveys/<unknown>/%s says the survey is not available",

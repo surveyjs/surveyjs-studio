@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
+  historyEntryFromBlob,
   isGuid,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
@@ -216,6 +217,75 @@ describe("themeFromLegacy", () => {
       expect(warnings[0]!.message).not.toContain(text);
     },
   );
+});
+
+describe("historyEntryFromBlob", () => {
+  const SURVEY = "22222222-0000-4000-8000-A00000000001";
+  const POINT = "88888888-0000-4000-8000-A00000000001";
+  const USER = "11111111-0000-4000-8000-A00000000002";
+  const name = `${SURVEY.toLowerCase()}/${POINT.toLowerCase()}`;
+  const modified = new Date("2026-05-06T07:08:09.000Z");
+
+  it("takes the time and the user from the metadata, lower-casing ids", () => {
+    expect(
+      historyEntryFromBlob(
+        SURVEY,
+        name,
+        { userid: USER, savedat: "2026-09-01T10:00:05.123Z" },
+        modified,
+      ),
+    ).toEqual({
+      id: POINT.toLowerCase(),
+      at: "2026-09-01T10:00:05.123Z",
+      userId: USER.toLowerCase(),
+    });
+  });
+
+  it("uses the last-modified time and no user for a legacy point without metadata", () => {
+    const expected = { id: POINT.toLowerCase(), at: modified.toISOString(), userId: null };
+    expect(historyEntryFromBlob(SURVEY, name, undefined, modified)).toEqual(expected);
+    expect(historyEntryFromBlob(SURVEY, name, {}, modified)).toEqual(expected);
+  });
+
+  it("reads a userid that is not a GUID as no user", () => {
+    for (const userid of ["", "someone", `${USER}x`, "{" + USER + "}"]) {
+      expect(historyEntryFromBlob(SURVEY, name, { userid }, modified)?.userId, userid).toBeNull();
+    }
+  });
+
+  it("uses the last-modified time when savedat does not parse as ISO 8601 UTC", () => {
+    for (const savedat of [
+      "",
+      "yesterday",
+      "2026-09-01",
+      "2026-09-01T10:00:05+02:00",
+      "2026-13-45T99:00:00Z",
+    ]) {
+      expect(historyEntryFromBlob(SURVEY, name, { savedat }, modified)?.at, savedat).toBe(
+        modified.toISOString(),
+      );
+    }
+  });
+
+  it("normalises a savedat without milliseconds", () => {
+    expect(
+      historyEntryFromBlob(SURVEY, name, { savedat: "2026-09-01T10:00:05Z" }, modified)?.at,
+    ).toBe("2026-09-01T10:00:05.000Z");
+  });
+
+  it("ignores blobs outside {surveyId}/ and names that are not a GUID point", () => {
+    const other = "22222222-0000-4000-8000-a00000000002";
+    for (const blob of [
+      POINT.toLowerCase(),
+      `${other}/${POINT.toLowerCase()}`,
+      `${name}/extra`,
+      `${SURVEY.toLowerCase()}/not-a-guid`,
+      `${SURVEY.toLowerCase()}/`,
+      `${SURVEY.toLowerCase()}${POINT.toLowerCase()}`,
+    ]) {
+      expect(historyEntryFromBlob(SURVEY, blob, undefined, modified), blob).toBeNull();
+    }
+  });
 });
 
 describe("isGuid", () => {

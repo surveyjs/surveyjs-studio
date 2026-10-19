@@ -4,15 +4,25 @@ import type {
   ProjectMembership,
   ProjectRecord,
   ProjectRole,
+  SaveOutcome,
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
   SurveyTheme,
   User,
+  Versioned,
 } from "../domain/types.js";
+import { randomUUID } from "node:crypto";
+import { contentVersion } from "../domain/content-version.js";
 import { applySurveyChanges } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
-import { isAfter, projectListOrder, surveyListOrder } from "./ordering.js";
+import {
+  historyOrder,
+  isAfter,
+  isAfterHistory,
+  projectListOrder,
+  surveyListOrder,
+} from "./ordering.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -25,7 +35,20 @@ export interface MemorySeed {
   definitions?: Record<string, SurveyDefinition>;
   /** Survey themes by survey id. */
   themes?: Record<string, SurveyTheme>;
+  /** History entries (with their snapshots) by survey id. */
+  history?: Record<string, { id: string; at: string; userId: null; snapshot: SurveyDefinition }[]>;
 }
+
+interface StoredHistoryEntry {
+  readonly id: string;
+  readonly at: string;
+  readonly userId: string | null;
+  readonly snapshot: SurveyDefinition;
+}
+
+/** The version of a stored document: the hash of its compact JSON, or of "" when none is stored. */
+const versionOf = (content: Record<string, unknown> | undefined): string =>
+  contentVersion(content === undefined ? "" : JSON.stringify(content));
 
 export interface MemoryOptions {
   /** `ACCOUNT_NOTICES`; default `none`. Only the demo settings: the memory store has no licences. */
@@ -91,6 +114,18 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     Object.entries(seed?.themes ?? {}).map(([id, t]) => [lower(id), structuredClone(t)]),
   );
 
+  const history = new Map<string, StoredHistoryEntry[]>(
+    Object.entries(seed?.history ?? {}).map(([id, entries]) => [
+      lower(id),
+      entries.map((e) => ({ ...e, id: lower(e.id), snapshot: structuredClone(e.snapshot) })),
+    ]),
+  );
+  const addHistory = (surveyId: string, entry: StoredHistoryEntry): void => {
+    const entries = history.get(surveyId) ?? [];
+    entries.push({ ...entry, snapshot: structuredClone(entry.snapshot) });
+    history.set(surveyId, entries);
+  };
+
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
 
   /** Stores a new survey; throws on a duplicate id. */
@@ -98,8 +133,44 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     const record = surveyFromNew(survey);
     if (findSurvey(record.id)) throw new Error(`survey ${record.id} already exists`);
     surveys.push(record);
-    if (definition !== undefined) definitions.set(record.id, structuredClone(definition));
+    if (definition !== undefined) {
+      definitions.set(record.id, structuredClone(definition));
+      addHistory(record.id, {
+        id: randomUUID(),
+        at: record.createdAt,
+        userId: record.creatorId,
+        snapshot: definition,
+      });
+    }
     return copySurvey(record);
+  };
+
+  /** A document and its version; null when no survey has this id. */
+  const read = (
+    id: string,
+    store: Map<string, Record<string, unknown>>,
+  ): Versioned<Record<string, unknown>> | null => {
+    if (!findSurvey(id)) return null;
+    const stored = store.get(lower(id));
+    return { content: structuredClone(stored ?? {}), version: versionOf(stored) };
+  };
+
+  /** Compare-and-set of one document; moves the survey's updatedAt on success. */
+  const write = (
+    id: string,
+    store: Map<string, Record<string, unknown>>,
+    content: Record<string, unknown>,
+    ifVersion: string,
+    savedAt: string,
+  ): SaveOutcome => {
+    const index = surveys.findIndex((s) => s.id === lower(id));
+    if (index < 0) return { kind: "not-found" };
+    const key = surveys[index]!.id;
+    if (versionOf(store.get(key)) !== ifVersion) return { kind: "conflict" };
+    const stored = structuredClone(content);
+    store.set(key, stored);
+    surveys[index] = { ...surveys[index]!, updatedAt: savedAt };
+    return { kind: "saved", version: versionOf(stored) };
   };
 
   /** A fresh membership with the project's current member count. */
@@ -145,13 +216,36 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
           return Promise.reject(error as Error);
         }
       },
-      getDefinition: (id) => {
-        if (!findSurvey(id)) return Promise.resolve(null);
-        return Promise.resolve(structuredClone(definitions.get(lower(id)) ?? {}));
+      getDefinition: (id) => Promise.resolve(read(id, definitions)),
+      getTheme: (id) => Promise.resolve(read(id, themes)),
+      saveDefinition: (id, definition, { ifVersion, userId, savedAt }) => {
+        const outcome = write(id, definitions, definition, ifVersion, savedAt);
+        if (outcome.kind === "saved") {
+          addHistory(lower(id), {
+            id: randomUUID(),
+            at: savedAt,
+            userId: lower(userId),
+            snapshot: definition,
+          });
+        }
+        return Promise.resolve(outcome);
       },
-      getTheme: (id) => {
-        if (!findSurvey(id)) return Promise.resolve(null);
-        return Promise.resolve(structuredClone(themes.get(lower(id)) ?? {}));
+      saveTheme: (id, theme, { ifVersion, savedAt }) =>
+        Promise.resolve(write(id, themes, theme, ifVersion, savedAt)),
+      listHistory: ({ surveyId, after, limit }) => {
+        const matching = [...(history.get(lower(surveyId)) ?? [])]
+          .sort(historyOrder)
+          .filter((e) => !after || isAfterHistory(e, after));
+        const items = matching.slice(0, limit).map(({ id, at, userId }) => ({ id, at, userId }));
+        const last = items.at(-1);
+        return Promise.resolve({
+          items,
+          next: matching.length > items.length && last ? { at: last.at, id: last.id } : null,
+        });
+      },
+      getHistorySnapshot: (surveyId, entryId) => {
+        const found = history.get(lower(surveyId))?.find((e) => e.id === lower(entryId));
+        return Promise.resolve(found ? structuredClone(found.snapshot) : null);
       },
       updateSurvey: (id, changes) => {
         const index = surveys.findIndex((s) => s.id === lower(id));
@@ -177,6 +271,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         if (index < 0) return Promise.resolve(false);
         const [removed] = surveys.splice(index, 1);
         definitions.delete(removed!.id);
+        history.delete(removed!.id);
         themes.delete(removed!.id);
         return Promise.resolve(true);
       },

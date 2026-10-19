@@ -44,6 +44,7 @@ describe("loadConfig", () => {
         maxAssetBytesPerSurvey: 52428800,
         maxFileBytes: 10485760,
         maxResponseBytes: 1048576,
+        maxDocumentBytes: 30000000,
       },
       apiDocs: true,
       identityProvider: "dev",
@@ -79,6 +80,7 @@ describe("loadConfig", () => {
       LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "10",
       LIMIT_MAX_FILE_BYTES: "20",
       LIMIT_MAX_RESPONSE_BYTES: "30",
+      LIMIT_MAX_DOCUMENT_BYTES: "40",
       API_DOCS: "true",
     });
     expect(config).toMatchObject({
@@ -92,7 +94,12 @@ describe("loadConfig", () => {
       surveyjsLicenseKey: "key-1",
       memorySeed: "legacy-fixtures",
       publicBaseUrl: "https://surveys.example.com",
-      limits: { maxAssetBytesPerSurvey: 10, maxFileBytes: 20, maxResponseBytes: 30 },
+      limits: {
+        maxAssetBytesPerSurvey: 10,
+        maxFileBytes: 20,
+        maxResponseBytes: 30,
+        maxDocumentBytes: 40,
+      },
       apiDocs: true,
     });
   });
@@ -127,6 +134,7 @@ describe("loadConfig", () => {
     ["LIMIT_MAX_ASSET_BYTES_PER_SURVEY", "0"],
     ["LIMIT_MAX_FILE_BYTES", "-5"],
     ["LIMIT_MAX_RESPONSE_BYTES", "1.5"],
+    ["LIMIT_MAX_DOCUMENT_BYTES", "0"],
     ["API_DOCS", "yes"],
   ])("rejects %s=%j and names the variable", (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(ConfigError);

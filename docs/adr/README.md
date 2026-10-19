@@ -18,3 +18,4 @@ and add each one to this index.
 | [0009](0009-survey-permissions-follow-legacy.md) | Survey permissions follow the legacy rules                                      | Accepted |
 | [0010](0010-writing-to-the-legacy-stores.md)     | Writing to the legacy stores                                                    | Accepted |
 | [0011](0011-survey-actions.md)                   | Survey actions: who may do what, and what each one changes                      | Accepted |
+| [0012](0012-editor-content-and-history.md)       | The editor, survey content and history                                          | Accepted |

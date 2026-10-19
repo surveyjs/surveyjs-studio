@@ -48,10 +48,12 @@ describe("memory provider isolation", () => {
     const definition: Record<string, unknown> = { title: "Original" };
     await providers.surveys.createSurvey(newSurvey, definition);
     definition.title = "Changed by the caller";
-    const read = await providers.surveys.getDefinition(newSurvey.id);
+    const read = (await providers.surveys.getDefinition(newSurvey.id))!.content;
     expect(read).toEqual({ title: "Original" });
-    (read as Record<string, unknown>).title = "Changed again";
-    expect(await providers.surveys.getDefinition(newSurvey.id)).toEqual({ title: "Original" });
+    read.title = "Changed again";
+    expect((await providers.surveys.getDefinition(newSurvey.id))?.content).toEqual({
+      title: "Original",
+    });
   });
 
   it("names the id when it refuses a duplicate", async () => {

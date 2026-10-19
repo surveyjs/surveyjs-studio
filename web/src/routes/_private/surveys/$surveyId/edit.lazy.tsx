@@ -1,14 +1,14 @@
 import { createLazyFileRoute } from "@tanstack/react-router";
-import { SurveyNotAvailable, SurveyPlaceholder } from "../../../../surveyList/surveyPlaceholder";
+import { EditorPage } from "../../../../editor/EditorPage";
+import { SurveyNotAvailable } from "../../../../surveyList/surveyPlaceholder";
 
 export const Route = createLazyFileRoute("/_private/surveys/$surveyId/edit")({
-  component: Placeholder,
+  component: Editor,
   notFoundComponent: SurveyNotAvailable,
 });
 
-function Placeholder() {
+function Editor() {
   const { surveyId } = Route.useParams();
-  return (
-    <SurveyPlaceholder surveyId={surveyId} text="The survey editor arrives in a later version." />
-  );
+  // Another survey is another editor: new reads, new savers, a new Creator.
+  return <EditorPage key={surveyId} surveyId={surveyId} />;
 }

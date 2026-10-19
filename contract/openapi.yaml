@@ -597,6 +597,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SurveyDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
@@ -605,7 +606,9 @@ paths:
       summary: Save the survey definition
       description: |
         Used by Survey Creator auto-save. Also updates `updatedAt` and adds a
-        history entry.
+        history entry. Send the ETag of your last read or write in `If-Match`
+        (`*` matches any version; weak tags never match). Bodies larger than
+        `limits.maxDocumentBytes` are rejected with `413`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -622,6 +625,7 @@ paths:
           description: Saved.
           headers:
             ETag: { $ref: '#/components/headers/ETag' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -644,12 +648,18 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SurveyTheme' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [Survey content]
       operationId: saveSurveyTheme
       summary: Save the survey theme
+      description: |
+        Also updates `updatedAt`. Does not add a history entry. Send the ETag of
+        your last read or write in `If-Match` (`*` matches any version; weak tags
+        never match). Bodies larger than `limits.maxDocumentBytes` are rejected
+        with `413`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -666,11 +676,13 @@ paths:
           description: Saved.
           headers:
             ETag: { $ref: '#/components/headers/ETag' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '412': { $ref: '#/components/responses/PreconditionFailed' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
 
   # ------------------------------------------------------------------ Files
@@ -716,7 +728,10 @@ paths:
       tags: [History]
       operationId: listSurveyHistory
       summary: List edits of a survey
-      description: Newest first.
+      description: |
+        Newest first. Every definition save adds an entry, and so do creating a
+        survey with a definition and cloning one. `user` is `null` for entries
+        recorded without a user (legacy) and for users who no longer exist.
       parameters:
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Cursor' }
@@ -726,6 +741,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HistoryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -1071,7 +1087,8 @@ components:
       description: URL of the created resource or redirect target.
       schema: { type: string }
     ETag:
-      description: Version tag of the document; send it back in `If-Match`.
+      description: Strong, opaque version tag of the document; send it back in `If-Match`.
+      required: true
       schema: { type: string }
     SetCookie:
       description: Session cookies `msid` (HttpOnly) and `msid_csrf` (readable).
@@ -1320,11 +1337,14 @@ components:
             nature, like any licence key shipped in a front-end bundle.
         limits:
           type: object
-          required: [maxAssetBytesPerSurvey, maxFileBytes, maxResponseBytes]
+          required: [maxAssetBytesPerSurvey, maxFileBytes, maxResponseBytes, maxDocumentBytes]
           properties:
             maxAssetBytesPerSurvey: { type: integer }
             maxFileBytes: { type: integer }
             maxResponseBytes: { type: integer }
+            maxDocumentBytes:
+              type: integer
+              description: Largest survey definition or theme body accepted, in bytes.
         links:
           type: object
           description: Shell links, such as account settings and help desk.

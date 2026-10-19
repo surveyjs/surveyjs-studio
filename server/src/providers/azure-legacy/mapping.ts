@@ -1,4 +1,5 @@
 import type {
+  HistoryEntryRecord,
   ProjectMembership,
   ProjectRecord,
   SurveyDefinition,
@@ -128,6 +129,40 @@ export function themeFromLegacy(
     logger.warn({ ...error.ids }, `Ignored a legacy survey theme. ${error.message}`);
     return {};
   }
+}
+
+/** ISO 8601 UTC as `savedat` holds it (Date.toISOString, milliseconds optional). */
+const SAVED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+
+/**
+ * A history entry from a blob of container `surveyjsonhistory` (layout section 3.4, ADR 0012 R8).
+ * Only `{surveyId}/{pointId}` with a GUID point id is an entry of that survey; any other name
+ * (the root-level points of the current legacy port, deeper paths) gives null. The time is the
+ * `savedat` metadata when it is ISO 8601 UTC, else the blob's last-modified time; the user is the
+ * `userid` metadata when it is a GUID, else null (legacy points carry no metadata).
+ */
+export function historyEntryFromBlob(
+  surveyId: string,
+  name: string,
+  metadata: Readonly<Record<string, string>> | undefined,
+  lastModified: Date,
+): HistoryEntryRecord | null {
+  const prefix = `${guid(surveyId)}/`;
+  // (Not startsWith: the folder's read-only lint rule refuses calls named start….)
+  if (name.slice(0, prefix.length) !== prefix) return null;
+  const pointId = name.slice(prefix.length);
+  if (!isGuid(pointId)) return null;
+  const savedAt = metadata?.savedat;
+  const at =
+    savedAt !== undefined && SAVED_AT.test(savedAt) && Number.isFinite(Date.parse(savedAt))
+      ? new Date(savedAt)
+      : lastModified;
+  const userId = metadata?.userid;
+  return {
+    id: guid(pointId),
+    at: at.toISOString(),
+    userId: userId !== undefined && isGuid(userId) ? guid(userId) : null,
+  };
 }
 
 export function responseFromLegacy(entity: LegacyResultEntity): SurveyResponse {

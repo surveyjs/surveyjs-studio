@@ -9,6 +9,7 @@ committed.
 
 - [Conventions](conventions.md): errors, paging, concurrency, CSRF, idempotency and more.
 - [Paging](paging.md): `limit` and `cursor`, what a page can hold, and the reference cursor format for ports.
+- [Concurrent editing with ETags](concurrency.md): `ETag`, `If-Match`, `412` and `428`, with a `curl` loop.
 - [Authentication, sessions and CSRF](authentication.md): the sign-in flow, `returnTo`, the cookies,
   the CSRF header, sign-out and rate limiting.
 
@@ -57,12 +58,13 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 
 ## What is implemented
 
-| Since  | Operations                                                                                 |
-| ------ | ------------------------------------------------------------------------------------------ |
-| Step 1 | `getConfig`                                                                                |
-| Step 3 | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md)) |
-| Step 4 | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)       |
-| Step 5 | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                  |
+| Since  | Operations                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------- |
+| Step 1 | `getConfig`                                                                                                         |
+| Step 3 | `login`, `loginCallback`, `logout`, `getCurrentUser` ([authentication](authentication.md))                          |
+| Step 4 | `listSurveys`, `createSurvey`, `getSurvey`, `listProjects`, `getProject` (see below)                                |
+| Step 5 | `updateSurvey`, `deleteSurvey`, `cloneSurvey` (see below)                                                           |
+| Step 6 | `getSurveyDefinition`, `saveSurveyDefinition`, `getSurveyTheme`, `saveSurveyTheme`, `listSurveyHistory` (see below) |
 
 ### Step 4: surveys and projects
 
@@ -87,7 +89,8 @@ Rules for `createSurvey`:
 - `createdAt` and `updatedAt` are the server's clock; the ids of the survey, its `postId` and its
   `resultId` are new GUIDs. The survey starts unpublished and not archived, with every setting off.
 - A given `definition` is stored. Nothing is stored without one, and the definition then reads as
-  `{}`. It is read back over HTTP in a later step (`getSurveyDefinition` is still `501`).
+  `{}`. It is read back with `getSurveyDefinition` ([Step 6](#step-6-definition-theme-and-history)) and
+  gets one history entry.
 - `permissions.canModify` follows [ADR 0009](../adr/0009-survey-permissions-follow-legacy.md).
 
 ### Step 5: survey actions
@@ -224,6 +227,81 @@ HTTP/1.1 409 Conflict
 ```
 
 After `{"archived":true}` the same request answers `204 No Content`, and a third one `404`.
+
+### Step 6: definition, theme and history
+
+All five need a session. The two `PUT`s also need the CSRF header and `If-Match` (see
+[Concurrent editing with ETags](concurrency.md)). The examples use the setup of the Step 5 section.
+
+| Operation              | Behaviour                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getSurveyDefinition`  | `GET /surveys/{surveyId}/definition`. `200`, the definition (`{}` when the survey has none) and an `ETag`. `404` for an unknown survey and for one the user cannot see         |
+| `saveSurveyDefinition` | `PUT /surveys/{surveyId}/definition`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                |
+| `getSurveyTheme`       | `GET /surveys/{surveyId}/theme`. As the definition (`{}` when none)                                                                                                            |
+| `saveSurveyTheme`      | `PUT /surveys/{surveyId}/theme`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                     |
+| `listSurveyHistory`    | `GET /surveys/{surveyId}/history`, query `limit` (1 to 200, default 50) and `cursor`. `200` `{ items: [{ at, user }], nextCursor }`, newest first. `404` as for the definition |
+
+Rules for the two `PUT`s:
+
+- **Who.** The user must be allowed to modify the survey (same rule and same answers as Step 5: `403`
+  when the user can see the survey but not modify it, `404` when it is invisible).
+- **Order of checks.** Authentication, CSRF, the body size (`413`), the media type (`415`), the body
+  schema (`422`, the body must be a JSON object), then `404`, `403`, `428` (no `If-Match`) and `412`
+  (the version is not the current one). Nothing is written before every check passes.
+- **The body limit** is `limits.maxDocumentBytes` (`GET /config`, default 30,000,000 bytes), not the
+  1 MB of the other routes.
+- **Stored as** the compact JSON text of the body (`JSON.stringify`), so a read returns the same
+  content, not the same bytes.
+- **`updatedAt`** is set to the save time by both saves.
+- **History.** Only the definition save adds an entry (with the saving user and a full snapshot of the
+  definition). Creating a survey with a definition, and cloning a survey that has one, also add an
+  entry. The theme save adds none.
+- **The conflict test is atomic.** On the `azure-legacy` provider the definition is replaced only if
+  the blob still has the ETag you sent, and the theme only if the stored text is still the one the
+  ETag was made from, so two writers cannot both succeed.
+
+Rules for `listSurveyHistory`:
+
+- Entries are ordered by `at` (newest first), then by entry id (descending). Paging works as in
+  [Paging](paging.md); the cursor is opaque, and a bad cursor or `limit` is `400`.
+- `user` is `{ id, displayName }`, or `null` for entries recorded without a user (the legacy editor
+  wrote none) and for users that no longer exist.
+- There is no operation yet to read, compare or restore one entry (P1).
+
+Read, edit and save the definition (the full loop with explanations is in
+[Concurrent editing with ETags](concurrency.md#example-a-save-loop-with-curl)):
+
+```sh
+curl -i -b cookies.txt "$API/surveys/$ID/definition"
+curl -i -b cookies.txt -X PUT "$API/surveys/$ID/definition"   -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json"   -H "If-Match: $ETAG" -d '{"title":"Customer feedback","pages":[]}'
+```
+
+The second one answers `204 No Content` and an `ETag`. With a stale `If-Match` it answers
+`412 Precondition Failed`:
+
+```text
+HTTP/1.1 412 Precondition Failed
+{"type":"https://my-surveys.surveyjs.io/problems/edit-conflict","title":"The survey was changed by someone else","status":412,"code":"edit-conflict","detail":"Reload the survey to see the latest version."}
+```
+
+The history, with the entries of the survey just saved:
+
+```sh
+curl -b cookies.txt "$API/surveys/$ID/history?limit=2"
+```
+
+```json
+{
+  "items": [
+    {
+      "at": "2026-10-16T08:15:02.411Z",
+      "user": { "id": "11111111-0000-4000-8000-a00000000001", "displayName": "Olivia Owner" }
+    },
+    { "at": "2026-03-13T10:00:00.000Z", "user": null }
+  ],
+  "nextCursor": null
+}
+```
 
 Every other operation answers `501` with a Problem Details body (`code: not-implemented`), after
 authentication: a private operation called without a session answers `401`. `passwordLogin` stays

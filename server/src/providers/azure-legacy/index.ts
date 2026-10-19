@@ -4,22 +4,34 @@ import sql from "mssql";
 import type { Clock } from "../../auth/session.js";
 import type { AccountNoticesSetting, LegacyConfig } from "../../config.js";
 import type {
+  HistoryEntryRecord,
   NewSurvey,
   ProjectMembership,
+  SaveOutcome,
   SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
   SurveyTheme,
+  Versioned,
 } from "../../domain/types.js";
+import { contentVersion } from "../../domain/content-version.js";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { demoAccountNotices, type AccountNotices } from "../../notices/account-notices.js";
 import { licenceNotices } from "../../notices/licence-rule.js";
-import { projectListOrder, surveyListOrder } from "../ordering.js";
-import type { ProviderSet, SurveyPage, SurveyPageQuery, SurveyPosition } from "../types.js";
+import { historyOrder, isAfterHistory, projectListOrder, surveyListOrder } from "../ordering.js";
+import type {
+  HistoryPage,
+  HistoryQuery,
+  ProviderSet,
+  SurveyPage,
+  SurveyPageQuery,
+  SurveyPosition,
+} from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import {
   UnmappableLegacyRowError,
   definitionFromLegacy,
+  historyEntryFromBlob,
   isGuid,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
@@ -36,9 +48,11 @@ import type {
 } from "./rows.js";
 import {
   writeClonedSurvey,
+  writeDefinitionSave,
   writeNewSurvey,
   writeSurveyChanges,
   writeSurveyDeletion,
+  writeThemeSave,
   type LegacyWriteTargets,
 } from "./writes.js";
 
@@ -49,9 +63,17 @@ import {
  * tables in the same database.
  *
  * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
- * folder): survey creation, update, clone and delete call the writers of writes.ts.
+ * folder): survey creation, update, clone, delete and the definition and theme saves call the
+ * writers of writes.ts.
  * Connection strings are secrets: no error or log line built here holds one.
  */
+
+/** Reads a download stream to the end (a missing body is empty). */
+async function streamToBuffer(stream: NodeJS.ReadableStream | undefined): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  if (stream) for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks);
+}
 
 export { LegacyStoreError } from "./errors.js";
 
@@ -346,39 +368,86 @@ export function createAzureLegacyProviders(
     };
   }
 
-  async function getDefinition(id: string): Promise<SurveyDefinition | null> {
+  async function getDefinition(id: string): Promise<Versioned<SurveyDefinition> | null> {
     const survey = await getSurvey(id);
     if (!survey) return null;
-    let content: Buffer;
+    let text: string;
+    let version: string;
     try {
-      content = await surveysAccount.blobs
+      const response = await surveysAccount.blobs
         .getContainerClient("surveyjson")
         .getBlobClient(survey.id)
-        .downloadToBuffer();
+        .download();
+      // Body and ETag come from the same response, so the version names the text read.
+      text = (await streamToBuffer(response.readableStreamBody)).toString("utf8");
+      version = (response.etag ?? "").replaceAll('"', "");
     } catch (error) {
       // No blob until the first save (layout section 3.2).
-      if (statusOf(error) === 404) return {};
+      if (statusOf(error) === 404) return { content: {}, version: "none" };
       throw new LegacyStoreError("definition read", error);
     }
+    // An empty surveyjson is a save that failed after replacing it (writeDefinitionSave): the
+    // text is still in surveytext, written after it. The version stays surveyjson's, so the next
+    // save with it rewrites both blobs.
+    if (text === "") text = await surveyTextBlob(survey.id);
+    // A version is never empty: without an ETag no save could be checked against this read.
+    if (version === "") throw new LegacyStoreError("definition read", new Error("no ETag"));
     try {
-      return definitionFromLegacy(survey.id, content.toString("utf8"));
+      return { content: definitionFromLegacy(survey.id, text), version };
     } catch (error) {
       if (!(error instanceof UnmappableLegacyRowError)) throw error;
       logger.warn({ ...error.ids }, `Ignored a legacy survey definition. ${error.message}`);
-      return {};
+      return { content: {}, version };
     }
   }
 
-  async function getTheme(id: string): Promise<SurveyTheme | null> {
-    if (!isGuid(id)) return null;
+  /** The text of `surveytext/{id}`; "" when there is no such blob. */
+  async function surveyTextBlob(id: string): Promise<string> {
+    try {
+      const response = await surveysAccount.blobs
+        .getContainerClient("surveytext")
+        .getBlobClient(id)
+        .download();
+      return (await streamToBuffer(response.readableStreamBody)).toString("utf8");
+    } catch (error) {
+      if (statusOf(error) === 404) return "";
+      throw new LegacyStoreError("definition read", error);
+    }
+  }
+
+  /** The raw `Surveys.theme` text of a survey; undefined when no survey has this id. */
+  async function rawTheme(id: string): Promise<{ id: string; theme: string | null } | undefined> {
     const rows = await select<{ id: string; theme: string | null }>(
       "theme read",
       "SELECT id, theme FROM Surveys WHERE id = @id",
       (request) => request.input("id", sql.UniqueIdentifier, id),
     );
-    const [row] = rows;
-    return row ? themeFromLegacy(row.id, row.theme, logger) : null;
+    return rows[0];
   }
+
+  async function getTheme(id: string): Promise<Versioned<SurveyTheme> | null> {
+    if (!isGuid(id)) return null;
+    const row = await rawTheme(id);
+    return row
+      ? {
+          content: themeFromLegacy(row.id, row.theme, logger),
+          version: contentVersion(row.theme ?? ""),
+        }
+      : null;
+  }
+
+  /** Whether a `Surveys` row has this id (also one the mapping would skip). */
+  async function surveyExists(operation: string, id: string): Promise<boolean> {
+    const rows = await select(
+      operation,
+      "SELECT 1 AS found FROM Surveys WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
+    );
+    return rows.length > 0;
+  }
+
+  /** The history container of the surveys account (layout section 3.4). */
+  const historyContainer = () => surveysAccount.blobs.getContainerClient("surveyjsonhistory");
 
   const writeTargets: LegacyWriteTargets = {
     pool: connected,
@@ -408,6 +477,101 @@ export function createAzureLegacyProviders(
     if (!isGuid(sourceId)) return null;
     const id = await writeClonedSurvey(writeTargets, sourceId, copy);
     return id === null ? null : storedSurvey(id);
+  }
+
+  async function saveDefinition(
+    id: string,
+    definition: SurveyDefinition,
+    save: { readonly ifVersion: string; readonly userId: string; readonly savedAt: string },
+  ): Promise<SaveOutcome> {
+    if (!isGuid(id)) return { kind: "not-found" };
+    return writeDefinitionSave(writeTargets, id, JSON.stringify(definition), {
+      blobVersion: save.ifVersion,
+      userId: save.userId,
+      savedAt: save.savedAt,
+    });
+  }
+
+  /**
+   * The theme column has no version of its own: the stored text is read, its hash compared with
+   * `ifVersion`, and the write is made only while the column still holds that text (R2).
+   */
+  async function saveTheme(
+    id: string,
+    theme: SurveyTheme,
+    save: { readonly ifVersion: string; readonly savedAt: string },
+  ): Promise<SaveOutcome> {
+    if (!isGuid(id)) return { kind: "not-found" };
+    const row = await rawTheme(id);
+    if (!row) return { kind: "not-found" };
+    const expectedRaw = row.theme ?? "";
+    if (contentVersion(expectedRaw) !== save.ifVersion) return { kind: "conflict" };
+    const outcome = await writeThemeSave(writeTargets, id, JSON.stringify(theme), {
+      expectedRaw,
+      savedAt: save.savedAt,
+    });
+    // The version of what the column holds now, which the next getTheme hashes too.
+    return outcome.kind === "saved"
+      ? { kind: "saved", version: contentVersion(outcome.stored) }
+      : outcome;
+  }
+
+  /**
+   * Every point under `surveyjsonhistory/{id}/` with its metadata, sorted in history order, then
+   * paged (R9). An unknown survey has no history, whatever blobs are left under its id.
+   */
+  async function listHistory({ surveyId, after, limit }: HistoryQuery): Promise<HistoryPage> {
+    const empty: HistoryPage = { items: [], next: null };
+    if (!isGuid(surveyId)) return empty;
+    const id = surveyId.toLowerCase();
+    if (!(await surveyExists("history list", id))) return empty;
+    const entries: HistoryEntryRecord[] = [];
+    try {
+      const blobs = historyContainer().listBlobsFlat({ prefix: `${id}/`, includeMetadata: true });
+      for await (const blob of blobs) {
+        const entry = historyEntryFromBlob(
+          id,
+          blob.name,
+          blob.metadata,
+          blob.properties.lastModified,
+        );
+        if (entry) entries.push(entry);
+      }
+    } catch (error) {
+      if (statusOf(error) === 404) return empty; // no history container yet
+      throw new LegacyStoreError("history list", error);
+    }
+    const matching = entries.sort(historyOrder).filter((e) => !after || isAfterHistory(e, after));
+    const items = matching.slice(0, limit);
+    const last = items.at(-1);
+    return {
+      items,
+      next: matching.length > items.length && last ? { at: last.at, id: last.id } : null,
+    };
+  }
+
+  async function getHistorySnapshot(
+    surveyId: string,
+    entryId: string,
+  ): Promise<SurveyDefinition | null> {
+    if (!isGuid(surveyId) || !isGuid(entryId)) return null;
+    const id = surveyId.toLowerCase();
+    if (!(await surveyExists("history read", id))) return null;
+    let text: string;
+    try {
+      const blob = historyContainer().getBlobClient(`${id}/${entryId.toLowerCase()}`);
+      text = (await blob.downloadToBuffer()).toString("utf8");
+    } catch (error) {
+      if (statusOf(error) === 404) return null;
+      throw new LegacyStoreError("history read", error);
+    }
+    try {
+      return definitionFromLegacy(id, text);
+    } catch (error) {
+      if (!(error instanceof UnmappableLegacyRowError)) throw error;
+      logger.warn({ ...error.ids }, `Ignored a legacy history point. ${error.message}`);
+      return {};
+    }
   }
 
   async function deleteSurvey(id: string): Promise<boolean> {
@@ -450,6 +614,10 @@ export function createAzureLegacyProviders(
       createSurvey,
       getDefinition,
       getTheme,
+      saveDefinition,
+      saveTheme,
+      listHistory,
+      getHistorySnapshot,
       updateSurvey,
       cloneSurvey,
       deleteSurvey,
