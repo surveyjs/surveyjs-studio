@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http as mswHttp } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "./navigation";
+import type { RunSurveyProps } from "./run/RunSurvey";
 import { createAppRouter } from "./router";
 import {
   appConfig,
@@ -17,8 +18,13 @@ import {
   surveyListPageHandlers,
   unauthenticatedHandler,
 } from "./test/server";
+import { publishedSurveyHandler, samplePublishedSurvey } from "./test/public-handlers";
 
 vi.mock("./navigation", () => ({ navigateTo: vi.fn() }));
+// jsdom does not run the Form Library here (src/runRoutes.test.tsx tests the run page).
+vi.mock("./run/RunSurvey", () => ({
+  RunSurvey: ({ data }: RunSurveyProps) => <p data-testid="fake-survey">{data.survey.name}</p>,
+}));
 
 function renderAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -235,15 +241,25 @@ describe("survey placeholder routes", () => {
 });
 
 describe("public run route", () => {
-  it("/s/<id> renders without a session and calls no survey endpoint", async () => {
-    // Only /config (the root loader) is answered: any other request fails the test.
-    server.use(configHandler());
+  it("/s/<id> renders without a session, reading only /config and the published survey", async () => {
+    server.use(configHandler(), publishedSurveyHandler());
+    const paths: string[] = [];
+    const record = ({ request }: { request: Request }) => {
+      paths.push(new URL(request.url).pathname);
+    };
+    server.events.on("request:start", record);
+    try {
+      renderAt(`/s/${samplePublishedSurvey.id}`);
 
-    renderAt(`/s/${sampleSurvey.id}`);
-
-    expect(await screen.findByRole("heading", { level: 1, name: "Survey" })).toBeTruthy();
-    expect(screen.getByText("The survey run page arrives in a later version.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
-    expect(navigateTo).not.toHaveBeenCalled();
+      expect((await screen.findByTestId("fake-survey")).textContent).toBe("Customer feedback");
+      expect(paths).toEqual([
+        "/api/v1/config",
+        `/api/v1/public/surveys/${samplePublishedSurvey.id}`,
+      ]);
+      expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
+      expect(navigateTo).not.toHaveBeenCalled();
+    } finally {
+      server.events.removeListener("request:start", record);
+    }
   });
 });

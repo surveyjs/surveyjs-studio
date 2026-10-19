@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 export class ConfigError extends Error {
@@ -41,6 +42,12 @@ export interface AppConfig {
   /** Set only when `identityProvider` is `surveyjs-oidc` (and identity is not skipped). */
   readonly oidc: OidcConfig | null;
   readonly signInRateLimitPerMinute: number;
+  /** Peers (IP addresses or CIDR ranges) whose X-Forwarded-For is believed; empty trusts nobody. */
+  readonly trustProxy: readonly string[];
+  /** Requests per client IP and minute for each of the three public operations. */
+  readonly publicRateLimitPerMinute: number;
+  /** Requests per client IP and minute for `downloadFile`. */
+  readonly publicFileRateLimitPerMinute: number;
   readonly accountNotices: AccountNoticesSetting;
   /** Optional account links merged over the shell's built-in ones. */
   readonly shellLinks: Readonly<Record<string, string>>;
@@ -88,6 +95,28 @@ export const LEGACY_VARIABLES = [
 // Decimal digits only: rejects "1e3", "0x10", "-1", "1.5" which Number() would accept.
 const decimalInt = z.string().regex(/^[0-9]+$/, "must be a decimal integer");
 const positiveInt = decimalInt.transform(Number).pipe(z.number().int().positive());
+
+const TRUST_PROXY_MESSAGE = "must be a comma-separated list of IP addresses or CIDR ranges";
+
+function isTrustedPeer(item: string): boolean {
+  const slash = item.indexOf("/");
+  if (slash < 0) return isIP(item) !== 0;
+  const version = isIP(item.slice(0, slash));
+  const prefix = item.slice(slash + 1);
+  return (
+    version !== 0 && /^[0-9]{1,3}$/.test(prefix) && Number(prefix) <= (version === 4 ? 32 : 128)
+  );
+}
+
+const trustProxy = z
+  .string()
+  .transform((value) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item !== ""),
+  )
+  .refine((items) => items.every(isTrustedPeer), TRUST_PROXY_MESSAGE);
 
 const authMethods = z
   .string()
@@ -174,6 +203,9 @@ const envSchema = z.object({
   // Default by OIDC_DISCOVERY: auth.surveyjs.io advertises only profile and email.
   OIDC_SCOPES: z.string().min(1).optional(),
   SIGN_IN_RATE_LIMIT: positiveInt.default(30),
+  TRUST_PROXY: trustProxy.default([]),
+  PUBLIC_RATE_LIMIT: positiveInt.default(60),
+  PUBLIC_FILE_RATE_LIMIT: positiveInt.default(600),
   ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
   SHELL_LINKS: shellLinks.optional(),
   // Plain strings: a schema check here could echo a value in its message.
@@ -343,6 +375,9 @@ export function loadConfig(
           })
         : null,
     signInRateLimitPerMinute: e.SIGN_IN_RATE_LIMIT,
+    trustProxy: Object.freeze([...e.TRUST_PROXY]),
+    publicRateLimitPerMinute: e.PUBLIC_RATE_LIMIT,
+    publicFileRateLimitPerMinute: e.PUBLIC_FILE_RATE_LIMIT,
     accountNotices: e.ACCOUNT_NOTICES,
     shellLinks: Object.freeze({ ...e.SHELL_LINKS }),
   });

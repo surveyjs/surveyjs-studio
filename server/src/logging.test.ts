@@ -13,6 +13,12 @@ describe("redactUrl", () => {
     );
   });
 
+  it("redacts clientId", () => {
+    expect(redactUrl("/api/v1/public/surveys/s?clientId=abc&x=1")).toBe(
+      "/api/v1/public/surveys/s?clientId=[redacted]&x=1",
+    );
+  });
+
   it("also finds percent-encoded names, and keeps other URLs as they are", () => {
     expect(redactUrl("/cb?co%64e=c-1&%73tate")).toBe("/cb?co%64e=[redacted]&%73tate=[redacted]");
     expect(redactUrl("/surveys?view=1&codes=2")).toBe("/surveys?view=1&codes=2");
@@ -50,5 +56,32 @@ describe("request logs", () => {
     expect(logged).not.toContain(ownerUser.id);
     expect(state).toBeTruthy();
     expect(logged).not.toContain(state);
+  });
+});
+
+describe("public request logs", () => {
+  it("redact the client id and truncate the client address", async () => {
+    const lines: string[] = [];
+    const config = loadConfig({
+      NODE_ENV: "test",
+      IDENTITY_PROVIDER: "dev",
+      MEMORY_SEED: "legacy-fixtures",
+    });
+    const app = await buildApp(config, await createProviders(config), {
+      logStream: { write: (line) => lines.push(line) },
+    });
+    try {
+      await app.inject({
+        url: "/api/v1/public/surveys/22222222-0000-4000-8000-a00000000001?clientId=secret-client",
+        remoteAddress: "203.0.113.9",
+      });
+    } finally {
+      await app.close();
+    }
+    const logged = lines.join("");
+    expect(logged).toContain("clientId=[redacted]");
+    expect(logged).toContain('"remoteAddress":"203.0.113.0"');
+    expect(logged).not.toContain("secret-client");
+    expect(logged).not.toContain("203.0.113.9");
   });
 });

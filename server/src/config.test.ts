@@ -53,6 +53,9 @@ describe("loadConfig", () => {
       sessionMaxAgeSeconds: 43200,
       oidc: null,
       signInRateLimitPerMinute: 30,
+      trustProxy: [],
+      publicRateLimitPerMinute: 60,
+      publicFileRateLimitPerMinute: 600,
       accountNotices: "none",
       shellLinks: {},
     });
@@ -459,6 +462,33 @@ describe("loadConfig", () => {
       });
       for (const name of ["SESSION_MAX_AGE_SECONDS", "SIGN_IN_RATE_LIMIT"]) {
         for (const value of ["0", "-1", "1.5", "abc"]) {
+          expect(() => loadConfig({ [name]: value })).toThrow(name);
+        }
+      }
+    });
+  });
+
+  describe("trusted proxy and public rate limits", () => {
+    it("lists the trusted peers, trimmed, without blanks", () => {
+      expect(loadConfig({ TRUST_PROXY: " 10.0.0.1 , 10.1.0.0/16,::1," }).trustProxy).toEqual([
+        "10.0.0.1",
+        "10.1.0.0/16",
+        "::1",
+      ]);
+      expect(loadConfig({ TRUST_PROXY: "fd00::/8" }).trustProxy).toEqual(["fd00::/8"]);
+    });
+
+    it.each(["10.0.0.0/33", "::1/129", "localhost", "10.0.0.1/"])("refuses %s", (value) => {
+      expect(() => loadConfig({ TRUST_PROXY: value })).toThrow(/TRUST_PROXY: must be a comma/);
+    });
+
+    it("reads the limits and refuses zero and fractions", () => {
+      expect(loadConfig({ PUBLIC_RATE_LIMIT: "5", PUBLIC_FILE_RATE_LIMIT: "7" })).toMatchObject({
+        publicRateLimitPerMinute: 5,
+        publicFileRateLimitPerMinute: 7,
+      });
+      for (const name of ["PUBLIC_RATE_LIMIT", "PUBLIC_FILE_RATE_LIMIT"]) {
+        for (const value of ["0", "1.5"]) {
           expect(() => loadConfig({ [name]: value })).toThrow(name);
         }
       }

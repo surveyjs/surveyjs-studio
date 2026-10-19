@@ -1,15 +1,19 @@
 import type { Readable } from "node:stream";
 import type {
+  CompletionState,
   FileKind,
   HistoryEntryRecord,
+  NewResponse,
   NewSurvey,
   ProjectMembership,
   SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  ResultStatsRecord,
   SaveOutcome,
   StoredFileRecord,
+  SurveyResponse,
   SurveyTheme,
   User,
   Versioned,
@@ -98,6 +102,41 @@ export interface FileStore {
   ): Promise<ReadonlyMap<string, string>>;
 }
 
+export type AppendOutcome = "stored" | "exists";
+
+/** The provider cannot hold this response's answers (S7). Carries lengths only, never content. */
+export class ResponseTooLargeError extends Error {
+  constructor(
+    readonly length: number,
+    readonly max: number,
+  ) {
+    super(`The answers are ${String(length)} characters; the store holds at most ${String(max)}.`);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
+export interface ResultStore {
+  /**
+   * Stores the response unless one with this id (case-insensitive) exists for the survey.
+   * - absent: stores `{ id lower-case, submittedAt, data (a copy), clientId?, respondentIp?, partial:
+   *   false }`, then, when `clientId` is given, writes or overwrites that client's marker as complete;
+   *   -> "stored".
+   * - present: the stored response is not changed; when `clientId` is given the client's marker is
+   *   (re)written as complete (repairs a marker lost to a failure after the row); -> "exists".
+   * Rejects (nothing written) when `id` is not a GUID. azure-legacy rejects with ResponseTooLargeError
+   * (nothing written) when JSON.stringify(data) is longer than 32,768 UTF-16 code units.
+   */
+  appendResponse(survey: SurveyRecord, response: NewResponse): Promise<AppendOutcome>;
+  /** Whether the survey has a response with this id (case-insensitive); false for a non-GUID id. */
+  hasResponse(survey: SurveyRecord, id: string): Promise<boolean>;
+  /** Every stored response (fixture rows included), submittedAt ascending, then id ascending. */
+  listResponses(survey: SurveyRecord): Promise<SurveyResponse[]>;
+  /** count = number of stored responses (no merging by client); first/last submittedAt; 0/null/null. */
+  stats(survey: SurveyRecord): Promise<ResultStatsRecord>;
+  /** The client's marker; client ids match exactly (case-sensitive). */
+  completion(survey: SurveyRecord, clientId: string): Promise<CompletionState>;
+}
+
 export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
@@ -151,8 +190,8 @@ export interface SurveyStore {
     options?: CloneOptions,
   ): Promise<SurveyRecord | null>;
   /**
-   * Deletes the survey and everything stored for it; false when no survey has this id. Files are the
-   * FileStore's: the service deletes them first (R10).
+   * Deletes the survey and everything stored for it, its responses and markers included; false when no
+   * survey has this id. Files are the FileStore's: the service deletes them first (R10).
    */
   deleteSurvey(id: string): Promise<boolean>;
 }
@@ -175,6 +214,7 @@ export interface ProviderSet {
   readonly surveys: SurveyStore;
   readonly directory: Directory;
   readonly files: FileStore;
+  readonly results: ResultStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
   ready(): Promise<boolean>;

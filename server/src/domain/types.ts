@@ -81,6 +81,29 @@ export interface SurveyResponse {
   readonly partial: boolean; // missing -> false
 }
 
+/** A response to store (S5-S8). */
+export interface NewResponse {
+  /** GUID, any case (stored lower-case): responseIdFor(survey.id, key) with a key, else randomUUID(). */
+  readonly id: string;
+  /** ISO 8601 UTC with milliseconds (Date#toISOString of the server clock). */
+  readonly submittedAt: string;
+  readonly data: Record<string, unknown>;
+  /** Contract ClientId: 1-256 characters. */
+  readonly clientId?: string;
+  /** Only when the survey's storeRespondentIp is on (S8). */
+  readonly respondentIp?: string;
+}
+
+/** A client's completion marker (S3): none, a legacy partial marker, or a complete one. */
+export type CompletionState = "none" | "partial" | "completed";
+
+export interface ResultStatsRecord {
+  readonly count: number;
+  /** ISO 8601 UTC; null when there are no responses. */
+  readonly firstSubmittedAt: string | null;
+  readonly lastSubmittedAt: string | null;
+}
+
 /** A stored document and its version token (opaque, never contains `"`). */
 export interface Versioned<T> {
   readonly content: T;
@@ -102,8 +125,8 @@ export type SaveOutcome =
   | { readonly kind: "conflict" }
   | { readonly kind: "not-found" };
 
-/** What a stored file is for (R3). Step 8 adds "response". */
-export type FileKind = "asset";
+/** What a stored file is for: editor assets (Step 7) and respondent files (Step 8, S11). */
+export type FileKind = "asset" | "response";
 
 export interface StoredFileRecord {
   /** 64 lower-case hex digits (R1). */

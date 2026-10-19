@@ -222,6 +222,80 @@ metadata, and `getHistorySnapshot` downloads one point.
 - `ESLint` lists "Step 6: definition and theme saves" in the comment of the rule block's `ignores`;
   `writes.ts` is still the only file that writes.
 
+## Step 8: result rows and completion markers
+
+Step 8 adds the writes that store a respondent's answers, under the same rules: all of them are in
+`writes.ts`, with the ESLint `ignores` comment extended by "Step 8: result rows and completion markers". The
+rulings behind them (idempotent ids, the one-response rule, the size cap) are in
+[ADR 0014](0014-run-page-and-response-collection.md). The format is
+[layout, 3.6 and 3.7](../architecture/legacy-data-layout.md#36-results-azure-tables-postpostid).
+
+### Write a response
+
+`writeResponse(targets, survey, response, publishId)` runs in this order:
+
+1. **Checks.** `survey.id`, `survey.postId` and `response.id` must be GUIDs. `result = JSON.stringify(data)`;
+   when it is longer than **32,768 UTF-16 code units** the function throws `ResponseTooLargeError(length, max)`
+   before any call. The error carries two numbers, never the content. (One Azure Table string holds 64 KiB; the
+   same precedent as the 32,000 of the audit `theme`, but exact.)
+2. **The row** in `post{postId}` (the post id without dashes, lower case; **not** the survey id): `PartitionKey`
+   `*`, `RowKey` the response id, `id` `Edm.Guid`, `type` `SURVEY_POSTRESUTL`, `happendat` `Edm.DateTime` (the
+   response's `submittedAt`), `surveyid` `Edm.Guid` (a random GUID: the legacy post path never sets it, layout
+   3.6), `postid` `Edm.Guid` (the survey's post id), `result` (`Edm.String`), `clientid` (`Edm.String`, only when
+   given) and `ipaddress` (`Edm.String`, only when given). **`ispartialcompleted` is never written** (partial
+   responses are ignored, S6) and no other property is. `createEntity`; a `409` means the id exists: the row is
+   left as it is and the outcome is `exists`. A `404` means the table is missing: `createTable()` (a `409`
+   from a race is fine) and `createEntity` once more.
+3. **The marker**, when a `clientId` is given, also for `exists`: `upsertEntity` with `Replace` into
+   `SurveyCompletion{surveyId}` (the survey id without dashes, lower case) at the row key `clientId`, with
+   `ispartialcompleted` `Edm.Boolean` false and `publishid` `Edm.String` only when the survey has one. The same
+   `404` then `createTable()` then retry. At the store level, `appendResponse` with an id that
+   already exists writes the marker again, which would repair a marker lost between the row and the marker
+   (for example when two identical requests race). The HTTP service does not reach this path for a keyed
+   retry: `submit` answers from `hasResponse` before it calls `appendResponse`.
+
+Failures are `LegacyStoreError("response write")` and `LegacyStoreError("completion marker write")`, with the
+operation and the driver's codes only.
+
+### Rulings
+
+- **Direct writes.** The rows are written to the table, not through the legacy `POST post`, so the legacy HTML
+  cleaner does not run. This is condition 3 of [ADR 0005](0005-respondent-files-as-urls.md). New rows hold the
+  text as typed; old rows may hold entities (layout, 3.6). The readers treat `result` as an opaque JSON text, so
+  both read.
+- **Deterministic ids.** The row key is the response id, which the service derives from the `Idempotency-Key`
+  (a version 5 UUID) or makes at random. Insert-if-absent therefore makes a retry idempotent with no extra
+  store. The legacy write was an upsert at the row key; this one is an insert, so an existing row is never
+  changed.
+- **`publishid` is read, not written.** The marker carries the survey's `Surveys.publishid` as legacy does. It is
+  not in `SurveyRecord`, so the store reads it with one `SELECT publishid FROM Surveys WHERE id = @id`
+  (`UniqueIdentifier`, lower-cased; `NULL` or no row gives no property) for each submission that carries a
+  `clientId`. That select is in `index.ts` with the other reads; the write only receives the value.
+- **No audit row.** Layout 5.2: for a post, "the row is the event". `Surveys.timestamp` is not touched either (a
+  post never moved it).
+- **The cap.** 32,768 UTF-16 code units for `result`, refused as a typed error before any write, answered with
+  `413` by the service. It is checked in the writes test and not in conformance, because the `memory` provider
+  has no such cap.
+- **The target.** `LegacyWriteTargets` gains `resultTable(name)`, a table client of the results account built
+  in `index.ts` with `TableClient.fromConnectionString(...)` (and `allowInsecureConnection` only for a local
+  emulator string; a throw is wrapped like `storageClients`, because the SDK message may quote the string).
+  The `resultTables` service client stays for the delete.
+- **Respondent files** use the Step 7 container and blob layout unchanged: the metadata `kind` is `response`.
+  `isFileKind` in the mapping accepts both kinds.
+- **A response row the mapping cannot read** (`result` is not a JSON object) is skipped and reported by id, as
+  other unmappable rows are.
+
+### Consequences of Step 8
+
+- A response and its marker are two writes. A failure between them leaves a row without a marker. A retry with
+  the same `Idempotency-Key` does **not** repair it: the service finds the response with `hasResponse` and
+  writes nothing. Only the next response of that client writes the marker. (The store itself writes the marker
+  for `exists`, which matters only for a race between two identical requests.)
+- The first response of a survey creates two tables on the fly (`post{postId}` and, with a client id,
+  `SurveyCompletion{surveyId}`). The credentials of a production deployment need the right to create tables.
+- A table is deleted with its survey (`writeSurveyDeletion` already drops both).
+- A response of more than 32,768 characters is refused with `413` on this provider and accepted by `memory`.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

@@ -8,6 +8,7 @@ import type {
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
+  SurveyResponse,
   SurveyTheme,
   User,
   Versioned,
@@ -24,6 +25,7 @@ import {
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryFileStore } from "./memory-files.js";
+import { createMemoryResultStore } from "./memory-results.js";
 import type { ProviderSet } from "./types.js";
 
 export interface MemorySeed {
@@ -38,6 +40,10 @@ export interface MemorySeed {
   themes?: Record<string, SurveyTheme>;
   /** History entries (with their snapshots) by survey id. */
   history?: Record<string, { id: string; at: string; userId: null; snapshot: SurveyDefinition }[]>;
+  /** Stored responses by survey id (S15). */
+  responses?: Record<string, SurveyResponse[]>;
+  /** Completion markers by survey id, then client id (S15). */
+  completions?: Record<string, Record<string, { partial: boolean }>>;
 }
 
 interface StoredHistoryEntry {
@@ -126,6 +132,11 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     entries.push({ ...entry, snapshot: structuredClone(entry.snapshot) });
     history.set(surveyId, entries);
   };
+
+  const results = createMemoryResultStore({
+    ...(seed?.responses && { responses: seed.responses }),
+    ...(seed?.completions && { completions: seed.completions }),
+  });
 
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
 
@@ -279,10 +290,12 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         definitions.delete(removed!.id);
         history.delete(removed!.id);
         themes.delete(removed!.id);
+        results.dropSurvey(removed!.id);
         return Promise.resolve(true);
       },
     },
     files: createMemoryFileStore(),
+    results: results.store,
     directory: {
       getUser: (id) => {
         const found = users.find((u) => u.id === lower(id));

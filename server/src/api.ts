@@ -14,6 +14,8 @@ export type Handlers = Partial<Record<OperationId, RouteHandlerMethod>>;
 export interface RateLimit {
   readonly max: number;
   readonly timeWindow: number;
+  /** The 429 detail; `after` is the plugin's wording of the wait, such as "42 seconds". */
+  readonly detail: (after: string) => string;
 }
 
 export interface ApiOptions {
@@ -121,7 +123,21 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
       url: op.url,
       schema: { ...op.schema },
       ...(onRequest && { onRequest }),
-      ...(rateLimit && { config: { rateLimit } }),
+      ...(rateLimit && {
+        config: {
+          rateLimit: {
+            max: rateLimit.max,
+            timeWindow: rateLimit.timeWindow,
+            errorResponseBuilder: (_request: FastifyRequest, context: { after: string }) =>
+              new AppError({
+                code: "rate-limited",
+                status: 429,
+                title: "Too many requests",
+                detail: rateLimit.detail(context.after),
+              }),
+          },
+        },
+      }),
       ...(bodyLimit !== undefined && { bodyLimit }),
       ...(op.requestBody && { preValidation: bodyGuard(op.requestBody) }),
       handler: handlers[operationId] ?? notImplemented(op.operationId),

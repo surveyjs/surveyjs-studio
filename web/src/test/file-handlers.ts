@@ -33,7 +33,7 @@ export interface SeenUpload {
  * The parts of a `multipart/form-data` body. Parsed here: Node's own parser (`request.formData()`)
  * fails under jsdom, whose `File` replaces Node's.
  */
-function multipartParts(bytes: Uint8Array, contentType: string | null): SeenPart[] {
+export function multipartParts(bytes: Uint8Array, contentType: string | null): SeenPart[] {
   const boundary = /boundary=([^;]+)/.exec(contentType ?? "")?.[1];
   if (boundary === undefined) return [];
   // One character per byte, so the bytes come back unchanged.

@@ -8,8 +8,10 @@ Creator):
 | `uploadSurveyAsset` | `POST /surveys/{surveyId}/assets`, multipart | `201`, `Location` and the stored file |
 | `downloadFile`      | `GET /public/files/{fileId}`, no session     | `200` and the file                    |
 
-`uploadResponseFile` (respondent files) is not built yet and still answers `501` (Step 8). The reasons for
-each rule are in [ADR 0013](../adr/0013-editor-uploads-and-files.md).
+`uploadResponseFile` (the files that respondents upload, Step 8) uses the same store and the same download
+route, but has its own rules (any type, a per-file limit, no quota, a rate limit). It is described in
+[Public endpoints](public-endpoints.md#respondent-files). The reasons for each rule here are in
+[ADR 0013](../adr/0013-editor-uploads-and-files.md).
 
 The examples use a cookie jar `cookies.txt` of a signed-in session, as in
 [Step 5](README.md#step-5-survey-actions):

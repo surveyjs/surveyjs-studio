@@ -219,10 +219,13 @@ retry-after: 60
 {"type":"https://my-surveys.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many sign-in attempts. Try again in 1 minute."}
 ```
 
-**Known limitation:** the client is the socket's IP address, and the server does not trust
-`X-Forwarded-For` yet. Behind a reverse proxy every request comes from the proxy's address, so all
-users share one counter. Raise `SIGN_IN_RATE_LIMIT` for such a deployment until trusted-proxy
-support arrives (Step 14).
+**The client is the address of the connection**, unless the server was told to believe a reverse proxy.
+`TRUST_PROXY` is a comma-separated list of the proxies' IP addresses or CIDR ranges. For a request from a
+listed proxy the client is the address in `X-Forwarded-For`; from any other peer the header is ignored.
+Without `TRUST_PROXY`, a server behind a proxy sees one address for all users, and they share one counter.
+Set it to the proxy's address (see [Public endpoints](public-endpoints.md#the-respondents-ip-address)).
+The public respondent operations use the same address and their own, higher limit
+([Rate limits](public-endpoints.md#rate-limits)).
 
 ## Edition and provider
 

@@ -8,7 +8,7 @@ import { loadConfig } from "../config.js";
 import { newFileId } from "../domain/file-id.js";
 import type { SurveyRecord, User } from "../domain/types.js";
 import { createMemoryProviders, type MemorySeed } from "../providers/memory.js";
-import type { FileStore, ProviderSet } from "../providers/types.js";
+import type { FileStore, ProviderSet, SurveyStore } from "../providers/types.js";
 
 const NOW = "2026-10-15T08:30:00.000Z";
 const QUOTA = 1000;
@@ -34,7 +34,15 @@ const survey: SurveyRecord = {
   settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
 };
 
-const seed: MemorySeed = { users: [USER], surveys: [survey], projects: [], memberships: [] };
+const PUBLISHED_ID = "cccccccc-0000-4000-8000-00000000000b";
+const published: SurveyRecord = { ...survey, id: PUBLISHED_ID, name: "Run", published: true };
+
+const seed: MemorySeed = {
+  users: [USER],
+  surveys: [survey, published],
+  projects: [],
+  memberships: [],
+};
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Bytes detected as PNG, `size` long. */
@@ -66,7 +74,9 @@ afterEach(async () => {
 async function start(
   options: {
     files?: (store: FileStore, memory: ProviderSet) => FileStore;
+    surveys?: (store: SurveyStore) => SurveyStore;
     logLines?: string[];
+    env?: Record<string, string>;
   } = {},
 ) {
   const config = loadConfig({
@@ -74,11 +84,13 @@ async function start(
     IDENTITY_PROVIDER: "dev",
     LIMIT_MAX_ASSET_BYTES_PER_SURVEY: String(QUOTA),
     LOG_LEVEL: "info",
+    ...options.env,
   });
   const memory = createMemoryProviders(seed);
   const providers: ProviderSet = {
     ...memory,
     files: options.files ? options.files(memory.files, memory) : memory.files,
+    surveys: options.surveys ? options.surveys(memory.surveys) : memory.surveys,
   };
   const { logLines } = options;
   app = await buildApp(config, providers, {
@@ -87,15 +99,23 @@ async function start(
     ...(logLines && { logStream: { write: (line: string) => logLines.push(line) } }),
   });
   const { headers } = await signIn(app, USER.id);
-  const upload = (payload: Buffer | Readable) =>
+  const upload = (payload: Buffer | Readable, surveyId = SURVEY_ID) =>
     app!.inject({
       method: "POST",
       // Upper-case on purpose: stored files carry the survey's lower-case id.
-      url: `/api/v1/surveys/${SURVEY_ID.toUpperCase()}/assets`,
+      url: `/api/v1/surveys/${surveyId.toUpperCase()}/assets`,
       headers: { ...headers, "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
       payload,
     });
-  return { providers: memory, upload };
+  const uploadResponse = (payload: Buffer | Readable, surveyId = PUBLISHED_ID) =>
+    app!.inject({
+      method: "POST",
+      // No session, no CSRF header: respondents are anonymous.
+      url: `/api/v1/public/surveys/${surveyId.toUpperCase()}/files`,
+      headers: { "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
+      payload,
+    });
+  return { providers: memory, upload, uploadResponse };
 }
 
 describe("uploadSurveyAsset", () => {
@@ -249,6 +269,88 @@ describe("uploadSurveyAsset", () => {
     const logged = logLines.join("");
     expect(logged).toContain("store unavailable");
     expect(logged).not.toContain("private-name-7f3a");
+  });
+});
+
+describe("uploadResponseFile", () => {
+  it("stores a response file with the clock's time and the sanitized name, without a session", async () => {
+    const { providers, uploadResponse } = await start();
+    const res = await uploadResponse(fileBody("C:\\fakepath\\Logo\u0001.png ", png(100)));
+    expect(res.statusCode).toBe(201);
+    const { id } = res.json<{ id: string }>();
+    expect(res.headers.location).toBe(`/api/v1/public/files/${id}`);
+    const stored = await providers.files.getFile(id);
+    stored?.content.destroy();
+    expect(stored?.file).toStrictEqual({
+      id,
+      surveyId: PUBLISHED_ID,
+      kind: "response",
+      name: "Logo.png",
+      contentType: "image/png",
+      size: 100,
+      createdAt: NOW,
+    });
+  });
+
+  it("stores bytes of an unknown type as octet-stream and serves them as an attachment", async () => {
+    const { uploadResponse } = await start();
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n");
+    const res = await uploadResponse(fileBody("doc.pdf", pdf));
+    expect(res.statusCode).toBe(201);
+    const { id, contentType } = res.json<{ id: string; contentType: string }>();
+    expect(contentType).toBe("application/octet-stream");
+    const file = await app!.inject({ url: `/api/v1/public/files/${id}` });
+    expect(file.statusCode).toBe(200);
+    expect(file.headers["content-type"]).toBe("application/octet-stream");
+    expect(file.headers["content-disposition"]).toMatch(/^attachment; /);
+    expect(file.rawPayload).toStrictEqual(pdf);
+  });
+
+  it("deletes the new file and answers 404 when the survey is unpublished while it is stored", async () => {
+    let reads = 0;
+    const { providers, uploadResponse } = await start({
+      // The second read (after the file is stored) sees an unpublished copy.
+      surveys: (store) => ({
+        ...store,
+        getSurvey: async (id) => {
+          const found = await store.getSurvey(id);
+          return found && ++reads > 1 ? { ...found, published: false } : found;
+        },
+      }),
+    });
+    const res = await uploadResponse(fileBody("a.png", png(100)));
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "survey-not-available" });
+    expect(reads).toBe(2);
+    expect(await providers.files.usage(PUBLISHED_ID, "response")).toBe(0);
+  });
+
+  it("answers 500 when the store fails, without logging the file name", async () => {
+    const logLines: string[] = [];
+    const { uploadResponse } = await start({
+      logLines,
+      files: (store) => ({
+        ...store,
+        putFile: () => Promise.reject(new Error("store unavailable")),
+      }),
+    });
+    const res = await uploadResponse(fileBody("private-name-7f3a.png", png(100)));
+    expect(res.statusCode).toBe(500);
+    const logged = logLines.join("");
+    expect(logged).toContain("store unavailable");
+    expect(logged).not.toContain("private-name-7f3a");
+  });
+
+  it("does not count against the asset quota", async () => {
+    const { providers, upload, uploadResponse } = await start({
+      env: { LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "1024" },
+    });
+    expect((await uploadResponse(fileBody("big.bin", Buffer.alloc(2000, 1)))).statusCode).toBe(201);
+    expect(await providers.files.usage(PUBLISHED_ID, "response")).toBe(2000);
+    // The same survey (the user owns it) still takes an asset: 2000 response bytes are over the
+    // 1024-byte asset quota, so this proves they are not counted against it.
+    expect((await upload(fileBody("a.png", png(500)), PUBLISHED_ID)).statusCode).toBe(201);
+    expect(await providers.files.usage(PUBLISHED_ID, "asset")).toBe(500);
   });
 });
 

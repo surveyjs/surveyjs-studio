@@ -43,3 +43,16 @@ bounded by the **remaining quota** of the survey (`LIMIT_MAX_ASSET_BYTES_PER_SUR
 already use), through the busboy `fileSize` limit, and by fixed limits on the number and size of the other
 parts. `LIMIT_MAX_FILE_BYTES` stays for respondent files (Step 8). See
 [ADR 0013](0013-editor-uploads-and-files.md).
+
+## Addendum (Step 8)
+
+Respondent files (`uploadResponseFile`) are bounded **per file** by `LIMIT_MAX_FILE_BYTES` (default 10 MB,
+reported as `limits.maxFileBytes`), through the busboy `fileSize` limit. A multipart body is read by the
+handler, so, as in Step 7, Fastify's `bodyLimit` does not apply; the route is not raised either. A file over the
+limit is `413 payload-too-large` with the title "File too large". The editor upload keeps its quota (ADR 0013).
+
+The legacy stores add a second limit to a response: the `azure-legacy` provider refuses answers of more than
+**32,768 UTF-16 code units** (one Azure Table string holds 64 KiB) with `413 payload-too-large` and the detail
+"The answers are too large to store.", even below `LIMIT_MAX_RESPONSE_BYTES`. The `memory` provider has no such
+cap. Files go to the file store, so a response that has files stays small. See
+[ADR 0014](0014-run-page-and-response-collection.md) (S7, S11).

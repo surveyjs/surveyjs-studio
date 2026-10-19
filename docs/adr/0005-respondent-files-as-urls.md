@@ -52,3 +52,21 @@ Evidence:
     exports or API results.
 - The verdict rests on reading the legacy code, not on production data. If a check fails, add a
   new ADR that supersedes this one.
+
+## Note (Step 8)
+
+Step 8 implements conditions 1 to 4:
+
+1. **The value shape and the absolute URL.** A File Upload or Signature question keeps the library's value
+   `[{ "name", "type", "content" }]`, and `content` is the `url` of the stored file, the absolute
+   `PUBLIC_BASE_URL` plus `/api/v1/public/files/{id}`. The run page forces `storeDataAsText: false` so the
+   library calls the upload handler instead of putting the file inline.
+2. **A public, unguessable, long-lived URL.** `GET /public/files/{id}` needs no session; the id holds 128
+   random bits; a file stays until its survey is deleted.
+3. **Direct writes.** Result rows go to `post{postId}` without the legacy sanitizer
+   ([ADR 0010](0010-writing-to-the-legacy-stores.md#step-8-result-rows-and-completion-markers)).
+4. **Cleanup with the survey.** Deleting a survey deletes its files, respondent files included.
+
+Condition 5 and the three open checks are unchanged. Details and the limits that apply to respondent files are
+in [ADR 0014](0014-run-page-and-response-collection.md) (S11) and the
+[public endpoints guide](../api/public-endpoints.md#respondent-files).

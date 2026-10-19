@@ -6,6 +6,7 @@ import { newFileId } from "../domain/file-id.js";
 import type { StoredFileRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import type { Directory, FileStore, StoredFileContent, SurveyStore } from "../providers/types.js";
+import { availableSurvey } from "../results/availability.js";
 import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { ALLOWED_TYPES_TEXT, detectFileType, fileNameOf } from "./file-type.js";
 import { formatBytes, remainingQuota } from "./quota.js";
@@ -20,6 +21,8 @@ export interface FilesServiceOptions {
   readonly publicBaseUrl: string;
   /** Total bytes of assets one survey may hold (R5). */
   readonly maxAssetBytesPerSurvey: number;
+  /** Largest respondent file, in bytes (S11). */
+  readonly maxFileBytes: number;
   /** The clock for creation times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -39,6 +42,15 @@ export interface FilesService {
    */
   uploadAsset(
     user: RequestUser,
+    surveyId: string,
+    read: (maxBytes: number) => Promise<IncomingFile | undefined>,
+  ): Promise<StoredFileJson>;
+  /**
+   * S11 order. `read(maxBytes)` as for `uploadAsset`, but a file over `maxBytes` → 413
+   * payload-too-large. The survey must be available (404 survey-not-available); any file type is
+   * stored, one that is not an allowed image or video type as application/octet-stream.
+   */
+  uploadResponse(
     surveyId: string,
     read: (maxBytes: number) => Promise<IncomingFile | undefined>,
   ): Promise<StoredFileJson>;
@@ -62,6 +74,16 @@ export function quotaExceeded(quota: number): AppError {
   });
 }
 
+/** 413: a respondent file is over the per-file limit (S11). */
+export function fileTooLarge(max: number): AppError {
+  return new AppError({
+    code: "payload-too-large",
+    status: 413,
+    title: "File too large",
+    detail: `A file can be up to ${formatBytes(max)}.`,
+  });
+}
+
 const invalidFile = (detail: string): AppError =>
   new AppError({
     code: "validation-failed",
@@ -78,10 +100,11 @@ const unsupportedType = (): AppError =>
     detail: ALLOWED_TYPES_TEXT,
   });
 
-/** Editor uploads and public downloads of stored files. */
+/** Editor uploads, respondent uploads and public downloads of stored files. */
 export function createFilesService(options: FilesServiceOptions): FilesService {
   const { surveys, directory, files, publicBaseUrl, now = Date.now } = options;
   const quota = options.maxAssetBytesPerSurvey;
+  const { maxFileBytes } = options;
   const access = createSurveyAccess({ surveys, directory });
 
   return {
@@ -122,6 +145,42 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
         throw error;
       }
       if (refusal) throw refusal;
+      return {
+        id: record.id,
+        url: publicUrl(publicBaseUrl, filePath(record.id)),
+        name: record.name,
+        contentType: record.contentType,
+        size: record.size,
+      };
+    },
+
+    async uploadResponse(surveyId, read) {
+      const survey = await availableSurvey(surveys, surveyId);
+
+      const incoming = await read(maxFileBytes);
+      if (incoming?.fieldName !== FILE_FIELD) {
+        throw invalidFile("Send one file in the part named file.");
+      }
+      const { bytes } = incoming;
+      if (bytes.length === 0) throw invalidFile("The file is empty.");
+
+      const record: StoredFileRecord = {
+        id: newFileId(survey.id),
+        surveyId: survey.id.toLowerCase(),
+        kind: "response",
+        name: fileNameOf(incoming.fileName),
+        contentType: detectFileType(bytes)?.contentType ?? "application/octet-stream",
+        size: bytes.length,
+        createdAt: new Date(now()).toISOString(),
+      };
+      await files.putFile(record, bytes);
+      try {
+        // A survey deleted or unpublished while the bytes were stored must not keep the file.
+        await availableSurvey(surveys, survey.id);
+      } catch (error) {
+        await files.deleteFile(record.id).catch(() => undefined);
+        throw error;
+      }
       return {
         id: record.id,
         url: publicUrl(publicBaseUrl, filePath(record.id)),

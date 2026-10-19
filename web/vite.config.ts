@@ -12,10 +12,17 @@ const proxy = {
   "/readyz": backend,
 };
 
-// The Survey Creator's packages and Ace, plus the survey-core parts only the editor uses: all
-// survey locales, the themes and the survey styles.
+// The Survey Creator's packages and Ace, plus the survey-core part only the editor uses: the
+// themes (the run page applies a survey's stored theme without them).
 const creatorModules =
-  /[\\/]node_modules[\\/](survey-creator-core|survey-creator-react|survey-react-ui|ace-builds)[\\/]|[\\/]node_modules[\\/]survey-core[\\/](fesm[\\/](i18n|themes)[\\/]|survey-core\.css)/;
+  /[\\/]node_modules[\\/](survey-creator-core|survey-creator-react|ace-builds)[\\/]|[\\/]node_modules[\\/]survey-core[\\/]fesm[\\/]themes[\\/]/;
+// The Form Library's React UI and the survey styles: the run page (src/run/RunSurvey.tsx) and the
+// editor (src/editor/SurveyEditor.tsx) both use them.
+const surveyFormModules =
+  /[\\/]node_modules[\\/](survey-react-ui[\\/]|survey-core[\\/]survey-core\.css)/;
+// All of the Form Library's locales: the editor, and the run page for a survey in another
+// language (src/run/surveyLocales.ts, imported on demand).
+const surveyLocaleModules = /[\\/]node_modules[\\/]survey-core[\\/]fesm[\\/]i18n[\\/]/;
 // survey-core's own code (not its locales and themes): the licence key (src/surveyjs/license.ts)
 // needs it without the Creator. Taken first, or the Creator group takes it as a dependency.
 const surveyCoreModules =
@@ -29,13 +36,17 @@ export default defineConfig({
     // survey-core (see src/surveyjs/license.ts) and the Survey Creator are intentionally big lazy
     // chunks.
     chunkSizeWarningLimit: 2900,
+    // dist/.vite/manifest.json: the chunk check reads each route's chunks from it.
+    manifest: true,
     rolldownOptions: {
       output: {
         codeSplitting: {
           groups: [
-            // The Creator in one chunk with a stable name, loaded only by the editor page
-            // (src/editor/SurveyEditor.tsx); the e2e tests look for this name.
-            // Only these modules: their shared dependencies (React) stay where they are.
+            // Chunks with stable names. The e2e tests look for `survey-creator-*` (the editor
+            // page only, src/editor/SurveyEditor.tsx) and `survey-form-*` (the run page and the
+            // editor); the build's chunk check (scripts/check-run-chunks.mjs) keeps the Creator
+            // out of the run page. Each group takes only the modules it names: their shared
+            // dependencies (React, survey-core) stay where they are.
             {
               name: "survey-creator",
               test: creatorModules,
@@ -43,6 +54,18 @@ export default defineConfig({
               includeDependenciesRecursively: false,
             },
             { name: "survey-core", test: surveyCoreModules, priority: 2 },
+            {
+              name: "survey-form",
+              test: surveyFormModules,
+              priority: 3,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "survey-i18n",
+              test: surveyLocaleModules,
+              priority: 3,
+              includeDependenciesRecursively: false,
+            },
           ],
         },
       },

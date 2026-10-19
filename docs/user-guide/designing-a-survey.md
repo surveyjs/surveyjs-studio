@@ -146,8 +146,8 @@ to create, with a **Copy Code** button for each block.
   logged to the browser console.
 - On: the code loads the survey from this application (`/api/v1/public/surveys/<survey id>`) and sends
   each answer back to it (`/api/v1/public/surveys/<survey id>/responses`). The address in the code is
-  the one you are using now. Those public endpoints arrive with the run page, so until then this code
-  shows what the calls will look like.
+  the one you are using now. These public endpoints work for a published survey
+  ([Public endpoints](../api/public-endpoints.md)).
 
 **Embed Creator** says that Survey Creator needs a commercial licence when you use it in your own
 application, with links to the licence and the FAQ.

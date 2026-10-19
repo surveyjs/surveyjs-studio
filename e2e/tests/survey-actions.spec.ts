@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { routeBrandImage } from "./support/run.js";
 import { signInAt } from "./support/sign-in.js";
 import {
   answerNextConfirm,
@@ -107,6 +108,8 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
   context,
   browserName,
 }) => {
+  // The run page's brand footer loads its image from surveyjs.io; answered locally.
+  await routeBrandImage(context);
   await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const survey = await createSurveyViaApi(page, name);
@@ -123,8 +126,8 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
     await run.click();
     const tab = await opened;
     await expect(tab).toHaveURL(new RegExp(`/s/${survey.id}$`));
-    await expect(tab.getByRole("heading", { level: 1, name: "Survey" })).toBeVisible();
-    await expect(tab.getByText("The survey run page arrives in a later version.")).toBeVisible();
+    // A new survey has no questions yet.
+    await expect(tab.getByText("The survey doesn't contain any visible elements.")).toBeVisible();
     await tab.close();
 
     popup = await openRowMenu(surveyRow(page, name));

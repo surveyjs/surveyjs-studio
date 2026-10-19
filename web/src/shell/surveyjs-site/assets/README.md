@@ -177,3 +177,22 @@ Step 6 (the History page) copies one more file:
 The page uses the `.my-surveys-history-item` and `.my-surveys-page__clock-icon` rules of the
 `pages/my-surveys.scss` copy. It shows the time in the browser's locale and time zone with the zone
 named (the site shows the server's `DateTime.ToString()` without a zone).
+
+Step 8 (the run page, `src/run/`) copies one piece of markup, from commit `adeaa47cbd`
+(2026-10-16; `the site's page markup` has not changed since `a1fd364fb4`, 2026-10-02, so it is
+the same in the commits above):
+
+| Copy                                                                                                                                                                                                                                                                                        | In                         | Original                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
+| The not-available heading: `h3.running-survey-not-available-header` with its inline style (`position: absolute; top: 0; left: 0; bottom: 80px; right: 0; text-align: center; font-family: Arial; color: red`), the text "This survey is not currently available." and the `<br />` after it | `src/run/NotAvailable.tsx` | `the site's page markup` |
+
+Changes and additions:
+
+- The heading sits in `<main class="running-survey">` (the site puts it straight in `<body>`;
+  `running-survey` is the class of the site's survey wrapper). The page title is "Survey not
+  available" (the site's run page has an empty title).
+- `src/run/run-page.css` sets `margin: 0` on the `body` of a run page, as the site's
+  `<body style="margin: 0">` (`the site's page markup`).
+- The footer is the Form Library's own brand block (`showBrandInfo`), as on the site: nothing is
+  copied for it. The run page's other texts (loading, load failure, saving and upload messages) are
+  the app's own.

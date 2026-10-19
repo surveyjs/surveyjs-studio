@@ -904,8 +904,13 @@ paths:
       operationId: getPublishedSurvey
       summary: Load a published survey
       description: |
-        Used by the run page and by embeds. An unknown or unpublished survey
-        returns `404 survey-not-available`; the two cases are not distinguished.
+        Used by the run page and by embeds. A survey runs while it is published,
+        archived or not. An unknown or unpublished survey returns
+        `404 survey-not-available`; the two cases are not distinguished.
+
+        "Limit to one response" is on when the returned `definition` has a non-empty
+        `cookieName`. The server sets `cookieName` to the survey ID when the survey's
+        legacy one-response setting is on and the definition has none.
       security: []
       parameters:
         - name: clientId
@@ -920,6 +925,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PublishedSurvey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/responses:
@@ -930,10 +936,20 @@ paths:
       operationId: submitResponse
       summary: Submit a response
       description: |
-        Stores a response to a published survey. When the survey allows one
-        response per client and `clientId` has already completed it, the server
-        returns `409 already-completed`. The respondent's IP address is stored
-        only when the survey's `storeRespondentIp` setting is on.
+        Stores a response to a published survey (archived or not); an unknown or
+        unpublished survey is `404 survey-not-available`. The respondent's IP address
+        is stored only when the survey's `storeRespondentIp` setting is on.
+
+        When "Limit to one response" is on (see `getPublishedSurvey`) and `clientId`
+        has already completed the survey, the server returns `409 already-completed`.
+        A request whose `Idempotency-Key` already stored a response answers `201` with
+        that response's `id` and stores nothing, even if the client has completed
+        since. Two first submissions of one client sent at the same moment may both be
+        stored.
+
+        `partial` and `lastPageIndex` are ignored in Phase 1: the response is stored
+        as complete. A server may refuse answers its storage cannot hold with
+        `413 payload-too-large`, even below `limits.maxResponseBytes`.
       security: []
       parameters:
         - { $ref: '#/components/parameters/IdempotencyKey' }
@@ -944,7 +960,7 @@ paths:
             schema: { $ref: '#/components/schemas/ResponseSubmission' }
       responses:
         '201':
-          description: Stored.
+          description: Stored, or already stored under this `Idempotency-Key` (same `id`).
           content:
             application/json:
               schema:
@@ -952,9 +968,11 @@ paths:
                 required: [id]
                 properties:
                   id: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/files:
@@ -967,6 +985,13 @@ paths:
       description: |
         Files from File Upload and Signature questions are stored as blobs, and the
         response keeps only the returned URL. This lifts the 64 KB response limit.
+
+        Send one file as the multipart part `file`, up to `limits.maxFileBytes`
+        (`413 payload-too-large` above). Any type is accepted: the type is detected
+        from the content, and a file that is not one of the image or video types of
+        `downloadFile` is stored and served as `application/octet-stream`. The survey
+        must be published, as for `submitResponse`. Files stay until the survey is
+        deleted.
       security: []
       requestBody:
         required: true
@@ -975,12 +1000,16 @@ paths:
             schema: { $ref: '#/components/schemas/FileUpload' }
       responses:
         '201':
-          description: Stored.
+          description: Stored. `Location` is the file's download path.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StoredFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/files/{fileId}:
@@ -998,7 +1027,8 @@ paths:
       summary: Download a stored file
       description: |
         Public: the unguessable URL is the permission. Images are served `inline`,
-        other files as `attachment`. Deleting the survey deletes its files (`404`
+        other files as `attachment`. Respondent files of other types are served as
+        `application/octet-stream`. Deleting the survey deletes its files (`404`
         afterwards; caches may keep a copy for up to an hour).
       security: []
       responses:
@@ -1046,7 +1076,10 @@ paths:
               schema: { type: string, contentMediaType: video/webm }
             video/ogg:
               schema: { type: string, contentMediaType: video/ogg }
+            application/octet-stream:
+              schema: { type: string, contentMediaType: application/octet-stream }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/results:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -1128,8 +1161,9 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: A client-generated unique key (UUID recommended). Keys are remembered for 24 hours.
-      schema: { type: string, maxLength: 128 }
+      description: A client-generated unique key (UUID recommended). A repeated key for the same survey
+        returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours.
+      schema: { type: string, minLength: 1, maxLength: 128 }
 
   headers:
     Location:
@@ -1283,7 +1317,9 @@ components:
       type: string
       minLength: 1
       maxLength: 256
-      description: Identifies a respondent's device or account, for one-response limits.
+      pattern: '^[^/\\#?\u0000-\u001F\u007F-\u009F]+$'
+      description: Identifies a respondent's device or account, for one-response limits. Must not
+        contain `/`, `\`, `#`, `?` or control characters.
     Cursor:
       type: [string, 'null']
       description: Pass as `cursor` to fetch the next page; `null` on the last page.
@@ -1394,7 +1430,9 @@ components:
             maxFileBytes:
               type: integer
               description: Largest respondent file, in bytes.
-            maxResponseBytes: { type: integer }
+            maxResponseBytes:
+              type: integer
+              description: Largest response body, in bytes.
             maxDocumentBytes:
               type: integer
               description: Largest survey definition or theme body accepted, in bytes.
@@ -1666,9 +1704,11 @@ components:
       type: object
       required: [count, firstSubmittedAt, lastSubmittedAt]
       properties:
-        count: { type: integer, minimum: 0 }
-        firstSubmittedAt: { type: [string, 'null'], format: date-time }
-        lastSubmittedAt: { type: [string, 'null'], format: date-time }
+        count: { type: integer, minimum: 0, description: Stored responses. }
+        firstSubmittedAt:
+          { type: [string, 'null'], format: date-time, description: '`null` when there are none.' }
+        lastSubmittedAt:
+          { type: [string, 'null'], format: date-time, description: '`null` when there are none.' }
     ViewState:
       type: object
       description: Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`).
@@ -1680,7 +1720,7 @@ components:
       required: [id, name, definition, theme]
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        name: { $ref: '#/components/schemas/SurveyName' }
+        name: { type: string, maxLength: 200, description: May be empty for legacy records. }
         definition: { $ref: '#/components/schemas/SurveyDefinition' }
         theme: { $ref: '#/components/schemas/SurveyTheme' }
         completed:
@@ -1697,12 +1737,12 @@ components:
         partial:
           type: boolean
           default: false
-          description: Save progress without completing.
+          description: 'Save progress without completing. Ignored in Phase 1: the response is stored as complete.'
           x-phase: P1
         lastPageIndex:
           type: integer
           minimum: 0
-          description: Page to resume on.
+          description: Page to resume on. Ignored in Phase 1.
           x-phase: P1
     PublicResultPage:
       type: object

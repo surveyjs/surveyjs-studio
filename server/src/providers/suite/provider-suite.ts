@@ -1,9 +1,15 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
-import type { NewSurvey, StoredFileRecord, SurveyOwner, SurveyRecord } from "../../domain/types.js";
+import type {
+  NewResponse,
+  NewSurvey,
+  StoredFileRecord,
+  SurveyOwner,
+  SurveyRecord,
+} from "../../domain/types.js";
 import { surveyListOrder } from "../ordering.js";
-import type { ProviderSet, SurveyPosition } from "../types.js";
+import type { AppendOutcome, ProviderSet, SurveyPosition } from "../types.js";
 import {
   ADMIN_ID,
   BLOCKED_ID,
@@ -13,7 +19,9 @@ import {
   PROJECT_A_ID,
   PROJECT_B_ID,
   adminProjects,
+  campaignResponses,
   feedbackHistoryIds,
+  feedbackResponses,
   feedbackHistorySnapshots,
   feedbackTheme,
   fixtureDefinitions,
@@ -32,6 +40,7 @@ import {
   projectASurveys,
   projectBSurveys,
   surveyApiCreated,
+  surveyCampaign,
   surveyDraft,
   surveyFeedback,
   surveysWithoutDefinition,
@@ -992,6 +1001,166 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("results", () => {
+      const sid = (n: number): string =>
+        `66666666-0000-4000-8000-b${n.toString(16).padStart(11, "0")}`;
+      const freshSurvey = async (): Promise<SurveyRecord> =>
+        providers.surveys.createSurvey(newSurvey(freshScope()));
+      const append = (
+        survey: SurveyRecord,
+        id: string,
+        over: Partial<NewResponse> = {},
+      ): Promise<AppendOutcome> =>
+        providers.results.appendResponse(survey, {
+          id,
+          submittedAt: "2026-08-02T12:00:00.000Z",
+          data: { q: "first" },
+          ...over,
+        });
+      const emptyStats = { count: 0, firstSubmittedAt: null, lastSubmittedAt: null };
+
+      it("reads the fixture responses in order, with statistics and markers", async () => {
+        expect(await providers.results.listResponses(surveyFeedback)).toStrictEqual(
+          feedbackResponses,
+        );
+        expect(await providers.results.listResponses(surveyCampaign)).toStrictEqual(
+          campaignResponses,
+        );
+        expect(await providers.results.stats(surveyFeedback)).toEqual({
+          count: 5,
+          firstSubmittedAt: "2026-04-01T08:00:00.500Z",
+          lastSubmittedAt: "2026-04-01T12:00:00.000Z",
+        });
+        expect(await providers.results.stats(surveyCampaign)).toEqual({
+          count: 5,
+          firstSubmittedAt: "2026-04-02T08:00:00.500Z",
+          lastSubmittedAt: "2026-04-02T12:00:00.000Z",
+        });
+        expect(await providers.results.listResponses(surveyDraft)).toStrictEqual([]);
+        expect(await providers.results.stats(surveyDraft)).toEqual(emptyStats);
+        const completion = (survey: SurveyRecord, client: string) =>
+          providers.results.completion(survey, client);
+        expect(await completion(surveyFeedback, "client-0001")).toBe("partial");
+        expect(await completion(surveyCampaign, "client-0002")).toBe("partial");
+        expect(await completion(surveyFeedback, "client-0002")).toBe("none");
+        expect(await completion(surveyFeedback, "CLIENT-0001")).toBe("none");
+      });
+
+      it("stores a response on a new survey, with the id in lower case", async () => {
+        const survey = await freshSurvey();
+        const id = randomUUID();
+        expect(await append(survey, id.toUpperCase())).toBe("stored");
+        expect(await providers.results.listResponses(survey)).toStrictEqual([
+          { id, submittedAt: "2026-08-02T12:00:00.000Z", data: { q: "first" }, partial: false },
+        ]);
+      });
+
+      it("stores the client id and IP, and marks the client completed", async () => {
+        const survey = await freshSurvey();
+        const id = randomUUID();
+        expect(await providers.results.completion(survey, "c-1")).toBe("none");
+        expect(await append(survey, id, { clientId: "c-1", respondentIp: "203.0.113.9" })).toBe(
+          "stored",
+        );
+        expect(await providers.results.listResponses(survey)).toStrictEqual([
+          {
+            id,
+            submittedAt: "2026-08-02T12:00:00.000Z",
+            data: { q: "first" },
+            clientId: "c-1",
+            respondentIp: "203.0.113.9",
+            partial: false,
+          },
+        ]);
+        expect(await providers.results.completion(survey, "c-1")).toBe("completed");
+        expect(await providers.results.completion(survey, "C-1")).toBe("none");
+      });
+
+      it("keeps the first response of an id and answers exists", async () => {
+        const survey = await freshSurvey();
+        const other = await freshSurvey();
+        const id = randomUUID();
+        expect(await append(survey, id)).toBe("stored");
+        expect(await append(survey, id.toUpperCase(), { data: { q: "second" } })).toBe("exists");
+        expect(await append(survey, id, { data: { q: "third" } })).toBe("exists");
+        expect((await providers.results.listResponses(survey)).map((r) => r.data)).toStrictEqual([
+          { q: "first" },
+        ]);
+        expect(await providers.results.hasResponse(survey, id)).toBe(true);
+        expect(await providers.results.hasResponse(survey, id.toUpperCase())).toBe(true);
+        expect(await providers.results.hasResponse(survey, randomUUID())).toBe(false);
+        expect(await providers.results.hasResponse(other, id)).toBe(false);
+        expect(await providers.results.hasResponse(survey, "abc")).toBe(false);
+      });
+
+      it("repairs a missing marker when the same id comes again with a client id", async () => {
+        const survey = await freshSurvey();
+        const id = randomUUID();
+        await append(survey, id);
+        expect(await providers.results.completion(survey, "c-repair")).toBe("none");
+        expect(await append(survey, id, { clientId: "c-repair" })).toBe("exists");
+        expect(await providers.results.completion(survey, "c-repair")).toBe("completed");
+        expect((await providers.results.listResponses(survey))[0]).not.toHaveProperty("clientId");
+      });
+
+      it("lists by time, then by id, and counts per survey", async () => {
+        const survey = await freshSurvey();
+        const other = await freshSurvey();
+        const at = (hour: number) => `2026-08-02T${String(hour).padStart(2, "0")}:00:00.000Z`;
+        await append(survey, sid(1), { submittedAt: at(12) });
+        await append(survey, sid(2), { submittedAt: at(10) });
+        await append(survey, sid(3), { submittedAt: at(14) });
+        await append(survey, sid(0xb), { submittedAt: at(11) });
+        await append(survey, sid(0xa), { submittedAt: at(11) });
+        await append(other, sid(1), { submittedAt: at(9) });
+        expect((await providers.results.listResponses(survey)).map((r) => r.id)).toStrictEqual([
+          sid(2),
+          sid(0xa),
+          sid(0xb),
+          sid(1),
+          sid(3),
+        ]);
+        expect(await providers.results.stats(survey)).toEqual({
+          count: 5,
+          firstSubmittedAt: at(10),
+          lastSubmittedAt: at(14),
+        });
+        expect(await providers.results.stats(other)).toEqual({
+          count: 1,
+          firstSubmittedAt: at(9),
+          lastSubmittedAt: at(9),
+        });
+      });
+
+      it("returns the answers unchanged", async () => {
+        const survey = await freshSurvey();
+        const data = {
+          nested: { list: [1, "two", { three: null }], flag: true },
+          text: "Ünïcødé 😀",
+          markup: `& < > " '`,
+        };
+        await append(survey, randomUUID(), { data });
+        expect((await providers.results.listResponses(survey))[0]?.data).toEqual(data);
+      });
+
+      it("rejects an id that is not a GUID and stores nothing", async () => {
+        const survey = await freshSurvey();
+        await expect(append(survey, "not-a-guid")).rejects.toThrow();
+        expect(await providers.results.stats(survey)).toEqual(emptyStats);
+      });
+
+      it("is emptied by surveys.deleteSurvey", async () => {
+        const survey = await freshSurvey();
+        const id = randomUUID();
+        await append(survey, id, { clientId: "c-gone" });
+        expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+        expect(await providers.results.listResponses(survey)).toStrictEqual([]);
+        expect((await providers.results.stats(survey)).count).toBe(0);
+        expect(await providers.results.completion(survey, "c-gone")).toBe("none");
+        expect(await providers.results.hasResponse(survey, id)).toBe(false);
+      });
+    });
+
     describe("files", () => {
       const fileRecord = (
         surveyId: string,
@@ -1103,6 +1272,24 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         expect((await read(theirs.id))?.file).toEqual(theirs);
         expect(await providers.files.usage(other, "asset")).toBe(PNG.length);
         expect(await providers.files.deleteSurveyFiles(freshSurveyId())).toBe(0);
+      });
+
+      it("counts files per kind, copies only assets and deletes every kind", async () => {
+        const surveyId = freshSurveyId();
+        const target = freshSurveyId();
+        await put(surveyId, PNG, { kind: "response" });
+        await put(surveyId, PNG, { kind: "response" });
+        const asset = await put(surveyId);
+        expect(await providers.files.usage(surveyId, "asset")).toBe(PNG.length);
+        expect(await providers.files.usage(surveyId, "response")).toBe(2 * PNG.length);
+        const map = await providers.files.copySurveyAssets(
+          surveyId,
+          target,
+          "2026-09-05T12:00:00.000Z",
+        );
+        expect([...map.keys()]).toEqual([asset.id]);
+        expect(await providers.files.usage(target, "response")).toBe(0);
+        expect(await providers.files.deleteSurveyFiles(surveyId)).toBe(3);
       });
 
       it("copies a survey's assets under new ids of the target survey", async () => {

@@ -331,8 +331,15 @@ describe("fileRecordFromBlob", () => {
     }
   });
 
+  it("keeps the kind of a respondent file", () => {
+    expect(fileRecordFromBlob(name, properties, { ...metadata, kind: "response" })).toMatchObject({
+      id: ID,
+      kind: "response",
+    });
+  });
+
   it("ignores a blob of an unknown or missing kind", () => {
-    for (const kind of ["", "response", "Asset", undefined]) {
+    for (const kind of ["", "other", "Asset", "Response", undefined]) {
       expect(fileRecordFromBlob(name, properties, { ...metadata, kind }), String(kind)).toBeNull();
     }
     expect(fileRecordFromBlob(name, properties, undefined)).toBeNull();
@@ -403,6 +410,21 @@ describe("responseFromLegacy", () => {
     expect(r).not.toHaveProperty("clientId");
     expect(r).not.toHaveProperty("respondentIp");
     expect(r.partial).toBe(false);
+  });
+
+  it("refuses a result that is not a JSON object, naming the row id", () => {
+    for (const result of ["not json", "[1]", "null"]) {
+      let error: unknown;
+      try {
+        responseFromLegacy(entity({ result }));
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error, result).toBeInstanceOf(UnmappableLegacyRowError);
+      expect((error as UnmappableLegacyRowError).ids, result).toEqual({
+        responseId: "dddddddd-0000-4000-8000-000000000001",
+      });
+    }
   });
 
   it("includes optional fields when present", () => {

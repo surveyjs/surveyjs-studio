@@ -58,6 +58,9 @@ describe("sign-in rate limit", () => {
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
     expect(res.json()).toMatchObject({ code: "rate-limited", status: 429 });
+    expect(res.json<{ detail: string }>().detail).toMatch(
+      /^Too many sign-in attempts\. Try again in /,
+    );
   });
 
   it("does not limit other operations", async () => {

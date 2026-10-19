@@ -407,6 +407,17 @@ once, but the two read paths merge differently:
 `the site's code` (`site code`),
 `the site's code` (`site code`)
 
+**Implemented in Step 8.** My Surveys writes these rows directly (`writeResponse` in
+`providers/azure-legacy/writes.ts`, [ADR 0010](../adr/0010-writing-to-the-legacy-stores.md#step-8-result-rows-and-completion-markers)),
+not through the legacy `POST post`, so the sanitizer never runs: the text of `result` is stored as typed,
+while old rows may hold entities. The row has exactly the properties above with their Edm types
+(`ispartialcompleted` is never written, `clientid` and `ipaddress` only when given), and `surveyid` is a
+random GUID as in legacy. The row id is a GUID that the server derives from the `Idempotency-Key`
+(a version 5 UUID of the survey id and the key) or makes at random, and `happendat` is the server's clock
+in UTC. A result text over **32,768 UTF-16 code units** is refused before anything is written (the answer
+is `413`). The table `post{postId}` is created on the first response, and `Surveys.timestamp` is not
+touched. The IP address is stored only while the survey's `storeipaddress` is on.
+
 ### 3.7 "Already completed" markers: Azure tables `SurveyCompletion{surveyId}`
 
 One table per survey in the results account, for example
@@ -439,6 +450,17 @@ Synthetic row in `SurveyCompletion22222222000040008000000000000001`:
 
 The run page on surveyjs.io never sends a client ID, so it never creates these rows. **[C]**
 `the site's codehtml` (`postResults`)
+
+**Implemented in Step 8.** Every response that carries a client id writes its marker with an upsert
+(`Replace`) at the row key `clientId`, with `ispartialcompleted` as `Edm.Boolean` false and `publishid` as
+`Edm.String` when the survey has one (read from `Surveys.publishid`). The table
+`SurveyCompletion{surveyId}` is created when it is missing. A response that is stored again under the same
+id writes the marker again at the store level (the HTTP service answers a keyed retry
+before it reaches the store, so only a race of identical requests gets there). A marker written by an old API client
+with `ispartialcompleted` true reads as `partial`, and "completed" for the run page is a marker that exists and
+is not partial. A client id that Azure refuses as a row key cannot be stored, so the contract's `ClientId`
+refuses `/`, `\`, `#`, `?` and control characters up front. The run page of My Surveys, unlike the old one, sends a client
+id when "Limit to one response" is on, so it creates these rows.
 
 ### 3.8 Deleted-result audit: Azure tables `postdelete{postId}`
 
@@ -1078,15 +1100,17 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 
 ### 9.2 Response (`SurveyResponse`, `ResultStats`)
 
-| Legacy (`post{postId}` row)   | Domain                                                     | Rule                                                                                                                      |
-| ----------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `id` / `RowKey` (InstanceId)  | `id`                                                       | As is.                                                                                                                    |
-| `happendat` (HappendAt)       | `submittedAt`                                              | UTC (the Table writer converts to UTC). **[C]**                                                                           |
-| `result`                      | `data`                                                     | `JSON.parse`; may contain HTML entities from the sanitizer (section 11).                                                  |
-| `clientid`                    | `clientId`                                                 | Optional.                                                                                                                 |
-| `ipaddress`                   | `respondentIp`                                             | Optional; present only on rows written while the setting was on (and by pre-port code).                                   |
-| `ispartialcompleted`          | `partial`                                                  | Missing → `false`.                                                                                                        |
-| count / min / max `happendat` | `ResultStats.count`, `firstSubmittedAt`, `lastSubmittedAt` | Full scan of the table; legacy merges rows with the same client ID before counting (merge rules differ by path, see 3.6). |
+| Legacy (`post{postId}` row)      | Domain                                                     | Rule                                                                                                                                                                                                                    |
+| -------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id` / `RowKey` (InstanceId)     | `id`                                                       | As is.                                                                                                                                                                                                                  |
+| `happendat` (HappendAt)          | `submittedAt`                                              | UTC (the Table writer converts to UTC). **[C]**                                                                                                                                                                         |
+| `result`                         | `data`                                                     | `JSON.parse`; may contain HTML entities from the sanitizer (section 11).                                                                                                                                                |
+| `clientid`                       | `clientId`                                                 | Optional.                                                                                                                                                                                                               |
+| `ipaddress`                      | `respondentIp`                                             | Optional; present only on rows written while the setting was on (and by pre-port code).                                                                                                                                 |
+| `ispartialcompleted`             | `partial`                                                  | Missing → `false`.                                                                                                                                                                                                      |
+| count / min / max `happendat`    | `ResultStats.count`, `firstSubmittedAt`, `lastSubmittedAt` | Full scan of the table; legacy merges rows with the same client ID before counting (merge rules differ by path, see 3.6). **Step 8:** `count` is the number of rows, with no merging; Step 9 decides the reading rules. |
+| new row (Step 8)                 | `NewResponse`                                              | `id` is the response id, `submittedAt` the server clock, `data` is stored as compact JSON text (at most 32,768 UTF-16 code units), `clientId` and `respondentIp` only when given. See 3.6.                              |
+| `SurveyCompletion{surveyId}` row | `CompletionState` (`none`, `partial`, `completed`)         | No row: `none`. `ispartialcompleted` true: `partial`. Otherwise `completed`. Written on every response with a client ID. See 3.7.                                                                                       |
 
 ### 9.3 Project (`Project`)
 
