@@ -74,7 +74,9 @@ export const HEADER_NORMALIZATIONS: readonly Normalization[] = [
 
 const LIST_ITEM = ".v2-class---my-surveys-page__list-item";
 const SURVEY_DATE = ".v2-class---my-surveys-page__survey-date-item-text";
-const FEEDBACK_ROW = `${LIST_ITEM}:has-text("Customer feedback")`;
+// The row menus open on Product poll, unpublished on both sides: on live, Customer feedback never
+// lists as published (a null flag runs but lists as unpublished), so its menu items would differ.
+const MENU_ROW = `${LIST_ITEM}:has-text("Product poll")`;
 const SELECTOR_TRIGGER_APP = ".v2-class---drop-down-button__selected-item-button";
 const SURVEY_IDS = '.v2-class---drop-down-menu-item__text:text-is("Survey IDs")';
 const DETAILS_DATES =
@@ -125,12 +127,12 @@ const listSide = (
 ): SideSpec => ({ path, ready, ...extra });
 
 const ROW_MENU_LIVE: readonly Step[] = [
-  { hover: FEEDBACK_ROW },
-  { click: `${FEEDBACK_ROW} .v2-class---my-surveys-page__survey-context-menu-button` },
+  { hover: MENU_ROW },
+  { click: `${MENU_ROW} .v2-class---my-surveys-page__survey-context-menu-button` },
 ];
 const ROW_MENU_APP: readonly Step[] = [
-  { hover: FEEDBACK_ROW },
-  { click: `${FEEDBACK_ROW} [role="button"][aria-label="Survey actions"]` },
+  { hover: MENU_ROW },
+  { click: `${MENU_ROW} [role="button"][aria-label="Survey actions"]` },
 ];
 
 const EDITOR_READY = ".svc-creator .svc-question__content";

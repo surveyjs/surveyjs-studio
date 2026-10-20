@@ -160,4 +160,7 @@ These are decisions of the team, not of the product owner. Until the owner confi
 - **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
   dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
   (`pnpm visual:capture --grep history`).
+- **The live publish flag.** On the dedicated account `Customer feedback` stays `data-ispublished="false"` after
+  Publish (the list shows "true" only when `IsPublished == true`; the run page refuses only when it is `false`). Why?
+  The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`.
 - **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades.

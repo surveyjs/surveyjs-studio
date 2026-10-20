@@ -84,7 +84,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
     }
   };
   const next: VisualIds = {};
-  const states: VisualStates = { historyEntries: 0, liveVersions: {} };
+  const states: VisualStates = { historyEntries: 0, feedbackPublished: false, liveVersions: {} };
   try {
     const [active, archived, project] = expectedScopes();
     await attempt(active!.label, async () => {
@@ -107,7 +107,8 @@ test.beforeAll(async ({ browser }, testInfo) => {
       else problems.push(`${FEEDBACK_NAME}: no survey id found`);
       if (resultId) next.feedbackResultId = resultId;
       else problems.push(`${FEEDBACK_NAME}: no result id found`);
-      if (published?.toLowerCase() !== "true") problems.push(`${FEEDBACK_NAME}: not published`);
+      // Not a problem: on live the flag stays false after Publish; it is recorded in states.json.
+      states.feedbackPublished = published?.toLowerCase() === "true";
     });
 
     // The project selector lists the projects as links /Service/MySurveys/{id}.
@@ -216,6 +217,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
       capturedAt: new Date().toISOString(),
       playwright: playwrightVersion,
       historyEntries: states.historyEntries,
+      feedbackPublished: states.feedbackPublished,
       liveVersions: states.liveVersions,
     };
     mkdirSync(dirname(STATES_FILE), { recursive: true });

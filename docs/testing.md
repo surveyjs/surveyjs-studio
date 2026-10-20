@@ -771,7 +771,9 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    three responses to submit. Do them in the account. In short: create the project `Visual project` with the survey
    `Team retro`; archive `Old poll`; create `Product poll`, `Event registration` and `Customer feedback` (paste the
    JSON, publish, submit the three responses, and turn **Grant Access** on in View Results › Details); make sure
-   `Customer feedback` is first in the list. Do not open the editor tour or change anything else.
+   `Customer feedback` is first in the list. The capture does not need `Customer feedback` to list as published (on
+   live it may stay unpublished); it records the flag as `feedbackPublished` in `states.json`. The two row-menu
+   screens open the menu of `Product poll`, which is unpublished on both sides. Do not open the editor tour or change anything else.
 2. Run `pnpm visual:capture`. It refuses when `CI` is set (it exits non-zero), so run it in your own terminal.
 3. A browser window opens surveyjs.io. **Sign in yourself** with the dedicated account. The script never types for you.
    It waits up to ten minutes.
@@ -801,13 +803,13 @@ A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compare
 
 **If something fails**
 
-| What you see                                                                                                                                                                                     | What to do                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `not published`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                      |
-| `The page tried to write to the live site (blocked): POST …`                                                                                                                                     | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry |
-| `Selectors matched nothing on live for <id>: …`                                                                                                                                                  | The live page changed, or the account state differs. Tell the developers the id                                                      |
-| Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                                             | Delete `e2e/visual/.auth/` and run again                                                                                             |
-| One screen fails and the later screens of that browser are skipped                                                                                                                               | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                        |
+| What you see                                                                                                                                                                    | What to do                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                      |
+| `The page tried to write to the live site (blocked): POST …`                                                                                                                    | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry |
+| `Selectors matched nothing on live for <id>: …`                                                                                                                                 | The live page changed, or the account state differs. Tell the developers the id                                                      |
+| Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                            | Delete `e2e/visual/.auth/` and run again                                                                                             |
+| One screen fails and the later screens of that browser are skipped                                                                                                              | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                        |
 
 **Good to know**
 
