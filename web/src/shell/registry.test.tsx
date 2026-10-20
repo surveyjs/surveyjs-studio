@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { currentUser } from "../test/server";
-import { renderShell } from "./registry";
+import { renderShell, renderShellStyles } from "./registry";
 
 function shellFor(name: string) {
   return renderShell(name, {
@@ -37,5 +37,28 @@ describe("renderShell", () => {
     expect(header.classList.contains("v2-class---top-bar")).toBe(true);
     expect(within(header).getByRole("button", { name: "Sign Out" })).toBeTruthy();
     expect(screen.getByRole("contentinfo").classList.contains("v2-class---footer")).toBe(true);
+  });
+});
+
+describe("renderShellStyles", () => {
+  it.each(["plain", "something-else", "toString"])(
+    "renders the page alone for %s, with no shell around it",
+    (name) => {
+      render(renderShellStyles(name, <p>page</p>));
+
+      expect(screen.getByText("page")).toBeTruthy();
+      expect(screen.queryByRole("banner")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
+    },
+  );
+
+  it("renders the page with no header or footer for surveyjs-site", async () => {
+    render(renderShellStyles("surveyjs-site", <p>page</p>));
+
+    // The styles are a lazy chunk, like the shell.
+    expect(await screen.findByText("page", undefined, { timeout: 5000 })).toBeTruthy();
+    expect(screen.queryByRole("banner")).toBeNull();
+    expect(screen.queryByRole("contentinfo")).toBeNull();
+    expect(document.querySelector(".v2-class---top-bar")).toBeNull();
   });
 });

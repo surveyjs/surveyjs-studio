@@ -3,7 +3,6 @@ import { getRouteApi } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { publicResultsQueryOptions } from "../api/public";
 import { useLicenceApplied } from "../surveyjs/useLicenceApplied";
-import "../shell/surveyjs-site/assets/surveyjs-site.scss";
 import "./public-results.css";
 import { publicResultsState } from "./publicResultsState";
 import type { ResultsWidgetProps } from "./ResultsPage";
@@ -31,7 +30,8 @@ const LOADING = (
 /**
  * The public results page of a survey with Grant Access on (`/results/$surveyId`), without the
  * site's shell: the Summary and the Table, read only, private questions left out. The results
- * are read once per open.
+ * are read once per open. The route wraps it in the configured shell's styles
+ * (`renderShellStyles`); under `plain` it has none.
  */
 export function PublicResultsPage({ surveyId }: { surveyId: string }) {
   const query = useQuery(publicResultsQueryOptions(surveyId));
