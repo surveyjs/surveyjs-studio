@@ -105,6 +105,19 @@ describe("the screen manifest", () => {
     for (const screen of SCREENS) {
       const showsHeader =
         screen.id !== "run" && screen.id !== "public-results" && !screen.live.target;
+      if (screen.id === "public-results") {
+        // the live page shows the header, the app page has none: optional header normalizations
+        for (const header of HEADER_NORMALIZATIONS) {
+          expect(screen.normalize ?? [], screen.id).toContainEqual(
+            expect.objectContaining({
+              live: header.live,
+              app: header.app,
+              text: header.text,
+              optional: true,
+            }),
+          );
+        }
+      }
       if (!showsHeader) continue;
       for (const header of HEADER_NORMALIZATIONS) {
         expect(screen.normalize ?? [], screen.id).toContainEqual(header);

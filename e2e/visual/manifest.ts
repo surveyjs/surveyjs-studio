@@ -29,6 +29,7 @@ export interface Normalization {
   readonly text: string;
   readonly reason: string;
   readonly category: Category;
+  readonly optional?: boolean; // may match nothing on a side (default: must match at least one element)
 }
 
 export interface Screen {
@@ -84,17 +85,23 @@ const CHARTS_READY = "[data-question]";
 const TABLE_READY = ".tabulator-row";
 const DETAILS_READY = '.survey-results-header-line:has-text("Last response at")';
 
-/** The embed tab's code shows the survey ids; the live class is the legacy view's, the app's is ours. */
-function EMBED_CODE_MASK(side: Side): Adjustment {
-  return {
-    selector:
-      side === "live"
-        ? ".svc-custom-embedded-tab__code-container, .svc-embed-tab__code-container"
-        : ".svc-embed-tab__code-container",
-    reason: "the code shows the survey ids",
-    category: "live-data",
-  };
-}
+/** The embed tab's code shows the survey ids (live: embed-tab.tsx:376; app: EmbedTab.tsx). */
+const EMBED_CODE_MASK: Adjustment = {
+  selector: ".svc-embed-tab__code-container",
+  reason: "the code shows the survey ids",
+  category: "live-data",
+};
+
+/** At 1440 px the Embed Survey tab sits in the Creator tab strip's "More" popup (live finding). */
+const EMBED_POPUP_ITEM = '.svc-tabbed-menu-item__popup li:has-text("Embed Survey")';
+const EMBED_STEPS_LIVE: readonly Step[] = [
+  { click: ".svc-tabbed-menu-dots__item" },
+  { click: EMBED_POPUP_ITEM },
+];
+const EMBED_STEPS_APP: readonly Step[] = [
+  { click: ".svc-tabbed-menu-dots" },
+  { click: EMBED_POPUP_ITEM },
+];
 
 /** The survey dates of the list cannot match: they are fixed to one text on both sides. */
 const SURVEY_DATES: Normalization = {
@@ -258,15 +265,15 @@ export const SCREENS: readonly Screen[] = [
     live: {
       path: "/Service/EditSurvey/{feedbackId}",
       ready: EDITOR_READY,
-      steps: [{ click: '.svc-tabbed-menu-item:has-text("Embed Survey")' }],
-      mask: [EMBED_CODE_MASK("live")],
+      steps: EMBED_STEPS_LIVE,
+      mask: [EMBED_CODE_MASK],
     },
     app: {
       path: "/surveys/{feedbackId}/edit",
       ready: EDITOR_READY,
-      steps: [{ click: '.svc-tabbed-menu-item:has-text("Embed Survey")' }],
+      steps: EMBED_STEPS_APP,
       hide: EDITOR_HIDE_APP,
-      mask: [EMBED_CODE_MASK("app")],
+      mask: [EMBED_CODE_MASK],
     },
     normalize: HEADER_NORMALIZATIONS,
     maxDiffPixelRatio: 0.02,
@@ -402,12 +409,23 @@ export const SCREENS: readonly Screen[] = [
     id: "public-results",
     group: "results",
     kind: "library",
-    live: { path: "/Results/Survey/{feedbackResultId}", ready: CHARTS_READY },
+    live: {
+      path: "/Results/Survey/{feedbackResultId}",
+      ready: CHARTS_READY,
+      hide: RESULTS_HIDE_LIVE,
+    },
     app: {
       path: "/results/{feedbackId}",
       ready: CHARTS_READY,
       hide: DASHBOARD_BANNER_HIDE_APP,
     },
+    // The live page is the results partial with the site header; the app's public page has no
+    // shell (routes/results/$surveyId.tsx), so the app side matches nothing. Parity lead for Task 9.
+    normalize: HEADER_NORMALIZATIONS.map((item) => ({
+      ...item,
+      optional: true,
+      reason: `${item.reason}; the app's public results page has no site header`,
+    })),
     maxDiffPixelRatio: 0.02,
   },
 ];

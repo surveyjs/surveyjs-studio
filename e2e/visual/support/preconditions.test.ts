@@ -20,6 +20,19 @@ describe("compareNames", () => {
     ]);
   });
 
+  it("reports an extra duplicate of an expected name", () => {
+    expect(compareNames("Personal archived", ["a", "b"], ["a", "b", "b"])).toEqual([
+      'Personal archived: duplicate "b"',
+    ]);
+  });
+
+  it("reports a repeated name that takes the place of another", () => {
+    expect(compareNames("Personal archived", ["a", "b"], ["a", "a"])).toEqual([
+      'Personal archived: missing "b"',
+      'Personal archived: duplicate "a"',
+    ]);
+  });
+
   it("reports a swapped pair once per misplaced position", () => {
     expect(
       compareNames("Personal active", expected, [

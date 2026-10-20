@@ -28,6 +28,11 @@ export function compareNames(
   for (const name of found) {
     if (!expected.includes(name)) messages.push(`${label}: unexpected "${name}"`);
   }
+  const seen: string[] = [];
+  for (const name of found) {
+    if (seen.includes(name)) messages.push(`${label}: duplicate "${name}"`);
+    else seen.push(name);
+  }
   if (messages.length > 0) return messages;
   expected.forEach((name, index) => {
     const actual = found[index];

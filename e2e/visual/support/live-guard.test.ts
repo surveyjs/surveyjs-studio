@@ -40,7 +40,19 @@ describe("isTracker", () => {
 });
 
 describe("LIVE_READ_ALLOWLIST", () => {
-  it("starts empty", () => {
-    expect(LIVE_READ_ALLOWLIST).toEqual([]);
+  it("lets the two reading POSTs through", () => {
+    expect(isLiveWrite("POST", "https://surveyjs.io/api/CodeViewer/getfiles")).toBe(false);
+    expect(isLiveWrite("POST", "https://surveyjs.io/api/cart/calcprepare")).toBe(false);
+  });
+
+  it("has one entry per reading POST", () => {
+    expect(LIVE_READ_ALLOWLIST).toHaveLength(2);
+  });
+
+  it("keeps any other path, host or method a write", () => {
+    expect(isLiveWrite("POST", "https://surveyjs.io/api/cart/calcprepare/x")).toBe(true);
+    expect(isLiveWrite("POST", "https://surveyjs.io/api/CodeViewer/other")).toBe(true);
+    expect(isLiveWrite("POST", "https://api.surveyjs.io/api/CodeViewer/getfiles")).toBe(true);
+    expect(isLiveWrite("PUT", "https://surveyjs.io/api/CodeViewer/getfiles")).toBe(true);
   });
 });

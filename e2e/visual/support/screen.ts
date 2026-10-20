@@ -53,7 +53,11 @@ function checksOf(screen: Screen, side: Side): Check[] {
     checks.push({ kind: "mask", selector: item.selector, optional: item.optional === true });
   }
   for (const item of screen.normalize ?? []) {
-    checks.push({ kind: "normalize", selector: pickSelector(item, side), optional: false });
+    checks.push({
+      kind: "normalize",
+      selector: pickSelector(item, side),
+      optional: item.optional === true,
+    });
   }
   return checks;
 }
@@ -113,6 +117,10 @@ export async function openScreen(
       try {
         if (flags.consent) localStorage.setItem(flags.cookieKey, "true");
         localStorage.setItem(flags.tourKey, "true");
+        // The licence popups (the site's page markup) show only while these are unset; a
+        // licensed account would otherwise get a 710x296 popup over the page.
+        localStorage.setItem("expiredNotificationDateTime", "seen");
+        localStorage.setItem("expiresSoonNotificationDateTime", "seen");
       } catch {
         // storage can be blocked; the screen then shows the banner or the tour
       }
@@ -128,7 +136,11 @@ export async function openScreen(
     try {
       await target.waitFor({ state: "visible", timeout: STEP_TIMEOUT });
     } catch (error) {
-      await failIfUnmatched(page, screen, side);
+      if ((await page.locator(selector).count()) === 0) {
+        throw new Error(`Selectors matched nothing on ${side} for ${screen.id}: ${selector}`, {
+          cause: error,
+        });
+      }
       throw error;
     }
     return target;
