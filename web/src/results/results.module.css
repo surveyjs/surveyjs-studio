@@ -1,14 +1,11 @@
-/* Only what the results page needs to be usable; visual parity with surveyjs.io is Step 13. */
-
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  margin: 0 0 16px;
-  padding: 0;
-  list-style: none;
-}
-
-.tabContent {
-  min-height: 250px;
+/*
+ * "Back to My Surveys" is the app's own way out of the page (the site has none). It sits where the
+ * site draws its 1,000-responses warning, out of the flow, so the page is as tall as the site's.
+ */
+.back {
+  position: absolute;
+  top: 25px;
+  right: 175px;
+  margin: 0;
+  text-align: right;
 }

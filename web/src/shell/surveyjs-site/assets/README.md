@@ -217,9 +217,20 @@ Changes and additions:
 - The Reset texts are `p.v2-class---paragraph` without the site's `role="alert"` (static text is not a
   live region). After a reset the page shows "The table layout is reset." or "The summary layout is
   reset." (or "The layout was not reset. Please try again.") instead of reloading.
-- The page heading stays the survey name (the site's "My Surveys. Results" heading and its locale
-  picker are not copied), and the site's "only the first 1,000 responses" panel is left out: the page
-  shows every response.
+- The page shows the site's "My Surveys. Results" heading (`h3.survey-results-page__title`) and the
+  survey name under it; the name is an `h1` styled as the site's description span, so it stays the
+  page's level 1 heading. The locale picker is not copied, and the site's "only the first 1,000
+  responses" panel is left out: the page shows every response.
+- "Back to My Surveys" is the app's own and sits out of the flow where the site draws that panel
+  (`results.module.css`), so the page is as tall as the site's.
+- Step 13: the page's styles are `site/Content/Styles/pages/survey-results.scss` (a copy of
+  `the site's source`, byte-order mark removed), imported after
+  `my-surveys.scss`. The Details tab body has the site's `#resultsInfo` id (its flex rule needs it)
+  and the Summary body `#summaryContainer`. The Reset texts are plain `div`s, and the Delete Results
+  confirmation block (`#ctrlClearAll`) is always laid out and collapsed until opened, as on the site.
+- Step 13: `site/Content/Fonts/Google/` holds the latin subset of Raleway and Open Sans, the two
+  families the site's `the site's page markup` loads from Google Fonts (SIL Open Font License). They are
+  declared in `surveyjs-site.scss`; the app makes no request to Google.
 - The loading, load-failure, save-failure and export-failure texts are the app's own; the texts inside
   the charts and the table come from survey-analytics.
 
