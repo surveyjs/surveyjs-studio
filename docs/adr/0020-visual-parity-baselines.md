@@ -22,7 +22,7 @@ live site behind sign-in. Three things follow.
 
 A read-only inspection of the live pages, with the product owner signed in, also found that the header's account item
 reads literally "Account", not the user's name. Plan Step 3 shows the name. The app's account text is therefore a
-parity difference, and fixing it is the lead of a later Step 13 task. The test does not decide it, because both sides
+parity difference, and it is open for the product owner (see To confirm). The test does not decide it, because both sides
 are normalized to "Account" (see below).
 
 ## Decision
@@ -119,6 +119,13 @@ one exception is `pnpm e2e:visual --self`, the harness check: it writes throwawa
 `e2e/visual/.self-baselines/` and compares a second, fresh server with them. It proves the app side is deterministic. It
 says nothing about parity.
 
+### Decided by the product owner (2026-10-20)
+
+- **A dedicated surveyjs.io account was used, and its screenshots are committed.** The product owner captured the
+  baselines and reviewed every image. Names and emails are normalized, and no image shows personal data.
+- **The public results page stays without the site header and footer.** [ADR 0016](0016-results-details-exports-and-public-results.md)
+  R19 is confirmed, so the live header and footer are hidden as a `departure`.
+
 ### Settled here
 
 The menu under the cookie banner stays as surveyjs.io has it. [ADR 0011](0011-survey-actions.md) left it open: the
@@ -142,21 +149,21 @@ the same behaviour, and parity is the goal, so the app does not change it.
   in in that browser too, up to three times.
 - **Live content can change** between the capture and a fix. A screen that fails only for that reason is reported and
   recaptured with `--grep <id>`.
-- **Findings from the live site** that become parity work: the account item's text ("Account"), the public results
-  page's site header and 1,000-responses warning (the app's page has no shell), and the library versions.
+- **Findings from the live site** that become parity work: the account item's text ("Account"), the 1,000-responses
+  warning, and the library versions. The public results page keeps no site shell (decided 2026-10-20).
 
 ## To confirm
 
 These are decisions of the team, not of the product owner. Until the owner confirms them they stand as written.
 
-- **A dedicated surveyjs.io account**, and committing its screenshots to a repository that will become public. Names
-  and emails are normalized, and every image is reviewed before it is committed.
+- **The header's account item.** Live reads "Account"; the app shows the user's name (plan Step 3). Both sides are
+  normalized to "Account", so the test does not decide it. Keep the name, or show "Account"?
 - **The run page's "Disclaimer of liability"** ([ADR 0014](0014-run-page-and-response-collection.md), S13). It is hidden
   on the live side, because the visual account has no licence, and the app does not build it. Build it, or drop it?
 - **No "first 1,000 responses" banner** ([ADR 0015](0015-results-summary-table-and-views.md), R12). It is hidden on the
   live side. Confirm.
-- **Library versions.** The live pages may run newer Creator and Dashboard builds than the app's. Differences inside
-  them are accepted as `library`. Upgrading is a separate decision.
+- **Library versions.** Live Form Library and Creator run 3.2.2; the app runs 3.1.2. The live Dashboard version is not
+  exposed (`states.json`). Differences inside them are accepted as `library`. Upgrading is a separate decision.
 - **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
   dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
   (`pnpm visual:capture --grep history`).

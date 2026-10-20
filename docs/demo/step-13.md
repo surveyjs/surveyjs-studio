@@ -32,8 +32,8 @@ they were captured, not in CI.
 pnpm e2e:visual
 ```
 
-It builds the web app, starts its own server and preview on 3002 and 5175, and runs 17 screens (the history screen is skipped) in Chromium, Firefox and
-WebKit. Then open the report:
+It builds the web app, starts its own server and preview on 3002 and 5175, and runs 17 screens (the history screen is
+skipped) in Chromium, Firefox and WebKit. The result is `52 passed, 3 skipped`. Then open the report:
 
 ```sh
 pnpm e2e:visual:report
@@ -88,9 +88,22 @@ says nothing about parity with surveyjs.io.
 ## Known differences
 
 The accepted differences and their reasons are in [Testing › Accepted differences](../testing.md#accepted-differences).
-This list is filled when the fix tasks are done.
+In short:
+
+- **Left out on purpose** (`departure`): the run page's "Disclaimer of liability", the "first 1,000 responses" banner,
+  the app's save status in the editor, and on the public results page the site header, footer and Details tab (ADR 0016
+  R19, confirmed by the product owner).
+- **Library builds** (`library`): the live Creator and Form Library run 3.2.2, the app 3.1.2. The licence banners of
+  Creator and Dashboard show only in the app, and are hidden.
+- **Content that cannot match** (`live-data`): dates, the GitHub star count, the member name and the survey ids in the
+  embed code.
+- **The header's account item** reads "Account" on live and the user's name in the app. Both are normalized, so the
+  tests do not catch it (open for the product owner).
+- **The history screen is skipped**, because the live history is empty for a fresh account.
 
 - **The visual tests run locally only.** The baselines are Windows renders; CI cannot see a visual regression.
+- **The baselines are Windows renders.** The tests are valid on the machine (or an identical setup: system, fonts,
+  display scaling) that captured them, and after a Playwright upgrade they need a recapture.
 - **Text that cannot match is normalized**, so a format difference in a date or a name is not caught by the images.
   The functional specs assert the formats.
 
