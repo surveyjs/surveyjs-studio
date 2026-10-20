@@ -211,6 +211,8 @@ function DeleteResults({ survey, hasResults }: { survey: Survey; hasResults: boo
           <button
             className="rounded-button rounded-button--danger"
             type="button"
+            aria-expanded={open}
+            aria-controls="ctrlClearAll"
             onClick={() => setOpen(!open)}
           >
             Delete Results

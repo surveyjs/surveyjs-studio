@@ -20,7 +20,8 @@ export interface DropDownTopMenuItemProps {
  * the mouse, the site's CSS opens the menu on hover. The site offers no keyboard access, so the
  * trigger is also a focusable button: Enter, Space or ArrowDown opens the menu (glue class
  * `dropDownOpen` applies the site's hover styles), Escape closes it and returns focus to the
- * trigger, and the menu closes when focus leaves the item or an item of the menu is clicked.
+ * trigger, and the menu closes when focus leaves the item or an item of the menu is activated (a
+ * click, or Enter on a focused item; focus then goes back to the trigger, not to `<body>`).
  */
 export function DropDownTopMenuItem({
   label,
@@ -31,8 +32,10 @@ export function DropDownTopMenuItem({
 }: DropDownTopMenuItemProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
-  // A click inside the menu closes it for good (`hovered` stays, the pointer is still there): the
-  // site's hover CSS is switched off until the pointer leaves and returns.
+  // Activating an item (a click, or Enter on a focused item) closes the menu for good (`hovered`
+  // stays when the pointer is still there): the site's hover CSS is switched off until the pointer
+  // leaves and returns. Focus that was inside the menu goes back to the trigger, since the closed
+  // menu is hidden and the browser would otherwise drop focus to <body>.
   const [dismissed, setDismissed] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuId = useId();
@@ -102,9 +105,10 @@ export function DropDownTopMenuItem({
       <nav
         id={menuId}
         className={menuClass}
-        onClick={() => {
+        onClick={(event) => {
           setOpen(false);
           setDismissed(true);
+          if (event.currentTarget.contains(document.activeElement)) triggerRef.current?.focus();
         }}
       >
         {children}

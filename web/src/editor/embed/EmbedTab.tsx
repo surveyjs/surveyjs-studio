@@ -78,6 +78,9 @@ function createSettingsSurvey(creator: SurveyCreator, product: Product, canLoad:
   const css = Object.assign({}, propertyGridCss) as typeof propertyGridCss;
   css.dropdown = { ...css.dropdown, controlInputFieldComponent: "spg-custom-dropdown-control" };
   css.root += " svc-custom-embedded-tab-properties";
+  // `survey.css = …` merges into the current classes and propertyGridCss has no `list`, so this
+  // first drops the Form Library's list classes, as Creator's own property grid does
+  // (survey-creator-core PropertyGridModel.onCreateSurvey).
   survey.getCss().list = {};
   survey.css = css;
   return survey;

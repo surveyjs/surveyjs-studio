@@ -239,5 +239,28 @@ describe("AccountMenu", () => {
 
       expect(trigger().getAttribute("aria-expanded")).toBe("false");
     });
+
+    it("puts focus back on the trigger after an item is activated from the keyboard", () => {
+      const { onSignOut } = renderMenu();
+      trigger().focus();
+      fireEvent.keyDown(trigger(), { key: "ArrowDown" });
+      const signOut = screen.getByRole("button", { name: "Sign Out" });
+      signOut.focus();
+
+      // Enter or Space on a focused button or link fires its click.
+      fireEvent.click(signOut);
+
+      expect(onSignOut).toHaveBeenCalledTimes(1);
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it("leaves focus alone when the activated item did not have it", () => {
+      renderMenu();
+      const elsewhere = document.body;
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+
+      expect(document.activeElement).toBe(elsewhere);
+    });
   });
 });

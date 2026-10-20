@@ -505,7 +505,12 @@ describe("the Details tab: Delete Results", () => {
     // The block is laid out but hidden until the toggle is clicked: out of the accessibility tree.
     expect(screen.queryByRole("textbox", { name: "Type the survey name" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear All Data" })).toBeNull();
+    // The toggle names the block it shows and says whether it is shown.
+    expect(deleteResults.getAttribute("aria-expanded")).toBe("false");
+    const controlled = document.getElementById(deleteResults.getAttribute("aria-controls") ?? "");
+    expect(controlled?.textContent).toContain(DELETE_WARNING);
     fireEvent.click(deleteResults);
+    expect(deleteResults.getAttribute("aria-expanded")).toBe("true");
 
     expect(screen.getByText(DELETE_WARNING)).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Type the survey name" })).toBeTruthy();
