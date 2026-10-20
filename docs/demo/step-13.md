@@ -22,7 +22,7 @@ Ports **3002** and **5175** must be free (the visual run uses them; ports 3000 a
 and 3). For part 2 you also need 3000 and 5173.
 
 The baselines must be committed: `e2e/visual/baselines/` holds `states.json` and a `win32` folder with one folder per
-browser. If they are missing, `pnpm e2e:visual` stops at once and says so (see Troubleshooting). A person captures them
+browser (17 PNGs each, captured 2026-10-20 from live Form Library and Creator 3.2.2). If they are missing, `pnpm e2e:visual` stops at once and says so (see Troubleshooting). A person captures them
 once, as [Capturing baselines](../testing.md#capturing-baselines) describes. The tests are valid on the machine where
 they were captured, not in CI.
 

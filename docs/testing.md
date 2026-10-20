@@ -774,7 +774,13 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    JSON, publish, submit the three responses, and turn **Grant Access** on in View Results › Details); make sure
    `Customer feedback` is first in the list. The capture does not need `Customer feedback` to list as published (on
    live it may stay unpublished); it records the flag as `feedbackPublished` in `states.json`. The two row-menu
-   screens open the menu of `Product poll`, which is unpublished on both sides. Do not open the editor tour or change anything else.
+   screens open the menu of `Product poll`, which is unpublished on both sides. Do not open the editor tour or change
+   anything else.
+
+   **Publish only once.** In the live "..." menu, Publish and Unpublish are one toggle, and a second click
+   unpublishes. After you publish `Customer feedback`, reload the page and open "..." again. It must show
+   **Unpublish** and **Run**. Then "..." › Run must show the survey, not "This survey is not currently available."
+
 2. Run `pnpm visual:capture`. It refuses when `CI` is set (it exits non-zero), so run it in your own terminal.
 3. A browser window opens surveyjs.io. **Sign in yourself** with the dedicated account. The script never types for you.
    It waits up to ten minutes.
@@ -787,7 +793,8 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    browsers; the 3 skipped are the `history` screen, see Skipped screens below) and no `failed` or `did not run`
    line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`, `firefox/` and `webkit/` hold 17
    PNGs each (51 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed, fix the cause and
-   recapture it with `--grep <id>` first. Do not commit a partial set.
+   recapture it with `--grep <id>` first. Do not commit a partial set. The `results` screens wait for the live
+   "loading..." overlay (`#loadingIndicator`) to go. If a results screenshot still shows it, recapture that screen.
 
 6. **Review every image for personal data** before you commit. Open each PNG. No name or email of the account may
    appear. Do not commit an image that shows one.
@@ -798,9 +805,9 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
 
 A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped.
 
-| Screen    | Reason                                                                                                   | How to re-enable                                                                             |
-| --------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `history` | Live history is empty for the dedicated account (2026-10-20); find how surveyjs.io records history first | Remove `skip` from the screen in the manifest, then run `pnpm visual:capture --grep history` |
+| Screen    | Reason                                                                                            | How to re-enable                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `history` | Live history is empty on a fresh account (2026-10-20); find how surveyjs.io records history first | Remove `skip` from the screen in the manifest, then run `pnpm visual:capture --grep history` |
 
 **If something fails**
 
@@ -809,6 +816,8 @@ A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compare
 | `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                      |
 | `The page tried to write to the live site (blocked): POST …`                                                                                                                    | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry |
 | `Selectors matched nothing on live for <id>: …`                                                                                                                                 | The live page changed, or the account state differs. Tell the developers the id                                                      |
+| `Selectors matched nothing on live for run: .sd-question__title`                                                                                                                | `Customer feedback` is unpublished (the run page says "not currently available"). Publish it once, then run with `--grep run`        |
+| `Still loading on live for <id>: #loadingIndicator`                                                                                                                             | The live results page took over 30 s to load. Run again with `--grep <id>`                                                           |
 | Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                            | Delete `e2e/visual/.auth/` and run again                                                                                             |
 | One screen fails and the later screens of that browser are skipped                                                                                                              | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                        |
 
@@ -816,7 +825,10 @@ A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compare
 
 - The script deletes the sign-in state (`e2e/visual/.auth/`) when it ends. If a run was killed, delete the folder by
   hand. It is git-ignored; never commit it. `--keep-sign-in` keeps it for the next run.
-- Recapture one screen, or some, with `pnpm visual:capture --grep <id>`. The account checks run again.
+- Recapture one screen, or some, with `pnpm visual:capture --grep <id>`. The account checks run again. To recapture
+  one screen in one browser, add the project: `pnpm visual:capture --project=chromium --grep results-details`
+  (the sign-in of that browser runs first). For several screens use `--grep "results-summary|results-table"`. A
+  capture run always overwrites the screenshots it takes.
 - The script lets exactly two read-only POSTs through: `/api/CodeViewer/getfiles` (the embed code) and
   `/api/cart/calcprepare` (the renewals calculator on /manage). Every other non-GET request to surveyjs.io is aborted
   and fails the screen. Service workers are blocked, so the guard sees every request.

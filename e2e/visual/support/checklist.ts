@@ -6,7 +6,7 @@ const STEPS = [
   `My Surveys -> switch to \`${PROJECT_NAME}\` -> Create a Survey -> rename it \`Team retro\`.`,
   'Switch to Personal Surveys. Create a survey, rename it `Old poll`, then "..." -> Archive.',
   "Create `Product poll`, then `Event registration` (rename each new survey).",
-  'Create a survey, rename it `Customer feedback`, open it, paste the printed JSON in the JSON Editor tab, wait for the save, close the editor. "..." -> Publish.',
+  'Create a survey, rename it `Customer feedback`, open it, paste the printed JSON in the JSON Editor tab, wait for the save, close the editor. "..." -> Publish once, reload, and check the menu now shows Unpublish.',
   '"..." -> Run, and submit the three printed responses, one per page load.',
   '"..." -> View Results -> Details -> turn **Grant Access** on.',
   "If `Customer feedback` is not first in the list, open it in the editor and change and restore its title once.",
