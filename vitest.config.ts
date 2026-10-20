@@ -14,6 +14,7 @@ export default defineConfig({
         },
       },
       "web",
+      { test: { name: "e2e-visual", include: ["e2e/visual/**/*.test.ts"] } },
       {
         // Needs the local replica (`pnpm demo:azurite:up`). Not part of `pnpm test:unit`;
         // run with `pnpm test:providers:azurite`, which reads docker/azurite.env.
