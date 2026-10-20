@@ -34,15 +34,19 @@ import styles from "./ProjectsPage.module.css";
 export function ProjectCard({
   project,
   viewerId,
+  open,
+  onOpenChange,
   onRename,
 }: {
   project: Project;
   /** The signed-in user's id. */
   viewerId: string;
+  /** Whether the card is expanded; the page keeps it, so a rename does not collapse the card. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onRename: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // One action at a time: a second click while a request is in flight is ignored.
   const busy = useRef(false);
@@ -70,7 +74,7 @@ export function ProjectCard({
       // The project is gone, or the user is no longer in it: the list is read again.
       if (isProjectGone(failure)) void refreshProjects(queryClient);
       setError(projectErrorText(failure, action, email));
-      setOpen(true);
+      onOpenChange(true);
       return false;
     } finally {
       busy.current = false;
@@ -138,7 +142,7 @@ export function ProjectCard({
         onClick={(event) => {
           // Controlled: the card opens and closes through its state, not the browser's toggle.
           event.preventDefault();
-          setOpen((wasOpen) => !wasOpen);
+          onOpenChange(!open);
         }}
       >
         <div className="v2-class---account-page__project-summary">
@@ -194,7 +198,7 @@ export function ProjectCard({
           </div>
         )}
 
-        {controls.addMember && <AddMemberForm onAdd={add} />}
+        {controls.addMember && <AddMemberForm onAdd={add} onCancel={() => setError(null)} />}
       </div>
     </details>
   );

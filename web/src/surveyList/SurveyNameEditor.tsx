@@ -36,6 +36,8 @@ export function SurveyNameEditor({
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              // The Enter that ends an IME composition only confirms the text.
+              if (event.nativeEvent.isComposing) return;
               event.preventDefault();
               onSave(value);
             } else if (event.key === "Escape") {

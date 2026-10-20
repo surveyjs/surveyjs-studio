@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { configQueryOptions } from "../api/config";
 import { AnonymousShell } from "../shell/PlainShell";
+import { PageHeader } from "../surveyList/PageHeader";
 import { applySurveyJSLicense } from "../surveyjs/license";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -28,14 +29,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 /**
  * An address the app does not know, surveyjs.io's old ones included (they are never redirected
- * here, R22). The root renders outside the shell, so the page has none; Step 13 styles it.
+ * here, R22). The root renders outside the shell, so the page has none; it uses the site's header,
+ * paragraph and small primary button classes.
  */
 function PageNotFound() {
   return (
     <main>
-      <h1>Page not found</h1>
-      <p>This page doesn't exist or has moved.</p>
-      <Link to="/">Go to My Surveys</Link>
+      <PageHeader title="Page not found" />
+      <p className="v2-class---paragraph">This page doesn't exist or has moved.</p>
+      <Link
+        to="/"
+        className="v2-class---button v2-class---button--brand-primary v2-class---button--small"
+      >
+        <span className="v2-class---button__text v2-class---button__text--small">
+          Go to My Surveys
+        </span>
+      </Link>
     </main>
   );
 }

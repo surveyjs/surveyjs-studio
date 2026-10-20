@@ -120,6 +120,23 @@ describe("AccountMenu", () => {
       expect(names).toEqual(["Settings", "Projects", "Help Desk", "Billing", "Sign Out"]);
     });
 
+    it("closes the drop-down after the click, though the pointer is still over it", () => {
+      const { link } = renderWithProjects();
+      const item = screen.getByRole("listitem", { name: "Account" });
+      const trigger = within(item).getByRole("button", { name: /Olivia Owner/ });
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.mouseEnter(item);
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+      fireEvent.click(link);
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(item.className).toMatch(/dropDownDismissed/);
+
+      fireEvent.mouseLeave(item);
+      expect(item.className).not.toMatch(/dropDownDismissed/);
+    });
+
     it("navigates in the app on a plain click instead of loading the page", () => {
       const { navigate, link } = renderWithProjects();
 

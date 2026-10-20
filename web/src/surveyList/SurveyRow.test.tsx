@@ -120,6 +120,18 @@ describe("renaming a survey in the list", () => {
     expect(document.activeElement).toBe(pencil());
   });
 
+  it("does not save on the Enter that ends an IME composition", async () => {
+    const bodies = await renderList("/", sampleSurvey);
+
+    const box = startRename();
+    fireEvent.change(box, { target: { value: "Renamed" } });
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+
+    expect(input()).toBe(box);
+    await settle();
+    expect(bodies).toEqual([]);
+  });
+
   it("saves with the Save button", async () => {
     const bodies = await renderList("/", sampleSurvey);
 

@@ -29,6 +29,13 @@
   background-color: transparent;
 }
 
+/* A drop-down closed by a click on its item stays closed while the pointer is over it, though the
+   site's :hover would show it. */
+:global(.v2-class---top-menu-item--drop-down).dropDownDismissed
+  :global(.v2-class---drop-down-menu--popup-menu) {
+  display: none !important;
+}
+
 /* A drop-down opened from the keyboard (DropDownTopMenuItem) gets the site's :hover styles
    (top-bar/top-menu-item.scss, `.v2-class---top-menu-item--drop-down:hover`), so mouse users see
    no change. The extra class outranks the site's closed state (0,2,0). */
