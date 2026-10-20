@@ -148,18 +148,25 @@ that one warning.
 
 ## Fonts
 
-| Font             | Files                                            | Licence                                                                                                                                                         |
-| ---------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lato 2.0 (Latin) | `LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | SIL Open Font License 1.1 (© Łukasz Dziedzic): may be copied, embedded and redistributed with software.                                                         |
-| DM Mono          | `DMMono-Regular.woff2`                           | SIL Open Font License 1.1 (© The DM Mono Project Authors). Declared by the copied `fonts.scss`; the shell itself never uses it, so browsers do not download it. |
+All five families are under the SIL Open Font License 1.1 (OFL): they may be copied, embedded and
+redistributed with software, and the licence text travels with the files. Each directory holds one
+`OFL-<Family>.txt` per family, with that family's copyright line and the full licence.
 
-The site serves these files itself, and so does the shell (bundled by Vite). The site also loads
-**Raleway** and **Open Sans** from Google Fonts. The shell does not: it makes no runtime calls to
-third parties, and the legacy source has no copies of those files. Raleway only styles legacy page
-classes the shell does not use. Open Sans is the second choice after Lato in the site's font stack
-and the `body` font of `common-styles.scss`, so page text outside the shell's elements falls back to
-Helvetica Neue / Helvetica / Arial. Step 13 (visual parity) decides whether to self-host Open Sans
-(it is licensed under the SIL OFL 1.1, so that is allowed).
+| Font                       | Files                                                     | Version | Copyright and licence                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lato (Latin)               | `Fonts/V2/LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | 2.015   | © 2011-2015 tyPoland Łukasz Dziedzic, Reserved Font Name "Lato". `Fonts/V2/OFL-Lato.txt`.                                                                    |
+| DM Mono                    | `Fonts/V2/DMMono-Regular.woff2`                           | 1.000   | © 2020 The DM Mono Project Authors. `Fonts/V2/OFL-DMMono.txt`. Declared by the copied `fonts.scss`; the shell never uses it, so browsers do not download it. |
+| Open Sans (variable, wght) | `Fonts/Google/OpenSans-latin.woff2`, latin subset         | 3.003   | © 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans). `Fonts/Google/OFL-OpenSans.txt`.                                             |
+| Raleway (variable, wght)   | `Fonts/Google/Raleway-latin.woff2`, latin subset          | 4.026   | © 2010 The Raleway Project Authors (impallari@gmail.com), Reserved Font Name "Raleway". `Fonts/Google/OFL-Raleway.txt`.                                      |
+
+Lato and DM Mono are copies of the site's own files. Open Sans and Raleway are not in the legacy
+source: the site loads them from Google Fonts (`the site's page markup`). The two files here are
+the unmodified latin-subset woff2 files that the Google Fonts CSS API serves for those families
+(`fonts.googleapis.com/css`, then `fonts.gstatic.com`), downloaded on 2026-10-20 (Step 13). The
+shell and the app declare them in `surveyjs-site.scss`, bundled by Vite, so they make no runtime
+call to Google. Open Sans is the `body` font of `common-styles.scss`; Raleway styles the results
+page headings. Letters outside the latin subset fall back to Helvetica Neue / Helvetica / Arial.
+Reserved Font Names: the files keep their original names and are not modified.
 
 ## Left out on purpose
 
@@ -214,8 +221,8 @@ Changes and additions:
 - The tabs are links to `?tab=summary|table|details` (the summary without `tab`), not the site's
   `#summary`, `#table` and `#info` hash; the active one also has `aria-current="page"`. Only the active
   tab's body is rendered.
-- The Reset texts are `p.v2-class---paragraph` without the site's `role="alert"` (static text is not a
-  live region). After a reset the page shows "The table layout is reset." or "The summary layout is
+- The Reset texts are plain `div`s, as on the site, without the site's `role="alert"` (static text
+  is not a live region). After a reset the page shows "The table layout is reset." or "The summary layout is
   reset." (or "The layout was not reset. Please try again.") instead of reloading.
 - The page shows the site's "My Surveys. Results" heading (`h3.survey-results-page__title`) and the
   survey name under it; the name is an `h1` styled as the site's description span, so it stays the
@@ -227,10 +234,7 @@ Changes and additions:
   `the site's source`, byte-order mark removed), imported after
   `my-surveys.scss`. The Details tab body has the site's `#resultsInfo` id (its flex rule needs it)
   and the Summary body `#summaryContainer`. The Reset texts are plain `div`s, and the Delete Results
-  confirmation block (`#ctrlClearAll`) is always laid out and collapsed until opened, as on the site.
-- Step 13: `site/Content/Fonts/Google/` holds the latin subset of Raleway and Open Sans, the two
-  families the site's `the site's page markup` loads from Google Fonts (SIL Open Font License). They are
-  declared in `surveyjs-site.scss`; the app makes no request to Google.
+  confirmation block (`#ctrlClearAll`) is always laid out and hidden (`visibility: hidden`) until opened (the site uses `visibility: collapse`; `hidden` takes the same room and keeps the block out of the accessibility tree).
 - The loading, load-failure, save-failure and export-failure texts are the app's own; the texts inside
   the charts and the table come from survey-analytics.
 

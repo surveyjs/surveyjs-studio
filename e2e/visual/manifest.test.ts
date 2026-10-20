@@ -122,17 +122,10 @@ describe("the screen manifest", () => {
       const showsHeader =
         screen.id !== "run" && screen.id !== "public-results" && !screen.live.target;
       if (screen.id === "public-results") {
-        // the live page shows the header, the app page has none: optional header normalizations
-        for (const header of HEADER_NORMALIZATIONS) {
-          expect(screen.normalize ?? [], screen.id).toContainEqual(
-            expect.objectContaining({
-              live: header.live,
-              app: header.app,
-              text: header.text,
-              optional: true,
-            }),
-          );
-        }
+        // ADR 0016 R19: the app page has no shell, so the live header and footer are hidden
+        const hidden = (screen.live.hide ?? []).map((item) => item.selector);
+        expect(hidden, screen.id).toContain("header.v2-class---top-bar");
+        expect(hidden, screen.id).toContain("footer.v2-class---footer");
       }
       if (!showsHeader) continue;
       for (const header of HEADER_NORMALIZATIONS) {

@@ -501,9 +501,14 @@ describe("the Details tab: Delete Results", () => {
     const { count: requestCount } = record();
     renderApp(`${path}?tab=details`);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Results" }));
+    const deleteResults = await screen.findByRole("button", { name: "Delete Results" });
+    // The block is laid out but hidden until the toggle is clicked: out of the accessibility tree.
+    expect(screen.queryByRole("textbox", { name: "Type the survey name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear All Data" })).toBeNull();
+    fireEvent.click(deleteResults);
 
     expect(screen.getByText(DELETE_WARNING)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Type the survey name" })).toBeTruthy();
     const clear = screen.getByRole("button", { name: "Clear All Data" });
     expect(clear.hasAttribute("disabled")).toBe(true);
     const input = screen.getByPlaceholderText("Type the survey name");

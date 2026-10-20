@@ -836,15 +836,16 @@ A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compare
   (`expiredNotificationDateTime`, `expiresSoonNotificationDateTime`, `isTourRejected` and
   `isInformedAboutCookieAndPolicies`). The cookie banner shows only on the `shell-cookie-banner` screen.
 - The live public results page works only with **Grant Access** on (checklist step 8). It shows the site header and the
-  1,000-responses warning; the app's page has no shell. The visual tasks handle that.
+  1,000-responses warning; the app's page has no shell (ADR 0016 R19), so the live header and footer are hidden.
 - Recapture after a Playwright upgrade or a deliberate change of the live site. Each recapture adds a few MB to git.
 
 ### Accepted differences
 
 Each difference the team accepts instead of fixing is one row. The visual fix tasks fill this table.
 
-| Screen | What | Category | Reason |
-| ------ | ---- | -------- | ------ |
+| Screen           | What                                                                        | Category  | Reason                                                  |
+| ---------------- | --------------------------------------------------------------------------- | --------- | ------------------------------------------------------- |
+| `public-results` | The live site header (both top bars) and footer are hidden on the live side | departure | ADR 0016 R19: the public results page has no site shell |
 
 ## Provider suite
 

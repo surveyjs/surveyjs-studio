@@ -166,6 +166,25 @@ const RESULTS_HIDE_LIVE: readonly Adjustment[] = [
     category: "departure",
   },
 ];
+// The live public results page is the results partial inside the site layout. The app's public page
+// has no site shell (ADR 0016 R19), so the live header (both top bars) and footer are hidden.
+const PUBLIC_SHELL_HIDE_LIVE: readonly Adjustment[] = [
+  {
+    selector: "header.v2-class---top-bar",
+    reason: "ADR 0016 R19: the public results page has no site shell",
+    category: "departure",
+  },
+  {
+    selector: "footer.v2-class---footer",
+    reason: "ADR 0016 R19: the public results page has no site shell",
+    category: "departure",
+  },
+  {
+    selector: '.tabs__tab-wrapper:has(> a[href="#info"])',
+    reason: "ADR 0016 R19: the public results page has no Details tab",
+    category: "departure",
+  },
+];
 const DASHBOARD_BANNER_HIDE_APP: readonly Adjustment[] = [
   {
     selector: DASHBOARD_LICENCE,
@@ -425,20 +444,13 @@ export const SCREENS: readonly Screen[] = [
       path: "/Results/Survey/{feedbackResultId}",
       ready: CHARTS_READY,
       idle: RESULTS_IDLE_LIVE,
-      hide: RESULTS_HIDE_LIVE,
+      hide: [...RESULTS_HIDE_LIVE, ...PUBLIC_SHELL_HIDE_LIVE],
     },
     app: {
       path: "/results/{feedbackId}",
       ready: CHARTS_READY,
       hide: DASHBOARD_BANNER_HIDE_APP,
     },
-    // The live page is the results partial with the site header; the app's public page has no
-    // shell (routes/results/$surveyId.tsx), so the app side matches nothing. Parity lead for Task 9.
-    normalize: HEADER_NORMALIZATIONS.map((item) => ({
-      ...item,
-      optional: true,
-      reason: `${item.reason}; the app's public results page has no site header`,
-    })),
     maxDiffPixelRatio: 0.02,
   },
 ];

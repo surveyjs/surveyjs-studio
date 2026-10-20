@@ -216,7 +216,7 @@ function DeleteResults({ survey, hasResults }: { survey: Survey; hasResults: boo
             Delete Results
           </button>
           {/* Always laid out, as on the site, so the sections below keep their place. */}
-          <div id="ctrlClearAll" style={{ visibility: open ? "visible" : "collapse" }}>
+          <div id="ctrlClearAll" style={{ visibility: open ? "visible" : "hidden" }}>
             <div>
               <div>Deletes all survey results without the possibility to restore.</div>
               <div>
