@@ -685,13 +685,14 @@ never touches the functional servers.
 | ------------------- | ----------------------------------------------------------------------------- |
 | `id`                | The image name, in kebab-case                                                 |
 | `group`, `kind`     | `list`, `pages` or `results`; `page`, `element` or `library` (the threshold)  |
-| `live`, `app`       | Per side: `path`, `steps`, `ready`, `target`, `hide`, `mask`                  |
+| `live`, `app`       | Per side: `path`, `steps`, `ready`, `idle`, `target`, `hide`, `mask`          |
 | `normalize`         | Text set to the same fixed value on both sides (dates, names, the star count) |
 | `maxDiffPixelRatio` | The share of pixels that may differ                                           |
 | `thresholdReason`   | Required when the ratio is above the kind's default                           |
 | `cookieBanner`      | `true` when the consent flag must not be preset                               |
 
-A step is a `click` or a `hover` and nothing else. Every hide, mask and normalization has a non-empty `reason` and a
+`idle` is a selector (a loading overlay) that must be hidden or gone before the shot; a timeout fails with
+`Still loading on <side> for <id>: …`. A step is a `click` or a `hover` and nothing else. Every hide, mask and normalization has a non-empty `reason` and a
 category (see [the acceptance rule](#the-acceptance-rule)). A selector that matches nothing fails the screen with
 `Selectors matched nothing on <side> for <id>: …`, unless it is marked `optional`.
 

@@ -18,6 +18,7 @@ export interface SideSpec {
   readonly path: string; // starts with "/"; placeholders {feedbackId} {feedbackResultId} {projectId}
   readonly steps?: readonly Step[];
   readonly ready: string; // visible before steps and before the shot
+  readonly idle?: string; // must be hidden or gone after the steps and before the shot (a loading overlay)
   readonly target?: string; // element shot; absent = the 1440x900 viewport
   readonly hide?: readonly Adjustment[]; // display: none !important
   readonly mask?: readonly Adjustment[]; // Playwright mask (pink box)
@@ -154,6 +155,10 @@ const EDITOR_HIDE_APP: readonly Adjustment[] = [
   },
 ];
 
+// The legacy results page shows this overlay (the site's page markup) while it loads; its content is
+// already in the DOM beneath it. The app has no confirmed equivalent, so the app side sets no idle.
+const RESULTS_IDLE_LIVE = "#loadingIndicator";
+
 const RESULTS_HIDE_LIVE: readonly Adjustment[] = [
   {
     selector: ".survey-results-page__warning",
@@ -176,7 +181,7 @@ const resultsSide = (
   appPath: string,
   ready: { live: string; app: string },
 ): Pick<Screen, "live" | "app"> => ({
-  live: { path: livePath, ready: ready.live, hide: RESULTS_HIDE_LIVE },
+  live: { path: livePath, ready: ready.live, idle: RESULTS_IDLE_LIVE, hide: RESULTS_HIDE_LIVE },
   app: { path: appPath, ready: ready.app, hide: DASHBOARD_BANNER_HIDE_APP },
 });
 
@@ -396,6 +401,7 @@ export const SCREENS: readonly Screen[] = [
     live: {
       path: "/Service/SurveyResults/{feedbackId}#info",
       ready: DETAILS_READY,
+      idle: RESULTS_IDLE_LIVE,
       hide: RESULTS_HIDE_LIVE,
     },
     app: { path: "/surveys/{feedbackId}/results?tab=details", ready: DETAILS_READY },
@@ -418,6 +424,7 @@ export const SCREENS: readonly Screen[] = [
     live: {
       path: "/Results/Survey/{feedbackResultId}",
       ready: CHARTS_READY,
+      idle: RESULTS_IDLE_LIVE,
       hide: RESULTS_HIDE_LIVE,
     },
     app: {

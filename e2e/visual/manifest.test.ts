@@ -35,6 +35,14 @@ describe("the screen manifest", () => {
     expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual(["history"]);
   });
 
+  it("gives every idle selector a value", () => {
+    for (const screen of SCREENS) {
+      for (const [side, spec] of sides(screen)) {
+        if (spec.idle !== undefined) expect(spec.idle.trim(), `${screen.id} ${side}`).not.toBe("");
+      }
+    }
+  });
+
   it("groups and classifies the screens as the plan does", () => {
     expect(SCREENS.map((s) => [s.id, s.group, s.kind])).toEqual([
       ["list-active", "list", "page"],

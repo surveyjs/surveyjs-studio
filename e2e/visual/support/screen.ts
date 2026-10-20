@@ -172,6 +172,14 @@ export async function openScreen(
     else await (await visible(step.hover, "step ")).hover();
   }
 
+  if (spec.idle !== undefined) {
+    try {
+      await page.locator(spec.idle).first().waitFor({ state: "hidden", timeout: STEP_TIMEOUT });
+    } catch (error) {
+      throw new Error(`Still loading on ${side} for ${screen.id}: ${spec.idle}`, { cause: error });
+    }
+  }
+
   await waitForAdjustments(page, screen, side);
 
   await page.addStyleTag({ content: hideCss(spec) });
