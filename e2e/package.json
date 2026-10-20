@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node scripts/run.mjs",
+    "test:visual": "node scripts/visual.mjs",
     "test:azurite": "node scripts/run.mjs --config playwright.azurite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

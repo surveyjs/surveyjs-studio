@@ -129,10 +129,12 @@ const ROW_MENU_LIVE: readonly Step[] = [
 ];
 const ROW_MENU_APP: readonly Step[] = [
   { hover: FEEDBACK_ROW },
-  { click: `${FEEDBACK_ROW} button[aria-label="Survey actions"]` },
+  { click: `${FEEDBACK_ROW} [role="button"][aria-label="Survey actions"]` },
 ];
 
 const EDITOR_READY = ".svc-creator .svc-question__content";
+// The Embed Survey tab replaces the designer, so its ready selector must outlive the tab switch.
+const EMBED_READY = ".svc-creator .svc-tabbed-menu";
 const EDITOR_HIDE_APP: readonly Adjustment[] = [
   {
     selector: ".svc-creator__banner",
@@ -264,13 +266,13 @@ export const SCREENS: readonly Screen[] = [
     kind: "library",
     live: {
       path: "/Service/EditSurvey/{feedbackId}",
-      ready: EDITOR_READY,
+      ready: EMBED_READY,
       steps: EMBED_STEPS_LIVE,
       mask: [EMBED_CODE_MASK],
     },
     app: {
       path: "/surveys/{feedbackId}/edit",
-      ready: EDITOR_READY,
+      ready: EMBED_READY,
       steps: EMBED_STEPS_APP,
       hide: EDITOR_HIDE_APP,
       mask: [EMBED_CODE_MASK],

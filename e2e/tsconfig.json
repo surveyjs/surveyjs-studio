@@ -5,6 +5,7 @@
     "app-variables.d.mts",
     "playwright.config.ts",
     "playwright.azurite.config.ts",
+    "playwright.visual.config.ts",
     "tests",
     "visual"
   ]
