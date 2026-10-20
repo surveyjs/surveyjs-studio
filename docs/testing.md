@@ -758,8 +758,7 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
 - A Windows machine with the repository installed (`pnpm install`; see [Development](development.md#setup)).
 - **Node 24.** If your default `node` is older (for example with nvm), put Node 24 first once in each terminal window,
   before any `pnpm` command. In Git Bash: `export PATH="$APPDATA/nvm/v24.21.0:$PATH"`. In PowerShell:
-  `$env:PATH = "$env:APPDATA
-vm24.21.0;$env:PATH"`. Check with `node --version`; it must print `v24.21.0`. Run every
+  `$env:PATH = "$env:APPDATA\nvm\v24.21.0;$env:PATH"`. Check with `node --version`; it must print `v24.21.0`. Run every
   command below in that window.
 - The three browsers: `pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`
 - A **dedicated surveyjs.io account**: not a site administrator, no licence, an empty cart, no other surveys or
