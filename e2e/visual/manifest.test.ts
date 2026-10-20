@@ -82,7 +82,9 @@ describe("the screen manifest", () => {
       const all = [
         ...sides(screen).flatMap(([, spec]) => adjustments(spec)),
         ...(screen.normalize ?? []),
+        ...(screen.residual ?? []),
       ];
+      for (const item of screen.residual ?? []) expect(item.what.trim(), screen.id).not.toBe("");
       for (const item of all) {
         expect(item.reason.trim(), screen.id).not.toBe("");
         expect(CATEGORIES.has(item.category), screen.id).toBe(true);
@@ -147,5 +149,31 @@ describe("the screen manifest", () => {
       library: { default: 0.02, cap: 0.05 },
     });
     expect(LIVE_ORIGIN).toBe("https://surveyjs.io");
+  });
+
+  it("records the results pages' known differences", () => {
+    const byId = (id: string) => SCREENS.find((screen) => screen.id === id)!;
+    const selectors = (items: readonly Adjustment[] | undefined) =>
+      (items ?? []).map((item) => item.selector);
+    const submittedCard = '.sa-question[data-question="HappendAt"]';
+    // ADR 0015 R13: the live Dashboard draws a Submitted card, the app's Summary has none.
+    for (const id of ["results-summary", "public-results"]) {
+      expect(selectors(byId(id).live.hide), id).toContain(submittedCard);
+    }
+    // The app's "Back to My Surveys" link has no live counterpart.
+    for (const id of ["results-summary", "results-table", "results-details"]) {
+      expect(
+        selectors(byId(id).app.hide).some((s) => s.includes("v2-class---paragraph-link")),
+        id,
+      ).toBe(true);
+    }
+    // ADR 0015 R3: the table's rows are in another order; the Submitted cells are live data.
+    const table = byId("results-table");
+    expect(table.residual?.map((item) => item.reason)).toEqual([
+      "ADR 0015 R3: the app sorts the responses by (submittedAt, id)",
+    ]);
+    expect(table.normalize?.map((item) => item.app)).toContain(
+      '.tabulator-row .tabulator-cell[tabulator-field="HappendAt"]',
+    );
   });
 });

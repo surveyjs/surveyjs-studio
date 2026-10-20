@@ -107,7 +107,8 @@ test.beforeAll(async ({ browser }, testInfo) => {
       else problems.push(`${FEEDBACK_NAME}: no survey id found`);
       if (resultId) next.feedbackResultId = resultId;
       else problems.push(`${FEEDBACK_NAME}: no result id found`);
-      // Not a problem: on live the flag stays false after Publish; it is recorded in states.json.
+      // Not a problem: on live the survey may list as unpublished after Publish; the capture records
+      // the flag in states.json.
       states.feedbackPublished = published?.toLowerCase() === "true";
     });
 

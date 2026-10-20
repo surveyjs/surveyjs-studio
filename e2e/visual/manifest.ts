@@ -33,6 +33,16 @@ export interface Normalization {
   readonly optional?: boolean; // may match nothing on a side (default: must match at least one element)
 }
 
+/**
+ * A difference left in the image: nothing hides, masks or normalizes it, and it fits within the
+ * screen's `maxDiffPixelRatio`. It is recorded so every accepted difference has an entry.
+ */
+export interface Residual {
+  readonly what: string;
+  readonly reason: string; // non-empty
+  readonly category: Category;
+}
+
 export interface Screen {
   readonly id: string; // kebab-case; the PNG name
   readonly group: "list" | "pages" | "results"; // fix-task split; describe block name
@@ -41,6 +51,7 @@ export interface Screen {
   readonly live: SideSpec;
   readonly app: SideSpec;
   readonly normalize?: readonly Normalization[];
+  readonly residual?: readonly Residual[];
   readonly maxDiffPixelRatio: number;
   readonly thresholdReason?: string; // required when above the kind's default
   readonly skip?: string; // non-empty reason: the screen is neither captured nor compared
@@ -61,7 +72,8 @@ export const HEADER_NORMALIZATIONS: readonly Normalization[] = [
     live: ".v2-class---top-menu-item--drop-down-account .v2-class---top-menu-item__text",
     app: ".v2-class---top-menu-item--drop-down-account .v2-class---top-menu-item__text",
     text: "Account",
-    reason: "Step 3 shows the user's name; the accounts differ",
+    reason:
+      "Step 3 shows the user's name where live shows the constant Account (open: ADR 0020 › To confirm)",
     category: "departure",
   },
   {
@@ -75,8 +87,8 @@ export const HEADER_NORMALIZATIONS: readonly Normalization[] = [
 
 const LIST_ITEM = ".v2-class---my-surveys-page__list-item";
 const SURVEY_DATE = ".v2-class---my-surveys-page__survey-date-item-text";
-// The row menus open on Product poll, unpublished on both sides: on live, Customer feedback never
-// lists as published (a null flag runs but lists as unpublished), so its menu items would differ.
+// The row menus open on Product poll, unpublished on both sides: on live, Customer feedback may list
+// as unpublished (the capture records its flag in states.json), so its menu items could differ.
 const MENU_ROW = `${LIST_ITEM}:has-text("Product poll")`;
 const SELECTOR_TRIGGER_APP = ".v2-class---drop-down-button__selected-item-button";
 const SURVEY_IDS = '.v2-class---drop-down-menu-item__text:text-is("Survey IDs")';
@@ -166,6 +178,20 @@ const RESULTS_HIDE_LIVE: readonly Adjustment[] = [
     category: "departure",
   },
 ];
+// Legacy adds the submission time as a hidden question named HappendAt, so the live Dashboard draws
+// a "Submitted" card (the Dashboard's question element carries the name in data-question).
+const SUBMITTED_CARD_HIDE_LIVE: Adjustment = {
+  selector: '.sa-question[data-question="HappendAt"]',
+  reason:
+    "ADR 0015 R13: Submitted is a table-only column, so the app's Summary has no Submitted card",
+  category: "departure",
+};
+// The app's own way back to the list (results.module.css .back); surveyjs.io has none.
+const BACK_LINK_HIDE_APP: Adjustment = {
+  selector: ".survey-results-page > p.v2-class---paragraph:has(> a.v2-class---paragraph-link)",
+  reason: "app navigation link, no live counterpart (Step 9)",
+  category: "departure",
+};
 // The live public results page is the results partial inside the site layout. The app's public page
 // has no site shell (ADR 0016 R19), so the live header (both top bars) and footer are hidden.
 const PUBLIC_SHELL_HIDE_LIVE: readonly Adjustment[] = [
@@ -199,10 +225,23 @@ const resultsSide = (
   livePath: string,
   appPath: string,
   ready: { live: string; app: string },
+  liveHide: readonly Adjustment[] = [],
 ): Pick<Screen, "live" | "app"> => ({
-  live: { path: livePath, ready: ready.live, idle: RESULTS_IDLE_LIVE, hide: RESULTS_HIDE_LIVE },
-  app: { path: appPath, ready: ready.app, hide: DASHBOARD_BANNER_HIDE_APP },
+  live: {
+    path: livePath,
+    ready: ready.live,
+    idle: RESULTS_IDLE_LIVE,
+    hide: [...RESULTS_HIDE_LIVE, ...liveHide],
+  },
+  app: {
+    path: appPath,
+    ready: ready.app,
+    hide: [...DASHBOARD_BANNER_HIDE_APP, BACK_LINK_HIDE_APP],
+  },
 });
+
+/** The table's Submitted cells (legacy and app both use the data name HappendAt). */
+const SUBMITTED_CELLS = '.tabulator-row .tabulator-cell[tabulator-field="HappendAt"]';
 
 export const SCREENS: readonly Screen[] = [
   {
@@ -394,6 +433,7 @@ export const SCREENS: readonly Screen[] = [
         live: CHARTS_READY,
         app: CHARTS_READY,
       },
+      [SUBMITTED_CARD_HIDE_LIVE],
     ),
     normalize: HEADER_NORMALIZATIONS,
     maxDiffPixelRatio: 0.02,
@@ -410,7 +450,23 @@ export const SCREENS: readonly Screen[] = [
         app: TABLE_READY,
       },
     ),
-    normalize: HEADER_NORMALIZATIONS,
+    normalize: [
+      ...HEADER_NORMALIZATIONS,
+      {
+        live: SUBMITTED_CELLS,
+        app: SUBMITTED_CELLS,
+        text: "2026-01-01T00:00:00.000Z",
+        reason: "the submission times are the moments the data was created",
+        category: "live-data",
+      },
+    ],
+    residual: [
+      {
+        what: "the rows' order: live lists the responses in storage order, the app by submission time",
+        reason: "ADR 0015 R3: the app sorts the responses by (submittedAt, id)",
+        category: "departure",
+      },
+    ],
     maxDiffPixelRatio: 0.02,
   },
   {
@@ -423,7 +479,11 @@ export const SCREENS: readonly Screen[] = [
       idle: RESULTS_IDLE_LIVE,
       hide: RESULTS_HIDE_LIVE,
     },
-    app: { path: "/surveys/{feedbackId}/results?tab=details", ready: DETAILS_READY },
+    app: {
+      path: "/surveys/{feedbackId}/results?tab=details",
+      ready: DETAILS_READY,
+      hide: [BACK_LINK_HIDE_APP],
+    },
     normalize: [
       ...HEADER_NORMALIZATIONS,
       {
@@ -444,7 +504,7 @@ export const SCREENS: readonly Screen[] = [
       path: "/Results/Survey/{feedbackResultId}",
       ready: CHARTS_READY,
       idle: RESULTS_IDLE_LIVE,
-      hide: [...RESULTS_HIDE_LIVE, ...PUBLIC_SHELL_HIDE_LIVE],
+      hide: [...RESULTS_HIDE_LIVE, ...PUBLIC_SHELL_HIDE_LIVE, SUBMITTED_CARD_HIDE_LIVE],
     },
     app: {
       path: "/results/{feedbackId}",

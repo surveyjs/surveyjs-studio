@@ -59,7 +59,10 @@ export interface VisualStates {
   capturedAt?: string;
   playwright?: string;
   historyEntries: number;
-  /** Whether the live `Customer feedback` lists as published (it stays false on live). */
+  /**
+   * Whether the live `Customer feedback` lists as published. It may list as unpublished after
+   * Publish; the capture records it.
+   */
   feedbackPublished?: boolean;
   liveVersions: Record<string, string | null>;
 }
