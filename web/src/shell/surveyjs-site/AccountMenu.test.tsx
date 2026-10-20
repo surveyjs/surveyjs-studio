@@ -137,6 +137,21 @@ describe("AccountMenu", () => {
       expect(item.className).not.toMatch(/dropDownDismissed/);
     });
 
+    it("opens again from the keyboard after an item was activated", () => {
+      const { link } = renderWithProjects();
+      const item = screen.getByRole("listitem", { name: "Account" });
+      const trigger = within(item).getByRole("button", { name: /Olivia Owner/ });
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.click(link);
+      expect(item.className).toMatch(/dropDownDismissed/);
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(item.className).not.toMatch(/dropDownDismissed/);
+      expect(item.className).toMatch(/dropDownOpen/);
+    });
+
     it("navigates in the app on a plain click instead of loading the page", () => {
       const { navigate, link } = renderWithProjects();
 

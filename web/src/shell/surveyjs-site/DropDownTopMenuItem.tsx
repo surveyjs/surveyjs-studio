@@ -84,9 +84,11 @@ export function DropDownTopMenuItem({
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
+            setDismissed(false);
             setOpen((wasOpen) => !wasOpen);
           } else if (event.key === "ArrowDown") {
             event.preventDefault();
+            setDismissed(false);
             setOpen(true);
           }
         }}
