@@ -14,14 +14,16 @@ describe("isLiveWrite", () => {
     expect(isLiveWrite("delete", "https://auth.surveyjs.io/x")).toBe(true);
   });
 
-  it("does not count a write to another host", () => {
-    expect(isLiveWrite("POST", "https://www.google-analytics.com/collect")).toBe(false);
-    expect(isLiveWrite("POST", "https://evil-surveyjs.io/x")).toBe(false);
-    expect(isLiveWrite("POST", "https://surveyjs.io.example.com/x")).toBe(false);
+  it("counts a write to any other host too", () => {
+    expect(isLiveWrite("POST", "https://www.google-analytics.com/collect")).toBe(true);
+    expect(isLiveWrite("POST", "https://evil-surveyjs.io/x")).toBe(true);
+    expect(isLiveWrite("PATCH", "https://surveyjs.io.example.com/x")).toBe(true);
+    expect(isLiveWrite("GET", "https://cdn.example.com/x.js")).toBe(false);
   });
 
-  it("does not throw on a URL it cannot parse", () => {
-    expect(isLiveWrite("POST", "not a url")).toBe(false);
+  it("counts a write to a URL it cannot parse, without throwing", () => {
+    expect(isLiveWrite("POST", "not a url")).toBe(true);
+    expect(isLiveWrite("GET", "not a url")).toBe(false);
   });
 });
 

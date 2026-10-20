@@ -76,8 +76,16 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "CallExpression[callee.property.name=/^(fill|type|press|pressSequentially|check|uncheck|setChecked|selectOption|setInputFiles|dragTo|dispatchEvent|tap|dblclick|post|put|patch|delete|fetch)$/]",
+            "CallExpression[callee.property.name=/^(fill|type|press|pressSequentially|check|uncheck|setChecked|selectOption|setInputFiles|dragTo|dispatchEvent|tap|dblclick|post|put|patch|delete|fetch|insertText|submit|requestSubmit|sendBeacon)$/]",
           message: "The surveyjs.io capture is read only: navigate, hover and click only.",
+        },
+        {
+          selector: 'CallExpression[callee.name="fetch"]',
+          message: "The surveyjs.io capture is read only: no direct requests.",
+        },
+        {
+          selector: 'NewExpression[callee.name="XMLHttpRequest"]',
+          message: "The surveyjs.io capture is read only: no direct requests.",
         },
       ],
     },

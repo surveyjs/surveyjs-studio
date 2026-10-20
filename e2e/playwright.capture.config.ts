@@ -19,6 +19,9 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 15_000 },
   reporter: "list",
+  // Traces, screenshots and diffs of failed captures show live pages of the account: they go to the
+  // git-ignored visual/.auth/ folder, which the runner deletes with the sign-in state.
+  outputDir: "visual/.auth/test-results",
   projects: [
     ...VISUAL_PROJECTS.map((project) => ({
       name: `signin-${project.name}`,

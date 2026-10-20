@@ -39,13 +39,15 @@ function isHostOrSubdomain(host: string, domain: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
-/** True for any method other than GET, HEAD or OPTIONS to `surveyjs.io` or a subdomain. */
+/**
+ * True for any method other than GET, HEAD or OPTIONS, to any host: surveyjs.io, its subdomains and
+ * every other site the live pages call. Only the reading POSTs of `LIVE_READ_ALLOWLIST` pass.
+ */
 export function isLiveWrite(method: string, url: string): boolean {
   if (SAFE_METHODS.has(method.toUpperCase())) return false;
-  if (method.toUpperCase() === "POST" && LIVE_READ_ALLOWLIST.some((allowed) => allowed.test(url)))
-    return false;
-  const host = hostOf(url);
-  return host !== undefined && isHostOrSubdomain(host, "surveyjs.io");
+  return !(
+    method.toUpperCase() === "POST" && LIVE_READ_ALLOWLIST.some((allowed) => allowed.test(url))
+  );
 }
 
 /** True for the analytics and advertising hosts the live pages load; their requests are not the site's. */
