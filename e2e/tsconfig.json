@@ -6,6 +6,7 @@
     "playwright.config.ts",
     "playwright.azurite.config.ts",
     "playwright.visual.config.ts",
+    "playwright.capture.config.ts",
     "tests",
     "visual"
   ]

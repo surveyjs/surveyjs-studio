@@ -77,6 +77,26 @@ async function failIfUnmatched(page: Page, screen: Screen, side: Side): Promise<
   }
 }
 
+/**
+ * Waits (within the step timeout) for every required hide, mask, normalization and target selector
+ * to be attached. Parts of a page appear late (the live Embed tab shows "Loading..." until a request
+ * returns). A selector that never appears is reported by `failIfUnmatched`, not here.
+ */
+async function waitForAdjustments(page: Page, screen: Screen, side: Side): Promise<void> {
+  const deadline = Date.now() + STEP_TIMEOUT;
+  const selectors = checksOf(screen, side)
+    .filter((check) => !check.optional && check.kind !== "ready" && check.kind !== "step")
+    .map((check) => check.selector);
+  for (const selector of new Set(selectors)) {
+    const remaining = Math.max(deadline - Date.now(), 1);
+    try {
+      await page.locator(selector).first().waitFor({ state: "attached", timeout: remaining });
+    } catch {
+      // reported with every other missing selector by failIfUnmatched
+    }
+  }
+}
+
 /** Sets the text of every match now, and again whenever the page changes it back (React re-renders). */
 async function normalizeTexts(
   page: Page,
@@ -151,6 +171,8 @@ export async function openScreen(
     if ("click" in step) await (await visible(step.click)).click();
     else await (await visible(step.hover)).hover();
   }
+
+  await waitForAdjustments(page, screen, side);
 
   await page.addStyleTag({ content: hideCss(spec) });
   await normalizeTexts(
