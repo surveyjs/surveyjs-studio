@@ -297,16 +297,19 @@ export function surveyEmbedCode(options: {
       platform === "angular" ? "\nng generate component survey" : "",
     ),
   ];
+  // As on surveyjs.io: the component's file first, then the survey's data files.
+  const data: CodeBlock[] = [];
   if (service) {
     const surveyUrl = `${options.origin}/api/v1/public/surveys/${encodeURIComponent(options.surveyId)}`;
-    blocks.push(serviceFile(platform, surveyUrl));
+    data.push(serviceFile(platform, surveyUrl));
   } else {
-    blocks.push(jsonFile(platform, "json", "json", options.definition));
-    if (hasTheme) blocks.push(jsonFile(platform, "theme", "themeJson", options.theme));
+    data.push(jsonFile(platform, "json", "json", options.definition));
+    if (hasTheme) data.push(jsonFile(platform, "theme", "themeJson", options.theme));
   }
   if (platform === "react") blocks.push(reactSurvey(service, hasTheme));
   else if (platform === "angular") blocks.push(...angularSurvey(service, hasTheme));
   else blocks.push(...vanillaSurvey(service, hasTheme));
+  blocks.push(...data);
   return blocks;
 }
 

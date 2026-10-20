@@ -1,9 +1,9 @@
 // The "Embed Survey" and "Embed Creator" tabs of surveyjs.io's editor (Scripts/Models/embed-tab.tsx):
 // their names, titles, icons, texts and class names are the site's (D14); the component is our own.
-// The settings are in the tab itself, not in the Creator's sidebar. Part of the Creator chunk.
-import { createElement, useState } from "react";
-import { Base, Version } from "survey-core";
-import type { ICreatorPlugin } from "survey-creator-core";
+// The settings are in the Creator's sidebar, as on the site. Part of the Creator chunk.
+import { createElement, useEffect, useState } from "react";
+import { Base, Serializer, Version } from "survey-core";
+import { propertyGridCss, type ICreatorPlugin } from "survey-creator-core";
 import type { SurveyCreator } from "survey-creator-react";
 import { ReactElementFactory, SvgIcon } from "survey-react-ui";
 import "../../shell/surveyjs-site/assets/site/Content/Styles/pages/create-free-survey/embedded-tab.scss";
@@ -20,27 +20,129 @@ import styles from "./EmbedTab.module.css";
 
 type Product = "survey" | "creator";
 
-/** What one Embed tab shows; the choices stay while the editor is open. */
+/** The sidebar's settings survey (Scripts/Models/embed-tab.tsx): platform, display method, service. */
+function createSettingsSurvey(creator: SurveyCreator, product: Product, canLoad: boolean) {
+  const creatorTab = product === "creator";
+  const survey = creator.createSurvey(
+    {
+      showNavigationButtons: "none",
+      showPageTitles: false,
+      focusFirstQuestionAutomatic: false,
+      showQuestionNumbers: "off",
+      elements: [
+        {
+          type: "panel",
+          name: "root",
+          elements: [
+            {
+              type: "dropdown",
+              name: "platform",
+              defaultValue: DEFAULT_PLATFORM,
+              title: "Select Platform",
+              allowClear: false,
+              descriptionLocation: "hidden",
+              inputFieldComponent: "dropdown-custom-input",
+              searchEnabled: false,
+              choices: EMBED_PLATFORMS.map((choice) => ({
+                value: choice.value,
+                text: choice.text,
+                iconName: choice.iconName,
+                iconSize: "auto",
+                css: "spg-platform-choice",
+              })),
+            },
+            {
+              type: "dropdown",
+              name: "displayMethod",
+              searchEnabled: false,
+              defaultValue: "onPage",
+              title: "Display Method",
+              allowClear: false,
+              descriptionLocation: "hidden",
+              // Only the on-page code is offered (ADR 0012 R22: no Pop-up).
+              choices: [{ value: "onPage", text: "On-Page" }],
+              visible: !creatorTab,
+            },
+            {
+              type: "boolean",
+              renderAs: "checkbox",
+              titleLocation: "hidden",
+              name: "loadFromService",
+              title: "Load Survey JSON from service",
+              defaultValue: false,
+              visible: !creatorTab && canLoad,
+            },
+          ],
+        },
+      ],
+    },
+    "customembedded",
+  );
+  const css = Object.assign({}, propertyGridCss) as typeof propertyGridCss;
+  css.dropdown = { ...css.dropdown, controlInputFieldComponent: "spg-custom-dropdown-control" };
+  css.root += " svc-custom-embedded-tab-properties";
+  survey.getCss().list = {};
+  survey.css = css;
+  return survey;
+}
+
+/** What one Embed tab shows; the choices live in the sidebar's settings survey. */
 class EmbedTabModel extends Base {
-  platform: EmbedPlatform = DEFAULT_PLATFORM;
-  loadFromService = false;
+  readonly settings: ReturnType<typeof createSettingsSurvey>;
+  private readonly sidebarPage: {
+    visible: boolean;
+    componentData: unknown;
+    componentName: string;
+    caption: string;
+    id?: string;
+  };
 
   constructor(
+    readonly creator: SurveyCreator,
     readonly product: Product,
     readonly surveyId: string,
   ) {
     super();
+    this.sidebarPage = creator.sidebar.addPage(
+      product === "creator" ? "embedded-creator" : "embedded",
+    );
+    this.settings = createSettingsSurvey(creator, product, surveyId !== "");
   }
 
   override getType(): string {
     return "embedtab";
   }
 
-  /** Keeps the tab's choices for the next time it opens. */
-  remember(choices: { platform?: EmbedPlatform; loadFromService?: boolean }): void {
-    this.platform = choices.platform ?? this.platform;
-    this.loadFromService = choices.loadFromService ?? this.loadFromService;
+  get platform(): EmbedPlatform {
+    return this.settings.getValue("platform") as EmbedPlatform;
   }
+
+  get loadFromService(): boolean {
+    return this.settings.getValue("loadFromService") === true;
+  }
+
+  /** Shows the settings in the sidebar. */
+  activate(): void {
+    this.sidebarPage.componentData = this.settings;
+    this.sidebarPage.componentName = "survey-widget";
+    this.sidebarPage.caption = "Settings";
+    this.creator.sidebar.activePage = this.sidebarPage.id ?? "";
+  }
+
+  deactivate(): void {
+    this.sidebarPage.visible = false;
+  }
+}
+
+/** The custom platform input of the settings dropdown: the platform's icon and name. */
+function PlatformInput(props: { item?: { iconName: string; title: string } }) {
+  if (!props.item) return null;
+  return (
+    <div className="spg-custom-dropdown-input">
+      <SvgIcon iconName={props.item.iconName} size="auto" />
+      <span className="spg-custom-dropdown-input__text">{props.item.title}</span>
+    </div>
+  );
 }
 
 /** The tab's component: both tabs use the site's one name. */
@@ -62,12 +164,20 @@ function surveyTheme(creator: SurveyCreator): object {
 }
 
 function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabModel }) {
-  const [platform, setPlatform] = useState(model.platform);
-  const [loadFromService, setLoadFromService] = useState(model.loadFromService);
+  const [, setVersion] = useState(0);
+  // The sidebar's settings change the code.
+  useEffect(() => {
+    const changed = () => setVersion((version) => version + 1);
+    model.settings.onValueChanged.add(changed);
+    return () => model.settings.onValueChanged.remove(changed);
+  }, [model]);
   // Read when the tab opens: it is rendered again each time it is selected.
   const [definition] = useState(() => plain(creator.JSON));
   const [theme] = useState(() => surveyTheme(creator));
+  const { platform, loadFromService } = model;
   const creatorTab = model.product === "creator";
+  const platformText =
+    EMBED_PLATFORMS.find((choice) => choice.value === platform)?.text ?? platform;
   const productText = creatorTab ? "Survey Creator" : "the survey";
   const blocks = creatorTab
     ? creatorEmbedCode({ platform, version: Version, definition })
@@ -94,7 +204,25 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
         >
           Get Started
         </a>{" "}
-        tutorial.
+        tutorial. You can also view {productText} within a configured {platformText} application on{" "}
+        <a
+          target="_blank"
+          rel="noopener noreferrer"
+          className="svc-embed-tab__info-link"
+          href="https://plnkr.co/edit/"
+        >
+          Plunker
+        </a>{" "}
+        or{" "}
+        <a
+          target="_blank"
+          rel="noopener noreferrer"
+          className="svc-embed-tab__info-link"
+          href="https://codesandbox.io/"
+        >
+          CodeSandbox
+        </a>
+        .
       </div>
       {creatorTab && (
         <div className="svc-embed-tab__info-panel">
@@ -121,44 +249,6 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
           integration.
         </div>
       )}
-      <div className={styles.settings}>
-        <fieldset className={styles.platforms}>
-          <legend className={styles.legend}>Select Platform</legend>
-          {EMBED_PLATFORMS.map((choice) => (
-            <label
-              key={choice.value}
-              className={`${styles.platform} spg-platform-choice${choice.value === platform ? ` ${styles.selected}` : ""}`}
-            >
-              <input
-                type="radio"
-                name={`${model.product}-platform`}
-                className={styles.radio}
-                value={choice.value}
-                checked={choice.value === platform}
-                onChange={() => {
-                  model.remember({ platform: choice.value });
-                  setPlatform(choice.value);
-                }}
-              />
-              <SvgIcon iconName={choice.iconName} size={24} />
-              <span>{choice.text}</span>
-            </label>
-          ))}
-        </fieldset>
-        {!creatorTab && (
-          <label className={styles.checkbox}>
-            <input
-              type="checkbox"
-              checked={loadFromService}
-              onChange={(event) => {
-                model.remember({ loadFromService: event.target.checked });
-                setLoadFromService(event.target.checked);
-              }}
-            />
-            Load Survey JSON from service
-          </label>
-        )}
-      </div>
       {blocks.map((block, index) => (
         <CodeItem key={`${platform}-${index}`} block={block} />
       ))}
@@ -202,11 +292,15 @@ function CodeItem({ block }: { block: CodeBlock }) {
 
 let registered = false;
 
-function plugin(product: Product, surveyId: string): ICreatorPlugin {
+function plugin(creator: SurveyCreator, product: Product, surveyId: string): ICreatorPlugin {
+  const model = new EmbedTabModel(creator, product, surveyId);
   return {
-    model: new EmbedTabModel(product, surveyId),
-    activate: () => {},
-    deactivate: () => true,
+    model,
+    activate: () => model.activate(),
+    deactivate: () => {
+      model.deactivate();
+      return true;
+    },
   };
 }
 
@@ -214,20 +308,26 @@ function plugin(product: Product, surveyId: string): ICreatorPlugin {
 export function addEmbedTabs(creator: SurveyCreator, surveyId: string): void {
   if (!registered) {
     registered = true;
+    Serializer.addProperty("itemvalue", { name: "iconName", visible: false });
+    Serializer.addProperty("itemvalue", { name: "iconSize", visible: false, default: 24 });
+    Serializer.addProperty("itemvalue", { name: "css", visible: false });
+    ReactElementFactory.Instance.registerElement("dropdown-custom-input", (props) =>
+      createElement(PlatformInput, props as Parameters<typeof PlatformInput>[0]),
+    );
     ReactElementFactory.Instance.registerElement(COMPONENT, (props) =>
       createElement(EmbedTab, props as { creator: SurveyCreator; model: EmbedTabModel }),
     );
   }
   creator.addTab({
     name: "customembeded",
-    plugin: plugin("survey", surveyId),
+    plugin: plugin(creator, "survey", surveyId),
     title: "Embed Survey",
     iconName: "icon-embedsurvey",
     componentName: COMPONENT,
   });
   creator.addTab({
     name: "customembededcreator",
-    plugin: plugin("creator", surveyId),
+    plugin: plugin(creator, "creator", surveyId),
     title: "Embed Creator",
     iconName: "icon-embedcreator",
     componentName: COMPONENT,
