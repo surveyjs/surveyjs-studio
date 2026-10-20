@@ -4,8 +4,8 @@ This page lets you check Step 13 without reading code. It takes about thirty min
 app and opens three browsers). Commands are for Git Bash (or any POSIX shell).
 
 What Step 13 delivers: **a way to measure how much the app looks like surveyjs.io, and the fixes it points to.** A
-SurveyJS team member captures screenshots of 17 live pages once (an 18th, the history page, is skipped for now) (the _baselines_). A local test opens the same pages in
-the app, with the same data, and compares the images. The harness, the capture guide and the reasons are in
+SurveyJS team member captures screenshots of 17 live pages once: the _baselines_ (an 18th, the history page, is skipped
+for now). A local test opens the same pages in the app, with the same data, and compares the images. The harness, the capture guide and the reasons are in
 [Testing › Visual parity](../testing.md#visual-parity) and [ADR 0020](../adr/0020-visual-parity-baselines.md).
 
 ## Before you start
@@ -22,8 +22,8 @@ Ports **3002** and **5175** must be free (the visual run uses them; ports 3000 a
 and 3). For part 2 you also need 3000 and 5173.
 
 The baselines must be committed: `e2e/visual/baselines/` holds `states.json` and a `win32` folder with one folder per
-browser (17 PNGs each, captured 2026-10-20 from live Form Library and Creator 3.2.2). If they are missing, `pnpm e2e:visual` stops at once and says so (see Troubleshooting). A person captures them
-once, as [Capturing baselines](../testing.md#capturing-baselines) describes. The tests are valid on the machine where
+browser (17 PNGs each, captured 2026-10-20 from live Form Library and Creator 3.2.2). If they are missing,
+`pnpm e2e:visual` stops at once and says so (see Troubleshooting). A person captures them once, as [Capturing baselines](../testing.md#capturing-baselines) describes. The tests are valid on the machine where
 they were captured, not in CI.
 
 ## 1. The visual tests pass (checklist 1)
@@ -33,7 +33,8 @@ pnpm e2e:visual
 ```
 
 It builds the web app, starts its own server and preview on 3002 and 5175, and runs 17 screens (the history screen is
-skipped) in Chromium, Firefox and WebKit. The result is `52 passed, 3 skipped`. Then open the report:
+skipped) in Chromium, Firefox and WebKit. The result is `52 passed, 3 skipped`: 17 screens in 3 browsers (51 tests)
+plus the setup that creates the visual data set, and `history` skipped in each browser. Then open the report:
 
 ```sh
 pnpm e2e:visual:report
@@ -91,15 +92,19 @@ The accepted differences and their reasons are in [Testing › Accepted differen
 In short:
 
 - **Left out on purpose** (`departure`): the run page's "Disclaimer of liability", the "first 1,000 responses" banner,
-  the app's save status in the editor, and on the public results page the site header, footer and Details tab (ADR 0016
-  R19, confirmed by the product owner).
+  the app's save status in the editor, the live Dashboard's "Submitted" card (ADR 0015 R13), the app's "Back to My
+  Surveys" link on the results pages, and on the public results page the site header, footer and Details tab (ADR 0016
+  R19, confirmed by the product owner). The results table lists the rows in another order (ADR 0015 R3); it fits within
+  the screen's ratio.
 - **Library builds** (`library`): the live Creator and Form Library run 3.2.2, the app 3.1.2. The licence banners of
   Creator and Dashboard show only in the app, and are hidden.
-- **Content that cannot match** (`live-data`): dates, the GitHub star count, the member name and the survey ids in the
-  embed code.
+- **Content that cannot match** (`live-data`): dates and submission times, the GitHub star count, the member name
+  and the survey ids in the embed code.
 - **The header's account item** reads "Account" on live and the user's name in the app. Both are normalized, so the
   tests do not catch it (open for the product owner).
 - **The history screen is skipped**, because the live history is empty for a fresh account.
+
+## Limits
 
 - **The visual tests run locally only.** The baselines are Windows renders; CI cannot see a visual regression.
 - **The baselines are Windows renders.** The tests are valid on the machine (or an identical setup: system, fonts,

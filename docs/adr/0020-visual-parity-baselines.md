@@ -4,9 +4,10 @@ Date: 2026-10-20
 
 ## Status
 
-Accepted. The product owner has not confirmed the dedicated account and the committed screenshots, the live site's
-disclaimer and 1,000-responses banner staying out of the app, the library versions, or the local-only run; see "To
-confirm".
+Accepted. The product owner decided the dedicated account and the committed screenshots, and the public results page
+without the site shell (see "Decided by the product owner"). Still open for the owner: the header's account text, the
+live site's disclaimer and 1,000-responses banner staying out of the app, the library versions, the skipped history
+screen, the live publish flag and the local-only run; see "To confirm".
 
 ## Context
 
@@ -33,8 +34,8 @@ One **visual data set** (`e2e/visual/data-set.ts`) describes the account content
 project, three responses. A person creates it once by hand in a **dedicated surveyjs.io account**. The visual run
 creates the same content through the HTTP API for Erin Erasable in a fresh memory server (ports 3002 and 5175; it never
 touches the functional servers on 3000, 3001, 5173 and 5174). One **manifest** (`e2e/visual/manifest.ts`) lists the 18
-screens with their live and app paths, the steps to reach the state, the element to shoot and the adjustments of each
-side. One **preparation module** (`e2e/visual/support/screen.ts`) opens and prepares a screen the same way on both
+screens (17 compared; `history` is skipped) with their live and app paths, the steps to reach the state, the element
+to shoot and the adjustments of each side. One **preparation module** (`e2e/visual/support/screen.ts`) opens and prepares a screen the same way on both
 sides.
 
 ### Normalize, hide, mask, with reasons
@@ -90,8 +91,8 @@ A hide or mask never covers a whole screen, the whole Creator or a whole Dashboa
 
 The capture runs against the live site with a real account, so it is read only in three ways. The `Step` type allows
 only `click` and `hover`. An ESLint rule on the capture and support folders forbids typing, form input, uploads and
-direct requests. A network guard aborts every non-GET request to surveyjs.io and its subdomains and fails that screen;
-it deletes that screen's image so no baseline shows a failed save.
+direct requests. A network guard aborts every request with a method other than GET, HEAD and OPTIONS, to surveyjs.io
+or to any other host, and fails that screen; it deletes that screen's image so no baseline shows a failed save.
 
 Two POSTs are let through, because each reads only. Both are proven in the legacy source.
 
@@ -109,15 +110,18 @@ The capture suppresses the live site's pop-ups with the site's own `localStorage
 tour) and `isInformedAboutCookieAndPolicies` (the cookie banner, except on the cookie-banner screen).
 
 The person signs in; the code never types into a field. The sign-in state goes to the git-ignored `e2e/visual/.auth/`,
-and the runner deletes it at the end (`--keep-sign-in` keeps it). The repository never holds credentials, cookies or a
-storage state.
+and the runner deletes it at the end (`--keep-sign-in` keeps it). Playwright's traces and failure screenshots of the
+capture go to `e2e/visual/.auth/test-results/`, so they are deleted with it. The repository never holds credentials,
+cookies or a storage state.
 
 ### Baselines never come from the app
 
-No script, task or flag writes a baseline from the app. `pnpm e2e:visual` refuses `-u` and `--update-snapshots`. The
-one exception is `pnpm e2e:visual --self`, the harness check: it writes throwaway app screenshots to the git-ignored
-`e2e/visual/.self-baselines/` and compares a second, fresh server with them. It proves the app side is deterministic. It
-says nothing about parity.
+No script, task or flag writes a baseline from the app. `pnpm e2e:visual` refuses `-u` and `--update-snapshots`, and so
+does the visual config when Playwright is run directly. The one exception is `pnpm e2e:visual --self`, the harness
+check: it writes throwaway app screenshots to the git-ignored `e2e/visual/.self-baselines/` and compares a second,
+fresh server with them. It proves the app side is deterministic. It says nothing about parity. Only `--self` selects
+the throwaway baselines: in normal mode the runner removes a `VISUAL_BASELINES` variable left in the caller's
+environment.
 
 ### Decided by the product owner (2026-10-20)
 
@@ -167,7 +171,9 @@ These are decisions of the team, not of the product owner. Until the owner confi
 - **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
   dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
   (`pnpm visual:capture --grep history`).
-- **The live publish flag.** On the dedicated account `Customer feedback` stays `data-ispublished="false"` after
-  Publish (the list shows "true" only when `IsPublished == true`; the run page refuses only when it is `false`). Why?
-  The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`.
+- **The live publish flag.** On the dedicated account `Customer feedback` may list as unpublished
+  (`data-ispublished="false"`) after Publish (the list shows "true" only when `IsPublished == true`; the run page
+  refuses only when it is `false`). It listed as published in the end (`states.json` has `feedbackPublished: true`).
+  The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`,
+  so neither depends on it. Why it can lag is open.
 - **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades.

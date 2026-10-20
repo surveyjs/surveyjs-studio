@@ -73,7 +73,7 @@ Changes to them:
   `embed-tab.tsx` (platform, display method, load from service; the class names and the
   `spg-custom-dropdown-control` styling are the site's); jQuery is not offered (no SurveyJS 3.1.2 jQuery
   package), and the "Display Method" has only On-Page. The intro's last sentence reads "You can also
-  paste this code into an online editor such as Plunker or CodeSandbox", with links to the two start
+  paste this code into an online code editor, such as Plunker or CodeSandbox", with links to the two start
   pages: the site builds the example projects with its own services. The "Get Started" link goes to
   surveyjs.io. The code is the app's own template (`embedCode.ts`).
 - The links and code headers of `embedded-tab.scss` use a font token that Creator 3.1.2 does not
