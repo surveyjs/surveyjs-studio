@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { LIVE_ORIGIN } from "../manifest.js";
+import { guardLiveContext } from "./route-guard.js";
 import { checklistText } from "../support/checklist.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -17,11 +18,19 @@ test("sign in to surveyjs.io", async ({ browser }, testInfo) => {
 
   const reuse = existsSync(STATE);
   const context = await browser.newContext(reuse ? { storageState: STATE } : {});
+  // A fresh sign-in is unguarded: the person's own login posts to the site. A reused state needs no
+  // login, so every write is blocked except to the auth host (a stale state sends the person there).
+  if (reuse) await guardLiveContext(context, ["auth.surveyjs.io"]);
   const page = await context.newPage();
   await page.goto(`${LIVE_ORIGIN}/Service/MySurveys/personal?type=list`);
 
-  // No write guard here: the person's own sign-in posts to the site. The capture contexts are guarded.
-  if (!reuse) {
+  const shown = await page
+    .locator(MY_SURVEYS)
+    .first()
+    .waitFor({ state: "visible", timeout: reuse ? 20_000 : 1 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) {
     console.log(
       "Sign in to surveyjs.io in the browser window (the dedicated visual account). Waiting up to 10 minutes…",
     );

@@ -8,6 +8,7 @@ import { SNAPSHOT_PATH_TEMPLATE } from "./visual/support/paths.js";
 // See docs/testing.md > Visual parity > Capturing baselines.
 const STORAGE_STATE = "visual/.auth/surveyjs-io.json";
 
+// serviceWorkers "block": context.route does not see requests a Service Worker handles, so the write guard needs them off.
 export default defineConfig({
   testDir: "visual/capture",
   snapshotPathTemplate: SNAPSHOT_PATH_TEMPLATE,
@@ -23,13 +24,13 @@ export default defineConfig({
       name: `signin-${project.name}`,
       testMatch: "sign-in.setup.ts",
       timeout: 15 * 60_000,
-      use: { ...project.use, headless: false },
+      use: { ...project.use, headless: false, serviceWorkers: "block" as const },
     })),
     ...VISUAL_PROJECTS.map((project) => ({
       name: project.name,
       testMatch: "capture.spec.ts",
       dependencies: [`signin-${project.name}`],
-      use: { ...project.use, storageState: STORAGE_STATE },
+      use: { ...project.use, storageState: STORAGE_STATE, serviceWorkers: "block" as const },
     })),
   ],
 });

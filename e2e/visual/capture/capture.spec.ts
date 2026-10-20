@@ -149,9 +149,12 @@ test.beforeAll(async ({ browser }, testInfo) => {
           .locator('.survey-results-header-line:has-text("Total responses:") span')
           .last();
         await total.waitFor({ state: "visible", timeout: 30_000 });
-        await expect(total).not.toHaveText("", { timeout: 30_000 });
-        const text = ((await total.textContent()) ?? "").trim();
-        if (text !== "3") problems.push(`Details: total responses is "${text}", expected "3"`);
+        try {
+          await expect(total).toHaveText("3", { timeout: 30_000 });
+        } catch {
+          const text = ((await total.textContent()) ?? "").trim();
+          problems.push(`Details: total responses is "${text}", expected "3"`);
+        }
       });
       await attempt("History", async () => {
         await page.goto(`${LIVE_ORIGIN}/Service/History/${next.feedbackId}`);
@@ -175,11 +178,14 @@ test.beforeAll(async ({ browser }, testInfo) => {
     if (next.feedbackResultId !== undefined) {
       await attempt("Public results", async () => {
         await page.goto(`${LIVE_ORIGIN}/Results/Survey/${next.feedbackResultId}`);
-        await page
-          .locator("[data-question]")
-          .first()
-          .waitFor({ state: "attached", timeout: 30_000 });
-        if (/authorizationerror/i.test(page.url())) throw new Error("access is not granted");
+        const denied = "access is not granted: turn Grant Access on (Details tab)";
+        if (/authorizationerror/i.test(page.url())) throw new Error(denied);
+        await Promise.race([
+          page.locator("[data-question]").first().waitFor({ state: "attached", timeout: 30_000 }),
+          page.waitForURL(/authorizationerror/i, { timeout: 30_000 }).then(() => {
+            throw new Error(denied);
+          }),
+        ]);
       });
     }
     if (writes.length > 0) problems.push(`Blocked writes while checking: ${writes.join("; ")}`);
