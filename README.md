@@ -150,6 +150,9 @@ Run from the repository root.
 | `pnpm test:conformance:azurite`  | Conformance suite on the `azure-legacy` provider and the replica                                                          |
 | `pnpm e2e`                       | Playwright tests in three browsers (starts server and web app)                                                            |
 | `pnpm e2e:azurite`               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
+| `pnpm e2e:visual`                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))       |
+| `pnpm e2e:visual:report`         | Opens the visual parity report                                                                                            |
+| `pnpm visual:capture`            | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                             |
 | `pnpm lint`                      | ESLint                                                                                                                    |
 | `pnpm typecheck`                 | `tsc` in every package                                                                                                    |
 | `pnpm format`                    | Prettier, write                                                                                                           |
@@ -170,12 +173,12 @@ Run from the repository root.
 
 - [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow, identity and session.
 - [Development](docs/development.md): setup, demo modes, seed accounts, environment variables, scripts, dependency upgrades.
-- [Testing](docs/testing.md): the test seams and how to run each suite.
+- [Testing](docs/testing.md): the test seams and how to run each suite. [Visual parity](docs/testing.md#visual-parity) compares the app with surveyjs.io, and [ADR 0020](docs/adr/0020-visual-parity-baselines.md) records why.
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
 - [Operations](docs/operations.md): configuring accounts, the erase and reconcile commands, the webhook secret, the header policy.
 - Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
-- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–12.
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–13.
 
 **For users and integrators**
 

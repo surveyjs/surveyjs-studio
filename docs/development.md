@@ -540,6 +540,12 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 | `contract`          | `build:docs`                                   | Write the self-contained `contract/dist/reference.html`                                                                                                 |
 | `conformance-tests` | `test`, `test:azurite`, `test:user-api`        | See [testing](testing.md)                                                                                                                               |
 | `e2e`               | `test`                                         | Playwright                                                                                                                                              |
+| `e2e`               | `test:visual`, `capture`                       | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
+
+The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
+the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
+surveyjs.io). The visual run uses its own ports, **3002** (server) and **5175** (web), so it can run beside the
+functional e2e suite (3000/5173 and 3001/5174). See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
 `pnpm --filter @my-surveys/contract generate`.
@@ -594,6 +600,10 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    `azure-legacy` server and the mock OIDC server, Chromium);
 6. on failure, it uploads the Playwright report;
 7. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+
+The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see
+[Testing › Visual parity](testing.md#visual-parity)). CI typechecks, lints and unit-tests their helpers. Run
+`pnpm e2e:visual` locally before you merge a change to the look of a page.
 
 Run the same commands locally before you push. Steps 3, 4 and 7 need Docker.
 
