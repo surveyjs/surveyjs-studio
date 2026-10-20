@@ -69,11 +69,13 @@ Changes to them:
 
 - Run opens the app's run page `/s/{id}` (the old site's address, `/published?id=`, is handled by the site's redirect); Help and Run open with
   `noopener`.
-- The Embed tabs' settings are inside the tab (glue in `src/editor/embed/EmbedTab.module.css`), not a
-  settings survey in the Creator's sidebar; jQuery is not offered (no SurveyJS 3.1.2 jQuery package),
-  nor the "Display Method" (pop-up) choice; the intro leaves out its last sentence (viewing the
-  example on Plunker or CodeSandbox: the site builds those projects with its own services). The
-  "Get Started" link goes to surveyjs.io. The code is the app's own template (`embedCode.ts`).
+- The Embed tabs' settings are in the Creator's sidebar, as a settings survey copied from
+  `embed-tab.tsx` (platform, display method, load from service; the class names and the
+  `spg-custom-dropdown-control` styling are the site's); jQuery is not offered (no SurveyJS 3.1.2 jQuery
+  package), and the "Display Method" has only On-Page. The intro's last sentence reads "You can also
+  paste this code into an online editor such as Plunker or CodeSandbox", with links to the two start
+  pages: the site builds the example projects with its own services. The "Get Started" link goes to
+  surveyjs.io. The code is the app's own template (`embedCode.ts`).
 - The links and code headers of `embedded-tab.scss` use a font token that Creator 3.1.2 does not
   define, and its `--sjs2-color-utility-surface-embed` background is not defined either: glue sets the
   font to the page's.

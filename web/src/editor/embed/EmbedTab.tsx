@@ -2,7 +2,7 @@
 // their names, titles, icons, texts and class names are the site's (D14); the component is our own.
 // The settings are in the Creator's sidebar, as on the site. Part of the Creator chunk.
 import { createElement, useEffect, useState } from "react";
-import { Base, Serializer, Version } from "survey-core";
+import { Base, Version } from "survey-core";
 import { propertyGridCss, type ICreatorPlugin } from "survey-creator-core";
 import type { SurveyCreator } from "survey-creator-react";
 import { ReactElementFactory, SvgIcon } from "survey-react-ui";
@@ -46,9 +46,6 @@ function createSettingsSurvey(creator: SurveyCreator, product: Product, canLoad:
               choices: EMBED_PLATFORMS.map((choice) => ({
                 value: choice.value,
                 text: choice.text,
-                iconName: choice.iconName,
-                iconSize: "auto",
-                css: "spg-platform-choice",
               })),
             },
             {
@@ -135,11 +132,12 @@ class EmbedTabModel extends Base {
 }
 
 /** The custom platform input of the settings dropdown: the platform's icon and name. */
-function PlatformInput(props: { item?: { iconName: string; title: string } }) {
-  if (!props.item) return null;
+function PlatformInput(props: { item?: { value: unknown; title: string } }) {
+  const platform = EMBED_PLATFORMS.find((choice) => choice.value === props.item?.value);
+  if (!props.item || !platform) return null;
   return (
     <div className="spg-custom-dropdown-input">
-      <SvgIcon iconName={props.item.iconName} size="auto" />
+      <SvgIcon iconName={platform.iconName} size="auto" />
       <span className="spg-custom-dropdown-input__text">{props.item.title}</span>
     </div>
   );
@@ -176,8 +174,6 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
   const [theme] = useState(() => surveyTheme(creator));
   const { platform, loadFromService } = model;
   const creatorTab = model.product === "creator";
-  const platformText =
-    EMBED_PLATFORMS.find((choice) => choice.value === platform)?.text ?? platform;
   const productText = creatorTab ? "Survey Creator" : "the survey";
   const blocks = creatorTab
     ? creatorEmbedCode({ platform, version: Version, definition })
@@ -204,7 +200,7 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
         >
           Get Started
         </a>{" "}
-        tutorial. You can also view {productText} within a configured {platformText} application on{" "}
+        tutorial. You can also paste this code into an online code editor, such as{" "}
         <a
           target="_blank"
           rel="noopener noreferrer"
@@ -221,8 +217,8 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
           href="https://codesandbox.io/"
         >
           CodeSandbox
-        </a>
-        .
+        </a>{" "}
+        to try it out.
       </div>
       {creatorTab && (
         <div className="svc-embed-tab__info-panel">
@@ -308,9 +304,6 @@ function plugin(creator: SurveyCreator, product: Product, surveyId: string): ICr
 export function addEmbedTabs(creator: SurveyCreator, surveyId: string): void {
   if (!registered) {
     registered = true;
-    Serializer.addProperty("itemvalue", { name: "iconName", visible: false });
-    Serializer.addProperty("itemvalue", { name: "iconSize", visible: false, default: 24 });
-    Serializer.addProperty("itemvalue", { name: "css", visible: false });
     ReactElementFactory.Instance.registerElement("dropdown-custom-input", (props) =>
       createElement(PlatformInput, props as Parameters<typeof PlatformInput>[0]),
     );

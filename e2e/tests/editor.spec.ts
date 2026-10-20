@@ -314,7 +314,11 @@ test("the Embed Survey tab can load the survey from this service", async ({
     await expect(code.first()).toBeVisible();
     await expect(code.filter({ hasText: serviceUrl })).toHaveCount(0);
 
-    await page.getByRole("checkbox", { name: "Load Survey JSON from service" }).check();
+    // The survey's own checkbox hides its input: a user clicks the text.
+    await page.getByText("Load Survey JSON from service", { exact: true }).click();
+    await expect(
+      page.getByRole("checkbox", { name: "Load Survey JSON from service" }),
+    ).toBeChecked();
     await expect(code.filter({ hasText: serviceUrl }).first()).toBeVisible();
   });
 });

@@ -5,20 +5,3 @@
 .tab :global(.svc-embed-tab__code-header) {
   font-family: inherit;
 }
-
-/* The settings' checkbox keeps the survey's look, but its real input (hidden by the survey styles)
-   covers the box and its text, so a click lands on the input, as on any native checkbox. */
-:global(.svc-custom-embedded-tab-properties) :global(.sd-selectbase__label) {
-  position: relative;
-}
-
-:global(.svc-custom-embedded-tab-properties) :global(.sd-checkbox__control.sd-visuallyhidden) {
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  clip: auto;
-  clip-path: none;
-  cursor: pointer;
-}
