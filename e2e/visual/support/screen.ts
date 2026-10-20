@@ -31,21 +31,18 @@ export function hideCss(spec: SideSpec): string {
   return [...rules, FIXED_LOOK_CSS].join("\n");
 }
 
-interface Check {
+export interface Check {
   readonly kind: string;
   readonly selector: string;
   readonly optional: boolean;
 }
 
-function checksOf(screen: Screen, side: Side): Check[] {
+/** The selectors checked after the steps ran. Steps are not here: each is checked when it runs. */
+export function checksOf(screen: Screen, side: Side): Check[] {
   const spec = screen[side];
   const checks: Check[] = [{ kind: "ready", selector: spec.ready, optional: false }];
   if (spec.target !== undefined)
     checks.push({ kind: "target", selector: spec.target, optional: false });
-  for (const step of spec.steps ?? []) {
-    const selector = "click" in step ? step.click : step.hover;
-    checks.push({ kind: "step", selector, optional: false });
-  }
   for (const item of spec.hide ?? []) {
     checks.push({ kind: "hide", selector: item.selector, optional: item.optional === true });
   }
@@ -151,15 +148,18 @@ export async function openScreen(
   const path = resolvePath(spec.path, ids);
   await page.goto(side === "live" ? `${LIVE_ORIGIN}${path}` : path);
 
-  const visible = async (selector: string) => {
+  const visible = async (selector: string, what = "") => {
     const target = page.locator(selector).first();
     try {
       await target.waitFor({ state: "visible", timeout: STEP_TIMEOUT });
     } catch (error) {
       if ((await page.locator(selector).count()) === 0) {
-        throw new Error(`Selectors matched nothing on ${side} for ${screen.id}: ${selector}`, {
-          cause: error,
-        });
+        throw new Error(
+          `Selectors matched nothing on ${side} for ${screen.id}: ${what}${selector}`,
+          {
+            cause: error,
+          },
+        );
       }
       throw error;
     }
@@ -168,8 +168,8 @@ export async function openScreen(
 
   await visible(spec.ready);
   for (const step of spec.steps ?? []) {
-    if ("click" in step) await (await visible(step.click)).click();
-    else await (await visible(step.hover)).hover();
+    if ("click" in step) await (await visible(step.click, "step ")).click();
+    else await (await visible(step.hover, "step ")).hover();
   }
 
   await waitForAdjustments(page, screen, side);
