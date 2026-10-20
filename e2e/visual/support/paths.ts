@@ -1,10 +1,20 @@
-/** Where Playwright writes and reads the baselines (both configs), relative to the test directory. */
-export const SNAPSHOT_PATH_TEMPLATE = "{testDir}/../baselines/{platform}/{projectName}/{arg}{ext}";
+export type BaselinesMode = "live" | "self";
 
 /** The baselines root from the repository root: the live site's, or the git-ignored `--self` check's. */
-export function baselinesRoot(mode: "live" | "self"): string {
+export function baselinesRoot(mode: BaselinesMode): string {
   return mode === "live" ? "e2e/visual/baselines" : "e2e/visual/.self-baselines";
 }
+
+/**
+ * Where Playwright writes and reads the baselines of a mode. Both configs' test directories sit at
+ * `e2e/visual/<dir>`, so three levels up from `{testDir}` is the repository root.
+ */
+export function snapshotPathTemplate(mode: BaselinesMode): string {
+  return `{testDir}/../../../${baselinesRoot(mode)}/{platform}/{projectName}/{arg}{ext}`;
+}
+
+/** The live site's baselines: the capture writes them, `pnpm e2e:visual` reads them. */
+export const SNAPSHOT_PATH_TEMPLATE = snapshotPathTemplate("live");
 
 /** The file the capture writes its states to (the live baselines root). */
 export function statesFile(): string {

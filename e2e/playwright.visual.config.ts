@@ -3,20 +3,24 @@ import { defineConfig } from "@playwright/test";
 import { stripAppVariables } from "./app-variables.mjs";
 import { memoryServerEnv } from "./playwright.config.js";
 import { VISUAL_PROJECTS } from "./visual/support/browser.js";
-import { SNAPSHOT_PATH_TEMPLATE } from "./visual/support/paths.js";
+import { snapshotPathTemplate } from "./visual/support/paths.js";
 
 // The visual run has its own server and preview (ports 3002 and 5175, memory provider), so its data
 // is fresh on every run and never touches the functional e2e servers. See docs/testing.md > Visual parity.
 stripAppVariables(process.env);
 
-// `--self`: the baselines are throwaway app screenshots in a git-ignored folder.
+// `--self`: the baselines are throwaway app screenshots in a git-ignored folder. Only the runner's
+// `--self` mode sets this; in normal mode it removes the variable from the child's environment.
 const self = process.env["VISUAL_BASELINES"] === "self";
+
+// The runner refuses -u; this also refuses a direct `playwright test -c playwright.visual.config.ts -u`.
+const updates = (arg: string) =>
+  arg === "-u" || arg === "--update-snapshots" || arg.startsWith("--update-snapshots=");
+if (!self && process.argv.some(updates)) throw new Error("Baselines come only from surveyjs.io.");
 
 export default defineConfig({
   testDir: "visual/tests",
-  snapshotPathTemplate: self
-    ? SNAPSHOT_PATH_TEMPLATE.replace("/baselines/", "/.self-baselines/")
-    : SNAPSHOT_PATH_TEMPLATE,
+  snapshotPathTemplate: snapshotPathTemplate(self ? "self" : "live"),
   // The runner passes --update-snapshots=all only in the first pass of `--self`.
   updateSnapshots: "none",
   fullyParallel: true,

@@ -1,6 +1,8 @@
 // `pnpm e2e:visual` entry: compares the app with the surveyjs.io baselines (never writes them).
 // With `--self` it checks the harness instead: two runs against throwaway app baselines, the second
 // of which must pass. Exit codes: 0 pass, 1 failure or missing baselines, 2 refused argument.
+// Only --self selects the throwaway baselines: a VISUAL_BASELINES left in the caller's environment is
+// removed in normal mode, so the run always compares with the surveyjs.io baselines.
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -31,6 +33,10 @@ if (!self) {
 }
 
 const baseEnv = stripAppVariables({ ...process.env });
+// Windows environment names ignore case, so every spelling goes.
+for (const name of Object.keys(baseEnv)) {
+  if (name.toUpperCase() === "VISUAL_BASELINES") delete baseEnv[name];
+}
 const run = (command, extraEnv = {}) => {
   const result = spawnSync(command, {
     stdio: "inherit",

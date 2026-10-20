@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { baselinesRoot, resolvePath, SNAPSHOT_PATH_TEMPLATE, statesFile } from "./paths.js";
+import {
+  baselinesRoot,
+  resolvePath,
+  SNAPSHOT_PATH_TEMPLATE,
+  snapshotPathTemplate,
+  statesFile,
+} from "./paths.js";
 
 describe("resolvePath", () => {
   it("fills every placeholder", () => {
@@ -24,9 +30,13 @@ describe("resolvePath", () => {
 });
 
 describe("baseline locations", () => {
-  it("names the snapshot template", () => {
+  it("names the snapshot template of each mode", () => {
     expect(SNAPSHOT_PATH_TEMPLATE).toBe(
-      "{testDir}/../baselines/{platform}/{projectName}/{arg}{ext}",
+      "{testDir}/../../../e2e/visual/baselines/{platform}/{projectName}/{arg}{ext}",
+    );
+    expect(snapshotPathTemplate("live")).toBe(SNAPSHOT_PATH_TEMPLATE);
+    expect(snapshotPathTemplate("self")).toBe(
+      "{testDir}/../../../e2e/visual/.self-baselines/{platform}/{projectName}/{arg}{ext}",
     );
   });
 
