@@ -14,6 +14,7 @@ import {
   VISUAL_USER,
   type VisualStates,
 } from "../data-set.js";
+import { SCREENS } from "../manifest.js";
 import { putDefinitionViaApi } from "../../tests/support/editor.js";
 import { createProjectViaApi } from "../../tests/support/projects.js";
 import { submitViaApi } from "../../tests/support/results.js";
@@ -75,14 +76,19 @@ setup("create the visual data set for the visual user", async ({ page }) => {
   const feedback = await createSurveyViaApi(page, FEEDBACK_NAME);
 
   // The same number of history entries as the live survey; the last save is the feedback definition.
-  const wanted = historyEntries();
-  let count = await historyCount(page, feedback.id);
-  expect(count, "the new survey has more history than the live one").toBeLessThanOrEqual(wanted);
-  while (count < wanted) {
+  // Skipped with the history screen: nothing compares the count, so one definition save is enough.
+  if (SCREENS.find((screen) => screen.id === "history")?.skip === undefined) {
+    const wanted = historyEntries();
+    let count = await historyCount(page, feedback.id);
+    expect(count, "the new survey has more history than the live one").toBeLessThanOrEqual(wanted);
+    while (count < wanted) {
+      await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
+      count = await historyCount(page, feedback.id);
+    }
+    expect(count).toBe(wanted);
+  } else {
     await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
-    count = await historyCount(page, feedback.id);
   }
-  expect(count).toBe(wanted);
   const stored = await page.request.get(`/api/v1/surveys/${feedback.id}/definition`);
   expect(await stored.json()).toEqual(FEEDBACK_DEFINITION);
 

@@ -156,9 +156,17 @@ test.beforeAll(async ({ browser }, testInfo) => {
           problems.push(`Details: total responses is "${text}", expected "3"`);
         }
       });
+      // An empty history is not a problem: the count is recorded as 0 (the history screen is skipped).
       await attempt("History", async () => {
         await page.goto(`${LIVE_ORIGIN}/Service/History/${next.feedbackId}`);
-        await page.locator(HISTORY_ITEM).first().waitFor({ state: "visible", timeout: 30_000 });
+        await page.waitForLoadState("load");
+        await page
+          .locator(HISTORY_ITEM)
+          .first()
+          .waitFor({ state: "visible", timeout: 10_000 })
+          .catch(() => {
+            // no entries: the count below is 0
+          });
         states.historyEntries = await page.locator(HISTORY_ITEM).count();
       });
       await attempt("Library versions (editor)", async () => {
@@ -217,6 +225,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
 
 for (const screen of SCREENS) {
   test(screen.id, async ({ page, context }, testInfo) => {
+    test.skip(screen.skip !== undefined, screen.skip ?? "");
     const writes = await guardLiveContext(context);
     let failure: unknown;
     try {

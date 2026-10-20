@@ -27,6 +27,14 @@ describe("the screen manifest", () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
+  it("skips a screen only with a reason, and only history today", () => {
+    for (const screen of SCREENS) {
+      if (screen.skip !== undefined) expect(screen.skip.trim(), screen.id).not.toBe("");
+    }
+    // A new skip is a deliberate change of this test.
+    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual(["history"]);
+  });
+
   it("groups and classifies the screens as the plan does", () => {
     expect(SCREENS.map((s) => [s.id, s.group, s.kind])).toEqual([
       ["list-active", "list", "page"],

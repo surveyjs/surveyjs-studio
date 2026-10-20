@@ -4,7 +4,7 @@ This page lets you check Step 13 without reading code. It takes about thirty min
 app and opens three browsers). Commands are for Git Bash (or any POSIX shell).
 
 What Step 13 delivers: **a way to measure how much the app looks like surveyjs.io, and the fixes it points to.** A
-SurveyJS team member captures screenshots of 18 live pages once (the _baselines_). A local test opens the same pages in
+SurveyJS team member captures screenshots of 17 live pages once (an 18th, the history page, is skipped for now) (the _baselines_). A local test opens the same pages in
 the app, with the same data, and compares the images. The harness, the capture guide and the reasons are in
 [Testing › Visual parity](../testing.md#visual-parity) and [ADR 0020](../adr/0020-visual-parity-baselines.md).
 
@@ -32,7 +32,7 @@ they were captured, not in CI.
 pnpm e2e:visual
 ```
 
-It builds the web app, starts its own server and preview on 3002 and 5175, and runs 18 screens in Chromium, Firefox and
+It builds the web app, starts its own server and preview on 3002 and 5175, and runs 17 screens (the history screen is skipped) in Chromium, Firefox and
 WebKit. Then open the report:
 
 ```sh

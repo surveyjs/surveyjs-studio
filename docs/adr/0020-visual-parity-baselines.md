@@ -48,7 +48,7 @@ fails the screen, unless it is marked `optional`.
 ### Baselines and browsers
 
 The baselines are the live site, captured by a person on a Windows machine in one run, for Chromium, Firefox and
-WebKit: `e2e/visual/baselines/{platform}/{browser}/{id}.png`, 18 screens in 3 browsers (54 images), plus
+WebKit: `e2e/visual/baselines/{platform}/{browser}/{id}.png`, 17 captured screens in 3 browsers (51 images; the 18th, `history`, is skipped, see To confirm), plus
 `e2e/visual/baselines/states.json` (the live history length and the library versions the live pages report). One
 Chromium baseline for all three engines was rejected: the engines render fonts differently by more than any useful
 threshold.
@@ -157,4 +157,7 @@ These are decisions of the team, not of the product owner. Until the owner confi
   live side. Confirm.
 - **Library versions.** The live pages may run newer Creator and Dashboard builds than the app's. Differences inside
   them are accepted as `library`. Upgrading is a separate decision.
+- **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
+  dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
+  (`pnpm visual:capture --grep history`).
 - **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades.

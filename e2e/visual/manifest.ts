@@ -42,6 +42,7 @@ export interface Screen {
   readonly normalize?: readonly Normalization[];
   readonly maxDiffPixelRatio: number;
   readonly thresholdReason?: string; // required when above the kind's default
+  readonly skip?: string; // non-empty reason: the screen is neither captured nor compared
 }
 
 export const LIVE_ORIGIN = "https://surveyjs.io";
@@ -284,6 +285,7 @@ export const SCREENS: readonly Screen[] = [
     id: "history",
     group: "pages",
     kind: "page",
+    skip: "Live history is empty for the dedicated account (2026-10-20); re-enable after finding how surveyjs.io records history",
     live: { path: "/Service/History/{feedbackId}", ready: ".my-surveys-history-item" },
     app: { path: "/surveys/{feedbackId}/history", ready: ".my-surveys-history-item" },
     normalize: [

@@ -37,6 +37,7 @@ for (const group of groups) {
   test.describe(group, () => {
     for (const screen of SCREENS.filter((item: Screen) => item.group === group)) {
       test(screen.id, async ({ page, context }, testInfo) => {
+        test.skip(screen.skip !== undefined, screen.skip ?? "");
         const aborted: string[] = [];
         await context.route("**/*", (route) => {
           const url = route.request().url();

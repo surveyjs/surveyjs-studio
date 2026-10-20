@@ -777,18 +777,27 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    It waits up to ten minutes.
 4. The sign-in may not carry over to Firefox or WebKit. If another window asks again, sign in once per browser (up to
    three times in all).
-5. The script checks the account against the data set, then captures the 18 screens in each browser. It writes
+5. The script checks the account against the data set, then captures the 17 screens that are not skipped in each browser. It writes
    `e2e/visual/baselines/win32/<browser>/<id>.png` and `e2e/visual/baselines/states.json`.
 
-   **A good run** ends with Playwright's summary `57 passed` (3 sign-ins and 54 captures) and no `failed`, `skipped` or
-   `did not run` line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`, `firefox/` and
-   `webkit/` hold 18 PNGs each (54 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed or was
-   skipped, fix the cause and recapture it with `--grep <id>` first. Do not commit a partial set.
+   **A good run** ends with Playwright's summary `54 passed, 3 skipped` (3 sign-ins and 17 captures in each of 3
+   browsers; the 3 skipped are the `history` screen, see Skipped screens below) and no `failed` or `did not run`
+   line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`, `firefox/` and `webkit/` hold 17
+   PNGs each (51 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed, fix the cause and
+   recapture it with `--grep <id>` first. Do not commit a partial set.
 
 6. **Review every image for personal data** before you commit. Open each PNG. No name or email of the account may
    appear. Do not commit an image that shows one.
 7. Commit the folder:
    `git add e2e/visual/baselines && git commit -m "test(e2e): surveyjs.io visual baselines (<date>)"`
+
+**Skipped screens**
+
+A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped.
+
+| Screen    | Reason                                                                                                   | How to re-enable                                                                             |
+| --------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `history` | Live history is empty for the dedicated account (2026-10-20); find how surveyjs.io records history first | Remove `skip` from the screen in the manifest, then run `pnpm visual:capture --grep history` |
 
 **If something fails**
 
