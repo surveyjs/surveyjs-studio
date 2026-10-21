@@ -31,6 +31,10 @@ on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=d
 `/readyz`, and stops it (and its process tree) afterwards. `PUBLIC_BASE_URL` is the server's own
 origin, and `SIGN_IN_RATE_LIMIT` is high enough that the suite never reaches it.
 
+With `CONFORMANCE_IMAGE=<tag>` (Linux only, used by CI) it runs that production image instead, with
+`docker run --network host` and the same settings. See
+[Testing](../docs/testing.md#the-conformance-suite-on-the-production-image).
+
 ## Signing in
 
 `src/sign-in.ts` signs in over HTTP only, like a browser: it calls `/auth/login`, follows the

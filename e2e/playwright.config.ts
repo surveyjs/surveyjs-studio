@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/test";
 
-import { stripAppVariables } from "./app-variables.mjs";
+import { appVariables, stripAppVariables } from "./app-variables.mjs";
+import { imageTag, isImageTarget } from "./image-target.mjs";
 
 type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 
@@ -21,6 +24,10 @@ const reuseExistingServer = !process.env["CI"];
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,
 //   editor, history, uploads, run, results, results-details, projects and xss specs, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
+
+// Two targets: the source (default; tsx server and `vite preview`) or the production image
+// (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below).
+const imageTarget = isImageTarget(process.env);
 
 const serverEnv = {
   NODE_ENV: "test",
@@ -109,6 +116,71 @@ const azuriteWebServers: WebServers = [
   },
 ];
 
+// The image target: one container per server and preview pair, listening on the preview's port and
+// serving the web app from the image's WEB_ROOT. `--network host` (Linux only) lets the container
+// reach the replica and the mock OIDC server on the host's loopback ports, as the tsx server does.
+// Values go in the docker client's environment and are passed by name (`-e NAME`), so none is on
+// the command line. A container of an earlier run with the same name is removed first; the global
+// teardown saves the logs and removes the containers.
+function imageWebServer(name: string, port: number, env: Record<string, string>) {
+  const passed = Object.keys(env).map((variable) => `-e ${variable}`);
+  const run = ["docker run", `--name ${name}`, "--network host", ...passed, imageTag(process.env)];
+  return {
+    command: `docker rm -f ${name} >/dev/null 2>&1; exec ${run.join(" ")}`,
+    url: `http://127.0.0.1:${port}/readyz`,
+    reuseExistingServer: false,
+    timeout: 120_000,
+    // The docker client passes SIGTERM to the server, which shuts down cleanly.
+    gracefulShutdown: { signal: "SIGTERM" as const, timeout: 10_000 },
+    env,
+  };
+}
+
+// The image runs on `localhost` (both loopback addresses), where the browsers open the app.
+const imageServerEnv = (port: number) => ({
+  ...serverEnv,
+  HOST: "localhost",
+  PORT: String(port),
+  PUBLIC_BASE_URL: `http://localhost:${port}`,
+});
+
+// Built only for the image target (it reads docker/azurite.env and checks E2E_IMAGE).
+function imageWebServers(): WebServers {
+  if (!azurite) {
+    // The dev sign-in is refused under NODE_ENV=production (the image's default), so development.
+    return [
+      imageWebServer("my-surveys-e2e-memory-5173", 5173, {
+        ...memoryServerEnv,
+        ...imageServerEnv(5173),
+        NODE_ENV: "development",
+      }),
+      // The licence-notice server (see memoryWebServers).
+      imageWebServer("my-surveys-e2e-memory-5174", 5174, {
+        ...memoryServerEnv,
+        ...imageServerEnv(5174),
+        NODE_ENV: "development",
+        ACCOUNT_NOTICES: "license-expired",
+      }),
+    ];
+  }
+  // docker/azurite.env is read here, because `docker run --env-file` would keep its quotes in the
+  // values. Only the app's variables are passed (not the SQL Server container's password), and the
+  // explicit values win over the file, as with `node --env-file`.
+  const file = parseEnv(readFileSync(new URL("../docker/azurite.env", import.meta.url), "utf8"));
+  const azuriteEnv = Object.fromEntries(
+    Object.entries(file).filter(([name]) => appVariables.includes(name)),
+  ) as Record<string, string>;
+  return [
+    // NODE_ENV stays production, as in a deployment, so the server needs a session secret.
+    imageWebServer("my-surveys-e2e-azurite-5173", 5173, {
+      ...azuriteEnv,
+      ...imageServerEnv(5173),
+      NODE_ENV: "production",
+      SESSION_SECRET: "e2e-local-only-session-secret-not-a-real-value",
+    }),
+  ];
+}
+
 // The surveyjs-site header shows the account name only from this width up.
 const viewport = { width: 1440, height: 900 };
 
@@ -151,5 +223,6 @@ export default defineConfig({
         { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
         { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
       ],
-  webServer: azurite ? azuriteWebServers : memoryWebServers,
+  webServer: imageTarget ? imageWebServers() : azurite ? azuriteWebServers : memoryWebServers,
+  ...(imageTarget && { globalTeardown: "./image-teardown.mjs" }),
 });

@@ -16,6 +16,7 @@ e2e/**
 **/test-results
 **/playwright-report
 **/blob-report
+docker-logs
 **/*.tsbuildinfo
 *.log
 Dockerfile

@@ -209,6 +209,23 @@ Remove-Item Env:CONFORMANCE_BASE_URL
 
 A port is accepted when this suite passes against it.
 
+### The conformance suite on the production image
+
+With `CONFORMANCE_IMAGE` set to an image tag, the suite runs the reference server as that image instead of tsx, with
+the same settings. CI builds `my-surveys:ci` and runs `pnpm test:conformance:azurite` this way. Details:
+
+- The container is `my-surveys-conformance`, started with `docker run --network host` on a free port, so it reaches
+  the replica and the mock OIDC server on the host's loopback ports. This works on **Linux only**; on Windows and
+  macOS the suite stops with a message.
+- The values are passed by name (`-e NAME`), never on the command line.
+- `NODE_ENV` is `development` on memory (the dev sign-in is refused in production) and `production` on
+  `azure-legacy`, with a local-only `SESSION_SECRET`. Both keep the server's log (`NODE_ENV=test` turns it off).
+- When the suite ends, it saves the container's log to `docker-logs/my-surveys-conformance.log` and removes the
+  container. CI uploads `docker-logs/` on failure.
+- It cannot be combined with `CONFORMANCE_BASE_URL`.
+
+The provider suite (`pnpm test:providers:azurite`) tests the provider in-process, so it has no image target.
+
 ### Files and the shared harness
 
 | File                     | Checks                                                                                                                                                                                                                                                                                                                                                       |
@@ -664,6 +681,28 @@ WebKit are left to CI.
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
 actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+
+### The end-to-end suites on the production image
+
+With `E2E_TARGET=image`, both suites run against the production image instead of the tsx server and `vite preview`.
+CI sets it, with `E2E_IMAGE=my-surveys:ci` (the default). The image serves the web app itself (`WEB_ROOT`), so
+`pnpm e2e` does not build it.
+
+| Mode    | Containers (`docker run --network host`)                                 | Settings                                                                                        |
+| ------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| memory  | `my-surveys-e2e-memory-5173`, and `my-surveys-e2e-memory-5174` (licence) | The memory settings with `NODE_ENV=development` (the dev sign-in needs it)                      |
+| Azurite | `my-surveys-e2e-azurite-5173`                                            | The app variables of `docker/azurite.env`; `NODE_ENV=production`, a local-only `SESSION_SECRET` |
+
+- Each container listens on the preview's port, on `localhost`, with `PUBLIC_BASE_URL` on that port. Playwright
+  waits for `http://127.0.0.1:<port>/readyz`.
+- The rate limits, `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`, `APP_EDITION`, `APP_SHELL` and `LOG_LEVEL` are those of the
+  tsx servers. The values are passed by name (`-e NAME`), never on the command line. `docker/azurite.env` is read
+  by the config, because `docker run --env-file` would keep the quotes in its values.
+- `--network host` works on **Linux only**, so the image target is for CI (or Linux). On Windows and macOS, `pnpm e2e`
+  stops at once with a message.
+- A container left by an earlier run is removed before its server starts. The global teardown
+  (`e2e/image-teardown.mjs`) saves each container's log to `docker-logs/<name>.log` and removes it. CI uploads
+  `docker-logs/` on failure.
 
 ## Visual parity
 

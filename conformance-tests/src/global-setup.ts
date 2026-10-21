@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
@@ -18,6 +19,13 @@ declare module "vitest" {
 }
 
 const READY_TIMEOUT_MS = 30_000;
+// The image's first start on the replica opens the SQL pool and the storage clients.
+const IMAGE_READY_TIMEOUT_MS = 60_000;
+
+// The image target (CONFORMANCE_IMAGE): the container's name, and the local-only session secret of
+// a NODE_ENV=production server (production requires one).
+const IMAGE_CONTAINER = "my-surveys-conformance";
+const IMAGE_SESSION_SECRET = "conformance-local-only-session-secret-not-a-real-value";
 
 // The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
 const USER_API_TOKEN = "conformance-user-api-token";
@@ -160,6 +168,66 @@ function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
 }
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
+/**
+ * `CONFORMANCE_IMAGE=<tag>` runs the reference server as that image of the production build
+ * (`docker build -t my-surveys:ci .`) instead of tsx, with the same settings. It uses
+ * `docker run --network host`, so it works on Linux only (CI). Null when unset.
+ */
+function imageTag(): string | null {
+  const tag = process.env.CONFORMANCE_IMAGE?.trim();
+  if (!tag) return null;
+  if (!/^\w[\w./:@-]*$/.test(tag)) {
+    throw new Error(`CONFORMANCE_IMAGE is not an image name: "${tag}"`);
+  }
+  if (process.platform !== "linux") {
+    throw new Error(
+      `CONFORMANCE_IMAGE is Linux only (CI): it runs the image with docker run --network host, which does not reach the host's ports on ${process.platform}. Run the suite without it.`,
+    );
+  }
+  return tag;
+}
+
+/**
+ * The image's settings: those of `serverEnv`, with NODE_ENV=development on memory (the dev sign-in
+ * is refused in production) and NODE_ENV=production elsewhere, as in a deployment. Unlike
+ * `NODE_ENV=test`, both keep the server's log, which `docker logs` saves.
+ */
+function imageEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (env.STORAGE_PROVIDER === "memory") return { ...env, NODE_ENV: "development" };
+  return { ...env, NODE_ENV: "production", SESSION_SECRET: IMAGE_SESSION_SECRET };
+}
+
+/** Saves `docker logs` of the image container to docker-logs/ (CI uploads it on failure), then removes it. */
+function removeImageContainer(): void {
+  const logs = spawnSync("docker", ["logs", IMAGE_CONTAINER], { encoding: "utf8" });
+  if (logs.status === 0) {
+    const dir = `${repoRoot}docker-logs`;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(`${dir}/${IMAGE_CONTAINER}.log`, `${logs.stdout}${logs.stderr}`);
+  }
+  spawnSync("docker", ["rm", "-f", IMAGE_CONTAINER], { stdio: "ignore" });
+}
+
+/**
+ * Starts the image in the foreground (its output is collected like the tsx server's). The values
+ * stay in the docker client's environment and are passed by name (`-e NAME`), so none is on the
+ * command line.
+ */
+function spawnImage(image: string, env: NodeJS.ProcessEnv): ChildProcess {
+  spawnSync("docker", ["rm", "-f", IMAGE_CONTAINER], { stdio: "ignore" });
+  const passed = appVariables
+    .filter((name) => env[name] !== undefined)
+    .flatMap((name) => ["-e", name]);
+  return spawn(
+    "docker",
+    ["run", "--name", IMAGE_CONTAINER, "--network", "host", ...passed, image],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      env,
+    },
+  );
+}
+
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
@@ -254,28 +322,36 @@ async function startUserApiStub(): Promise<{ url: string; stop: () => void }> {
 
 async function startReferenceServer(
   stubUrl: string | null,
+  image: string | null,
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const command = "pnpm --filter @my-surveys/server start";
   // On Windows `pnpm` is a .cmd shim, so it needs a shell (the command has no user input).
-  const child = spawn(command, {
-    cwd: repoRoot,
-    shell: true,
-    detached: process.platform !== "win32",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: serverEnv(port, stubUrl),
-  });
+  const child =
+    image === null
+      ? spawn(command, {
+          cwd: repoRoot,
+          shell: true,
+          detached: process.platform !== "win32",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: serverEnv(port, stubUrl),
+        })
+      : spawnImage(image, imageEnv(serverEnv(port, stubUrl)));
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  const stop = () => killTree(child);
+  const stop = () => {
+    if (image !== null) removeImageContainer();
+    killTree(child);
+  };
 
-  const deadline = Date.now() + READY_TIMEOUT_MS;
+  const timeout = image === null ? READY_TIMEOUT_MS : IMAGE_READY_TIMEOUT_MS;
+  const deadline = Date.now() + timeout;
   try {
     for (;;) {
       if (child.exitCode !== null) throw new Error(`exited with code ${child.exitCode}`);
-      if (Date.now() > deadline) throw new Error(`/readyz not ready after ${READY_TIMEOUT_MS} ms`);
+      if (Date.now() > deadline) throw new Error(`/readyz not ready after ${timeout} ms`);
       try {
         if ((await fetch(`${baseUrl}/readyz`)).status === 200) break;
       } catch {
@@ -295,7 +371,10 @@ ${output}`,
   return { baseUrl, stop };
 }
 
-/** Uses `CONFORMANCE_BASE_URL` if set; otherwise runs the reference server for the suite. */
+/**
+ * Uses `CONFORMANCE_BASE_URL` if set; otherwise runs the reference server for the suite (as the
+ * `CONFORMANCE_IMAGE` image when that is set).
+ */
 export async function setup(project: TestProject): Promise<(() => void) | void> {
   const external = process.env.CONFORMANCE_BASE_URL?.trim();
   const mode = userDirectoryMode();
@@ -303,15 +382,19 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
     if (mode !== "default") {
       throw new Error("CONFORMANCE_USER_DIRECTORY cannot be used with CONFORMANCE_BASE_URL");
     }
+    if (process.env.CONFORMANCE_IMAGE?.trim()) {
+      throw new Error("CONFORMANCE_IMAGE cannot be used with CONFORMANCE_BASE_URL");
+    }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
     project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     return;
   }
+  const image = imageTag();
   const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
   let server: { baseUrl: string; stop: () => void };
   try {
-    server = await startReferenceServer(stub?.url ?? null);
+    server = await startReferenceServer(stub?.url ?? null, image);
   } catch (error) {
     stub?.stop();
     throw error;
