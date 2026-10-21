@@ -87,3 +87,35 @@ describe("run", () => {
     expect(result.stderr[0]).toContain(what);
   });
 });
+
+describe("run: Dockerfile node version", () => {
+  const base = {
+    "pnpm-workspace.yaml": workspace,
+    "package.json": pkg({}),
+    "web/package.json": pkg({}),
+  };
+
+  it("reports nothing when there is no Dockerfile", () => {
+    expect(run(fixture({ ...base, ".nvmrc": "24.21.0\n" })).code).toBe(0);
+  });
+
+  it("passes when the Dockerfile matches .nvmrc", () => {
+    const root = fixture({
+      ...base,
+      ".nvmrc": "24.21.0\n",
+      Dockerfile: "FROM node:24.21.0-bookworm-slim\n",
+    });
+    expect(run(root).code).toBe(0);
+  });
+
+  it("fails when the Dockerfile differs from .nvmrc", () => {
+    const root = fixture({
+      ...base,
+      ".nvmrc": "24.21.0\n",
+      Dockerfile: "FROM node:24.20.0-bookworm-slim\n",
+    });
+    const result = run(root);
+    expect(result.code).toBe(1);
+    expect(result.stderr[0]).toContain("Dockerfile:1");
+  });
+});
