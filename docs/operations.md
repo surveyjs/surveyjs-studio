@@ -151,7 +151,7 @@ two steps ([the API document](integrations/surveyjs-user-api.md#authentication))
 
 The server sends its own security headers on every answer. The **web app's pages** are static files, and their
 headers come from whoever serves them. `vite preview` (and `pnpm demo:preview`, and the end-to-end tests) send them
-from `web/security-headers.ts`; **a production host must send the same values**, or the run page loses its protection
+from `server/src/web/security-headers.ts`, as does the server itself when `WEB_ROOT` is set; **a production host must send the same values**, or the run page loses its protection
 against a script in a survey ([ADR 0019](adr/0019-run-page-isolation-and-security-headers.md)). The Vite dev server
 (`pnpm demo`) sends none.
 

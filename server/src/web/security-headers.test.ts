@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentSecurityPolicy, securityHeaders } from "./security-headers";
+import { contentSecurityPolicy, securityHeaders } from "./security-headers.js";
 
 const SURVEY_ID = "22222222-0000-4000-8000-a00000000001";
 

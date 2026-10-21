@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ConfigError, DEV_SESSION_SECRET, loadConfig as load } from "./config.js";
 
@@ -67,6 +68,7 @@ describe("loadConfig", () => {
       userApi: null,
       accountWebhookSecret: null,
       shellLinks: {},
+      webRoot: null,
     });
   });
 
@@ -687,6 +689,20 @@ describe("loadConfig", () => {
       '{"a":"ftp://a.example"}',
     ])("rejects %s", (value) => {
       expect(messageOf(() => loadConfig({ SHELL_LINKS: value }))).toContain("SHELL_LINKS");
+    });
+  });
+
+  describe("WEB_ROOT", () => {
+    const absolute = resolve("web-root-for-tests");
+
+    it("takes an absolute path", () => {
+      expect(loadConfig({ WEB_ROOT: absolute }).webRoot).toBe(absolute);
+    });
+
+    it.each(["web/dist", "./dist", "dist"])("refuses the relative path %s", (value) => {
+      expect(messageOf(() => loadConfig({ WEB_ROOT: value }))).toContain(
+        "WEB_ROOT: must be an absolute path",
+      );
     });
   });
 });

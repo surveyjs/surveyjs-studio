@@ -23,6 +23,8 @@ import { createResultHandlers } from "./results/handlers.js";
 import { serverSecurityHeaders } from "./security-headers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 import { createViewHandlers } from "./views/handlers.js";
+import { securityHeaders } from "./web/security-headers.js";
+import { isServerPath, registerWebApp, requestPathname } from "./web/static.js";
 
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
@@ -83,10 +85,23 @@ export async function buildApp(
   });
 
   const https = new URL(config.publicBaseUrl).protocol === "https:";
+  /** With `WEB_ROOT`, any path but the server's own is the web app's and gets its policy (ADR 0021). */
+  function headersFor(url: string): Record<string, string> {
+    const pathname = requestPathname(url);
+    if (config.webRoot === null || isServerPath(pathname)) {
+      return serverSecurityHeaders(url, { https });
+    }
+    return Object.fromEntries(
+      Object.entries(securityHeaders(pathname, { https })).map(([name, value]) => [
+        name.toLowerCase(),
+        value,
+      ]),
+    );
+  }
   app.addHook("onSend", (request, reply, payload, done) => {
     void reply.header("x-request-id", request.id);
     // A route's own header wins: the dev sign-in page and file downloads set a CSP of their own.
-    for (const [name, value] of Object.entries(serverSecurityHeaders(request.url, { https }))) {
+    for (const [name, value] of Object.entries(headersFor(request.url))) {
       if (!reply.hasHeader(name)) void reply.header(name, value);
     }
     done(null, payload);
@@ -225,6 +240,9 @@ export async function buildApp(
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);
+
+  // Last: its catch-all answers only the GET and HEAD paths no route above took.
+  if (config.webRoot !== null) await registerWebApp(app, config.webRoot);
 
   app.addHook("onClose", async () => {
     await providers.close();

@@ -138,9 +138,9 @@ every unknown address.
   run in CI.
 - **`style-src 'unsafe-inline'`** stays until the libraries stop needing it.
 - **A cookie-less run-page origin** (and the CORS and base URL it needs), after the hosted track's Step 3.
-- **The SPA policy in the production image.** Only `vite preview` applies `web/security-headers.ts`. If the server
-  serves the built front-end (plan Step 14), its `onSend` hook would give every page the API policy
-  (`default-src 'none'`) unless the SPA paths get `securityHeaders(pathname)` instead. Carried into plan Step 14.
+- **The SPA policy in the production image.** Done in Step 14: the module moved to
+  `server/src/web/security-headers.ts`, and the server applies it to the web app's answers when `WEB_ROOT` is set
+  ([ADR 0021](0021-production-image-and-web-serving.md)).
 
 ## To confirm
 

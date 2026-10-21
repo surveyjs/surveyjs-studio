@@ -158,7 +158,10 @@ injected output, the provider interface or a pure function):
   the exit codes, nothing written without `--yes` or `--apply`, no secret in any output), and
   `account-cli.integration.test.ts` (the two erase commands spawned, for the wiring).
 - `security-headers.test.ts` (server) and `web/security-headers.test.ts` (the SPA policy and the `frame-ancestors`
-  split).
+  split; in `server/src` since Step 14).
+- `web/static.test.ts` and `web/client-routes.test.ts` (Step 14): the server with `WEB_ROOT` (status, content type,
+  headers and cache rule of each answer, no file outside the root or under `.vite/`), and the client routes against
+  `web/src/routes`.
 - `results/respondent-logs.test.ts`: **the log check.** The server runs with `LOG_LEVEL=trace` and a captured log
   stream; a submission with marker answers and a client id (success, an idempotent replay, `422`, `413`, IP capture
   on, a store failure) and a respondent file upload are made; no captured line contains a marker answer. It is a unit

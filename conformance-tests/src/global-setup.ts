@@ -68,6 +68,7 @@ const appVariables = [
   "USER_API_TOKEN",
   "ACCOUNT_WEBHOOK_SECRET",
   "SHELL_LINKS",
+  "WEB_ROOT",
 ];
 
 const legacyVariables = [
