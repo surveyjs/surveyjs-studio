@@ -1,10 +1,50 @@
 # Operations
 
-For the people who run My Surveys. This is the first version: it covers the settings for accounts, the two commands that
-erase an account's data, the webhook secret and the header policy a static host must send. Everything else about
+For the people who run My Surveys. This is the first version: it covers the image and its settings, the settings for accounts, the two
+commands that erase an account's data, the webhook secret and the header policy a static host must send. Everything else about
 configuration is in [Development](development.md#environment-variables-server).
 
 Commands are for Git Bash or any POSIX shell, from the repository root, with Node.js 24.
+
+## Deployment
+
+My Surveys ships as one Docker image: the server, which also serves the built web app. Build it from the repository
+root with `pnpm image:build` (`docker build -t my-surveys:local .`). Try it locally with `pnpm prod-like:up`
+([prod-like mode](development.md#prod-like-mode)).
+
+| Item     | Value                                                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Process  | `node --import tsx src/main.ts` in `/app/server`, as the user `node` (uid 1000)                                                                  |
+| Port     | `3000` (`EXPOSE 3000`); put an https proxy or load balancer in front                                                                             |
+| Set      | `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `WEB_ROOT=/app/web` (the built web app)                                                      |
+| Liveness | `GET /healthz`: `200` while the process runs; the image's `HEALTHCHECK` calls it                                                                 |
+| Ready    | `GET /readyz`: `200 {"status":"ok"}` when the stores answer, else `503 {"status":"unavailable"}`. It never shows a connection string or a secret |
+
+`HOST=0.0.0.0` makes the server listen on every interface of the container, which is what a container needs; outside a
+container the default stays `127.0.0.1`. `WEB_ROOT` makes the server serve the web app with the SPA header policy (see
+[below](#the-header-policy-for-the-static-host)); `/api`, `/__dev`, `/healthz` and `/readyz` keep the server's own
+routes and headers.
+
+**The settings of mode 1.1** (hosted, the surveyjs.io stores and users). A missing "required" value stops the server,
+which names the variable. A "set" value has a default that is wrong for mode 1.1.
+
+| Variable                                   | Value                                                                      |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                |
+| `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                        |
+| `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                               |
+| `STORAGE_PROVIDER`                         | Required: `azure-legacy` (the default is `memory`)                         |
+| `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                          |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                          |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, the default (`dev` is refused when `NODE_ENV=production`) |
+| `OIDC_ISSUER_URL`                          | Required: `https://auth.surveyjs.io`                                       |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`     | Required: the client registered there; the secret is **secret**            |
+| `ACCOUNT_NOTICES`                          | Set: `surveyjs-licenses` (the default is `none`)                           |
+
+The accounts settings are [below](#configuring-accounts); every variable is in
+[Development](development.md#environment-variables-server). Register
+`<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI.
 
 ## Configuring accounts
 

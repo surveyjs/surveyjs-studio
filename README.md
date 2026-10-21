@@ -146,6 +146,10 @@ Run from the repository root.
 | `pnpm demo:azurite`              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
 | `pnpm demo:azurite:down`         | Stops the replica and deletes its data                                                                                    |
 | `pnpm dev:prod-data`             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
+| `pnpm image:build`               | Builds the production image `my-surveys:local` (needs Docker)                                                             |
+| `pnpm prod-like:up`              | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
+| `pnpm prod-like:down`            | Stops the prod-like containers and deletes their data                                                                     |
+| `pnpm image:prod-data`           | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
 | `pnpm legacy:load`               | Loads the golden fixtures into a running replica                                                                          |
 | `pnpm inspect:legacy`            | Read-only inspector: lists one user's surveys from the configured store                                                   |
 | `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |

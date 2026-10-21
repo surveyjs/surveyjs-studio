@@ -433,6 +433,71 @@ and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 - **The first request takes several seconds** while the SQL and storage connections open.
 - Tests and the e2e suites never read `server/.env`; they use their own env files.
 
+## Prod-like mode
+
+Prod-like mode runs the **production image** (`my-surveys:local`, see [Operations](operations.md#deployment)) in the
+mode 1 configuration on the offline replica, signing in through the mock OIDC server. Nothing real is touched. It
+uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
+before starting the other.
+
+| Command               | Does                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm prod-like:up`   | Builds the image, starts it with the replica and the mock, waits until all are healthy, loads the fixtures |
+| `pnpm prod-like:down` | Stops the containers and **deletes their volumes**                                                         |
+
+Open <http://localhost:8080> and sign in as `owner` on the mock's page
+([users](#signing-in-through-the-mock-oidc-server)). The files:
+
+- [`docker/compose.prod-like.yaml`](../docker/compose.prod-like.yaml) extends the services of
+  `docker/compose.azurite.yaml` (which stays as it is for Azurite mode) and adds `app`, the image;
+- [`docker/prod-like.env`](../docker/prod-like.env) is the app's settings: `APP_EDITION=hosted`,
+  `STORAGE_PROVIDER=azure-legacy`, `ACCOUNT_NOTICES=surveyjs-licenses`, `IDENTITY_PROVIDER=surveyjs-oidc` with the
+  mock, `PUBLIC_BASE_URL=http://localhost:8080` and a local `SESSION_SECRET`. All values are local placeholders.
+
+**Why the app shares the mock's network.** openid-client checks that the issuer's metadata names the configured
+issuer, so the browser and the app must reach the mock at the same address, and the server allows an http issuer
+only on localhost. The app, the mock and Azurite share one network namespace (the mock's), and the mock listens on
+18080 there: inside and on the host it is `http://127.0.0.1:18080/surveyjs`. Azurite is `127.0.0.1:10000` and
+`:10002` inside too, because the server allows plain http to storage only on loopback. SQL Server is reached by its
+service name, `legacy-sql,1433`. The app's port 3000 is published as 8080.
+
+To see the logs: `docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml logs app`.
+
+## The image on production data
+
+`pnpm image:prod-data` runs the **production image** on the stores and the sign-in in `server/.env`, like
+[production data mode](#production-data-mode) but without Vite: the app is at <http://localhost:3000>. It reads and
+writes production data.
+
+1. **Register the redirect URI** `http://localhost:3000/api/v1/auth/callback` in the the site's sign-in service client (and
+   `http://localhost:3000/` after sign-out, if the server checks it).
+2. **Start the site's sign-in service** on this machine, then run `pnpm image:prod-data`. Stop it with Ctrl+C.
+
+The launcher:
+
+- refuses to start while `server/.env` is not ready: the checks of `pnpm dev:prod-data`, plus a `SESSION_SECRET` of
+  at least 32 characters (the image runs with `NODE_ENV=production`), `IDENTITY_PROVIDER=surveyjs-oidc`, and an
+  issuer on localhost. It names the variable, never the value;
+- refuses a value with `$` that is not in single quotes: docker compose expands `$NAME` in an env file, Node does not;
+- for an https issuer, reads its certificate into `server/.local/issuer-ca.pem`, mounts it read-only at
+  `/certs/issuer-ca.pem` and sets `NODE_EXTRA_CA_CERTS` to it;
+- prints the "REAL DATA" banner (servers and accounts, never a key or password), then runs
+  `docker compose -f docker/image-prod-data.yaml up --build` and removes the containers when it stops.
+
+Only `server/.env` reaches the container: variables set in the shell do not override it here. The compose file sets
+`NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT` and `PUBLIC_BASE_URL=http://localhost:3000` over the file.
+
+**The issuer stays `https://localhost:7100`.** The issuer runs on the host, but `localhost` in a container is the
+container. The service `issuer-forward` (`alpine/socat`) owns the app's network namespace and forwards the issuer's
+port of its localhost to the same port on the host (`host.docker.internal`), so the metadata's issuer matches and
+the certificate's `localhost` name fits. It forwards every other endpoint of the file on this machine the same way.
+It also publishes the app's port 3000. On Docker Desktop this reaches a service the host runs on 127.0.0.1 (the site's sign-in service
+on `localhost` listens there and on ::1); on Linux, `host.docker.internal` is the bridge address, so the issuer must
+listen there too.
+
+`--env-file <path>` reads another file instead of `server/.env`. It is for testing the launcher on the replica and
+the mock (with `pnpm demo:azurite:up` running), not for real use.
+
 ## Golden fixtures
 
 `server/fixtures/legacy/` holds synthetic data in the **legacy storage formats**: SQL rows as JSON

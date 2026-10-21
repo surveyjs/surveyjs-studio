@@ -1,0 +1,45 @@
+# The production image (my-surveys:local) on the stores and the sign-in named in server/.env: the
+# REAL surveyjs.io data. Run it through `pnpm image:prod-data` (scripts/image-prod-data/cli.ts),
+# which checks the file, reads the issuer's certificate and sets the variables used below.
+#
+# Networking: openid-client checks that the issuer's metadata names the configured issuer, so the
+# app must reach the local the site's sign-in service as https://localhost:<port>, as the browser does (the
+# development certificate is for localhost). issuer-forward owns the app's network namespace and
+# maps that port of its localhost (and any other endpoint of the env file on this machine) to the
+# same port on the host. The app answers on its port 3000, published as 127.0.0.1:3000.
+name: my-surveys-image-prod-data
+services:
+  issuer-forward:
+    image: alpine/socat:1.8.1.1
+    # Without the launcher (say, for `docker compose -f docker/image-prod-data.yaml down`) it exits.
+    entrypoint: ["sh", "-c", "${FORWARD_SCRIPT:-echo start it with pnpm image:prod-data; exit 1}"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  app:
+    build: ..
+    image: my-surveys:local
+    env_file: ${APP_ENV_FILE:-../server/.env}
+    # These win over the env file: the image's own layout and the browser origin of this run.
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      WEB_ROOT: /app/web
+      PUBLIC_BASE_URL: http://localhost:3000
+      # Set to /certs/issuer-ca.pem for an https issuer; empty (ignored by Node) otherwise.
+      NODE_EXTRA_CA_CERTS: ${CONTAINER_CA_FILE:-}
+    configs:
+      # The issuer's certificate (server/.local/issuer-ca.pem), mounted read-only; a comment only
+      # when the issuer is not https.
+      - source: issuer-ca
+        target: /certs/issuer-ca.pem
+    network_mode: "service:issuer-forward"
+    depends_on:
+      - issuer-forward
+
+configs:
+  issuer-ca:
+    content: ${ISSUER_CA_PEM:-}

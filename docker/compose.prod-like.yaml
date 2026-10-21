@@ -1,0 +1,55 @@
+# Prod-like mode: the production image (my-surveys:local) in the mode 1 configuration
+# (docker/prod-like.env) on the offline replica of compose.azurite.yaml, signing in through the
+# mock OIDC server. Start with `pnpm prod-like:up`, open http://localhost:8080; stop and wipe with
+# `pnpm prod-like:down`. It uses the same host ports as Azurite mode, so stop one before the other.
+#
+# Networking: openid-client checks that the issuer's metadata names the configured issuer, so the
+# browser and the app must reach the mock at the same address. The app, the mock and Azurite share
+# one network namespace (the mock's): inside it, and on the host through the published ports, the
+# mock is http://127.0.0.1:18080/surveyjs and Azurite is 127.0.0.1:10000 and :10002 (plain http to
+# storage is allowed on loopback only). SQL Server is reached by its service name.
+name: my-surveys-prod-like
+services:
+  mock-oidc:
+    extends:
+      file: compose.azurite.yaml
+      service: mock-oidc
+    environment:
+      # Listen on the published port, so the issuer is the same inside and outside.
+      SERVER_PORT: "18080"
+    ports: !override
+      - "127.0.0.1:18080:18080"
+      - "127.0.0.1:8080:3000" # the app
+      - "127.0.0.1:10000:10000" # Azurite Blob
+      - "127.0.0.1:10002:10002" # Azurite Table
+    healthcheck:
+      test: !override ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:18080/isalive"]
+
+  azurite:
+    extends:
+      file: compose.azurite.yaml
+      service: azurite
+    network_mode: "service:mock-oidc"
+    ports: !reset []
+
+  legacy-sql:
+    extends:
+      file: compose.azurite.yaml
+      service: legacy-sql
+
+  app:
+    build: ..
+    image: my-surveys:local
+    env_file: prod-like.env
+    network_mode: "service:mock-oidc"
+    depends_on:
+      mock-oidc:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+      legacy-sql:
+        condition: service_healthy
+
+volumes:
+  azurite-data:
+  legacy-sql-data:
