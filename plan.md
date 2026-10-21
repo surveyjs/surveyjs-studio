@@ -1,6 +1,6 @@
 # Implementation plan: My Surveys, Phase 1
 
-Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0)
+Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0) · Steps 1–13 done 2026-10-21; Step 14 carries Step 13's open points
 Implements: [spec.md](spec.md) (Phase 1, which is deployment modes 1.1 and 1.2), within the brief in [idea.md](idea.md) and the contract [contract/openapi.yaml](contract/openapi.yaml). The work after Phase 1 runs as two track plans; see [After Phase 1](#after-phase-1).
 
 ## How to use this plan
@@ -84,8 +84,8 @@ The documentation is created in Step 1 and grown by every step:
 | 9 | Results: Summary and Table | ☑ |
 | 10 | Results: Details, downloads and public results | ☑ |
 | 11 | Projects and members | ☑ |
-| 12 | Accounts by deployment mode, data protection and hardening | ☐ |
-| 13 | Visual parity with surveyjs.io | ☐ |
+| 12 | Accounts by deployment mode, data protection and hardening | ☑ |
+| 13 | Visual parity with surveyjs.io | ☑ |
 | 14 | Production readiness and rollout kit | ☐ |
 
 ---
@@ -756,6 +756,7 @@ The documentation is created in Step 1 and grown by every step:
 - a staging copy of the data (spec › Further Notes);
 - the account-deleted webhook secret.
 - If surveyjs.io has shipped it by then: the user API endpoint and credentials (Step 12).
+- The product owner's answers to [ADR 0020 › To confirm](docs/adr/0020-visual-parity-baselines.md#to-confirm) (Step 13). Each item says when it is due: the library versions and visual tests in CI at Step 14 planning; history and the publish flag with the compatibility smoke test; the header text, the 1,000-responses banner and the run-page disclaimer before rollout steps 2 and 3.
 
 **References**
 - idea §3.0 (deployment modes); idea §3.1 *Done when*; idea §6.1 F11; idea §9 (rollout steps, legacy API coexistence until 1.3); D13, D16–D19.
@@ -778,16 +779,23 @@ The documentation is created in Step 1 and grown by every step:
 - **A compatibility smoke test:** after the new app writes (rename, save definition, submit a response, move a survey, change a project), the legacy `api.surveyjs.io` read paths still return correct data.
   - It runs against staging.
   - It protects modes 1.1 and 1.2 only. At 1.3 the hosted-migration track replaces `api.surveyjs.io` with the compatibility layer (D18).
+  - It also covers two things Step 13 found on the live site (ADR 0020 › To confirm):
+    - **History:** the live history page stayed empty for a fresh account after editor saves. Find where the legacy records history, and check the app's history entries are read correctly by the legacy pages.
+    - **The publish flag:** the legacy list shows a survey as published only when `IsPublished` is `true`, but the run page refuses it only when it is `false`, so an unset flag runs while it lists as unpublished. Check the app writes a value both sides read the same way.
 - **Costs carried over from earlier steps:**
   - the Azure `listResults` scan reads a whole partition into memory (Step 9). Read keys first, then a time window.
   - `deleteAllRows` keeps every key in memory (Step 10).
   - verify the production `Surveys.theme` collation against the compare-and-set (ADR 0012).
   - conformance hygiene: suites that leave data on Azurite, cleanup helpers that fail silently, duplicated helpers (Step 11).
   - the SPA's security headers in the production image (Step 12, ADR 0019): `web/security-headers.ts` is applied only by `vite preview` today. When the server serves the front-end, apply `securityHeaders(pathname)` to the SPA paths and keep the server's API policy (`default-src 'none'`, R18) for `/api` only, or every page gets the API policy. Smoke-check both with `curl -sI`, and align the "static host" part of `docs/operations.md` with the deployment chosen.
+  - from Step 13 (ADR 0020):
+    - decide the survey-* versions: live surveyjs.io runs Form Library and Creator 3.2.2, the app 3.1.2. An upgrade that changes the look needs a visual recapture (`pnpm visual:capture`, by a person).
+    - decide whether the visual tests run in CI. Today they run locally on Windows only; CI would need Linux baselines captured by a person.
+    - e2e hygiene: locally `reuseExistingServer` reuses any server on port 3000, so a stray `pnpm demo` watcher (`node --env-file=demo.env --watch`) makes the sign-in specs fail with `429`. Make the e2e run detect a non-test server on its ports and fail with a clear message.
 - **A rollout runbook**, written for the SurveyJS team and the surveyjs.io site team:
   1. Internal use on production data, read-only first.
-  2. An opt-in beta link from the old section.
-  3. The surveyjs.io site switches on the redirects in `docs/operations/surveyjs-redirects.md` (Step 12), and the site's "My Surveys" and "All-in-One Demo" links point to the app.
+  2. An opt-in beta link from the old section. Before it: the product owner has answered the header account text and the 1,000-responses banner (ADR 0020).
+  3. Before this step the product owner has decided the run page's "Disclaimer of liability" (ADR 0020, ADR 0014 S13). The surveyjs.io site switches on the redirects in `docs/operations/surveyjs-redirects.md` (Step 12), and the site's "My Surveys" and "All-in-One Demo" links point to the app.
   4. The site removes My Surveys and **Settings → Manage MySurveys** (D13), and the account-deleted webhook is switched on.
   5. **Rollback** before step 4 means removing the redirects. After step 4, the old pages exist only in a previous site release, so rollback means redeploying that release.
   6. **Handover:** a checklist of what the hosted-migration track (1.3) starts from: data stays on the legacy stores, and `api.surveyjs.io` still serves legacy clients.
@@ -874,7 +882,7 @@ The documentation is created in Step 1 and grown by every step:
 - **Step 12:**
   - the surveyjs.io team must agree to build the user API and the account-deleted webhook that Step 12 specifies. Until then the app reads the site's SQL `Users` directly.
   - the site must build the redirects from the Step 12 map.
-- **Step 13:** a team member must capture the visual baselines, because that needs a signed-in session.
+- **Step 13:** ~~a team member must capture the visual baselines~~ Done: the product owner captured them on 2026-10-20 and 2026-10-21 from a dedicated surveyjs.io account (ADR 0020). A recapture needs a person again.
 - **Step 14:** the hosting environment, OIDC registration, credentials and staging data.
 - **idea §3.1 *Done when*** includes "the old section is switched off". That is an operational action by the SurveyJS team after Step 14, outside this plan's code.
 

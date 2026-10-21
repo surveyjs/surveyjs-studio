@@ -158,22 +158,29 @@ the same behaviour, and parity is the goal, so the app does not change it.
 
 ## To confirm
 
-These are decisions of the team, not of the product owner. Until the owner confirms them they stand as written.
+These are decisions of the team, not of the product owner. Until the owner confirms them they stand as written. None
+of them blocks Step 13; each one is due before the Step 14 point named in its _Answer by_ (plan.md › Step 14).
 
 - **The header's account item.** Live reads "Account"; the app shows the user's name (plan Step 3). Both sides are
-  normalized to "Account", so the test does not decide it. Keep the name, or show "Account"?
+  normalized to "Account", so the test does not decide it. Keep the name, or show "Account"? _Answer by:_ rollout step
+  2, the opt-in beta link, when real users first see it.
 - **The run page's "Disclaimer of liability"** ([ADR 0014](0014-run-page-and-response-collection.md), S13). It is hidden
   on the live side, because the visual account has no licence, and the app does not build it. Build it, or drop it?
+  _Answer by:_ rollout step 3, the redirects, after which respondents no longer see the old run page.
 - **No "first 1,000 responses" banner** ([ADR 0015](0015-results-summary-table-and-views.md), R12). It is hidden on the
-  live side. Confirm.
+  live side. Confirm. _Answer by:_ rollout step 2.
 - **Library versions.** Live Form Library and Creator run 3.2.2; the app runs 3.1.2. The live Dashboard version is not
   exposed (`states.json`). Differences inside them are accepted as `library`. Upgrading is a separate decision.
+  _Answer by:_ Step 14 planning, which pins the production image; an upgrade that changes the look needs a recapture.
 - **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
   dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
-  (`pnpm visual:capture --grep history`).
+  (`pnpm visual:capture --grep history`). _Answer by:_ the Step 14 compatibility smoke test, which must cover how the
+  legacy records history.
 - **The live publish flag.** On the dedicated account `Customer feedback` may list as unpublished
   (`data-ispublished="false"`) after Publish (the list shows "true" only when `IsPublished == true`; the run page
   refuses only when it is `false`). It listed as published in the end (`states.json` has `feedbackPublished: true`).
   The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`,
-  so neither depends on it. Why it can lag is open.
-- **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades.
+  so neither depends on it. Why it can lag is open. _Answer by:_ the Step 14 compatibility smoke test, because the app
+  writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2.
+- **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades. _Answer by:_ Step 14
+  planning, which completes the CI pipeline; visual tests in CI would need Linux baselines captured by a person.
