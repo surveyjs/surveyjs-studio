@@ -145,6 +145,7 @@ Run from the repository root.
 | `pnpm demo:azurite:up`           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
 | `pnpm demo:azurite`              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
 | `pnpm demo:azurite:down`         | Stops the replica and deletes its data                                                                                    |
+| `pnpm dev:prod-data`             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
 | `pnpm legacy:load`               | Loads the golden fixtures into a running replica                                                                          |
 | `pnpm inspect:legacy`            | Read-only inspector: lists one user's surveys from the configured store                                                   |
 | `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |

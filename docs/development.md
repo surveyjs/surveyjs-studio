@@ -399,6 +399,39 @@ The user's id (`11111111-0000-4000-8000-a00000000001` for the owner) works too. 
 these names their legacy `Users.id` as the subject, with their email and name claims. Any other
 text signs in a user the directory does not know, with that text as the subject.
 
+## Production data mode
+
+`pnpm dev:prod-data` runs the app on the **real** surveyjs.io stores (the mode 1.1 data) with sign-in
+through a the site's sign-in service instance running on this machine. It reads and writes production data:
+everything you do there is real.
+
+1. **Register the client** in the site's sign-in service: client id `my-surveys` with the redirect URI
+   `http://localhost:5173/api/v1/auth/callback` (and `http://localhost:5173/` after sign-out, if
+   the server checks it). The browser uses the Vite origin, which proxies `/api` to the server.
+2. **Fill in `server/.env`**: copy `server/.env.example` and set the three `LEGACY_*` connection
+   strings, `OIDC_CLIENT_SECRET` and `SESSION_SECRET`. The file is gitignored; never commit it or
+   put a real value in the template.
+3. **Start the site's sign-in service**, then run `pnpm dev:prod-data` and open <http://localhost:5173>.
+
+The launcher refuses to start while a required value is empty, prints the SQL server, database and
+storage accounts it is about to use (never a key or password), then starts the server (`--env-file=.env`)
+and Vite as `pnpm demo` does. Stop both with Ctrl+C.
+
+- **The issuer is `https://localhost:7100`**: its metadata names that address, and
+  `http://localhost:5100` only redirects there. the site's sign-in service publishes RFC 8414 metadata with the
+  scopes `profile` and `email` and no ID token, so `OIDC_DISCOVERY` and `OIDC_SCOPES` keep their
+  defaults ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)).
+- **Its certificate is the self-signed ASP.NET development certificate**, which Node rejects. For an
+  https issuer on localhost the launcher reads the certificate from the running server, saves it to
+  `server/.local/issuer-ca.pem` (gitignored) and starts the server with `NODE_EXTRA_CA_CERTS`
+  pointing at it; Node reads that variable only at start-up, so `server/.env` cannot set it. A
+  `NODE_EXTRA_CA_CERTS` already set in the shell is kept. The launcher stops if the issuer is not
+  reachable.
+- **The server watches `server/src` only** (`--watch-path=src`): with plain `--watch`, Node restarts
+  whenever a library loads a file lazily on first use (the SQL driver does), dropping the requests in flight.
+- **The first request takes several seconds** while the SQL and storage connections open.
+- Tests and the e2e suites never read `server/.env`; they use their own env files.
+
 ## Golden fixtures
 
 `server/fixtures/legacy/` holds synthetic data in the **legacy storage formats**: SQL rows as JSON
@@ -534,6 +567,7 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 | Package             | Script                                         | Purpose                                                                                                                                                 |
 | ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server`            | `dev`, `start`, `typecheck`                    | Watch mode, plain start, type check                                                                                                                     |
+| `server`            | `dev:prod-data`                                | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
 | `web`               | `dev`, `build`, `preview`, `test`, `typecheck` | Vite dev server, build (type check first), preview, unit tests                                                                                          |
 | `contract`          | `generate`                                     | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
 | `contract`          | `lint`, `check:generated`                      | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
