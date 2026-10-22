@@ -56,3 +56,16 @@ The legacy stores add a second limit to a response: the `azure-legacy` provider 
 "The answers are too large to store.", even below `LIMIT_MAX_RESPONSE_BYTES`. The `memory` provider has no such
 cap. Files go to the file store, so a response that has files stays small. See
 [ADR 0014](0014-run-page-and-response-collection.md) (S7, S11).
+
+## Addendum (Step 14)
+
+Fastify refuses a body over the limit on its declared `Content-Length`, before reading it, and answers 413 with
+`Connection: close`. Node then closes the socket with the rest of the body unread, and the kernel resets the
+connection. A client still sending the body (fetch, a browser, the survey library) can see `EPIPE` or
+`ECONNRESET` instead of the 413, so it cannot tell a refusal from a network failure; the conformance suite hit
+this on CI with a body one byte over the limit.
+
+A small overflow is therefore read to its end and dropped: when the declared length is at most **4 times the
+route's limit**, the 413 keeps the connection, Node discards the rest of the body without buffering it, and the
+client reads the 413 once it has sent everything. A larger declared length, or a body without one (chunked),
+keeps `Connection: close`, so the server never reads an unbounded body. See `server/src/body-limit.ts`.

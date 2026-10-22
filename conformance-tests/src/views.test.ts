@@ -192,6 +192,10 @@ describe("views", () => {
     });
     expect(response.status).toBe(413);
     expect(await codeOf(response)).toBe("payload-too-large");
+    // The server reads a small overflow to its end and keeps the connection; with Connection: close
+    // it would cut the connection while the client is still sending, and the client could see
+    // EPIPE instead of this answer.
+    expect(response.headers.get("connection")).not.toBe("close");
   });
 
   it("refuses an unknown view, a missing CSRF token and a missing session", async (ctx) => {

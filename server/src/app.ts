@@ -9,6 +9,7 @@ import type { IdentityProvider } from "./auth/identity.js";
 import { createIdentityProvider } from "./auth/providers/index.js";
 import type { Clock } from "./auth/session.js";
 import { createSessionHandlers } from "./auth/session-handlers.js";
+import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
@@ -108,6 +109,9 @@ export async function buildApp(
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      drainSmallOverflow(request, reply);
+    }
     const body = toProblem(error);
     // A 501 for a not-yet-implemented operation and a read-only refusal are expected answers, not
     // server faults.
