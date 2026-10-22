@@ -4,6 +4,16 @@
   padding: 0;
 }
 
+/*
+ * The site draws an entry's text as its `.action-link` (common-styles.scss): this font and colour,
+ * underlined, as a link that opens the saved JSON. The app has no JSON view (ADR 0012 R23), so the
+ * text keeps the font and colour but is not a link.
+ */
+.entry {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #404040;
+}
+
 .linkButton {
   background: none;
   border: 0;
