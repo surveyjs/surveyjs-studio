@@ -428,7 +428,8 @@ invalid-signature`; a valid one for a body that is not an account event is `400`
 - `security-headers.test.ts`: the headers of [ADR 0019](adr/0019-run-page-isolation-and-security-headers.md) on an
   API answer, a problem answer and an unknown path; HSTS only when the server is reached over https (a port behind
   a TLS proxy cannot be judged otherwise).
-- `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`.
+- `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`. The body
+  is a `not-found` Problem, or the web app's HTML page when the server serves the app (`WEB_ROOT`, the image).
 - `user-directory.test.ts`: runs only in the user-API mode and checks the licence notices that come from the API.
 - **The user-API run**, `pnpm test:conformance:user-api`: the whole suite with the reference server on
   `USER_DIRECTORY=surveyjs-api`, against the stub the run starts itself. Sign-in, members by email and the notices
