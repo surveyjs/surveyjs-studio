@@ -742,7 +742,6 @@ never touches the functional servers.
 | `thresholdReason`   | Required when the ratio is above the kind's default                           |
 | `cookieBanner`      | `true` when the consent flag must not be preset                               |
 | `skip`              | A reason: the screen is neither captured nor compared (none today)            |
-| `awaitingBaseline`  | A reason: no committed image yet, so the run skips it until it is captured    |
 
 `idle` is a selector (a loading overlay) that must be hidden or gone before the shot; a timeout fails with
 `Still loading on <side> for <id>: …`. A step is a `click` or a `hover` and nothing else. Every hide, mask and normalization has a non-empty `reason` and a
@@ -765,7 +764,6 @@ Messages you may see:
 | `No surveyjs.io baselines for win32. A SurveyJS team member captures them with pnpm visual:capture (…)` | `e2e/visual/baselines/states.json` or the platform folder is missing. Exits 1, before the build                                                                                                     |
 | `Baselines come only from surveyjs.io.`                                                                 | You passed `-u`, `--update-snapshots` or `--update-snapshots=…`. Exits 2. The visual config also refuses them when Playwright is run directly (`playwright test -c playwright.visual.config.ts -u`) |
 | `Missing surveyjs.io baseline <path>. Baselines are captured by a person: …`                            | One screen has no image in this browser's folder                                                                                                                                                    |
-| `No surveyjs.io baseline yet: …` (a skipped test)                                                       | The screen is marked `awaitingBaseline` and has no image yet. Not a failure; see [Screens awaiting a baseline](#screens-awaiting-a-baseline)                                                        |
 | `pnpm visual:capture is run by a person, never in CI.`                                                  | `CI` is set. The command refuses and exits non-zero                                                                                                                                                 |
 
 Pass any Playwright argument after the command, for example `pnpm e2e:visual --project=chromium --grep list-active`.
@@ -860,20 +858,12 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
 A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped. No
 screen is skipped today.
 
-**Screens awaiting a baseline**
-
-A screen with `awaitingBaseline` in the manifest is captured, but its image is not committed yet. `pnpm e2e:visual`
-still opens the app side and attaches its screenshot to the report, then reports the screen as skipped (`No
-surveyjs.io baseline yet: …`) instead of failing. Once the image exists, the screen is compared as usual.
-Accepted differences marks it `(pending)`.
-
-| Screen    | Why                                                                                                                       | Before the capture                                                                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `history` | surveyjs.io lists history only since its fix of 2026-10-20 (commit `3389d6cd49`); earlier saves are not listed (ADR 0020) | Make two editor saves of `Customer feedback` (checklist step 9). Run `pnpm visual:capture --grep history`, then remove `awaitingBaseline` in the same commit |
+**The history screen**
 
 The capture refuses a history with fewer than two entries and records the live count in `states.json`; the visual run
-gives the app's survey the same number of entries. A `states.json` with `historyEntries: 0` (captured before the fix)
-makes the app side use two.
+gives the app's survey the same number of entries. `e2e/visual/states.test.ts` (part of `pnpm test:unit`) fails when
+`states.json` records fewer than two while a `history.png` is committed: the states file must come from the same
+capture as the images.
 
 **If something fails**
 
@@ -890,6 +880,9 @@ makes the app side use two.
 
 **Good to know**
 
+- The capture writes `states.json` before the screenshots. Do not commit, stash, check out or restore files under
+  `e2e/visual/baselines/` while it runs: on 2026-10-22 a commit and its amend in another terminal put the old file
+  back, and the capture's states had to be recovered from git.
 - The script deletes the sign-in state (`e2e/visual/.auth/`) when it ends. If a run was killed, delete the folder by
   hand. It is git-ignored; never commit it. `--keep-sign-in` keeps it for the next run.
 - Recapture one screen, or some, with `pnpm visual:capture --grep <id>`. The account checks run again. To recapture
@@ -916,20 +909,26 @@ makes the app side use two.
 ### Accepted differences
 
 Each difference the team accepts instead of fixing is one row. The table matches the `hide`, `mask`, `normalize` and
-`residual` entries of `e2e/visual/manifest.ts` one to one. No screen has a `maxDiffPixelRatio` above its kind's default. Live
+`residual` entries of `e2e/visual/manifest.ts` one to one. One screen has a `maxDiffPixelRatio` above its kind's default:
+`projects-expanded` (0.015; `element` 0.01), because Firefox's live capture of 2026-10-22 draws the section 1 px lower
+than the one of 2026-10-20 (ADR 0020 › To confirm). Live
 Form Library and Creator run 3.2.2, as the app does since Step 14; the live Dashboard version is not exposed
 (`states.json`).
 
 | Screen                                                                                                                                  | What                                                                                                                                               | Category  | Reason                                                                                                     |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
-| The six `list-*` screens, `editor-designer`, `editor-embed`, `history` (pending), `results-summary`, `results-table`, `results-details` | The header's account item reads "Account" on both sides                                                                                            | departure | Step 3 shows the user's name where live shows the constant "Account"; open in ADR 0020 › To confirm        |
+| Six `list-*` screens, `editor-designer`, `editor-embed`, `history`, `results-summary`, `results-table`, `results-details` (with header) | The header's account item reads "Account" on both sides                                                                                            | departure | Step 3 shows the user's name where live shows the constant "Account"; open in ADR 0020 › To confirm        |
 | The same screens                                                                                                                        | The GitHub star count reads "4.7k" on both sides                                                                                                   | live-data | The star count changes daily                                                                               |
 | `list-active`, `list-archived`, `list-project`, `list-project-selector`, `list-row-menu`, `list-row-menu-ids`                           | The survey dates read "1/1/2026" on both sides                                                                                                     | live-data | The dates are the days the data was created                                                                |
 | `editor-designer`, `editor-embed`                                                                                                       | The Creator licence banner is hidden on the app side                                                                                               | library   | survey-creator-core 3.2.2 shows it without a licence key; the live site has a key                          |
 | `editor-designer`, `editor-embed`                                                                                                       | The app's save status in the bottom bar is hidden                                                                                                  | departure | ADR 0012 R18: the save status is ours; the live bottom bar has none                                        |
 | `editor-embed`                                                                                                                          | The embed code box is masked                                                                                                                       | live-data | The code shows the survey ids                                                                              |
-| `history` (pending)                                                                                                                     | The entry times read "1/1/2026, 12:00:00 PM" on both sides                                                                                         | live-data | The times are the moments the data was created                                                             |
+| `history`                                                                                                                               | The entry times read "1/1/2026, 12:00:00 PM" on both sides                                                                                         | live-data | The times are the moments the data was created                                                             |
+| `history`                                                                                                                               | The app's "by {name}" after each entry time is hidden on the app side                                                                              | departure | ADR 0012 R23: the app names the user of each save; legacy records no user                                  |
+| `history`                                                                                                                               | The app's "Back to My Surveys" link is hidden on the app side                                                                                      | departure | App navigation link, no live counterpart (as on the results pages, Step 9)                                 |
+| `history`                                                                                                                               | The entry times are not underlined in the app. Nothing hides it; it fits within the default ratio                                                  | departure | ADR 0012 R23: no JSON view, so the time is not a link                                                      |
 | `run`                                                                                                                                   | The "Disclaimer of liability" banner is hidden on the live side                                                                                    | departure | ADR 0014 S13: the disclaimer is not built                                                                  |
+| `projects`, `projects-expanded`                                                                                                         | The heading: "Projects" in a level-1 header in the app, "Manage MySurveys" in a level-3 header on live. Nothing hides it                           | departure | ADR 0017 R20: the page's heading is Projects, an h1 as the survey list's                                   |
 | `projects-expanded`                                                                                                                     | The member's display name reads "Visual User" on both sides                                                                                        | live-data | The name belongs to the account that made the data                                                         |
 | `results-summary`, `results-table`, `results-details`, `public-results`                                                                 | The "first 1,000 responses" banner is hidden on the live side                                                                                      | departure | ADR 0015 R12: no 1,000 banner                                                                              |
 | `results-summary`, `results-table`, `public-results`                                                                                    | The Dashboard licence banner is hidden on the app side                                                                                             | library   | The Dashboard library shows it without a licence key; the live site has a key (its version is not exposed) |

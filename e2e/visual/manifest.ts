@@ -55,12 +55,6 @@ export interface Screen {
   readonly maxDiffPixelRatio: number;
   readonly thresholdReason?: string; // required when above the kind's default
   readonly skip?: string; // non-empty reason: the screen is neither captured nor compared
-  /**
-   * Non-empty reason: the screen is captured, but its surveyjs.io baseline is not committed yet.
-   * Until a person captures it, the visual run skips the screen with this note instead of failing on
-   * the missing image; once the image exists, it is compared as usual. Removed with the capture.
-   */
-  readonly awaitingBaseline?: string;
 }
 
 export const LIVE_ORIGIN = "https://surveyjs.io";
@@ -124,6 +118,13 @@ const EMBED_STEPS_APP: readonly Step[] = [
   { click: ".svc-tabbed-menu-dots" },
   { click: EMBED_POPUP_ITEM },
 ];
+
+/** The Projects page is the account page's section alone, with its own heading. */
+const PROJECTS_HEADING: Residual = {
+  what: 'the heading: "Projects" in a level-1 header in the app, "Manage MySurveys" in a level-3 header on live',
+  reason: "ADR 0017 R20: the page's heading is Projects, an h1 as the survey list's",
+  category: "departure",
+};
 
 /** The survey dates of the list cannot match: they are fixed to one text on both sides. */
 const SURVEY_DATES: Normalization = {
@@ -356,10 +357,24 @@ export const SCREENS: readonly Screen[] = [
     id: "history",
     group: "pages",
     kind: "page",
-    awaitingBaseline:
-      "surveyjs.io lists history since its fix of 2026-10-20 (3389d6cd49); the product owner captures it: pnpm visual:capture --grep history",
     live: { path: "/Service/History/{feedbackId}", ready: ".my-surveys-history-item" },
-    app: { path: "/surveys/{feedbackId}/history", ready: ".my-surveys-history-item" },
+    app: {
+      path: "/surveys/{feedbackId}/history",
+      ready: ".my-surveys-history-item",
+      hide: [
+        {
+          selector: ".my-surveys-history-item__user",
+          reason: "ADR 0012 R23: the app names the user of each save; legacy records no user",
+          category: "departure",
+        },
+        {
+          selector:
+            ".my-surveys-page__results-section > p.v2-class---paragraph:has(> a.v2-class---paragraph-link)",
+          reason: "app navigation link, no live counterpart (as on the results pages, Step 9)",
+          category: "departure",
+        },
+      ],
+    },
     normalize: [
       ...HEADER_NORMALIZATIONS,
       {
@@ -368,6 +383,13 @@ export const SCREENS: readonly Screen[] = [
         text: "1/1/2026, 12:00:00 PM",
         reason: "the entry times are the moments the data was created",
         category: "live-data",
+      },
+    ],
+    residual: [
+      {
+        what: "the entry times are not underlined",
+        reason: "ADR 0012 R23: no JSON view, so the time is not a link",
+        category: "departure",
       },
     ],
     maxDiffPixelRatio: 0.005,
@@ -400,6 +422,7 @@ export const SCREENS: readonly Screen[] = [
       target: PROJECTS_SECTION,
     },
     app: { path: "/projects", ready: PROJECTS_SECTION, target: PROJECTS_SECTION },
+    residual: [PROJECTS_HEADING],
     maxDiffPixelRatio: 0.01,
   },
   {
@@ -427,7 +450,10 @@ export const SCREENS: readonly Screen[] = [
         category: "live-data",
       },
     ],
-    maxDiffPixelRatio: 0.01,
+    residual: [PROJECTS_HEADING],
+    maxDiffPixelRatio: 0.015,
+    thresholdReason:
+      "Firefox: the live capture of 2026-10-22 draws the section below the heading 1 px lower than the one of 2026-10-20 (3,639 px apart; no site change). With the heading residual the app is 0.0134 from it (ADR 0020)",
   },
   {
     id: "results-summary",

@@ -7,7 +7,6 @@ import {
   FEEDBACK_DEFINITION,
   FEEDBACK_NAME,
   FEEDBACK_RESPONSES,
-  HISTORY_SAVES,
   PERSONAL_ACTIVE,
   PERSONAL_ARCHIVED,
   PROJECT_NAME,
@@ -29,14 +28,11 @@ const statesPath = resolve(here, "../baselines/states.json");
 
 /**
  * How many history entries the live survey has: from the capture's states, or the default for
- * `--self`. A count of 0 comes from a capture made before surveyjs.io listed history (its fix of
- * 2026-10-20): the history screen then awaits its baseline, and the app side shows the entries the
- * product owner's saves will make (`HISTORY_SAVES`).
+ * `--self`. The capture refuses fewer than `HISTORY_SAVES` (states.test.ts checks the committed file).
  */
 function historyEntries(): number {
   if (process.env["VISUAL_BASELINES"] === "self") return DEFAULT_STATES.historyEntries;
-  const recorded = (JSON.parse(readFileSync(statesPath, "utf8")) as VisualStates).historyEntries;
-  return recorded > 0 ? recorded : HISTORY_SAVES;
+  return (JSON.parse(readFileSync(statesPath, "utf8")) as VisualStates).historyEntries;
 }
 
 async function patchSurvey(page: Page, id: string, patch: Record<string, unknown>): Promise<void> {

@@ -35,19 +35,6 @@ describe("the screen manifest", () => {
     expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual([]);
   });
 
-  it("lets a screen await its baseline only with a reason, and only history today", () => {
-    for (const screen of SCREENS) {
-      if (screen.awaitingBaseline === undefined) continue;
-      expect(screen.awaitingBaseline.trim(), screen.id).not.toBe("");
-      // A skipped screen is never captured, so it cannot await a capture.
-      expect(screen.skip, screen.id).toBeUndefined();
-    }
-    // Removed with the product owner's capture of the screen (ADR 0020).
-    expect(SCREENS.filter((s) => s.awaitingBaseline !== undefined).map((s) => s.id)).toEqual([
-      "history",
-    ]);
-  });
-
   it("gives every idle selector a value", () => {
     for (const screen of SCREENS) {
       for (const [side, spec] of sides(screen)) {
@@ -188,5 +175,15 @@ describe("the screen manifest", () => {
     expect(table.normalize?.map((item) => item.app)).toContain(
       '.tabulator-row .tabulator-cell[tabulator-field="HappendAt"]',
     );
+  });
+
+  it("records the history page's known differences", () => {
+    const history = SCREENS.find((screen) => screen.id === "history")!;
+    const hidden = (history.app.hide ?? []).map((item) => item.selector);
+    // ADR 0012 R23: "by {name}" on each entry; legacy records no user.
+    expect(hidden).toContain(".my-surveys-history-item__user");
+    // The app's "Back to My Surveys" link has no live counterpart.
+    expect(hidden.some((s) => s.includes("v2-class---paragraph-link"))).toBe(true);
+    expect(history.live.hide ?? []).toEqual([]);
   });
 });
