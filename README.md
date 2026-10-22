@@ -160,6 +160,7 @@ Run from the repository root.
 | `pnpm inspect:legacy-schema`     | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
 | `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
 | `pnpm account:erase`             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
+| `pnpm smoke:legacy`              | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                  |
 | `pnpm account:reconcile`         | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
 | `pnpm webhook:account-deleted`   | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
 | `pnpm test:conformance:user-api` | Conformance suite with the server on the user-API stub                                                                    |

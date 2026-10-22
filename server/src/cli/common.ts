@@ -120,13 +120,14 @@ export const READ_ONLY_REFUSAL = "Refused: READ_ONLY=true. Nothing was erased.";
  * Runs `body` with the configured providers and closes them after. Exit 2 for an unreadable env
  * file, a memory store, or `writes` with `READ_ONLY=true` (`makeProviders` is not called); exit 1
  * with `Error: <safe text>` when the configuration or `body` fails. `writes`: `body` may write
- * (the command's `--yes` or `--apply`); its dry run is not refused.
+ * (the command's `--yes` or `--apply`); its dry run is not refused. `readOnlyRefusal` replaces
+ * READ_ONLY_REFUSAL for a command that does not erase.
  */
 export async function withProviders(
   envFile: string | null,
   io: CliIo,
   deps: StoreCommandDeps,
-  options: { readonly writes: boolean },
+  options: { readonly writes: boolean; readonly readOnlyRefusal?: string },
   body: (providers: ProviderSet) => Promise<number>,
 ): Promise<number> {
   let env: CliEnv = deps.env ?? process.env;

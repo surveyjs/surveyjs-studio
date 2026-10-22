@@ -1133,6 +1133,38 @@ All paths above are **[C]** from `the site's code`,
 - The browser results page (SurveyJS Dashboard and Table) renders the values client-side. **[C]**
   `the site's codehtml`
 
+**Calls of the smoke test (Step 14).** `pnpm smoke:legacy` ([smoke test](../operations/smoke-test.md)) reads these.
+All are `GET`; the paths also work with `v1` after `public` or `private`. **[C]**
+`the site's code`, `the site's code`
+
+| Call                                            | Parameters                                                     | Answer                                                                           |
+| ----------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `public/Survey/getSurvey`                       | `surveyId`                                                     | The `surveyjson` text; 400 when there is none                                    |
+| `public/Survey/getResult`                       | `resultId`, `name`                                             | `{ AnswersCount, QuestionResult, FirstResultAt, LastResultAt, ResultCount }`     |
+| `public/Survey/isCompleted`                     | `resultId`, `clientId`                                         | The string `no`, `partial` or `completed`                                        |
+| `private/Surveys/getActive` (`getArchive`)      | `accessKey`; `ownerId` (optional)                              | The active (archived) `Survey` records of the owner                              |
+| `private/Surveys/getSurveyInfo`                 | `accessKey`, `surveyId`; `ownerId` (optional)                  | `{ Info: Survey, Json }`, `Json` HTML-encoded (not used)                         |
+| `private/Surveys/getHistoryPoint[/{id}]`        | `accessKey`, `id`, `pointId`                                   | The point's JSON; 400 when not allowed or empty                                  |
+| `private/Surveys/getSurveyResults[/{id}]`       | `accessKey`, `id`; `from`, `till`, `take`, `continuationToken` | `{ Data, ResultCount }` (with `take`: one page and `ContinuationToken`)          |
+| `private/Surveys/getSurveyPublicResults[/{id}]` | `id`; `from`, `till`                                           | `{ Data, ResultCount }`, no key; 400 unless `allowaccessresult`                  |
+| `private/Surveys/getIsPublished[/{id}]`         | `accessKey`, `id`                                              | `IsPublished ?? false` and a `publishid`: false after a plain publish (not used) |
+
+- **The access key** is the query parameter `accessKey` and nothing else (or the site's cookie). An unknown key or a
+  blocked user fails, and the error text quotes the key: `The accessKey '…' is incorrect.` A client must never print
+  a legacy error text. **[C]** `the site's code` (`site code`,
+  `site code`), `the site's code` (`site code`, `site code`)
+- **`ownerId`**: a project id lists the project's surveys only when the key's user has an `OrganizationUsers` row in
+  it; otherwise the user's own list comes back, with no error. **[C]** `site code`
+- **Access to one survey** (`getHistoryPoint`, `getSurveyResults`, `getIsPublished`): its owner, a member of its
+  project, or a site admin. **[C]** `site code`
+- **The record's JSON** uses the member names of `the site's code` as declared (Newtonsoft
+  `DefaultContractResolver`; the class is a `[site code]`, so only `[site code]` members): `Id`, `Name`,
+  `IsArchived`, `UserId`, `CreatorId`, `PostId`, `ResultId`, `PublishId`, `IsPublished` (`null` while the flag is
+  empty), `UseCookies`, `UpdatedOn`, `CreatedAt`, `AllowAccessResult`, `StoreIPAddress`, `Theme` (the stored text),
+  `Json`. **[C]** `the site's code` (`site code`)
+- **No project read.** No call lists projects or members (`changeOrganization` only moves a survey), so the smoke test
+  cannot read a project delete back. **[C]** `the site's code`
+
 ## 8. D11 verdict
 
 **Yes, with conditions.** Respondent files can be stored as URLs in place of inline content without

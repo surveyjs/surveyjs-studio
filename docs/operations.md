@@ -53,6 +53,10 @@ The accounts settings are [below](#configuring-accounts); every variable is in
 [Development](development.md#environment-variables-server). Register
 `<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI.
 
+**The legacy smoke test.** Once the app writes to the real stores, run `pnpm smoke:legacy` with the dedicated test
+account: it checks that `api.surveyjs.io` reads what the app writes. How to run it, and the checklist for the old
+site's pages: [Legacy smoke test](operations/smoke-test.md).
+
 ## Configuring accounts
 
 Users come from a **user directory**. Which one is a setting, and some combinations cannot work: the server then

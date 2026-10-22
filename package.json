@@ -32,6 +32,7 @@
     "inspect:legacy": "node --import tsx server/src/cli/inspect-legacy.ts --",
     "inspect:legacy-schema": "node --import tsx server/src/cli/inspect-legacy-schema.ts --",
     "account:erase": "node --import tsx server/src/cli/account-erase.ts --",
+    "smoke:legacy": "node --import tsx server/src/cli/smoke-legacy.ts --",
     "account:reconcile": "node --import tsx server/src/cli/account-reconcile.ts --",
     "webhook:account-deleted": "node --import tsx server/src/cli/send-account-deleted.ts --",
     "legacy:load": "node --env-file=docker/azurite.env --import tsx server/src/legacy/load-fixtures.ts",
