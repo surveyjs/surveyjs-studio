@@ -9,9 +9,19 @@
  * list or results deletion goes to them. Cleanup (archive, then delete) is registered with
  * `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn, upload } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it } from "vitest";
+import {
+  call,
+  codeOf,
+  upload,
+  as,
+  ONE_QUESTION,
+  submitted,
+  walkItems,
+  ownSurvey as ownHarnessSurvey,
+  type OwnSurveyOptions,
+} from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider } = fixtureUsers;
 
@@ -24,7 +34,6 @@ const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const RESULTS = "/surveys/{surveyId}/results";
 const EXPORT = "/surveys/{surveyId}/results/export";
 const STATS = "/surveys/{surveyId}/results/stats";
-const RESPONSES = "/public/surveys/{surveyId}/responses";
 const MERGE_PATCH = "application/merge-patch+json";
 
 /** The data URL of the fixture response 4's receipt (`suite/expected.ts`). */
@@ -52,31 +61,7 @@ interface Page {
   nextCursor: string | null;
 }
 
-const sessions = new Map<string, SignInResult>();
-
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 const merge = (headers: Headers): Headers => ({ "content-type": MERGE_PATCH, ...headers });
-
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: merge(headers),
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
 
 function patch(headers: Headers, id: string, body: unknown): Promise<Response> {
   return call("PATCH", "/surveys/{surveyId}", {
@@ -86,31 +71,11 @@ function patch(headers: Headers, id: string, body: unknown): Promise<Response> {
   });
 }
 
-interface OwnSurvey {
-  readonly name?: string;
-  readonly projectId?: string;
-  readonly definition?: unknown;
-}
-
 /** A published survey with one text question `q1` (by default); its cleanup is registered. */
-async function ownSurvey(headers: Headers, options: OwnSurvey = {}): Promise<string> {
-  const definition = options.definition ?? {
-    pages: [{ name: "page1", elements: [{ type: "text", name: "q1" }] }],
-  };
-  const response = await call("POST", "/surveys", {
-    headers,
-    body: {
-      definition,
-      ...(options.name !== undefined && { name: options.name }),
-      ...(options.projectId !== undefined && { projectId: options.projectId }),
-    },
-  });
-  expect(response.status).toBe(201);
-  const { id } = (await response.json()) as { id: string };
-  onTestFinished(() => cleanUp(headers, id));
-  expect((await patch(headers, id, { published: true })).status).toBe(200);
-  return id;
-}
+const ownSurvey = (
+  headers: Headers,
+  options: Omit<OwnSurveyOptions, "published"> = {},
+): Promise<string> => ownHarnessSurvey(headers, { definition: ONE_QUESTION, ...options });
 
 function exported(surveyId: string, headers?: Headers, query = "", accept?: string) {
   return call("GET", EXPORT, {
@@ -119,41 +84,8 @@ function exported(surveyId: string, headers?: Headers, query = "", accept?: stri
   });
 }
 
-async function listPage(surveyId: string, query: string, headers: Headers): Promise<Page> {
-  const response = await call("GET", RESULTS, {
-    path: `/surveys/${surveyId}/results${query}`,
-    headers,
-  });
-  expect(response.status).toBe(200);
-  return (await response.json()) as Page;
-}
-
-async function listAll(surveyId: string, headers: Headers): Promise<Item[]> {
-  const items: Item[] = [];
-  let cursor: string | null = null;
-  do {
-    const next: Page = await listPage(
-      surveyId,
-      `?limit=500${cursor === null ? "" : `&cursor=${cursor}`}`,
-      headers,
-    );
-    items.push(...next.items);
-    cursor = next.nextCursor;
-  } while (cursor !== null);
-  return items;
-}
-
-const pause = () => new Promise((resolve) => setTimeout(resolve, 15));
-
-async function submitted(surveyId: string, body: unknown, extra: Headers = {}): Promise<void> {
-  const response = await call("POST", RESPONSES, {
-    path: `/public/surveys/${surveyId}/responses`,
-    headers: extra,
-    body,
-  });
-  expect(response.status).toBe(201);
-  await pause();
-}
+const listAll = (surveyId: string, headers: Headers): Promise<Item[]> =>
+  walkItems<Item>(RESULTS, `/surveys/${surveyId}/results?limit=500`, headers);
 
 async function statsOf(surveyId: string, headers: Headers): Promise<unknown> {
   const response = await call("GET", STATS, {

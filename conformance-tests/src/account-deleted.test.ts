@@ -8,9 +8,9 @@
  * ids, so a refusal that wrongly succeeded would erase nobody.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, inject, it, onTestFinished } from "vitest";
+import { as, call, cleanUp, codeOf } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 import { randomWebhookKey, signWebhook, webhookKey } from "./webhook.js";
 
 const { admin, erasable } = fixtureUsers;
@@ -34,19 +34,6 @@ function deliverSigned(
 ): Promise<Response> {
   const key = options.key ?? webhookKey(secret!);
   return deliver(body, signWebhook(key, body, { timestamp: options.timestamp }));
-}
-
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
 }
 
 async function created<T>(response: Response): Promise<T> {
@@ -147,15 +134,22 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     onTestFinished(async () => {
       // Adam (promoted by the erasure) deletes the project and receives its survey; Erin's own
       // session deletes it when the erasure never happened.
+      const statuses: number[] = [];
+      let deletedProject = false;
       for (const headers of [adam, erin]) {
-        if ((await deleteProject(headers, shared.id)).status === 204) break;
+        const status = (await deleteProject(headers, shared.id)).status;
+        if (status === 204) {
+          deletedProject = true;
+          break;
+        }
+        statuses.push(status);
       }
+      expect(
+        deletedProject,
+        `project ${shared.id} was not cleaned up (answers ${statuses.join(", ")})`,
+      ).toBe(true);
       if (sharedSurveyId === null) return;
-      if ((await patchSurvey(adam, sharedSurveyId, { archived: true })).status !== 200) return;
-      await call("DELETE", "/surveys/{surveyId}", {
-        path: `/surveys/${sharedSurveyId}`,
-        headers: adam,
-      });
+      await cleanUp(adam, sharedSurveyId);
     });
     await created(
       await call("POST", "/projects/{projectId}/members", {

@@ -3,7 +3,7 @@
  * checked against the contract, and signed-in sessions.
  */
 import { openapiPath } from "@my-surveys/contract";
-import { expect, inject, type TestContext } from "vitest";
+import { expect, inject, onTestFinished, type TestContext } from "vitest";
 import { fixtureUsers, signIn, SignInUnsupportedError, type SignInResult } from "./sign-in.js";
 import { createValidator, type Validator } from "./validator.js";
 
@@ -107,3 +107,156 @@ export async function signedIn(
 export function sessionHeaders({ jar }: SignInResult): Record<string, string> {
   return { cookie: jar.header(), "x-csrf-token": jar.get("msid_csrf") ?? "" };
 }
+
+const sessions = new Map<string, SignInResult>();
+
+/** Request headers of the user's browser; signs in once per user and test file. */
+export async function as(ctx: TestContext, user: { id: string }): Promise<Record<string, string>> {
+  let session = sessions.get(user.id);
+  if (!session) {
+    session = await signedIn(ctx, user.id);
+    expect(session.callback.status).toBe(302);
+    sessions.set(user.id, session);
+  }
+  return sessionHeaders(session);
+}
+
+const MERGE_PATCH = "application/merge-patch+json";
+
+/**
+ * Archives and deletes a survey the test created; a survey that is already gone is fine. Any
+ * other answer fails the test, so a leftover survey is never silent.
+ */
+export async function cleanUp(headers: Record<string, string>, id: string): Promise<void> {
+  const archived = await call("PATCH", "/surveys/{surveyId}", {
+    path: `/surveys/${id}`,
+    headers: { "content-type": MERGE_PATCH, ...headers },
+    body: { archived: true },
+  });
+  if (archived.status === 404) return;
+  expect(archived.status).toBe(200);
+  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
+  expect([204, 404]).toContain(deleted.status);
+}
+
+/** A definition with one text question `q1`. */
+export const ONE_QUESTION = {
+  pages: [{ name: "page1", elements: [{ type: "text", name: "q1" }] }],
+};
+
+export interface OwnSurveyOptions {
+  readonly name?: string;
+  readonly projectId?: string;
+  /** Default `{}`. */
+  readonly definition?: unknown;
+  /** Publish the survey (default true). */
+  readonly published?: boolean;
+}
+
+/**
+ * Creates a survey as the user, publishes it unless told not to, and registers its cleanup for
+ * the end of the test; returns its id.
+ */
+export async function ownSurvey(
+  headers: Record<string, string>,
+  options: OwnSurveyOptions = {},
+): Promise<string> {
+  const response = await call("POST", "/surveys", {
+    headers,
+    body: {
+      definition: options.definition ?? {},
+      ...(options.name !== undefined && { name: options.name }),
+      ...(options.projectId !== undefined && { projectId: options.projectId }),
+    },
+  });
+  expect(response.status).toBe(201);
+  const { id } = (await response.json()) as { id: string };
+  onTestFinished(() => cleanUp(headers, id));
+  if (options.published ?? true) {
+    const patched = await call("PATCH", "/surveys/{surveyId}", {
+      path: `/surveys/${id}`,
+      headers: { "content-type": MERGE_PATCH, ...headers },
+      body: { published: true },
+    });
+    expect(patched.status).toBe(200);
+  }
+  return id;
+}
+
+const pause = () => new Promise((resolve) => setTimeout(resolve, 15));
+
+/**
+ * Submits through the public API and waits, so the next submission has a later time. Returns the
+ * response id.
+ */
+export async function submitted(
+  surveyId: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<string> {
+  const response = await call("POST", "/public/surveys/{surveyId}/responses", {
+    path: `/public/surveys/${surveyId}/responses`,
+    headers,
+    body,
+  });
+  expect(response.status).toBe(201);
+  await pause();
+  return ((await response.json()) as { id: string }).id;
+}
+
+/** A page of a cursor list. */
+export interface CursorPage<T> {
+  readonly items: T[];
+  readonly nextCursor: string | null;
+}
+
+/** GETs a list page (path with its query) and fails unless it answers 200. */
+export async function listPage<T = unknown>(
+  pathTemplate: string,
+  path: string,
+  headers?: Record<string, string>,
+): Promise<CursorPage<T>> {
+  const response = await call("GET", pathTemplate, { path, ...(headers && { headers }) });
+  expect(response.status).toBe(200);
+  return (await response.json()) as CursorPage<T>;
+}
+
+/**
+ * Follows `nextCursor` to the end; returns every page. `each` sees each page as it arrives. The
+ * path may hold a query already.
+ */
+export async function walkPages<T = unknown>(
+  pathTemplate: string,
+  path: string,
+  headers?: Record<string, string>,
+  each?: (page: CursorPage<T>) => void,
+): Promise<CursorPage<T>[]> {
+  const pages: CursorPage<T>[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    if (pages.length >= 1000) throw new Error("the list does not end");
+    const join = path.includes("?") ? "&" : "?";
+    const next: CursorPage<T> = await listPage<T>(
+      pathTemplate,
+      cursor === null ? path : `${path}${join}cursor=${encodeURIComponent(cursor)}`,
+      headers,
+    );
+    each?.(next);
+    pages.push(next);
+    if (next.nextCursor === null) return pages;
+    cursor = next.nextCursor;
+  }
+}
+
+/** Every item of a cursor list, in order. */
+export async function walkItems<T = unknown>(
+  pathTemplate: string,
+  path: string,
+  headers?: Record<string, string>,
+  each?: (page: CursorPage<T>) => void,
+): Promise<T[]> {
+  return (await walkPages<T>(pathTemplate, path, headers, each)).flatMap((p) => p.items);
+}
+
+/** A GUID as the API writes it (lower case). */
+export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

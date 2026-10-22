@@ -12,14 +12,13 @@
  * test's users is still an admin.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { GUID, call, codeOf, as, cleanUp } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { admin, member, outsider } = fixtureUsers;
 
 const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
-const LOWER_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MERGE_PATCH = "application/merge-patch+json";
 
 type Headers = Record<string, string>;
@@ -46,19 +45,6 @@ interface Survey {
 interface Page<T> {
   items: T[];
   nextCursor: string | null;
-}
-
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
 }
 
 /** The same browser without the CSRF token header. */
@@ -171,21 +157,12 @@ async function readSurvey(headers: Headers, id: string): Promise<Survey> {
   return (await response.json()) as Survey;
 }
 
-/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
-async function cleanUpSurvey(headers: Headers, id: string): Promise<void> {
-  const archived = await patchSurvey(headers, id, { archived: true });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
-
 /** Creates a survey in the project as `headers` (Adam) and registers its cleanup as Adam. */
 async function createdSurvey(headers: Headers, projectId: string, body = {}): Promise<Survey> {
   const response = await call("POST", "/surveys", { headers, body: { ...body, projectId } });
   expect(response.status).toBe(201);
   const survey = (await response.json()) as Survey;
-  onTestFinished(() => cleanUpSurvey(headers, survey.id));
+  onTestFinished(() => cleanUp(headers, survey.id));
   return survey;
 }
 
@@ -198,7 +175,7 @@ describe("createProject", () => {
     const project = (await response.json()) as Project;
     onTestFinished(() => deleteProjectAsAnyOf([adam], project.id));
     expect(project).toEqual({
-      id: expect.stringMatching(LOWER_GUID) as string,
+      id: expect.stringMatching(GUID) as string,
       name,
       ownerId: admin.id,
       role: "admin",

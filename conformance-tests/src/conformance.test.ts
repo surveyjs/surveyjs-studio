@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { baseUrl, call, codeOf, sessionHeaders, signedIn, validator } from "./harness.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { baseUrl, call, cleanUp, codeOf, sessionHeaders, signedIn, validator } from "./harness.js";
 import { CookieJar, finishSignIn, fixtureUsers, startSignIn } from "./sign-in.js";
 
 const { owner, blocked } = fixtureUsers;
@@ -191,6 +191,11 @@ describe(`server at ${baseUrl}`, () => {
         headers: { cookie: session.jar.header() },
         body: {},
       });
+      if (response.status === 201) {
+        // The server should have refused; do not leave the survey behind.
+        const { id } = (await response.clone().json()) as { id: string };
+        onTestFinished(() => cleanUp(sessionHeaders(session), id));
+      }
       expect(response.status).toBe(403);
       expect(await codeOf(response)).toBe("csrf-token-invalid");
     });

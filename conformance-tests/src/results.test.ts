@@ -8,9 +8,18 @@
  * response, marker or view goes to them. Cleanup (archive, then delete) is registered with
  * `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it } from "vitest";
+import {
+  call,
+  codeOf,
+  as,
+  ONE_QUESTION,
+  listPage,
+  walkPages,
+  submitted,
+  ownSurvey as ownHarnessSurvey,
+} from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider } = fixtureUsers;
 
@@ -20,7 +29,6 @@ const CAMPAIGN = "22222222-0000-4000-8000-a00000000004";
 const LARGE = "22222222-0000-4000-8000-a00000000008";
 
 const RESULTS = "/surveys/{surveyId}/results";
-const RESPONSES = "/public/surveys/{surveyId}/responses";
 
 type Headers = Record<string, string>;
 
@@ -37,45 +45,9 @@ interface Page {
   nextCursor: string | null;
 }
 
-const sessions = new Map<string, SignInResult>();
-
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
-
 /** A published survey of the admin with one text question; its cleanup is registered. */
-async function ownSurvey(headers: Headers): Promise<string> {
-  const definition = { pages: [{ name: "page1", elements: [{ type: "text", name: "q1" }] }] };
-  const response = await call("POST", "/surveys", { headers, body: { definition } });
-  expect(response.status).toBe(201);
-  const { id } = (await response.json()) as { id: string };
-  onTestFinished(() => cleanUp(headers, id));
-  const patched = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { published: true },
-  });
-  expect(patched.status).toBe(200);
-  return id;
-}
+const ownSurvey = (headers: Headers): Promise<string> =>
+  ownHarnessSurvey(headers, { definition: ONE_QUESTION });
 
 function list(surveyId: string, query = "", headers?: Headers): Promise<Response> {
   return call("GET", RESULTS, {
@@ -84,37 +56,12 @@ function list(surveyId: string, query = "", headers?: Headers): Promise<Response
   });
 }
 
-async function page(surveyId: string, query: string, headers: Headers): Promise<Page> {
-  const response = await list(surveyId, query, headers);
-  expect(response.status).toBe(200);
-  return (await response.json()) as Page;
-}
+const page = (surveyId: string, query: string, headers: Headers): Promise<Page> =>
+  listPage<Item>(RESULTS, `/surveys/${surveyId}/results${query}`, headers);
 
 /** Follows `nextCursor` to the end; returns every page. */
-async function walk(surveyId: string, limit: number, headers: Headers): Promise<Page[]> {
-  const pages: Page[] = [];
-  let cursor: string | null = null;
-  do {
-    const query: string = `?limit=${limit}${cursor === null ? "" : `&cursor=${cursor}`}`;
-    const next = await page(surveyId, query, headers);
-    pages.push(next);
-    cursor = next.nextCursor;
-  } while (cursor !== null);
-  return pages;
-}
-
-const pause = () => new Promise((resolve) => setTimeout(resolve, 15));
-
-/** Submits through the public API and waits, so the next submission has a later time. */
-async function submitted(surveyId: string, body: unknown): Promise<string> {
-  const response = await call("POST", RESPONSES, {
-    path: `/public/surveys/${surveyId}/responses`,
-    body,
-  });
-  expect(response.status).toBe(201);
-  await pause();
-  return ((await response.json()) as { id: string }).id;
-}
+const walk = (surveyId: string, limit: number, headers: Headers): Promise<Page[]> =>
+  walkPages<Item>(RESULTS, `/surveys/${surveyId}/results?limit=${limit}`, headers);
 
 /** The generated response n of `…a08`. */
 const largeId = (n: number) => `66666666-0000-4000-8000-c${n.toString(16).padStart(11, "0")}`;
