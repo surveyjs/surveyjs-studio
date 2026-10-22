@@ -41,9 +41,11 @@ this timeout; if its own limits are lower, it answers first, with its own page.
 
 1. **The settings** go in an env file on the host, outside any repository, readable only by the account that starts
    the container (`chmod 600`). The variables of each mode are [below](#configuration-by-deployment-mode).
-   With `docker run --env-file`, write each value **without quotes**: Docker keeps quotes as part of the value and
-   does not expand `$`. (Docker Compose's `env_file` removes quotes and expands `$`; see
-   [Running the app](running.md#changing-settings).)
+   With `docker run --env-file`, write each value **without quotes**: Docker keeps quotes and `#` as part of the value
+   and does not expand `$`. (Docker Compose's `env_file` removes quotes and expands `$`; see
+   [Running the app](running.md#changing-settings).) The commands of this page (`inspect:legacy-schema`,
+   `smoke:legacy`, `account:*`) read their `--env-file` with Node's parser instead, which removes quotes and ends an
+   unquoted value at `#`: there, quote a value that holds `#`. So give the commands a file of their own.
 2. **Start one container**, with the port published to the reverse proxy only, never to the internet:
 
    ```sh
@@ -57,15 +59,29 @@ this timeout; if its own limits are lower, it answers first, with its own page.
 4. **`TRUST_PROXY`** is the address the proxy's connections come from, as the container sees it. Without it every
    user shares the proxy's rate-limit counters (sign-in allows 30 requests a minute per address) and a saved respondent
    address is the proxy's. When the proxy runs on the same host and reaches a published port, that address is
-   usually the Docker network's gateway (`docker network inspect bridge`, `Gateway`).
+   usually the Docker network's gateway (`docker network inspect bridge`, `Gateway`). A proxy that runs in a container
+   on a user-defined network connects from that network's subnet (`docker network inspect <network>`, `Subnet`); with
+   host networking (`--network host`) it is `127.0.0.1`. Check it once: the `incoming request` log lines must show
+   clients' addresses (truncated, such as `203.0.113.0`) in `remoteAddress`, not the proxy's.
 
 **One instance.** The rate-limit counters live in the process, so a second instance counts alone; sessions are sealed
 cookies and need no shared store. One instance is enough for mode 1.1.
 
-**Stopping and upgrading.** `docker stop` sends `SIGTERM` and kills the process after 10 s; give `--time 60` if long
-uploads should finish. To upgrade, start the new tag the same way. The app has no database migrations: the stores
-keep the legacy formats, so any earlier image runs on the same data, and rolling back the app is starting the
-previous tag.
+**Changing a setting or the image: re-create the container.** A container keeps the environment it was created
+with: `docker restart` does **not** read the env file again. After any change to the env file, and to run another
+image tag, remove the container and run it again with the same command:
+
+```sh
+docker stop --time 60 my-surveys   # SIGTERM: requests in flight may finish; SIGKILL after 60 s
+docker rm my-surveys
+docker run -d --name my-surveys --restart unless-stopped \
+  --env-file /etc/my-surveys/app.env -p 127.0.0.1:3000:3000 my-surveys:<tag>
+```
+
+Then check the `starting` log line (`docker logs my-surveys`; [Logs](#logs)): it shows the settings the process
+really runs with. (`docker rm -f` would kill it at once, cutting requests in flight.) The app has no database
+migrations: the stores keep the legacy formats, so any earlier image runs on the same data, and rolling back the app
+is re-creating the container with the previous tag.
 
 **Where the images come from.** For now an image is built from a commit of `master` (`docker build -t
 my-surveys:<commit> .`). The registry is chosen for the hosting step: `surveyjs/my-surveys` on Docker Hub, mirrored
@@ -75,9 +91,10 @@ to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
 
 ### Health and readiness
 
-`/healthz` answers `200` while the process runs: use it to restart a container that hangs (the image's
-`HEALTHCHECK` already does). `/readyz` checks what the app needs, in parallel, each with a 5 s limit, and names the
-checks that failed:
+`/healthz` answers `200` while the process runs. The image's `HEALTHCHECK` calls it every 30 s, but it only marks
+the container `unhealthy`: Docker does not restart it (`--restart unless-stopped` acts only when the process exits).
+The host's monitoring, or an orchestrator, must alert on an `unhealthy` container and re-create it. `/readyz` checks
+what the app needs, in parallel, each with a 5 s limit, and names the checks that failed:
 
 | Check             | When                            | What it does                                                           |
 | ----------------- | ------------------------------- | ---------------------------------------------------------------------- |
@@ -123,7 +140,7 @@ that restarts.
 `READ_ONLY=true` makes the app read-only: every operation that writes answers `503` with the Problem code `read-only`
 ("My Surveys is read-only at the moment. Changes cannot be saved."). Browsing, the results, the history, sign-in and
 sign-out keep working. The web app shows that sentence in a banner on every page, and the editor opens read-only.
-Change the setting and restart the container to switch.
+Change the setting and [re-create the container](#running-the-image) to switch.
 
 - **Refused:** every operation that is not a `GET`, except `logout` and `passwordLogin`. Today that is the survey,
   project and member writes, the definition and theme saves, the uploads, Delete Results, the saved layouts, the
@@ -133,6 +150,9 @@ Change the setting and restart the container to switch.
   `smoke:legacy` exit 2 with `Refused: READ_ONLY=true …`. Their dry runs and the read-only inspectors work.
 - **Use it** for rollout step 1 ([the runbook](#rollout-and-rollback-runbook)), and whenever the stores must not
   change, for example during maintenance on the site's database.
+- **In mode 1.2 the account-deleted webhook is refused too** (`503`). The site should retry it later
+  ([the integration](integrations/surveyjs-user-api.md#answers) asks for retries); `account:reconcile` catches an
+  account whose retries ran out.
 
 ## Configuration by deployment mode
 
@@ -151,7 +171,7 @@ surveyjs.io sign-in, while the old My Surveys section still runs.
 | `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                |
 | `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                        |
 | `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                               |
-| `STORAGE_PROVIDER`                         | Required: `azure-legacy` (the default is `memory`)                         |
+| `STORAGE_PROVIDER`                         | Set: `azure-legacy` (the default is `memory`)                              |
 | `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                |
 | `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                          |
 | `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                          |
@@ -162,7 +182,7 @@ surveyjs.io sign-in, while the old My Surveys section still runs.
 | `USER_DIRECTORY`                           | Leave unset: the default `surveyjs-sql` reads the site's `Users` table     |
 | `TRUST_PROXY`                              | Set: the reverse proxy's address ([above](#running-the-image))             |
 | `READ_ONLY`                                | `true` in rollout step 1, then unset or `false` (the default)              |
-| `SURVEYJS_LICENSE_KEY`                     | Optional: hides the Creator's and Dashboard's licence banner               |
+| `SURVEYJS_LICENSE_KEY`                     | Set: the SurveyJS licence key; without it the licence banner shows         |
 | `NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT`     | Set by the image; leave them                                               |
 
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
@@ -185,6 +205,7 @@ OIDC_ISSUER_URL=https://auth.surveyjs.io
 OIDC_CLIENT_ID=<the client id>
 OIDC_CLIENT_SECRET=<the client secret>
 ACCOUNT_NOTICES=surveyjs-licenses
+SURVEYJS_LICENSE_KEY=<the SurveyJS licence key>
 TRUST_PROXY=<the proxy's address>
 READ_ONLY=true
 ```
@@ -196,7 +217,7 @@ Changing it signs everyone out.
 services; service, container and object resource types; read, add, create, write, update, delete and list). The app
 creates tables and containers on demand (a survey's `post{postId}` and `SurveyCompletion{id}` tables, its own
 `my-surveys-files` and `my-surveys-views` containers), which a container-scoped SAS cannot do, and readiness reads
-account properties. An account SAS expires: renew it, and restart the container, before then. The SQL login needs
+account properties. An account SAS expires: renew it, and re-create the container, before then. The SQL login needs
 read and write on the site's tables. Least privilege (Entra ID roles for the app, containers and tables created ahead)
 is later hardening, not done yet. The read-only inspectors can use narrower credentials
 ([Development › Inspector](development.md#inspector)).
@@ -388,7 +409,8 @@ repository. The demo secret in `server/demo.env` is a local test value; **never 
 
 1. The site starts signing each message with both the old and the new secret, sending both signatures in
    `webhook-signature` (`v1,<old> v1,<new>`). The server accepts either while it still has the old secret.
-2. Set the new secret in `ACCOUNT_WEBHOOK_SECRET` and restart the server. The new signature now matches.
+2. Set the new secret in `ACCOUNT_WEBHOOK_SECRET` and [re-create the container](#running-the-image). The new
+   signature now matches.
 3. The site stops signing with the old secret.
 
 The same applies to the user API token: the site accepts two tokens at a time, so change `USER_API_TOKEN` between the
@@ -431,7 +453,8 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
   for a year (`immutable`); `index.html` is `no-cache`.
 
 **The reverse proxy** must not replace or drop these headers, and must not add its own `Content-Security-Policy` or an
-`X-Frame-Options` (which would stop embedded run pages). It may add compression and its own `x-request-id`.
+`X-Frame-Options` (which would stop embedded run pages). It may add compression. If it sets `x-request-id`, it must
+overwrite one a client sent, so a caller cannot choose the id that appears in the logs.
 
 **Another static host.** If the web app is ever served apart from the server (a CDN for `web/dist`), that host must
 send the same values per path and route the server paths above to the server; otherwise the run page loses its
@@ -463,6 +486,7 @@ the current one has run without problems for as long as the team wants.
 | The client registration at `auth.surveyjs.io` (id and secret)              | Site team              | 1    |
 | Network rules for the host on the SQL server and both storage accounts     | Whoever runs Azure     | 1    |
 | The store connection strings (account key or account SAS)                  | Whoever runs Azure     | 1    |
+| The SurveyJS licence key, at the latest for step 2                         | SurveyJS team          | 1    |
 | A test account used for nothing else, and its `api.surveyjs.io` access key | Product owner          | 1    |
 | The header's account item and the 1,000-responses banner (ADR 0020)        | Product owner          | 2    |
 | The run page's "Disclaimer of liability" (ADR 0020, ADR 0014 S13)          | Product owner          | 3    |
@@ -482,9 +506,13 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
    network rules of the surveys and the results storage accounts. Keep the address of the machine that runs the
    commands below allowed too, or run them from the host.
 3. **Write the env file on the host**: the [mode 1.1 settings](#mode-11-hosted-side-by-side-with-the-old-section) with
-   `READ_ONLY=true` and `TRUST_PROXY`. `chmod 600`; outside any repository.
+   `READ_ONLY=true`, `TRUST_PROXY` and `SURVEYJS_LICENSE_KEY`. `chmod 600`; outside any repository. Without the
+   licence key the editor and the results pages show the SurveyJS libraries' missing-licence banner: acceptable for
+   the team, not for step 2.
 4. **Check the schema** from a checkout of this repository, with an env file holding at least
-   `LEGACY_SQL_CONNECTION_STRING` (a read-only login is enough):
+   `LEGACY_SQL_CONNECTION_STRING`. A read-only login is enough, but SQL Server hides the metadata of objects a login
+   has no permission on: with `SELECT` alone the triggers and the column default may not show, and the check would
+   print `none` for them either way. Give that login `VIEW DEFINITION` on `Surveys`, or use the app's login:
 
    ```sh
    pnpm inspect:legacy-schema --env-file <path>
@@ -499,21 +527,28 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
    - `GET /healthz` is `200` and `GET /readyz` is `{"status":"ok"}`;
    - the `starting` log line says `"readOnly":true`, `"webApp":true`, `"storageProvider":"azure-legacy"`,
      `"userDirectory":"surveyjs-sql"` and the right `publicBaseUrl`;
-   - the headers, with the `curl` commands of [the header policy](#the-header-policy).
+   - the headers, with the `curl` commands of [the header policy](#the-header-policy);
+   - `TRUST_PROXY`: after a request from your browser, an `incoming request` log line shows your own address,
+     truncated, in `remoteAddress`, not the proxy's ([Running the image](#running-the-image)).
 6. **Browse read-only.** Team members sign in with their surveyjs.io accounts and open the list, the projects, the
    editor, the results and the history of their own surveys. Every page shows the read-only banner, and a save is
    refused with it. Nothing is written.
-7. **Switch to read-write**: set `READ_ONLY=false` (or remove the line), restart, check the `starting` line.
-8. **Run the smoke test** with the test account, then walk its manual checklist on surveyjs.io
-   ([Legacy smoke test](operations/smoke-test.md)):
+7. **Run the smoke test while the app is still read-only.** The script writes through the app's code in its own
+   process, with its own env file, so the container's `READ_ONLY` does not matter to it; a `FAIL` then stops the
+   rollout before anyone writes through the app ([Legacy smoke test](operations/smoke-test.md)):
 
    ```sh
    pnpm smoke:legacy --account <test account email> --yes --env-file <path>
    ```
 
-   It needs write credentials and `SMOKE_ACCESS_KEY`; every row must be `pass` (and `manual` for the project delete).
-   A `FAIL` stops the rollout until it is understood.
+   Its env file has write credentials and `SMOKE_ACCESS_KEY`, and **not** `READ_ONLY=true`: a copy of the container's
+   file from this step makes it refuse (exit 2). Every row must be `pass` (and `manual` for the project delete). A
+   `FAIL` stops the rollout until it is understood.
 
+8. **Switch to read-write**: set `READ_ONLY=false` (or remove the line), [re-create the container](#running-the-image)
+   and check that the `starting` line says `"readOnly":false`. Then walk the smoke test's
+   [manual checklist](operations/smoke-test.md#manual-checklist-on-surveyjsio) on surveyjs.io: it needs surveys made in
+   the app.
 9. **Internal use.** The team works in the app on real surveys for a while, side by side with the old section.
 
 Nothing in the app limits sign-in to the team: anyone with a surveyjs.io account who finds the address can use it, on
@@ -527,11 +562,12 @@ address allow-list, for example).
   **Unpublish**; the old list shows **Publish** for them. Nothing rewrites the stored flags
   ([ADR 0014](adr/0014-run-page-and-response-collection.md), S1). New and cloned surveys keep an empty flag on both
   sides.
-- **History saved before 2026-10-20.** The old site's history writer was fixed in surveyjs.io commit `3389d6cd49`
-  ("Fix empty survey editing history page"); since then both sides write and list `surveyjsonhistory/{surveyId}/{pointId}`.
-  Points the old code wrote before the fix are lost to both sides: a new survey's points went to the container's root
-  as `{pointId}` and belong to no survey, and an older survey's later saves rewrote its first point instead of adding
-  one. Nothing migrates them ([legacy data layout, 3.4](architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)).
+- **History saved before the site's fix was deployed.** The old site's history writer was fixed in surveyjs.io commit
+  `3389d6cd49` ("Fix empty survey editing history page", 2026-10-20); since its deployment both sides write and
+  list `surveyjsonhistory/{surveyId}/{pointId}`. Points the old code wrote before that are lost to both sides: a new
+  survey's points went to the container's root as `{pointId}` and belong to no survey, and an older survey's later
+  saves rewrote its first point instead of adding one. Nothing migrates them
+  ([legacy data layout, 3.4](architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)).
 
 ### Step 2: an opt-in beta link from the old section
 
@@ -559,7 +595,15 @@ S13): after this step respondents no longer see the old run page.
 This step makes it mode 1.2.
 
 1. **The webhook secret** (operator): generate it ([the webhook secret](#the-webhook-secret)), set
-   `ACCOUNT_WEBHOOK_SECRET` on the host, restart, and give the same value to the site team through a secure channel.
+   `ACCOUNT_WEBHOOK_SECRET` in the env file, [re-create the container](#running-the-image), and give the same value to
+   the site team through a secure channel. Check that it took effect: an unsigned call must answer `401` (it was
+   `404` without the secret; `503` means the app is still read-only):
+
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'content-type: application/json' -d '{}' \
+     https://my-surveys.surveyjs.io/api/v1/webhooks/account-deleted
+   ```
+
 2. **The site** removes the My Surveys section and **Settings → Manage MySurveys** (D13), and calls the
    [account-deleted webhook](integrations/surveyjs-user-api.md#the-account-deleted-webhook) instead of deleting My
    Surveys data itself. Keep what the redirect map lists under
@@ -573,11 +617,11 @@ This step makes it mode 1.2.
 
 | After step | To roll back                                                                                  | Who       |
 | ---------- | --------------------------------------------------------------------------------------------- | --------- |
-| 1          | Stop the container. Nothing on the site changed                                               | Operator  |
+| 1          | Stop and remove the container. Nothing on the site changed                                    | Operator  |
 | 2          | Remove the beta link                                                                          | Site team |
 | 3          | Remove the redirects and point the site's links back to the old section                       | Site team |
 | 4          | Redeploy the previous site release: the old pages exist only there. Then remove the redirects | Site team |
-| Any        | Start the previous image tag: the app has no migrations, so it runs on the same data          | Operator  |
+| Any        | Re-create the container with the previous tag: no migrations, it runs on the same data        | Operator  |
 
 What users wrote in the app stays valid after any rollback: the app writes the legacy formats, which the old section
 and `api.surveyjs.io` read. After rolling back step 4 the old site deletes My Surveys data itself again when an account

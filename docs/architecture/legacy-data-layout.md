@@ -272,14 +272,13 @@ code ignores metadata, so the point reads as before. Reading uses `savedat` for 
 points written by legacy have no user. Create and clone points get the metadata too (`userid` = the
 creator, `savedat` = the creation time). Reasons: [ADR 0012](../adr/0012-editor-content-and-history.md).
 
-**Legacy-overwrite caveat.** With the current port's `site code` (above), a definition save by the
-legacy editor **rewrites the alphabetically first blob under `{surveyId}`** instead of adding a point. If
-that blob is a point written by the new application, its content and `LastModified` change, and its
-metadata is replaced by none: the entry then reads as written by no user at the time of that save. This
-is accepted ([ADR 0012](../adr/0012-editor-content-and-history.md), R8). Blobs at the root of the
-container (that port's new points) are not listed for any survey by the new application. Since the site's fix
-(above) the legacy editor adds a new point instead, so the caveat applies only to saves made before
-2026-10-20.
+**Legacy-overwrite caveat.** Before the site's fix (above), a definition save by the legacy editor
+**rewrote the alphabetically first blob under `{surveyId}`** instead of adding a point. If
+that blob was a point written by the new application, its content and `LastModified` changed, and its
+metadata was replaced by none: the entry then reads as written by no user at the time of that save. This
+was accepted ([ADR 0012](../adr/0012-editor-content-and-history.md), R8). Blobs at the root of the
+container (that port's new points) are not listed for any survey by the new application. Since the fix was
+deployed the legacy editor adds a new point instead, so the caveat applies only to saves made before that.
 
 ### 3.5 Survey event log: Azure table `surveys`
 

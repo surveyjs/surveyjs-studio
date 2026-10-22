@@ -5,10 +5,11 @@ Date: 2026-10-20
 ## Status
 
 Accepted. The product owner decided the dedicated account and the committed screenshots, and the public results page
-without the site shell (see "Decided by the product owner"). Still open for the owner: the header's account text, the
-live site's disclaimer and 1,000-responses banner staying out of the app, and the live publish flag; see "To confirm".
-Answered there on 2026-10-21: the library versions (3.2.2), the history screen (back in the run; captured 2026-10-22)
-and the local-only run (kept local). New on 2026-10-22: the Firefox offset of `projects-expanded`.
+without the site shell (see "Decided by the product owner"). Still open for the owner: the header's account text, and
+the live site's disclaimer and 1,000-responses banner staying out of the app; see "To confirm". Answered there on
+2026-10-21: the library versions (3.2.2), the history screen (back in the run; captured 2026-10-22), the local-only
+run (kept local) and the live publish flag (an empty flag means published, Step 14). New on 2026-10-22: the Firefox
+offset of `projects-expanded`.
 
 ## Context
 

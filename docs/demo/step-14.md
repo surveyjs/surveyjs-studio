@@ -196,7 +196,7 @@ When you are done: `pnpm prod-like:down` (it deletes the prod-like data).
 - **The published flag.** The old list shows **Publish** for a survey whose flag is empty; the app lists it as
   published, with **Run** and **Unpublish**. On production that is most of the surveys. Expected (product owner,
   2026-10-21).
-- **History saved before 2026-10-20** on the old site is lost to both sides; surveyjs.io fixed its history writer in
+- **History saved before the site's fix was deployed** on the old site is lost to both sides; surveyjs.io fixed its history writer in
   commit `3389d6cd49`, and new saves on either side are listed by both
   ([layout, 3.4](../architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)).
 - **No HSTS in prod-like**, because it is served over http.

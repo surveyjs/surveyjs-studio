@@ -67,7 +67,7 @@ production and the review of the runbook, is open ([progress](plan.md#progress))
   - `/readyz` names the dependency that fails; JSON logs with a start-up summary, request ids and the operation;
   - `READ_ONLY=true` for the first phase on production data;
   - `pnpm smoke:legacy`, which proves on production that `api.surveyjs.io` reads what the app writes.
-- **The same look as surveyjs.io, proven by screenshots:** `pnpm e2e:visual` compares 17 screens with baselines captured from the live site, in Chromium, Firefox and WebKit ([docs/testing.md › Visual parity](docs/testing.md#visual-parity)).
+- **The same look as surveyjs.io, proven by screenshots:** `pnpm e2e:visual` compares 18 screens with baselines captured from the live site, in Chromium, Firefox and WebKit ([docs/testing.md › Visual parity](docs/testing.md#visual-parity)).
 - **Tests:**
   - unit tests;
   - the HTTP conformance suite;

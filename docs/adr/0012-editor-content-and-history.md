@@ -88,7 +88,7 @@ survey folder and are ignored.
 
 **Since the site's fix (Step 14).** surveyjs.io commit `3389d6cd49` (2026-10-20) makes the legacy editor add a point
 `{surveyId}/{pointId}` and list the children of `{surveyId}/`, as the app does. A legacy save no longer rewrites one
-of ours, so the cost above applies only to saves made before that date. Points the old code wrote before the fix stay
+of ours, so the cost above applies only to saves made before the fix was deployed. Points the old code wrote before the fix stay
 lost to both sides; nothing migrates them
 ([layout, 3.4](../architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)).
 
