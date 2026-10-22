@@ -39,7 +39,7 @@ const serverEnv = {
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "1048576",
 };
 
-const memoryServerEnv = {
+export const memoryServerEnv = {
   ...serverEnv,
   STORAGE_PROVIDER: "memory",
   IDENTITY_PROVIDER: "dev",

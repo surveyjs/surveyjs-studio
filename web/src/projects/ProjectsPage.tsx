@@ -30,6 +30,15 @@ export function ProjectsPage() {
   const renameProject = useRenameProject();
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // The expanded cards live here, so a card keeps its state while its rename editor replaces it.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const setCardOpen = (projectId: string, open: boolean) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) next.add(projectId);
+      else next.delete(projectId);
+      return next;
+    });
 
   const rename = (projectId: string) => (name: string) =>
     renameProject.mutateAsync({ projectId, name }).catch((failure: unknown) => {
@@ -67,6 +76,8 @@ export function ProjectsPage() {
                     key={project.id}
                     project={project}
                     viewerId={user.id}
+                    open={expanded.has(project.id)}
+                    onOpenChange={(open) => setCardOpen(project.id, open)}
                     onRename={() => setRenaming(project.id)}
                   />
                 ),

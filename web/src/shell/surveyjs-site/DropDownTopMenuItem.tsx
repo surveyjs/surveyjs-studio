@@ -20,7 +20,8 @@ export interface DropDownTopMenuItemProps {
  * the mouse, the site's CSS opens the menu on hover. The site offers no keyboard access, so the
  * trigger is also a focusable button: Enter, Space or ArrowDown opens the menu (glue class
  * `dropDownOpen` applies the site's hover styles), Escape closes it and returns focus to the
- * trigger, and the menu closes when focus leaves the item.
+ * trigger, and the menu closes when focus leaves the item or an item of the menu is activated (a
+ * click, or Enter on a focused item; focus then goes back to the trigger, not to `<body>`).
  */
 export function DropDownTopMenuItem({
   label,
@@ -31,6 +32,11 @@ export function DropDownTopMenuItem({
 }: DropDownTopMenuItemProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // Activating an item (a click, or Enter on a focused item) closes the menu for good (`hovered`
+  // stays when the pointer is still there): the site's hover CSS is switched off until the pointer
+  // leaves and returns. Focus that was inside the menu goes back to the trigger, since the closed
+  // menu is hidden and the browser would otherwise drop focus to <body>.
+  const [dismissed, setDismissed] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuId = useId();
 
@@ -39,6 +45,7 @@ export function DropDownTopMenuItem({
     modifier,
     "v2-class---top-menu-item--drop-down",
     open ? styles.dropDownOpen : undefined,
+    dismissed ? styles.dropDownDismissed : undefined,
   ]
     .filter(Boolean)
     .join(" ");
@@ -54,7 +61,10 @@ export function DropDownTopMenuItem({
       className={itemClass}
       aria-label={label}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setDismissed(false);
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
@@ -72,14 +82,16 @@ export function DropDownTopMenuItem({
         role="button"
         tabIndex={0}
         aria-haspopup="menu"
-        aria-expanded={open || hovered}
+        aria-expanded={open || (hovered && !dismissed)}
         aria-controls={menuId}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
+            setDismissed(false);
             setOpen((wasOpen) => !wasOpen);
           } else if (event.key === "ArrowDown") {
             event.preventDefault();
+            setDismissed(false);
             setOpen(true);
           }
         }}
@@ -90,7 +102,15 @@ export function DropDownTopMenuItem({
           dangerouslySetInnerHTML={iconHtml("top-bar/Drop-Down-Arrow")}
         />
       </span>
-      <nav id={menuId} className={menuClass}>
+      <nav
+        id={menuId}
+        className={menuClass}
+        onClick={(event) => {
+          setOpen(false);
+          setDismissed(true);
+          if (event.currentTarget.contains(document.activeElement)) triggerRef.current?.focus();
+        }}
+      >
         {children}
       </nav>
     </li>

@@ -14,6 +14,9 @@ warnings.
 
 Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
+The visual parity specs (Step 13) use the browser seam: they compare screenshots of the app with screenshots of
+surveyjs.io, and they run locally only. See [Visual parity](#visual-parity).
+
 ## Run everything
 
 | Command                          | Runs                                                                                                                                                            |
@@ -658,6 +661,219 @@ WebKit are left to CI.
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
 actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+
+## Visual parity
+
+The visual specs answer one question: does a page of the app look like the same page on surveyjs.io? For each of 17
+compared screens (the manifest has 18; `history` is skipped) the test opens the app, takes a screenshot and compares
+it with a **baseline**, a screenshot of the live site that a person captured earlier. The reasons are in [ADR 0020](adr/0020-visual-parity-baselines.md).
+
+The tests are **local only**. The baselines are rendered on a Windows machine, Linux CI renders text differently, and CI
+cannot sign in to surveyjs.io. CI typechecks, lints and unit-tests the harness; it does not run `pnpm e2e:visual`. Run
+it on the machine where the baselines were captured, or on one set up the same way.
+
+### The data set and the manifest
+
+Both sides show the same content. [`e2e/visual/data-set.ts`](../e2e/visual/data-set.ts) describes it: five surveys, one
+project and three responses. A person creates it by hand in a dedicated surveyjs.io account. The visual run creates it
+through the HTTP API for Erin Erasable in its own server (memory provider, ports 3002 and 5175, fresh on every run). It
+never touches the functional servers.
+
+[`e2e/visual/manifest.ts`](../e2e/visual/manifest.ts) lists the screens. Each one has these fields.
+
+| Field               | Meaning                                                                       |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `id`                | The image name, in kebab-case                                                 |
+| `group`, `kind`     | `list`, `pages` or `results`; `page`, `element` or `library` (the threshold)  |
+| `live`, `app`       | Per side: `path`, `steps`, `ready`, `idle`, `target`, `hide`, `mask`          |
+| `normalize`         | Text set to the same fixed value on both sides (dates, names, the star count) |
+| `residual`          | A difference left in the image, within the ratio, with its reason             |
+| `maxDiffPixelRatio` | The share of pixels that may differ                                           |
+| `thresholdReason`   | Required when the ratio is above the kind's default                           |
+| `cookieBanner`      | `true` when the consent flag must not be preset                               |
+
+`idle` is a selector (a loading overlay) that must be hidden or gone before the shot; a timeout fails with
+`Still loading on <side> for <id>: …`. A step is a `click` or a `hover` and nothing else. Every hide, mask and normalization has a non-empty `reason` and a
+category (see [the acceptance rule](#the-acceptance-rule)). A selector that matches nothing fails the screen with
+`Selectors matched nothing on <side> for <id>: …`, unless it is marked `optional`.
+
+### Run modes
+
+| Command                      | What it does                                                                                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm e2e:visual [args]`     | Checks that the baselines exist, builds the web app and runs the specs in three browsers. A screen without an image fails. It never writes a baseline. It removes a `VISUAL_BASELINES` variable left in your environment, so only `--self` selects the throwaway baselines.    |
+| `pnpm e2e:visual --self`     | The harness check; it needs no baselines. It writes throwaway app screenshots to `e2e/visual/.self-baselines/` (git-ignored), then compares a fresh server with them. The second pass must pass: it shows the app side is the same on every run. It says nothing about parity. |
+| `pnpm e2e:visual:report`     | Opens the HTML report in `e2e/visual-report/`. Each test shows a `surveyjs.io (baseline)` image and an `app` image. A failing one also has Playwright's expected, actual and diff views.                                                                                       |
+| `pnpm visual:capture [args]` | **A person runs it, never CI.** Writes the baselines from surveyjs.io. See [Capturing baselines](#capturing-baselines).                                                                                                                                                        |
+
+Messages you may see:
+
+| Message                                                                                                 | Cause                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `No surveyjs.io baselines for win32. A SurveyJS team member captures them with pnpm visual:capture (…)` | `e2e/visual/baselines/states.json` or the platform folder is missing. Exits 1, before the build                                                                                                     |
+| `Baselines come only from surveyjs.io.`                                                                 | You passed `-u`, `--update-snapshots` or `--update-snapshots=…`. Exits 2. The visual config also refuses them when Playwright is run directly (`playwright test -c playwright.visual.config.ts -u`) |
+| `Missing surveyjs.io baseline <path>. Baselines are captured by a person: …`                            | One screen has no image in this browser's folder                                                                                                                                                    |
+| `pnpm visual:capture is run by a person, never in CI.`                                                  | `CI` is set. The command refuses and exits non-zero                                                                                                                                                 |
+
+Pass any Playwright argument after the command, for example `pnpm e2e:visual --project=chromium --grep list-active`.
+
+### Reading the report
+
+Run `pnpm e2e:visual:report`. A passing screen shows its two images; compare them by eye to see how close they are. A
+failing screen adds the diff, where the differing pixels are marked. Decide whether to **fix** the app or **accept** the
+difference (see below). Do not raise a threshold only to make a test pass.
+
+### Thresholds
+
+Playwright compares with a per-pixel `threshold` of 0.2. The share of pixels that may differ depends on the kind.
+
+| Kind                                         | Default | Cap  |
+| -------------------------------------------- | ------- | ---- |
+| `page` (site markup in the viewport)         | 0.005   | 0.01 |
+| `element` (footer, banner, projects section) | 0.01    | 0.02 |
+| `library` (Creator, Dashboard, Form Library) | 0.02    | 0.05 |
+
+The values are starting points; nothing measured them (see ADR 0020).
+
+### The acceptance rule
+
+A difference is **fixed** in markup or CSS by default. It may be **accepted** (a hide, a mask, a normalization or a
+ratio above the default, never above the cap) only in one of four cases.
+
+| Category    | Use it when                                                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `departure` | The app differs by a decision recorded in the idea, the spec or an ADR. Name it in the reason.                                                                   |
+| `library`   | The difference is inside Creator, Dashboard or Form Library markup and the live page runs another version. Name both versions (`states.json` has the live ones). |
+| `live-data` | The content cannot be reproduced: counts, dates, ids, names.                                                                                                     |
+| `rendering` | Only sub-pixel antialiasing is left after markup, classes and computed styles match. State the styles you compared.                                              |
+
+A hide or mask never covers a whole screen, the whole Creator or a whole Dashboard. Every acceptance is a manifest entry
+with its reason, and a row in [Accepted differences](#accepted-differences).
+
+### Capturing baselines
+
+This part is for a SurveyJS team member. You capture the baselines once. It takes about fifteen minutes to prepare the
+account and then a few minutes for the run. Nothing on surveyjs.io is changed: the script only reads.
+
+**What you need**
+
+- A Windows machine with the repository installed (`pnpm install`; see [Development](development.md#setup)).
+- **Node 24.** If your default `node` is older (for example with nvm), put Node 24 first once in each terminal window,
+  before any `pnpm` command. In Git Bash: `export PATH="$APPDATA/nvm/v24.21.0:$PATH"`. In PowerShell:
+  `$env:PATH = "$env:APPDATA\nvm\v24.21.0;$env:PATH"`. Check with `node --version`; it must print `v24.21.0`. Run every
+  command below in that window.
+- The three browsers: `pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`
+- A **dedicated surveyjs.io account**: not a site administrator, no licence, an empty cart, no other surveys or
+  projects. A fresh registration is easiest. Its name and email never reach the images (the header is normalized to
+  "Account").
+
+**Steps**
+
+1. Print the checklist: `pnpm visual:capture --checklist`. It lists ten steps, the JSON of `Customer feedback` and the
+   three responses to submit. Do them in the account. In short: create the project `Visual project` with the survey
+   `Team retro`; archive `Old poll`; create `Product poll`, `Event registration` and `Customer feedback` (paste the
+   JSON, publish, submit the three responses, and turn **Grant Access** on in View Results › Details); make sure
+   `Customer feedback` is first in the list. The capture does not need `Customer feedback` to list as published (on
+   live it may list as unpublished); it records the flag as `feedbackPublished` in `states.json`. The two row-menu
+   screens open the menu of `Product poll`, which is unpublished on both sides. Do not open the editor tour or change
+   anything else.
+
+   **Publish only once.** In the live "..." menu, Publish and Unpublish are one toggle, and a second click
+   unpublishes. After you publish `Customer feedback`, reload the page and open "..." again. It must show
+   **Unpublish** and **Run**. Then "..." › Run must show the survey, not "This survey is not currently available."
+
+2. Run `pnpm visual:capture`. It refuses when `CI` is set (it exits non-zero), so run it in your own terminal.
+3. A browser window opens surveyjs.io. **Sign in yourself** with the dedicated account. The script never types for you.
+   It waits up to ten minutes.
+4. The sign-in may not carry over to Firefox or WebKit. If another window asks again, sign in once per browser (up to
+   three times in all).
+5. The script checks the account against the data set, then captures the 17 screens that are not skipped in each browser. It writes
+   `e2e/visual/baselines/win32/<browser>/<id>.png` and `e2e/visual/baselines/states.json`.
+
+   **A good run** ends with Playwright's summary `54 passed, 3 skipped` (3 sign-ins and 17 captures in each of 3
+   browsers; the 3 skipped are the `history` screen, see Skipped screens below) and no `failed` or `did not run`
+   line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`, `firefox/` and `webkit/` hold 17
+   PNGs each (51 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed, fix the cause and
+   recapture it with `--grep <id>` first. Do not commit a partial set. The `results` screens wait for the live
+   "loading..." overlay (`#loadingIndicator`) to go. If a results screenshot still shows it, recapture that screen.
+
+6. **Review every image for personal data** before you commit. Open each PNG. No name or email of the account may
+   appear. Do not commit an image that shows one.
+7. Commit the folder:
+   `git add e2e/visual/baselines && git commit -m "test(e2e): surveyjs.io visual baselines (<date>)"`
+
+**Skipped screens**
+
+A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped.
+
+| Screen    | Reason                                                                                            | How to re-enable                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `history` | Live history is empty on a fresh account (2026-10-20); find how surveyjs.io records history first | Remove `skip` from the screen in the manifest, then run `pnpm visual:capture --grep history` |
+
+**If something fails**
+
+| What you see                                                                                                                                                                    | What to do                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                      |
+| `The page tried to write to the live site (blocked): POST …`                                                                                                                    | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry |
+| `Selectors matched nothing on live for <id>: …`                                                                                                                                 | The live page changed, or the account state differs. Tell the developers the id                                                      |
+| `Selectors matched nothing on live for run: .sd-question__title`                                                                                                                | `Customer feedback` is unpublished (the run page says "not currently available"). Publish it once, then run with `--grep run`        |
+| `Still loading on live for <id>: #loadingIndicator`                                                                                                                             | The live results page took over 30 s to load. Run again with `--grep <id>`                                                           |
+| Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                            | Delete `e2e/visual/.auth/` and run again                                                                                             |
+| One screen fails and the later screens of that browser are skipped                                                                                                              | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                        |
+
+**Good to know**
+
+- The script deletes the sign-in state (`e2e/visual/.auth/`) when it ends. If a run was killed, delete the folder by
+  hand. It is git-ignored; never commit it. `--keep-sign-in` keeps it for the next run.
+- Recapture one screen, or some, with `pnpm visual:capture --grep <id>`. The account checks run again. To recapture
+  one screen in one browser, add the project: `pnpm visual:capture --project=chromium --grep results-details`
+  (the sign-in of that browser runs first). For several screens use `--grep "results-summary|results-table"`. A
+  capture run always overwrites the screenshots it takes.
+- The script lets exactly two read-only POSTs through: `/api/CodeViewer/getfiles` (the embed code) and
+  `/api/cart/calcprepare` (the renewals calculator on /manage). Every other request with a method other than GET,
+  HEAD and OPTIONS, to surveyjs.io or to any other host, is aborted and fails the screen. Service workers are blocked,
+  so the guard sees every request.
+- Playwright's traces and failure screenshots show live pages of the account, so the capture writes them to
+  `e2e/visual/.auth/test-results/`; the runner deletes them with the sign-in state.
+- The licence pop-ups, the editor tour and the cookie banner are suppressed with the site's own `localStorage` keys
+  (`expiredNotificationDateTime`, `expiresSoonNotificationDateTime`, `isTourRejected` and
+  `isInformedAboutCookieAndPolicies`). The cookie banner shows only on the `shell-cookie-banner` screen.
+- The live public results page works only with **Grant Access** on (checklist step 8). It shows the site header and the
+  1,000-responses warning; the app's page has no shell (ADR 0016 R19), so the live header and footer are hidden.
+- Recapture after a Playwright upgrade or a deliberate change of the live site. Each recapture adds a few MB to git.
+- Recapture after a change to a live-side `hide`, `mask` or `normalize` entry: it takes effect only in new
+  baselines. The entries added on 2026-10-20 (the live "Submitted" card and the table's Submitted cells) need
+  `pnpm visual:capture --grep "results-summary|results-table|public-results"`. Until then the committed images
+  still show the card and the live times; the three screens pass within their ratio all the same.
+
+### Accepted differences
+
+Each difference the team accepts instead of fixing is one row. The table matches the `hide`, `mask`, `normalize` and
+`residual` entries of `e2e/visual/manifest.ts` one to one. No screen has a `maxDiffPixelRatio` above its kind's default. Live
+Form Library and Creator run 3.2.2 and the app runs 3.1.2; the live Dashboard version is not exposed
+(`states.json`).
+
+| Screen                                                                                                                                  | What                                                                                                                                               | Category  | Reason                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| The six `list-*` screens, `editor-designer`, `editor-embed`, `history` (skipped), `results-summary`, `results-table`, `results-details` | The header's account item reads "Account" on both sides                                                                                            | departure | Step 3 shows the user's name where live shows the constant "Account"; open in ADR 0020 › To confirm        |
+| The same screens                                                                                                                        | The GitHub star count reads "4.7k" on both sides                                                                                                   | live-data | The star count changes daily                                                                               |
+| `list-active`, `list-archived`, `list-project`, `list-project-selector`, `list-row-menu`, `list-row-menu-ids`                           | The survey dates read "1/1/2026" on both sides                                                                                                     | live-data | The dates are the days the data was created                                                                |
+| `editor-designer`, `editor-embed`                                                                                                       | The Creator licence banner is hidden on the app side                                                                                               | library   | survey-creator-core 3.1.2 shows it without a licence key; the live site (3.2.2) has a key                  |
+| `editor-designer`, `editor-embed`                                                                                                       | The app's save status in the bottom bar is hidden                                                                                                  | departure | ADR 0012 R18: the save status is ours; the live bottom bar has none                                        |
+| `editor-embed`                                                                                                                          | The embed code box is masked                                                                                                                       | live-data | The code shows the survey ids                                                                              |
+| `history` (skipped)                                                                                                                     | The entry times read "1/1/2026, 12:00:00 PM" on both sides                                                                                         | live-data | The times are the moments the data was created. The screen is skipped, see Skipped screens                 |
+| `run`                                                                                                                                   | The "Disclaimer of liability" banner is hidden on the live side                                                                                    | departure | ADR 0014 S13: the disclaimer is not built                                                                  |
+| `projects-expanded`                                                                                                                     | The member's display name reads "Visual User" on both sides                                                                                        | live-data | The name belongs to the account that made the data                                                         |
+| `results-summary`, `results-table`, `results-details`, `public-results`                                                                 | The "first 1,000 responses" banner is hidden on the live side                                                                                      | departure | ADR 0015 R12: no 1,000 banner                                                                              |
+| `results-summary`, `results-table`, `public-results`                                                                                    | The Dashboard licence banner is hidden on the app side                                                                                             | library   | The Dashboard library shows it without a licence key; the live site has a key (its version is not exposed) |
+| `results-summary`, `public-results`                                                                                                     | The live Dashboard's "Submitted" card is hidden on the live side                                                                                   | departure | ADR 0015 R13: Submitted is a table-only column, so the app's Summary has no Submitted card                 |
+| `results-table`                                                                                                                         | The Submitted cells read "2026-01-01T00:00:00.000Z" on both sides                                                                                  | live-data | The times are the moments the data was created                                                             |
+| `results-table`                                                                                                                         | The rows' order differs: live lists the responses in storage order, the app by submission time. Nothing hides it; it fits within the default ratio | departure | ADR 0015 R3: the app sorts the responses by (submittedAt, id)                                              |
+| `results-summary`, `results-table`, `results-details`                                                                                   | The app's "Back to My Surveys" link is hidden on the app side                                                                                      | departure | App navigation link, no live counterpart (Step 9)                                                          |
+| `results-details`                                                                                                                       | The first and last response times read "1/1/2026" on both sides                                                                                    | live-data | The times are the moments the data was created                                                             |
+| `public-results`                                                                                                                        | The live site header (both top bars) and footer are hidden on the live side                                                                        | departure | ADR 0016 R19: the public results page has no site shell                                                    |
+| `public-results`                                                                                                                        | The live Details tab is hidden on the live side                                                                                                    | departure | ADR 0016 R19: the public results page has no Details tab                                                   |
 
 ## Provider suite
 

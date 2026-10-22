@@ -66,6 +66,19 @@ describe("the footer name editor", () => {
     expect(bodies).toHaveLength(1);
   });
 
+  it("does not save on the Enter that ends an IME composition", async () => {
+    await openEditor();
+    const bodies = recordRenames();
+    openNameEditor();
+
+    fireEvent.change(input(), { target: { value: "Renamed" } });
+    fireEvent.keyDown(input(), { key: "Enter", isComposing: true });
+
+    expect(input().value).toBe("Renamed");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bodies).toEqual([]);
+  });
+
   it("saves when the box loses the focus", async () => {
     await openEditor();
     const bodies = recordRenames();

@@ -11,7 +11,6 @@ import {
   type ViewState,
 } from "../api/views";
 import { surveyListSearch } from "../surveyList/search";
-import { PlaceholderFrame } from "../surveyList/surveyPlaceholder";
 import { useLicenceApplied } from "../surveyjs/useLicenceApplied";
 import { DetailsTab } from "./DetailsTab";
 import type { PrivacyChange } from "./privacy";
@@ -166,9 +165,12 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
     archived: survey.archived,
   });
   return (
-    <PlaceholderFrame title={survey.name}>
+    <div className="survey-results-page">
+      <h3 className="survey-results-page__title">My Surveys. Results</h3>
+      {/* The survey name stays the page's level 1 heading; the site's span is styled alike. */}
+      <h1 className="survey-results-page__description">{survey.name}</h1>
       <div className="tabs survey-results-page__tabs">
-        <ul className={`tabs__wrapper my-surveys-page__tabs-wrapper ${styles.tabs}`}>
+        <ul className="tabs__wrapper my-surveys-page__tabs-wrapper">
           {TABS.map(({ tab: target, label }) => {
             const active = target === tab;
             return (
@@ -194,7 +196,12 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
             );
           })}
         </ul>
-        <div className={`tabs__tab-content survey-results-page__tab-content ${styles.tabContent}`}>
+        <div
+          id={
+            tab === "details" ? "resultsInfo" : tab === "summary" ? "summaryContainer" : undefined
+          }
+          className="tabs__tab-content survey-results-page__tab-content"
+        >
           {content}
         </div>
       </div>
@@ -208,11 +215,11 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
           The list of private questions could not be saved. Please try again.
         </p>
       )}
-      <p className="v2-class---paragraph">
+      <p className={`v2-class---paragraph ${styles.back}`}>
         <Link className="v2-class---paragraph-link" to="/" search={back}>
           Back to My Surveys
         </Link>
       </p>
-    </PlaceholderFrame>
+    </div>
   );
 }

@@ -211,31 +211,36 @@ function DeleteResults({ survey, hasResults }: { survey: Survey; hasResults: boo
           <button
             className="rounded-button rounded-button--danger"
             type="button"
+            aria-expanded={open}
+            aria-controls="ctrlClearAll"
             onClick={() => setOpen(!open)}
           >
             Delete Results
           </button>
-          {open && (
+          {/* Always laid out, as on the site, so the sections below keep their place. */}
+          <div id="ctrlClearAll" style={{ visibility: open ? "visible" : "hidden" }}>
             <div>
-              <p className="v2-class---paragraph">
-                Deletes all survey results without the possibility to restore.
-              </p>
-              <input
-                type="text"
-                placeholder="Type the survey name"
-                aria-label="Type the survey name"
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-              />
-              <button
-                type="button"
-                disabled={!deleteConfirmed(typed, survey.name) || deletion.isPending}
-                onClick={() => void clear()}
-              >
-                Clear All Data
-              </button>
+              <div>Deletes all survey results without the possibility to restore.</div>
+              <div>
+                <input
+                  type="text"
+                  placeholder="Type the survey name"
+                  aria-label="Type the survey name"
+                  value={typed}
+                  onChange={(event) => setTyped(event.target.value)}
+                />
+                <span>
+                  <button
+                    type="button"
+                    disabled={!deleteConfirmed(typed, survey.name) || deletion.isPending}
+                    onClick={() => void clear()}
+                  >
+                    Clear All Data
+                  </button>
+                </span>
+              </div>
             </div>
-          )}
+          </div>
         </>
       )}
       {outcome === "done" && (
@@ -275,7 +280,7 @@ function ResetSection({
 
   return (
     <div className="mod-mt-30">
-      <p className="v2-class---paragraph">{text}</p>
+      <div>{text}</div>
       <div>
         <span>
           <button

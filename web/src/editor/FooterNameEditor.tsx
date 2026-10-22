@@ -57,6 +57,8 @@ export function FooterNameEditor({
               onBlur={() => save(editingName, false)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
+                  // The Enter that ends an IME composition only confirms the text.
+                  if (event.nativeEvent.isComposing) return;
                   event.preventDefault();
                   save(editingName);
                 } else if (event.key === "Escape") {

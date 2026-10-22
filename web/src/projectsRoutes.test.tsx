@@ -240,6 +240,33 @@ describe("the Projects page", () => {
     ]);
   });
 
+  it("does not save a project name on the Enter that ends an IME composition", async () => {
+    const { writes } = await renderProjects();
+
+    fireEvent.click(summary("Marketing").getByRole("link", { name: "Rename" }));
+    const input = screen.getByRole<HTMLInputElement>("textbox", { name: "Project name" });
+    fireEvent.change(input, { target: { value: "Marketing 2" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByRole("textbox", { name: "Project name" })).toBe(input);
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps an open card open after its rename is saved or cancelled", async () => {
+    await renderProjects();
+    await open("Marketing");
+
+    fireEvent.click(summary("Marketing").getByRole("link", { name: "Rename" }));
+    fireEvent.click(screen.getByRole("link", { name: "Cancel" }));
+    expect(card("Marketing").open).toBe(true);
+
+    fireEvent.click(summary("Marketing").getByRole("link", { name: "Rename" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull());
+    expect(card("Marketing").open).toBe(true);
+  });
+
   it("asks before deleting a project and sends nothing when declined", async () => {
     confirm.mockReturnValue(false);
     const { writes } = await renderProjects();
@@ -302,6 +329,19 @@ describe("the Projects page", () => {
       expect(
         marketingCard.getByRole<HTMLInputElement>("textbox", { name: "New member's email" }).value,
       ).toBe("nobody@example.test");
+    });
+
+    it("clears the email and the error on Cancel", async () => {
+      const { marketingCard } = await add(() => problemAnswer(404, "user-not-found"));
+      await marketingCard.findByRole("alert");
+
+      fireEvent.click(marketingCard.getByRole("link", { name: "Cancel" }));
+
+      expect(marketingCard.queryByRole("alert")).toBeNull();
+      fireEvent.click(marketingCard.getByRole("button", { name: "Add a New Member" }));
+      expect(
+        marketingCard.getByRole<HTMLInputElement>("textbox", { name: "New member's email" }).value,
+      ).toBe("");
     });
 
     it("explains an address that is already a member", async () => {

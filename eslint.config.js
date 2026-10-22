@@ -11,6 +11,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/test-results/**",
       "**/playwright-report/**",
+      "**/visual-report/**",
       "**/blob-report/**",
       "**/generated/**",
       "web/src/routeTree.gen.ts",
@@ -59,6 +60,32 @@ export default tseslint.config(
           selector:
             "TemplateElement[value.raw=/\\b(insert|update|delete|merge|drop|create|alter|truncate|exec|execute|grant|into)\\b/i]",
           message: "The azure-legacy provider is read-only: SQL text must be SELECT only.",
+        },
+      ],
+    },
+  },
+  {
+    // The capture reads the live surveyjs.io site with a real account (Step 13): it may navigate,
+    // hover and click, and nothing else. No typing, no form input, no uploads, no direct requests,
+    // so a coding slip cannot change data on the live site. The support code is shared with the
+    // app side and held to the same rule.
+    files: ["e2e/visual/capture/**/*.ts", "e2e/visual/support/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(fill|type|press|pressSequentially|check|uncheck|setChecked|selectOption|setInputFiles|dragTo|dispatchEvent|tap|dblclick|post|put|patch|delete|fetch|insertText|submit|requestSubmit|sendBeacon)$/]",
+          message: "The surveyjs.io capture is read only: navigate, hover and click only.",
+        },
+        {
+          selector: 'CallExpression[callee.name="fetch"]',
+          message: "The surveyjs.io capture is read only: no direct requests.",
+        },
+        {
+          selector: 'NewExpression[callee.name="XMLHttpRequest"]',
+          message: "The surveyjs.io capture is read only: no direct requests.",
         },
       ],
     },

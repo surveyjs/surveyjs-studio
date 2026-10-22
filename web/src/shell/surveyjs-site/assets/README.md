@@ -69,11 +69,13 @@ Changes to them:
 
 - Run opens the app's run page `/s/{id}` (the old site's address, `/published?id=`, is handled by the site's redirect); Help and Run open with
   `noopener`.
-- The Embed tabs' settings are inside the tab (glue in `src/editor/embed/EmbedTab.module.css`), not a
-  settings survey in the Creator's sidebar; jQuery is not offered (no SurveyJS 3.1.2 jQuery package),
-  nor the "Display Method" (pop-up) choice; the intro leaves out its last sentence (viewing the
-  example on Plunker or CodeSandbox: the site builds those projects with its own services). The
-  "Get Started" link goes to surveyjs.io. The code is the app's own template (`embedCode.ts`).
+- The Embed tabs' settings are in the Creator's sidebar, as a settings survey copied from
+  `embed-tab.tsx` (platform, display method, load from service; the class names and the
+  `spg-custom-dropdown-control` styling are the site's); jQuery is not offered (no SurveyJS 3.1.2 jQuery
+  package), and the "Display Method" has only On-Page. The intro's last sentence reads "You can also
+  paste this code into an online code editor, such as Plunker or CodeSandbox", with links to the two start
+  pages: the site builds the example projects with its own services. The "Get Started" link goes to
+  surveyjs.io. The code is the app's own template (`embedCode.ts`).
 - The links and code headers of `embedded-tab.scss` use a font token that Creator 3.1.2 does not
   define, and its `--sjs2-color-utility-surface-embed` background is not defined either: glue sets the
   font to the page's.
@@ -146,18 +148,25 @@ that one warning.
 
 ## Fonts
 
-| Font             | Files                                            | Licence                                                                                                                                                         |
-| ---------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lato 2.0 (Latin) | `LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | SIL Open Font License 1.1 (© Łukasz Dziedzic): may be copied, embedded and redistributed with software.                                                         |
-| DM Mono          | `DMMono-Regular.woff2`                           | SIL Open Font License 1.1 (© The DM Mono Project Authors). Declared by the copied `fonts.scss`; the shell itself never uses it, so browsers do not download it. |
+All five families are under the SIL Open Font License 1.1 (OFL): they may be copied, embedded and
+redistributed with software, and the licence text travels with the files. Each directory holds one
+`OFL-<Family>.txt` per family, with that family's copyright line and the full licence.
 
-The site serves these files itself, and so does the shell (bundled by Vite). The site also loads
-**Raleway** and **Open Sans** from Google Fonts. The shell does not: it makes no runtime calls to
-third parties, and the legacy source has no copies of those files. Raleway only styles legacy page
-classes the shell does not use. Open Sans is the second choice after Lato in the site's font stack
-and the `body` font of `common-styles.scss`, so page text outside the shell's elements falls back to
-Helvetica Neue / Helvetica / Arial. Step 13 (visual parity) decides whether to self-host Open Sans
-(it is licensed under the SIL OFL 1.1, so that is allowed).
+| Font                       | Files                                                     | Version | Copyright and licence                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lato (Latin)               | `Fonts/V2/LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | 2.015   | © 2011-2015 tyPoland Łukasz Dziedzic, Reserved Font Name "Lato". `Fonts/V2/OFL-Lato.txt`.                                                                    |
+| DM Mono                    | `Fonts/V2/DMMono-Regular.woff2`                           | 1.000   | © 2020 The DM Mono Project Authors. `Fonts/V2/OFL-DMMono.txt`. Declared by the copied `fonts.scss`; the shell never uses it, so browsers do not download it. |
+| Open Sans (variable, wght) | `Fonts/Google/OpenSans-latin.woff2`, latin subset         | 3.003   | © 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans). `Fonts/Google/OFL-OpenSans.txt`.                                             |
+| Raleway (variable, wght)   | `Fonts/Google/Raleway-latin.woff2`, latin subset          | 4.026   | © 2010 The Raleway Project Authors (impallari@gmail.com), Reserved Font Name "Raleway". `Fonts/Google/OFL-Raleway.txt`.                                      |
+
+Lato and DM Mono are copies of the site's own files. Open Sans and Raleway are not in the legacy
+source: the site loads them from Google Fonts (`the site's page markup`). The two files here are
+the unmodified latin-subset woff2 files that the Google Fonts CSS API serves for those families
+(`fonts.googleapis.com/css`, then `fonts.gstatic.com`), downloaded on 2026-10-20 (Step 13). The
+shell and the app declare them in `surveyjs-site.scss`, bundled by Vite, so they make no runtime
+call to Google. Open Sans is the `body` font of `common-styles.scss`; Raleway styles the results
+page headings. Letters outside the latin subset fall back to Helvetica Neue / Helvetica / Arial.
+Reserved Font Names: the files keep their original names and are not modified.
 
 ## Left out on purpose
 
@@ -212,12 +221,20 @@ Changes and additions:
 - The tabs are links to `?tab=summary|table|details` (the summary without `tab`), not the site's
   `#summary`, `#table` and `#info` hash; the active one also has `aria-current="page"`. Only the active
   tab's body is rendered.
-- The Reset texts are `p.v2-class---paragraph` without the site's `role="alert"` (static text is not a
-  live region). After a reset the page shows "The table layout is reset." or "The summary layout is
+- The Reset texts are plain `div`s, as on the site, without the site's `role="alert"` (static text
+  is not a live region). After a reset the page shows "The table layout is reset." or "The summary layout is
   reset." (or "The layout was not reset. Please try again.") instead of reloading.
-- The page heading stays the survey name (the site's "My Surveys. Results" heading and its locale
-  picker are not copied), and the site's "only the first 1,000 responses" panel is left out: the page
-  shows every response.
+- The page shows the site's "My Surveys. Results" heading (`h3.survey-results-page__title`) and the
+  survey name under it; the name is an `h1` styled as the site's description span, so it stays the
+  page's level 1 heading. The locale picker is not copied, and the site's "only the first 1,000
+  responses" panel is left out: the page shows every response.
+- "Back to My Surveys" is the app's own and sits out of the flow where the site draws that panel
+  (`results.module.css`), so the page is as tall as the site's.
+- Step 13: the page's styles are `site/Content/Styles/pages/survey-results.scss` (a copy of
+  `the site's source`, byte-order mark removed), imported after
+  `my-surveys.scss`. The Details tab body has the site's `#resultsInfo` id (its flex rule needs it)
+  and the Summary body `#summaryContainer`. The Reset texts are plain `div`s, and the Delete Results
+  confirmation block (`#ctrlClearAll`) is always laid out and hidden (`visibility: hidden`) until opened (the site uses `visibility: collapse`; `hidden` takes the same room and keeps the block out of the accessibility tree).
 - The loading, load-failure, save-failure and export-failure texts are the app's own; the texts inside
   the charts and the table come from survey-analytics.
 

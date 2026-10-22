@@ -23,3 +23,11 @@
   outline: 2px solid #19b394; /* $Primary--Primary */
   outline-offset: 2px;
 }
+
+/* The site's account styles remove the outline of every button (`account/index.scss`), so the
+   keyboard focus would not show on Save and Add: it shows here, in the same colour. This rule
+   (0,3,0) outranks the site's (0,2,0). */
+:global(.v2-class---account-page__projects-section) :global(.v2-class---button):focus-visible {
+  outline: 2px solid #19b394; /* $Primary--Primary */
+  outline-offset: 2px;
+}

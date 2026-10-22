@@ -120,6 +120,38 @@ describe("AccountMenu", () => {
       expect(names).toEqual(["Settings", "Projects", "Help Desk", "Billing", "Sign Out"]);
     });
 
+    it("closes the drop-down after the click, though the pointer is still over it", () => {
+      const { link } = renderWithProjects();
+      const item = screen.getByRole("listitem", { name: "Account" });
+      const trigger = within(item).getByRole("button", { name: /Olivia Owner/ });
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.mouseEnter(item);
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+      fireEvent.click(link);
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(item.className).toMatch(/dropDownDismissed/);
+
+      fireEvent.mouseLeave(item);
+      expect(item.className).not.toMatch(/dropDownDismissed/);
+    });
+
+    it("opens again from the keyboard after an item was activated", () => {
+      const { link } = renderWithProjects();
+      const item = screen.getByRole("listitem", { name: "Account" });
+      const trigger = within(item).getByRole("button", { name: /Olivia Owner/ });
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.click(link);
+      expect(item.className).toMatch(/dropDownDismissed/);
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(item.className).not.toMatch(/dropDownDismissed/);
+      expect(item.className).toMatch(/dropDownOpen/);
+    });
+
     it("navigates in the app on a plain click instead of loading the page", () => {
       const { navigate, link } = renderWithProjects();
 
@@ -206,6 +238,29 @@ describe("AccountMenu", () => {
       });
 
       expect(trigger().getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("puts focus back on the trigger after an item is activated from the keyboard", () => {
+      const { onSignOut } = renderMenu();
+      trigger().focus();
+      fireEvent.keyDown(trigger(), { key: "ArrowDown" });
+      const signOut = screen.getByRole("button", { name: "Sign Out" });
+      signOut.focus();
+
+      // Enter or Space on a focused button or link fires its click.
+      fireEvent.click(signOut);
+
+      expect(onSignOut).toHaveBeenCalledTimes(1);
+      expect(trigger().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it("leaves focus alone when the activated item did not have it", () => {
+      renderMenu();
+      const elsewhere = document.body;
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+
+      expect(document.activeElement).toBe(elsewhere);
     });
   });
 });

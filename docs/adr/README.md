@@ -26,3 +26,4 @@ and add each one to this index.
 | [0017](0017-projects-and-members.md)                       | Projects and members                                                            | Accepted |
 | [0018](0018-accounts-by-deployment-mode.md)                | Accounts by deployment mode                                                     | Accepted |
 | [0019](0019-run-page-isolation-and-security-headers.md)    | Run page isolation and security headers                                         | Accepted |
+| [0020](0020-visual-parity-baselines.md)                    | Visual parity baselines                                                         | Accepted |

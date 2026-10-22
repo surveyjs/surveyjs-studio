@@ -1,0 +1,179 @@
+import { describe, expect, it } from "vitest";
+import {
+  HEADER_NORMALIZATIONS,
+  KIND_LIMITS,
+  LIVE_ORIGIN,
+  SCREENS,
+  type Adjustment,
+  type Screen,
+  type SideSpec,
+} from "./manifest.js";
+
+const PLACEHOLDERS = new Set(["feedbackId", "feedbackResultId", "projectId"]);
+const CATEGORIES = new Set(["departure", "library", "live-data", "rendering"]);
+const FORBIDDEN = new Set(["body", "html", "main", "#root", ".svc-creator", ".sa-dashboard"]);
+
+const sides = (screen: Screen): [string, SideSpec][] => [
+  ["live", screen.live],
+  ["app", screen.app],
+];
+const adjustments = (spec: SideSpec): Adjustment[] => [...(spec.hide ?? []), ...(spec.mask ?? [])];
+
+describe("the screen manifest", () => {
+  it("has 18 screens with unique kebab-case ids", () => {
+    expect(SCREENS).toHaveLength(18);
+    const ids = SCREENS.map((screen) => screen.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+  });
+
+  it("skips a screen only with a reason, and only history today", () => {
+    for (const screen of SCREENS) {
+      if (screen.skip !== undefined) expect(screen.skip.trim(), screen.id).not.toBe("");
+    }
+    // A new skip is a deliberate change of this test.
+    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual(["history"]);
+  });
+
+  it("gives every idle selector a value", () => {
+    for (const screen of SCREENS) {
+      for (const [side, spec] of sides(screen)) {
+        if (spec.idle !== undefined) expect(spec.idle.trim(), `${screen.id} ${side}`).not.toBe("");
+      }
+    }
+  });
+
+  it("groups and classifies the screens as the plan does", () => {
+    expect(SCREENS.map((s) => [s.id, s.group, s.kind])).toEqual([
+      ["list-active", "list", "page"],
+      ["list-archived", "list", "page"],
+      ["list-project", "list", "page"],
+      ["list-project-selector", "list", "page"],
+      ["list-row-menu", "list", "page"],
+      ["list-row-menu-ids", "list", "page"],
+      ["shell-cookie-banner", "list", "element"],
+      ["shell-footer", "list", "element"],
+      ["editor-designer", "pages", "library"],
+      ["editor-embed", "pages", "library"],
+      ["history", "pages", "page"],
+      ["run", "pages", "library"],
+      ["projects", "pages", "element"],
+      ["projects-expanded", "pages", "element"],
+      ["results-summary", "results", "library"],
+      ["results-table", "results", "library"],
+      ["results-details", "results", "page"],
+      ["public-results", "results", "library"],
+    ]);
+  });
+
+  it("uses known placeholders in paths that start with /", () => {
+    for (const screen of SCREENS) {
+      for (const [side, spec] of sides(screen)) {
+        expect(spec.path, `${screen.id} ${side}`).toMatch(/^\//);
+        for (const match of spec.path.matchAll(/\{(\w+)\}/g)) {
+          expect(PLACEHOLDERS.has(match[1] ?? ""), `${screen.id} ${side} {${match[1]}}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("gives every adjustment and normalization a reason and a category", () => {
+    for (const screen of SCREENS) {
+      const all = [
+        ...sides(screen).flatMap(([, spec]) => adjustments(spec)),
+        ...(screen.normalize ?? []),
+        ...(screen.residual ?? []),
+      ];
+      for (const item of screen.residual ?? []) expect(item.what.trim(), screen.id).not.toBe("");
+      for (const item of all) {
+        expect(item.reason.trim(), screen.id).not.toBe("");
+        expect(CATEGORIES.has(item.category), screen.id).toBe(true);
+      }
+    }
+    for (const item of HEADER_NORMALIZATIONS) {
+      expect(item.reason.trim()).not.toBe("");
+      expect(CATEGORIES.has(item.category)).toBe(true);
+    }
+  });
+
+  it("keeps maxDiffPixelRatio within the kind's cap, above the default only with a reason", () => {
+    for (const screen of SCREENS) {
+      const limits = KIND_LIMITS[screen.kind];
+      expect(screen.maxDiffPixelRatio, screen.id).toBeLessThanOrEqual(limits.cap);
+      if (screen.maxDiffPixelRatio > limits.default) {
+        expect((screen.thresholdReason ?? "").trim(), screen.id).not.toBe("");
+      }
+    }
+  });
+
+  it("never hides or masks a whole screen", () => {
+    for (const screen of SCREENS) {
+      for (const [side, spec] of sides(screen)) {
+        for (const item of adjustments(spec)) {
+          expect(
+            FORBIDDEN.has(item.selector.trim()),
+            `${screen.id} ${side}: ${item.selector}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("normalizes the header on every screen that shows it", () => {
+    for (const screen of SCREENS) {
+      const showsHeader =
+        screen.id !== "run" && screen.id !== "public-results" && !screen.live.target;
+      if (screen.id === "public-results") {
+        // ADR 0016 R19: the app page has no shell, so the live header and footer are hidden
+        const hidden = (screen.live.hide ?? []).map((item) => item.selector);
+        expect(hidden, screen.id).toContain("header.v2-class---top-bar");
+        expect(hidden, screen.id).toContain("footer.v2-class---footer");
+      }
+      if (!showsHeader) continue;
+      for (const header of HEADER_NORMALIZATIONS) {
+        expect(screen.normalize ?? [], screen.id).toContainEqual(header);
+      }
+    }
+  });
+
+  it("presets the cookie flag everywhere except the banner screen", () => {
+    expect(SCREENS.filter((s) => s.cookieBanner === true).map((s) => s.id)).toEqual([
+      "shell-cookie-banner",
+    ]);
+  });
+
+  it("has the thresholds of the plan and the live origin", () => {
+    expect(KIND_LIMITS).toEqual({
+      page: { default: 0.005, cap: 0.01 },
+      element: { default: 0.01, cap: 0.02 },
+      library: { default: 0.02, cap: 0.05 },
+    });
+    expect(LIVE_ORIGIN).toBe("https://surveyjs.io");
+  });
+
+  it("records the results pages' known differences", () => {
+    const byId = (id: string) => SCREENS.find((screen) => screen.id === id)!;
+    const selectors = (items: readonly Adjustment[] | undefined) =>
+      (items ?? []).map((item) => item.selector);
+    const submittedCard = '.sa-question[data-question="HappendAt"]';
+    // ADR 0015 R13: the live Dashboard draws a Submitted card, the app's Summary has none.
+    for (const id of ["results-summary", "public-results"]) {
+      expect(selectors(byId(id).live.hide), id).toContain(submittedCard);
+    }
+    // The app's "Back to My Surveys" link has no live counterpart.
+    for (const id of ["results-summary", "results-table", "results-details"]) {
+      expect(
+        selectors(byId(id).app.hide).some((s) => s.includes("v2-class---paragraph-link")),
+        id,
+      ).toBe(true);
+    }
+    // ADR 0015 R3: the table's rows are in another order; the Submitted cells are live data.
+    const table = byId("results-table");
+    expect(table.residual?.map((item) => item.reason)).toEqual([
+      "ADR 0015 R3: the app sorts the responses by (submittedAt, id)",
+    ]);
+    expect(table.normalize?.map((item) => item.app)).toContain(
+      '.tabulator-row .tabulator-cell[tabulator-field="HappendAt"]',
+    );
+  });
+});

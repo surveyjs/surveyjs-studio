@@ -30,7 +30,8 @@ const LOADING = (
 /**
  * The public results page of a survey with Grant Access on (`/results/$surveyId`), without the
  * site's shell: the Summary and the Table, read only, private questions left out. The results
- * are read once per open.
+ * are read once per open. The route wraps it in the configured shell's styles
+ * (`renderShellStyles`); under `plain` it has none.
  */
 export function PublicResultsPage({ surveyId }: { surveyId: string }) {
   const query = useQuery(publicResultsQueryOptions(surveyId));
@@ -81,41 +82,47 @@ export function PublicResultsPage({ surveyId }: { surveyId: string }) {
         publicView: true,
       };
       return (
-        <main className="public-results">
-          <h1 className="public-results__title">{survey.name}</h1>
-          <div className="tabs">
-            <ul className="tabs__wrapper my-surveys-page__tabs-wrapper">
-              {TABS.map(({ tab: target, label }) => {
-                const active = target === tab;
-                return (
-                  <li key={target} className="tabs__tab-wrapper">
-                    <a
-                      className={
-                        active
-                          ? "tabs__tab tabs__tab--active my-surveys-page__tabs-tab-active"
-                          : "tabs__tab"
-                      }
-                      href={`#${target}`}
-                      aria-current={active ? "page" : undefined}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setTab(target);
-                      }}
-                    >
-                      {label}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="tabs__tab-content">
-              {licenceApplied ? (
-                <Suspense fallback={LOADING}>
-                  {tab === "summary" ? <SummaryView {...props} /> : <TableView {...props} />}
-                </Suspense>
-              ) : (
-                LOADING
-              )}
+        <main>
+          <div className="survey-results-page">
+            <h3 className="survey-results-page__title">My Surveys. Results</h3>
+            <h1 className="survey-results-page__description">{survey.name}</h1>
+            <div className="tabs survey-results-page__tabs">
+              <ul className="tabs__wrapper my-surveys-page__tabs-wrapper">
+                {TABS.map(({ tab: target, label }) => {
+                  const active = target === tab;
+                  return (
+                    <li key={target} className="tabs__tab-wrapper">
+                      <a
+                        className={
+                          active
+                            ? "tabs__tab tabs__tab--active my-surveys-page__tabs-tab-active"
+                            : "tabs__tab"
+                        }
+                        href={`#${target}`}
+                        aria-current={active ? "page" : undefined}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setTab(target);
+                        }}
+                      >
+                        {label}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div
+                id={tab === "summary" ? "summaryContainer" : undefined}
+                className="tabs__tab-content survey-results-page__tab-content"
+              >
+                {licenceApplied ? (
+                  <Suspense fallback={LOADING}>
+                    {tab === "summary" ? <SummaryView {...props} /> : <TableView {...props} />}
+                  </Suspense>
+                ) : (
+                  LOADING
+                )}
+              </div>
             </div>
           </div>
         </main>

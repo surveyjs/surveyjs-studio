@@ -153,6 +153,9 @@ the public Table is built from a definition without the private questions. The "
 application's own: the old page showed an "Unauthorized Access" page that asked the visitor to write to a
 support address, which is not copied.
 
+Confirmed by the product owner on 2026-10-20 ([ADR 0020](0020-visual-parity-baselines.md)): the public results page stays
+without the surveyjs.io site header and footer. The visual comparison hides them on the live side as a `departure`.
+
 ## Consequences
 
 - A private question is **private** only for the public page. The owner's Summary, Table and both downloads still
