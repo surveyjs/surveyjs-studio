@@ -27,12 +27,25 @@ describe("the screen manifest", () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
-  it("skips a screen only with a reason, and only history today", () => {
+  it("skips no screen today, and a skip needs a reason", () => {
     for (const screen of SCREENS) {
       if (screen.skip !== undefined) expect(screen.skip.trim(), screen.id).not.toBe("");
     }
     // A new skip is a deliberate change of this test.
-    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual(["history"]);
+    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual([]);
+  });
+
+  it("lets a screen await its baseline only with a reason, and only history today", () => {
+    for (const screen of SCREENS) {
+      if (screen.awaitingBaseline === undefined) continue;
+      expect(screen.awaitingBaseline.trim(), screen.id).not.toBe("");
+      // A skipped screen is never captured, so it cannot await a capture.
+      expect(screen.skip, screen.id).toBeUndefined();
+    }
+    // Removed with the product owner's capture of the screen (ADR 0020).
+    expect(SCREENS.filter((s) => s.awaitingBaseline !== undefined).map((s) => s.id)).toEqual([
+      "history",
+    ]);
   });
 
   it("gives every idle selector a value", () => {

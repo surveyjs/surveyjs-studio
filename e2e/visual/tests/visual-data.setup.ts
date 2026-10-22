@@ -7,6 +7,7 @@ import {
   FEEDBACK_DEFINITION,
   FEEDBACK_NAME,
   FEEDBACK_RESPONSES,
+  HISTORY_SAVES,
   PERSONAL_ACTIVE,
   PERSONAL_ARCHIVED,
   PROJECT_NAME,
@@ -14,7 +15,6 @@ import {
   VISUAL_USER,
   type VisualStates,
 } from "../data-set.js";
-import { SCREENS } from "../manifest.js";
 import { putDefinitionViaApi } from "../../tests/support/editor.js";
 import { createProjectViaApi } from "../../tests/support/projects.js";
 import { submitViaApi } from "../../tests/support/results.js";
@@ -27,10 +27,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stateDir = resolve(here, "../.state");
 const statesPath = resolve(here, "../baselines/states.json");
 
-/** How many history entries the live survey has: from the capture's states, or the default for `--self`. */
+/**
+ * How many history entries the live survey has: from the capture's states, or the default for
+ * `--self`. A count of 0 comes from a capture made before surveyjs.io listed history (its fix of
+ * 2026-10-20): the history screen then awaits its baseline, and the app side shows the entries the
+ * product owner's saves will make (`HISTORY_SAVES`).
+ */
 function historyEntries(): number {
   if (process.env["VISUAL_BASELINES"] === "self") return DEFAULT_STATES.historyEntries;
-  return (JSON.parse(readFileSync(statesPath, "utf8")) as VisualStates).historyEntries;
+  const recorded = (JSON.parse(readFileSync(statesPath, "utf8")) as VisualStates).historyEntries;
+  return recorded > 0 ? recorded : HISTORY_SAVES;
 }
 
 async function patchSurvey(page: Page, id: string, patch: Record<string, unknown>): Promise<void> {
@@ -75,20 +81,16 @@ setup("create the visual data set for the visual user", async ({ page }) => {
   for (const name of [...others].reverse()) await createSurveyViaApi(page, name);
   const feedback = await createSurveyViaApi(page, FEEDBACK_NAME);
 
-  // The same number of history entries as the live survey; the last save is the feedback definition.
-  // Skipped with the history screen: nothing compares the count, so one definition save is enough.
-  if (SCREENS.find((screen) => screen.id === "history")?.skip === undefined) {
-    const wanted = historyEntries();
-    let count = await historyCount(page, feedback.id);
-    expect(count, "the new survey has more history than the live one").toBeLessThanOrEqual(wanted);
-    while (count < wanted) {
-      await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
-      count = await historyCount(page, feedback.id);
-    }
-    expect(count).toBe(wanted);
-  } else {
+  // The same number of history entries as the live survey; the last save is the feedback definition,
+  // so at least one save is needed (a new survey has fewer entries than the live one).
+  const wanted = historyEntries();
+  let count = await historyCount(page, feedback.id);
+  expect(count, "a new survey has fewer history entries than the live one").toBeLessThan(wanted);
+  while (count < wanted) {
     await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
+    count = await historyCount(page, feedback.id);
   }
+  expect(count).toBe(wanted);
   const stored = await page.request.get(`/api/v1/surveys/${feedback.id}/definition`);
   expect(await stored.json()).toEqual(FEEDBACK_DEFINITION);
 

@@ -67,4 +67,12 @@ export interface VisualStates {
   liveVersions: Record<string, string | null>;
 }
 
-export const DEFAULT_STATES: VisualStates = { historyEntries: 2, liveVersions: {} };
+/**
+ * The editor saves of `Customer feedback` the product owner makes on surveyjs.io before a capture
+ * (change its title, then restore it). surveyjs.io lists history since its fix of 2026-10-20
+ * (3389d6cd49); earlier saves are not listed. The capture records the live count in `states.json`
+ * and the app side makes the same number of entries.
+ */
+export const HISTORY_SAVES = 2;
+
+export const DEFAULT_STATES: VisualStates = { historyEntries: HISTORY_SAVES, liveVersions: {} };

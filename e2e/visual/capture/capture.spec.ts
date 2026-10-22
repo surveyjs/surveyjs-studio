@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { FEEDBACK_NAME, PROJECT_NAME, type VisualStates } from "../data-set.js";
+import { FEEDBACK_NAME, HISTORY_SAVES, PROJECT_NAME, type VisualStates } from "../data-set.js";
 import { LIVE_ORIGIN, SCREENS } from "../manifest.js";
 import type { VisualIds } from "../support/paths.js";
 import { compareNames, expectedScopes } from "../support/preconditions.js";
@@ -158,7 +158,8 @@ test.beforeAll(async ({ browser }, testInfo) => {
           problems.push(`Details: total responses is "${text}", expected "3"`);
         }
       });
-      // An empty history is not a problem: the count is recorded as 0 (the history screen is skipped).
+      // The history screen needs the checklist's saves; the count goes to states.json, and the app
+      // side makes the same number of entries.
       await attempt("History", async () => {
         await page.goto(`${LIVE_ORIGIN}/Service/History/${next.feedbackId}`);
         await page.waitForLoadState("load");
@@ -167,9 +168,14 @@ test.beforeAll(async ({ browser }, testInfo) => {
           .first()
           .waitFor({ state: "visible", timeout: 10_000 })
           .catch(() => {
-            // no entries: the count below is 0
+            // no entries: reported below
           });
         states.historyEntries = await page.locator(HISTORY_ITEM).count();
+        if (states.historyEntries < HISTORY_SAVES) {
+          problems.push(
+            `History: ${states.historyEntries} entries, expected at least ${HISTORY_SAVES}: save ${FEEDBACK_NAME} in the editor (change its title, then restore it)`,
+          );
+        }
       });
       await attempt("Library versions (editor)", async () => {
         const editor = await libraryVersions(page, `/Service/EditSurvey/${next.feedbackId}`);
