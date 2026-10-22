@@ -1,6 +1,6 @@
 import multipart from "@fastify/multipart";
 import type { operations } from "@my-surveys/contract";
-import type { FastifyPluginAsync, FastifyRequest, RouteHandlerMethod } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
 import { authenticationHook, type AuthenticationOptions } from "./auth/authenticate.js";
 import { isJsonMediaType, type Contract, type ContractOperation } from "./contract.js";
 import { AppError } from "./errors.js";
@@ -143,6 +143,12 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
       readOnly && refusedWhenReadOnly(op)
         ? refuseReadOnly
         : authenticationHook(op.security, authentication);
+    // The operation is known only here: its log lines, "request completed" included, carry it.
+    const tagOperation = (request: FastifyRequest, reply: FastifyReply, done: () => void) => {
+      request.log = request.log.child({ operationId });
+      reply.log = request.log;
+      done();
+    };
     const rateLimit = rateLimits[operationId];
     const bodyLimit = bodyLimits[operationId];
     // A raw-body handler checks the text itself: no body or header schema, no media-type guard.
@@ -154,7 +160,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
       method: op.method,
       url: op.url,
       schema,
-      ...(onRequest && { onRequest }),
+      onRequest: onRequest ? [tagOperation, onRequest] : [tagOperation],
       ...(rateLimit && {
         config: {
           rateLimit: {

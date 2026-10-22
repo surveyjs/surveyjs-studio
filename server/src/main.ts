@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
+import { startupSummary } from "./logging.js";
 import { createProviders } from "./providers/index.js";
 
 let config: AppConfig;
@@ -40,6 +41,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     );
   });
 }
+
+app.log.info(startupSummary(config), "starting");
 
 try {
   await app.listen({ host: config.host, port: config.port });
