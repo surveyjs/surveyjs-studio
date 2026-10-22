@@ -60,6 +60,8 @@ import {
   surveyCampaign,
   surveyDraft,
   surveyFeedback,
+  surveyOldPoll,
+  surveyRetro,
   surveysWithoutDefinition,
 } from "./expected.js";
 import { describeUserDirectorySections } from "./user-directory-suite.js";
@@ -99,7 +101,10 @@ const newSurvey = (owner: PersonalScope, over: Partial<NewSurvey> = {}): NewSurv
   ...over,
 });
 
-/** The record `createSurvey` must return for a personal `survey`: legacy defaults, lower-case ids. */
+/**
+ * The record `createSurvey` must return for a personal `survey`: legacy defaults, lower-case ids.
+ * The published flag is left empty, which means published (ADR 0014 S1).
+ */
 const storedRecord = (survey: NewSurvey): SurveyRecord => ({
   id: survey.id.toLowerCase(),
   name: survey.name,
@@ -110,7 +115,7 @@ const storedRecord = (survey: NewSurvey): SurveyRecord => ({
   creatorId: survey.creatorId.toLowerCase(),
   postId: survey.postId.toLowerCase(),
   resultId: survey.resultId.toLowerCase(),
-  published: false,
+  published: true,
   archived: false,
   createdAt: survey.createdAt,
   updatedAt: survey.updatedAt,
@@ -141,6 +146,17 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
 
       it("returns null for an unknown id", async () => {
         expect(await providers.surveys.getSurvey(UNKNOWN_ID)).toBeNull();
+      });
+
+      it("reads an empty published flag as published and 0 as unpublished", async () => {
+        for (const survey of [surveyDraft, surveyApiCreated]) {
+          expect((await providers.surveys.getSurvey(survey.id))?.published, survey.name).toBe(true);
+        }
+        for (const survey of [surveyOldPoll, surveyRetro]) {
+          expect((await providers.surveys.getSurvey(survey.id))?.published, survey.name).toBe(
+            false,
+          );
+        }
       });
 
       it("matches ids case-insensitively and returns lower-case ids", async () => {
@@ -778,7 +794,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
 
       it.each([
         ["name", { name: "After" }, { name: "After" }],
-        ["published", { published: true }, { published: true }],
+        ["published", { published: false }, { published: false }],
         ["archived", { archived: true }, { archived: true }],
         [
           "settings.publicResults",
@@ -798,6 +814,22 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         });
         expect(updated).toEqual({ ...survey, ...expected, updatedAt: UPDATED_AT });
         expect(await providers.surveys.getSurvey(survey.id)).toEqual(updated);
+      });
+
+      it("unpublishes a new (published) survey and publishes it again", async () => {
+        const survey = await created();
+        expect(survey.published).toBe(true);
+        const off = await providers.surveys.updateSurvey(survey.id, {
+          published: false,
+          updatedAt: UPDATED_AT,
+        });
+        expect(off?.published).toBe(false);
+        const on = await providers.surveys.updateSurvey(survey.id, {
+          published: true,
+          updatedAt: UPDATED_AT,
+        });
+        expect(on).toEqual({ ...survey, published: true, updatedAt: UPDATED_AT });
+        expect((await providers.surveys.getSurvey(survey.id))?.published).toBe(true);
       });
 
       it("keeps the other setting when one setting changes", async () => {
@@ -932,6 +964,14 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         );
         expect((await providers.surveys.getDefinition(copy.id))?.content).toEqual({});
         expect((await providers.surveys.getTheme(copy.id))?.content).toEqual({});
+      });
+
+      it("publishes the copy of an unpublished survey, as a new survey", async () => {
+        const copy = copyOf(freshScope());
+        const stored = await providers.surveys.cloneSurvey(surveyRetro.id, copy);
+        expect(stored).toEqual(storedRecord(copy));
+        expect(stored?.published).toBe(true);
+        expect(await providers.surveys.getSurvey(surveyRetro.id)).toEqual(surveyRetro);
       });
 
       it("copies the definition of a survey created with one", async () => {

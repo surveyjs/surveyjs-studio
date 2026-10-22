@@ -13,7 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { call, codeOf, as, ownSurvey, ownsServer } from "./harness.js";
+import { call, codeOf, as, newSurvey, ownSurvey, ownsServer, setPublished } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -22,7 +22,10 @@ const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
 
 const fixture = {
   customerFeedback: "22222222-0000-4000-8000-a00000000001",
-  unpublished: "22222222-0000-4000-8000-a00000000002",
+  /** "Draft idea": an empty (NULL) published flag, which means published. */
+  emptyFlag: "22222222-0000-4000-8000-a00000000002",
+  /** "Old poll": unpublished (0) and archived. */
+  unpublishedArchived: "22222222-0000-4000-8000-a00000000003",
   archivedPublished: "22222222-0000-4000-8000-a00000000005",
   unpublishedRetro: "22222222-0000-4000-8000-a00000000006",
 };
@@ -121,9 +124,15 @@ describe("getPublishedSurvey", () => {
     expect((await load(fixture.archivedPublished)).status).toBe(200);
   });
 
+  it("serves a survey whose published flag is empty, as the old run page did", async () => {
+    const response = await load(fixture.emptyFlag);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: fixture.emptyFlag, name: "Draft idea" });
+  });
+
   it("does not tell an unpublished survey from an unknown one", async () => {
     const responses = [
-      await load(fixture.unpublished),
+      await load(fixture.unpublishedArchived),
       await load(fixture.unpublishedRetro),
       await load(UNKNOWN_ID),
     ];
@@ -142,6 +151,31 @@ describe("getPublishedSurvey", () => {
       const response = await load(fixture.customerFeedback, clientId);
       expect(response.status).toBe(400);
     }
+  });
+});
+
+describe("a new survey", () => {
+  it("runs at once, stops when unpublished and runs again when published", async (ctx) => {
+    const headers = await as(ctx, admin);
+    // No PATCH: the new survey's published flag is empty, which means published.
+    const surveyId = await newSurvey(headers, { definition: ONE_QUESTION });
+    const read = await call("GET", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers,
+    });
+    expect(await read.json()).toMatchObject({ published: true });
+    expect((await load(surveyId)).status).toBe(200);
+    expect((await submit(surveyId, { data: { q1: "a" } })).status).toBe(201);
+    expect(await countOf(surveyId, headers)).toBe(1);
+
+    await setPublished(headers, surveyId, false);
+    await expectNotAvailable(await load(surveyId));
+    await expectNotAvailable(await submit(surveyId, { data: { q1: "b" } }));
+
+    await setPublished(headers, surveyId, true);
+    expect((await load(surveyId)).status).toBe(200);
+    expect((await submit(surveyId, { data: { q1: "c" } })).status).toBe(201);
+    expect(await countOf(surveyId, headers)).toBe(2);
   });
 });
 
@@ -227,7 +261,7 @@ describe("submitResponse", () => {
     const headers = await as(ctx, admin);
     const unpublished = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
     await expectNotAvailable(await submit(unpublished, { data: { q1: "a" } }));
-    await expectNotAvailable(await submit(fixture.unpublished, { data: { q1: "a" } }));
+    await expectNotAvailable(await submit(fixture.unpublishedArchived, { data: { q1: "a" } }));
     await expectNotAvailable(await submit(UNKNOWN_ID, { data: { q1: "a" } }));
     expect(await countOf(unpublished, headers)).toBe(0);
 

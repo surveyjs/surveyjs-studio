@@ -261,6 +261,7 @@ export interface paths {
          *     more than the highest number among the active surveys of the target scope
          *     whose names are `New Survey N`. Without a `definition`, the survey starts
          *     from the default template. The default template is an empty survey (`{}`).
+         *     A new survey is published: it runs at once, as on surveyjs.io.
          */
         post: operations["createSurvey"];
         delete?: never;
@@ -316,7 +317,7 @@ export interface paths {
         put?: never;
         /**
          * Clone a survey
-         * @description Copies the definition and theme into a new, unpublished, active survey.
+         * @description Copies the definition and theme into a new, published, active survey.
          *     Anyone who can read the source may clone it. The copy goes to the source's
          *     project (or Personal), unless `projectId` is given (`null` = the caller's
          *     Personal surveys; a project requires membership). The caller becomes the
@@ -975,6 +976,10 @@ export interface components {
             /** @description May be empty for legacy records. */
             name: string;
             projectId: components["schemas"]["NullableProjectId"];
+            /**
+             * @description Whether the survey runs. False only after Unpublish: a new survey, and a legacy
+             *     survey whose flag was never set, is published.
+             */
             published: boolean;
             archived: boolean;
             createdAt: components["schemas"]["Timestamp"];

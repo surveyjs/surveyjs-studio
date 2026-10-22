@@ -16,6 +16,7 @@ import {
   upload,
   as,
   cleanUp,
+  newSurvey,
   ownSurvey,
 } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
@@ -23,7 +24,8 @@ import { fixtureUsers } from "./sign-in.js";
 const { admin } = fixtureUsers;
 
 const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
-const UNPUBLISHED_FIXTURE = "22222222-0000-4000-8000-a00000000002";
+/** "Engineering retro": its published flag is 0. */
+const UNPUBLISHED_FIXTURE = "22222222-0000-4000-8000-a00000000006";
 
 const UPLOAD = "/public/surveys/{surveyId}/files";
 const DOWNLOAD = "/public/files/{fileId}";
@@ -103,6 +105,12 @@ describe("uploadResponseFile", () => {
     expect(file.headers.get("content-type")).toBe("image/png");
     expect(file.headers.get("content-disposition")).toMatch(/^inline; /);
     expect(Buffer.from(await file.arrayBuffer())).toStrictEqual(PNG_1X1);
+  });
+
+  it("stores a file for a new survey, whose empty published flag means published", async (ctx) => {
+    const surveyId = await newSurvey(await as(ctx, admin));
+    const { stored } = await uploaded(surveyId, fileForm(PNG_1X1, "new.png"));
+    expect((await download(stored.id)).status).toBe(200);
   });
 
   it("stores a file of another type as octet-stream and serves it as an attachment", async (ctx) => {

@@ -176,6 +176,8 @@ describe("listSurveys", () => {
       permissions: { canModify: true },
       settings: { publicResults: true, storeRespondentIp: true },
     });
+    // Draft idea's published flag is empty (NULL), which means published.
+    expect(find(items, fixture.draftIdea)?.published).toBe(true);
   });
 
   it("lists archived surveys with archived=true", async (ctx) => {
@@ -303,7 +305,8 @@ describe("createSurvey", () => {
     expect(response.headers.get("location")).toBe(`/api/v1/surveys/${survey.id}`);
     expect(survey).toMatchObject({
       projectId: null,
-      published: false,
+      // The legacy published flag stays empty, which means published.
+      published: true,
       archived: false,
       permissions: { canModify: true },
       settings: { publicResults: false, storeRespondentIp: false },
@@ -416,6 +419,19 @@ describe("getSurvey", () => {
       projectId: null,
       permissions: { canModify: true },
     });
+  });
+
+  it("reads an empty published flag as published and 0 as unpublished", async (ctx) => {
+    const headers = await as(ctx, owner);
+    for (const [id, published] of [
+      [fixture.draftIdea, true],
+      [fixture.apiCreated, true],
+      [fixture.oldPoll, false],
+    ] as const) {
+      const response = await get(headers, id);
+      expect(response.status, id).toBe(200);
+      expect(await response.json(), id).toMatchObject({ published });
+    }
   });
 
   it("answers a project survey to a member", async (ctx) => {

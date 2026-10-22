@@ -100,7 +100,8 @@ Rules for `createSurvey`:
   also answers `422` at `/name` for a name longer than 200 UTF-16 code units (a name with emoji can
   pass the schema and still fail here).
 - `createdAt` and `updatedAt` are the server's clock; the ids of the survey, its `postId` and its
-  `resultId` are new GUIDs. The survey starts unpublished and not archived, with every setting off.
+  `resultId` are new GUIDs. The survey starts published (its legacy flag stays empty, which means
+  published since Step 14, ADR 0014 S1) and not archived, with every setting off.
 - A given `definition` is stored. Nothing is stored without one, and the definition then reads as
   `{}`. It is read back with `getSurveyDefinition` ([Step 6](#step-6-definition-theme-and-history)) and
   gets one history entry.
@@ -161,8 +162,8 @@ Rules for `cloneSurvey`:
 - The **caller** is the copy's creator.
 - The name is the given `name` (same rule as above, `422`), or `Copy of {name}` cut to 200 UTF-16
   code units without splitting a character.
-- The copy has the definition and the theme of the source. It is unpublished and active, every
-  setting is off, and it has new `id`, `postId` and `resultId`. `createdAt` and `updatedAt` are now.
+- The copy has the definition and the theme of the source. It is published (like a new survey,
+  since Step 14) and active, every setting is off, and it has new `id`, `postId` and `resultId`. `createdAt` and `updatedAt` are now.
   Results and history are not copied.
 
 Examples. Rename:

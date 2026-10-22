@@ -237,8 +237,8 @@ export interface SurveyStore {
    */
   listSurveyPage(query: SurveyPageQuery): Promise<SurveyPage>;
   /**
-   * Stores a new survey with the legacy defaults (published false, archived false, every setting
-   * false) and, when given, its first definition. Returns the record as stored (read back), which
+   * Stores a new survey with the legacy defaults (published flag left empty, which reads as
+   * published; archived false, every setting false) and, when given, its first definition. Returns the record as stored (read back), which
    * can differ from the input in timestamp precision (SQL `datetime`). Throws on a duplicate id.
    */
   createSurvey(survey: NewSurvey, definition?: SurveyDefinition): Promise<SurveyRecord>;

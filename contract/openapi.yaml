@@ -470,6 +470,7 @@ paths:
         more than the highest number among the active surveys of the target scope
         whose names are `New Survey N`. Without a `definition`, the survey starts
         from the default template. The default template is an empty survey (`{}`).
+        A new survey is published: it runs at once, as on surveyjs.io.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -576,7 +577,7 @@ paths:
       operationId: cloneSurvey
       summary: Clone a survey
       description: |
-        Copies the definition and theme into a new, unpublished, active survey.
+        Copies the definition and theme into a new, published, active survey.
         Anyone who can read the source may clone it. The copy goes to the source's
         project (or Personal), unless `projectId` is given (`null` = the caller's
         Personal surveys; a project requires membership). The caller becomes the
@@ -1753,7 +1754,11 @@ components:
           maxLength: 200
           description: May be empty for legacy records.
         projectId: { $ref: '#/components/schemas/NullableProjectId' }
-        published: { type: boolean }
+        published:
+          type: boolean
+          description: |
+            Whether the survey runs. False only after Unpublish: a new survey, and a legacy
+            survey whose flag was never set, is published.
         archived: { type: boolean }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }

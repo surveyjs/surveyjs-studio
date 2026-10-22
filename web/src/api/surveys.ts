@@ -207,7 +207,7 @@ export function useUpdateSurvey() {
   });
 }
 
-/** Copies a survey into a new unpublished one in the source's scope. */
+/** Copies a survey into a new (published) one in the source's scope. */
 export function useCloneSurvey() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -10,7 +10,7 @@ import {
   routeBrandImage,
 } from "./support/run.js";
 import { signInAt } from "./support/sign-in.js";
-import { createSurveyViaApi, openRowMenu, pickMenuItem, surveyRow } from "./support/survey-list.js";
+import { createSurveyViaApi, openRowMenu, surveyRow } from "./support/survey-list.js";
 import { expect, test, watchConsole } from "./support/test.js";
 import { chooseFile, paddedPng } from "./support/uploads.js";
 
@@ -38,7 +38,7 @@ function isSubmit(request: Request, surveyId: string): boolean {
   );
 }
 
-/** Signs in as the admin and creates a survey with this definition (unpublished). */
+/** Signs in as the admin and creates a survey with this definition; a new survey is published. */
 async function adminSurvey(
   page: Page,
   prefix: string,
@@ -55,7 +55,7 @@ function completeButton(page: Page) {
   return page.getByRole("button", { name: "Complete", exact: true });
 }
 
-test("a survey published from the list runs in a new tab with its theme and stores the response", async ({
+test("a new survey runs from the list in a new tab with its theme and stores the response", async ({
   page,
   context,
   browserName,
@@ -66,8 +66,7 @@ test("a survey published from the list runs in a new tab with its theme and stor
       cssVariables: { "--sjs-primary-backcolor": "rgba(255, 0, 0, 1)" },
     });
     await page.goto("/");
-    await pickMenuItem(await openRowMenu(surveyRow(page, survey.name)), "Publish");
-
+    // No Publish: a new survey is published (its legacy flag is empty).
     const popup = await openRowMenu(surveyRow(page, survey.name));
     const opened = context.waitForEvent("page");
     await popup.getByRole("link", { name: "Run", exact: true }).click();
@@ -155,6 +154,7 @@ test.describe("not available", () => {
   test("an unpublished survey shows the not-available page", async ({ page, browserName }) => {
     const survey = await adminSurvey(page, "Unpublished", browserName, QUESTION_DEFINITION);
     await withCleanup(page, [survey.id], async () => {
+      await publishViaApi(page, survey.id, false);
       await page.goto(`/s/${survey.id}`);
       await expect(page.getByText("This survey is not currently available.")).toBeVisible();
     });

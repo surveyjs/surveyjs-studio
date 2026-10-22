@@ -151,17 +151,20 @@ export interface OwnSurveyOptions {
   readonly projectId?: string;
   /** Default `{}`. */
   readonly definition?: unknown;
-  /** Publish the survey (default true). */
+  /**
+   * `true` (the default) publishes the survey through `PATCH`; `false` unpublishes it. A new survey
+   * is already published (its legacy flag is empty), so `false` is needed for an unpublished one.
+   */
   readonly published?: boolean;
 }
 
 /**
- * Creates a survey as the user, publishes it unless told not to, and registers its cleanup for
- * the end of the test; returns its id.
+ * Creates a survey as the user and registers its cleanup for the end of the test; returns its id.
+ * Its legacy published flag stays empty, which means published.
  */
-export async function ownSurvey(
+export async function newSurvey(
   headers: Record<string, string>,
-  options: OwnSurveyOptions = {},
+  options: Omit<OwnSurveyOptions, "published"> = {},
 ): Promise<string> {
   const response = await call("POST", "/surveys", {
     headers,
@@ -174,14 +177,33 @@ export async function ownSurvey(
   expect(response.status).toBe(201);
   const { id } = (await response.json()) as { id: string };
   onTestFinished(() => cleanUp(headers, id));
-  if (options.published ?? true) {
-    const patched = await call("PATCH", "/surveys/{surveyId}", {
-      path: `/surveys/${id}`,
-      headers: { "content-type": MERGE_PATCH, ...headers },
-      body: { published: true },
-    });
-    expect(patched.status).toBe(200);
-  }
+  return id;
+}
+
+/** Publishes or unpublishes a survey through `PATCH`; expects `200`. */
+export async function setPublished(
+  headers: Record<string, string>,
+  id: string,
+  published: boolean,
+): Promise<void> {
+  const patched = await call("PATCH", "/surveys/{surveyId}", {
+    path: `/surveys/${id}`,
+    headers: { "content-type": MERGE_PATCH, ...headers },
+    body: { published },
+  });
+  expect(patched.status).toBe(200);
+}
+
+/**
+ * Creates a survey as the user, publishes it (or unpublishes it with `published: false`), and
+ * registers its cleanup for the end of the test; returns its id.
+ */
+export async function ownSurvey(
+  headers: Record<string, string>,
+  options: OwnSurveyOptions = {},
+): Promise<string> {
+  const id = await newSurvey(headers, options);
+  await setPublished(headers, id, options.published ?? true);
   return id;
 }
 

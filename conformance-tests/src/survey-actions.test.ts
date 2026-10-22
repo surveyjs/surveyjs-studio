@@ -140,15 +140,16 @@ const listed = (headers: Headers, query: string): Promise<Survey[]> =>
   walkItems<Survey>("/surveys", `/surveys?${query}`, headers);
 
 describe("updateSurvey", () => {
-  it("renames, publishes, unpublishes, archives and restores", async (ctx) => {
+  it("renames, unpublishes, publishes, archives and restores", async (ctx) => {
     const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: states" });
     let before = survey;
 
     const states: [string, Record<string, unknown>, Partial<Survey>][] = [
       ["rename", { name: " Renamed (kept as sent) " }, { name: " Renamed (kept as sent) " }],
-      ["publish", { published: true }, { published: true }],
+      // A new survey starts published.
       ["unpublish", { published: false }, { published: false }],
+      ["publish", { published: true }, { published: true }],
       ["archive", { archived: true }, { archived: true }],
       ["restore", { archived: false }, { archived: false }],
     ];
@@ -437,7 +438,7 @@ describe("cloneSurvey", () => {
     return created(headers, { name: "Actions: clone source" });
   }
 
-  it("copies a survey into the caller's scope as an unpublished, active survey", async (ctx) => {
+  it("copies a survey into the caller's scope as a published (as new), active survey", async (ctx) => {
     const headers = await as(ctx, admin);
     const original = await source(headers);
     await tick();
@@ -446,7 +447,7 @@ describe("cloneSurvey", () => {
     expect(copy).toMatchObject({
       name: "Copy of Actions: clone source",
       projectId: null,
-      published: false,
+      published: true,
       archived: false,
       settings: { publicResults: false, storeRespondentIp: false },
       permissions: { canModify: true },
@@ -482,6 +483,8 @@ describe("cloneSurvey", () => {
     expect(copy).toMatchObject({
       name: "Copy of Engineering retro",
       projectId: ENGINEERING,
+      // The source is unpublished; a copy is published, as a new survey.
+      published: true,
       permissions: { canModify: true },
     });
   });

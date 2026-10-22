@@ -49,6 +49,12 @@ export const isGuid = (value: string): boolean => GUID.test(value);
 
 const flag = (value: number | null): boolean => value === 1;
 
+/**
+ * `Surveys.ispublished`: only 0 is unpublished. An empty (NULL) flag, which every survey has until
+ * its first Publish or Unpublish, means published, as the old run page treats it (ADR 0014 S1).
+ */
+export const publishedFlag = (value: number | null): boolean => value !== 0;
+
 export function surveyFromLegacy(
   row: LegacySurveyRow,
   ownerKind: "personal" | "project",
@@ -75,7 +81,7 @@ export function surveyFromLegacy(
     creatorId: creatorId === ZERO_GUID ? null : creatorId,
     postId,
     resultId,
-    published: flag(row.ispublished),
+    published: publishedFlag(row.ispublished),
     archived: flag(row.isarchived),
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),

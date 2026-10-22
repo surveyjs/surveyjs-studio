@@ -21,6 +21,18 @@ export const PROJECT_SURVEYS = ["Team retro"] as const;
 /** The survey that is published, has responses and public results ("Grant Access"). */
 export const FEEDBACK_NAME = "Customer feedback";
 
+/**
+ * The surveys that are not published: all but `Customer feedback`. On surveyjs.io they were never
+ * published, so their flag is empty, which the site's list shows as unpublished. The app reads an
+ * empty flag as published (ADR 0014 S1), so the app setup unpublishes these through the API and
+ * both lists show the same Publish items.
+ */
+export const NOT_PUBLISHED: readonly string[] = [
+  ...PERSONAL_ARCHIVED,
+  ...PROJECT_SURVEYS,
+  ...PERSONAL_ACTIVE.filter((name) => name !== FEEDBACK_NAME),
+];
+
 export const FEEDBACK_DEFINITION = {
   title: "Customer feedback",
   pages: [

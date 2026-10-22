@@ -24,7 +24,7 @@ says what the legacy site does, what this application does and why. The legacy b
 | R1  | Who may change (any field, rename included) or delete | Users with `canModify` ([ADR 0009](0009-survey-permissions-follow-legacy.md)). A survey the user can see but not modify answers `403 forbidden`; an invisible or unknown one answers `404 not-found`                                             |
 | R2  | Who may clone, where the copy goes, who creates it    | Anyone who can see the source. The copy goes to the source's scope, or to the caller's Personal surveys (`projectId: null`), or to a project the caller belongs to (else `403`). The **caller** is the creator                                   |
 | R3  | The name of a clone                                   | The given `name`, or `Copy of {source name}` cut to 200 UTF-16 code units without splitting a surrogate pair                                                                                                                                     |
-| R4  | What a clone contains                                 | The definition and the theme. Unpublished, not archived, every setting off, new `id`, `postId` and `resultId`, `createdAt` = `updatedAt` = now                                                                                                   |
+| R4  | What a clone contains                                 | The definition and the theme. Published like a new survey (empty flag, Step 14), not archived, every setting off, new `id`, `postId` and `resultId`, `createdAt` = `updatedAt` = now                                                             |
 | R5  | What a move does                                      | A project id different from the current scope sets the owner to it and the **creator to the caller**. `null` moves to the **caller's** Personal surveys. The caller must belong to the target project (else `403`). The current scope is no move |
 | R6  | `updatedAt`                                           | Every successful `PATCH` sets it to now, even when no value changes                                                                                                                                                                              |
 | R7  | Names                                                 | Kept as sent, no trimming. Blank after trimming, or longer than 200 UTF-16 code units: `422` at `/name`                                                                                                                                          |
@@ -63,6 +63,11 @@ the copy is cut to the 200 UTF-16 code units that fit the `name` column (never i
 surrogate pair). What is copied is what the contract says (definition and theme) and what legacy copies;
 results, history and settings are not copied. A source without a definition gives a copy without one
 (it reads `{}`).
+
+**Step 14 change (R4).** A copy was "Unpublished" because the mapping read the empty (`NULL`) published flag as
+not published. Clone still writes no flag, as legacy does, and an empty flag now means published
+([ADR 0014](0014-run-page-and-response-collection.md) S1), so a copy is published like a new survey, whatever
+the source's state.
 
 ### R5: move
 

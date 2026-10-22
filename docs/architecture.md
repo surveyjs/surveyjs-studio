@@ -354,8 +354,8 @@ Step 8 builds `getPublishedSurvey`, `submitResponse` and `getResultStats` in `se
 | `getResultStats`     | Session (`401`); the path (`400`); the survey is visible to the user (`404`, the rule of ADR 0009); `ResultStore.stats`; `200`                                                                                                                                                                                                                                    |
 
 - **Available.** `availableSurvey` (`results/availability.ts`) is the one rule of the public operations: the
-  survey exists and `published` is true. `archived` is not looked at. An unknown and an unpublished survey
-  give the same `404`.
+  survey exists and `published` is true (an empty legacy flag is published since Step 14). `archived` is not
+  looked at. An unknown and an unpublished survey give the same `404`.
 - **The one-response rule.** `one-response.ts` is pure. `limitCookieOf(definition)` is the non-empty string
   `cookieName`, else `null`. `publishedDefinition(survey, definition)` returns a copy with `cookieName` set to
   the survey id when `settings.useCookies` (the legacy flag) is on and the definition has none. "The limit is
@@ -670,7 +670,7 @@ summarises it.
 | Legacy                                   | Domain                                                                   |
 | ---------------------------------------- | ------------------------------------------------------------------------ |
 | `Surveys.userid`                         | A project id when it is an organization id, otherwise the personal owner |
-| `Surveys.ispublished` (`NULL`)           | `published = false`                                                      |
+| `Surveys.ispublished` (`NULL`)           | `published = true` (Step 14; only 0 is unpublished)                      |
 | `Surveys.creatorid` (all zeros)          | `creatorId = null`                                                       |
 | `Surveys.createdat`, `Surveys.timestamp` | `createdAt`, `updatedAt`, read as UTC                                    |
 | `OrganizationUsers.role`                 | `admin` or `user` (case is ignored)                                      |

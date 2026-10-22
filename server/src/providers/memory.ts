@@ -112,7 +112,10 @@ function sameOwner(stored: SurveyOwner, wanted: SurveyOwner): boolean {
 const copySurvey = (s: SurveyRecord): SurveyRecord => structuredClone(s);
 const copyUser = (u: User): User => ({ ...u });
 
-/** A stored survey for a new one: the legacy defaults (layout section 5.3) and lower-case ids. */
+/**
+ * A stored survey for a new one (create and clone): the legacy defaults (layout section 5.3) and
+ * lower-case ids. Published, as the legacy store's empty flag reads (ADR 0014 S1).
+ */
 const surveyFromNew = (survey: NewSurvey): SurveyRecord => ({
   id: lower(survey.id),
   name: survey.name,
@@ -120,7 +123,7 @@ const surveyFromNew = (survey: NewSurvey): SurveyRecord => ({
   creatorId: lower(survey.creatorId),
   postId: lower(survey.postId),
   resultId: lower(survey.resultId),
-  published: false,
+  published: true,
   archived: false,
   createdAt: survey.createdAt,
   updatedAt: survey.updatedAt,

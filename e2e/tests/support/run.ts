@@ -16,11 +16,15 @@ export const FILE_DEFINITION = {
   pages: [{ name: "page1", elements: [{ type: "file", name: "doc", storeDataAsText: true }] }],
 };
 
-/** Publishes a survey through the API; the page must be signed in. */
-export async function publishViaApi(page: Page, surveyId: string): Promise<void> {
+/**
+ * Publishes (or, with `false`, unpublishes) a survey through the API; the page must be signed in.
+ * A new survey is already published (its legacy flag is empty), so tests that need an unpublished
+ * survey unpublish it.
+ */
+export async function publishViaApi(page: Page, surveyId: string, published = true): Promise<void> {
   const response = await page.request.patch(`/api/v1/surveys/${surveyId}`, {
     headers: { ...(await csrfHeaders(page)), "Content-Type": "application/merge-patch+json" },
-    data: { published: true },
+    data: { published },
   });
   expect(response.status()).toBe(200);
 }
