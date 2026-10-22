@@ -17,6 +17,29 @@
   height: calc(100vh - 160px);
 }
 
+/* While the read-only banner is above the page (`ReadOnlyBanner`), the Creator gives up its height.
+   Only the page's own height rules are repeated with the banner subtracted, so nothing changes
+   without the banner. The site's rules are in pages/my-surveys.scss (same breakpoints). */
+.creator.belowBanner {
+  height: calc(100vh - 160px - var(--read-only-banner-height));
+}
+
+:global(#creator).belowBanner.belowBanner {
+  height: calc(var(--surveyjs-io-vh, 1vh) * 100 - 105px - 54px - var(--read-only-banner-height));
+}
+
+@media (min-width: 600px) and (max-width: 1200px) {
+  :global(#creator).belowBanner.belowBanner {
+    height: calc(var(--surveyjs-io-vh, 1vh) * 100 - 105px - 31px - var(--read-only-banner-height));
+  }
+}
+
+@media (max-width: 600px) {
+  :global(#creator).belowBanner.belowBanner {
+    height: calc(var(--surveyjs-io-vh, 1vh) * 100 - 64px - var(--read-only-banner-height));
+  }
+}
+
 .creatorArea {
   flex: 1 1 auto;
   min-height: 0;

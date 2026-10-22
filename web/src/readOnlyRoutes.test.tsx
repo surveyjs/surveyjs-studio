@@ -72,6 +72,7 @@ describe("the read-only banner", () => {
       await screen.findByTestId("fake-creator");
 
       expect(banner()).not.toBeNull();
+      expect(document.getElementById("creator")!.className).toContain("belowBanner");
       expect(editor.props!.saves).toBeNull();
       expect(editor.props!.uploads).toBeNull();
       expect(screen.getByText("Read-only")).toBeTruthy();

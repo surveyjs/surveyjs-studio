@@ -75,6 +75,8 @@ describe("the editor page", () => {
     expect(screen.getByText("Customer feedback")).toBeTruthy();
     expect(screen.getByText("All changes saved")).toBeTruthy();
     expect(editor.props!.saves).not.toBeNull();
+    // No banner above the page: the Creator keeps the page's own height.
+    expect(document.getElementById("creator")!.className).not.toContain("belowBanner");
   });
 
   it("is read-only without modify rights", async () => {

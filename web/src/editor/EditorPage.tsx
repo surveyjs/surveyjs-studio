@@ -235,11 +235,13 @@ function EditorFrame({
   children?: ReactNode;
 }) {
   const [renameFailed, setRenameFailed] = useState(false);
+  // The root route shows the read-only banner above the page; the Creator makes room for it.
+  const belowBanner = rootRoute.useLoaderData().readOnly;
   return (
     <>
       <div
         id="creator"
-        className={`editor-editor v2-class---my-surveys-edit-survey ${styles.creator}`}
+        className={`editor-editor v2-class---my-surveys-edit-survey ${styles.creator}${belowBanner ? ` ${styles.belowBanner}` : ""}`}
       >
         {notice}
         {renameFailed && (
