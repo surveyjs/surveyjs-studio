@@ -509,8 +509,8 @@ each fixture covers. Three things read them: `MEMORY_SEED=legacy-fixtures`, the 
 and `pnpm legacy:load`.
 
 **The large survey (Step 9).** "API created" (`22222222-0000-4000-8000-a00000000008`, Olivia Owner's Personal
-survey: active, never published) holds **1,500 generated responses** and a definition with five questions
-(`color`, `score`, `subscribe`, `channels`, `comment`). It is for the results page: its Summary counts every
+survey: active, its published flag never set, so it reads as published) holds **1,500 generated responses** and
+a definition with five questions (`color`, `score`, `subscribe`, `channels`, `comment`). It is for the results page: its Summary counts every
 response, the Table pages through them (300 pages of 5), and `listResults` takes two pages of 1,000 to read
 them. The rows are not a JSON file: `server/src/providers/azure-legacy/large-survey.ts` makes them from a fixed
 rule, so the memory seed and the Azurite loader hold the same rows. Colour is Red, Green or Blue 500 times each;

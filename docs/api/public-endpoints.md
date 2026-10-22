@@ -37,7 +37,9 @@ HTTP/1.1 404 Not Found
 {"type":"https://my-surveys.surveyjs.io/problems/survey-not-available","title":"This survey is not available","status":404,"code":"survey-not-available"}
 ```
 
-A survey whose published flag is empty in the old site's table (it was never switched) is not published.
+Only a survey that was unpublished is not published. A survey whose published flag is empty in the old site's
+table (it was never switched) is published, as the old run page treated it. A new or cloned survey also starts
+published. See [ADR 0014](../adr/0014-run-page-and-response-collection.md) S1.
 
 ## Load a survey
 

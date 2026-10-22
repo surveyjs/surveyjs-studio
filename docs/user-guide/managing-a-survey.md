@@ -87,7 +87,8 @@ collecting responses. Unpublish it to stop.
 or the same project). The copy:
 
 - is named **Copy of** and the original name (cut to 200 characters if that is longer);
-- is **unpublished** and active, with every setting off, even when the original is published;
+- is **published** and active, like a new survey, with every setting off, even when the original is
+  unpublished;
 - has **you** as its creator, so you can modify it, even when you could not modify the original;
 - gets new IDs;
 - gets its own copies of the survey's uploaded files ([Images and files](images-and-files.md#copies-of-a-survey));
