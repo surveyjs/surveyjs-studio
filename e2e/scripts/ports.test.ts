@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { functionalPorts, usesAzuriteConfig, visualPorts } from "../ports.mjs";
-import { busyMessage, checkPorts, describeCommandLine } from "./ports.mjs";
+import { busyMessage, checkPorts } from "./ports.mjs";
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -32,20 +33,41 @@ describe("checkPorts", () => {
     const free = await freePort();
     const busy = await checkPorts([taken, free]);
     expect(busy.map((b) => b.port)).toEqual([taken]);
-    expect(busyMessage({ port: taken, owner: "node server.js" })).toBe(
-      `Port ${taken} is in use by node server.js. Stop it and run again.`,
+    expect(busyMessage({ port: taken, owner: "node (PID 1)" })).toBe(
+      `Port ${taken} is in use by node (PID 1). Stop it and run again.`,
     );
     expect(busyMessage({ port: taken, owner: null })).toBe(
-      `Port ${taken} is in use by another process. Stop it and run again.`,
+      `Port ${taken} is in use. Stop it and run again.`,
     );
   });
 
-  it("finds the owner of the listener when the platform tells", async () => {
-    const taken = await listen("127.0.0.1");
-    const [busy] = await checkPorts([taken]);
-    expect(busy?.owner === null || typeof busy?.owner === "string").toBe(true);
-    if (busy?.owner) expect(busy.owner).toMatch(/node|vitest|PID \d+/i);
-  });
+  it("names the PID and the program of a listener, and nothing of its arguments", async () => {
+    const port = await freePort();
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `require("net").createServer().listen(${port},"127.0.0.1",()=>console.log("up"));setTimeout(()=>process.exit(0),60000)`,
+        "--",
+        "--password",
+        "canary-secret",
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    try {
+      await new Promise((ready) => child.stdout.once("data", ready));
+      const [busy] = await checkPorts([port]);
+      // Lookup is supported on Windows, Linux and macOS (netstat, lsof); null would hide a break.
+      expect(busy?.owner).not.toBeNull();
+      expect(busy?.owner).toMatch(/^\S.* \(PID \d+\)$|^PID \d+$/);
+      expect(busy?.owner).toContain(String(child.pid));
+      const message = busyMessage(busy as { port: number; owner: string | null });
+      expect(message).toBe(`Port ${port} is in use by ${busy?.owner}. Stop it and run again.`);
+      expect(message).not.toMatch(/canary|password|-e |createServer/i);
+    } finally {
+      child.kill();
+    }
+  }, 30_000);
 
   it("sees a listener on the IPv6 loopback too", async () => {
     let taken: number;
@@ -59,15 +81,6 @@ describe("checkPorts", () => {
 
   it("is empty when every port is free", async () => {
     expect(await checkPorts([await freePort()])).toEqual([]);
-  });
-});
-
-describe("describeCommandLine", () => {
-  it("hides credentials and shortens a long line", () => {
-    expect(describeCommandLine("node x.js --conn Password=hunter2;Server=a")).toBe(
-      "node x.js --conn Password=***;Server=a",
-    );
-    expect(describeCommandLine("x".repeat(300))).toHaveLength(200);
   });
 });
 

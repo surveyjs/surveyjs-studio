@@ -39,43 +39,37 @@ function listeningPid(port) {
   return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
-/** The command line of the process, or null. */
-function commandLine(pid) {
+/** The program name of the process (no path, no arguments), or null. */
+function programName(pid) {
   const result =
     process.platform === "win32"
       ? run("powershell", [
           "-NoProfile",
           "-Command",
-          `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine`,
+          `(Get-Process -Id ${pid} -ErrorAction Stop).ProcessName`,
         ])
-      : run("ps", ["-p", String(pid), "-o", "args="]);
-  const text = (result.stdout ?? "").trim();
-  return text === "" ? null : text;
+      : run("ps", ["-p", String(pid), "-o", "comm="]);
+  const name = (result.stdout ?? "").trim().split(/[\\/]/).pop() ?? "";
+  return /^[\w.+ -]{1,64}$/.test(name) ? name : null;
 }
 
-/** A command line is shortened, and a value that looks like a credential is hidden. */
-export function describeCommandLine(text) {
-  const hidden = text.replace(
-    /((?:password|pwd|accountkey|sharedaccesskey|secret|token|key)\s*[=:]\s*)[^\s;"']+/gi,
-    "$1***",
-  );
-  return hidden.length > 200 ? `${hidden.slice(0, 197)}...` : hidden;
-}
-
-/** The command line, else `PID <n>`, of whatever listens on the port; null when unknown. */
+/**
+ * `node (PID 123)` for whatever listens on the port; null when unknown. Never a command line:
+ * arguments can hold secrets, and this text goes to terminals and CI logs.
+ */
 function ownerOf(port) {
   try {
     const pid = listeningPid(port);
     if (pid === null) return null;
-    const line = commandLine(pid);
-    return line === null ? `PID ${pid}` : describeCommandLine(line);
+    const name = programName(pid);
+    return name === null ? `PID ${pid}` : `${name} (PID ${pid})`;
   } catch {
     return null;
   }
 }
 
 /**
- * The ports that something listens on, with its command line or PID (`null` when it cannot be
+ * The ports that something listens on, with its program name and PID (`null` when it cannot be
  * found). An empty array means every port is free.
  */
 export async function checkPorts(ports) {
@@ -86,9 +80,9 @@ export async function checkPorts(ports) {
   return busy;
 }
 
-/** `Port 3000 is in use by <owner>. Stop it and run again.` */
+/** `Port 3000 is in use by node (PID 123). Stop it and run again.` */
 export function busyMessage({ port, owner }) {
-  return `Port ${port} is in use by ${owner ?? "another process"}. Stop it and run again.`;
+  return `Port ${port} is in use${owner === null ? "" : ` by ${owner}`}. Stop it and run again.`;
 }
 
 /** Exits 1 with the message of the first busy port; returns when all are free. */

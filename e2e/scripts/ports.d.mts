@@ -1,4 +1,3 @@
-export declare function describeCommandLine(text: string): string;
 export declare function checkPorts(
   ports: readonly number[],
 ): Promise<{ port: number; owner: string | null }[]>;

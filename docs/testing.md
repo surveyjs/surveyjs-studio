@@ -515,7 +515,7 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   what you have exported.
 - It never reuses a running server (`reuseExistingServer: false`, locally and in CI). Before the build,
   `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
-  `Port 3000 is in use by <command line or PID>. Stop it and run again.` when one is taken (a forgotten
+  `Port 3000 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
   `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
   target 5173 and 5174. They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
