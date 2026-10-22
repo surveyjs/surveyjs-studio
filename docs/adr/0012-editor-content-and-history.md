@@ -128,7 +128,7 @@ override it announced.
 | Deleting the preview image                    | Legacy deletes `my-surveys-survey-preview-image-{id}` from the `surveyfiles` share on each save. There is no file store yet (Step 7). A stale preview image stays in legacy storage |
 | One history snapshot over HTTP, diff, restore | P1                                                                                                                                                                                  |
 | Image and file upload                         | Step 7                                                                                                                                                                              |
-| CORS for embeds on other origins              | Step 12                                                                                                                                                                             |
+| CORS for embeds on other origins              | Hosted track, Step 3 (API tokens and CORS); not built in Step 12 ([ADR 0019](0019-run-page-isolation-and-security-headers.md))                                                      |
 
 ## For the product owner to confirm
 

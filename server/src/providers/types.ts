@@ -23,6 +23,7 @@ import type {
   ViewName,
   ViewState,
 } from "../domain/types.js";
+import type { IdentityClaims } from "../auth/identity.js";
 import type { AccountNotices } from "../notices/account-notices.js";
 
 /** A place in the survey list order (updatedAt descending, then id ascending). */
@@ -283,19 +284,66 @@ export interface SurveyStore {
    * views and reset markers and the private-question list included; false when no survey has this id. Files are the FileStore's: the service deletes them first (R10).
    */
   deleteSurvey(id: string): Promise<boolean>;
+  /**
+   * R12: every owner id of a personal survey, archived ones included: distinct, lower-case,
+   * ascending. NULL owners, the all-zero GUID and values that are not GUIDs are left out.
+   */
+  listPersonalOwnerIds(): Promise<string[]>;
+  /**
+   * R11: the id of every survey of the owner, archived ones included, also rows `listSurveys`
+   * skips because the domain cannot represent them (azure-legacy: a NULL `postid` or `resultid`).
+   * Lower-case, ascending. A personal scope never holds a project's surveys. [] for a non-GUID id.
+   * Erasure reads this, so it reaches every row `listPersonalOwnerIds` sees.
+   */
+  listSurveyIds(owner: SurveyOwner): Promise<string[]>;
 }
 
 export type AddMemberOutcome = "added" | "already-member" | "not-found";
 export type RoleChangeOutcome = "changed" | "unchanged" | "last-admin" | "not-found";
 export type RemovalOutcome = "removed" | "last-admin" | "not-found";
 
-export interface Directory {
+/** `external`: the users belong to another system and are never created here. `local`: the app owns them (self-hosted track). */
+export type UserDirectoryKind = "external" | "local";
+
+/**
+ * Users (R5): the authority for sign-in, lookup by email, licence notices and erasure detection.
+ * Ids are matched case-insensitively and returned lower-case.
+ */
+export interface UserDirectory {
+  readonly kind: UserDirectoryKind;
+  /** null for an unknown id or an id that is not a GUID (no lookup is made for it). */
   getUser(id: string): Promise<User | null>;
   /** Case-insensitive match on email. A blank email matches no user (a NULL legacy email is ""). */
   findUserByEmail(email: string): Promise<User | null>;
   /**
+   * The user to sign in from the identity claims. An external directory returns `getUser(claims.sub)`
+   * and never creates a user (null when it does not know the user); a local one may create one
+   * (self-hosted track). The caller handles null (claims fallback) and `blocked`.
+   */
+  signInUser(claims: IdentityClaims): Promise<User | null>;
+  /**
+   * The ids among `ids` this directory positively does not know (R12): lower-case, each once, in
+   * the order of their first occurrence. Ids that are not GUIDs are never reported. Rejects on any
+   * failure; a failure is never read as "missing".
+   */
+  missingUsers(ids: readonly string[]): Promise<string[]>;
+}
+
+/** What `eraseMember` decided and did (R11). */
+export type MemberErasure =
+  | { readonly kind: "not-member" } // no row of the user (or no such project): nothing written
+  | { readonly kind: "last-member" } // no other visible member: nothing written; the caller deletes the project
+  | { readonly kind: "promote"; readonly successorId: string } // rows deleted, successor made admin
+  | { readonly kind: "remove" }; // rows deleted
+
+/**
+ * Projects, members and roles (R5): today's project operations of Directory, unchanged in names and
+ * semantics. Member users are resolved from the provider's own user rows (R6).
+ */
+export interface ProjectStore {
+  /**
    * Projects the user is a member of, ordered by project name ignoring case (lower-cased, code
-   * point order), then project id.
+   * point order), then project id. Works for a user the directory no longer knows (orphan rows).
    */
   listUserProjects(userId: string): Promise<ProjectMembership[]>;
   /** The user's membership of that project; null when not a member or no such project. */
@@ -347,12 +395,37 @@ export interface Directory {
   ): Promise<RoleChangeOutcome>;
   /** Deletes every row of the user (R7), unless `decideRemoval` refuses (R8). */
   removeMember(projectId: string, userId: string): Promise<RemovalOutcome>;
+  /**
+   * R11: atomically, decides with `decideMemberErasure` over the project's rows and writes the
+   * decision. `promote`: deletes every row of the user (orphan or not) and sets every row of the
+   * successor to `admin`; `remove`: deletes every row of the user; `not-member` and `last-member`
+   * write nothing. An unknown project or a non-GUID id gives `not-member`, except that rows of the
+   * user left under a project whose row is gone (azure-legacy only) are deleted and give `remove`.
+   * Erasing the creator clears the project's owner (as `removeMember` does). Does not check whether
+   * the user still exists.
+   */
+  eraseMember(
+    projectId: string,
+    userId: string,
+    options: { readonly now: string },
+  ): Promise<MemberErasure>;
+  /** R12: every user id with a membership row (orphans included): distinct, lower-case, ascending. */
+  listMemberUserIds(): Promise<string[]>;
+  /**
+   * R11: the id of every project in which the user has a membership row, whatever its role and
+   * also when the project row is gone (azure-legacy): distinct, lower-case, ascending. [] for a
+   * non-GUID id. Erasure reads this, so it reaches every row `listMemberUserIds` sees.
+   */
+  listUserProjectIds(userId: string): Promise<string[]>;
 }
 
 export interface ProviderSet {
   readonly name: string;
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  /** R5: the user directory. */
+  readonly users: UserDirectory;
+  /** R5: projects, members and roles. */
+  readonly projects: ProjectStore;
   readonly files: FileStore;
   readonly results: ResultStore;
   readonly views: ViewStore;

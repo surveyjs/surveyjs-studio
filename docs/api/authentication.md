@@ -234,4 +234,4 @@ The public respondent operations use the same address and their own, higher limi
 | `IDENTITY_PROVIDER=surveyjs-oidc` (default) | Sign in at `OIDC_ISSUER_URL`: `auth.surveyjs.io`, or the local mock OIDC server                                                               |
 | `IDENTITY_PROVIDER=dev`                     | A "Sign in as…" page at `/__dev/sign-in`. Memory storage, self-hosted, development only. See [ADR 0007](../adr/0007-dev-identity-provider.md) |
 
-`GET /config` lists `authMethods`; only `surveyjs` works in Phase 1.
+`GET /config` lists `authMethods`. The values are `surveyjs` (surveyjs.io accounts), `password`, `google`, `github` and `facebook`; only `surveyjs` works in Phase 1. The others need the local user directory of the self-hosted track, and a server configured with one of them refuses to start ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md)).

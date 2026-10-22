@@ -48,11 +48,12 @@ describe("azure-legacy provider without a reachable store", () => {
         await providers.surveys.updateSurvey(id, { updatedAt: new Date(0).toISOString() }),
       ).toBeNull();
       expect(await providers.surveys.deleteSurvey(id)).toBe(false);
-      expect(await providers.directory.getUser(id)).toBeNull();
-      expect(await providers.directory.listUserProjects(id)).toEqual([]);
+      expect(await providers.users.getUser(id)).toBeNull();
+      expect(await providers.users.missingUsers([id])).toEqual([]);
+      expect(await providers.projects.listUserProjects(id)).toEqual([]);
       const user = "11111111-0000-4000-8000-a00000000001";
-      expect(await providers.directory.getUserProject(id, user)).toBeNull();
-      expect(await providers.directory.getUserProject(user, id)).toBeNull();
+      expect(await providers.projects.getUserProject(id, user)).toBeNull();
+      expect(await providers.projects.getUserProject(user, id)).toBeNull();
     },
   );
 
@@ -86,8 +87,8 @@ describe("azure-legacy provider without a reachable store", () => {
   });
 
   it("answers an empty or over-long email without a query", async () => {
-    expect(await providers.directory.findUserByEmail("")).toBeNull();
-    expect(await providers.directory.findUserByEmail(`${"a".repeat(200)}@example.com`)).toBeNull();
+    expect(await providers.users.findUserByEmail("")).toBeNull();
+    expect(await providers.users.findUserByEmail(`${"a".repeat(200)}@example.com`)).toBeNull();
   });
 
   it("ready resolves false instead of throwing", async () => {

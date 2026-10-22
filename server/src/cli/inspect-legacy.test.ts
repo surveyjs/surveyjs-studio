@@ -98,15 +98,20 @@ describe("run (provider seam)", () => {
       {
         name: "fake",
         surveys: guard({ listSurveys: call("listSurveys", []), getSurvey: undefined }, "surveys"),
-        directory: guard(
+        users: guard(
           {
             getUser: call("getUser", found ? user : null),
             findUserByEmail: call("findUserByEmail", found ? user : null),
+          },
+          "users",
+        ),
+        projects: guard(
+          {
             listUserProjects: call("listUserProjects", [
               { project: { id: "p1", name: "P" }, role: "admin" },
             ]),
           },
-          "directory",
+          "projects",
         ),
         close: call("close", undefined),
       },

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   NewProject,
@@ -14,11 +15,13 @@ import type { AppendOutcome, ProviderSet, ResponsePosition, SurveyPosition } fro
 import {
   ADMIN_ID,
   BLOCKED_ID,
+  ERASABLE_ID,
   MEMBER_ID,
   OUTSIDER_ID,
   OWNER_ID,
   PROJECT_A_ID,
   PROJECT_B_ID,
+  UNKNOWN_ID,
   adminProjects,
   adminUser,
   blockedUser,
@@ -46,7 +49,6 @@ import {
   ownerPersonalArchivedSurveys,
   ownerPersonalSurveys,
   ownerProjects,
-  ownerUser,
   projectA,
   projectAActiveSurveys,
   projectAArchivedSurveys,
@@ -60,8 +62,7 @@ import {
   surveyFeedback,
   surveysWithoutDefinition,
 } from "./expected.js";
-
-const UNKNOWN_ID = "99999999-9999-4999-8999-999999999999";
+import { describeUserDirectorySections } from "./user-directory-suite.js";
 
 /** A minimal valid 1x1 PNG. */
 const PNG = Buffer.from(
@@ -1016,6 +1017,66 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
+    describe("surveys.listPersonalOwnerIds", () => {
+      it("lists each personal owner once, lower-case and sorted, and no project", async () => {
+        const ids = await providers.surveys.listPersonalOwnerIds();
+        expect(ids).toEqual(expect.arrayContaining([OWNER_ID, OUTSIDER_ID]));
+        expect(ids).not.toContain(PROJECT_A_ID);
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+
+      it("includes the owner of a new survey", async () => {
+        const scope = freshScope();
+        const survey = await providers.surveys.createSurvey(newSurvey(scope));
+        onTestFinished(async () => {
+          await providers.surveys.deleteSurvey(survey.id);
+        });
+        expect(await providers.surveys.listPersonalOwnerIds()).toContain(scope.userId);
+      });
+    });
+
+    describe("surveys.listSurveyIds", () => {
+      const sortedIds = (surveys: readonly SurveyRecord[]) => surveys.map((s) => s.id).sort();
+
+      it("lists every survey id of a scope, archived ones too, lower-case and ascending", async () => {
+        const scope = freshScope();
+        const first = await providers.surveys.createSurvey(newSurvey(scope));
+        const second = await providers.surveys.createSurvey(newSurvey(scope));
+        onTestFinished(async () => {
+          await providers.surveys.deleteSurvey(first.id);
+          await providers.surveys.deleteSurvey(second.id);
+        });
+        await providers.surveys.updateSurvey(second.id, {
+          archived: true,
+          updatedAt: "2026-08-02T10:00:00.000Z",
+        });
+        const upper = { kind: "personal", userId: scope.userId.toUpperCase() } as const;
+        expect(await providers.surveys.listSurveyIds(upper)).toEqual([first.id, second.id].sort());
+      });
+
+      it("keeps personal and project scopes apart", async () => {
+        const project = { kind: "project", projectId: PROJECT_A_ID } as const;
+        expect(await providers.surveys.listSurveyIds(project)).toEqual(
+          expect.arrayContaining(sortedIds(projectASurveys)),
+        );
+        const ids = await providers.surveys.listSurveyIds({ kind: "personal", userId: OWNER_ID });
+        expect(ids).toEqual(expect.arrayContaining(sortedIds(ownerPersonalSurveys)));
+        expect(ids).toEqual([...ids].sort());
+        // A project id names no personal scope.
+        expect(
+          await providers.surveys.listSurveyIds({ kind: "personal", userId: PROJECT_A_ID }),
+        ).toEqual([]);
+      });
+
+      it("gives [] for an unknown or non-GUID owner", async () => {
+        expect(await providers.surveys.listSurveyIds(freshScope())).toEqual([]);
+        expect(
+          await providers.surveys.listSurveyIds({ kind: "personal", userId: "not-a-guid" }),
+        ).toEqual([]);
+      });
+    });
+
     describe("results", () => {
       const sid = (n: number): string =>
         `66666666-0000-4000-8000-b${n.toString(16).padStart(11, "0")}`;
@@ -1694,40 +1755,9 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("directory.getUser", () => {
-      it.each(fixtureUsers.map((user) => [user.email, user] as const))(
-        "returns the expected user %s",
-        async (_email, user) => {
-          expect(await providers.directory.getUser(user.id)).toEqual(user);
-        },
-      );
+    describeUserDirectorySections(() => providers.users);
 
-      it("returns null for an unknown id", async () => {
-        expect(await providers.directory.getUser(UNKNOWN_ID)).toBeNull();
-      });
-
-      it("matches ids case-insensitively and returns lower-case ids", async () => {
-        expect(await providers.directory.getUser(OWNER_ID.toUpperCase())).toEqual(ownerUser);
-      });
-    });
-
-    describe("directory.findUserByEmail", () => {
-      it("finds a user by email, ignoring case", async () => {
-        expect(await providers.directory.findUserByEmail("owner@example.com")).toEqual(ownerUser);
-        expect(await providers.directory.findUserByEmail("OWNER@Example.COM")).toEqual(ownerUser);
-      });
-
-      it("returns null for an unknown email", async () => {
-        expect(await providers.directory.findUserByEmail("nobody@example.com")).toBeNull();
-      });
-
-      it("returns null for a blank email", async () => {
-        expect(await providers.directory.findUserByEmail("")).toBeNull();
-        expect(await providers.directory.findUserByEmail("  ")).toBeNull();
-      });
-    });
-
-    describe("directory.listUserProjects", () => {
+    describe("projects.listUserProjects", () => {
       it.each([
         ["the owner", OWNER_ID, ownerProjects],
         ["the admin", ADMIN_ID, adminProjects],
@@ -1735,44 +1765,44 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         ["the outsider", OUTSIDER_ID, []],
       ] as const)("lists the projects of %s ordered by name", async (_name, userId, expected) => {
         // Other tests' own projects may be in the list too (R25): only the fixture ones are checked.
-        expect(fixtureProjectsOnly(await providers.directory.listUserProjects(userId))).toEqual(
+        expect(fixtureProjectsOnly(await providers.projects.listUserProjects(userId))).toEqual(
           expected,
         );
       });
 
       it("matches ids case-insensitively", async () => {
         expect(
-          fixtureProjectsOnly(await providers.directory.listUserProjects(OWNER_ID.toUpperCase())),
+          fixtureProjectsOnly(await providers.projects.listUserProjects(OWNER_ID.toUpperCase())),
         ).toEqual(ownerProjects);
       });
 
       it("returns an empty list for an unknown user", async () => {
-        expect(await providers.directory.listUserProjects(UNKNOWN_ID)).toEqual([]);
+        expect(await providers.projects.listUserProjects(UNKNOWN_ID)).toEqual([]);
       });
     });
 
-    describe("directory.getUserProject", () => {
+    describe("projects.getUserProject", () => {
       it("returns the user's membership with the full project record", async () => {
-        expect(await providers.directory.getUserProject(OWNER_ID, PROJECT_A_ID)).toEqual({
+        expect(await providers.projects.getUserProject(OWNER_ID, PROJECT_A_ID)).toEqual({
           project: projectA,
           role: "admin",
         });
       });
 
       it("returns null when the user is not a member", async () => {
-        expect(await providers.directory.getUserProject(MEMBER_ID, PROJECT_B_ID)).toBeNull();
-        expect(await providers.directory.getUserProject(OUTSIDER_ID, PROJECT_A_ID)).toBeNull();
+        expect(await providers.projects.getUserProject(MEMBER_ID, PROJECT_B_ID)).toBeNull();
+        expect(await providers.projects.getUserProject(OUTSIDER_ID, PROJECT_A_ID)).toBeNull();
       });
 
       it("returns null for an unknown project or user, or a non-GUID id", async () => {
-        expect(await providers.directory.getUserProject(OWNER_ID, UNKNOWN_ID)).toBeNull();
-        expect(await providers.directory.getUserProject(UNKNOWN_ID, PROJECT_A_ID)).toBeNull();
-        expect(await providers.directory.getUserProject(OWNER_ID, "personal")).toBeNull();
+        expect(await providers.projects.getUserProject(OWNER_ID, UNKNOWN_ID)).toBeNull();
+        expect(await providers.projects.getUserProject(UNKNOWN_ID, PROJECT_A_ID)).toBeNull();
+        expect(await providers.projects.getUserProject(OWNER_ID, "personal")).toBeNull();
       });
 
       it("matches ids case-insensitively", async () => {
         expect(
-          await providers.directory.getUserProject(
+          await providers.projects.getUserProject(
             OWNER_ID.toUpperCase(),
             PROJECT_A_ID.toUpperCase(),
           ),
@@ -1780,25 +1810,50 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("directory.listMembers", () => {
+    describe("projects.listMembers", () => {
       it("lists the visible members once each, by display name, the stored Admin read as admin", async () => {
-        expect(await providers.directory.listMembers(PROJECT_A_ID)).toEqual(projectAMembers);
-        expect(await providers.directory.listMembers(PROJECT_B_ID)).toEqual(projectBMembers);
+        expect(await providers.projects.listMembers(PROJECT_A_ID)).toEqual(projectAMembers);
+        expect(await providers.projects.listMembers(PROJECT_B_ID)).toEqual(projectBMembers);
       });
 
       it("matches the project id case-insensitively", async () => {
-        expect(await providers.directory.listMembers(PROJECT_A_ID.toUpperCase())).toEqual(
+        expect(await providers.projects.listMembers(PROJECT_A_ID.toUpperCase())).toEqual(
           projectAMembers,
         );
       });
 
       it("returns an empty list for an unknown project or a non-GUID id", async () => {
-        expect(await providers.directory.listMembers(UNKNOWN_ID)).toEqual([]);
-        expect(await providers.directory.listMembers("personal")).toEqual([]);
+        expect(await providers.projects.listMembers(UNKNOWN_ID)).toEqual([]);
+        expect(await providers.projects.listMembers("personal")).toEqual([]);
       });
     });
 
-    describe("directory writes", () => {
+    describe("projects.listMemberUserIds", () => {
+      it("lists each member once, sorted, and no outsider", async () => {
+        const ids = await providers.projects.listMemberUserIds();
+        expect(ids).toEqual(expect.arrayContaining([OWNER_ID, ADMIN_ID, MEMBER_ID]));
+        expect(ids).not.toContain(OUTSIDER_ID);
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+    });
+
+    describe("projects.listUserProjectIds", () => {
+      it("lists the projects of each membership once, lower-case and ascending", async () => {
+        const ids = await providers.projects.listUserProjectIds(MEMBER_ID.toUpperCase());
+        expect(ids).toEqual(expect.arrayContaining(memberProjects.map((m) => m.project.id).sort()));
+        expect(ids).toEqual([...new Set(ids)].sort());
+        expect(ids.filter((id) => id !== id.toLowerCase())).toEqual([]);
+      });
+
+      it("gives [] for a user without memberships and for a non-GUID id", async () => {
+        expect(await providers.projects.listUserProjectIds(OUTSIDER_ID)).toEqual([]);
+        expect(await providers.projects.listUserProjectIds(UNKNOWN_ID)).toEqual([]);
+        expect(await providers.projects.listUserProjectIds("not-a-guid")).toEqual([]);
+      });
+    });
+
+    describe("projects writes", () => {
       // Marketing, Engineering and the fixture memberships are read only (R25): every test creates
       // its own project with fixture users as members (the only users the replica accepts, FK) and
       // deletes it when the test finishes. Oscar Outsider is never added to a project.
@@ -1816,7 +1871,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       /** Deletes the project when the test finishes, passed or failed (null when already gone). */
       const deleteWhenFinished = (projectId: string): void => {
         onTestFinished(async () => {
-          await providers.directory.deleteProject(projectId, {
+          await providers.projects.deleteProject(projectId, {
             receiverId: freshScope().userId,
             now: NOW,
           });
@@ -1827,13 +1882,13 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       const ownProject = async (over: Partial<NewProject> = {}): Promise<NewProject> => {
         const project = newProject(over);
         deleteWhenFinished(project.id);
-        await providers.directory.createProject(project);
+        await providers.projects.createProject(project);
         return project;
       };
 
       /** The project record as `userId` (Adam by default) sees it; undefined when not a member. */
       const recordOf = async (projectId: string, userId = ADMIN_ID) =>
-        (await providers.directory.getUserProject(userId, projectId))?.project;
+        (await providers.projects.getUserProject(userId, projectId))?.project;
 
       describe("createProject", () => {
         it("stores the project with its creator as the only member, an admin", async () => {
@@ -1849,9 +1904,9 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
             },
             role: "admin",
           };
-          expect(await providers.directory.createProject(project)).toEqual(expected);
-          expect(await providers.directory.getUserProject(ADMIN_ID, project.id)).toEqual(expected);
-          expect(await providers.directory.listMembers(project.id)).toEqual([
+          expect(await providers.projects.createProject(project)).toEqual(expected);
+          expect(await providers.projects.getUserProject(ADMIN_ID, project.id)).toEqual(expected);
+          expect(await providers.projects.listMembers(project.id)).toEqual([
             { user: adminUser, role: "admin" },
           ]);
         });
@@ -1861,24 +1916,24 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           await ownProject({ id: id.toUpperCase() });
           expect((await recordOf(id))?.id).toBe(id);
           expect(
-            (await providers.directory.listUserProjects(ADMIN_ID)).map((m) => m.project.id),
+            (await providers.projects.listUserProjects(ADMIN_ID)).map((m) => m.project.id),
           ).toContain(id);
         });
 
         it("refuses an id in use, storing nothing", async () => {
           const project = await ownProject();
           await expect(
-            providers.directory.createProject(
+            providers.projects.createProject(
               newProject({ id: project.id.toUpperCase(), creatorId: MEMBER_ID }),
             ),
           ).rejects.toThrow();
-          expect(await providers.directory.getUserProject(MEMBER_ID, project.id)).toBeNull();
+          expect(await providers.projects.getUserProject(MEMBER_ID, project.id)).toBeNull();
           expect(await recordOf(project.id)).toMatchObject({ name: project.name, memberCount: 1 });
         });
 
         it("refuses a non-GUID id", async () => {
           await expect(
-            providers.directory.createProject(newProject({ id: "not-a-guid" })),
+            providers.projects.createProject(newProject({ id: "not-a-guid" })),
           ).rejects.toThrow();
         });
       });
@@ -1887,9 +1942,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
         it("sets the name only; createdAt and ownerId stay", async () => {
           const project = await ownProject();
           const name = `Suite project Ünïcødé 😀 ${randomUUID()}`;
-          expect(await providers.directory.renameProject(project.id, name, { now: NOW })).toBe(
-            true,
-          );
+          expect(await providers.projects.renameProject(project.id, name, { now: NOW })).toBe(true);
           expect(await recordOf(project.id)).toEqual({
             id: project.id,
             name,
@@ -1901,28 +1954,26 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
 
         it("answers false for an unknown project or a non-GUID id", async () => {
           const options = { now: NOW };
-          expect(await providers.directory.renameProject(UNKNOWN_ID, "Name", options)).toBe(false);
-          expect(await providers.directory.renameProject("not-a-guid", "Name", options)).toBe(
-            false,
-          );
+          expect(await providers.projects.renameProject(UNKNOWN_ID, "Name", options)).toBe(false);
+          expect(await providers.projects.renameProject("not-a-guid", "Name", options)).toBe(false);
         });
       });
 
       describe("addMember", () => {
         it("adds users once, a blocked one too, and lists them by display name", async () => {
           const { id } = await ownProject();
-          const directory = providers.directory;
+          const projects = providers.projects;
           const options = { now: NOW };
-          expect(await directory.addMember(id, MEMBER_ID, "user", options)).toBe("added");
+          expect(await projects.addMember(id, MEMBER_ID, "user", options)).toBe("added");
           expect(await recordOf(id)).toMatchObject({ memberCount: 2 });
-          expect((await directory.getUserProject(MEMBER_ID, id))?.role).toBe("user");
-          expect(await directory.addMember(id, MEMBER_ID.toUpperCase(), "admin", options)).toBe(
+          expect((await projects.getUserProject(MEMBER_ID, id))?.role).toBe("user");
+          expect(await projects.addMember(id, MEMBER_ID.toUpperCase(), "admin", options)).toBe(
             "already-member",
           );
-          expect((await directory.getUserProject(MEMBER_ID, id))?.role).toBe("user");
-          expect(await directory.addMember(id, BLOCKED_ID, "user", options)).toBe("added");
+          expect((await projects.getUserProject(MEMBER_ID, id))?.role).toBe("user");
+          expect(await projects.addMember(id, BLOCKED_ID, "user", options)).toBe("added");
           // Lower-case "blocked@example.com" sorts between "Adam Admin" and "Mia Member".
-          expect(await directory.listMembers(id)).toEqual([
+          expect(await projects.listMembers(id)).toEqual([
             { user: adminUser, role: "admin" },
             { user: blockedUser, role: "user" },
             { user: memberUser, role: "user" },
@@ -1932,7 +1983,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
 
         it("answers not-found for an unknown project", async () => {
           expect(
-            await providers.directory.addMember(UNKNOWN_ID, MEMBER_ID, "user", { now: NOW }),
+            await providers.projects.addMember(UNKNOWN_ID, MEMBER_ID, "user", { now: NOW }),
           ).toBe("not-found");
         });
       });
@@ -1940,28 +1991,26 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       describe("setMemberRole", () => {
         it("changes roles in place and always keeps an admin", async () => {
           const { id } = await ownProject();
-          const directory = providers.directory;
+          const projects = providers.projects;
           const options = { now: NOW };
-          await directory.addMember(id, MEMBER_ID, "user", options);
-          expect(await directory.setMemberRole(id, MEMBER_ID, "admin", options)).toBe("changed");
-          expect((await directory.getUserProject(MEMBER_ID, id))?.role).toBe("admin");
-          expect(await directory.setMemberRole(id, MEMBER_ID, "admin", options)).toBe("unchanged");
+          await projects.addMember(id, MEMBER_ID, "user", options);
+          expect(await projects.setMemberRole(id, MEMBER_ID, "admin", options)).toBe("changed");
+          expect((await projects.getUserProject(MEMBER_ID, id))?.role).toBe("admin");
+          expect(await projects.setMemberRole(id, MEMBER_ID, "admin", options)).toBe("unchanged");
           // In place (R3): the creator's own role change keeps the owner and the creation time.
-          expect(await directory.setMemberRole(id, ADMIN_ID, "user", options)).toBe("changed");
-          expect(await directory.getUserProject(ADMIN_ID, id)).toMatchObject({
+          expect(await projects.setMemberRole(id, ADMIN_ID, "user", options)).toBe("changed");
+          expect(await projects.getUserProject(ADMIN_ID, id)).toMatchObject({
             project: { ownerId: ADMIN_ID, createdAt: CREATED_AT, memberCount: 2 },
             role: "user",
           });
-          expect(await directory.setMemberRole(id, MEMBER_ID, "user", options)).toBe("last-admin");
-          expect((await directory.getUserProject(MEMBER_ID, id))?.role).toBe("admin");
-          expect(await directory.setMemberRole(id, OUTSIDER_ID, "admin", options)).toBe(
-            "not-found",
-          );
+          expect(await projects.setMemberRole(id, MEMBER_ID, "user", options)).toBe("last-admin");
+          expect((await projects.getUserProject(MEMBER_ID, id))?.role).toBe("admin");
+          expect(await projects.setMemberRole(id, OUTSIDER_ID, "admin", options)).toBe("not-found");
         });
 
         it("answers not-found for an unknown project", async () => {
           expect(
-            await providers.directory.setMemberRole(UNKNOWN_ID, ADMIN_ID, "user", { now: NOW }),
+            await providers.projects.setMemberRole(UNKNOWN_ID, ADMIN_ID, "user", { now: NOW }),
           ).toBe("not-found");
         });
       });
@@ -1969,28 +2018,28 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       describe("removeMember", () => {
         it("removes a member but never the last admin or the sole member", async () => {
           const { id } = await ownProject();
-          const directory = providers.directory;
-          await directory.addMember(id, MEMBER_ID, "user", { now: NOW });
-          expect(await directory.removeMember(id, ADMIN_ID)).toBe("last-admin");
-          expect(await directory.removeMember(id, MEMBER_ID.toUpperCase())).toBe("removed");
-          expect(await directory.getUserProject(MEMBER_ID, id)).toBeNull();
+          const projects = providers.projects;
+          await projects.addMember(id, MEMBER_ID, "user", { now: NOW });
+          expect(await projects.removeMember(id, ADMIN_ID)).toBe("last-admin");
+          expect(await projects.removeMember(id, MEMBER_ID.toUpperCase())).toBe("removed");
+          expect(await projects.getUserProject(MEMBER_ID, id)).toBeNull();
           expect(await recordOf(id)).toMatchObject({ memberCount: 1 });
-          expect(await directory.removeMember(id, MEMBER_ID)).toBe("not-found");
-          expect(await directory.removeMember(id, ADMIN_ID)).toBe("last-admin");
-          expect(await directory.listMembers(id)).toEqual([{ user: adminUser, role: "admin" }]);
+          expect(await projects.removeMember(id, MEMBER_ID)).toBe("not-found");
+          expect(await projects.removeMember(id, ADMIN_ID)).toBe("last-admin");
+          expect(await projects.listMembers(id)).toEqual([{ user: adminUser, role: "admin" }]);
         });
 
         it("answers not-found for an unknown project", async () => {
-          expect(await providers.directory.removeMember(UNKNOWN_ID, ADMIN_ID)).toBe("not-found");
+          expect(await providers.projects.removeMember(UNKNOWN_ID, ADMIN_ID)).toBe("not-found");
         });
 
         it("leaves the project without an owner once its creator is removed, for good", async () => {
           const { id } = await ownProject();
-          const directory = providers.directory;
-          await directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
-          expect(await directory.removeMember(id, ADMIN_ID)).toBe("removed");
+          const projects = providers.projects;
+          await projects.addMember(id, MEMBER_ID, "admin", { now: NOW });
+          expect(await projects.removeMember(id, ADMIN_ID)).toBe("removed");
           expect(await recordOf(id, MEMBER_ID)).toMatchObject({ ownerId: null, memberCount: 1 });
-          expect(await directory.addMember(id, ADMIN_ID, "admin", { now: NOW })).toBe("added");
+          expect(await projects.addMember(id, ADMIN_ID, "admin", { now: NOW })).toBe("added");
           expect(await recordOf(id, MEMBER_ID)).toEqual({
             id,
             name: expect.any(String),
@@ -2028,7 +2077,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           const receiver = freshScope();
           const options = { receiverId: receiver.userId.toUpperCase(), now: NOW };
 
-          expect(await providers.directory.deleteProject(id, options)).toEqual(ids);
+          expect(await providers.projects.deleteProject(id, options)).toEqual(ids);
           for (const survey of before) {
             expect(await providers.surveys.getSurvey(survey.id)).toEqual({
               ...survey,
@@ -2040,17 +2089,214 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
           expect(
             (await providers.surveys.listSurveys(receiver)).map((survey) => survey.id).sort(),
           ).toEqual(ids);
-          expect(await providers.directory.getUserProject(ADMIN_ID, id)).toBeNull();
-          expect(await providers.directory.listMembers(id)).toEqual([]);
-          expect(await providers.directory.deleteProject(id, options)).toBeNull();
+          expect(await providers.projects.getUserProject(ADMIN_ID, id)).toBeNull();
+          expect(await providers.projects.listMembers(id)).toEqual([]);
+          expect(await providers.projects.deleteProject(id, options)).toBeNull();
         });
 
         it("answers [] for a project without surveys and null for an unknown one", async () => {
           const { id } = await ownProject();
           const options = { receiverId: freshScope().userId, now: NOW };
-          expect(await providers.directory.deleteProject(id, options)).toEqual([]);
-          expect(await providers.directory.getUserProject(ADMIN_ID, id)).toBeNull();
-          expect(await providers.directory.deleteProject(UNKNOWN_ID, options)).toBeNull();
+          expect(await providers.projects.deleteProject(id, options)).toEqual([]);
+          expect(await providers.projects.getUserProject(ADMIN_ID, id)).toBeNull();
+          expect(await providers.projects.deleteProject(UNKNOWN_ID, options)).toBeNull();
+        });
+      });
+
+      describe("eraseMember", () => {
+        // Erin Erasable is the only user erased (R4); Adam and Mia are the members who stay.
+        const options = { now: NOW };
+
+        it("removes a plain member of a project with another admin", async () => {
+          const { id } = await ownProject();
+          await providers.projects.addMember(id, ERASABLE_ID, "user", options);
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "remove",
+          });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+          ]);
+        });
+
+        it("promotes the first member by display name when the creator, the only admin, goes", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          await providers.projects.addMember(id, MEMBER_ID, "user", options);
+          await providers.projects.addMember(id, ADMIN_ID, "user", options);
+          // "Adam Admin" comes before "Mia Member".
+          expect(
+            await providers.projects.eraseMember(id, ERASABLE_ID.toUpperCase(), options),
+          ).toEqual({ kind: "promote", successorId: ADMIN_ID });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+            { user: memberUser, role: "user" },
+          ]);
+          expect(await recordOf(id)).toMatchObject({ ownerId: null, memberCount: 2 });
+        });
+
+        it("removes the creator while another admin remains", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          await providers.projects.addMember(id, ADMIN_ID, "admin", options);
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "remove",
+          });
+          expect(await providers.projects.listMembers(id)).toEqual([
+            { user: adminUser, role: "admin" },
+          ]);
+          expect(await recordOf(id)).toMatchObject({ ownerId: null, memberCount: 1 });
+        });
+
+        it("writes nothing for the last member", async () => {
+          const { id } = await ownProject({ creatorId: ERASABLE_ID });
+          expect(await providers.projects.eraseMember(id, ERASABLE_ID, options)).toEqual({
+            kind: "last-member",
+          });
+          expect(await providers.projects.getUserProject(ERASABLE_ID, id)).toMatchObject({
+            project: { ownerId: ERASABLE_ID, memberCount: 1 },
+            role: "admin",
+          });
+        });
+
+        it("answers not-member for a non-member, an unknown project and a non-GUID id", async () => {
+          const projects = providers.projects;
+          expect(await projects.eraseMember(PROJECT_A_ID, ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.listMembers(PROJECT_A_ID)).toEqual(projectAMembers);
+          expect(await projects.eraseMember(UNKNOWN_ID, ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.eraseMember("not-a-guid", ERASABLE_ID, options)).toEqual({
+            kind: "not-member",
+          });
+          expect(await projects.eraseMember(PROJECT_A_ID, "not-a-guid", options)).toEqual({
+            kind: "not-member",
+          });
+        });
+      });
+
+      describe("erasure (eraseAccount)", () => {
+        const options = { now: NOW };
+        const erin: PersonalScope = { kind: "personal", userId: ERASABLE_ID };
+        const noCounts = {
+          surveysDeleted: 0,
+          projectsLeft: 0,
+          projectsDeleted: 0,
+          adminsPromoted: 0,
+        };
+
+        /** Stores an editor asset of the survey and returns its id. */
+        const putAsset = async (surveyId: string): Promise<string> => {
+          const file: StoredFileRecord = {
+            id: newFileId(surveyId),
+            surveyId,
+            kind: "asset",
+            name: "logo.png",
+            contentType: "image/png",
+            size: PNG.length,
+            createdAt: CREATED_AT,
+          };
+          await providers.files.putFile(file, PNG);
+          return file.id;
+        };
+
+        it("deletes every personal survey of an id without a user, archived ones and files too", async () => {
+          const scope = freshScope();
+          const archived = await providers.surveys.createSurvey(newSurvey(scope));
+          await providers.surveys.updateSurvey(archived.id, { archived: true, updatedAt: NOW });
+          const withFile = await providers.surveys.createSurvey(newSurvey(scope));
+          const fileId = await putAsset(withFile.id);
+          const eraseAccount = createEraseAccount(providers);
+
+          expect(await eraseAccount(scope.userId, options)).toEqual({
+            userId: scope.userId,
+            surveysDeleted: 2,
+            projectsLeft: 0,
+            projectsDeleted: 0,
+            adminsPromoted: 0,
+          });
+          expect(await providers.surveys.listSurveys(scope)).toEqual([]);
+          expect(await providers.surveys.getSurvey(archived.id)).toBeNull();
+          expect(await providers.surveys.getSurvey(withFile.id)).toBeNull();
+          expect(await providers.files.getFile(fileId)).toBeNull();
+          expect(await eraseAccount(scope.userId, options)).toEqual({
+            userId: scope.userId,
+            ...noCounts,
+          });
+        });
+
+        it("previews, then erases Erin: projects first, then her personal surveys", async () => {
+          const eraseAccount = createEraseAccount(providers);
+          // Leftovers of an interrupted earlier run on the replica (R4) would change the counts.
+          await eraseAccount(ERASABLE_ID, options);
+
+          const personal = await providers.surveys.createSurvey(newSurvey(erin));
+          // Named so that listUserProjects returns them in this order.
+          const tag = randomUUID();
+          const p1 = await ownProject({ name: `Erasure 1 ${tag}`, creatorId: ERASABLE_ID });
+          await providers.projects.addMember(p1.id, MEMBER_ID, "user", options);
+          const p1Survey = await providers.surveys.createSurvey(
+            newSurvey(freshScope(), {
+              owner: { kind: "project", projectId: p1.id },
+              creatorId: ERASABLE_ID,
+            }),
+          );
+          onTestFinished(async () => {
+            await providers.surveys.deleteSurvey(p1Survey.id);
+          });
+          const p2 = await ownProject({ name: `Erasure 2 ${tag}`, creatorId: ERASABLE_ID });
+          const p2Survey = await providers.surveys.createSurvey(
+            newSurvey(freshScope(), {
+              owner: { kind: "project", projectId: p2.id },
+              creatorId: ERASABLE_ID,
+            }),
+          );
+          const p2File = await putAsset(p2Survey.id);
+          const p3 = await ownProject({ name: `Erasure 3 ${tag}` });
+          await providers.projects.addMember(p3.id, ERASABLE_ID, "user", options);
+
+          const expectedPreview = {
+            userId: ERASABLE_ID,
+            personalSurveys: [{ id: personal.id, name: personal.name }],
+            projects: [
+              {
+                id: p1.id,
+                name: p1.name,
+                decision: { kind: "promote", successorId: MEMBER_ID },
+                surveyCount: 1,
+              },
+              { id: p2.id, name: p2.name, decision: { kind: "last-member" }, surveyCount: 1 },
+              { id: p3.id, name: p3.name, decision: { kind: "remove" }, surveyCount: 0 },
+            ],
+          };
+          expect(await previewErasure(providers, ERASABLE_ID.toUpperCase())).toEqual(
+            expectedPreview,
+          );
+          // A preview writes nothing: a second one sees the same.
+          expect(await previewErasure(providers, ERASABLE_ID)).toEqual(expectedPreview);
+
+          expect(await eraseAccount(ERASABLE_ID, options)).toEqual({
+            userId: ERASABLE_ID,
+            surveysDeleted: 2,
+            projectsLeft: 2,
+            projectsDeleted: 1,
+            adminsPromoted: 1,
+          });
+          expect(await providers.surveys.getSurvey(personal.id)).toBeNull();
+          expect(await providers.surveys.getSurvey(p1Survey.id)).toEqual(p1Survey);
+          expect((await providers.projects.getUserProject(MEMBER_ID, p1.id))?.role).toBe("admin");
+          expect(await providers.projects.getUserProject(ERASABLE_ID, p2.id)).toBeNull();
+          expect(await providers.projects.listMembers(p2.id)).toEqual([]);
+          expect(await providers.surveys.getSurvey(p2Survey.id)).toBeNull();
+          expect(await providers.files.getFile(p2File)).toBeNull();
+          expect(await recordOf(p3.id)).toMatchObject({ memberCount: 1 });
+          const left = (await providers.projects.listUserProjects(ERASABLE_ID)).map(
+            (membership) => membership.project.id,
+          );
+          expect(left.filter((id) => [p1.id, p2.id, p3.id].includes(id))).toEqual([]);
+          expect(await eraseAccount(ERASABLE_ID, options)).toEqual({
+            userId: ERASABLE_ID,
+            ...noCounts,
+          });
         });
       });
     });

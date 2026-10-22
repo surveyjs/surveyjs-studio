@@ -26,6 +26,7 @@ mode from the replica). In the mock OIDC form of Azurite mode you type the short
 | Adam Admin     | `admin@example.com`    | `admin`                    | none                                       | none               | Engineering (admin), Marketing (admin) |
 | Mia Member     | `member@example.com`   | `member`                   | none                                       | none               | Marketing (user)                       |
 | Oscar Outsider | `outsider@example.com` | `outsider`                 | Outsider quiz                              | none               | none                                   |
+| Erin Erasable  | `erasable@example.com` | `erasable`                 | none (added in Step 12; erasure only)      | none               | none                                   |
 
 Marketing has the active survey "Campaign survey" and the archived "Archived campaign". Engineering
 has the active "Engineering retro".

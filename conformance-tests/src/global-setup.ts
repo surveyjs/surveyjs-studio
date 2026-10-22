@@ -7,10 +7,24 @@ declare module "vitest" {
   export interface ProvidedContext {
     /** Server origin under test, without `/api/v1`. */
     baseUrl: string;
+    /** `surveyjs-api` when the reference server runs against the user-API stub, else `default`. */
+    userDirectory: "default" | "surveyjs-api";
+    /**
+     * The `whsec_` secret the server checks account-deleted webhooks with; null when unknown (an
+     * external server without `CONFORMANCE_WEBHOOK_SECRET`): the webhook tests skip.
+     */
+    webhookSecret: string | null;
   }
 }
 
 const READY_TIMEOUT_MS = 30_000;
+
+// The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
+const USER_API_TOKEN = "conformance-user-api-token";
+
+// The reference server's account-deleted webhook secret: a synthetic test value (the base64 of
+// the 34-byte text `my-surveys-conformance-webhook-key`).
+const WEBHOOK_SECRET = "whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==";
 
 // Every variable of the server's environment table (server/src/config.ts). The reference
 // server must see only the explicit values set below, never the developer's shell.
@@ -49,6 +63,10 @@ const appVariables = [
   "PUBLIC_RATE_LIMIT",
   "PUBLIC_FILE_RATE_LIMIT",
   "ACCOUNT_NOTICES",
+  "USER_DIRECTORY",
+  "USER_API_URL",
+  "USER_API_TOKEN",
+  "ACCOUNT_WEBHOOK_SECRET",
   "SHELL_LINKS",
 ];
 
@@ -95,7 +113,21 @@ function providerEnv(): Record<string, string> {
   return env;
 }
 
-function serverEnv(port: number): NodeJS.ProcessEnv {
+/**
+ * `CONFORMANCE_USER_DIRECTORY=surveyjs-api` points the reference server at the user-API stub (the
+ * stub is started first; `stubUrl` is its address) and turns the licence notices on.
+ */
+function userDirectoryEnv(stubUrl: string | null): Record<string, string> {
+  if (stubUrl === null) return {};
+  return {
+    USER_DIRECTORY: "surveyjs-api",
+    USER_API_URL: stubUrl,
+    USER_API_TOKEN,
+    ACCOUNT_NOTICES: "surveyjs-licenses",
+  };
+}
+
+function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of appVariables) delete env[name];
   return {
@@ -119,7 +151,10 @@ function serverEnv(port: number): NodeJS.ProcessEnv {
     LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",
     // Small, so the 413 test stays cheap (it reads the limit from /config).
     LIMIT_MAX_FILE_BYTES: "65536",
+    // The account-deleted webhook tests sign with the same secret.
+    ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ...providerEnv(),
+    ...userDirectoryEnv(stubUrl),
   };
 }
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -150,7 +185,75 @@ function killTree(child: ChildProcess): void {
   }
 }
 
-async function startReferenceServer(): Promise<{ baseUrl: string; stop: () => void }> {
+/** The mode of `CONFORMANCE_USER_DIRECTORY`: `default` or `surveyjs-api`. */
+function userDirectoryMode(): "default" | "surveyjs-api" {
+  const mode = process.env.CONFORMANCE_USER_DIRECTORY?.trim() || "default";
+  if (mode !== "default" && mode !== "surveyjs-api") {
+    throw new Error(`CONFORMANCE_USER_DIRECTORY must be default or surveyjs-api, got "${mode}"`);
+  }
+  return mode;
+}
+
+/** Waits until `url` answers 200, the child exits or the deadline passes; throws with the output. */
+async function waitFor200(
+  child: ChildProcess,
+  url: string,
+  what: string,
+  output: () => string,
+): Promise<void> {
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  for (;;) {
+    if (child.exitCode !== null) {
+      throw new Error(`${what} failed to start: exited with code ${child.exitCode}
+${output()}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`${what} failed to start: ${url} not ready after ${READY_TIMEOUT_MS} ms
+${output()}`);
+    }
+    try {
+      if ((await fetch(url)).status === 200) return;
+    } catch {
+      // not listening yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+/** Runs the user-API stub (server/src/users/surveyjs-api/stub-cli.ts) on a free port. */
+async function startUserApiStub(): Promise<{ url: string; stop: () => void }> {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "server/src/users/surveyjs-api/stub-cli.ts",
+      "--",
+      "--port",
+      String(port),
+      "--token",
+      USER_API_TOKEN,
+    ],
+    { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let output = "";
+  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+  const stop = () => killTree(child);
+  try {
+    await waitFor200(child, `${url}/healthz`, "User API stub", () => output);
+  } catch (error) {
+    stop();
+    throw error;
+  }
+  return { url, stop };
+}
+
+async function startReferenceServer(
+  stubUrl: string | null,
+): Promise<{ baseUrl: string; stop: () => void }> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const command = "pnpm --filter @my-surveys/server start";
@@ -160,7 +263,7 @@ async function startReferenceServer(): Promise<{ baseUrl: string; stop: () => vo
     shell: true,
     detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
-    env: serverEnv(port),
+    env: serverEnv(port, stubUrl),
   });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
@@ -194,11 +297,29 @@ ${output}`,
 /** Uses `CONFORMANCE_BASE_URL` if set; otherwise runs the reference server for the suite. */
 export async function setup(project: TestProject): Promise<(() => void) | void> {
   const external = process.env.CONFORMANCE_BASE_URL?.trim();
+  const mode = userDirectoryMode();
   if (external) {
+    if (mode !== "default") {
+      throw new Error("CONFORMANCE_USER_DIRECTORY cannot be used with CONFORMANCE_BASE_URL");
+    }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
+    project.provide("userDirectory", "default");
+    project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     return;
   }
-  const server = await startReferenceServer();
+  const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
+  let server: { baseUrl: string; stop: () => void };
+  try {
+    server = await startReferenceServer(stub?.url ?? null);
+  } catch (error) {
+    stub?.stop();
+    throw error;
+  }
   project.provide("baseUrl", server.baseUrl);
-  return server.stop;
+  project.provide("userDirectory", mode);
+  project.provide("webhookSecret", WEBHOOK_SECRET);
+  return () => {
+    server.stop();
+    stub?.stop();
+  };
 }

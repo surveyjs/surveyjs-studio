@@ -2,6 +2,7 @@
 // connects this to the model's `onComplete`.
 import { ApiError } from "../api/client";
 import type { ResponseBody } from "../api/public";
+import { randomId } from "./clientId";
 
 /** The saving messages of the Form Library's complete page (its `onComplete` options). */
 export interface SaveOptions {
@@ -52,7 +53,8 @@ export function createSubmitHandler(deps: {
   readonly clientId: () => Promise<string | undefined>;
   readonly newKey?: () => string;
 }): (sender: SubmitSender, options: SaveOptions) => void {
-  const newKey = deps.newKey ?? (() => crypto.randomUUID());
+  // randomId, not crypto.randomUUID: the run page also works over plain HTTP (R20).
+  const newKey = deps.newKey ?? (() => randomId());
   let key: string | undefined;
   let sending = false;
   /** The `showSaveSuccess` arguments once the handler is done (none: the library's own text). */

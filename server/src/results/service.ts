@@ -7,7 +7,7 @@ import { AppError } from "../errors.js";
 import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
-  type Directory,
+  type ProjectStore,
   type FileStore,
   type ResultStore,
   type SurveyStore,
@@ -68,7 +68,7 @@ export interface ResultsService {
 
 export interface ResultsServiceOptions {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly projects: ProjectStore;
   readonly results: ResultStore;
   /** Respondent files: deleted with the results. */
   readonly files: FileStore;
@@ -98,8 +98,8 @@ const tooLarge = (cause: unknown): AppError =>
 
 /** Loading a published survey, storing responses to it once, and counting them. */
 export function createResultsService(options: ResultsServiceOptions): ResultsService {
-  const { surveys, directory, results, files, views, now = Date.now } = options;
-  const access = createSurveyAccess({ surveys, directory });
+  const { surveys, projects, results, files, views, now = Date.now } = options;
+  const access = createSurveyAccess({ surveys, projects });
 
   return {
     async getPublished(surveyId, clientId) {

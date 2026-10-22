@@ -224,3 +224,43 @@ describe("the submit handler", () => {
     }
   });
 });
+
+describe("the submit handler's own key", () => {
+  it("is a version 4 UUID without crypto.randomUUID (plain HTTP), reused on retry", async () => {
+    const realCrypto = globalThis.crypto;
+    // Outside a secure context the browser's crypto has getRandomValues but no randomUUID.
+    vi.stubGlobal("crypto", { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) });
+    try {
+      const keys: string[] = [];
+      let attempt = 0;
+      const handle = createSubmitHandler({
+        submit: (_body, key) => {
+          keys.push(key);
+          attempt += 1;
+          return attempt === 1
+            ? Promise.reject(new TypeError("Failed to fetch"))
+            : Promise.resolve({ id: "response-1" });
+        },
+        clientId: () => Promise.resolve(undefined),
+      });
+      const sender = { data: { satisfaction: 4 }, setCookie: vi.fn(), deleteCookie: vi.fn() };
+      const options = saveOptions();
+
+      handle(sender, options);
+      await settle();
+      expect(options.showSaveError).toHaveBeenCalledOnce();
+      handle(sender, options);
+      await settle();
+
+      expect(options.showSaveSuccess).toHaveBeenCalledExactlyOnceWith();
+      expect(keys).toHaveLength(2);
+      expect(keys[0]).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(keys[1]).toBe(keys[0]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(globalThis.crypto).toBe(realCrypto);
+  });
+});

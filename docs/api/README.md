@@ -77,6 +77,7 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 | Step 9  | `listResults`, `getResultsView`, `saveResultsView`, `resetResultsView` (see below)                                        |
 | Step 10 | `exportResults`, `deleteResults`, `getPublicResults` (see below)                                                          |
 | Step 11 | `createProject`, `updateProject`, `deleteProject`, `listMembers`, `addMember`, `updateMember`, `removeMember` (see below) |
+| Step 12 | `receiveAccountDeleted`, the webhook of surveyjs.io (see below)                                                           |
 
 ### Step 4: surveys and projects
 
@@ -503,3 +504,39 @@ Since Step 11 only `passwordLogin` answers `501` with a Problem Details body (`c
 `501` until P1. A private operation called without a session answers `401`. The conformance suite has one `501`
 test (`passwordLogin`, which is public); the server tests build the routes with no handler at all to check the
 `501` of an operation without one.
+
+### Step 12: the account-deleted webhook
+
+`receiveAccountDeleted` is `POST /api/v1/webhooks/account-deleted`, in the contract's `Integrations` tag. It is not
+for browsers or scripts of users. **surveyjs.io calls it** when someone deletes their surveyjs.io account, and the
+server then erases that user's data: personal surveys with their results and files, the user's place in every
+project (a project that would lose its last admin passes to its next member, and a project with no other member is
+deleted with its surveys). The same erasure runs from `pnpm account:erase` and `pnpm account:reconcile`
+([Operations](../operations.md)). The contract is the reference; the surveyjs.io side is written up in
+[the user API and webhook document](../integrations/surveyjs-user-api.md#the-account-deleted-webhook).
+
+- **No session and no CSRF header.** The call is signed, as [Standard Webhooks](https://www.standardwebhooks.com/)
+  describes, with the secret the server has in `ACCOUNT_WEBHOOK_SECRET` (`whsec_` and base64). The headers are
+  `webhook-id`, `webhook-timestamp` (Unix seconds) and `webhook-signature` (`v1,` and the base64 HMAC-SHA256 of
+  `{id}.{timestamp}.{body}`).
+- **The body** is `{ "type": "account.deleted", "data": { "userId": "<user id>" } }`. Another `type` answers `204`
+  and does nothing.
+- **Answers.** `204`: the erasure is finished (repeat it and nothing more happens). `401 invalid-signature`: the
+  signature is missing, wrong, or its timestamp is more than five minutes from the server's clock; this is checked
+  before the body is read. `400`: the signature is valid but the body is not an account event, or `data.userId` is
+  not an id. `404`: the server has no webhook secret. `413`: the body is over 64 KiB.
+- **The server trusts the signed message.** It does not ask the user directory whether the account is gone.
+- **`curl` is not practical**, because the signature needs the body and a clock. To try it on a local server use
+  `pnpm webhook:account-deleted --user <id> --env-file server/demo.env`, which signs with the local demo secret
+  and prints `HTTP 204` (or the refusal; `--bad-signature` shows `HTTP 401` and `invalid-signature`). See
+  [the Step 12 demo](../demo/step-12.md).
+
+`GET /config` lists `authMethods`; its values are `surveyjs`, `password`, `google`, `github` and `facebook`
+(`oidc` is gone). Only `surveyjs` works ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md)).
+
+Every server answer, success or problem, carries `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin` and a `Content-Security-Policy` that forbids framing (and, except for
+`/api/docs`, everything else); over https also `Strict-Transport-Security`
+([ADR 0019](../adr/0019-run-page-isolation-and-security-headers.md)). The server answers no old surveyjs.io
+address: `/published?id=…`, `/Service/*` and `/Results/*` are ordinary unknown paths (`404 not-found`, no
+`Location`).

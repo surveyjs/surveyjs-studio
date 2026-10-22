@@ -1,8 +1,10 @@
 import { pathToFileURL } from "node:url";
-import { ConfigError, loadConfig } from "../config.js";
+import { loadConfig } from "../config.js";
 import type { ProjectMembership, SurveyRecord, User } from "../domain/types.js";
-import { LegacyStoreError } from "../providers/azure-legacy/index.js";
 import { createProviders, type ProviderSet } from "../providers/index.js";
+import { GUID, safeErrorText, type CliIo } from "./common.js";
+
+export type { CliIo } from "./common.js";
 
 export type ParsedArgs =
   | { kind: "run"; user: string; envFile: string | null }
@@ -111,24 +113,6 @@ export function storeProblem(env: Readonly<Record<string, string | undefined>>):
   return null;
 }
 
-/** `unexpected failure (TypeError, code ESOCKET)`: the error name and a plain-identifier code. */
-function describeUnexpected(error: unknown): string {
-  const details: string[] = [];
-  if (error instanceof Error && /^[A-Za-z][A-Za-z0-9_]*$/.test(error.name)) {
-    details.push(error.name);
-  }
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === "string" && /^[A-Z][A-Z0-9_]*$/.test(code)) details.push(`code ${code}`);
-  return details.length > 0 ? `unexpected failure (${details.join(", ")})` : "unexpected failure";
-}
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export interface CliIo {
-  out(text: string): void;
-  err(text: string): void;
-}
-
 /** Runs the inspector. Returns the exit code; never throws. Calls only read methods. */
 export async function run(
   argv: readonly string[],
@@ -166,14 +150,14 @@ export async function run(
       },
     });
     const user = GUID.test(args.user)
-      ? await providers.directory.getUser(args.user)
-      : await providers.directory.findUserByEmail(args.user);
+      ? await providers.users.getUser(args.user)
+      : await providers.users.findUserByEmail(args.user);
     if (user === null) {
       io.err(`User not found in the ${providers.name} store: ${args.user}\n`);
       return 1;
     }
     const personal = await providers.surveys.listSurveys({ kind: "personal", userId: user.id });
-    const memberships = await providers.directory.listUserProjects(user.id);
+    const memberships = await providers.projects.listUserProjects(user.id);
     const projects = [];
     for (const membership of memberships) {
       const surveys = await providers.surveys.listSurveys({
@@ -185,10 +169,7 @@ export async function run(
     io.out(formatReport(user, providers.name, personal, projects));
     return 0;
   } catch (error) {
-    // Only these two error types are known to be free of connection-string values. Any other
-    // message or stack may hold one, so only the error's name and a safe code are printed.
-    const safe = error instanceof ConfigError || error instanceof LegacyStoreError;
-    io.err(`Error: ${safe ? error.message : describeUnexpected(error)}\n`);
+    io.err(`Error: ${safeErrorText(error)}\n`);
     return 1;
   } finally {
     if (providers) await providers.close().catch(() => undefined);

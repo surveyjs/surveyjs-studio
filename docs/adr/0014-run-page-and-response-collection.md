@@ -180,6 +180,12 @@ can load Creator, Ace or Dashboard code.
 
 ## Consequences
 
+**Superseded in Step 12:** the `/published` alias (S21) is removed; the surveyjs.io site redirects old links
+([ADR 0018](0018-accounts-by-deployment-mode.md), [the redirect map](../operations/surveyjs-redirects.md)). The run
+page's `id` search member is no longer reserved (only `locale` is), because the site's redirect moves `id` into the
+path. The Idempotency-Key no longer depends on `crypto.randomUUID`
+([ADR 0019](0019-run-page-isolation-and-security-headers.md)). S21 below stays as the record of Step 8.
+
 - A survey runs while it is published, archived or not, and a survey that was never switched on the old site
   needs one Publish.
 - "Limit to one response" is a courtesy limit. It stops the ordinary repeat visit from the same browser. It does

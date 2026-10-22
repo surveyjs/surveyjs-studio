@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@my-surveys/contract";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import { createEraseAccount } from "./accounts/erasure.js";
+import { createAccountHandlers } from "./accounts/handlers.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
 import { createIdentityProvider } from "./auth/providers/index.js";
@@ -12,12 +14,13 @@ import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
-import { serializeRequest } from "./logging.js";
+import { REDACTED_LOG_PATHS, serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
 import { createResultHandlers } from "./results/handlers.js";
+import { serverSecurityHeaders } from "./security-headers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 import { createViewHandlers } from "./views/handlers.js";
 
@@ -60,6 +63,7 @@ export async function buildApp(
         : {
             level: config.logLevel,
             serializers: { req: serializeRequest },
+            redact: [...REDACTED_LOG_PATHS],
             ...(options.logStream && { stream: options.logStream }),
           },
     genReqId: (req) => {
@@ -78,8 +82,13 @@ export async function buildApp(
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
 
+  const https = new URL(config.publicBaseUrl).protocol === "https:";
   app.addHook("onSend", (request, reply, payload, done) => {
     void reply.header("x-request-id", request.id);
+    // A route's own header wins: the dev sign-in page and file downloads set a CSP of their own.
+    for (const [name, value] of Object.entries(serverSecurityHeaders(request.url, { https }))) {
+      if (!reply.hasHeader(name)) void reply.header(name, value);
+    }
     done(null, payload);
   });
 
@@ -142,29 +151,31 @@ export async function buildApp(
       ...createSessionHandlers({
         config,
         identity,
-        directory: providers.directory,
+        users: providers.users,
         notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),
       ...createProjectHandlers({
-        directory: providers.directory,
+        users: providers.users,
+        projects: providers.projects,
         ...(options.now && { now: options.now }),
       }),
       ...createContentHandlers({
         surveys: providers.surveys,
-        directory: providers.directory,
+        users: providers.users,
+        projects: providers.projects,
         ...(options.now && { now: options.now }),
       }),
       ...createSurveyHandlers({
         surveys: providers.surveys,
-        directory: providers.directory,
+        projects: providers.projects,
         files: providers.files,
         views: providers.views,
         ...(options.now && { now: options.now }),
       }),
       ...createResultHandlers({
         surveys: providers.surveys,
-        directory: providers.directory,
+        projects: providers.projects,
         results: providers.results,
         files: providers.files,
         views: providers.views,
@@ -172,16 +183,24 @@ export async function buildApp(
       }),
       ...createViewHandlers({
         surveys: providers.surveys,
-        directory: providers.directory,
+        projects: providers.projects,
         views: providers.views,
       }),
       ...createFileHandlers({
         surveys: providers.surveys,
-        directory: providers.directory,
+        projects: providers.projects,
         files: providers.files,
         publicBaseUrl: config.publicBaseUrl,
         maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
         maxFileBytes: config.limits.maxFileBytes,
+        ...(options.now && { now: options.now }),
+      }),
+      ...createAccountHandlers({
+        webhookSecret: config.accountWebhookSecret,
+        eraseAccount: createEraseAccount(
+          { surveys: providers.surveys, projects: providers.projects, files: providers.files },
+          app.log,
+        ),
         ...(options.now && { now: options.now }),
       }),
     },
@@ -198,7 +217,11 @@ export async function buildApp(
     bodyLimits: {
       saveSurveyDefinition: config.limits.maxDocumentBytes,
       saveSurveyTheme: config.limits.maxDocumentBytes,
+      // The account-deleted webhook carries a small event; anything larger is refused unread.
+      receiveAccountDeleted: 65_536,
     },
+    // The webhook's signature covers the body exactly as sent: it is checked before parsing.
+    rawBodyOperations: ["receiveAccountDeleted"],
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);

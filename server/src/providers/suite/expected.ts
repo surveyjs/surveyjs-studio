@@ -22,6 +22,9 @@ export const ADMIN_ID = "11111111-0000-4000-8000-a00000000002";
 export const MEMBER_ID = "11111111-0000-4000-8000-a00000000003";
 export const OUTSIDER_ID = "11111111-0000-4000-8000-a00000000004";
 export const BLOCKED_ID = "11111111-0000-4000-8000-a00000000005";
+export const ERASABLE_ID = "11111111-0000-4000-8000-a00000000006";
+/** A well-formed id no fixture row uses. */
+export const UNKNOWN_ID = "99999999-9999-4999-8999-999999999999";
 
 export const PROJECT_A_ID = "55555555-0000-4000-8000-a00000000001";
 export const PROJECT_B_ID = "55555555-0000-4000-8000-a00000000002";
@@ -68,12 +71,21 @@ export const blockedUser: User = {
   blocked: true,
 };
 
+/** Has no data at all: the erasure tests erase only this user (and fresh ids). */
+export const erasableUser: User = {
+  id: ERASABLE_ID,
+  email: "erasable@example.com",
+  displayName: "Erin Erasable",
+  blocked: false,
+};
+
 export const fixtureUsers: readonly User[] = [
   ownerUser,
   adminUser,
   memberUser,
   outsiderUser,
   blockedUser,
+  erasableUser,
 ];
 
 // ---- Surveys ----
@@ -198,6 +210,27 @@ export const surveyApiCreated: SurveyRecord = {
   settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
 };
 
+export const XSS_SURVEY_ID = "22222222-0000-4000-8000-a00000000009";
+
+/**
+ * "XSS in question name" (R24): markup in its name, question name and title, HTML and completed
+ * HTML, shown as text by the list, editor and run page. The member's only personal survey; read
+ * only (the e2e answers its submission itself and fails on any definition write).
+ */
+export const surveyXss: SurveyRecord = {
+  id: XSS_SURVEY_ID,
+  name: "XSS in question name <img src=x onerror=alert(1)>",
+  owner: { kind: "personal", userId: MEMBER_ID },
+  creatorId: MEMBER_ID,
+  postId: "33333333-0000-4000-8000-a00000000009",
+  resultId: "44444444-0000-4000-8000-a00000000009",
+  published: true,
+  archived: false,
+  createdAt: "2026-03-01T09:00:00.000Z",
+  updatedAt: "2026-03-01T09:00:00.000Z",
+  settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
+};
+
 export const fixtureSurveys: readonly SurveyRecord[] = [
   surveyFeedback,
   surveyDraft,
@@ -207,6 +240,7 @@ export const fixtureSurveys: readonly SurveyRecord[] = [
   surveyRetro,
   surveyOutsider,
   surveyApiCreated,
+  surveyXss,
 ];
 
 // ---- Survey lists, in the documented order: updatedAt descending, then id ----
@@ -274,12 +308,28 @@ export const largeSurveyDefinition: SurveyDefinition = {
   ],
 };
 
+/** The definition of "XSS in question name" (`…a09`): every piece of markup is meant as text. */
+export const xssDefinition: SurveyDefinition = {
+  title: "XSS in question name <img src=x onerror=alert(1)>",
+  completedHtml: "<p>Thank you, {q1}.</p><img src=x onerror=alert(5)>",
+  pages: [
+    {
+      name: "page1",
+      elements: [
+        { type: "text", name: "<img src=x onerror=alert(2)>", title: "<script>alert(3)</script>" },
+        { type: "html", name: "greeting", html: "<p>Hello, {q1}.</p><img src=x onerror=alert(4)>" },
+      ],
+    },
+  ],
+};
+
 /** Survey -> its stored definition. Every other fixture survey has no surveyjson blob. */
 export const fixtureDefinitions: readonly (readonly [SurveyRecord, SurveyDefinition])[] = [
   [surveyFeedback, fixtureDefinition("Customer feedback")],
   [surveyCampaign, fixtureDefinition("Campaign survey")],
   [surveyRetro, fixtureDefinition("Engineering retro")],
   [surveyApiCreated, largeSurveyDefinition],
+  [surveyXss, xssDefinition],
 ];
 /** The theme of fixture 01 (`Surveys.theme`); no other fixture survey has one. */
 export const feedbackTheme: SurveyTheme = {
@@ -380,6 +430,7 @@ export const licenceNoticesAtClock: readonly (readonly [string, string, Notice[]
   ["the member (seat of a valid licence)", MEMBER_ID, []],
   ["the outsider (no date, valid transfer)", OUTSIDER_ID, []],
   ["the blocked user (no licences)", BLOCKED_ID, []],
+  ["the erasure user (no licences)", ERASABLE_ID, []],
 ];
 
 /** 7 days before the owner's 2027-06-01 licence expires: the seat and the transfer follow it. */
@@ -391,6 +442,7 @@ export const licenceNoticesAtLaterClock: readonly (readonly [string, string, Not
   ["the member (seat)", MEMBER_ID, [expiresSoonNotice]],
   ["the outsider (transfer)", OUTSIDER_ID, [expiresSoonNotice]],
   ["the blocked user", BLOCKED_ID, []],
+  ["the erasure user (no licences)", ERASABLE_ID, []],
 ];
 
 /** The admin's licence expires at 2026-09-10T00:00:00Z; "soon" starts exactly 15 days earlier. */

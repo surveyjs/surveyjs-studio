@@ -1,7 +1,7 @@
 import type { RequestUser } from "../auth/authenticate.js";
 import type { ProjectMembership, SurveyRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
-import type { Directory, SurveyStore } from "../providers/types.js";
+import type { ProjectStore, SurveyStore } from "../providers/types.js";
 import { canModify, canSee } from "./permissions.js";
 
 export function notFound(): AppError {
@@ -24,16 +24,16 @@ export interface SurveyAccess {
 /** The 404 and 403 checks every survey operation starts with (ADR 0009, ADR 0011). */
 export function createSurveyAccess(stores: {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly projects: ProjectStore;
 }): SurveyAccess {
-  const { surveys, directory } = stores;
+  const { surveys, projects } = stores;
 
   async function visible(user: RequestUser, surveyId: string): Promise<FoundSurvey> {
     const survey = await surveys.getSurvey(surveyId);
     if (!survey) throw notFound();
     const membership =
       survey.owner.kind === "project"
-        ? await directory.getUserProject(user.id, survey.owner.projectId)
+        ? await projects.getUserProject(user.id, survey.owner.projectId)
         : null;
     // A survey the user cannot see answers like an unknown one.
     if (!canSee(survey, user, membership)) throw notFound();

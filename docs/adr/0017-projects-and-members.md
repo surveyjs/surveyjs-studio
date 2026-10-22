@@ -292,5 +292,8 @@ written.
   batch, if it matters.
 - **`projectKeys.members` lower-cases the project id, and the other keys do not**, so a mixed-case id could miss a
   removal. Ids come from the server in lower case.
-- **Legacy `/manage#manage-mysurveys` links** do not reach the page (Step 12). A project **description**, invitations of
+- **Step 12:** account erasure may promote a member to admin and bypasses the last-admin refusal, because the
+  erased user has to leave ([ADR 0018](0018-accounts-by-deployment-mode.md)).
+- **Legacy `/manage#manage-mysurveys` links** do not reach the page: the surveyjs.io site links the section to
+  `/projects` ([the redirect map](../operations/surveyjs-redirects.md)). A project **description**, invitations of
   unregistered users and a transfer of ownership are not built.

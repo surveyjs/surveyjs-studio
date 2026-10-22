@@ -3,7 +3,7 @@ import type { Handlers } from "../api.js";
 import type { AppConfig } from "../config.js";
 import { AppError } from "../errors.js";
 import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
-import type { Directory } from "../providers/types.js";
+import type { UserDirectory } from "../providers/types.js";
 import { shellLinks } from "../shell-links.js";
 import { requireUser } from "./authenticate.js";
 import {
@@ -33,7 +33,7 @@ type CurrentUser = components["schemas"]["CurrentUser"];
 export interface SessionHandlerOptions {
   readonly config: AppConfig;
   readonly identity: IdentityProvider;
-  readonly directory: Directory;
+  readonly users: UserDirectory;
   readonly notices: AccountNotices;
   readonly now?: Clock;
 }
@@ -49,11 +49,11 @@ function avatarUrl(picture: string | undefined): string | null {
 }
 
 /**
- * The account in the directory wins over the provider's claims; without one, the claims are used.
+ * The account in the user directory wins over the provider's claims; without one, the claims are used.
  * A blocked account, or an identity without an email address, gets no session.
  */
-async function sessionUser(directory: Directory, claims: IdentityClaims): Promise<SessionUser> {
-  const user = await directory.getUser(claims.sub);
+async function sessionUser(users: UserDirectory, claims: IdentityClaims): Promise<SessionUser> {
+  const user = await users.signInUser(claims);
   if (user?.blocked) {
     throw new AppError({
       code: "forbidden",
@@ -76,7 +76,7 @@ async function sessionUser(directory: Directory, claims: IdentityClaims): Promis
 
 /** `login`, `loginCallback`, `logout` and `getCurrentUser`. */
 export function createSessionHandlers(options: SessionHandlerOptions): Handlers {
-  const { config, identity, directory, notices, now } = options;
+  const { config, identity, users, notices, now } = options;
   const secret = config.sessionSecret;
   const links = shellLinks(config.shellLinks);
 
@@ -115,7 +115,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         new URL(new URL(config.publicBaseUrl).origin + request.url),
         tx,
       );
-      const user = await sessionUser(directory, claims);
+      const user = await sessionUser(users, claims);
       const csrf = generateCsrfToken();
       const session = createSession(user, csrf, config.sessionMaxAgeSeconds, now);
       return reply

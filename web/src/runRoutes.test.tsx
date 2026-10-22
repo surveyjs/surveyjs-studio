@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_ID_KEY, perSurveyClientId } from "./run/clientId";
 import type { RunSurveyProps } from "./run/RunSurvey";
@@ -109,34 +109,6 @@ describe("the run page", () => {
         `/api/v1/public/surveys/${surveyId}`,
         `/api/v1/public/surveys/${surveyId}`,
       ]);
-    } finally {
-      requests.stop();
-    }
-  });
-});
-
-describe("the /published redirect", () => {
-  it("replaces /published?id= with the run page, keeping the other members", async () => {
-    server.use(configHandler(), publishedSurveyHandler());
-
-    const router = renderApp(`/published?id=${surveyId}&locale=de&q1=Ann`);
-
-    expect(await shown()).toMatchObject({ search: { locale: "de", q1: "Ann" } });
-    expect(router.state.location.pathname).toBe(`/s/${surveyId}`);
-    expect(router.state.location.search).toEqual({ locale: "de", q1: "Ann" });
-  });
-
-  it("shows the not-available page without an id, and reads no survey", async () => {
-    server.use(configHandler());
-    const requests = recordRequests();
-    try {
-      renderApp("/published?locale=de");
-
-      expect(
-        await screen.findByRole("heading", { name: "This survey is not currently available." }),
-      ).toBeTruthy();
-      await waitFor(() => expect(requests.paths).toContain("/api/v1/config"));
-      expect(requests.paths.filter((path) => path.startsWith("/api/v1/public/"))).toEqual([]);
     } finally {
       requests.stop();
     }

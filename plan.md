@@ -783,6 +783,7 @@ The documentation is created in Step 1 and grown by every step:
   - `deleteAllRows` keeps every key in memory (Step 10).
   - verify the production `Surveys.theme` collation against the compare-and-set (ADR 0012).
   - conformance hygiene: suites that leave data on Azurite, cleanup helpers that fail silently, duplicated helpers (Step 11).
+  - the SPA's security headers in the production image (Step 12, ADR 0019): `web/security-headers.ts` is applied only by `vite preview` today. When the server serves the front-end, apply `securityHeaders(pathname)` to the SPA paths and keep the server's API policy (`default-src 'none'`, R18) for `/api` only, or every page gets the API policy. Smoke-check both with `curl -sI`, and align the "static host" part of `docs/operations.md` with the deployment chosen.
 - **A rollout runbook**, written for the SurveyJS team and the surveyjs.io site team:
   1. Internal use on production data, read-only first.
   2. An opt-in beta link from the old section.

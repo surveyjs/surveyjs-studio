@@ -1,7 +1,7 @@
 import type { RequestUser } from "../auth/authenticate.js";
 import type { ViewName, ViewState } from "../domain/types.js";
 import { AppError } from "../errors.js";
-import type { Directory, SurveyStore, ViewStore } from "../providers/types.js";
+import type { ProjectStore, SurveyStore, ViewStore } from "../providers/types.js";
 import { createSurveyAccess } from "../surveys/access.js";
 
 export interface ViewsService {
@@ -13,7 +13,7 @@ export interface ViewsService {
 
 export interface ViewsServiceOptions {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly projects: ProjectStore;
   readonly views: ViewStore;
 }
 
@@ -26,7 +26,7 @@ export const viewNotFound = (): AppError =>
  */
 export function createViewsService(options: ViewsServiceOptions): ViewsService {
   const { views } = options;
-  const access = createSurveyAccess({ surveys: options.surveys, directory: options.directory });
+  const access = createSurveyAccess({ surveys: options.surveys, projects: options.projects });
 
   return {
     async get(user, surveyId, view) {

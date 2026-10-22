@@ -1,12 +1,17 @@
+import { randomUUID } from "node:crypto";
 import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createEraseAccount, previewErasure } from "../accounts/erasure.js";
+import { findErasureCandidates } from "../accounts/reconcile.js";
 import type { SurveyRecord } from "../domain/types.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { localBlobServiceClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "./azure-legacy/index.js";
 import {
+  ADMIN_ID,
   BLOCKED_ID,
+  ERASABLE_ID,
   LICENCE_CLOCK,
   MEMBER_ID,
   OWNER_ID,
@@ -30,6 +35,77 @@ const EXPIRED_LICENCE = "eeeeeeee-0000-4000-8000-0000000000f1";
 const ORPHAN_SEAT = "eeeeeeee-0000-4000-8000-0000000000f2";
 const OLDEST = "2020-01-01T00:00:00.000Z";
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const NOW = "2026-10-19T10:00:00.000Z";
+const NO_COUNTS = { surveysDeleted: 0, projectsLeft: 0, projectsDeleted: 0, adminsPromoted: 0 };
+
+/** Runs `use` with a pool of the replica's database, closed afterwards. */
+async function onReplica<T>(use: (pool: sql.ConnectionPool) => Promise<T>): Promise<T> {
+  const pool = await new sql.ConnectionPool(replicaConfig().sqlConnectionString).connect();
+  try {
+    return await use(pool);
+  } finally {
+    await pool.close();
+  }
+}
+
+/** An archived `Surveys` row; a NULL `postid` or `resultid` makes it a row the mapping skips. */
+const insertSurvey = (
+  pool: sql.ConnectionPool,
+  row: { id: string; userid: string; postid: string | null; resultid: string | null },
+) =>
+  pool
+    .request()
+    .input("id", sql.UniqueIdentifier, row.id)
+    .input("userid", sql.UniqueIdentifier, row.userid)
+    .input("postid", sql.UniqueIdentifier, row.postid)
+    .input("resultid", sql.UniqueIdentifier, row.resultid)
+    .input("timestamp", sql.DateTime, new Date(OLDEST))
+    .query(
+      "INSERT INTO Surveys (id, name, userid, postid, resultid, isarchived, [timestamp]) " +
+        "VALUES (@id, 'Unmappable', @userid, @postid, @resultid, 1, @timestamp)",
+    );
+
+const insertProject = (pool: sql.ConnectionPool, id: string) =>
+  pool
+    .request()
+    .input("id", sql.UniqueIdentifier, id)
+    .query(
+      "INSERT INTO Organizations (id, name, type) VALUES (@id, 'Unmappable', 'ORGANIZATION_CREATE')",
+    );
+
+const insertMember = (
+  pool: sql.ConnectionPool,
+  projectId: string,
+  userId: string,
+  role: string | null,
+) =>
+  pool
+    .request()
+    .input("id", sql.UniqueIdentifier, randomUUID())
+    .input("project", sql.UniqueIdentifier, projectId)
+    .input("user", sql.UniqueIdentifier, userId)
+    .input("role", sql.VarChar(sql.MAX), role)
+    .query(
+      "INSERT INTO OrganizationUsers (id, organizationid, userid, role, type) " +
+        "VALUES (@id, @project, @user, @role, 'ORGANIZATION_JOIN')",
+    );
+
+/** How many rows `text` counts, with `@id` bound to `id`. */
+const countRows = (text: string, id: string): Promise<number> =>
+  onReplica(async (pool) => {
+    const result = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .query<{ n: number }>(text);
+    return result.recordset[0]!.n;
+  });
+const surveyRows = (id: string) =>
+  countRows("SELECT COUNT(*) AS n FROM Surveys WHERE id = @id", id);
+const memberRows = (userId: string) =>
+  countRows("SELECT COUNT(*) AS n FROM OrganizationUsers WHERE userid = @id", userId);
+const projectRows = (id: string) =>
+  countRows("SELECT COUNT(*) AS n FROM Organizations WHERE id = @id", id);
 
 interface Warning {
   details: Readonly<Record<string, string>>;
@@ -126,14 +202,14 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
   };
 
   it('maps a NULL email to "" and never finds that user by a blank email', async () => {
-    expect(await store().directory.getUser(NULL_EMAIL_USER)).toEqual({
+    expect(await store().users.getUser(NULL_EMAIL_USER)).toEqual({
       id: NULL_EMAIL_USER,
       email: "",
       displayName: "",
       blocked: false,
     });
-    expect(await store().directory.findUserByEmail("")).toBeNull();
-    expect(await store().directory.findUserByEmail(" ")).toBeNull();
+    expect(await store().users.findUserByEmail("")).toBeNull();
+    expect(await store().users.findUserByEmail(" ")).toBeNull();
   });
 
   it("lists a survey with NULL name, creatorid and createdat using the defaults", async () => {
@@ -196,7 +272,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
 
   it("skips a membership with a NULL role and reports its ids", async () => {
     warnings.length = 0;
-    expect(fixtureProjectsOnly(await store().directory.listUserProjects(MEMBER_ID))).toEqual(
+    expect(fixtureProjectsOnly(await store().projects.listUserProjects(MEMBER_ID))).toEqual(
       memberProjects,
     );
     expect(warnings.map((w) => w.details)).toEqual([
@@ -217,11 +293,148 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     warnings.length = 0;
     await store().surveys.listSurveys({ kind: "personal", userId: OWNER_ID });
     await store().surveys.getSurvey(NULL_POSTID_SURVEY);
-    await store().directory.listUserProjects(MEMBER_ID);
+    await store().projects.listUserProjects(MEMBER_ID);
     expect(warnings).toHaveLength(3);
     for (const { details, message } of warnings) {
       for (const value of Object.values(details)) expect(value).toMatch(GUID);
       expect(message).not.toMatch(/@|Engineering|Marketing|Password|AccountKey/);
     }
+  });
+
+  describe("erasure reaches the rows the mapping skips (R11)", () => {
+    // Reconciliation reads raw ids (listPersonalOwnerIds, listMemberUserIds); erasure must leave
+    // none of them, or the id is listed again on every run. Memberships are Erin's only (the
+    // Users foreign key); a fresh id owns the personal surveys of the first case.
+    const erase = (userId: string) => createEraseAccount(store())(userId, { now: NOW });
+
+    it("deletes personal surveys with a NULL postid or resultid; the id is no longer a candidate", async () => {
+      const owner = randomUUID();
+      const bothNull = randomUUID();
+      const nullResult = randomUUID();
+      await onReplica(async (pool) => {
+        await insertSurvey(pool, { id: bothNull, userid: owner, postid: null, resultid: null });
+        await insertSurvey(pool, {
+          id: nullResult,
+          userid: owner,
+          postid: randomUUID(),
+          resultid: null,
+        });
+      });
+      const definition = localBlobServiceClient(
+        replicaConfig().surveysStorageConnectionString,
+        "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+      )
+        .getContainerClient("surveyjson")
+        .getAppendBlobClient(bothNull);
+      await definition.create();
+      const personal = { kind: "personal", userId: owner } as const;
+      expect(await store().surveys.listSurveys(personal)).toEqual([]);
+      expect(await store().surveys.listSurveyIds(personal)).toEqual([bothNull, nullResult].sort());
+      expect(await findErasureCandidates(store())).toContain(owner);
+      expect((await previewErasure(store(), owner)).personalSurveys).toEqual(
+        [bothNull, nullResult].sort().map((id) => ({ id, name: "" })),
+      );
+
+      expect(await erase(owner)).toEqual({ userId: owner, ...NO_COUNTS, surveysDeleted: 2 });
+
+      expect(await surveyRows(bothNull)).toBe(0);
+      expect(await surveyRows(nullResult)).toBe(0);
+      expect(await definition.exists()).toBe(false);
+      expect(await store().surveys.listPersonalOwnerIds()).not.toContain(owner);
+      expect(await findErasureCandidates(store())).not.toContain(owner);
+      expect(await erase(owner)).toEqual({ userId: owner, ...NO_COUNTS });
+    });
+
+    it("erases Erin's NULL-role rows: a project she leaves, one she was the last member of", async () => {
+      await erase(ERASABLE_ID); // leftovers of an interrupted earlier run (R4)
+      const shared = randomUUID();
+      const alone = randomUUID();
+      const projectSurvey = randomUUID();
+      const personalSurvey = randomUUID();
+      await onReplica(async (pool) => {
+        await insertProject(pool, shared);
+        await insertMember(pool, shared, ADMIN_ID, "admin");
+        await insertMember(pool, shared, ERASABLE_ID, null);
+        await insertProject(pool, alone);
+        await insertMember(pool, alone, ERASABLE_ID, null);
+        await insertSurvey(pool, {
+          id: projectSurvey,
+          userid: alone,
+          postid: null,
+          resultid: null,
+        });
+        await insertSurvey(pool, {
+          id: personalSurvey,
+          userid: ERASABLE_ID,
+          postid: randomUUID(),
+          resultid: null,
+        });
+      });
+      expect(await store().projects.listUserProjects(ERASABLE_ID)).toEqual([]);
+      expect(await store().projects.listUserProjectIds(ERASABLE_ID)).toEqual(
+        [shared, alone].sort(),
+      );
+      expect(await store().projects.listMemberUserIds()).toContain(ERASABLE_ID);
+      const preview = await previewErasure(store(), ERASABLE_ID);
+      expect(preview.personalSurveys).toEqual([{ id: personalSurvey, name: "" }]);
+      expect(preview.projects).toEqual(
+        expect.arrayContaining([
+          { id: shared, name: "", decision: { kind: "remove" }, surveyCount: 0 },
+          { id: alone, name: "", decision: { kind: "last-member" }, surveyCount: 1 },
+        ]),
+      );
+
+      expect(await erase(ERASABLE_ID)).toEqual({
+        userId: ERASABLE_ID,
+        surveysDeleted: 2,
+        projectsLeft: 1,
+        projectsDeleted: 1,
+        adminsPromoted: 0,
+      });
+
+      expect(await memberRows(ERASABLE_ID)).toBe(0);
+      expect(await projectRows(shared)).toBe(1);
+      expect(await projectRows(alone)).toBe(0);
+      expect(await surveyRows(projectSurvey)).toBe(0);
+      expect(await surveyRows(personalSurvey)).toBe(0);
+      expect(await store().projects.listMemberUserIds()).not.toContain(ERASABLE_ID);
+      expect(await store().surveys.listPersonalOwnerIds()).not.toContain(ERASABLE_ID);
+      expect(await erase(ERASABLE_ID)).toEqual({ userId: ERASABLE_ID, ...NO_COUNTS });
+    });
+
+    it("deletes Erin's row of an organization whose row is gone and answers remove", async () => {
+      // The replica's foreign key forbids such a row, so it is switched off for this one insert
+      // (afterAll reloads the schema with it). Production rows may predate the key.
+      await erase(ERASABLE_ID); // leftovers of an interrupted earlier run (R4)
+      const gone = randomUUID();
+      await onReplica(async (pool) => {
+        const alter = (check: "CHECK" | "NOCHECK") =>
+          pool
+            .request()
+            .batch(
+              `ALTER TABLE OrganizationUsers ${check} CONSTRAINT organizationusers_organization_fk`,
+            );
+        await alter("NOCHECK");
+        try {
+          await insertMember(pool, gone, ERASABLE_ID, "user");
+        } finally {
+          await alter("CHECK");
+        }
+      });
+      expect(await store().projects.listUserProjectIds(ERASABLE_ID)).toEqual([gone]);
+      expect(await store().projects.listMemberUserIds()).toContain(ERASABLE_ID);
+
+      expect(await erase(ERASABLE_ID)).toEqual({
+        userId: ERASABLE_ID,
+        ...NO_COUNTS,
+        projectsLeft: 1,
+      });
+
+      expect(await memberRows(ERASABLE_ID)).toBe(0);
+      expect(await store().projects.listMemberUserIds()).not.toContain(ERASABLE_ID);
+      expect(await store().projects.eraseMember(gone, ERASABLE_ID, { now: NOW })).toEqual({
+        kind: "not-member",
+      });
+    });
   });
 });

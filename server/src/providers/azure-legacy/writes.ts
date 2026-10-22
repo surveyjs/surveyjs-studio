@@ -22,17 +22,24 @@ import type {
   SurveyRecord,
   StoredFileRecord,
 } from "../../domain/types.js";
-import { decideRemoval, decideRoleChange, type MembershipFacts } from "../../projects/rules.js";
+import {
+  decideMemberErasure,
+  decideRemoval,
+  decideRoleChange,
+  type ErasureFacts,
+  type MembershipFacts,
+} from "../../projects/rules.js";
 import {
   ResponseTooLargeError,
   type AddMemberOutcome,
   type AppendOutcome,
+  type MemberErasure,
   type RemovalOutcome,
   type RoleChangeOutcome,
 } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy } from "./mapping.js";
+import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy, userFromLegacy } from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
@@ -40,7 +47,8 @@ import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy } from "./mapping.
  * Step 6: definition and theme saves; Step 7: editor files (in a container of our own, which
  * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
  * our own; Step 10: deleting all results and the public-question list; Step 11: projects and
- * members (Organizations and OrganizationUsers rows, project deletion), in SQL transactions. Each
+ * members (Organizations and OrganizationUsers rows, project deletion), in SQL transactions;
+ * Step 12: member erasure (an erased account's membership rows, a successor made admin). Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -679,7 +687,8 @@ export async function writeClonedSurvey(
  * failure leaves the survey visible and the delete can run again. Each step accepts "not found":
  *
  * 1. Results account tables `post{postId}`, `SurveyCompletion{surveyId}` and `postdelete{postId}`
- *    (ids without dashes; layout sections 3.6 to 3.8).
+ *    (ids without dashes; layout sections 3.6 to 3.8). A row with a NULL `postid` has no
+ *    `post…` or `postdelete…` table to delete (erasure deletes such rows too, R11).
  * 2. Surveys account blobs `surveyjson/{id}`, `surveytext/{id}`, every `surveyjsonhistory/{id}/…`
  *    point, the four results-layout blobs `{container}/{id}` (layout sections 3.2, 3.4, 3.10) and
  *    every saved view under `my-surveys-views/{id}/` (Step 9).
@@ -690,15 +699,15 @@ export async function writeClonedSurvey(
  */
 export async function writeSurveyDeletion(
   targets: LegacyWriteTargets,
-  survey: SurveyRecord,
+  survey: { readonly id: string; readonly postId: string | null },
   deletedAt: string,
 ): Promise<boolean> {
   const id = checkedId("delete", survey.id);
-  const postKey = checkedId("delete", survey.postId).replaceAll("-", "");
+  const postKey =
+    survey.postId === null ? null : checkedId("delete", survey.postId).replaceAll("-", "");
   const tables = [
-    `post${postKey}`,
     `SurveyCompletion${id.replaceAll("-", "")}`,
-    `postdelete${postKey}`,
+    ...(postKey === null ? [] : [`post${postKey}`, `postdelete${postKey}`]),
   ];
   try {
     for (const table of tables) {
@@ -1548,4 +1557,82 @@ export async function writeProjectDeletion(
     await appendEventBestEffort(targets, survey.id, event, "the project is deleted.");
   }
   return moved.map((survey) => survey.id);
+}
+
+// Step 12: member erasure (R11). MEMBER_DELETE and MEMBER_ROLE_UPDATE of Step 11 are reused.
+
+/** Every membership row of the project, locked, with whether its user exists and the user's names. */
+const MEMBER_ROWS_WITH_NAMES =
+  "SELECT m.userid, m.role, CASE WHEN u.id IS NULL THEN 0 ELSE 1 END AS userexists, u.email, u.displayname " +
+  "FROM OrganizationUsers m WITH (UPDLOCK, HOLDLOCK) LEFT JOIN Users u ON u.id = m.userid " +
+  "WHERE m.organizationid = @project";
+
+/**
+ * Erases one member of a project (R11) in one transaction: locks the project row, then reads and
+ * locks its membership rows with the users' names, and decides with decideMemberErasure.
+ * `remove`: every row of the user is deleted (orphan or not). `promote`: the same, then every row
+ * of the successor gets `admin` and `timestamp` = `now` in place (id, `type`, `happendat` stay).
+ * `not-member` and `last-member` write nothing. No audit row (project writes write none).
+ *
+ * No such project: rows of the user may still name it (a dangling organization, which the replica's
+ * foreign key forbids but older production rows may hold). They are deleted and the answer is
+ * `remove`, so erasure reaches every row `listMemberUserIds` sees (R11); with none, `not-member`.
+ */
+export async function writeMemberErasure(
+  targets: LegacyWriteTargets,
+  projectId: string,
+  userId: string,
+  now: string,
+): Promise<MemberErasure> {
+  const project = checkedProjectId("member erase", projectId);
+  const user = checkedProjectId("member erase", userId);
+  return inTransaction<MemberErasure>(targets, "member erase", async (request) => {
+    if (!(await lockProject(request, project))) {
+      const dangling = await request()
+        .input("project", sql.UniqueIdentifier, project)
+        .input("user", sql.UniqueIdentifier, user)
+        .query(MEMBER_DELETE);
+      return (dangling.rowsAffected[0] ?? 0) > 0
+        ? { value: { kind: "remove" }, commit: true }
+        : { value: { kind: "not-member" }, commit: false };
+    }
+    const rows = await request().input("project", sql.UniqueIdentifier, project).query<{
+      userid: string;
+      role: string | null;
+      userexists: number;
+      email: string | null;
+      displayname: string | null;
+    }>(MEMBER_ROWS_WITH_NAMES);
+    const facts: ErasureFacts[] = rows.recordset.map((row) => ({
+      userId: row.userid.toLowerCase(),
+      role: row.role,
+      userExists: row.userexists === 1,
+      displayName:
+        row.userexists === 1
+          ? userFromLegacy({
+              id: row.userid,
+              email: row.email,
+              displayname: row.displayname,
+              blocked: null,
+            }).displayName
+          : "",
+    }));
+    const decision = decideMemberErasure(facts, user);
+    if (decision.kind !== "remove" && decision.kind !== "promote") {
+      return { value: decision, commit: false };
+    }
+    await request()
+      .input("project", sql.UniqueIdentifier, project)
+      .input("user", sql.UniqueIdentifier, user)
+      .query(MEMBER_DELETE);
+    if (decision.kind === "promote") {
+      await request()
+        .input("project", sql.UniqueIdentifier, project)
+        .input("user", sql.UniqueIdentifier, decision.successorId)
+        .input("role", sql.VarChar(sql.MAX), "admin")
+        .input("now", sql.DateTime, new Date(now))
+        .query(MEMBER_ROLE_UPDATE);
+    }
+    return { value: decision, commit: true };
+  });
 }

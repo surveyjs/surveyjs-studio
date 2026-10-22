@@ -16,13 +16,14 @@ Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 ## Run everything
 
-| Command                 | Runs                                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                   |
-| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web`                                                                                          |
-| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                                                          |
-| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                                                                       |
-| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results and results-details specs in Azurite mode (needs Docker) |
+| Command                          | Runs                                                                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                      | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                                  |
+| `pnpm test:unit`                 | Vitest projects: `scripts`, `contract`, `server`, `web`                                                                                                         |
+| `pnpm test:conformance`          | The conformance suite against a server it starts itself                                                                                                         |
+| `pnpm test:conformance:user-api` | The conformance suite with the server on `USER_DIRECTORY=surveyjs-api`, against the user-API stub it starts (no Docker)                                         |
+| `pnpm e2e`                       | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
+| `pnpm e2e:azurite`               | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results, results-details, projects and xss specs in Azurite mode (needs Docker) |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
@@ -122,8 +123,8 @@ Run with Vitest from the root. Scope:
   storage (the per-survey id: a known SHA-256, the same for one survey in any case, different across surveys,
   never the stored browser id, and a random id for the page load without `crypto.subtle`), `load.ts`, `runState.ts`, `submit.ts` (with the library's cookie kept or deleted) and
   `responseUploads.ts` with every message), `api/public.ts`, and the routes
-  rendered through the router (`runRoutes.test.tsx`: the states, the `/published` redirect that keeps the
-  other search members; `privateRoutes.test.tsx`: `/s/<id>` needs no session). **`RunSurvey.tsx` has no real
+  rendered through the router (`runRoutes.test.tsx`: the states, and that `id` is no longer a reserved
+  search member, so a question named `id` is prefilled; `privateRoutes.test.tsx`: `/s/<id>` needs no session). **`RunSurvey.tsx` has no real
   unit test**: the tests swap it for a stand-in, because jsdom does not run the library here, and the e2e spec
   covers it. **`web`'s build runs `scripts/check-run-chunks.mjs`** after `vite build`; it fails the build when
   the run route can load Creator, Ace or Dashboard code, or no `survey-form` chunk, and (Step 9) when the
@@ -134,6 +135,36 @@ Run with Vitest from the root. Scope:
   not Node's, and Node's own conversion fails on them, so `web/src/test/setup.ts` turns a `FormData`
   request body into a `multipart/form-data` body (keeping the file names) before it reaches the mock
   server. `web/src/test/file-handlers.ts` holds the `msw` handler that reads such a body back.
+
+**Step 12 adds unit tests** for each new module, all through a seam (HTTP with `inject`, a CLI's `run()` with
+injected output, the provider interface or a pure function):
+
+- `config.test.ts` and `config.env-lists.test.ts`: the start-up rules (every message line, all problems reported
+  together, no secret in a message) and a drift check that the four new variables are in the conformance and e2e
+  variable lists (`ENV_VARIABLES` against `conformance-tests/src/global-setup.ts` and `e2e/app-variables.mjs`, as text).
+- `accounts/`: `webhook-secret.test.ts`, `webhook.test.ts` (the Standard Webhooks test vector, the 5-minute window,
+  two signatures in one header), `handlers.test.ts` (the webhook through `inject`: every status and the check order,
+  logs with the webhook id only), `erasure.test.ts` and `reconcile.test.ts`.
+- `projects/rules.test.ts`: `decideMemberErasure` (`not-member`, `last-member`, `remove`, `promote` and the
+  successor order).
+- `users/surveyjs-api/`: `mapping.test.ts` (the pure mapping of the API's answers), `client.test.ts` (the client
+  with an injected `fetch`: the requests it sends, 404 as "unknown", every other status, a time-out, a network
+  error or a malformed body as a failure, never "unknown"), `stub.test.ts` (the stub over HTTP) and
+  `directory.stub.test.ts` (the `users.*` sections of the provider suite run on the client against the stub).
+- `cli/`: `account-erase.test.ts`, `account-reconcile.test.ts` and `send-account-deleted.test.ts` (injected output,
+  the exit codes, nothing written without `--yes` or `--apply`, no secret in any output), and
+  `account-cli.integration.test.ts` (the two erase commands spawned, for the wiring).
+- `security-headers.test.ts` (server) and `web/security-headers.test.ts` (the SPA policy and the `frame-ancestors`
+  split).
+- `results/respondent-logs.test.ts`: **the log check.** The server runs with `LOG_LEVEL=trace` and a captured log
+  stream; a submission with marker answers and a client id (success, an idempotent replay, `422`, `413`, IP capture
+  on, a store failure) and a respondent file upload are made; no captured line contains a marker answer. It is a unit
+  test, not a conformance test, because a port's logs are not observable over HTTP. It found that
+  `@fastify/multipart` logged the request headers of an upload at trace level (cookies, `X-Forwarded-For`); the
+  server now redacts `busboyOptions.headers` (`REDACTED_LOG_PATHS` in `server/src/logging.ts`).
+- `web/src/notFoundRoutes.test.tsx` (the root not-found page on `/published?id=…` and `/Service/EditSurvey/{id}`),
+  `run/submit.test.ts` (without `crypto.randomUUID` the run page still sends a version 4 UUID as the
+  `Idempotency-Key`) and `run/search.test.ts`.
 
 `pnpm test:unit` leaves out the `providers-azurite` project, which needs Docker.
 
@@ -347,7 +378,7 @@ for surveys because the Azurite replica keeps what a test leaves:
   fallback case), and deletes it at the end, also when the test fails (`onTestFinished`, registered right after
   the project is created; the deletion is done by whichever of the test's users is still an admin).
 - **Only Mia and the blocked user are added** to such a project, never Olivia Owner or Oscar Outsider (only the
-  five fixture users can be members on Azurite, because `OrganizationUsers.userid` has a foreign key, and an
+  six fixture users can be members on Azurite, because `OrganizationUsers.userid` has a foreign key, and an
   end-to-end spec asserts that Oscar has no project).
 - **Surveys a deletion moves land in Adam's Personal scope**, which is writable, never in Olivia's, which is
   fixture-only. Both delete tests make Adam the receiver: Mia deletes Adam's project, or, in the fallback, Mia
@@ -358,6 +389,28 @@ for surveys because the Azurite replica keeps what a test leaves:
 
 The two files are split so that Vitest runs them in parallel; the Azurite run also exercises the lock order of
 the SQL transactions ([ADR 0010](adr/0010-writing-to-the-legacy-stores.md#step-11-projects-and-members)).
+
+### Accounts, the webhook and the headers on the conformance server
+
+Step 12 adds four files and one mode (see [`conformance-tests/README.md`](../conformance-tests/README.md)):
+
+- `account-deleted.test.ts`: the account-deleted webhook over HTTP. A bad, missing or stale signature is `401
+invalid-signature`; a valid one for a body that is not an account event is `400`; an event of another type is
+  `204` and changes nothing; a valid `account.deleted` erases the user (the personal surveys answer `404` after it,
+  the memberships are gone, a project's other surveys remain, a project passes to its next member, a project without
+  another member goes). **Erin Erasable is the only user these tests may erase**, and each case creates her data
+  first. All the cases are in this one file because conformance files run in parallel and a second file erasing Erin
+  would race it. The reference server always has a fixed synthetic webhook secret; another server needs
+  `CONFORMANCE_WEBHOOK_SECRET`, or the file is skipped.
+- `security-headers.test.ts`: the headers of [ADR 0019](adr/0019-run-page-isolation-and-security-headers.md) on an
+  API answer, a problem answer and an unknown path; HSTS only when the server is reached over https (a port behind
+  a TLS proxy cannot be judged otherwise).
+- `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`.
+- `user-directory.test.ts`: runs only in the user-API mode and checks the licence notices that come from the API.
+- **The user-API run**, `pnpm test:conformance:user-api`: the whole suite with the reference server on
+  `USER_DIRECTORY=surveyjs-api`, against the stub the run starts itself. Sign-in, members by email and the notices
+  go through the API. It is not run on the replica; `CONFORMANCE_USER_DIRECTORY` cannot be combined with
+  `CONFORMANCE_BASE_URL`.
 
 ### Test data
 
@@ -477,8 +530,8 @@ says 1. (2) A double click on **Complete** sends one `POST`. (3) A File Upload q
 through the library's choose button and the browser's file chooser (survey-core 3.1.2 ignores a direct
 change on its hidden input), the upload answers `201`, the submitted answer holds the file's URL, and the
 file downloads with its bytes. (4) An unpublished survey shows "This survey is not currently available."
-(with an allowance for the one `404` the page's read produces). (5) `/published?id=<id>&q1=Ann` ends at
-`/s/<id>?q1=Ann` with the answer prefilled. (6) A signed-out respondent loads a `survey-form-*.js` chunk and no
+(with an allowance for the one `404` the page's read produces). (5) `/s/<id>?q1=Ann` opens with the answer
+prefilled (the old `/published` test is gone: the surveyjs.io site redirects that address). (6) A signed-out respondent loads a `survey-form-*.js` chunk and no
 Creator, Ace or Dashboard file. The brand footer's logo (`surveyjs.io`) is routed to a local response, so runs
 stay offline and the console guard stays quiet. The spec runs in three browsers in memory mode and on Chromium in
 Azurite mode (helpers: `e2e/tests/support/run.ts`).
@@ -579,15 +632,31 @@ Helpers (`e2e/tests/support/`):
   opens a **second browser context** watches that context's console with `watchConsole` too; and
   `expectedErrorResponses` accepts a `RegExp` path for an id known only at run time (the conflict test
   expects one `412`).
-- `test.ts`: the shared `test` and its console guard. **`expectedErrorResponses`** is a fixture option, a
+- `test.ts`: the shared `test` and its console guard. **`allowCspViolations`** (Step 12) is an option for one spec
+  (`test.use({ allowCspViolations: true })`): the console's Content Security Policy violations are then expected
+  and do not fail the test. Only `xss.spec.ts` sets it. **`expectedErrorResponses`** is a fixture option, a
   list of `{ path, status }`: a per-test allowance for API answers that the test expects to be
   errors, which browsers log as console errors (for example a `404` for an unknown project). Set it
   with `test.use({ expectedErrorResponses: [{ path: "/api/v1/surveys", status: 404 }] })`. Every such
   console error must be matched by an observed response with that path and status, so an allowance
   cannot hide an error that never came from the listed response.
 
+**Step 12 adds two specs.** `security-headers.spec.ts` (memory mode only; it sends no write) checks the headers
+`vite preview` sends: a private page has `script-src 'self'` and `frame-ancestors 'none'`, the run page has
+`frame-ancestors *`, an API answer through the preview keeps the server's own policy, and an old address,
+`/published?id=…`, shows the "Page not found" page with the address unchanged and no redirect.
+`xss.spec.ts` opens the "XSS in question name" survey of Mia (`22222222-0000-4000-8000-a00000000009`) in the list,
+the editor and the run page (`?q1=` holds markup), and fails on any dialog. **The survey is read only**: the
+submission is answered in the browser (`201`, nothing stored) and any `PUT` of its definition or theme is aborted
+and fails the test (Creator does not save on open). Names show as text: the run page shows the title as the Form
+Library's `div.sd-title` (not a heading), so the test checks the exact text and the tab title. It runs with
+`allowCspViolations`, because **the CSP is load-bearing**: with violations not allowed the spec fails on
+CSP-blocked inline event handlers (1 in the editor, 4 on the run page), since survey-core and Creator render the
+author's HTML as given. It runs in three browsers in memory mode and on Chromium in Azurite mode; Firefox and
+WebKit are left to CI.
+
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
-actions, editor, history, uploads, run, results and results-details specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ## Provider suite
@@ -603,7 +672,11 @@ It covers:
 - `getSurvey`: every fixture survey, an unknown id, and ids in upper case;
 - `listSurveys`: personal and project scopes, the order (`updatedAt` descending, then id), an owner
   with no surveys, no mixing of scopes, and case-insensitive ids;
-- `getUser` and `findUserByEmail`: found, unknown, email in any case;
+- the `users.*` sections (Step 12, `suite/user-directory-suite.ts`, the `UserDirectory`): `kind` is `external`;
+  `getUser` and `findUserByEmail` (found, unknown, ids and emails in any case, a blank email matches nobody);
+  `signInUser` (the user of the claims, `null` for an unknown one, never created); `missingUsers` (the ids the
+  directory positively does not know, lower-case, each once, in order of first occurrence, non-GUIDs never
+  reported, a list longer than 100 asked in chunks);
 - `listSurveyPage`: pages of the active and the archived list, the position of the last item, a walk
   that stays whole while a newer survey is added, ordering by id at equal times;
 - `createSurvey` and `getDefinition`: the legacy defaults and lower-case ids, the same record from
@@ -651,28 +724,59 @@ It covers:
   fixture `…a01` under a **fresh random user id** that no real user has, because only `…a01` holds legacy
   layouts and the suite cannot write one through the interface. It is the only write to a fixture survey, and
   `pnpm legacy:load` clears the marker (the memory provider is rebuilt for each run);
-- `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
+- the `projects.*` sections (the `ProjectStore`): `listUserProjects` and `getUserProject`: roles, order (project name ignoring case, then id), the full
   project record, unknown user or project, a non-member (the exact lists go through `fixtureProjectsOnly`, so a
   crashed run's leftover projects do not fail them);
-- `directory.listMembers` (Step 11): the members of the two fixture projects by display name, ids in upper case,
+- `projects.listMembers` (Step 11): the members of the two fixture projects by display name, ids in upper case,
   `[]` for an unknown project and for a non-GUID id;
-- `directory writes` (Step 11): `createProject` (the creator as the only member and an admin, an upper-case id
+- `projects writes` (Step 11): `createProject` (the creator as the only member and an admin, an upper-case id
   stored in lower case, an id in use or a non-GUID refused with nothing stored), `renameProject` (only the name
   changes, `false` for an unknown project), `addMember` (once, a blocked user too, `not-found`), `setMemberRole`
   (in place, and an admin always remains), `removeMember` (never the last admin or the sole member; a creator who
   is removed leaves the project without an owner for good) and `deleteProject` (every survey moves to the
   receiver's personal scope, changing only scope and time; `[]` for a project without surveys, `null` for an
   unknown one). Each test creates its own project and deletes it;
+- `projects.listMemberUserIds` and `surveys.listPersonalOwnerIds` (Step 12): distinct, lower-case, ascending, no
+  outsider; the personal owners leave out NULL, the all-zero GUID and project ids;
+- `projects.eraseMember` (Step 12): a plain member leaves a project with another admin (`remove`); the first member
+  by display name is promoted when the creator, the only admin, goes (`promote`); the last member writes nothing
+  (`last-member`); a non-member, an unknown project and a non-GUID id give `not-member`;
+- `erasure (eraseAccount)` (Step 12): an id without a `Users` row has its personal surveys, archived ones and their
+  files deleted; **Erin Erasable** is previewed and then erased: projects first (promote, remove, last member with
+  its surveys), then her personal surveys, and a second erasure finds nothing. Every erasure test creates its own
+  data first and erases only Erin or a fresh random id;
+- `surveys.listSurveyIds` and `projects.listUserProjectIds` (Step 12): the raw id reads erasure walks, sorted and
+  distinct, scopes kept apart, `[]` for an unknown or non-GUID id;
 - the lifecycle: `ready()` resolves `true`, `close()` resolves.
+
+**Orphan rows and the foreign key.** On the replica `OrganizationUsers.userid` has a foreign key to `Users.id`, so
+a membership can be written only for a fixture user (Erin included), and **a membership row whose user is gone
+cannot be made there**. The cases that need one (erasing a user the directory no longer has, an orphan row counted
+by `memberCount` but not visible) are tested on the **memory provider only** (`memory.provider.test.ts`).
+`Surveys.userid` has no foreign key, so personal surveys of a fresh id work on both providers.
+
+**Erasing rows the mapping skips** (Step 12 final review). The null-rows suite erases a fresh id whose personal
+surveys have a NULL `postid` or `resultid`, and Erin with NULL-role memberships (a project she leaves, one she was
+the last member of, with a project survey without a `postid`), and checks that the raw rows are gone and the
+reconciliation's reads (`findErasureCandidates`, `listMemberUserIds`, `listPersonalOwnerIds`) no longer list the id.
+A membership of a project whose row is gone needs the `organizationid` foreign key switched off for its one insert;
+the suite's `afterAll` reloads the schema and the fixtures. Memory cannot hold such a row (its seed refuses one), so
+the memory case (`erasure.test.ts`) covers orphan memberships only.
+
+**The `UserDirectory` against the stub.** `directory.stub.test.ts` runs the same `users.*` sections
+(`describeUserDirectorySuite`) on the `surveyjs-api` client against the in-process stub, which serves the fixture
+users, so the two directories are held to one behaviour. The licence-notice suite runs on it too, and gets the same
+answers as on SQL because the stub builds its licences from the same fixture rows.
 
 Where it runs:
 
-| Test file                                | Provider                                         | Run with                      |
-| ---------------------------------------- | ------------------------------------------------ | ----------------------------- |
-| `memory.provider.test.ts`                | `memory`, seeded with fixtures                   | `pnpm test:unit`              |
-| `azure-legacy.provider.azurite.test.ts`  | `azure-legacy` on the replica                    | `pnpm test:providers:azurite` |
-| `azure-legacy.null-rows.azurite.test.ts` | `azure-legacy`, rows with NULL columns           | `pnpm test:providers:azurite` |
-| `azure-legacy.writes.azurite.test.ts`    | `azure-legacy`, the legacy format of every write | `pnpm test:providers:azurite` |
+| Test file                                           | Provider                                           | Run with                      |
+| --------------------------------------------------- | -------------------------------------------------- | ----------------------------- |
+| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                     | `pnpm test:unit`              |
+| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                      | `pnpm test:providers:azurite` |
+| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns             | `pnpm test:providers:azurite` |
+| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write   | `pnpm test:providers:azurite` |
+| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub | `pnpm test:unit`              |
 
 `pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
 `docker/azurite.env`, loads the fixtures into the running replica first, and needs

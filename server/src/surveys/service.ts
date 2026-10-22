@@ -6,7 +6,7 @@ import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import { rewriteFileIds } from "../files/rewrite.js";
-import type { Directory, FileStore, SurveyStore, ViewStore } from "../providers/types.js";
+import type { ProjectStore, FileStore, SurveyStore, ViewStore } from "../providers/types.js";
 import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
@@ -21,7 +21,7 @@ type SurveyClone = { name?: string; projectId?: string | null };
 
 export interface SurveysServiceOptions {
   readonly surveys: SurveyStore;
-  readonly directory: Directory;
+  readonly projects: ProjectStore;
   /** The files of surveys: deleted with a survey, copied with a clone (R10, R11). */
   readonly files: FileStore;
   /** The private-question lists. */
@@ -125,8 +125,8 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 
 /** The rules of the survey records: list, create, get, update, delete and clone. */
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
-  const { surveys, directory, files, views, now = Date.now } = options;
-  const { visible, modifiable } = createSurveyAccess({ surveys, directory });
+  const { surveys, projects, files, views, now = Date.now } = options;
+  const { visible, modifiable } = createSurveyAccess({ surveys, projects });
 
   /**
    * The survey's private-question list for an answer; undefined (and a warning with the survey id
@@ -148,7 +148,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
   /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
     if (projectId === null) return personalScope(user);
-    const membership = await directory.getUserProject(user.id, projectId);
+    const membership = await projects.getUserProject(user.id, projectId);
     if (!membership) throw notMember();
     return projectScope(membership);
   }
@@ -158,7 +158,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       let scope = personalScope(user);
       if (project !== PERSONAL) {
         // An unknown id, text that is no id and a project of others all look the same.
-        const membership = await directory.getUserProject(user.id, project);
+        const membership = await projects.getUserProject(user.id, project);
         if (!membership) throw notFound();
         scope = projectScope(membership);
       }
@@ -183,7 +183,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       if (invalid) throw invalid;
       let scope = personalScope(user);
       if (projectId !== undefined && projectId !== null) {
-        const membership = await directory.getUserProject(user.id, projectId);
+        const membership = await projects.getUserProject(user.id, projectId);
         if (!membership) throw notMember();
         scope = projectScope(membership);
       }
@@ -242,7 +242,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       // The rights follow the stored scope: a move changes the scope and the creator.
       const membership =
         stored.owner.kind === "project"
-          ? await directory.getUserProject(user.id, stored.owner.projectId)
+          ? await projects.getUserProject(user.id, stored.owner.projectId)
           : null;
       return surveyJson(
         stored,

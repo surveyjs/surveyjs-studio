@@ -27,6 +27,13 @@ export interface ApiOptions {
   readonly rateLimits?: Partial<Record<OperationId, RateLimit>>;
   /** Request body limit in bytes of the operations that need more (or less) than the server's. */
   readonly bodyLimits?: Partial<Record<OperationId, number>>;
+  /**
+   * Operations whose handler reads the raw body: registered in their own plugin scope whose only
+   * content-type parser is a catch-all (`*`, `parseAs: "string"`, the text kept as is), without the
+   * body and header schemas and without the media-type guard; `request.body` is the text, or
+   * undefined when there is none.
+   */
+  readonly rawBodyOperations?: readonly OperationId[];
 }
 
 /**
@@ -91,7 +98,14 @@ function bodyGuard(
  * from the contract's security requirements and request validation from its schemas.
  */
 export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) => {
-  const { contract, handlers, authentication, rateLimits = {}, bodyLimits = {} } = options;
+  const {
+    contract,
+    handlers,
+    authentication,
+    rateLimits = {},
+    bodyLimits = {},
+    rawBodyOperations = [],
+  } = options;
   api.setValidatorCompiler(contract.compileValidator);
   api.decorateRequest("user", null);
   // Parses multipart/form-data lazily, in the handler. Fastify's bodyLimit does not apply to it;
@@ -113,15 +127,21 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
     }
   }
 
-  for (const op of contract.operations) {
+  const raw = new Set<string>(rawBodyOperations);
+  const route = (scope: typeof api, op: ContractOperation, rawBody: boolean) => {
     const operationId = op.operationId as OperationId;
     const onRequest = authenticationHook(op.security, authentication);
     const rateLimit = rateLimits[operationId];
     const bodyLimit = bodyLimits[operationId];
-    api.route({
+    // A raw-body handler checks the text itself: no body or header schema, no media-type guard.
+    const { params, querystring } = op.schema;
+    const schema = rawBody
+      ? { ...(params && { params }), ...(querystring && { querystring }) }
+      : { ...op.schema };
+    scope.route({
       method: op.method,
       url: op.url,
-      schema: { ...op.schema },
+      schema,
       ...(onRequest && { onRequest }),
       ...(rateLimit && {
         config: {
@@ -139,8 +159,22 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
         },
       }),
       ...(bodyLimit !== undefined && { bodyLimit }),
-      ...(op.requestBody && { preValidation: bodyGuard(op.requestBody) }),
+      ...(op.requestBody && !rawBody && { preValidation: bodyGuard(op.requestBody) }),
       handler: handlers[operationId] ?? notImplemented(op.operationId),
+    });
+  };
+
+  for (const op of contract.operations) {
+    if (!raw.has(op.operationId)) route(api, op, false);
+  }
+  const rawOperations = contract.operations.filter((op) => raw.has(op.operationId));
+  if (rawOperations.length > 0) {
+    await api.register(async (scope) => {
+      scope.removeAllContentTypeParsers();
+      scope.addContentTypeParser("*", { parseAs: "string" }, (_request, text, done) => {
+        done(null, text);
+      });
+      for (const op of rawOperations) route(scope, op, true);
     });
   }
 };

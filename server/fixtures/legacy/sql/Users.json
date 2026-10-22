@@ -83,5 +83,22 @@
     "twofactorenabled": 0,
     "allowmarketingemails": 0,
     "timestamp": "2026-01-05T10:00:00Z"
+  },
+  {
+    "id": "11111111-0000-4000-8000-a00000000006",
+    "email": "erasable@example.com",
+    "displayname": "Erin Erasable",
+    "blocked": 0,
+    "accesskey": "access-key-6",
+    "dxid": "dx-6",
+    "oldemail": null,
+    "passwordhash": null,
+    "emailconfirmed": 1,
+    "phonenumberconfirmed": 0,
+    "lockoutenddate": null,
+    "lockoutcount": 0,
+    "twofactorenabled": 0,
+    "allowmarketingemails": 0,
+    "timestamp": "2026-01-06T10:00:00Z"
   }
 ]

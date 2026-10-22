@@ -11,4 +11,5 @@ How to use My Surveys. The guide grows with the application.
 - [Viewing results: Summary and Table](viewing-results.md): the results page, charts, the table, exports, saved layouts and their reset.
 - [Downloading, sharing and deleting results](downloading-sharing-and-deleting-results.md): the Details tab: totals and dates, the JSON and CSV downloads, Grant Access and the public results page, private questions, "Save Respondent IP" and Delete Results.
 - [Survey history](survey-history.md): the list of saved versions of a survey.
+- [Moving from the old My Surveys](moving-from-the-old-my-surveys.md): where things moved, what stays the same, and what deleting your surveyjs.io account does.
 - [Signing in](signing-in.md): sign in, the account menu, sign out, licence notices and the cookie banner.

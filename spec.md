@@ -202,7 +202,7 @@ People will fork the repository, so it must always build from a known set of ver
    - an error mapper that turns domain errors into Problem Details;
    - rate limiting on `/public/*` and on sign-in.
 
-   The only routes outside `/api/v1` are health checks and legacy-URL redirects.
+   The only routes outside `/api/v1` are health checks.
 2. **Session and sign-in.**
    - The server is a confidential OAuth 2.0 client of `auth.surveyjs.io` (OIDC when the provider supports it; see [ADR 0008](docs/adr/0008-surveyjs-auth-oauth2-userinfo.md)), registered as a new client.
    - After the callback it issues a **stateless, encrypted, signed session cookie** (`msid`) containing the user ID, display data and expiry, plus a readable `msid_csrf` cookie. There is no server-side session store, which keeps ports simple.

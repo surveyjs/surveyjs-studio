@@ -28,6 +28,11 @@ export const fixtureUsers = {
     email: "outsider@example.com",
   },
   blocked: { id: "11111111-0000-4000-8000-a00000000005" },
+  erasable: {
+    id: "11111111-0000-4000-8000-a00000000006",
+    displayName: "Erin Erasable",
+    email: "erasable@example.com",
+  },
 } as const;
 
 /** A minimal cookie jar: names and values only (paths and domains are not tracked). */

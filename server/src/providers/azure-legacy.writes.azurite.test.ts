@@ -24,6 +24,7 @@ import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
 import {
   ADMIN_ID,
+  ERASABLE_ID,
   MEMBER_ID,
   PROJECT_B_ID,
   adminUser,
@@ -1939,9 +1940,9 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         ...over,
       };
       onTestFinished(async () => {
-        await store().directory.deleteProject(project.id, { receiverId: ADMIN_ID, now: NOW });
+        await store().projects.deleteProject(project.id, { receiverId: ADMIN_ID, now: NOW });
       });
-      await store().directory.createProject(project);
+      await store().projects.createProject(project);
       return project;
     }
 
@@ -2009,8 +2010,8 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     /** Two parallel reads, so the provider's pool holds two connections and two writes overlap. */
     async function twoConnections(projectId: string): Promise<void> {
       await Promise.all([
-        store().directory.listMembers(projectId),
-        store().directory.listMembers(projectId),
+        store().projects.listMembers(projectId),
+        store().projects.listMembers(projectId),
       ]);
     }
 
@@ -2047,7 +2048,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       const before = await projectRow(project.id);
       const duplicate = { ...project, name: "Second project", creatorId: MEMBER_ID };
       const error: unknown = await store()
-        .directory.createProject(duplicate)
+        .projects.createProject(duplicate)
         .catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(LegacyStoreError);
       expect(String(error)).not.toMatch(/Second project|Writes test project/);
@@ -2059,7 +2060,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       // A creator without a `Users` row: PROJECT_INSERT succeeds, CREATOR_INSERT fails on the FK.
       const id = randomUUID();
       onTestFinished(async () => {
-        await store().directory.deleteProject(id, { receiverId: ADMIN_ID, now: NOW });
+        await store().projects.deleteProject(id, { receiverId: ADMIN_ID, now: NOW });
       });
       const project: NewProject = {
         id,
@@ -2068,7 +2069,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         createdAt: CREATED_AT,
       };
       const error: unknown = await store()
-        .directory.createProject(project)
+        .projects.createProject(project)
         .catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(LegacyStoreError);
       expect(String(error)).toMatch(/project create/);
@@ -2082,7 +2083,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       const before = await projectRow(id);
       const members = await memberRows(id);
       const name = `Renamed Ünïcødé 😀 ${randomUUID()}`;
-      expect(await store().directory.renameProject(id, name, { now: NOW })).toBe(true);
+      expect(await store().projects.renameProject(id, name, { now: NOW })).toBe(true);
       expect(await projectRow(id)).toEqual({ ...before, name, timestamp: new Date(NOW) });
       expect(await memberRows(id)).toEqual(members);
     });
@@ -2090,7 +2091,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     it("adds a member with a new row of its own", async () => {
       const { id } = await ownProject();
       const [creator] = await memberRows(id);
-      expect(await store().directory.addMember(id, MEMBER_ID, "user", { now: NOW })).toBe("added");
+      expect(await store().projects.addMember(id, MEMBER_ID, "user", { now: NOW })).toBe("added");
       const rows = await memberRows(id);
       expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual(creator);
@@ -2112,9 +2113,9 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
     it("changes a role in place, the creator's row included", async () => {
       const { id } = await ownProject();
-      await store().directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      await store().projects.addMember(id, MEMBER_ID, "admin", { now: NOW });
       const [creator, member] = await memberRows(id);
-      expect(await store().directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe(
+      expect(await store().projects.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe(
         "changed",
       );
       expect(await memberRows(id)).toEqual([
@@ -2125,11 +2126,11 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
     it("changes and removes every row of a member with duplicate rows", async () => {
       const { id } = await ownProject();
-      await store().directory.addMember(id, MEMBER_ID, "user", { now: NOW });
+      await store().projects.addMember(id, MEMBER_ID, "user", { now: NOW });
       await insertRawMember(id, MEMBER_ID, "user");
       expect(await rowsOf(id, MEMBER_ID)).toHaveLength(2);
 
-      expect(await store().directory.setMemberRole(id, MEMBER_ID, "admin", { now: LATER })).toBe(
+      expect(await store().projects.setMemberRole(id, MEMBER_ID, "admin", { now: LATER })).toBe(
         "changed",
       );
       const changed = await rowsOf(id, MEMBER_ID);
@@ -2138,19 +2139,19 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         ["admin", new Date(LATER)],
       ]);
 
-      expect(await store().directory.removeMember(id, MEMBER_ID)).toBe("removed");
+      expect(await store().projects.removeMember(id, MEMBER_ID)).toBe("removed");
       expect(await rowsOf(id, MEMBER_ID)).toEqual([]);
       expect((await memberRows(id)).map((row) => row.userid)).toEqual([ADMIN_ID]);
     });
 
     it("lets only one of two concurrent demotions of the two admins pass", async () => {
       const { id } = await ownProject();
-      const directory = store().directory;
-      await directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      const projects = store().projects;
+      await projects.addMember(id, MEMBER_ID, "admin", { now: NOW });
       await twoConnections(id);
       const outcomes = await Promise.all([
-        directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER }),
-        directory.setMemberRole(id, MEMBER_ID, "user", { now: LATER }),
+        projects.setMemberRole(id, ADMIN_ID, "user", { now: LATER }),
+        projects.setMemberRole(id, MEMBER_ID, "user", { now: LATER }),
       ]);
       expect([...outcomes].sort()).toEqual(["changed", "last-admin"]);
       const admins = (await memberRows(id)).filter((row) => row.role === "admin");
@@ -2159,11 +2160,11 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
     it("adds a user once when two adds run at the same time", async () => {
       const { id } = await ownProject();
-      const directory = store().directory;
+      const projects = store().projects;
       await twoConnections(id);
       const outcomes = await Promise.all([
-        directory.addMember(id, MEMBER_ID, "user", { now: NOW }),
-        directory.addMember(id, MEMBER_ID, "user", { now: NOW }),
+        projects.addMember(id, MEMBER_ID, "user", { now: NOW }),
+        projects.addMember(id, MEMBER_ID, "user", { now: NOW }),
       ]);
       expect([...outcomes].sort()).toEqual(["added", "already-member"]);
       expect(await rowsOf(id, MEMBER_ID)).toHaveLength(1);
@@ -2171,30 +2172,67 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
 
     it("counts a user with two admin rows (one stored as Admin) as one admin", async () => {
       const { id } = await ownProject();
-      const directory = store().directory;
-      await directory.addMember(id, MEMBER_ID, "admin", { now: NOW });
+      const projects = store().projects;
+      await projects.addMember(id, MEMBER_ID, "admin", { now: NOW });
       await insertRawMember(id, ADMIN_ID, "Admin");
-      expect(await directory.listMembers(id)).toEqual([
+      expect(await projects.listMembers(id)).toEqual([
         { user: adminUser, role: "admin" },
         { user: memberUser, role: "admin" },
       ]);
-      expect(await directory.setMemberRole(id, MEMBER_ID, "user", { now: LATER })).toBe("changed");
-      expect(await directory.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe(
-        "last-admin",
-      );
+      expect(await projects.setMemberRole(id, MEMBER_ID, "user", { now: LATER })).toBe("changed");
+      expect(await projects.setMemberRole(id, ADMIN_ID, "user", { now: LATER })).toBe("last-admin");
     });
 
     it("skips a member whose only role is unknown and warns with ids only", async () => {
       const { id } = await ownProject();
       await insertRawMember(id, MEMBER_ID, "guest");
       warnings.length = 0;
-      expect(await store().directory.listMembers(id)).toEqual([{ user: adminUser, role: "admin" }]);
+      expect(await store().projects.listMembers(id)).toEqual([{ user: adminUser, role: "admin" }]);
       expect(warnings).toEqual([
         {
           details: { projectId: id, userId: MEMBER_ID },
           message: "Skipped a project member whose role is unknown.",
         },
       ]);
+    });
+
+    describe("member erasure", () => {
+      // Erin Erasable is the only user erased (R4); the replica's FK allows no orphan rows.
+      it("promotes in place: the erased rows go, the successor's rows change role and timestamp only", async () => {
+        const { id } = await ownProject({ creatorId: ERASABLE_ID });
+        await store().projects.addMember(id, MEMBER_ID, "user", { now: NOW });
+        await insertRawMember(id, MEMBER_ID, "user");
+        await insertRawMember(id, ERASABLE_ID, "user");
+        const successor = await rowsOf(id, MEMBER_ID);
+        expect(successor).toHaveLength(2);
+
+        expect(await store().projects.eraseMember(id, ERASABLE_ID, { now: LATER })).toEqual({
+          kind: "promote",
+          successorId: MEMBER_ID,
+        });
+
+        expect(await rowsOf(id, ERASABLE_ID)).toEqual([]);
+        expect(await rowsOf(id, MEMBER_ID)).toEqual(
+          successor.map((row) => ({ ...row, role: "admin", timestamp: new Date(LATER) })),
+        );
+        expect(await eventsNaming(id)).toEqual([]);
+      });
+
+      it("lets only one of two concurrent erasures of one member write", async () => {
+        const { id } = await ownProject({ creatorId: ERASABLE_ID });
+        const projects = store().projects;
+        await projects.addMember(id, MEMBER_ID, "user", { now: NOW });
+        await twoConnections(id);
+        const outcomes = await Promise.all([
+          projects.eraseMember(id, ERASABLE_ID, { now: LATER }),
+          projects.eraseMember(id, ERASABLE_ID, { now: LATER }),
+        ]);
+        expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(["not-member", "promote"]);
+        expect(await rowsOf(id, ERASABLE_ID)).toEqual([]);
+        expect((await memberRows(id)).map((row) => [row.userid, row.role])).toEqual([
+          [MEMBER_ID, "admin"],
+        ]);
+      });
     });
 
     it("deletes a project: its surveys, archived ones too, move to the receiver with their creators", async () => {
@@ -2211,7 +2249,7 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         for (const survey of [active, archived]) await store().surveys.deleteSurvey(survey.id);
       });
 
-      const moved = await store().directory.deleteProject(id, { receiverId, now: NOW });
+      const moved = await store().projects.deleteProject(id, { receiverId, now: NOW });
 
       expect(moved).toEqual(ids);
       for (const survey of [active, archived]) {

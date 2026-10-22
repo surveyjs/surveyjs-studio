@@ -1,5 +1,6 @@
 import type { Clock } from "../auth/session.js";
-import type { AppConfig } from "../config.js";
+import type { AccountNoticesSetting, AppConfig } from "../config.js";
+import { createSurveyjsApiDirectory } from "../users/surveyjs-api/client.js";
 import { createAzureLegacyProviders, type LegacyWarningLogger } from "./azure-legacy/index.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createMemoryProviders } from "./memory.js";
@@ -14,36 +15,64 @@ export interface ProviderOptions {
   readonly now?: Clock;
 }
 
-async function createMemory(config: AppConfig): Promise<ProviderSet> {
+async function createMemory(
+  config: AppConfig,
+  _options: ProviderOptions,
+  accountNotices: AccountNoticesSetting,
+): Promise<ProviderSet> {
   return createMemoryProviders(
     config.memorySeed === "legacy-fixtures" ? await legacyFixtureSeed() : undefined,
-    { accountNotices: config.accountNotices },
+    { accountNotices },
   );
 }
 
 async function createAzureLegacy(
   config: AppConfig,
   options: ProviderOptions,
+  accountNotices: AccountNoticesSetting,
 ): Promise<ProviderSet> {
   if (!config.legacy) throw new Error("STORAGE_PROVIDER=azure-legacy needs the LEGACY_* settings");
   return createAzureLegacyProviders(config.legacy, {
     logger: options.logger,
-    accountNotices: config.accountNotices,
+    accountNotices,
     now: options.now,
   });
 }
 
 const registry: Record<
   AppConfig["storageProvider"],
-  (config: AppConfig, options: ProviderOptions) => Promise<ProviderSet>
+  (
+    config: AppConfig,
+    options: ProviderOptions,
+    accountNotices: AccountNoticesSetting,
+  ) => Promise<ProviderSet>
 > = {
   memory: createMemory,
   "azure-legacy": createAzureLegacy,
 };
 
-export function createProviders(
+export async function createProviders(
   config: AppConfig,
   options: ProviderOptions = {},
 ): Promise<ProviderSet> {
-  return registry[config.storageProvider](config, options);
+  // The storage provider's own users and notices serve memory and surveyjs-sql (R7). With the
+  // user API, the storage provider gets no licence setting: the API answers licence state.
+  const external = config.userDirectory === "surveyjs-api";
+  const storage = await registry[config.storageProvider](
+    config,
+    options,
+    external ? "none" : config.accountNotices,
+  );
+  if (!external) return storage;
+  if (config.userApi === null) {
+    await storage.close();
+    throw new Error("USER_DIRECTORY=surveyjs-api needs USER_API_URL and USER_API_TOKEN");
+  }
+  const api = createSurveyjsApiDirectory({
+    baseUrl: config.userApi.url,
+    token: config.userApi.token,
+    accountNotices: config.accountNotices,
+    ...(options.now && { now: options.now }),
+  });
+  return { ...storage, users: api.users, notices: api.notices };
 }

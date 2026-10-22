@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../../auth/session.js";
-import type { ProviderSet } from "../types.js";
+import type { AccountNotices } from "../../notices/account-notices.js";
 import {
   ADMIN_ID,
   LATER_LICENCE_CLOCK,
@@ -12,18 +12,23 @@ import {
   licenceNoticesAtLaterClock,
 } from "./expected.js";
 
+export interface NoticesHandle {
+  readonly notices: AccountNotices;
+  close(): Promise<void>;
+}
+
 /**
  * Licence-expiry notices (`ACCOUNT_NOTICES=surveyjs-licenses`) against the golden licence
  * fixtures. `create` returns a provider that reads them and uses the given clock. Only providers
- * that hold licence data run it (azure-legacy); the demo settings have their own unit tests.
+ * that hold licence data run it (azure-legacy, the user-API stub); the demo settings have their own unit tests.
  */
 export function describeLicenceNoticeSuite(
   name: string,
-  create: (now: Clock) => Promise<ProviderSet>,
+  create: (now: Clock) => Promise<NoticesHandle>,
 ): void {
   describe(`licence notice suite: ${name}`, () => {
     let clock = LICENCE_CLOCK;
-    let providers: ProviderSet;
+    let providers: NoticesHandle;
     beforeAll(async () => {
       providers = await create(() => clock);
     });

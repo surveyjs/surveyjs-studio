@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  Link,
   Outlet,
   createRootRouteWithContext,
   useRouter,
@@ -22,7 +23,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   },
   component: Outlet,
   errorComponent: LoadError,
+  notFoundComponent: PageNotFound,
 });
+
+/**
+ * An address the app does not know, surveyjs.io's old ones included (they are never redirected
+ * here, R22). The root renders outside the shell, so the page has none; Step 13 styles it.
+ */
+function PageNotFound() {
+  return (
+    <main>
+      <h1>Page not found</h1>
+      <p>This page doesn't exist or has moved.</p>
+      <Link to="/">Go to My Surveys</Link>
+    </main>
+  );
+}
 
 function LoadError({ error }: ErrorComponentProps) {
   const router = useRouter();

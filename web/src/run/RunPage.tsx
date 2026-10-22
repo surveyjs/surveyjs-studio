@@ -13,8 +13,8 @@ const rootRoute = getRouteApi("__root__");
 
 /**
  * The public run page of a published survey (`/s/$surveyId`), without the site's shell, as
- * surveyjs.io's `/published?id=` page. The survey is read once per open: answering it must not
- * be interrupted by a refetch.
+ * surveyjs.io's run page (whose `/published?id=` links the site redirects here). The survey is
+ * read once per open: answering it must not be interrupted by a refetch.
  */
 export function RunPage({ surveyId, search }: { surveyId: string; search: RunSearch }) {
   // The route mounts one page per survey (`key`), so one per mount is one per survey.

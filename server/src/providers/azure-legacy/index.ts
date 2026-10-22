@@ -61,6 +61,7 @@ import {
   writeClonedSurvey,
   writeDefinitionSave,
   writeMemberAddition,
+  writeMemberErasure,
   writeMemberRemoval,
   writeMemberRole,
   writeNewSurvey,
@@ -81,8 +82,8 @@ import {
  *
  * This file holds SELECT statements and read-only SDK calls only (ESLint enforces it for the
  * folder): survey creation, update, clone, delete, the definition and theme saves and the
- * project and member writes call the writers of writes.ts. Editor files live in a container of
- * their own (files.ts).
+ * project and member writes (member erasure included) call the writers of writes.ts. Editor
+ * files live in a container of their own (files.ts).
  * Connection strings are secrets: no error or log line built here holds one.
  */
 
@@ -121,6 +122,8 @@ const FILES_CONTAINER = "my-surveys-files";
 
 /** Users.email is varchar(200) (layout section 3.11). */
 const MAX_EMAIL_LENGTH = 200;
+/** Ids per `missingUsers` query. */
+const MISSING_USERS_CHUNK = 100;
 const EPOCH = new Date(0);
 
 const SURVEY_COLUMNS =
@@ -170,6 +173,18 @@ const PROJECT_MEMBERS_SELECT =
 const PROJECT_MEMBER_USERS_SELECT =
   "SELECT m.userid, m.role, u.email, u.displayname, u.blocked " +
   "FROM OrganizationUsers m JOIN Users u ON u.id = m.userid WHERE m.organizationid = @project";
+
+/** R12: every owner of a personal survey, archived ones included. */
+const PERSONAL_OWNERS_SELECT = `SELECT DISTINCT s.userid FROM Surveys s WHERE s.userid IS NOT NULL AND NOT ${IS_PROJECT_SURVEY}`;
+/** R12: every user with a membership row, orphans included. */
+const MEMBER_USERS_SELECT = "SELECT DISTINCT userid FROM OrganizationUsers";
+/**
+ * R11: every project in which the user has a row, raw: whatever the role, and also when the
+ * `Organizations` row is gone, so erasure reaches every row MEMBER_USERS_SELECT sees.
+ */
+const USER_PROJECT_IDS_SELECT =
+  "SELECT DISTINCT organizationid FROM OrganizationUsers WHERE userid = @user";
+const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 
 type SurveyQueryRow = LegacySurveyRow & { isproject: number };
 type MemberUserQueryRow = Omit<LegacyUserRow, "id"> & { userid: string; role: string | null };
@@ -390,6 +405,16 @@ export function createAzureLegacyProviders(
           .input("project", sql.UniqueIdentifier, projectId),
     );
     return membershipsFromRows(rows, userId)[0] ?? null;
+  }
+
+  async function getUserById(id: string) {
+    if (!isGuid(id)) return null;
+    const rows = await select<LegacyUserRow>(
+      "user lookup",
+      "SELECT id, email, displayname, blocked FROM Users WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
+    );
+    return rows[0] ? userFromLegacy(rows[0]) : null;
   }
 
   async function getSurvey(id: string) {
@@ -669,11 +694,33 @@ export function createAzureLegacyProviders(
     }
   }
 
+  /**
+   * Reads the row raw, not through the mapping, so a survey the domain cannot represent (a NULL
+   * `postid` or `resultid`) can be deleted too: erasure must reach every row (R11). The post id
+   * names the results tables; without one there are none to delete.
+   */
   async function deleteSurvey(id: string): Promise<boolean> {
-    // The record names the children: the results tables are keyed by its post id.
-    const survey = await getSurvey(id);
-    if (!survey) return false;
-    return writeSurveyDeletion(writeTargets, survey, new Date(now()).toISOString());
+    if (!isGuid(id)) return false;
+    const [row] = await select<{ id: string; postid: string | null }>(
+      "survey lookup",
+      "SELECT id, postid FROM Surveys WHERE id = @id",
+      (request) => request.input("id", sql.UniqueIdentifier, id),
+    );
+    if (!row) return false;
+    return writeSurveyDeletion(
+      writeTargets,
+      { id: row.id, postId: row.postid },
+      new Date(now()).toISOString(),
+    );
+  }
+
+  /** The ids of a one-column `userid` SELECT: GUIDs only, lower-case, all-zero left out, distinct, sorted. */
+  async function userIds(operation: string, text: string): Promise<string[]> {
+    const rows = await select<{ userid: string | null }>(operation, text);
+    const ids = rows
+      .map((row) => row.userid?.toLowerCase() ?? "")
+      .filter((id) => isGuid(id) && id !== ZERO_GUID);
+    return [...new Set(ids)].sort();
   }
 
   async function sqlReady(): Promise<void> {
@@ -716,6 +763,22 @@ export function createAzureLegacyProviders(
       updateSurvey,
       cloneSurvey,
       deleteSurvey,
+
+      async listPersonalOwnerIds() {
+        return userIds("personal owner list", PERSONAL_OWNERS_SELECT);
+      },
+
+      async listSurveyIds(owner: SurveyOwner) {
+        const ownerId = ownerIdOf(owner);
+        if (!isGuid(ownerId)) return [];
+        const scope = owner.kind === "project" ? IS_PROJECT_SURVEY : `NOT ${IS_PROJECT_SURVEY}`;
+        const rows = await select<{ id: string }>(
+          "survey id list",
+          `SELECT s.id FROM Surveys s WHERE s.userid = @owner AND ${scope}`,
+          (request) => request.input("owner", sql.UniqueIdentifier, ownerId),
+        );
+        return rows.map((row) => row.id.toLowerCase()).sort();
+      },
     },
 
     files: createAzureFileStore(surveysAccount.blobs, {
@@ -726,16 +789,9 @@ export function createAzureLegacyProviders(
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
 
-    directory: {
-      async getUser(id) {
-        if (!isGuid(id)) return null;
-        const rows = await select<LegacyUserRow>(
-          "user lookup",
-          "SELECT id, email, displayname, blocked FROM Users WHERE id = @id",
-          (request) => request.input("id", sql.UniqueIdentifier, id),
-        );
-        return rows[0] ? userFromLegacy(rows[0]) : null;
-      },
+    users: {
+      kind: "external",
+      getUser: getUserById,
 
       async findUserByEmail(email) {
         // The legacy site stores and looks up lower-cased emails, and the database collation
@@ -754,6 +810,35 @@ export function createAzureLegacyProviders(
         return found ? userFromLegacy(found) : null;
       },
 
+      // An external directory never creates a user: the caller falls back to the claims.
+      async signInUser(claims) {
+        return getUserById(claims.sub);
+      },
+
+      async missingUsers(ids) {
+        const asked = [...new Set(ids.filter((id) => isGuid(id)).map((id) => id.toLowerCase()))];
+        const missing: string[] = [];
+        for (let start = 0; start < asked.length; start += MISSING_USERS_CHUNK) {
+          const chunk = asked.slice(start, start + MISSING_USERS_CHUNK);
+          const names = chunk.map((_, index) => `@id${String(index)}`);
+          const rows = await select<{ id: string }>(
+            "user existence check",
+            `SELECT id FROM Users WHERE id IN (${names.join(", ")})`,
+            (request) => {
+              chunk.forEach((id, index) =>
+                request.input(`id${String(index)}`, sql.UniqueIdentifier, id),
+              );
+              return request;
+            },
+          );
+          const found = new Set(rows.map((row) => row.id.toLowerCase()));
+          missing.push(...chunk.filter((id) => !found.has(id)));
+        }
+        return missing;
+      },
+    },
+
+    projects: {
       async listUserProjects(userId) {
         if (!isGuid(userId)) return [];
         const rows = await select<ProjectMemberQueryRow>(
@@ -808,6 +893,26 @@ export function createAzureLegacyProviders(
       async removeMember(projectId, userId) {
         if (!isGuid(projectId) || !isGuid(userId)) return "not-found";
         return writeMemberRemoval(writeTargets, projectId, userId);
+      },
+
+      async eraseMember(projectId, userId, { now: at }) {
+        // A user id that is not a GUID has no row (decideMemberErasure's not-member).
+        if (!isGuid(projectId) || !isGuid(userId)) return { kind: "not-member" };
+        return writeMemberErasure(writeTargets, projectId, userId, at);
+      },
+
+      async listMemberUserIds() {
+        return userIds("member user list", MEMBER_USERS_SELECT);
+      },
+
+      async listUserProjectIds(userId) {
+        if (!isGuid(userId)) return [];
+        const rows = await select<{ organizationid: string }>(
+          "user project list",
+          USER_PROJECT_IDS_SELECT,
+          (request) => request.input("user", sql.UniqueIdentifier, userId),
+        );
+        return [...new Set(rows.map((row) => row.organizationid.toLowerCase()))].sort();
       },
     },
 

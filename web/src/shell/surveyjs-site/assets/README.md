@@ -67,7 +67,7 @@ these, from the same commit:
 
 Changes to them:
 
-- Run opens the app's run page `/s/{id}` (the site's is `/published?id=`); Help and Run open with
+- Run opens the app's run page `/s/{id}` (the old site's address, `/published?id=`, is handled by the site's redirect); Help and Run open with
   `noopener`.
 - The Embed tabs' settings are inside the tab (glue in `src/editor/embed/EmbedTab.module.css`), not a
   settings survey in the Creator's sidebar; jQuery is not offered (no SurveyJS 3.1.2 jQuery package),

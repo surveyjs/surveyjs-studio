@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { z } from "zod";
+import { isWebhookSecret } from "./accounts/webhook-secret.js";
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -8,8 +9,22 @@ export class ConfigError extends Error {
   }
 }
 
-export const AUTH_METHODS = ["surveyjs", "password", "oidc"] as const;
+export const AUTH_METHODS = ["surveyjs", "password", "google", "github", "facebook"] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
+
+/** `USER_DIRECTORY` values; `local` is refused until the self-hosted track builds it (R8). */
+export const USER_DIRECTORIES = ["memory", "surveyjs-sql", "surveyjs-api", "local"] as const;
+export type UserDirectorySetting = Exclude<(typeof USER_DIRECTORIES)[number], "local">;
+
+/** Sign-in methods that need the local user directory (R8). */
+const LOCAL_DIRECTORY_METHODS: readonly string[] = ["password", "google", "github", "facebook"];
+
+export interface UserApiConfig {
+  /** `USER_API_URL` without a trailing slash. */
+  readonly url: string;
+  /** Secret: never log or echo. */
+  readonly token: string;
+}
 
 export interface AppConfig {
   readonly nodeEnv: "development" | "test" | "production";
@@ -49,6 +64,12 @@ export interface AppConfig {
   /** Requests per client IP and minute for `downloadFile`. */
   readonly publicFileRateLimitPerMinute: number;
   readonly accountNotices: AccountNoticesSetting;
+  /** `USER_DIRECTORY`, or its default for the storage provider (R7, R8). */
+  readonly userDirectory: UserDirectorySetting;
+  /** Set only when userDirectory is `surveyjs-api`. */
+  readonly userApi: UserApiConfig | null;
+  /** `ACCOUNT_WEBHOOK_SECRET` (`whsec_...`); null: the webhook answers 404. Secret: never log or echo. */
+  readonly accountWebhookSecret: string | null;
   /** Optional account links merged over the shell's built-in ones. */
   readonly shellLinks: Readonly<Record<string, string>>;
 }
@@ -207,12 +228,20 @@ const envSchema = z.object({
   PUBLIC_RATE_LIMIT: positiveInt.default(60),
   PUBLIC_FILE_RATE_LIMIT: positiveInt.default(600),
   ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
+  USER_DIRECTORY: z.enum(USER_DIRECTORIES).optional(),
+  USER_API_URL: httpUrl.optional(),
+  // Plain strings (checked in loadConfig): a schema check here could echo the secret.
+  USER_API_TOKEN: z.string().optional(),
+  ACCOUNT_WEBHOOK_SECRET: z.string().optional(),
   SHELL_LINKS: shellLinks.optional(),
   // Plain strings: a schema check here could echo a value in its message.
   LEGACY_SQL_CONNECTION_STRING: z.string().optional(),
   LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: z.string().optional(),
   LEGACY_RESULTS_STORAGE_CONNECTION_STRING: z.string().optional(),
 });
+
+/** Every variable the server reads, in schema order (the drift test compares the copies with it). */
+export const ENV_VARIABLES: readonly string[] = Object.freeze(Object.keys(envSchema.shape));
 
 /** Empty and whitespace-only values count as unset (e.g. `PORT=` in a .env file or compose file). */
 function withoutBlanks(
@@ -246,6 +275,78 @@ function isServedToOthers(env: Record<string, string | undefined>): boolean {
   const base = env.PUBLIC_BASE_URL;
   if (base === undefined || !URL.canParse(base)) return false; // default, or reported elsewhere
   return new URL(base).protocol === "https:" || !isLoopback(base);
+}
+
+/** The items of a comma-separated value, trimmed, blanks dropped, each once. */
+function csvItems(value: string | undefined): string[] {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item !== ""),
+    ),
+  ];
+}
+
+/**
+ * R8: the user directory, the sign-in methods and the account settings. Runs for every caller (the
+ * CLIs need a working directory too). A default USER_DIRECTORY always fits its storage provider, so
+ * the storage rules apply to an explicit value only.
+ */
+function accountProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const storage = env.STORAGE_PROVIDER ?? "memory";
+  const directory = env.USER_DIRECTORY;
+  if (directory === "memory" && storage !== "memory") {
+    problems.push("USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory");
+  }
+  if (directory === "surveyjs-sql" && storage !== "azure-legacy") {
+    problems.push("USER_DIRECTORY: surveyjs-sql requires STORAGE_PROVIDER=azure-legacy");
+  }
+  if (directory === "local") {
+    problems.push("USER_DIRECTORY: local is not available yet (self-hosted track)");
+  }
+  if (directory === "surveyjs-api") {
+    for (const name of ["USER_API_URL", "USER_API_TOKEN"]) {
+      if (env[name] === undefined) {
+        problems.push(`${name}: required when USER_DIRECTORY=surveyjs-api`);
+      }
+    }
+    const url = env.USER_API_URL;
+    if (
+      url !== undefined &&
+      URL.canParse(url) &&
+      new URL(url).protocol === "http:" &&
+      !isLoopback(url)
+    ) {
+      problems.push("USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]");
+    }
+  }
+  for (const method of csvItems(env.AUTH_METHODS)) {
+    if (LOCAL_DIRECTORY_METHODS.includes(method)) {
+      problems.push(
+        `AUTH_METHODS: ${method} requires USER_DIRECTORY=local, which is not available yet (self-hosted track)`,
+      );
+    }
+  }
+  const effective = directory ?? (storage === "azure-legacy" ? "surveyjs-sql" : "memory");
+  if (
+    env.ACCOUNT_NOTICES === "surveyjs-licenses" &&
+    effective !== "surveyjs-sql" &&
+    effective !== "surveyjs-api"
+  ) {
+    problems.push(
+      "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql or surveyjs-api",
+    );
+  }
+  const secret = env.ACCOUNT_WEBHOOK_SECRET;
+  if (secret !== undefined && !isWebhookSecret(secret)) {
+    problems.push(
+      "ACCOUNT_WEBHOOK_SECRET: must be whsec_ followed by the base64 of at least 24 bytes",
+    );
+  }
+  return problems;
 }
 
 function identityProblems(env: Record<string, string | undefined>): string[] {
@@ -315,11 +416,7 @@ export function loadConfig(
   if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
     problems.push("SESSION_SECRET: must be at least 32 characters");
   }
-  if (parsed.success && parsed.data.ACCOUNT_NOTICES === "surveyjs-licenses") {
-    if (env.STORAGE_PROVIDER !== "azure-legacy") {
-      problems.push("ACCOUNT_NOTICES: surveyjs-licenses requires STORAGE_PROVIDER=azure-legacy");
-    }
-  }
+  problems.push(...accountProblems(env));
   if (options.skipIdentityRules !== true) problems.push(...identityProblems(env));
   if (!parsed.success || problems.length > 0) {
     const lines = problems.map((p) => `  - ${p}`).join("\n");
@@ -379,6 +476,16 @@ export function loadConfig(
     publicRateLimitPerMinute: e.PUBLIC_RATE_LIMIT,
     publicFileRateLimitPerMinute: e.PUBLIC_FILE_RATE_LIMIT,
     accountNotices: e.ACCOUNT_NOTICES,
+    // `local` never gets here: accountProblems refuses it.
+    userDirectory: (e.USER_DIRECTORY ??
+      (e.STORAGE_PROVIDER === "azure-legacy" ? "surveyjs-sql" : "memory")) as UserDirectorySetting,
+    userApi:
+      e.USER_DIRECTORY === "surveyjs-api" &&
+      e.USER_API_URL !== undefined &&
+      e.USER_API_TOKEN !== undefined
+        ? Object.freeze({ url: e.USER_API_URL.replace(/\/+$/, ""), token: e.USER_API_TOKEN })
+        : null,
+    accountWebhookSecret: e.ACCOUNT_WEBHOOK_SECRET ?? null,
     shellLinks: Object.freeze({ ...e.SHELL_LINKS }),
   });
 }

@@ -142,5 +142,23 @@
     "theme": null,
     "publishid": null,
     "legacytheme": null
+  },
+  {
+    "id": "22222222-0000-4000-8000-a00000000009",
+    "name": "XSS in question name <img src=x onerror=alert(1)>",
+    "userid": "11111111-0000-4000-8000-a00000000003",
+    "creatorid": "11111111-0000-4000-8000-a00000000003",
+    "postid": "33333333-0000-4000-8000-a00000000009",
+    "resultid": "44444444-0000-4000-8000-a00000000009",
+    "createdat": "2026-03-01T09:00:00Z",
+    "timestamp": "2026-03-01T09:00:00Z",
+    "ispublished": 1,
+    "isarchived": 0,
+    "allowaccessresult": 0,
+    "storeipaddress": "0",
+    "usecookies": 0,
+    "theme": null,
+    "publishid": null,
+    "legacytheme": null
   }
 ]
