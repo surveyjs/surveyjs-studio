@@ -33,12 +33,25 @@ export interface StepResult {
   readonly detail?: string;
 }
 
+/** The test data a run creates. */
+export type TestData = "survey" | "project";
+
+export interface CleanupResult {
+  readonly what: TestData;
+  readonly id: string;
+  /** true when it could not be deleted: the operator removes it by hand. */
+  readonly failed: boolean;
+  readonly text: string;
+}
+
 export interface SmokeRun {
   readonly steps: readonly StepResult[];
-  /** One line per cleanup action; `failed` when something could not be deleted. */
-  readonly cleanup: readonly { readonly text: string; readonly failed: boolean }[];
+  /** One entry per cleanup action. */
+  readonly cleanup: readonly CleanupResult[];
   /** Ids only (the service warnings). */
   readonly warnings: readonly string[];
+  /** The signal stopped the run before its last step. */
+  readonly interrupted: boolean;
 }
 
 export interface SmokeOptions {
@@ -48,7 +61,20 @@ export interface SmokeOptions {
   readonly legacy: LegacyClient;
   /** Default `Date.now`. */
   readonly now?: () => number;
+  /**
+   * An interrupt: once aborted, the steps not yet started are skipped and the cleanup runs. The
+   * step under way finishes first.
+   */
+  readonly signal?: AbortSignal;
+  /** Called as soon as the test survey or project exists. */
+  readonly onCreated?: (what: TestData, id: string) => void;
+  /** Called once it is deleted (by its step or by the cleanup). */
+  readonly onRemoved?: (what: TestData, id: string) => void;
 }
+
+/** The detail of a failed `create survey` check when the new survey is not the account's. */
+export const KEY_OF_ANOTHER_ACCOUNT =
+  "the access key does not belong to this account (getActive does not list the new survey as the account's)";
 
 /** The question the response answers; `getResult` counts its answers. */
 const QUESTION = "smoke";
@@ -103,10 +129,14 @@ interface Step {
   readonly check?: () => Promise<string | null>;
   /** Not checked by the run: see the manual checklist. */
   readonly manual?: string;
+  /** A failed check stops the run (the later steps are skipped). */
+  readonly fatal?: boolean;
 }
 
 export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
-  const { providers, user, legacy } = options;
+  const { providers, user, legacy, signal } = options;
+  const created = (what: TestData, id: string): void => options.onCreated?.(what, id);
+  const removed = (what: TestData, id: string): void => options.onRemoved?.(what, id);
   const now = options.now ?? Date.now;
   const warnings: string[] = [];
   const log: WarningLog = {
@@ -166,21 +196,24 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
       app: "create in Personal (published flag empty)",
       legacy: "getActive: Name, UserId, IsPublished null",
       write: async () => {
-        const created = await surveys.create(user, { name });
-        state.surveyId = created.id;
-        state.postId = created.postId;
-        state.resultId = created.resultId;
-        state.appPublished = created.published;
+        const survey = await surveys.create(user, { name });
+        state.surveyId = survey.id;
+        created("survey", survey.id);
+        state.postId = survey.postId;
+        state.resultId = survey.resultId;
+        state.appPublished = survey.published;
       },
-      check: () =>
-        listedProblem("Personal", undefined, (s) =>
-          firstProblem(
-            compare("app published", state.appPublished, true),
-            compare("Name", s.Name, name),
-            sameId(s.UserId, user.id) ? null : `UserId is ${show(s.UserId)}, expected the account`,
-            compare("IsPublished", s.IsPublished, null),
-          ),
-        ),
+      // Fatal: with a key of another account the later reads would check that account's view.
+      fatal: true,
+      check: async () => {
+        const survey = await listed();
+        if (survey === undefined || !sameId(survey.UserId, user.id)) return KEY_OF_ANOTHER_ACCOUNT;
+        return firstProblem(
+          compare("app published", state.appPublished, true),
+          compare("Name", survey.Name, name),
+          compare("IsPublished", survey.IsPublished, null),
+        );
+      },
     },
     {
       name: "rename",
@@ -314,6 +347,7 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
       legacy: "getActive?ownerId=project: empty",
       write: async () => {
         state.projectId = (await projects.create(user, { name })).id;
+        created("project", state.projectId);
       },
       // A member gets the project's list (empty); a non-member would get the Personal list.
       check: async () => {
@@ -361,6 +395,7 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
         await update({ archived: true });
         await surveys.delete(user, state.surveyId);
         state.surveyDeleted = true;
+        removed("survey", state.surveyId);
       },
       check: async () =>
         firstProblem(
@@ -375,17 +410,23 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
       write: async () => {
         await projects.delete(user, state.projectId);
         state.projectDeleted = true;
+        removed("project", state.projectId);
       },
       manual: "checklist: the project is gone on surveyjs.io",
     },
   ];
 
   const done: StepResult[] = [];
-  const cleanup: { text: string; failed: boolean }[] = [];
+  const cleanup: CleanupResult[] = [];
+  let interrupted = false;
   try {
     let stopped = false;
     for (const step of steps) {
       const row = { step: step.name, app: step.app, legacy: step.legacy };
+      if (!stopped && signal?.aborted) {
+        interrupted = true;
+        stopped = true;
+      }
       if (stopped) {
         done.push({ ...row, result: "skipped" });
         continue;
@@ -407,9 +448,14 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
       } catch (error) {
         problem = describeFailure(error);
       }
-      done.push(
-        problem === null ? { ...row, result: "pass" } : { ...row, result: "FAIL", detail: problem },
-      );
+      if (problem === null) {
+        done.push({ ...row, result: "pass" });
+      } else if (step.fatal) {
+        done.push({ ...row, result: "FAIL", detail: `${problem}. The run stopped.` });
+        stopped = true;
+      } else {
+        done.push({ ...row, result: "FAIL", detail: problem });
+      }
     }
   } finally {
     // Also after a failure or a thrown error: the survey first (deleting a project moves its surveys).
@@ -420,27 +466,52 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
           if (!current.archived) await update({ archived: true });
           await surveys.delete(user, state.surveyId);
         }
-        cleanup.push({ text: `deleted the test survey ${state.surveyId}`, failed: false });
+        removed("survey", state.surveyId);
+        cleanup.push({
+          what: "survey",
+          id: state.surveyId,
+          failed: false,
+          text: `deleted the test survey ${state.surveyId}`,
+        });
       } catch (error) {
         cleanup.push({
-          text: `could not delete the test survey ${state.surveyId}: ${describeFailure(error)}`,
+          what: "survey",
+          id: state.surveyId,
           failed: true,
+          text: `could not delete the test survey ${state.surveyId}: ${describeFailure(error)}`,
         });
       }
     }
     if (state.projectId !== "" && !state.projectDeleted) {
       try {
         await projects.delete(user, state.projectId);
-        cleanup.push({ text: `deleted the test project ${state.projectId}`, failed: false });
+        removed("project", state.projectId);
+        cleanup.push({
+          what: "project",
+          id: state.projectId,
+          failed: false,
+          text: `deleted the test project ${state.projectId}`,
+        });
       } catch (error) {
         cleanup.push({
-          text: `could not delete the test project ${state.projectId}: ${describeFailure(error)}`,
+          what: "project",
+          id: state.projectId,
           failed: true,
+          text: `could not delete the test project ${state.projectId}: ${describeFailure(error)}`,
         });
       }
     }
   }
-  return { steps: done, cleanup, warnings };
+  return { steps: done, cleanup, warnings, interrupted };
+}
+
+/**
+ * `ACTION NEEDED: remove survey <id> / project <id> as the test account` for what the cleanup could
+ * not delete; null when it deleted everything.
+ */
+export function actionNeeded(cleanup: readonly CleanupResult[]): string | null {
+  const left = cleanup.filter((c) => c.failed).map((c) => `${c.what} ${c.id}`);
+  return left.length === 0 ? null : `ACTION NEEDED: remove ${left.join(" / ")} as the test account`;
 }
 
 /** Whether the run passed: every step `pass` or `manual`, and the cleanup succeeded. */

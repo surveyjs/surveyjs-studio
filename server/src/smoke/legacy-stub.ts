@@ -19,8 +19,11 @@ export interface LegacyStubOptions {
   readonly config: LegacyConfig;
   /** Access key → user id (the old API reads `Users.accesskey`; the stub is told). */
   readonly accessKeys: Readonly<Record<string, string>>;
-  /** `name`: `getActive` answers another name than stored (a corrupted write). */
-  readonly corrupt?: { readonly name?: boolean };
+  /**
+   * `nameSuffix`: `getActive` answers another name than stored for a survey whose name ends with
+   * it (a corrupted write).
+   */
+  readonly corrupt?: { readonly nameSuffix?: string };
 }
 
 export interface LegacyStub {
@@ -95,7 +98,11 @@ export async function startLegacyStub(options: LegacyStubOptions): Promise<Legac
 
   /** The `Survey` model as Newtonsoft writes it. */
   function legacySurvey(row: Row): Row {
-    const name = typeof row.name === "string" && corrupt.name ? `${row.name} (changed)` : row.name;
+    const suffix = corrupt.nameSuffix;
+    const name =
+      typeof row.name === "string" && suffix !== undefined && row.name.endsWith(suffix)
+        ? `${row.name} (changed)`
+        : row.name;
     return {
       Id: lower(row.id),
       Name: name,

@@ -1,14 +1,15 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { User } from "../domain/types.js";
+import type { SurveyOwner, User } from "../domain/types.js";
 import { createMemoryProviders } from "../providers/memory.js";
 import type { ProviderSet } from "../providers/types.js";
-import { run, USAGE } from "./smoke-legacy.js";
+import { KEY_OF_ANOTHER_ACCOUNT, type TestData } from "../smoke/steps.js";
+import { createInterruptHandler, parseArgs, run, USAGE } from "./smoke-legacy.js";
 
-// The refusals and the secret handling of `pnpm smoke:legacy`, on the memory store with an
-// injected provider set. The full run against a stub of the legacy API on the local replica is
-// smoke/smoke-legacy.azurite.test.ts.
+// The refusals, the interrupt, the cleanup and the secret handling of `pnpm smoke:legacy`, on the
+// memory store with an injected provider set. The full run against a stub of the legacy API on
+// the local replica is smoke/smoke-legacy.azurite.test.ts.
 
 const TESTER: User = {
   id: "11111111-0000-4000-8000-0000000000e1",
@@ -22,6 +23,8 @@ const BLOCKED: User = {
   displayName: "Blocked",
   blocked: true,
 };
+/** The owner of the key in the "another account" test. */
+const OTHER_ID = "11111111-0000-4000-8000-0000000000e3";
 
 /** Never printed: the canary of every test. */
 const KEY = "canary-access-key-0f6b1c2d";
@@ -53,13 +56,59 @@ afterAll(async () => {
   await new Promise<void>((resolve) => echo.close(() => resolve()));
 });
 
+const memoryStore = (): ProviderSet =>
+  createMemoryProviders({ users: [TESTER, BLOCKED], surveys: [], projects: [], memberships: [] });
+
+/**
+ * A `fetch` for the legacy API that answers `getActive` from the memory store as the key's user
+ * (`keyUserId`) sees it, and every other call with 401 and the key in the text. `onList` sees each
+ * `ownerId` asked for (undefined for Personal).
+ */
+function listingFetch(
+  providers: ProviderSet,
+  keyUserId: string,
+  onList: (ownerId: string | undefined) => void = () => undefined,
+): typeof fetch {
+  return async (input) => {
+    const url = new URL(String(input));
+    if (!url.pathname.endsWith("/getActive")) {
+      return new Response(`The accessKey '${url.searchParams.get("accessKey")}' is incorrect.`, {
+        status: 401,
+      });
+    }
+    const ownerId = url.searchParams.get("ownerId") ?? undefined;
+    onList(ownerId);
+    const member =
+      ownerId !== undefined && (await providers.projects.getUserProject(keyUserId, ownerId));
+    const owner: SurveyOwner = member
+      ? { kind: "project", projectId: ownerId! }
+      : { kind: "personal", userId: keyUserId };
+    const list = (await providers.surveys.listSurveys(owner)).filter((s) => !s.archived);
+    const body = list.map((s) => ({
+      Id: s.id,
+      Name: s.name,
+      UserId: s.owner.kind === "project" ? s.owner.projectId : s.owner.userId,
+      IsPublished: null,
+      IsArchived: false,
+      AllowAccessResult: s.settings.publicResults,
+      Theme: null,
+      PostId: s.postId,
+      ResultId: s.resultId,
+    }));
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+}
+
 async function smoke(
   argv: string[],
-  options: { env?: Record<string, string>; providers?: ProviderSet } = {},
+  options: {
+    env?: Record<string, string>;
+    providers?: ProviderSet;
+    fetch?: typeof fetch;
+    signal?: AbortSignal;
+  } = {},
 ) {
-  const providers =
-    options.providers ??
-    createMemoryProviders({ users: [TESTER, BLOCKED], surveys: [], projects: [], memberships: [] });
+  const providers = options.providers ?? memoryStore();
   const out: string[] = [];
   const err: string[] = [];
   let made = 0;
@@ -72,12 +121,16 @@ async function smoke(
         made += 1;
         return Promise.resolve(providers);
       },
+      ...(options.fetch && { fetch: options.fetch }),
+      ...(options.signal && { signal: options.signal }),
     },
   );
   return { code, out: out.join(""), err: err.join(""), made, providers };
 }
 
 const ARGS = ["--account", TESTER.email, "--yes", "--legacy-api"];
+const PERSONAL: SurveyOwner = { kind: "personal", userId: TESTER.id };
+const GUID = "[0-9a-f-]{36}";
 
 describe("smoke:legacy refusals", () => {
   it("prints the usage with --help", async () => {
@@ -109,10 +162,10 @@ describe("smoke:legacy refusals", () => {
     expect(r.made).toBe(0);
   });
 
-  it("refuses with READ_ONLY=true", async () => {
+  it("refuses with READ_ONLY=true, in its own words", async () => {
     const r = await smoke([...ARGS, echoUrl], { env: { ...LEGACY_ENV, READ_ONLY: "true" } });
     expect(r.code).toBe(2);
-    expect(r.err).toMatch(/^Refused: READ_ONLY=true\./);
+    expect(r.err).toBe("Refused: READ_ONLY=true. The smoke test writes; nothing was written.\n");
     expect(r.made).toBe(0);
   });
 
@@ -124,20 +177,31 @@ describe("smoke:legacy refusals", () => {
     expect(r.made).toBe(0);
   });
 
-  it("refuses a --legacy-api that is not an http(s) URL", async () => {
-    const r = await smoke([...ARGS, "ftp://example.com"]);
-    expect(r.code).toBe(2);
-    expect(r.err).toContain("--legacy-api");
-    expect(r.made).toBe(0);
+  it.each(["ftp://example.com", "http://example.com", "http://api.surveyjs.io", "not a url"])(
+    "refuses --legacy-api %s",
+    async (url) => {
+      const r = await smoke([...ARGS, url]);
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("--legacy-api must be an https URL");
+      expect(r.made).toBe(0);
+    },
+  );
+
+  it.each([
+    "https://api.surveyjs.io",
+    "http://localhost:4100",
+    "http://127.0.0.1:4100",
+    "http://[::1]:4100",
+  ])("accepts --legacy-api %s", (url) => {
+    const parsed = parseArgs(["--account", TESTER.email, "--yes", "--legacy-api", url]);
+    expect(parsed).toMatchObject({ kind: "run", legacyApi: url });
   });
 
   it("refuses an unknown account and writes nothing", async () => {
     const r = await smoke(["--account", "nobody@example.com", "--yes", "--legacy-api", echoUrl]);
     expect(r.code).toBe(2);
     expect(r.err).toContain("Refused: no account with this email: nobody@example.com");
-    expect(await r.providers.surveys.listSurveys({ kind: "personal", userId: TESTER.id })).toEqual(
-      [],
-    );
+    expect(await r.providers.surveys.listSurveys(PERSONAL)).toEqual([]);
   });
 
   it("refuses a blocked account and writes nothing", async () => {
@@ -150,46 +214,33 @@ describe("smoke:legacy refusals", () => {
   });
 });
 
-describe("smoke:legacy when the legacy API refuses every read", () => {
-  it("fails every check, cleans up, exits 1 and never prints the access key", async () => {
+describe("smoke:legacy stops at the first check when the key cannot be confirmed", () => {
+  it("stops when the legacy API refuses the key, cleans up and never prints it", async () => {
     const r = await smoke([...ARGS, echoUrl]);
     expect(r.code).toBe(1);
     expect(r.out + r.err).not.toContain(KEY);
+    expect(r.out).toMatch(new RegExp(`^Created test survey ${GUID}$`, "m"));
     expect(r.out).toMatch(/^\| step +\| app +\| legacy +\| result +\|$/m);
     expect(r.out).toMatch(/^\| create survey .*\| FAIL +\|$/m);
-    expect(r.out).toContain("create survey: getActive answered HTTP 401");
-    expect(r.out).toMatch(/^\| delete project .*\| manual +\|$/m);
-    expect(r.out).toContain("Result: FAILED");
-    // Every step ran on the app, the last ones deleted what the run created.
-    expect(await r.providers.surveys.listSurveys({ kind: "personal", userId: TESTER.id })).toEqual(
-      [],
-    );
-    expect(await r.providers.projects.listUserProjects(TESTER.id)).toEqual([]);
+    expect(r.out).toContain("create survey: getActive answered HTTP 401. The run stopped.");
+    expect(r.out).toMatch(/^\| rename .*\| skipped +\|$/m);
+    expect(r.out).toMatch(/^\| delete project .*\| skipped +\|$/m);
+    expect(r.out).toMatch(new RegExp(`^Cleanup: deleted the test survey ${GUID}$`, "m"));
+    expect(r.out).toContain("Result: FAILED.");
+    expect(await r.providers.surveys.listSurveys(PERSONAL)).toEqual([]);
   });
 
-  it("stops at an app write that fails, skips the rest and deletes the test survey", async () => {
-    const memory = createMemoryProviders({
-      users: [TESTER],
-      surveys: [],
-      projects: [],
-      memberships: [],
+  it("stops when the key belongs to another account", async () => {
+    const providers = memoryStore();
+    const r = await smoke([...ARGS, "http://127.0.0.1:9"], {
+      providers,
+      fetch: listingFetch(providers, OTHER_ID),
     });
-    const providers: ProviderSet = {
-      ...memory,
-      projects: {
-        ...memory.projects,
-        createProject: () => Promise.reject(new Error(`store failure ${KEY}`)),
-      },
-    };
-    const r = await smoke([...ARGS, echoUrl], { providers });
     expect(r.code).toBe(1);
-    expect(r.out).toMatch(/^\| create project .*\| error +\|$/m);
-    expect(r.out).toContain("create project: app: unexpected failure (Error)");
-    expect(r.out).toMatch(/^\| move into project .*\| skipped +\|$/m);
-    expect(r.out).toMatch(/^\| delete project .*\| skipped +\|$/m);
-    expect(r.out).toMatch(/^Cleanup: deleted the test survey [0-9a-f-]{36}$/m);
-    expect(r.out + r.err).not.toContain(KEY);
-    expect(await memory.surveys.listSurveys({ kind: "personal", userId: TESTER.id })).toEqual([]);
+    expect(r.out).toContain(`create survey: ${KEY_OF_ANOTHER_ACCOUNT}. The run stopped.`);
+    expect(r.out).toMatch(/^\| rename .*\| skipped +\|$/m);
+    expect(r.out).toMatch(new RegExp(`^Cleanup: deleted the test survey ${GUID}$`, "m"));
+    expect(await providers.surveys.listSurveys(PERSONAL)).toEqual([]);
   });
 
   it("names a legacy API it cannot reach without the URL's query", async () => {
@@ -197,5 +248,115 @@ describe("smoke:legacy when the legacy API refuses every read", () => {
     expect(r.code).toBe(1);
     expect(r.out + r.err).not.toContain(KEY);
     expect(r.out).toMatch(/create survey: getActive: the request failed \(TypeError/);
+  });
+});
+
+describe("smoke:legacy app failures, cleanup failures and interrupts", () => {
+  it("stops at an app write that fails, skips the rest and deletes the test survey", async () => {
+    const memory = memoryStore();
+    const providers: ProviderSet = {
+      ...memory,
+      projects: {
+        ...memory.projects,
+        createProject: () => Promise.reject(new Error(`store failure ${KEY}`)),
+      },
+    };
+    const r = await smoke([...ARGS, "http://127.0.0.1:9"], {
+      providers,
+      fetch: listingFetch(memory, TESTER.id),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/^\| create survey .*\| pass +\|$/m);
+    expect(r.out).toMatch(/^\| create project .*\| error +\|$/m);
+    expect(r.out).toContain("create project: app: unexpected failure (Error)");
+    expect(r.out).toMatch(/^\| move into project .*\| skipped +\|$/m);
+    expect(r.out).toMatch(/^\| delete project .*\| skipped +\|$/m);
+    expect(r.out).toMatch(new RegExp(`^Cleanup: deleted the test survey ${GUID}$`, "m"));
+    expect(r.out + r.err).not.toContain(KEY);
+    expect(await memory.surveys.listSurveys(PERSONAL)).toEqual([]);
+  });
+
+  it("prints ACTION NEEDED with the ids when the cleanup cannot delete them", async () => {
+    const memory = memoryStore();
+    const providers: ProviderSet = {
+      ...memory,
+      surveys: { ...memory.surveys, deleteSurvey: () => Promise.reject(new Error("no delete")) },
+      projects: {
+        ...memory.projects,
+        deleteProject: () => Promise.reject(new Error("no delete")),
+      },
+    };
+    const r = await smoke([...ARGS, "http://127.0.0.1:9"], {
+      providers,
+      fetch: listingFetch(memory, TESTER.id),
+    });
+    expect(r.code).toBe(1);
+    const survey = /^Created test survey (\S+)$/m.exec(r.out)?.[1];
+    const project = /^Created test project (\S+)$/m.exec(r.out)?.[1];
+    expect(survey).toMatch(new RegExp(`^${GUID}$`));
+    expect(project).toMatch(new RegExp(`^${GUID}$`));
+    expect(r.out).toMatch(/^\| delete survey .*\| error +\|$/m);
+    expect(r.err).toContain(
+      `Cleanup: could not delete the test survey ${survey}: unexpected failure (Error)\n`,
+    );
+    expect(r.err).toContain(
+      `Cleanup: could not delete the test project ${project}: unexpected failure (Error)\n`,
+    );
+    expect(r.err).toContain(
+      `ACTION NEEDED: remove survey ${survey} / project ${project} as the test account\n`,
+    );
+    expect(r.out).toContain("Result: FAILED.");
+  });
+
+  it("on an interrupt skips the steps left and deletes the survey and the project", async () => {
+    const controller = new AbortController();
+    const providers = memoryStore();
+    // The interrupt arrives during the project's check.
+    const fetch = listingFetch(providers, TESTER.id, (ownerId) => {
+      if (ownerId !== undefined) controller.abort();
+    });
+    const r = await smoke([...ARGS, "http://127.0.0.1:9"], {
+      providers,
+      fetch,
+      signal: controller.signal,
+    });
+    expect(r.code).toBe(1);
+    const survey = /^Created test survey (\S+)$/m.exec(r.out)?.[1];
+    const project = /^Created test project (\S+)$/m.exec(r.out)?.[1];
+    expect(r.out).toMatch(/^\| create project .*\| pass +\|$/m);
+    expect(r.out).toMatch(/^\| move into project .*\| skipped +\|$/m);
+    expect(r.out).toMatch(/^\| delete survey .*\| skipped +\|$/m);
+    expect(r.out).toContain(`Cleanup: deleted the test survey ${survey}\n`);
+    expect(r.out).toContain(`Cleanup: deleted the test project ${project}\n`);
+    expect(r.err).not.toContain("ACTION NEEDED");
+    expect(r.out).toContain("Result: FAILED (interrupted).");
+    expect(await providers.surveys.listSurveys(PERSONAL)).toEqual([]);
+    expect(await providers.projects.listUserProjects(TESTER.id)).toEqual([]);
+  });
+
+  it("aborts on the first signal and exits at once with the ids on the second", () => {
+    const controller = new AbortController();
+    const pending = new Map<TestData, string>([
+      ["survey", "22222222-0000-4000-8000-0000000000aa"],
+      ["project", "55555555-0000-4000-8000-0000000000bb"],
+    ]);
+    const err: string[] = [];
+    const exits: number[] = [];
+    const handler = createInterruptHandler({
+      controller,
+      io: { out: () => undefined, err: (t) => err.push(t) },
+      pending,
+      exit: (code) => exits.push(code),
+    });
+    handler();
+    expect(controller.signal.aborted).toBe(true);
+    expect(exits).toEqual([]);
+    expect(err.join("")).toContain("Interrupted: the current step finishes");
+    handler();
+    expect(exits).toEqual([130]);
+    expect(err.join("")).toContain(
+      "ACTION NEEDED: remove survey 22222222-0000-4000-8000-0000000000aa / " +
+        "project 55555555-0000-4000-8000-0000000000bb as the test account",
+    );
   });
 });

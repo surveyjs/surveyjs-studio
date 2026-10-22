@@ -148,7 +148,7 @@ export async function withProviders(
   try {
     const config = loadConfig({ ...env }, { skipIdentityRules: true });
     if (options.writes && config.readOnly) {
-      io.err(`${READ_ONLY_REFUSAL}\n`);
+      io.err(`${options.readOnlyRefusal ?? READ_ONLY_REFUSAL}\n`);
       return 2;
     }
     providers = await (deps.makeProviders ?? createProviders)(config, {

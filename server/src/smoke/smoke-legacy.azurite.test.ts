@@ -3,9 +3,10 @@ import { run } from "../cli/smoke-legacy.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "../providers/azure-legacy/index.js";
-import { OWNER_ID, ownerUser, blockedUser } from "../providers/suite/expected.js";
+import { ADMIN_ID, OWNER_ID, ownerUser, blockedUser } from "../providers/suite/expected.js";
 import type { ProviderSet } from "../providers/types.js";
 import { startLegacyStub, type LegacyStub } from "./legacy-stub.js";
+import { KEY_OF_ANOTHER_ACCOUNT } from "./steps.js";
 
 // Runs in the `providers-azurite` Vitest project: `pnpm smoke:legacy` against an in-process stub of
 // api.surveyjs.io that reads the local replica the way the old API does (legacy-data-layout
@@ -50,11 +51,13 @@ describe("smoke:legacy against a stub of the legacy API on the replica", () => {
     }
   });
 
-  async function stub(options: { corruptName?: boolean; key?: string } = {}): Promise<string> {
+  async function stub(
+    options: { corruptRenamed?: boolean; key?: string; keyUser?: string } = {},
+  ): Promise<string> {
     const started = await startLegacyStub({
       config: replicaConfig(),
-      accessKeys: { [options.key ?? KEY]: OWNER_ID },
-      ...(options.corruptName && { corrupt: { name: true } }),
+      accessKeys: { [options.key ?? KEY]: options.keyUser ?? OWNER_ID },
+      ...(options.corruptRenamed && { corrupt: { nameSuffix: " (renamed)" } }),
     });
     stubs.push(started);
     return started.url;
@@ -92,10 +95,11 @@ describe("smoke:legacy against a stub of the legacy API on the replica", () => {
   });
 
   it("fails the steps whose legacy read disagrees, exits 1 and still cleans up", async () => {
-    const url = await stub({ corruptName: true });
+    // The stub answers another name once the survey is renamed.
+    const url = await stub({ corruptRenamed: true });
     const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
     expect(r.code).toBe(1);
-    expect(r.out).toMatch(/^\| create survey .*\| FAIL +\|$/m);
+    expect(r.out).toMatch(/^\| create survey .*\| pass +\|$/m);
     expect(r.out).toMatch(/^\| rename .*\| FAIL +\|$/m);
     expect(r.out).toMatch(
       /^rename: Name is ".* \(renamed\) \(changed\)", expected ".* \(renamed\)"$/m,
@@ -111,9 +115,25 @@ describe("smoke:legacy against a stub of the legacy API on the replica", () => {
     const url = await stub({ key: "another-key-the-stub-knows-0000" });
     const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("create survey: getActive answered HTTP 401");
+    expect(r.out).toContain("create survey: getActive answered HTTP 401. The run stopped.");
     expect(r.out + r.err).not.toContain(KEY);
     expect(await leftovers()).toEqual([]);
+  });
+
+  it("stops when the key belongs to another account and writes nothing there", async () => {
+    // The key is Adam's: getActive lists Adam's surveys, not the owner's new one.
+    const url = await stub({ keyUser: ADMIN_ID });
+    const adamBefore = await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID });
+    const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`create survey: ${KEY_OF_ANOTHER_ACCOUNT}. The run stopped.`);
+    expect(r.out).toMatch(/^\| rename .*\| skipped +\|$/m);
+    expect(r.out).toMatch(/^Cleanup: deleted the test survey [0-9a-f-]{36}$/m);
+    expect(r.out + r.err).not.toContain(KEY);
+    expect(await leftovers()).toEqual([]);
+    expect(await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID })).toEqual(
+      adamBefore,
+    );
   });
 
   it("refuses a blocked account and an unknown one", async () => {
