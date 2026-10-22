@@ -1223,7 +1223,8 @@ paths:
         and the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`. A missing or wrong
         signature, or a timestamp more than five minutes from the server clock, fails with
         `401 invalid-signature` before the body is read. A server without a webhook secret answers
-        `404`.
+        `404` (`503 read-only` while `READ_ONLY=true`, which refuses every call before the
+        signature is checked).
 
         `204` means the erasure is finished. Repeating a call is harmless: the second erasure finds
         nothing. Events of another `type` answer `204` and change nothing.

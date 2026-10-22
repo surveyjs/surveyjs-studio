@@ -107,6 +107,11 @@ at once and prints `ACTION NEEDED: remove …` with the ids still there: remove 
 was killed without a word, search the test account's Personal surveys and its projects in the app for names that start
 with `Smoke test` (the `Created test …` lines name them) and delete them.
 
+- **Stop it with Ctrl+C, not by closing the window.** Closing the terminal sends `SIGHUP`, which the script does not
+  handle: it ends without the cleanup, as if it were killed.
+- **Under pnpm on Windows the prompt may come back before the cleanup ends**, because pnpm exits on Ctrl+C while the
+  script is still deleting. Keep the window open and wait for the `Result:` line.
+
 ## Manual checklist on surveyjs.io
 
 The script deletes its survey, so for these checks make two by hand. A new survey is already published: its

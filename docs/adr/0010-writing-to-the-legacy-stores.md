@@ -479,6 +479,8 @@ rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
 
 - The survey move of a project delete collects its ids with `OUTPUT … INTO` a table variable, because SQL Server
   refuses a bare `OUTPUT` on a table with enabled triggers and the production `Surveys` table may have some.
+  (Step 14: production has none, checked on 2026-10-22 with `pnpm inspect:legacy-schema`; the `OUTPUT … INTO` stays,
+  as it costs nothing and survives a trigger added later.)
 
 - A role change no longer replaces the row, so the legacy site, which reads `role` only, shows the same
   result, and the project's `createdAt` and creator marker survive.

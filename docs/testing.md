@@ -830,8 +830,9 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    `Customer feedback` twice in the editor (change its title, then restore it) for the history screen, which also puts
    it first in the list. The capture does not need `Customer feedback` to list as published (on
    live it may list as unpublished); it records the flag as `feedbackPublished` in `states.json`. The two row-menu
-   screens open the menu of `Product poll`, which is unpublished on both sides: the app reads its empty flag as
-   published, so the app setup unpublishes every survey but `Customer feedback` (`NOT_PUBLISHED` in
+   screens open the menu of `Product poll`, which shows **Publish** on both sides. On live its flag stays empty, and
+   the old list offers Publish for an empty flag. The app reads an empty flag as published (Step 14), so the app
+   setup unpublishes every survey but `Customer feedback` (`NOT_PUBLISHED` in
    `data-set.ts`). Do not open the editor tour or change anything else.
 
    **Publish only once.** In the live "..." menu, Publish and Unpublish are one toggle, and a second click

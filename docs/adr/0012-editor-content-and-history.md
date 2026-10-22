@@ -55,6 +55,12 @@ Server's `=` ignores trailing spaces even under a binary collation. A trigger on
 the bare `OUTPUT` (then `OUTPUT INTO` a table variable is needed); the replica schema and the legacy SQL
 have none.
 
+**Checked on production (Step 14, 2026-10-22).** `pnpm inspect:legacy-schema` printed
+`Surveys.theme: varchar(max) COLLATE SQL_Latin1_General_CP1_CI_AS` and `Surveys triggers: none`. The comparison sets
+its own `COLLATE Latin1_General_BIN2`, so the column's case-insensitive collation does not weaken it, and with no
+trigger the bare `OUTPUT` is allowed. The compare-and-set needs no change. Run the check again before a rollout if the
+site's schema may have changed ([Operations](../operations.md#step-1-internal-use-on-production-data-read-only-first)).
+
 ### What a save writes (R6, R7, R11, R13)
 
 | #   | Question        | Ruling                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -79,6 +85,12 @@ point (the alphabetically first one of the survey, because of how the current po
 [layout, 3.4](../architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)),
 so that entry loses its user and its time moves. Root-level points written by that port belong to no
 survey folder and are ignored.
+
+**Since the site's fix (Step 14).** surveyjs.io commit `3389d6cd49` (2026-10-20) makes the legacy editor add a point
+`{surveyId}/{pointId}` and list the children of `{surveyId}/`, as the app does. A legacy save no longer rewrites one
+of ours, so the cost above applies only to saves made before that date. Points the old code wrote before the fix stay
+lost to both sides; nothing migrates them
+([layout, 3.4](../architecture/legacy-data-layout.md#34-survey-history-blob-container-surveyjsonhistory)).
 
 ### The body limit (R12)
 

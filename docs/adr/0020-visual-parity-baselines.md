@@ -201,7 +201,13 @@ of them blocks Step 13; each one is due before the Step 14 point named in its _A
   refuses only when it is `false`). It listed as published in the end (`states.json` has `feedbackPublished: true`).
   The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`,
   so neither depends on it. Why it can lag is open. _Answer by:_ the Step 14 compatibility smoke test, because the app
-  writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2.
+  writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2. **Answered (product owner,
+  2026-10-21; Step 14):** an empty flag means published in the app, as on the old run page
+  ([ADR 0014](0014-run-page-and-response-collection.md), S1); Publish and Unpublish write 1 and 0, and
+  `pnpm smoke:legacy` reads both back through `api.surveyjs.io` (`IsPublished` `true` and `false`). The old list still
+  shows **Publish** for an empty flag: an accepted difference
+  ([Legacy smoke test](../operations/smoke-test.md#manual-checklist-on-surveyjsio)). Why the live list lagged on
+  2026-10-20 is not known.
 - **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades. **Answered (product
   owner, 2026-10-21): kept local for now.** Visual tests in CI would need: a second baseline set for Linux
   (`e2e/visual/baselines/linux/`), captured by a person on the same system image CI runs (the pinned Playwright Docker
