@@ -117,6 +117,11 @@ pnpm demo:azurite:down   # stops them and deletes their data
 
 See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/demo/).
 
+### Every run mode
+
+[Running the app](docs/running.md) lists every configuration that runs today (the memory and Azurite demos,
+prod-like, and the two runs on production data), how to start and stop each one, and which file holds its settings.
+
 ## Repository layout
 
 | Directory            | Package                         | Purpose                                                           |
@@ -183,6 +188,7 @@ Run from the repository root.
 **For developers**
 
 - [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow, identity and session.
+- [Running the app](docs/running.md): every run mode, how to start and stop it, and where its settings live.
 - [Development](docs/development.md): setup, demo modes, seed accounts, environment variables, scripts, dependency upgrades.
 - [Testing](docs/testing.md): the test seams and how to run each suite. [Visual parity](docs/testing.md#visual-parity) compares the app with surveyjs.io, and [ADR 0020](docs/adr/0020-visual-parity-baselines.md) records why.
 - [Architecture decision records](docs/adr/README.md).
