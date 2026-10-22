@@ -1,9 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const DRIVER_MESSAGE = vi.hoisted(
+  () => "Login failed; Password=canary-secret; AccountKey=canary-key",
+);
+
+vi.mock("mssql", async (importOriginal) => {
+  const actual = await importOriginal<{ default: typeof import("mssql") }>();
+  class FailingPool extends actual.default.ConnectionPool {
+    override connect(): never {
+      return Promise.reject(new Error(DRIVER_MESSAGE)) as never;
+    }
+  }
+  return { ...actual, default: { ...actual.default, ConnectionPool: FailingPool } };
+});
 import { buildApp } from "./app.js";
 import { transactionOf } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { redactUrl, startupSummary } from "./logging.js";
-import { LegacyStoreError } from "./providers/azure-legacy/errors.js";
+import { createAzureLegacyProviders } from "./providers/azure-legacy/index.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createProviders } from "./providers/index.js";
 import { ownerUser } from "./providers/suite/expected.js";
@@ -145,7 +159,7 @@ describe("canary run", () => {
   const FAILURE = "Password=canary-secret;AccountKey=canary-key";
 
   async function run(
-    override: (providers: ProviderSet) => ProviderSet,
+    override: (providers: ProviderSet) => ProviderSet | Promise<ProviderSet>,
     requests: (app: Awaited<ReturnType<typeof buildApp>>) => Promise<string[]>,
   ) {
     const lines: string[] = [];
@@ -154,7 +168,7 @@ describe("canary run", () => {
       IDENTITY_PROVIDER: "dev",
       MEMORY_SEED: "legacy-fixtures",
     });
-    const providers = override(await createProviders(config));
+    const providers = await override(await createProviders(config));
     const app = await buildApp(config, providers, {
       logStream: { write: (line) => lines.push(line) },
     });
@@ -167,21 +181,18 @@ describe("canary run", () => {
     return { lines, bodies };
   }
 
-  const failing = () =>
-    Promise.reject(
-      new LegacyStoreError("survey list", Object.assign(new Error(FAILURE), { code: "ESOCKET" })),
-    );
-
   it("keeps a failing read's error text out of the logs, and names the operation", async () => {
-    const { lines } = await run(
-      (providers) => ({
-        ...providers,
-        surveys: {
-          ...providers.surveys,
-          listSurveys: failing,
-          listSurveyPage: failing,
-        },
-      }),
+    const { lines, bodies } = await run(
+      async (providers) => {
+        // The real azure-legacy provider over a pool whose connect fails with a driver message that
+        // carries the canaries; the users stay in memory so that sign-in works.
+        const legacy = createAzureLegacyProviders({
+          sqlConnectionString: "Server=localhost;Database=x;User Id=u;Password=p",
+          surveysStorageConnectionString: "UseDevelopmentStorage=true",
+          resultsStorageConnectionString: "UseDevelopmentStorage=true",
+        });
+        return { ...providers, surveys: legacy.surveys };
+      },
       async (app) => {
         const login = transactionOf(await app.inject("/api/v1/auth/login"));
         const callback = await app.inject({
@@ -194,6 +205,7 @@ describe("canary run", () => {
         return [response.body];
       },
     );
+    expect(bodies.join("")).not.toContain("canary");
     const logged = lines.join("");
     expect(logged).not.toContain("canary");
     const completed = lines
