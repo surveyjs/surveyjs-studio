@@ -85,6 +85,7 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
       definition={definition.data}
       theme={theme.data}
       maxAssetBytesPerSurvey={config.limits.maxAssetBytesPerSurvey}
+      serverReadOnly={config.readOnly}
     />
   );
 }
@@ -95,6 +96,7 @@ function EditorSession({
   definition,
   theme,
   maxAssetBytesPerSurvey,
+  serverReadOnly,
 }: {
   survey: Survey;
   /** The documents as first read; later reads come from "Reload latest". */
@@ -102,10 +104,12 @@ function EditorSession({
   theme: VersionedDocument<SurveyTheme>;
   /** The configured upload quota per survey. */
   maxAssetBytesPerSurvey: number;
+  /** The server refuses every write (`READ_ONLY`): open like a survey without modify rights. */
+  serverReadOnly: boolean;
 }) {
   const queryClient = useQueryClient();
   // Fixed for the session: the savers exist or not from the start.
-  const [readOnly] = useState(!survey.permissions.canModify);
+  const [readOnly] = useState(serverReadOnly || !survey.permissions.canModify);
   const [states, setStates] = useState<readonly SaverState[]>(["saved", "saved"]);
   const [savers] = useState(() =>
     readOnly
@@ -177,6 +181,7 @@ function EditorSession({
   return (
     <EditorFrame
       survey={survey}
+      readOnly={readOnly}
       status={status}
       notice={
         status.kind === "conflict" && (
@@ -218,11 +223,13 @@ function EditorSession({
  */
 function EditorFrame({
   survey,
+  readOnly = !survey.permissions.canModify,
   status,
   notice,
   children,
 }: {
   survey: Survey;
+  readOnly?: boolean;
   status?: EditorStatus;
   notice?: ReactNode;
   children?: ReactNode;
@@ -253,7 +260,7 @@ function EditorFrame({
         </span>
         <FooterNameEditor
           survey={survey}
-          readOnly={!survey.permissions.canModify}
+          readOnly={readOnly}
           onRenameStart={() => setRenameFailed(false)}
           onRenamed={(ok) => setRenameFailed(!ok)}
         />
