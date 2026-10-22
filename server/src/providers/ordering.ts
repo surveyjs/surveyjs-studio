@@ -9,7 +9,7 @@ import type { HistoryPosition, ResponsePosition, SurveyPosition } from "./types.
 /** The list orders of the store interfaces (types.ts), shared so every provider sorts alike. */
 
 /** Code-point order: the same on every machine, whatever the locale. */
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+export const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** updatedAt descending, then id ascending. */
 export const surveyListOrder = (a: SurveyRecord, b: SurveyRecord): number =>

@@ -1,7 +1,6 @@
 import type { ViewName, ViewState } from "../domain/types.js";
 import type { ViewStore } from "./types.js";
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { GUID } from "../domain/guid.js";
 
 /** The marker of a reset view: `getView` answers null for it, even where a legacy state exists. */
 const RESET = Symbol("reset");

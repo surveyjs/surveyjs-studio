@@ -4,6 +4,7 @@ import { AppError } from "../errors.js";
 import type { EraseAccount } from "./erasure.js";
 import { verifyWebhook } from "./webhook.js";
 import { webhookKey } from "./webhook-secret.js";
+import { GUID } from "../domain/guid.js";
 
 export interface AccountHandlersOptions {
   /** `ACCOUNT_WEBHOOK_SECRET`; null: the webhook answers 404. Secret: never log or echo. */
@@ -12,7 +13,6 @@ export interface AccountHandlersOptions {
   readonly now?: Clock;
 }
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOGGABLE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const badRequest = (detail: string) =>

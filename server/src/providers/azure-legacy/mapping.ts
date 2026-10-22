@@ -20,6 +20,7 @@ import type {
   LegacySurveyRow,
   LegacyUserRow,
 } from "./rows.js";
+import { GUID } from "../../domain/guid.js";
 
 /**
  * Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9.
@@ -43,7 +44,6 @@ export class UnmappableLegacyRowError extends Error {
 
 const guid = (value: string): string => value.toLowerCase();
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A GUID with dashes, in any case: the only id form the legacy stores hold. */
 export const isGuid = (value: string): boolean => GUID.test(value);
 

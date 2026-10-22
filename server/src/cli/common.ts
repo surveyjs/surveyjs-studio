@@ -14,7 +14,7 @@ export interface CliIo {
 
 export type CliEnv = Readonly<Record<string, string | undefined>>;
 
-export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export { GUID } from "../domain/guid.js";
 
 export type ParsedFlags =
   | {

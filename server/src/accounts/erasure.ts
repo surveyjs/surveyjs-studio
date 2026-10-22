@@ -1,6 +1,7 @@
 import { decideMemberErasure, type ErasureFacts } from "../projects/rules.js";
 import type { SurveyOwner } from "../domain/types.js";
 import type { FileStore, MemberErasure, ProjectStore, SurveyStore } from "../providers/types.js";
+import { GUID } from "../domain/guid.js";
 
 /**
  * Account erasure (R11): everything the app holds for one user id. Projects come first: the user
@@ -54,8 +55,6 @@ export interface ErasurePreview {
     readonly surveyCount: number;
   }[];
 }
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The id in lower case; refuses anything but a GUID. */
 function checkedUserId(userId: string): string {

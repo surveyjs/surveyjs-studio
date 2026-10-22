@@ -12,10 +12,11 @@ import {
   type MemberPosition,
   type ProjectPosition,
 } from "../paging/cursor.js";
+import { compare } from "../providers/ordering.js";
 import type { ProjectStore, UserDirectory } from "../providers/types.js";
 import { notFound } from "../surveys/access.js";
 import { memberJson, projectJson, type MemberJson, type ProjectJson } from "./json.js";
-import { surveyReceiver } from "./rules.js";
+import { same, surveyReceiver } from "./rules.js";
 
 type ProjectPage = components["schemas"]["ProjectPage"];
 type MemberPage = components["schemas"]["MemberPage"];
@@ -61,9 +62,6 @@ export interface ProjectsService {
   ): Promise<MemberJson>;
   removeMember(user: RequestUser, projectId: string, userId: string): Promise<void>;
 }
-
-/** Code-point order, as `projectListOrder` and the member list order compare. */
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** A place in a (lower-cased name, id) list order: a project or a member position. */
 type Position = ProjectPosition | MemberPosition;
@@ -146,8 +144,6 @@ function checkName(name: string | undefined): void {
     });
   }
 }
-
-const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /** The projects of a user, and their members (ADR 0009: access through membership). */
 export function createProjectsService(options: ProjectsServiceOptions): ProjectsService {

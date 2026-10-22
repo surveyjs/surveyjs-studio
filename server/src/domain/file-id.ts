@@ -1,9 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { GUID } from "./guid.js";
 
 /** 64 lower-case hex digits. */
 export const FILE_ID_PATTERN = /^[0-9a-f]{64}$/;
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A new id for a file of `surveyId` (a GUID, any case; throws otherwise): its 32 hex digits, then 32 random. */
 export function newFileId(

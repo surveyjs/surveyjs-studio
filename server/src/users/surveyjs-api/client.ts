@@ -5,6 +5,7 @@ import { demoAccountNotices, type AccountNotices } from "../../notices/account-n
 import { licenceNotices } from "../../notices/licence-rule.js";
 import type { UserDirectory } from "../../providers/types.js";
 import { licenceExpiriesFromApi, userFromApi, usersFromLookup } from "./mapping.js";
+import { GUID } from "../../domain/guid.js";
 
 export interface SurveyjsApiOptions {
   /** USER_API_URL without a trailing slash. */
@@ -33,7 +34,6 @@ export class UserApiError extends Error {
   }
 }
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CHUNK = 100;
 
 const isTimeout = (error: unknown): boolean =>

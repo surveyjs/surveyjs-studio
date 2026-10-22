@@ -39,6 +39,7 @@ import { createMemoryFileStore } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
 import type { ProviderSet } from "./types.js";
+import { GUID } from "../domain/guid.js";
 
 /**
  * A stored project. `ownerId` and `memberCount` are worked out from `memberships` at read time:
@@ -91,7 +92,6 @@ export interface MemoryOptions {
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
 const lower = (id: string): string => id.toLowerCase();
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 
 /** Distinct values in ascending code-point order. */
