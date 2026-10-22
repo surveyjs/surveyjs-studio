@@ -52,7 +52,8 @@ identity provider, and `dev` signs in as a user of the memory seed), `pnpm --fil
 
 ## Environment variables (server)
 
-Read at start-up. Every problem is reported at once and the process exits with code 1.
+Read at start-up. Every problem is reported at once and the process exits with code 1. Which of them each deployment
+mode needs, and their values in production: [Operations › Configuration by deployment mode](operations.md#configuration-by-deployment-mode).
 
 | Variable                                   | Values                                                                                                                                                                                           | Default                                                                                                                                                                    |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -91,7 +92,7 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `USER_DIRECTORY`                           | `memory`, `surveyjs-sql`, `surveyjs-api`, `local` (`local` is refused: not built yet)                                                                                                            | `memory` with `STORAGE_PROVIDER=memory`, else `surveyjs-sql`                                                                                                               |
 | `USER_API_URL`                             | absolute http(s) URL; plain http only on `localhost`, `127.0.0.1` or `[::1]`; a trailing slash is dropped                                                                                        | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
 | `USER_API_TOKEN`                           | string; **secret**                                                                                                                                                                               | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
-| `ACCOUNT_WEBHOOK_SECRET`                   | `whsec_` and the base64 of at least 24 bytes; **secret**                                                                                                                                         | unset: the account-deleted webhook answers `404`                                                                                                                           |
+| `ACCOUNT_WEBHOOK_SECRET`                   | `whsec_` and the base64 of at least 24 bytes; **secret**                                                                                                                                         | unset: the account-deleted webhook answers `404` (`503 read-only` while `READ_ONLY=true`)                                                                                  |
 | `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                                                                                                                                                      | unset; merged over the built-in account links (below)                                                                                                                      |
 | `WEB_ROOT`                                 | absolute path of a built `web/dist`; it must hold `index.html`                                                                                                                                   | unset: the server serves the API only. Set: also the web app, with its own headers (ADR 0021)                                                                              |
 | `READ_ONLY`                                | `true`, `false`                                                                                                                                                                                  | `false`. `true`: every write answers `503 read-only`; reads, sign-in and sign-out work                                                                                     |
@@ -699,8 +700,9 @@ needs no server change until you implement it.
 - **Major upgrades** (a core dependency, Node.js, pnpm) get their own pull request, never mixed
   with feature work. The pull request adds an ADR in `docs/adr/` that records what changed and how
   it was verified (for the shape, see [ADR 0002](adr/0002-node-24-lts.md)).
-- **Node.js** is pinned in `.nvmrc` and `engines.node`. Keep both, and the Docker base image once
-  it exists, on the same major.
+- **Node.js** is pinned in `.nvmrc` and `engines.node`. Keep both on the same major, and the Docker
+  base image (`FROM node:<version>` in `Dockerfile`) on the exact `.nvmrc` version: `pnpm check:deps`
+  fails otherwise.
 
 To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dependency-rules).
 

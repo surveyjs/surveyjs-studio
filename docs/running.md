@@ -11,7 +11,8 @@ Two deployment modes ([idea §3.0](../idea.md)) can run now:
 - **Mode 1.1, hosted on the surveyjs.io stores:** the app on the real production SQL database and storage accounts.
 
 Mode 1.2 is mode 1.1 plus changes on surveyjs.io (its redirects and the account-deleted webhook), so it needs no other
-app configuration. Modes 1.3, 2a, 2b and 3 are not built yet.
+app configuration than the webhook secret. Modes 1.3, 2a, 2b and 3 are not built yet. A real deployment (the image
+behind an https proxy, its settings by mode, the rollout) is described in [Operations](operations.md).
 
 | Mode                              | What it is                                                                                         | Start                                                                               | Stop                                                                       | Settings file                                                                                             |
 | --------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |

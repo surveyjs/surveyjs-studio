@@ -53,7 +53,7 @@ holds the policy for the app's pages. `vite preview` applies it through a small 
 skips the proxied prefixes (`/api`, `/__dev`, `/healthz`, `/readyz`), which keep the server's own headers. **The Vite
 dev server sends none**, because it injects inline scripts: `pnpm demo` has no CSP and `pnpm demo:preview` has it.
 A production static host uses the same module (Step 14) or copies the values from
-[Operations](../operations.md#the-header-policy-for-the-static-host).
+[Operations](../operations.md#the-header-policy).
 
 | Header                      | Value                                                                                                                                                                                                                                                                                                                         |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

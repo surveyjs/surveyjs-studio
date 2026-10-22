@@ -17,7 +17,7 @@ directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployme
 
 | Mode                                       | What it is                                                                                                                                       | State                                                                                  |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| **1.1–1.2 Hosted on the surveyjs.io data** | `my-surveys.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): Steps 1–13 done, Step 14 to go                            |
+| **1.1–1.2 Hosted on the surveyjs.io data** | `my-surveys.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
 | **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                          | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
 | **2a Sandbox**                             | `my-surveys.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
 | **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                                | Same as 2a                                                                             |
@@ -26,7 +26,8 @@ directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployme
 
 ## Status
 
-Phase 1, **Steps 1–13 of 14 are done** ([progress](plan.md#progress)). What works:
+Phase 1, **Steps 1–13 of 14 are done, and Step 14 is built**: its last checkpoint, the compatibility smoke test on
+production and the review of the runbook, is open ([progress](plan.md#progress)). What works:
 
 - **Every screen of the current My Surveys.**
   - **Survey list:**
@@ -61,6 +62,11 @@ Phase 1, **Steps 1–13 of 14 are done** ([progress](plan.md#progress)). What wo
   - a deleted surveyjs.io account erases its data: through a signed webhook, the `pnpm account:erase` command, or a reconciliation check;
   - security headers, and no respondent answers in the logs;
   - no legacy URLs in the app: the surveyjs.io site redirects old links using [docs/operations/surveyjs-redirects.md](docs/operations/surveyjs-redirects.md).
+- **Production readiness (Step 14):**
+  - one Docker image that serves the web app and the API from one origin, runs as non-root and has a health check;
+  - `/readyz` names the dependency that fails; JSON logs with a start-up summary, request ids and the operation;
+  - `READ_ONLY=true` for the first phase on production data;
+  - `pnpm smoke:legacy`, which proves on production that `api.surveyjs.io` reads what the app writes.
 - **The same look as surveyjs.io, proven by screenshots:** `pnpm e2e:visual` compares 17 screens with baselines captured from the live site, in Chromium, Firefox and WebKit ([docs/testing.md › Visual parity](docs/testing.md#visual-parity)).
 - **Tests:**
   - unit tests;
@@ -73,8 +79,10 @@ Phase 1, **Steps 1–13 of 14 are done** ([progress](plan.md#progress)). What wo
 
 **Next:**
 
-- [plan.md](plan.md) Step 14: production readiness and the rollout kit. It starts from the product owner's open points
-  in [ADR 0020 › To confirm](docs/adr/0020-visual-parity-baselines.md#to-confirm).
+- Step 14's last checkpoint: the smoke test on production with the dedicated test account, and the review of the
+  [runbook](docs/operations.md#rollout-and-rollback-runbook) with the site team.
+- Hosting (most likely Hetzner) as a separate step, then the rollout: internal use read-only, a beta link, the
+  redirects, and the removal of the old section.
 
 After that, the hosted-migration and self-hosted tracks run at the same time ([After Phase 1](plan.md#after-phase-1)).
 
@@ -122,6 +130,25 @@ See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/
 [Running the app](docs/running.md) lists every configuration that runs today (the memory and Azurite demos,
 prod-like, and the two runs on production data), how to start and stop each one, and which file holds its settings.
 
+## Running in production
+
+One image serves every deployment mode; its settings choose the mode. Build it with `pnpm image:build`, try it with
+`pnpm prod-like:up`, and run it behind an https reverse proxy. [Operations](docs/operations.md) has the details.
+
+| Mode      | Settings                                                                                                               | Ready                                    |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| 1.1       | `APP_EDITION=hosted`, `STORAGE_PROVIDER=azure-legacy` with the three `LEGACY_*` strings, sign-in at `auth.surveyjs.io` | Yes: from rollout step 1                 |
+| 1.2       | As 1.1, plus `ACCOUNT_WEBHOOK_SECRET`                                                                                  | Yes: from rollout step 4                 |
+| 1.3       | The hosted-migration track                                                                                             | Not yet                                  |
+| 2a, 2b, 3 | The self-hosted track                                                                                                  | Not yet                                  |
+| 4         | In memory or on the local replica, with the dev sign-in or the mock OIDC server                                        | Yes ([Running the app](docs/running.md)) |
+
+- [Configuration by deployment mode](docs/operations.md#configuration-by-deployment-mode): every setting of each mode.
+- [Deployment](docs/operations.md#deployment), [monitoring](docs/operations.md#monitoring) and
+  [read-only mode](docs/operations.md#read-only-mode).
+- [The rollout and rollback runbook](docs/operations.md#rollout-and-rollback-runbook), for the SurveyJS team and the
+  surveyjs.io site team.
+
 ## Repository layout
 
 | Directory            | Package                         | Purpose                                                           |
@@ -132,7 +159,7 @@ prod-like, and the two runs on production data), how to start and stop each one,
 | `conformance-tests/` | `@my-surveys/conformance-tests` | HTTP suite that checks any server against the contract            |
 | `e2e/`               | `@my-surveys/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
 | `scripts/`           | (root)                          | Repository checks, for example `check:deps`                       |
-| `docker/`            |                                 | The legacy replica and the mock OIDC server for Azurite mode      |
+| `docker/`            |                                 | The legacy replica, the mock OIDC server, and the prod-like setup |
 | `docs/`              |                                 | Documentation                                                     |
 
 ## Scripts
@@ -195,9 +222,9 @@ Run from the repository root.
 - [Testing](docs/testing.md): the test seams and how to run each suite. [Visual parity](docs/testing.md#visual-parity) compares the app with surveyjs.io, and [ADR 0020](docs/adr/0020-visual-parity-baselines.md) records why.
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
-- [Operations](docs/operations.md): configuring accounts, the erase and reconcile commands, the webhook secret, the header policy.
+- [Operations](docs/operations.md): deployment, monitoring, read-only mode, the configuration by deployment mode, accounts, the erase and reconcile commands, the webhook secret, the header policy, and the rollout and rollback runbook.
 - Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
-- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–13.
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14.
 
 **For users and integrators**
 

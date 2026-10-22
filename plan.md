@@ -1,6 +1,6 @@
 # Implementation plan: My Surveys, Phase 1
 
-Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0) · Steps 1–13 done 2026-10-21; Step 14 carries Step 13's open points
+Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0) · Steps 1–13 done 2026-10-21; Step 14 in progress (built; checkpoints 1–3 passed 2026-10-22, checkpoint 4 open)
 Implements: [spec.md](spec.md) (Phase 1, which is deployment modes 1.1 and 1.2), within the brief in [idea.md](idea.md) and the contract [contract/openapi.yaml](contract/openapi.yaml). The work after Phase 1 runs as two track plans; see [After Phase 1](#after-phase-1).
 
 ## How to use this plan
@@ -86,7 +86,7 @@ The documentation is created in Step 1 and grown by every step:
 | 11 | Projects and members | ☑ |
 | 12 | Accounts by deployment mode, data protection and hardening | ☑ |
 | 13 | Visual parity with surveyjs.io | ☑ |
-| 14 | Production readiness and rollout kit | ☐ |
+| 14 | Production readiness and rollout kit | ☐ in progress: checkpoints 1–3 passed 2026-10-22; checkpoint 4 (the production smoke test, the runbook review) open |
 
 ---
 
@@ -883,7 +883,7 @@ The documentation is created in Step 1 and grown by every step:
   - the surveyjs.io team must agree to build the user API and the account-deleted webhook that Step 12 specifies. Until then the app reads the site's SQL `Users` directly.
   - the site must build the redirects from the Step 12 map.
 - **Step 13:** ~~a team member must capture the visual baselines~~ Done: the product owner captured them on 2026-10-20 and 2026-10-21 from a dedicated surveyjs.io account (ADR 0020). A recapture needs a person again.
-- **Step 14:** the hosting environment, OIDC registration, credentials and staging data.
+- **Step 14:** the hosting environment, OIDC registration, credentials and staging data. Since 2026-10-21: hosting is a separate step after Step 14; the OIDC registration and the credentials are inputs of rollout step 1 ([runbook](docs/operations.md#rollout-and-rollback-runbook)); there is no staging copy: the smoke test runs on production with a dedicated test account (product owner's decision).
 - **idea §3.1 *Done when*** includes "the old section is switched off". That is an operational action by the SurveyJS team after Step 14, outside this plan's code.
 
 ## After Phase 1

@@ -71,11 +71,13 @@ flowchart LR
 
 Rules that hold everywhere:
 
-- Every API path is under `/api/v1`. The only other routes are `/healthz`, `/readyz`,
+- Every API path is under `/api/v1`. The only other server routes are `/healthz`, `/readyz`,
   `/api/docs` (off in production unless `API_DOCS=true`) and, with the dev identity provider only,
-  `/__dev/sign-in`.
+  `/__dev/sign-in`. When `WEB_ROOT` is set (the production image), every other `GET` or `HEAD` path is the
+  web app's: a file of the built app, or `index.html` (`200` on a client route, `404` elsewhere), with the web
+  app's headers ([ADR 0021](adr/0021-production-image-and-web-serving.md)).
 - Every error body is `application/problem+json` with `type`, `title`, `status` and a stable
-  `code`. Unknown URLs give `404 not-found`.
+  `code`. Unknown URLs give `404 not-found` (with `WEB_ROOT`, an unknown page path gets the web app's `404` page).
 - Every response carries `x-request-id`. An incoming `x-request-id` (up to 128 characters) is reused.
 - Request logs never show the values of the `code`, `state` and `clientId` query parameters (the sign-in
   callback and the respondent's client id): they are written as `[redacted]`. The client address in a
@@ -1072,8 +1074,8 @@ frame-src https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-
 
 `frame-ancestors *` applies to `/s/*` only (a hosted survey embeds as an iframe of its run URL); every other page is
 `'none'`. `vite preview` sends the policy and the dev server does not (Vite dev injects inline scripts), so
-**`pnpm demo` has no CSP and `pnpm demo:preview` has it**. The values for a production static host are in
-[Operations](operations.md#the-header-policy-for-the-static-host).
+**`pnpm demo` has no CSP and `pnpm demo:preview` has it**. The production values, and what a reverse proxy must
+keep, are in [Operations](operations.md#the-header-policy).
 
 **CSP alone, no isolated run-page origin.** Author HTML (HTML questions, `completedHtml`, titles) and URL-prefilled
 `{placeholders}` are rendered by survey-core and Creator as given; the policy is what stops a script from running on
