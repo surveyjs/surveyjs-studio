@@ -71,14 +71,21 @@ const xssTest = test.extend<{ readOnlyAndSilent: void }>({
 xssTest.describe.configure({ timeout: 90_000 });
 xssTest.use({ allowCspViolations: true });
 
-xssTest("the list and the editor show the names as text", async ({ page }) => {
-  await signInAt(page, "/", "member");
-  const row = surveyRow(page, NAME);
-  await expect(row).toBeVisible();
-  await expect(row.locator('img[src="x"]')).toHaveCount(0);
+xssTest.describe("the list and the editor", () => {
+  // The editor renders the name's `<img src=x>` (its onerror is blocked by the CSP), so the browser
+  // loads `x` next to the editor's path. The server that serves the web app (the image) answers
+  // it with 404, which Chromium and WebKit log; `vite preview` answers 200.
+  xssTest.use({ expectedErrorResponses: [{ path: `/surveys/${XSS_SURVEY_ID}/x`, status: 404 }] });
 
-  await openEditor(page, XSS_SURVEY_ID);
-  await expect(creator(page).getByText(QUESTION_TITLE, { exact: true })).toBeVisible();
+  xssTest("the list and the editor show the names as text", async ({ page }) => {
+    await signInAt(page, "/", "member");
+    const row = surveyRow(page, NAME);
+    await expect(row).toBeVisible();
+    await expect(row.locator('img[src="x"]')).toHaveCount(0);
+
+    await openEditor(page, XSS_SURVEY_ID);
+    await expect(creator(page).getByText(QUESTION_TITLE, { exact: true })).toBeVisible();
+  });
 });
 
 xssTest("the run page shows the names as text, completes, and stores nothing", async ({ page }) => {
