@@ -528,7 +528,8 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         ),
     },
     notices,
-    ready: () => Promise.resolve(true),
+    readinessNames: ["memory"],
+    ready: () => Promise.resolve([{ name: "memory", ok: true }]),
     close: () => Promise.resolve(),
   };
 }

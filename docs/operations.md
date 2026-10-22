@@ -18,7 +18,7 @@ root with `pnpm image:build` (`docker build -t my-surveys:local .`). Try it loca
 | Port     | `3000` (`EXPOSE 3000`); put an https proxy or load balancer in front                                                                             |
 | Set      | `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `WEB_ROOT=/app/web` (the built web app)                                                      |
 | Liveness | `GET /healthz`: `200` while the process runs; the image's `HEALTHCHECK` calls it                                                                 |
-| Ready    | `GET /readyz`: `200 {"status":"ok"}` when the stores answer, else `503 {"status":"unavailable"}`. It never shows a connection string or a secret |
+| Ready    | `GET /readyz`: `200 {"status":"ok"}`, else `503` with `failing`: the failed checks by name, e.g. `sql`. It never shows an error text or a secret |
 
 `HOST=0.0.0.0` makes the server listen on every interface of the container, which is what a container needs; outside a
 container the default stays `127.0.0.1`. `WEB_ROOT` makes the server serve the web app with the SPA header policy (see

@@ -48,9 +48,14 @@ function discardBody(response: Response): void {
   void response.body?.cancel().catch(() => undefined);
 }
 
+/** A user id nobody has: the readiness probe looks it up and expects a 404. */
+const PROBE_USER_ID = "00000000-0000-4000-8000-000000000000";
+
 export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   readonly users: UserDirectory;
   readonly notices: AccountNotices;
+  /** True when the API answers (a 404 for a user nobody has); false for anything else. */
+  probe(): Promise<boolean>;
 } {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
@@ -158,5 +163,13 @@ export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   const notices =
     setting === "surveyjs-licenses" ? licenceNoticesFromApi : demoAccountNotices(setting);
 
-  return { users, notices };
+  async function probe(): Promise<boolean> {
+    try {
+      return (await call("readiness probe", `/users/${PROBE_USER_ID}`)) === null;
+    } catch {
+      return false;
+    }
+  }
+
+  return { users, notices, probe };
 }

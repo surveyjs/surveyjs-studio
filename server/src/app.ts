@@ -126,8 +126,14 @@ export async function buildApp(
   app.get("/healthz", () => ({ status: "ok" }));
 
   app.get("/readyz", async (_request, reply) => {
-    const ready = await providers.ready().catch(() => false);
-    return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable" });
+    // A check that cannot run counts as failed, and the answer never names less than all of them.
+    const checks = await providers.ready().catch(() => null);
+    const failing =
+      checks === null
+        ? [...providers.readinessNames]
+        : checks.filter((check) => !check.ok).map((check) => check.name);
+    if (failing.length === 0) return reply.send({ status: "ok" });
+    return reply.code(503).send({ status: "unavailable", failing });
   });
 
   // Only routes with a `rateLimit` config are limited (sign-in and the public operations); each

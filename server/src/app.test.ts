@@ -44,12 +44,35 @@ describe("health", () => {
     const notReady: ProviderSet = {
       ...createMemoryProviders(),
       name: "down",
-      ready: () => Promise.resolve(false),
+      readinessNames: ["sql", "surveys-storage", "results-storage"],
+      ready: () =>
+        Promise.resolve([
+          { name: "sql", ok: false },
+          { name: "surveys-storage", ok: true },
+          { name: "results-storage", ok: true },
+        ]),
       close: () => Promise.resolve(),
     };
     const res = await (await start(notReady)).inject("/readyz");
     expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ status: "unavailable" });
+    expect(res.json()).toEqual({ status: "unavailable", failing: ["sql"] });
+  });
+
+  it("GET /readyz lists every check of the provider set when ready() throws", async () => {
+    const broken: ProviderSet = {
+      ...createMemoryProviders(),
+      name: "broken",
+      readinessNames: ["sql", "surveys-storage", "results-storage", "user-api"],
+      ready: () => Promise.reject(new Error("Password=canary-secret")),
+      close: () => Promise.resolve(),
+    };
+    const res = await (await start(broken)).inject("/readyz");
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({
+      status: "unavailable",
+      failing: ["sql", "surveys-storage", "results-storage", "user-api"],
+    });
+    expect(res.body).not.toContain("canary-secret");
   });
 
   it("closes providers when the app closes", async () => {
@@ -57,7 +80,7 @@ describe("health", () => {
     const spy: ProviderSet = {
       ...createMemoryProviders(),
       name: "spy",
-      ready: () => Promise.resolve(true),
+      ready: () => Promise.resolve([{ name: "memory", ok: true }]),
       close: () => {
         closed = true;
         return Promise.resolve();

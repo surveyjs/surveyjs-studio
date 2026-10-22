@@ -2312,8 +2312,12 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
     });
 
     describe("lifecycle", () => {
-      it("ready resolves true", async () => {
-        expect(await providers.ready()).toBe(true);
+      it("ready reports every check ok", async () => {
+        const checks = await providers.ready();
+        expect(checks.map((check) => check.name).sort()).toEqual(
+          [...providers.readinessNames].sort(),
+        );
+        expect(checks.every((check) => check.ok)).toBe(true);
       });
 
       it("close resolves", async () => {

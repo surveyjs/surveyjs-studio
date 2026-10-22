@@ -431,6 +431,16 @@ export interface ProviderSet {
   readonly views: ViewStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
-  ready(): Promise<boolean>;
+  /** Every check `ready()` runs, by name: `/readyz` lists them all when `ready()` itself fails. */
+  readonly readinessNames: readonly ReadinessName[];
+  /** One entry per dependency check, run in parallel. Never carries an error text. */
+  ready(): Promise<readonly ReadinessCheck[]>;
   close(): Promise<void>;
+}
+
+export type ReadinessName = "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory";
+
+export interface ReadinessCheck {
+  readonly name: ReadinessName;
+  readonly ok: boolean;
 }
