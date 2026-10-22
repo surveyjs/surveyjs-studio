@@ -155,7 +155,7 @@ const EDITOR_HIDE_APP: readonly Adjustment[] = [
   {
     selector: ".svc-creator__banner",
     reason:
-      "survey-creator-core 3.1.2 shows its licence banner without a licence key; the live site has a key",
+      "survey-creator-core 3.2.2 shows its licence banner without a licence key; the live site has a key",
     category: "library",
     optional: true,
   },
