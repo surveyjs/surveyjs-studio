@@ -1093,20 +1093,43 @@ export async function writeViewReset(
 /** Rows of one transaction: the Table service accepts at most 100. */
 const TRANSACTION_ROWS = 100;
 
-/** Deletes every row of `table` (keys only listed), 100 per transaction; a missing table is fine. */
+/** Keys asked for per listing page while deleting: the most the Table service returns at once. */
+const LISTING_PAGE_ROWS = 1000;
+
+/**
+ * Deletes every row of `table` page by page: each listed page of keys is deleted, 100 per
+ * transaction and partition, before the next page is read. The listing goes on from the keys
+ * after the last page, so the deleted rows do not move it. A missing table is fine.
+ */
 async function deleteAllRows(table: TableClient): Promise<void> {
-  const keys = new Map<string, string[]>();
-  try {
-    const listing = table.listEntities({ queryOptions: { select: ["PartitionKey", "RowKey"] } });
-    for await (const { partitionKey, rowKey } of listing) {
-      if (partitionKey === undefined || rowKey === undefined) continue;
-      const rows = keys.get(partitionKey) ?? [];
-      rows.push(rowKey);
-      keys.set(partitionKey, rows);
+  const pages = table
+    .listEntities({ queryOptions: { select: ["PartitionKey", "RowKey"] } })
+    .byPage({ maxPageSize: LISTING_PAGE_ROWS });
+  for (;;) {
+    let page: readonly { partitionKey?: string; rowKey?: string }[];
+    try {
+      const step = await pages.next();
+      if (step.done) return;
+      page = step.value;
+    } catch (error) {
+      if (statusOf(error) === 404) return;
+      throw error;
     }
-  } catch (error) {
-    if (statusOf(error) === 404) return;
-    throw error;
+    await deleteKeys(table, page);
+  }
+}
+
+/** Deletes the listed rows, 100 per transaction and partition; a 404 goes row by row. */
+async function deleteKeys(
+  table: TableClient,
+  listed: readonly { partitionKey?: string; rowKey?: string }[],
+): Promise<void> {
+  const keys = new Map<string, string[]>();
+  for (const { partitionKey, rowKey } of listed) {
+    if (partitionKey === undefined || rowKey === undefined) continue;
+    const rows = keys.get(partitionKey) ?? [];
+    rows.push(rowKey);
+    keys.set(partitionKey, rows);
   }
   for (const [partitionKey, rowKeys] of keys) {
     for (let from = 0; from < rowKeys.length; from += TRANSACTION_ROWS) {
