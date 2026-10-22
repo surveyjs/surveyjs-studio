@@ -22,11 +22,25 @@ failure. No other data is written. Field names and endpoints are in
 | `SMOKE_ACCESS_KEY`                         | The test account's access key for `api.surveyjs.io`. Never printed; the run never reads it from `Users` |
 | `READ_ONLY`                                | Unset or `false`: with `true` the run refuses                                                           |
 
-- The access key is the `accessKey` the site sends to the API for that account. `private/Surveys/generateAccessKey`
-  makes a new one and invalidates the old one.
 - Keep the env file **outside the repository** (or name it `.env.<something>`, which git ignores) and delete it when
   you are done. Set `SMOKE_ACCESS_KEY` in the shell or in that file; the shell wins.
 - The test account must exist and must not be blocked.
+
+**Getting the access key.**
+
+1. Sign in on surveyjs.io as the test account and open **My Surveys**.
+2. Open the browser's developer tools, the **Network** tab, and reload the page (or rename a survey).
+3. Open any request to `api.surveyjs.io/private/…` and copy the value of its `accessKey` query parameter (32
+   letters and digits).
+4. Put it in `SMOKE_ACCESS_KEY`. Do not paste it into a ticket, a chat or a file in the repository.
+
+Do not call `private/Surveys/generateAccessKey` unless you want to rotate the key: it makes a new key and the old one
+stops working everywhere the account uses it.
+
+**A wrong key** stops the run at the first step, `create survey`, before anything else is written. It shows as
+`getActive answered HTTP 401`, as `the request failed (TypeError)` (the API may answer with a redirect, which the script
+never follows, so the key cannot go to another address), or, for the key of another account, as
+`the access key does not belong to this account`. The test survey is then deleted.
 
 ## Run
 
@@ -34,8 +48,10 @@ failure. No other data is written. Field names and endpoints are in
 pnpm smoke:legacy --account <test account email> --yes --env-file <path>
 ```
 
-`--legacy-api <base URL>` changes the API address (default `https://api.surveyjs.io`; the tests use a local stub).
-Without `--yes` nothing is done.
+`--legacy-api <base URL>` changes the API address (default `https://api.surveyjs.io`). It must be `https`; `http` is
+allowed only for `localhost`, `127.0.0.1` and `[::1]` (the tests' local stub). Without `--yes` nothing is done.
+
+The script prints `Created test survey <id>` and `Created test project <id>` as soon as each exists.
 
 | Exit code | Meaning                                                                                                                       |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -79,23 +95,42 @@ flag is still empty (empty means published, as on the old run page).
 Results: `pass`; `FAIL`, the legacy read disagrees or fails (the line under the table says how); `error`, the app
 write failed and the run stopped (the later steps show `skipped`); `manual`, see the checklist.
 
-**When the cleanup fails**, the `Cleanup:` line names the survey or project id. Archive and delete the survey, then
-delete the project, in the app as the test account.
+A failed `create survey` check stops the run: without it the script cannot tell that the key belongs to the account.
+
+**When the cleanup fails**, a `Cleanup: could not delete …` line and the banner
+`ACTION NEEDED: remove survey <id> / project <id> as the test account` name what is left. Sign in to the app as the
+test account, archive and delete the survey, then delete the project.
+
+**After an interrupt.** The first Ctrl+C (or `SIGTERM`) lets the current step finish, skips the rest, deletes the
+test survey and project and prints the table with `Result: FAILED (interrupted).` Wait for it. A second Ctrl+C exits
+at once and prints `ACTION NEEDED: remove …` with the ids still there: remove them by hand as above. If the process
+was killed without a word, search the test account's Personal surveys and its projects in the app for names that start
+with `Smoke test` (the `Created test …` lines name them) and delete them.
 
 ## Manual checklist on surveyjs.io
 
-The script deletes its survey, so for these checks make one by hand. Sign in to the **new app** as the test account,
-create a survey in Personal, save its definition two or three times, publish it, open its run page and submit one
-response. Then sign in to **surveyjs.io** as the test account and check:
+The script deletes its survey, so for these checks make two by hand. A new survey is already published: its
+published flag is empty, which the app (and the old run page) reads as published, so the app offers **Unpublish**, not
+**Publish**.
 
-- [ ] **My Surveys** lists the survey with the **Run** link (it is published).
-- [ ] `https://surveyjs.io/published?id=<survey id>` runs it.
-- [ ] **History** lists the app's saves, newest first, and each one opens.
-- [ ] The **results** page shows the response.
+In the **new app**, signed in as the test account:
+
+1. Create survey **A** in Personal, save its definition two or three times, open its run page and submit one response.
+2. Unpublish **A**, then Publish it again: its flag is now 1.
+3. Create survey **B** in Personal, save a definition, and leave it as it is (its flag stays empty).
+
+Then sign in to **surveyjs.io** as the test account and check:
+
+- [ ] **My Surveys** lists **A** with the **Run** link.
+- [ ] `https://surveyjs.io/published?id=<A's id>` runs it.
+- [ ] **History** of **A** lists the app's saves, newest first, and each one opens.
+- [ ] The **results** page of **A** shows the response.
+- [ ] **My Surveys** lists **B** with **Publish** and no **Run** link (the expected difference below), and
+      `https://surveyjs.io/published?id=<B's id>` still runs it.
 - [ ] After `pnpm smoke:legacy`, its test project is not in the project list.
 
-Then delete the survey in the app (archive, then delete).
+Then delete **A** and **B** in the app (archive, then delete).
 
-**Expected difference (PO decision, Step 14).** A survey that was never switched on the old site has an empty
-published flag. The app lists it as published, with **Run** and **Unpublish**; the old My Surveys list showed
-**Publish** for it. This is not a failure.
+**Expected difference (PO decision, Step 14).** A survey whose published flag is empty (never switched on the old
+site, or new) is published in the app, which lists it with **Run** and **Unpublish**; the old My Surveys list shows
+**Publish** and no **Run** for it, and the old run page still runs it. This is not a failure.
