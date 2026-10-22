@@ -6,6 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { FEEDBACK_NAME, HISTORY_SAVES, PROJECT_NAME, type VisualStates } from "../data-set.js";
 import { LIVE_ORIGIN, SCREENS } from "../manifest.js";
 import type { VisualIds } from "../support/paths.js";
+import { historyProblem } from "../support/history-report.js";
 import { compareNames, expectedScopes } from "../support/preconditions.js";
 import { openScreen, screenshotOptions } from "../support/screen.js";
 import { guardLiveContext } from "./route-guard.js";
@@ -161,7 +162,8 @@ test.beforeAll(async ({ browser }, testInfo) => {
       // The history screen needs the checklist's saves; the count goes to states.json, and the app
       // side makes the same number of entries.
       await attempt("History", async () => {
-        await page.goto(`${LIVE_ORIGIN}/Service/History/${next.feedbackId}`);
+        // The site links to it as /Service/History/{id}; the working address is lowercase.
+        const response = await page.goto(`${LIVE_ORIGIN}/service/history/${next.feedbackId}`);
         await page.waitForLoadState("load");
         await page
           .locator(HISTORY_ITEM)
@@ -172,8 +174,30 @@ test.beforeAll(async ({ browser }, testInfo) => {
           });
         states.historyEntries = await page.locator(HISTORY_ITEM).count();
         if (states.historyEntries < HISTORY_SAVES) {
+          // Never the page HTML: it embeds the access key. A git-ignored folder the runner keeps.
+          const shot = resolve(here, `../.state/history-${testInfo.project.name}.png`);
+          mkdirSync(dirname(shot), { recursive: true });
+          await page.screenshot({ path: shot, fullPage: true }).catch(() => {
+            // the message still names the path
+          });
+          const heading = await page
+            .locator("h1")
+            .first()
+            .textContent({ timeout: 2_000 })
+            .catch(() => "");
           problems.push(
-            `History: ${states.historyEntries} entries, expected at least ${HISTORY_SAVES}: save ${FEEDBACK_NAME} in the editor (change its title, then restore it)`,
+            historyProblem(
+              {
+                surveyId: next.feedbackId!,
+                finalUrl: page.url(),
+                status: response?.status() ?? null,
+                heading: heading ?? "",
+                entries: states.historyEntries,
+                screenshot: shot,
+              },
+              HISTORY_SAVES,
+              `save ${FEEDBACK_NAME} in the editor (change its title, then restore it)`,
+            ),
           );
         }
       });
