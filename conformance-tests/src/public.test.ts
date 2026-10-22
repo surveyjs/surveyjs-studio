@@ -13,7 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { call, codeOf, as, ownSurvey } from "./harness.js";
+import { call, codeOf, as, ownSurvey, ownsServer } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -268,7 +268,8 @@ describe("submitResponse", () => {
     // The server reads a small overflow to its end and keeps the connection; with Connection: close
     // it would cut the connection while the client is still sending, and the client could see
     // EPIPE instead of this answer.
-    expect(response.headers.get("connection")).not.toBe("close");
+    // Only the reference server is checked: a proxy in front decides this hop-by-hop header.
+    if (ownsServer) expect(response.headers.get("connection")).not.toBe("close");
     expect(await countOf(surveyId, headers)).toBe(0);
   });
 });

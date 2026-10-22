@@ -68,4 +68,9 @@ this on CI with a body one byte over the limit.
 A small overflow is therefore read to its end and dropped: when the declared length is at most **4 times the
 route's limit**, the 413 keeps the connection, Node discards the rest of the body without buffering it, and the
 client reads the 413 once it has sent everything. A larger declared length, or a body without one (chunked),
-keeps `Connection: close`, so the server never reads an unbounded body. See `server/src/body-limit.ts`.
+keeps `Connection: close`, so the 413 path reads at most 4 times the limit. Other early answers (401 or 403
+from authentication, 415, 429, multipart refusals) let Node drain the body; it is bounded only by
+`REQUEST_TIMEOUT_SECONDS` (default 300), the time the whole request may take (Node answers `408` and closes).
+The cap uses `routeOptions.bodyLimit`, which is the enforced limit only while no content-type parser sets its
+own. A proxy in front must allow at least the app's body limit and timeout, or it answers first. See
+`server/src/body-limit.ts`.

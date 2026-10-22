@@ -70,6 +70,7 @@ describe("loadConfig", () => {
       shellLinks: {},
       webRoot: null,
       readOnly: false,
+      requestTimeoutMs: 300_000,
     });
   });
 
@@ -691,6 +692,22 @@ describe("loadConfig", () => {
       '{"a":"ftp://a.example"}',
     ])("rejects %s", (value) => {
       expect(messageOf(() => loadConfig({ SHELL_LINKS: value }))).toContain("SHELL_LINKS");
+    });
+  });
+
+  describe("REQUEST_TIMEOUT_SECONDS", () => {
+    it("defaults to 300 seconds, in milliseconds", () => {
+      expect(loadConfig({}).requestTimeoutMs).toBe(300_000);
+    });
+
+    it("takes a positive integer of seconds", () => {
+      expect(loadConfig({ REQUEST_TIMEOUT_SECONDS: "45" }).requestTimeoutMs).toBe(45_000);
+    });
+
+    it.each(["0", "-1", "1.5", "abc"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ REQUEST_TIMEOUT_SECONDS: value }))).toContain(
+        "REQUEST_TIMEOUT_SECONDS: ",
+      );
     });
   });
 

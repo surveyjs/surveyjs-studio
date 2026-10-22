@@ -77,6 +77,8 @@ export interface AppConfig {
   readonly webRoot: string | null;
   /** `READ_ONLY`: every write answers `503 read-only`; reads, sign-in and sign-out keep working. */
   readonly readOnly: boolean;
+  /** `REQUEST_TIMEOUT_SECONDS` in milliseconds: the whole request, headers and body, must arrive within it. */
+  readonly requestTimeoutMs: number;
 }
 
 export const ACCOUNT_NOTICES = [
@@ -242,6 +244,7 @@ const envSchema = z.object({
   // Checked for an index.html at start-up (registerWebApp), not here.
   WEB_ROOT: z.string().refine(isAbsolute, "must be an absolute path").optional(),
   READ_ONLY: z.enum(["true", "false"], { error: "must be true or false" }).optional(),
+  REQUEST_TIMEOUT_SECONDS: positiveInt.default(300),
   // Plain strings: a schema check here could echo a value in its message.
   LEGACY_SQL_CONNECTION_STRING: z.string().optional(),
   LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: z.string().optional(),
@@ -497,5 +500,6 @@ export function loadConfig(
     shellLinks: Object.freeze({ ...e.SHELL_LINKS }),
     webRoot: e.WEB_ROOT ?? null,
     readOnly: e.READ_ONLY === "true",
+    requestTimeoutMs: e.REQUEST_TIMEOUT_SECONDS * 1000,
   });
 }

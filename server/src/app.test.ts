@@ -1,5 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { connect, type AddressInfo } from "node:net";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -308,6 +308,59 @@ describe("a body over the limit (64 bytes in these tests)", () => {
     } finally {
       socket.destroy();
     }
+  });
+});
+
+describe("request timeout and shutdown", () => {
+  /** Resolves with what the socket received once it closes. */
+  function collect(socket: Socket): Promise<string> {
+    let received = "";
+    socket.setEncoding("latin1");
+    socket.on("data", (chunk: string) => (received += chunk));
+    socket.on("error", () => undefined);
+    return new Promise((resolve) => socket.once("close", () => resolve(received)));
+  }
+
+  it("answers 408 to a body that trickles slower than REQUEST_TIMEOUT_SECONDS, and stays healthy", async () => {
+    const timed = await buildApp(
+      loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev", REQUEST_TIMEOUT_SECONDS: "1" }),
+      createMemoryProviders(),
+    );
+    app = timed;
+    timed.post("/t/json", () => ({}));
+    await timed.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = timed.server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1");
+    const closed = collect(socket);
+    const started = Date.now();
+    socket.write(
+      "POST /t/json HTTP/1.1\r\nhost: x\r\ncontent-type: application/json\r\ncontent-length: 1000\r\n\r\nx",
+    );
+    // Faster than the timeout would allow a 1000-byte body to be sent at, but never finishing it.
+    const trickle = setInterval(() => socket.writable && socket.write("x"), 300);
+    try {
+      const received = await closed;
+      expect(Date.now() - started).toBeLessThan(4000);
+      expect(received === "" || received.startsWith("HTTP/1.1 408")).toBe(true);
+    } finally {
+      clearInterval(trickle);
+      socket.destroy();
+    }
+    expect((await timed.inject("/healthz")).statusCode).toBe(200);
+  });
+
+  it("closes within a second while an idle keep-alive connection is open", async () => {
+    const instance = await start();
+    await instance.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = instance.server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1");
+    const closed = collect(socket);
+    socket.write("GET /healthz HTTP/1.1\r\nhost: x\r\n\r\n");
+    await new Promise<void>((resolve) => socket.once("data", () => resolve()));
+    const started = Date.now();
+    await instance.close();
+    expect(Date.now() - started).toBeLessThan(1000);
+    await closed;
   });
 });
 

@@ -25,6 +25,13 @@ container the default stays `127.0.0.1`. `WEB_ROOT` makes the server serve the w
 [below](#the-header-policy-for-the-static-host)); `/api`, `/__dev`, `/healthz` and `/readyz` keep the server's own
 routes and headers.
 
+**Timeouts and a proxy.** `REQUEST_TIMEOUT_SECONDS` (default `300`) is the time the whole request, headers and body,
+may take; a slower client gets `408` and the connection closes. It also bounds a body the server reads and drops
+after an early answer. On shutdown (`SIGTERM`) the server closes idle keep-alive connections at once and waits for
+requests in flight, so a request that is still arriving can hold it for up to this time. A proxy or load balancer in
+front must allow at least the app's body limit (`LIMIT_MAX_DOCUMENT_BYTES`, 30 MB by default, for a definition) and
+this timeout; if its own limits are lower, it answers first, with its own page.
+
 **The settings of mode 1.1** (hosted, the surveyjs.io stores and users). A missing "required" value stops the server,
 which names the variable. A "set" value has a default that is wrong for mode 1.1.
 

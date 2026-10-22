@@ -8,6 +8,8 @@ declare module "vitest" {
   export interface ProvidedContext {
     /** Server origin under test, without `/api/v1`. */
     baseUrl: string;
+    /** True when the suite started the reference server (memory or the image), not `CONFORMANCE_BASE_URL`. */
+    ownsServer: boolean;
     /** `surveyjs-api` when the reference server runs against the user-API stub, else `default`. */
     userDirectory: "default" | "surveyjs-api";
     /**
@@ -78,6 +80,7 @@ const appVariables = [
   "SHELL_LINKS",
   "WEB_ROOT",
   "READ_ONLY",
+  "REQUEST_TIMEOUT_SECONDS",
 ];
 
 const legacyVariables = [
@@ -397,6 +400,7 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
       throw new Error("CONFORMANCE_IMAGE cannot be used with CONFORMANCE_BASE_URL");
     }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
+    project.provide("ownsServer", false);
     project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     return;
@@ -411,6 +415,7 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
     throw error;
   }
   project.provide("baseUrl", server.baseUrl);
+  project.provide("ownsServer", true);
   project.provide("userDirectory", mode);
   project.provide("webhookSecret", WEBHOOK_SECRET);
   return () => {

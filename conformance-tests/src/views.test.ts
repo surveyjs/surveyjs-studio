@@ -8,7 +8,7 @@
  * `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { call, codeOf, as, cleanUp } from "./harness.js";
+import { call, codeOf, as, cleanUp, ownsServer } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -195,7 +195,8 @@ describe("views", () => {
     // The server reads a small overflow to its end and keeps the connection; with Connection: close
     // it would cut the connection while the client is still sending, and the client could see
     // EPIPE instead of this answer.
-    expect(response.headers.get("connection")).not.toBe("close");
+    // Only the reference server is checked: a proxy in front decides this hop-by-hop header.
+    if (ownsServer) expect(response.headers.get("connection")).not.toBe("close");
   });
 
   it("refuses an unknown view, a missing CSRF token and a missing session", async (ctx) => {

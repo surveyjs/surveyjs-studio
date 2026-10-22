@@ -8,6 +8,8 @@ import { fixtureUsers, signIn, SignInUnsupportedError, type SignInResult } from 
 import { createValidator, type Validator } from "./validator.js";
 
 export const baseUrl = inject("baseUrl");
+/** False with `CONFORMANCE_BASE_URL`: a deployment (behind a proxy) decides hop-by-hop headers. */
+export const ownsServer = inject("ownsServer");
 
 let validatorPromise: Promise<Validator> | undefined;
 

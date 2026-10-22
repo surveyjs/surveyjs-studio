@@ -81,6 +81,19 @@ export async function buildApp(
       return sendProblem(reply, body);
     },
     bodyLimit: config.limits.maxResponseBytes,
+    // Node answers 408 and closes a request whose headers and body have not all arrived in time
+    // (Fastify's default, 0, waits forever); this also bounds the drain of an early answer.
+    requestTimeout: config.requestTimeoutMs,
+    // Node checks the timeouts only every `connectionsCheckingInterval` (default 30 s). Node's own
+    // `headersTimeout` (60 s) must not exceed `requestTimeout`, or the request one is not enforced:
+    // Fastify sets `requestTimeout` after creating the server and does not adjust it.
+    http: {
+      connectionsCheckingInterval: Math.min(30_000, config.requestTimeoutMs),
+      headersTimeout: Math.min(60_000, config.requestTimeoutMs),
+    },
+    // `app.close()` closes idle keep-alive sockets and waits for requests in flight (Fastify's
+    // default on Node 18.2+, named here so a shutdown never hangs on an idle client).
+    forceCloseConnections: "idle",
     // Empty trusts nobody: `request.ip` is then the socket's peer, whatever X-Forwarded-For says.
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
