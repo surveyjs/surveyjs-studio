@@ -157,6 +157,7 @@ Run from the repository root.
 | `pnpm image:prod-data`           | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
 | `pnpm legacy:load`               | Loads the golden fixtures into a running replica                                                                          |
 | `pnpm inspect:legacy`            | Read-only inspector: lists one user's surveys from the configured store                                                   |
+| `pnpm inspect:legacy-schema`     | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
 | `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
 | `pnpm account:erase`             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
 | `pnpm account:reconcile`         | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |

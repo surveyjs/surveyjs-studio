@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 import { stripAppVariables } from "./app-variables.mjs";
+import { ports } from "./ports.mjs";
 import { memoryServerEnv } from "./playwright.config.js";
 import { VISUAL_PROJECTS } from "./visual/support/browser.js";
 import { snapshotPathTemplate } from "./visual/support/paths.js";
@@ -29,7 +30,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   forbidOnly: !!process.env["CI"],
   reporter: [["list"], ["html", { outputFolder: "visual-report", open: "never" }]],
-  use: { baseURL: "http://localhost:5175", trace: "retain-on-failure" },
+  use: { baseURL: `http://localhost:${ports.visualWeb}`, trace: "retain-on-failure" },
   projects: [
     {
       name: "visual-data",
@@ -46,17 +47,21 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm --filter @my-surveys/server start",
-      url: "http://127.0.0.1:3002/readyz",
+      url: `http://127.0.0.1:${ports.visualServer}/readyz`,
       reuseExistingServer: false,
       timeout: 60_000,
-      env: { ...memoryServerEnv, PORT: "3002", PUBLIC_BASE_URL: "http://localhost:5175" },
+      env: {
+        ...memoryServerEnv,
+        PORT: String(ports.visualServer),
+        PUBLIC_BASE_URL: `http://localhost:${ports.visualWeb}`,
+      },
     },
     {
-      command: "pnpm --filter @my-surveys/web exec vite preview --port 5175 --strictPort",
-      url: "http://localhost:5175/",
+      command: `pnpm --filter @my-surveys/web exec vite preview --port ${ports.visualWeb} --strictPort`,
+      url: `http://localhost:${ports.visualWeb}/`,
       reuseExistingServer: false,
       timeout: 60_000,
-      env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3002" },
+      env: { E2E_API_PROXY_TARGET: `http://127.0.0.1:${ports.visualServer}` },
     },
   ],
 });

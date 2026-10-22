@@ -4,6 +4,7 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 
 import { appVariables, stripAppVariables } from "./app-variables.mjs";
 import { imageTag, isImageTarget } from "./image-target.mjs";
+import { ports } from "./ports.mjs";
 
 type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 
@@ -14,9 +15,9 @@ type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 // conformance-tests/src/global-setup.ts (same approach there).
 stripAppVariables(process.env);
 
-// With reuseExistingServer off (CI), Playwright fails with "... is already used"
-// when something else already holds one of the ports below.
-const reuseExistingServer = !process.env["CI"];
+// Every server is started fresh (reuseExistingServer: false), so Playwright fails with
+// "... is already used" when something else holds one of the ports below. `pnpm e2e` checks them
+// first (scripts/ports.mjs) and names the process.
 
 // Two modes, because two server configurations cannot share port 3000:
 // - memory (default): the dev identity provider; all specs on Chromium, Firefox and WebKit.
@@ -33,7 +34,7 @@ const serverEnv = {
   NODE_ENV: "test",
   HOST: "127.0.0.1",
   // Sign-in redirects must come back to the browser-visible (Vite) origin.
-  PUBLIC_BASE_URL: "http://localhost:5173",
+  PUBLIC_BASE_URL: `http://localhost:${ports.web}`,
   APP_EDITION: "self-hosted",
   APP_SHELL: "surveyjs-site",
   LOG_LEVEL: "warn",
@@ -62,38 +63,38 @@ const preview = (port: number) =>
 const memoryWebServers: WebServers = [
   {
     command: serverCommand,
-    url: "http://127.0.0.1:3000/readyz",
-    reuseExistingServer,
+    url: `http://127.0.0.1:${ports.server}/readyz`,
+    reuseExistingServer: false,
     timeout: 60_000,
-    env: { ...memoryServerEnv, PORT: "3000" },
+    env: { ...memoryServerEnv, PORT: String(ports.server) },
   },
   {
-    command: preview(5173),
-    url: "http://localhost:5173/",
-    reuseExistingServer,
+    command: preview(ports.web),
+    url: `http://localhost:${ports.web}/`,
+    reuseExistingServer: false,
     timeout: 60_000,
-    env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3000" },
+    env: { E2E_API_PROXY_TARGET: `http://127.0.0.1:${ports.server}` },
   },
   // The licence-notice spec: a second server that always shows the expired-licence dialog, behind
   // its own preview whose proxy points at it (E2E_API_PROXY_TARGET, see web/vite.config.ts).
   {
     command: serverCommand,
-    url: "http://127.0.0.1:3001/readyz",
-    reuseExistingServer,
+    url: `http://127.0.0.1:${ports.licenceServer}/readyz`,
+    reuseExistingServer: false,
     timeout: 60_000,
     env: {
       ...memoryServerEnv,
-      PORT: "3001",
-      PUBLIC_BASE_URL: "http://localhost:5174",
+      PORT: String(ports.licenceServer),
+      PUBLIC_BASE_URL: `http://localhost:${ports.licenceWeb}`,
       ACCOUNT_NOTICES: "license-expired",
     },
   },
   {
-    command: preview(5174),
-    url: "http://localhost:5174/",
-    reuseExistingServer,
+    command: preview(ports.licenceWeb),
+    url: `http://localhost:${ports.licenceWeb}/`,
+    reuseExistingServer: false,
     timeout: 60_000,
-    env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3001" },
+    env: { E2E_API_PROXY_TARGET: `http://127.0.0.1:${ports.licenceServer}` },
   },
 ];
 
@@ -102,17 +103,17 @@ const azuriteWebServers: WebServers = [
     // The replica's and the mock OIDC server's local-only settings come from docker/azurite.env.
     command:
       "pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env --import tsx src/main.ts",
-    url: "http://127.0.0.1:3000/readyz",
-    reuseExistingServer,
+    url: `http://127.0.0.1:${ports.server}/readyz`,
+    reuseExistingServer: false,
     timeout: 120_000,
-    env: { ...serverEnv, PORT: "3000" },
+    env: { ...serverEnv, PORT: String(ports.server) },
   },
   {
-    command: preview(5173),
-    url: "http://localhost:5173/",
-    reuseExistingServer,
+    command: preview(ports.web),
+    url: `http://localhost:${ports.web}/`,
+    reuseExistingServer: false,
     timeout: 60_000,
-    env: { E2E_API_PROXY_TARGET: "http://127.0.0.1:3000" },
+    env: { E2E_API_PROXY_TARGET: `http://127.0.0.1:${ports.server}` },
   },
 ];
 
@@ -149,15 +150,15 @@ function imageWebServers(): WebServers {
   if (!azurite) {
     // The dev sign-in is refused under NODE_ENV=production (the image's default), so development.
     return [
-      imageWebServer("my-surveys-e2e-memory-5173", 5173, {
+      imageWebServer("my-surveys-e2e-memory-5173", ports.web, {
         ...memoryServerEnv,
-        ...imageServerEnv(5173),
+        ...imageServerEnv(ports.web),
         NODE_ENV: "development",
       }),
       // The licence-notice server (see memoryWebServers).
-      imageWebServer("my-surveys-e2e-memory-5174", 5174, {
+      imageWebServer("my-surveys-e2e-memory-5174", ports.licenceWeb, {
         ...memoryServerEnv,
-        ...imageServerEnv(5174),
+        ...imageServerEnv(ports.licenceWeb),
         NODE_ENV: "development",
         ACCOUNT_NOTICES: "license-expired",
       }),
@@ -172,9 +173,9 @@ function imageWebServers(): WebServers {
   ) as Record<string, string>;
   return [
     // NODE_ENV stays production, as in a deployment, so the server needs a session secret.
-    imageWebServer("my-surveys-e2e-azurite-5173", 5173, {
+    imageWebServer("my-surveys-e2e-azurite-5173", ports.web, {
       ...azuriteEnv,
-      ...imageServerEnv(5173),
+      ...imageServerEnv(ports.web),
       NODE_ENV: "production",
       SESSION_SECRET: "e2e-local-only-session-secret-not-a-real-value",
     }),
@@ -193,7 +194,7 @@ export default defineConfig({
   reporter: process.env["CI"] ? [["line"], ["html", { open: "never" }]] : "list",
   // A fixed locale and time zone, so the list's dates read the same on every machine.
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: `http://localhost:${ports.web}`,
     trace: "retain-on-failure",
     locale: "en-US",
     timezoneId: "UTC",

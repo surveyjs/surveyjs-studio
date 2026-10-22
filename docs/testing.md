@@ -513,8 +513,11 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   server variables) from the environment before starting the servers and the previews. The list is
   in `e2e/app-variables.mjs`, shared by the config and the runner script. Results do not depend on
   what you have exported.
-- Locally it reuses servers already running on 3000 and 5173 (for example `pnpm demo`). Those servers must use the default configuration, or the home page spec fails. With `CI` set it does not
-  reuse them, and fails if the ports are busy.
+- It never reuses a running server (`reuseExistingServer: false`, locally and in CI). Before the build,
+  `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
+  `Port 3000 is in use by <command line or PID>. Stop it and run again.` when one is taken (a forgotten
+  `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
+  target 5173 and 5174. They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
   page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
   message of Firefox, and the error responses a test allows (below).
@@ -685,7 +688,7 @@ WebKit are left to CI.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
 actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
-memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+memory-mode servers first; the runner names a port that is taken). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ### The end-to-end suites on the production image
 

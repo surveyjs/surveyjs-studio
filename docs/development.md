@@ -627,6 +627,22 @@ the least privilege it needs, since it only reads:
   `.env.*` are git-ignored (except `.env.example`). Never commit it, and delete it when you are
   done.
 
+### Schema check
+
+`pnpm inspect:legacy-schema [--env-file <path>]` prints what the app depends on in the `Surveys` table:
+
+```text
+Surveys.theme: varchar(max) COLLATE SQL_Latin1_General_CP1_CI_AS
+Surveys triggers: none
+Surveys.ispublished: tinyint, nullable yes, default none
+Surveys with an empty ispublished: 17 of 24
+```
+
+It reads `LEGACY_SQL_CONNECTION_STRING` only, runs `SELECT` on the `sys.*` views and one `COUNT`, and writes
+nothing, so `READ_ONLY` does not matter. Exit codes: `0` success, `1` connection or query error (the message has
+no connection string, host or password), `2` usage error, an unreadable env file, or no connection string. Use
+the same least-privilege login as the inspector above. The output above is the local replica.
+
 ## Scripts
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
@@ -646,7 +662,8 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
 surveyjs.io). The visual run uses its own ports, **3002** (server) and **5175** (web), so it can run beside the
-functional e2e suite (3000/5173 and 3001/5174). See [Testing › Visual parity](testing.md#visual-parity).
+functional e2e suite (3000/5173 and 3001/5174); both runners stop with a message naming the process when one of
+their ports is taken. See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
 `pnpm --filter @my-surveys/contract generate`.
