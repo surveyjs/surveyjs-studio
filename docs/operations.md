@@ -117,8 +117,10 @@ admins promoted.`
   directory does not know it. **If the directory lookup fails** (it only supplies the name for the plan), the command
   exits **1 and erases nothing**; run it again when the directory is back.
 - Erasing twice is harmless: the second run finds nothing.
+- With `READ_ONLY=true` it refuses `--yes` (`Refused: READ_ONLY=true`, exit 2) before it opens the stores; the dry
+  run still works.
 - Exit codes: `0` success (or a dry run), `1` the user is not found or a store or directory error, `2` a usage error, an
-  unreadable env file or no persistent store.
+  unreadable env file, no persistent store or `--yes` with `READ_ONLY=true`.
 
 ### Reconciling accounts
 
@@ -143,8 +145,10 @@ with nothing erased and exits 1; a failure is never read as "unknown".
 - **The first run on 1.1 will find users the legacy site already deleted.** The old site removes the user and the
   personal surveys but leaves memberships, so their ids still appear. Review that first list; apply it once by hand
   with a `--max` that fits it; only then schedule the command.
+- With `READ_ONLY=true` it refuses `--apply` (`Refused: READ_ONLY=true`, exit 2) before it opens the stores; the
+  dry run still works.
 - Exit codes: `0` success (or a dry run, or nothing to erase), `1` refused or a store or directory error, `2` a
-  usage error, an unreadable env file or no persistent store.
+  usage error, an unreadable env file, no persistent store or `--apply` with `READ_ONLY=true`.
 - **`listPersonalOwnerIds` reads the whole `Surveys` table** (an index on `userid` exists). Measure the run time on
   production data before scheduling it (Step 14).
 

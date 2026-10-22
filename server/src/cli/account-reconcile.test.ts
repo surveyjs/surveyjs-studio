@@ -57,7 +57,11 @@ const LEGACY_ENV = {
   LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "placeholder-results",
 };
 
-async function reconcile(argv: string[], providers: ProviderSet = seeded()) {
+async function reconcile(
+  argv: string[],
+  providers: ProviderSet = seeded(),
+  env: Record<string, string> = LEGACY_ENV,
+) {
   const out: string[] = [];
   const err: string[] = [];
   let made = 0;
@@ -65,7 +69,7 @@ async function reconcile(argv: string[], providers: ProviderSet = seeded()) {
     argv,
     { out: (t) => out.push(t), err: (t) => err.push(t) },
     {
-      env: LEGACY_ENV,
+      env,
       makeProviders: () => {
         made += 1;
         return Promise.resolve(providers);
@@ -163,6 +167,24 @@ describe("account:reconcile", () => {
     expect(r.err).toBe(
       "Error: Legacy store member erase failed (ETIMEOUT) Erased 1 of 2 users before the failure.\n",
     );
+  });
+
+  it("refuses --apply with exit 2 when READ_ONLY=true, before opening the stores", async () => {
+    const providers = seeded();
+    const r = await reconcile(["--apply"], providers, { ...LEGACY_ENV, READ_ONLY: "true" });
+    expect(r.code).toBe(2);
+    expect(r.made).toBe(0);
+    expect(r.out).toBe("");
+    expect(r.err).toBe("Refused: READ_ONLY=true. Nothing was erased.\n");
+    expect(await ghostData(providers)).toEqual({ g1Surveys: 1, g2Projects: 1 });
+  });
+
+  it("still lists the ids without --apply when READ_ONLY=true", async () => {
+    const r = await reconcile([], seeded(), { ...LEGACY_ENV, READ_ONLY: "true" });
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+    expect(r.out).toContain(LISTED);
+    expect(r.out).toContain("Dry run: nothing was erased.");
   });
 
   it("has nothing to erase when the directory knows everyone", async () => {

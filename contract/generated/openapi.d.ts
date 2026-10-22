@@ -797,7 +797,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -866,6 +866,11 @@ export interface components {
                 /** @description Largest survey definition or theme body accepted, in bytes. */
                 maxDocumentBytes: number;
             };
+            /**
+             * @description True while the server refuses every write with `503 read-only` (`READ_ONLY=true`); the
+             *     front-end shows a banner and opens the editor read-only.
+             */
+            readOnly: boolean;
             /** @description Shell links, such as account settings and help desk. */
             links?: {
                 [key: string]: string;
@@ -1357,6 +1362,27 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /**
+         * @description The server runs read-only (`read-only`): it refuses every write before reading the
+         *     request, whoever sends it. Reads, sign-in and sign-out keep working. `AppConfig.readOnly`
+         *     says so in advance.
+         */
+        ReadOnly: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://my-surveys.surveyjs.io/problems/read-only",
+                 *       "title": "My Surveys is read-only at the moment. Changes cannot be saved.",
+                 *       "status": 503,
+                 *       "code": "read-only"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
     };
     parameters: {
         SurveyId: components["schemas"]["Id"];
@@ -1596,6 +1622,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getProject: {
@@ -1645,6 +1672,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     updateProject: {
@@ -1677,6 +1705,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     listMembers: {
@@ -1740,6 +1769,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     removeMember: {
@@ -1766,6 +1796,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     updateMember: {
@@ -1800,6 +1831,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     listSurveys: {
@@ -1861,6 +1893,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getSurvey: {
@@ -1911,6 +1944,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     updateSurvey: {
@@ -1943,6 +1977,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     cloneSurvey: {
@@ -1978,6 +2013,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getSurveyDefinition: {
@@ -2040,6 +2076,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["PreconditionRequired"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getSurveyTheme: {
@@ -2102,6 +2139,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["PreconditionRequired"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     uploadSurveyAsset: {
@@ -2136,6 +2174,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     listSurveyHistory: {
@@ -2219,6 +2258,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getResultStats: {
@@ -2334,6 +2374,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     resetResultsView: {
@@ -2360,6 +2401,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getPublishedSurvey: {
@@ -2429,6 +2471,7 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     uploadResponseFile: {
@@ -2462,6 +2505,7 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     downloadFile: {
@@ -2573,6 +2617,7 @@ export interface operations {
             401: components["responses"]["InvalidSignature"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
+            503: components["responses"]["ReadOnly"];
         };
     };
 }

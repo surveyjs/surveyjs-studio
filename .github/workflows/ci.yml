@@ -52,6 +52,9 @@ jobs:
       - name: Conformance tests (in-memory)
         run: pnpm test:conformance
 
+      - name: Conformance tests (in-memory, READ_ONLY=true)
+        run: pnpm test:conformance:read-only
+
       # The Azurite conformance run and both end-to-end runs use this image (docker run --network host).
       - name: Build the production image
         run: docker build -t my-surveys:ci .

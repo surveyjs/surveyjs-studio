@@ -17,6 +17,7 @@
     "test:conformance": "pnpm --filter @my-surveys/conformance-tests test",
     "test:conformance:azurite": "pnpm --filter @my-surveys/conformance-tests test:azurite",
     "test:conformance:user-api": "pnpm --filter @my-surveys/conformance-tests test:user-api",
+    "test:conformance:read-only": "pnpm --filter @my-surveys/conformance-tests test:read-only",
     "test": "pnpm test:unit && pnpm test:conformance",
     "e2e": "pnpm --filter @my-surveys/e2e test",
     "e2e:azurite": "pnpm --filter @my-surveys/e2e test:azurite",

@@ -204,6 +204,26 @@ describe("account:erase", () => {
     );
   });
 
+  it("refuses --yes with exit 2 when READ_ONLY=true, before opening the stores", async () => {
+    const r = await erase(["--user", ERIN.id, "--yes"], {
+      env: { ...LEGACY_ENV, READ_ONLY: "true" },
+    });
+    expect(r.code).toBe(2);
+    expect(r.made).toBe(0);
+    expect(r.out).toBe("");
+    expect(r.err).toBe("Refused: READ_ONLY=true. Nothing was erased.\n");
+    expect(await r.providers.surveys.listSurveys(PERSONAL)).toHaveLength(2);
+    expect(await r.providers.projects.listUserProjects(ERIN.id)).toHaveLength(3);
+  });
+
+  it("still prints the plan without --yes when READ_ONLY=true", async () => {
+    const r = await erase(["--user", ERIN.id], { env: { ...LEGACY_ENV, READ_ONLY: "true" } });
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+    expect(r.out).toContain(`${PLAN}\n`);
+    expect(r.out).toContain("Dry run: nothing was erased.");
+  });
+
   it("prints a LegacyStoreError's message", async () => {
     const providers = seeded();
     const failing = {

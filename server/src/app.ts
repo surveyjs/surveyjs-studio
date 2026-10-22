@@ -109,8 +109,9 @@ export async function buildApp(
 
   app.setErrorHandler((error, request, reply) => {
     const body = toProblem(error);
-    // A 501 for a not-yet-implemented operation is an expected answer, not a server fault.
-    if (body.status >= 500 && body.code !== "not-implemented") {
+    // A 501 for a not-yet-implemented operation and a read-only refusal are expected answers, not
+    // server faults.
+    if (body.status >= 500 && body.code !== "not-implemented" && body.code !== "read-only") {
       request.log.error({ err: error }, "unhandled error");
     }
     return sendProblem(reply, body);
@@ -243,6 +244,7 @@ export async function buildApp(
     },
     // The webhook's signature covers the body exactly as sent: it is checked before parsing.
     rawBodyOperations: ["receiveAccountDeleted"],
+    readOnly: config.readOnly,
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);

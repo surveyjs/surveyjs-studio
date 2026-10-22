@@ -41,6 +41,7 @@ export const appVariables = [
   "ACCOUNT_WEBHOOK_SECRET",
   "SHELL_LINKS",
   "WEB_ROOT",
+  "READ_ONLY",
   "E2E_API_PROXY_TARGET",
 ];
 

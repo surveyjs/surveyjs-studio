@@ -431,10 +431,14 @@ invalid-signature`; a valid one for a body that is not an account event is `400`
 - `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`. The body
   is a `not-found` Problem, or the web app's HTML page when the server serves the app (`WEB_ROOT`, the image).
 - `user-directory.test.ts`: runs only in the user-API mode and checks the licence notices that come from the API.
+- `read-only.test.ts`: runs only when the server reports `readOnly: true`; every operation that documents the
+  `503 ReadOnly` response must answer `503 read-only`, and reads and sign-out must keep working.
 - **The user-API run**, `pnpm test:conformance:user-api`: the whole suite with the reference server on
   `USER_DIRECTORY=surveyjs-api`, against the stub the run starts itself. Sign-in, members by email and the notices
   go through the API. It is not run on the replica; `CONFORMANCE_USER_DIRECTORY` cannot be combined with
   `CONFORMANCE_BASE_URL`.
+- **The read-only run**, `pnpm test:conformance:read-only`: only `read-only.test.ts`, with the reference server on
+  memory and `READ_ONLY=true`. CI runs it after the in-memory run.
 
 ### Test data
 

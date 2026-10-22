@@ -253,6 +253,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /projects/{projectId}:
     parameters:
       - { $ref: '#/components/parameters/ProjectId' }
@@ -296,6 +297,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Projects]
       operationId: deleteProject
@@ -317,6 +319,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Members
   /projects/{projectId}/members:
@@ -372,6 +375,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /projects/{projectId}/members/{userId}:
     parameters:
       - { $ref: '#/components/parameters/ProjectId' }
@@ -407,6 +411,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Members]
       operationId: removeMember
@@ -427,6 +432,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Surveys
   /surveys:
@@ -485,6 +491,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -541,6 +548,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Surveys]
       operationId: deleteSurvey
@@ -559,6 +567,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/clones:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -599,6 +608,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # --------------------------------------------------------- Survey content
   /surveys/{surveyId}/definition:
@@ -652,6 +662,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/theme:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -703,6 +714,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ------------------------------------------------------------------ Files
   /surveys/{surveyId}/assets:
@@ -748,6 +760,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- History
   /surveys/{surveyId}/history:
@@ -824,6 +837,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/results/stats:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -943,6 +957,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Views]
       operationId: resetResultsView
@@ -962,6 +977,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ----------------------------------------------------------------- Public
   /public/surveys/{surveyId}:
@@ -1043,6 +1059,7 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /public/surveys/{surveyId}/files:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -1080,6 +1097,7 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /public/files/{fileId}:
     parameters:
       - name: fileId
@@ -1237,6 +1255,7 @@ paths:
         '401': { $ref: '#/components/responses/InvalidSignature' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
 components:
   securitySchemes:
@@ -1437,6 +1456,19 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ReadOnly:
+      description: |
+        The server runs read-only (`read-only`): it refuses every write before reading the
+        request, whoever sends it. Reads, sign-in and sign-out keep working. `AppConfig.readOnly`
+        says so in advance.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/read-only
+            title: My Surveys is read-only at the moment. Changes cannot be saved.
+            status: 503
+            code: read-only
 
   schemas:
     # ------------------------------------------------------------- Basics
@@ -1504,6 +1536,7 @@ components:
             - validation-failed
             - rate-limited
             - not-implemented
+            - read-only
             - internal-error
         errors:
           type: array
@@ -1545,7 +1578,7 @@ components:
 
     AppConfig:
       type: object
-      required: [edition, shell, authMethods, limits]
+      required: [edition, shell, authMethods, limits, readOnly]
       properties:
         edition:
           type: string
@@ -1583,6 +1616,11 @@ components:
             maxDocumentBytes:
               type: integer
               description: Largest survey definition or theme body accepted, in bytes.
+        readOnly:
+          type: boolean
+          description: |
+            True while the server refuses every write with `503 read-only` (`READ_ONLY=true`); the
+            front-end shows a banner and opens the editor read-only.
         links:
           type: object
           description: Shell links, such as account settings and help desk.

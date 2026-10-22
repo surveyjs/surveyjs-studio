@@ -6,6 +6,7 @@
     "test": "vitest run",
     "test:azurite": "node --env-file=../docker/azurite.env --env-file=azure-legacy.env node_modules/vitest/vitest.mjs run",
     "test:user-api": "node --env-file=user-api.env node_modules/vitest/vitest.mjs run",
+    "test:read-only": "node --env-file=read-only.env node_modules/vitest/vitest.mjs run src/read-only.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -86,6 +86,17 @@ pnpm test:conformance:user-api   # reads user-api.env
 The mode cannot be combined with `CONFORMANCE_BASE_URL`. The stub and the reference server are stopped
 afterwards.
 
+## Run read-only
+
+`CONFORMANCE_READ_ONLY=true` runs the reference server with `READ_ONLY=true`. The script runs only
+`src/read-only.test.ts`: every operation that documents the `503 ReadOnly` response must answer
+`503 read-only`, and reads and sign-out must keep working. In the other runs the server reports
+`readOnly: false` in `/config` and the file is skipped.
+
+```sh
+pnpm test:conformance:read-only   # reads read-only.env
+```
+
 ## The account-deleted webhook
 
 The reference server always runs with a fixed, synthetic `ACCOUNT_WEBHOOK_SECRET`, and
@@ -112,6 +123,7 @@ The server must be a fresh, in-memory/empty instance. No child process is starte
 | `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped |
 | `CONFORMANCE_PROVIDER`       | `memory` (default) or `azure-legacy`; the reference server only        |
 | `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                 |
+| `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                 |
 
 Two more files check the server's edge. `src/security-headers.test.ts` expects the headers of
 [ADR 0019](../docs/adr/0019-run-page-isolation-and-security-headers.md) on an API answer, a problem

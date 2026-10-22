@@ -77,6 +77,7 @@ const appVariables = [
   "ACCOUNT_WEBHOOK_SECRET",
   "SHELL_LINKS",
   "WEB_ROOT",
+  "READ_ONLY",
 ];
 
 const legacyVariables = [
@@ -136,6 +137,15 @@ function userDirectoryEnv(stubUrl: string | null): Record<string, string> {
   };
 }
 
+/** `CONFORMANCE_READ_ONLY=true` runs the reference server with `READ_ONLY=true`. */
+function readOnlyEnv(): Record<string, string> {
+  const value = process.env.CONFORMANCE_READ_ONLY?.trim() || "false";
+  if (value !== "true" && value !== "false") {
+    throw new Error(`CONFORMANCE_READ_ONLY must be true or false, got "${value}"`);
+  }
+  return value === "true" ? { READ_ONLY: "true" } : {};
+}
+
 function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of appVariables) delete env[name];
@@ -164,6 +174,7 @@ function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
     ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ...providerEnv(),
     ...userDirectoryEnv(stubUrl),
+    ...readOnlyEnv(),
   };
 }
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));

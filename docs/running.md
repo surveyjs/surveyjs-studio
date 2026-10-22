@@ -24,7 +24,9 @@ app configuration. Modes 1.3, 2a, 2b and 3 are not built yet.
 **The two runs on real data read and write production data.** Everything you do there is real. Both print a "REAL
 DATA" banner with the SQL server, the database and the storage accounts they use. Setting them up (the the site's sign-in service
 client, the connection strings, the certificate) is described in [Production data mode](development.md#production-data-mode)
-and [The image on production data](development.md#the-image-on-production-data).
+and [The image on production data](development.md#the-image-on-production-data). To look without changing anything,
+put `READ_ONLY=true` in `server/.env`: every write is then refused with `503 read-only`, while browsing, sign-in and
+sign-out still work.
 
 ## Changing settings
 

@@ -69,6 +69,7 @@ describe("loadConfig", () => {
       accountWebhookSecret: null,
       shellLinks: {},
       webRoot: null,
+      readOnly: false,
     });
   });
 
@@ -304,6 +305,7 @@ describe("loadConfig", () => {
         USER_API_TOKEN: "",
         ACCOUNT_WEBHOOK_SECRET: " ",
         SHELL_LINKS: " ",
+        READ_ONLY: "",
       });
       expect(config).toEqual(loadConfig({}));
     });
@@ -689,6 +691,19 @@ describe("loadConfig", () => {
       '{"a":"ftp://a.example"}',
     ])("rejects %s", (value) => {
       expect(messageOf(() => loadConfig({ SHELL_LINKS: value }))).toContain("SHELL_LINKS");
+    });
+  });
+
+  describe("READ_ONLY", () => {
+    it("takes true or false", () => {
+      expect(loadConfig({ READ_ONLY: "true" }).readOnly).toBe(true);
+      expect(loadConfig({ READ_ONLY: "false" }).readOnly).toBe(false);
+    });
+
+    it.each(["yes", "1", "TRUE", "on"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ READ_ONLY: value }))).toContain(
+        "READ_ONLY: must be true or false",
+      );
     });
   });
 
