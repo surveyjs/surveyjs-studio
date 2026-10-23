@@ -72,6 +72,13 @@ export interface SmokeOptions {
   readonly onRemoved?: (what: TestData, id: string) => void;
 }
 
+/**
+ * The detail of a failed `check key` step: before any write, the key's `getActive` lists surveys
+ * and none is the account's.
+ */
+export const KEY_LISTS_ANOTHER_ACCOUNT =
+  "the access key does not belong to this account (getActive lists none of the account's surveys)";
+
 /** The detail of a failed `create survey` check when the new survey is not the account's. */
 export const KEY_OF_ANOTHER_ACCOUNT =
   "the access key does not belong to this account (getActive does not list the new survey as the account's)";
@@ -192,6 +199,20 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
 
   const steps: Step[] = [
     {
+      name: "check key",
+      app: "none (reads only)",
+      legacy: "getActive: the account's surveys",
+      // Before any write: a key of another account that has surveys stops the run here. A key
+      // whose account has none passes, and the `create survey` check decides.
+      fatal: true,
+      check: async () => {
+        const list = await legacy.listActive();
+        return list.length > 0 && !list.some((s) => sameId(s.UserId, user.id))
+          ? KEY_LISTS_ANOTHER_ACCOUNT
+          : null;
+      },
+    },
+    {
       name: "create survey",
       app: "create in Personal (published flag empty)",
       legacy: "getActive: Name, UserId, IsPublished null",
@@ -203,7 +224,8 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeRun> {
         state.resultId = survey.resultId;
         state.appPublished = survey.published;
       },
-      // Fatal: with a key of another account the later reads would check that account's view.
+      // Fatal: with a key of another account the later reads would check that account's view
+      // (`check key` cannot tell for an account without surveys).
       fatal: true,
       check: async () => {
         const survey = await listed();

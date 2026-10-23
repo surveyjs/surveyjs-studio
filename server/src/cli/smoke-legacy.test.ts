@@ -4,7 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SurveyOwner, User } from "../domain/types.js";
 import { createMemoryProviders } from "../providers/memory.js";
 import type { ProviderSet } from "../providers/types.js";
-import { KEY_OF_ANOTHER_ACCOUNT, type TestData } from "../smoke/steps.js";
+import {
+  KEY_LISTS_ANOTHER_ACCOUNT,
+  KEY_OF_ANOTHER_ACCOUNT,
+  type TestData,
+} from "../smoke/steps.js";
 import { createInterruptHandler, parseArgs, run, USAGE } from "./smoke-legacy.js";
 
 // The refusals, the interrupt, the cleanup and the secret handling of `pnpm smoke:legacy`, on the
@@ -215,22 +219,53 @@ describe("smoke:legacy refusals", () => {
 });
 
 describe("smoke:legacy stops at the first check when the key cannot be confirmed", () => {
-  it("stops when the legacy API refuses the key, cleans up and never prints it", async () => {
+  it("stops when the legacy API refuses the key, before any write, and never prints it", async () => {
     const r = await smoke([...ARGS, echoUrl]);
     expect(r.code).toBe(1);
     expect(r.out + r.err).not.toContain(KEY);
-    expect(r.out).toMatch(new RegExp(`^Created test survey ${GUID}$`, "m"));
+    expect(r.out).not.toContain("Created test survey");
     expect(r.out).toMatch(/^\| step +\| app +\| legacy +\| result +\|$/m);
-    expect(r.out).toMatch(/^\| create survey .*\| FAIL +\|$/m);
-    expect(r.out).toContain("create survey: getActive answered HTTP 401. The run stopped.");
-    expect(r.out).toMatch(/^\| rename .*\| skipped +\|$/m);
+    expect(r.out).toMatch(/^\| check key .*\| FAIL +\|$/m);
+    expect(r.out).toContain("check key: getActive answered HTTP 401. The run stopped.");
+    expect(r.out).toMatch(/^\| create survey .*\| skipped +\|$/m);
     expect(r.out).toMatch(/^\| delete project .*\| skipped +\|$/m);
-    expect(r.out).toMatch(new RegExp(`^Cleanup: deleted the test survey ${GUID}$`, "m"));
+    expect(r.out).not.toContain("Cleanup:");
     expect(r.out).toContain("Result: FAILED.");
     expect(await r.providers.surveys.listSurveys(PERSONAL)).toEqual([]);
   });
 
-  it("stops when the key belongs to another account", async () => {
+  it("stops before any write when the key lists another account's surveys", async () => {
+    const providers = memoryStore();
+    const calls: string[] = [];
+    const otherAccount: typeof fetch = (input) => {
+      const url = new URL(String(input));
+      calls.push(url.pathname);
+      if (!url.pathname.endsWith("/getActive")) {
+        return Promise.resolve(new Response("", { status: 401 }));
+      }
+      const survey = {
+        Id: "22222222-0000-4000-8000-0000000000e3",
+        Name: "Another account's survey",
+        UserId: OTHER_ID,
+        IsPublished: null,
+        IsArchived: false,
+      };
+      return Promise.resolve(new Response(JSON.stringify([survey]), { status: 200 }));
+    };
+    const r = await smoke([...ARGS, "http://127.0.0.1:9"], { providers, fetch: otherAccount });
+    expect(r.code).toBe(1);
+    expect(KEY_LISTS_ANOTHER_ACCOUNT).toMatch(/^the access key does not belong to this account/);
+    expect(r.out).toContain(`check key: ${KEY_LISTS_ANOTHER_ACCOUNT}. The run stopped.`);
+    expect(r.out).toMatch(/^\| create survey .*\| skipped +\|$/m);
+    expect(r.out).not.toContain("Created test survey");
+    expect(r.out).not.toContain("Cleanup:");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatch(/\/getActive$/);
+    expect(await providers.surveys.listSurveys(PERSONAL)).toEqual([]);
+    expect(await providers.surveys.listSurveys({ kind: "personal", userId: OTHER_ID })).toEqual([]);
+  });
+
+  it("stops at create survey when the key's account has no surveys, and deletes it", async () => {
     const providers = memoryStore();
     const r = await smoke([...ARGS, "http://127.0.0.1:9"], {
       providers,
@@ -247,7 +282,7 @@ describe("smoke:legacy stops at the first check when the key cannot be confirmed
     const r = await smoke([...ARGS, "http://127.0.0.1:1"]);
     expect(r.code).toBe(1);
     expect(r.out + r.err).not.toContain(KEY);
-    expect(r.out).toMatch(/create survey: getActive: the request failed \(TypeError/);
+    expect(r.out).toMatch(/check key: getActive: the request failed \(TypeError/);
   });
 });
 

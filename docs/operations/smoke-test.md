@@ -37,10 +37,11 @@ failure. No other data is written. Field names and endpoints are in
 Do not call `private/Surveys/generateAccessKey` unless you want to rotate the key: it makes a new key and the old one
 stops working everywhere the account uses it.
 
-**A wrong key** stops the run at the first step, `create survey`, before anything else is written. It shows as
+**A wrong key** stops the run at the first step, `check key`, before anything is written. It shows as
 `getActive answered HTTP 401`, as `the request failed (TypeError)` (the API may answer with a redirect, which the script
-never follows, so the key cannot go to another address), or, for the key of another account, as
-`the access key does not belong to this account`. The test survey is then deleted.
+never follows, so the key cannot go to another address), or, for the key of another account that has surveys, as
+`the access key does not belong to this account`. The key of another account without surveys passes `check key`; the
+`create survey` check then stops the run with the same text, and the test survey is deleted.
 
 ## Run
 
@@ -64,6 +65,7 @@ The output is one table, then one line for each step that did not pass, then the
 ```text
 | step              | app                                       | legacy                                               | result |
 |-------------------|-------------------------------------------|------------------------------------------------------|--------|
+| check key         | none (reads only)                         | getActive: the account's surveys                     | pass   |
 | create survey     | create in Personal (published flag empty) | getActive: Name, UserId, IsPublished null            | pass   |
 | rename            | update name                               | getActive: Name                                      | pass   |
 …
@@ -77,6 +79,7 @@ flag is still empty (empty means published, as on the old run page).
 
 | Step              | App write                            | Legacy read                                                              |
 | ----------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| check key         | None                                 | `getActive`: if it lists surveys, one of them is the account's           |
 | create survey     | New survey in Personal               | `getActive`: the name, the account as owner, `IsPublished` `null`        |
 | rename            | New name                             | `getActive`: the new name                                                |
 | save definition   | One-question definition              | `getSurvey`: the same JSON                                               |
@@ -95,7 +98,8 @@ flag is still empty (empty means published, as on the old run page).
 Results: `pass`; `FAIL`, the legacy read disagrees or fails (the line under the table says how); `error`, the app
 write failed and the run stopped (the later steps show `skipped`); `manual`, see the checklist.
 
-A failed `create survey` check stops the run: without it the script cannot tell that the key belongs to the account.
+A failed `check key` or `create survey` check stops the run: without them the script cannot tell that the key belongs
+to the account.
 
 **When the cleanup fails**, a `Cleanup: could not delete …` line and the banner
 `ACTION NEEDED: remove survey <id> / project <id> as the test account` name what is left. Sign in to the app as the

@@ -3,10 +3,16 @@ import { run } from "../cli/smoke-legacy.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "../providers/azure-legacy/index.js";
-import { ADMIN_ID, OWNER_ID, ownerUser, blockedUser } from "../providers/suite/expected.js";
+import {
+  ADMIN_ID,
+  OUTSIDER_ID,
+  OWNER_ID,
+  ownerUser,
+  blockedUser,
+} from "../providers/suite/expected.js";
 import type { ProviderSet } from "../providers/types.js";
 import { startLegacyStub, type LegacyStub } from "./legacy-stub.js";
-import { KEY_OF_ANOTHER_ACCOUNT } from "./steps.js";
+import { KEY_LISTS_ANOTHER_ACCOUNT, KEY_OF_ANOTHER_ACCOUNT } from "./steps.js";
 
 // Runs in the `providers-azurite` Vitest project: `pnpm smoke:legacy` against an in-process stub of
 // api.surveyjs.io that reads the local replica the way the old API does (legacy-data-layout
@@ -19,6 +25,7 @@ const KEY = "5b0c6f2a9d8e4c1fa7b3e6d2c4f8a1b0";
 const ENV = { ...replicaEnv(), STORAGE_PROVIDER: "azure-legacy", SMOKE_ACCESS_KEY: KEY };
 
 const STEPS = [
+  "check key",
   "create survey",
   "rename",
   "save definition",
@@ -115,25 +122,46 @@ describe("smoke:legacy against a stub of the legacy API on the replica", () => {
     const url = await stub({ key: "another-key-the-stub-knows-0000" });
     const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("create survey: getActive answered HTTP 401. The run stopped.");
+    expect(r.out).toContain("check key: getActive answered HTTP 401. The run stopped.");
+    expect(r.out).not.toContain("Created test survey");
     expect(r.out + r.err).not.toContain(KEY);
     expect(await leftovers()).toEqual([]);
   });
 
-  it("stops when the key belongs to another account and writes nothing there", async () => {
-    // The key is Adam's: getActive lists Adam's surveys, not the owner's new one.
-    const url = await stub({ keyUser: ADMIN_ID });
-    const adamBefore = await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID });
+  it("stops before any write when the key belongs to another account with surveys", async () => {
+    // The key is the outsider's: getActive lists the outsider's survey, not one of the owner's.
+    const url = await stub({ keyUser: OUTSIDER_ID });
+    const personal = { kind: "personal", userId: OUTSIDER_ID } as const;
+    const ownerBefore = await providers.surveys.listSurveys({ kind: "personal", userId: OWNER_ID });
+    const outsiderBefore = await providers.surveys.listSurveys(personal);
+    expect(outsiderBefore.length).toBeGreaterThan(0);
     const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
     expect(r.code).toBe(1);
+    expect(r.out).toContain(`check key: ${KEY_LISTS_ANOTHER_ACCOUNT}. The run stopped.`);
+    expect(r.out).toMatch(/^\| create survey .*\| skipped +\|$/m);
+    expect(r.out).not.toContain("Created test survey");
+    expect(r.out).not.toContain("Cleanup:");
+    expect(r.out + r.err).not.toContain(KEY);
+    expect(await providers.surveys.listSurveys({ kind: "personal", userId: OWNER_ID })).toEqual(
+      ownerBefore,
+    );
+    expect(await providers.surveys.listSurveys(personal)).toEqual(outsiderBefore);
+  });
+
+  it("stops at create survey when the key's account has no surveys, and deletes it", async () => {
+    // The key is Adam's, who has no surveys: only the new survey's check can tell.
+    const url = await stub({ keyUser: ADMIN_ID });
+    const adamBefore = await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID });
+    expect(adamBefore).toEqual([]);
+    const r = await smoke(["--account", ownerUser.email, "--yes", "--legacy-api", url]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/^\| check key .*\| pass +\|$/m);
     expect(r.out).toContain(`create survey: ${KEY_OF_ANOTHER_ACCOUNT}. The run stopped.`);
     expect(r.out).toMatch(/^\| rename .*\| skipped +\|$/m);
     expect(r.out).toMatch(/^Cleanup: deleted the test survey [0-9a-f-]{36}$/m);
     expect(r.out + r.err).not.toContain(KEY);
     expect(await leftovers()).toEqual([]);
-    expect(await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID })).toEqual(
-      adamBefore,
-    );
+    expect(await providers.surveys.listSurveys({ kind: "personal", userId: ADMIN_ID })).toEqual([]);
   });
 
   it("refuses a blocked account and an unknown one", async () => {
