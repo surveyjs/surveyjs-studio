@@ -2,6 +2,11 @@
   "name": "@my-surveys/server",
   "private": true,
   "type": "module",
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "fixtures"
+  ],
   "scripts": {
     "dev": "node --watch --import tsx src/main.ts",
     "dev:demo": "node --env-file=demo.env --watch --import tsx src/main.ts",

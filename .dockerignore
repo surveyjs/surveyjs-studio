@@ -5,9 +5,18 @@
 .agents
 **/node_modules
 **/dist
+# Settings and key files never enter the build context, so none can reach the image
+# (scripts/check-deps checks these lines).
 **/.env
 **/.env.*
 !**/.env.example
+**/*.env
+**/*.pfx
+**/*.pem
+**/*.key
+**/secrets.*
+**/appsettings*.json
+**/SSL
 server/.local
 **/.local
 e2e/**

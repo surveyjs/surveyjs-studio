@@ -16,8 +16,11 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 RUN pnpm --filter @my-surveys/server deploy --prod /out/server
-# The docs route reads reference.html next to the contract package's openapi.yaml.
-RUN contract="$(dirname "$(find /out/server/node_modules/@my-surveys/contract/ -maxdepth 1 -name openapi.yaml)")" \
+# The docs route reads reference.html next to the contract package's openapi.yaml; the build fails
+# when that folder is not found (API_DOCS=true would answer 404 otherwise).
+RUN openapi="$(find /out/server/node_modules/@my-surveys/contract/ -maxdepth 1 -name openapi.yaml)" \
+    && test -n "$openapi" \
+    && contract="$(dirname "$openapi")" \
     && mkdir -p "$contract/dist" \
     && cp contract/dist/reference.html "$contract/dist/reference.html" \
     && rm -rf web/dist/.vite

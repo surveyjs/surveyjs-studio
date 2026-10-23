@@ -90,6 +90,11 @@ is re-creating the container with the previous tag.
 my-surveys:<commit> .`). The registry is chosen for the hosting step: `surveyjs/my-surveys` on Docker Hub, mirrored
 to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
 
+**No settings in the image.** `.dockerignore` keeps every `.env`, `*.env`, key and certificate file out of the build
+(`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
+(`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
+`docker run --rm --entrypoint sh my-surveys:<tag> -c 'find /app -name "*.env*"'`.
+
 ## Monitoring
 
 ### Health and readiness
