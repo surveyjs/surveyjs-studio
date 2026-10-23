@@ -18,6 +18,7 @@ import { createHandlers } from "./handlers.js";
 import { REDACTED_LOG_PATHS, serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
+import { createReadiness } from "./readiness.js";
 import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
 import { createResultHandlers } from "./results/handlers.js";
@@ -143,13 +144,10 @@ export async function buildApp(
 
   app.get("/healthz", () => ({ status: "ok" }));
 
+  // Not rate limited: concurrent calls share one check, and its answer is reused for a few seconds.
+  const readiness = createReadiness(providers, app.log, options.now);
   app.get("/readyz", async (_request, reply) => {
-    // A check that cannot run counts as failed, and the answer never names less than all of them.
-    const checks = await providers.ready().catch(() => null);
-    const failing =
-      checks === null
-        ? [...providers.readinessNames]
-        : checks.filter((check) => !check.ok).map((check) => check.name);
+    const { failing } = await readiness.check();
     if (failing.length === 0) return reply.send({ status: "ok" });
     return reply.code(503).send({ status: "unavailable", failing });
   });

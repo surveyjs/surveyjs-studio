@@ -86,7 +86,7 @@ Rules that hold everywhere:
   logs about responses and files carry survey ids, response ids, file ids, sizes and types only.
 - The request body limit is `LIMIT_MAX_RESPONSE_BYTES` ([ADR 0004](adr/0004-body-limit.md)), except for the
   definition and theme saves, which use `LIMIT_MAX_DOCUMENT_BYTES` (see [Body limits](#body-limits)).
-- `/readyz` returns `503` with `failing` (the names of the failed checks) when a check of `ready()` fails or `ready()` throws.
+- `/readyz` returns `503` with `failing` (the names of the failed checks) when a check of `ready()` fails or `ready()` throws. Concurrent calls share one run of `ready()` and reuse its answer for `READINESS_CACHE_MS` (5 s; `readiness.ts`). A check that starts or stops failing logs one `warn` line with its name and a safe category (`safe-error.ts`), never an error text.
 - (Step 12) Every server answer carries the headers of `serverSecurityHeaders`, and the server redirects no old surveyjs.io address: `/published`, `/Service/*` and `/Results/*` are unknown paths. See [Security and data protection](#security-and-data-protection).
 
 ## Storage providers

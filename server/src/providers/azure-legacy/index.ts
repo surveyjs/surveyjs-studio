@@ -37,6 +37,7 @@ import type {
   SurveyPageQuery,
   SurveyPosition,
 } from "../types.js";
+import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
 import { createAzureResultStore } from "./results.js";
@@ -724,8 +725,9 @@ export function createAzureLegacyProviders(
     return [...new Set(ids)].sort();
   }
 
+  // Not through select(): the check keeps the driver's error, whose code the log may show.
   async function sqlReady(): Promise<void> {
-    await select("readiness check", "SELECT 1 AS ok");
+    await (await connected()).request().query("SELECT 1 AS ok");
   }
 
   // Both probes are account-level calls. A least-privilege container SAS cannot make them, so
@@ -923,24 +925,28 @@ export function createAzureLegacyProviders(
 
     async ready() {
       const signal = AbortSignal.timeout(readyTimeoutMs);
-      // Each check has its own bound and only says ok or not: an error text never leaves here.
+      // Each check has its own bound. A failure carries a safe category only (safeErrorCategory):
+      // an error text never leaves here.
       const run = async (
         name: ReadinessName,
         check: () => Promise<void>,
       ): Promise<ReadinessCheck> => {
         let timer: NodeJS.Timeout | undefined;
-        const timeout = new Promise<false>((resolve) => {
-          timer = setTimeout(() => resolve(false), readyTimeoutMs);
+        const timeout = new Promise<ReadinessCheck>((resolve) => {
+          timer = setTimeout(() => resolve({ name, ok: false, reason: "timeout" }), readyTimeoutMs);
         });
         try {
-          const ok = await Promise.race([
+          return await Promise.race([
             check().then(
-              () => true,
-              () => false,
+              (): ReadinessCheck => ({ name, ok: true }),
+              (error: unknown): ReadinessCheck => ({
+                name,
+                ok: false,
+                reason: safeErrorCategory(error),
+              }),
             ),
             timeout,
           ]);
-          return { name, ok };
         } finally {
           clearTimeout(timer);
         }

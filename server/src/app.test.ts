@@ -78,6 +78,26 @@ describe("health", () => {
     expect(res.body).not.toContain("canary-secret");
   });
 
+  it("GET /readyz runs one provider check for concurrent calls and reuses its answer", async () => {
+    let calls = 0;
+    const counted: ProviderSet = {
+      ...createMemoryProviders(),
+      name: "counted",
+      ready: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [{ name: "memory", ok: true }];
+      },
+      close: () => Promise.resolve(),
+    };
+    const instance = await start(counted);
+    const answers = await Promise.all(Array.from({ length: 10 }, () => instance.inject("/readyz")));
+    expect(answers.map((res) => res.statusCode)).toEqual(Array(10).fill(200));
+    expect(calls).toBe(1);
+    expect((await instance.inject("/readyz")).statusCode).toBe(200);
+    expect(calls).toBe(1);
+  });
+
   it("closes providers when the app closes", async () => {
     let closed = false;
     const spy: ProviderSet = {

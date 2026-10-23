@@ -1,3 +1,5 @@
+import { safeErrorParts } from "../../safe-error.js";
+
 /**
  * Errors of the legacy stores. A driver message may name the host or quote a connection string,
  * so only operation names and driver codes reach an error message.
@@ -11,21 +13,8 @@ export class LegacyStoreError extends Error {
   }
 }
 
-/**
- * Codes such as ESOCKET, ELOGIN or BlobAlreadyExists, SQL error numbers and HTTP statuses are
- * safe; driver messages may name the host.
- */
 function describeDriverError(error: unknown): string {
-  if (typeof error !== "object" || error === null) return "";
-  const { code, number, statusCode } = error as {
-    code?: unknown;
-    number?: unknown;
-    statusCode?: unknown;
-  };
-  const parts: string[] = [];
-  if (typeof code === "string" && /^[A-Z][A-Za-z]{1,63}$/.test(code)) parts.push(code);
-  if (typeof number === "number") parts.push(`SQL error ${number}`);
-  if (typeof statusCode === "number") parts.push(`HTTP ${statusCode}`);
+  const parts = safeErrorParts(error);
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 

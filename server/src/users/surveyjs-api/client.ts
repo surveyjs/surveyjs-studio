@@ -27,7 +27,8 @@ export class UserApiError extends Error {
   constructor(
     readonly operation: string,
     readonly status: number | null,
-    reason: string,
+    /** Safe to log: `timeout`, `network error`, `status N` or `malformed answer`. */
+    readonly reason: string,
   ) {
     super(`The surveyjs.io user API failed: ${operation} (${reason})`);
     this.name = "UserApiError";
@@ -54,8 +55,11 @@ const PROBE_USER_ID = "00000000-0000-4000-8000-000000000000";
 export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   readonly users: UserDirectory;
   readonly notices: AccountNotices;
-  /** True when the API answers (a 404 for a user nobody has); false for anything else. */
-  probe(): Promise<boolean>;
+  /**
+   * Ok when the API answers (a 404 for a user nobody has); a failure for anything else, with a
+   * safe category only.
+   */
+  probe(): Promise<{ readonly ok: boolean; readonly reason?: string }>;
 } {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
@@ -163,11 +167,12 @@ export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   const notices =
     setting === "surveyjs-licenses" ? licenceNoticesFromApi : demoAccountNotices(setting);
 
-  async function probe(): Promise<boolean> {
+  async function probe(): Promise<{ readonly ok: boolean; readonly reason?: string }> {
     try {
-      return (await call("readiness probe", `/users/${PROBE_USER_ID}`)) === null;
-    } catch {
-      return false;
+      const answer = await call("readiness probe", `/users/${PROBE_USER_ID}`);
+      return answer === null ? { ok: true } : { ok: false, reason: "status 200" };
+    } catch (error) {
+      return { ok: false, reason: error instanceof UserApiError ? error.reason : "error" };
     }
   }
 

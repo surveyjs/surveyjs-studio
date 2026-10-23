@@ -28,7 +28,8 @@ differ ([below](#configuration-by-deployment-mode)).
 `HOST=0.0.0.0` makes the server listen on every interface of the container, which is what a container needs; outside a
 container the default stays `127.0.0.1`. `WEB_ROOT` makes the server serve the web app with the web app's header
 policy (see [below](#the-header-policy)); `/api`, `/__dev`, `/healthz` and `/readyz` keep the server's own routes and
-headers.
+headers. `/__dev` holds only the dev sign-in, and the server refuses to start with it (`IDENTITY_PROVIDER=dev`) when
+`NODE_ENV=production` or `APP_EDITION=hosted`, so in production that path answers `404`.
 
 **Timeouts and a proxy.** `REQUEST_TIMEOUT_SECONDS` (default `300`) is the time the whole request, headers and body,
 may take; a slower client gets `408` and the connection closes. It also bounds a body the server reads and drops
@@ -56,6 +57,8 @@ this timeout; if its own limits are lower, it answers first, with its own page.
 3. **The reverse proxy** terminates https for `PUBLIC_BASE_URL`, forwards every path to port 3000, sets
    `X-Forwarded-For`, and passes the app's headers through unchanged ([the header policy](#the-header-policy)). Its
    body size limit and timeout are at least the app's (above). Compression belongs there too: the app sends none.
+   `/readyz` is the one exception: it reaches the stores, so the proxy forwards it only for the monitor's addresses
+   (or the monitor calls `http://127.0.0.1:3000/readyz` on the host) and answers `404` to anyone else.
 4. **`TRUST_PROXY`** is the address the proxy's connections come from, as the container sees it. Without it every
    user shares the proxy's rate-limit counters (sign-in allows 30 requests a minute per address) and a saved respondent
    address is the proxy's. When the proxy runs on the same host and reaches a published port, that address is
@@ -94,7 +97,9 @@ to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
 `/healthz` answers `200` while the process runs. The image's `HEALTHCHECK` calls it every 30 s, but it only marks
 the container `unhealthy`: Docker does not restart it (`--restart unless-stopped` acts only when the process exits).
 The host's monitoring, or an orchestrator, must alert on an `unhealthy` container and re-create it. `/readyz` checks
-what the app needs, in parallel, each with a 5 s limit, and names the checks that failed:
+what the app needs, in parallel, each with a 5 s limit, and names the checks that failed. Calls that arrive together
+share one run of the checks, and its answer, ready or not, is reused for 5 s: the stores see at most one check every
+5 s, however often `/readyz` is called.
 
 | Check             | When                            | What it does                                                           |
 | ----------------- | ------------------------------- | ---------------------------------------------------------------------- |
@@ -111,7 +116,11 @@ what the app needs, in parallel, each with a 5 s limit, and names the checks tha
 
 The answer never holds an error text, a host name or a key. The sign-in server (`auth.surveyjs.io`) is not checked on
 purpose: when it is down, signing in fails and everything else keeps working. Alert when `/readyz` is not `200` for
-more than a minute, and look at the logs for the reason.
+more than a minute, and look at the logs for the reason. A check that starts failing logs one `warn` line,
+`"msg":"readiness check failing"`, with `check` (its name) and `reason`: `timeout`; the driver's or storage SDK's
+code (such as `ELOGIN`, `ESOCKET` or `AuthorizationFailure`), with any SQL error number or HTTP status; the user
+API's `status 500` or `network error`; or just `error`. It is never the error's text, a host or a key. When the check
+passes again, one `"msg":"readiness check ok again"` line follows; a check that keeps failing logs nothing more.
 
 ### Logs
 
@@ -524,7 +533,7 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
    needs a look ([ADR 0012](adr/0012-editor-content-and-history.md)).
 
 5. **Start the container** ([Running the image](#running-the-image)) and check:
-   - `GET /healthz` is `200` and `GET /readyz` is `{"status":"ok"}`;
+   - `GET /healthz` is `200` and `GET /readyz` is `{"status":"ok"}` (on the host, or from the monitor's address);
    - the `starting` log line says `"readOnly":true`, `"webApp":true`, `"storageProvider":"azure-legacy"`,
      `"userDirectory":"surveyjs-sql"` and the right `publicBaseUrl`;
    - the headers, with the `curl` commands of [the header policy](#the-header-policy);

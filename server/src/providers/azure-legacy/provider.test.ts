@@ -94,9 +94,9 @@ describe("azure-legacy provider without a reachable store", () => {
 
   it("ready names every check and fails each one instead of throwing", async () => {
     expect(await providers.ready()).toEqual([
-      { name: "sql", ok: false },
-      { name: "surveys-storage", ok: false },
-      { name: "results-storage", ok: false },
+      { name: "sql", ok: false, reason: expect.any(String) },
+      { name: "surveys-storage", ok: false, reason: expect.any(String) },
+      { name: "results-storage", ok: false, reason: expect.any(String) },
     ]);
   });
 
@@ -119,11 +119,24 @@ describe("azure-legacy provider without a reachable store", () => {
         status: "unavailable",
         failing: ["sql", "surveys-storage", "results-storage"],
       });
+      // The body names the checks only; the log adds a safe category (a code), never a message.
+      expect(res.body).not.toContain("ECONNREFUSED");
       for (const text of [res.body, ...lines]) {
         expect(text).not.toContain("canary-secret");
         expect(text).not.toContain("127.0.0.1");
-        expect(text).not.toContain("ECONNREFUSED");
+        expect(text).not.toContain("devstoreaccount1");
       }
+      const warnings = lines
+        .map((line) => JSON.parse(line) as { msg?: string; check?: string; reason?: string })
+        .filter((line) => line.msg === "readiness check failing");
+      expect(warnings.map((line) => line.check).sort()).toEqual([
+        "results-storage",
+        "sql",
+        "surveys-storage",
+      ]);
+      // Nothing listens on port 1: SQL fails with the driver's code, storage retries until the timeout.
+      expect(warnings.find((line) => line.check === "sql")?.reason).toBe("ESOCKET");
+      for (const line of warnings) expect(line.reason).toMatch(/^(timeout|[A-Z][A-Za-z]+)$/);
     } finally {
       await app.close();
     }

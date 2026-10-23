@@ -433,7 +433,10 @@ export interface ProviderSet {
   readonly notices: AccountNotices;
   /** Every check `ready()` runs, by name: `/readyz` lists them all when `ready()` itself fails. */
   readonly readinessNames: readonly ReadinessName[];
-  /** One entry per dependency check, run in parallel. Never carries an error text. */
+  /**
+   * One entry per dependency check, run in parallel. A failed check may carry a safe category
+   * (`reason`), never an error text.
+   */
   ready(): Promise<readonly ReadinessCheck[]>;
   close(): Promise<void>;
 }
@@ -443,4 +446,6 @@ export type ReadinessName = "sql" | "surveys-storage" | "results-storage" | "use
 export interface ReadinessCheck {
   readonly name: ReadinessName;
   readonly ok: boolean;
+  /** Why a check failed, for the log only: `timeout`, a driver or SDK code, an HTTP status. */
+  readonly reason?: string;
 }

@@ -106,9 +106,11 @@ is limited, and the rest are cheap or reached only by a signed-in user or a sign
 | `getConfig`, `logout`                                                            | None                                            | Public but cheap: no store is read                                          |
 | Every other operation                                                            | None                                            | Needs a session (and CSRF for writes) or a bearer token                     |
 
-`/healthz` and `/readyz` sit outside `/api` and are not limited; `/readyz` touches the stores, so the reverse proxy
-must not expose it (it forwards `/api` only). The counters live in each process, which Step 14 must replace for
-several instances ([architecture](../architecture.md), "Open for later steps").
+`/healthz` and `/readyz` sit outside `/api` and are not limited. `/readyz` touches the stores, so the reverse proxy
+forwards it only for the monitor (it forwards every other path, since the Step 14 image serves the web app too), and
+concurrent calls share one check whose answer is reused for 5 s ([operations](../operations.md#health-and-readiness)).
+The counters live in each process: one instance is enough for mode 1.1, and a second one needs shared counters first
+(later; [architecture](../architecture.md), "Open for later steps").
 
 ### `/published` removed, `id` no longer reserved (R22)
 

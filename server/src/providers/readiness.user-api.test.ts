@@ -12,7 +12,7 @@ afterEach(async () => {
   while (closers.length > 0) await closers.pop()!();
 });
 
-async function readyzWith(url: string, token = TOKEN) {
+async function readyzWith(url: string, token = TOKEN, lines?: string[]) {
   const config = loadConfig({
     NODE_ENV: "test",
     IDENTITY_PROVIDER: "dev",
@@ -21,7 +21,9 @@ async function readyzWith(url: string, token = TOKEN) {
     USER_API_TOKEN: token,
   });
   const providers = await createProviders(config);
-  const app = await buildApp(config, providers);
+  const app = await buildApp(config, providers, {
+    ...(lines && { logStream: { write: (line: string) => lines.push(line) } }),
+  });
   closers.push(() => app.close());
   return app.inject("/readyz");
 }
@@ -54,10 +56,17 @@ describe("/readyz with the user API", () => {
     expect(res.json()).toEqual({ status: "ok" });
   });
 
-  it("names user-api when the API answers 500", async () => {
-    const res = await readyzWith(await answering(500));
+  it("names user-api when the API answers 500, and logs the status but not the token", async () => {
+    const lines: string[] = [];
+    const res = await readyzWith(await answering(500), TOKEN, lines);
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ status: "unavailable", failing: ["user-api"] });
+    const warnings = lines
+      .map((line) => JSON.parse(line) as { msg?: string; check?: string; reason?: string })
+      .filter((line) => line.msg === "readiness check failing");
+    expect(warnings).toMatchObject([{ check: "user-api", reason: "status 500" }]);
+    expect(lines.join("")).not.toContain(TOKEN);
+    expect(lines.join("")).not.toContain("127.0.0.1");
   });
 
   it("names user-api when the token is refused", async () => {

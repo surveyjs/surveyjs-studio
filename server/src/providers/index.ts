@@ -80,8 +80,8 @@ export async function createProviders(
     notices: api.notices,
     readinessNames: [...storage.readinessNames, "user-api"],
     async ready(): Promise<readonly ReadinessCheck[]> {
-      const [checks, ok] = await Promise.all([storage.ready(), api.probe()]);
-      return [...checks, { name: "user-api", ok }];
+      const [checks, probe] = await Promise.all([storage.ready(), api.probe()]);
+      return [...checks, { name: "user-api", ...probe }];
     },
   };
 }
