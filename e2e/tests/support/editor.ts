@@ -102,6 +102,10 @@ export async function addQuestion(page: Page): Promise<void> {
 /** Selects one of the Creator's tabs, through the tab bar's "More" menu when it is hidden there. */
 export async function openTab(page: Page, name: string): Promise<void> {
   const tab = page.getByRole("tab", { name, exact: true });
+  // The tab bar first renders every tab, transparent (opacity 0), and only after a resize
+  // observation and an animation frame moves the tabs that do not fit into "More". Whether a tab
+  // shows is known only once the bar is opaque: a tab seen before can be gone by the click.
+  await expect(page.locator(".svc-tabbed-menu")).toHaveCSS("opacity", "1");
   if (!(await tab.isVisible())) {
     await page.locator(".svc-tabbed-menu-dots").getByRole("button", { name: "More" }).click();
     await page
