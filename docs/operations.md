@@ -90,6 +90,9 @@ is re-creating the container with the previous tag.
 my-surveys:<commit> .`). The registry is chosen for the hosting step: `surveyjs/my-surveys` on Docker Hub, mirrored
 to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
 
+**A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server, its
+firewall, Docker, Caddy for https, and the first deploy.
+
 **No settings in the image.** `.dockerignore` keeps every `.env`, `*.env`, key and certificate file out of the build
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
 (`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
