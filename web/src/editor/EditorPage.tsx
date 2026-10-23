@@ -5,7 +5,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api/client";
 import {
   definitionQueryOptions,
@@ -275,9 +275,13 @@ function EditorFrame({
  * While `active`, closing the tab, reloading or leaving for another site asks first (the browser's
  * own prompt). Leaving within the app needs no prompt: the editor hands its pending changes to the
  * savers when it closes, and they finish on their own.
+ *
+ * A layout effect: the listener changes in the same commit as the status the bar shows. A passive
+ * effect runs in a later task, so for a moment the bar could say "Saving…" while leaving does not
+ * ask yet.
  */
 function useLeaveGuard(active: boolean): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return;
     const ask = (event: BeforeUnloadEvent) => {
       event.preventDefault();
