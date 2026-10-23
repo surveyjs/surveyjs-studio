@@ -218,7 +218,7 @@ Several respondents behind one address (a school, an office) share a counter. Th
 "Limit to one response" reads `getPublishedSurvey` twice for a browser that has a client id (once to learn
 whether the limit is on, once with the id), so such page loads use the budget twice as fast. Raise
 `PUBLIC_RATE_LIMIT` for such a deployment. The counters live in the process: with several server instances each one counts on its
-own (a shared store is open for Step 14).
+own (a shared store is open for later; one instance is enough for mode 1.1).
 
 ## Respondent files
 

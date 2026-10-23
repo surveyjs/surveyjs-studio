@@ -731,8 +731,8 @@ export function createAzureLegacyProviders(
   }
 
   // Both probes are account-level calls. A least-privilege container SAS cannot make them, so
-  // /readyz would stay at 503 with such credentials. A narrower probe is open for Step 14
-  // (docs/architecture.md, "Open for later steps").
+  // /readyz would stay at 503 with such credentials. A narrower probe is open for later, with
+  // least-privilege credentials (docs/architecture.md, "Open for later steps").
   async function storageReady(account: typeof surveysAccount, signal: AbortSignal) {
     await account.blobs.getProperties({ abortSignal: signal });
     await account.tables.listTables({ abortSignal: signal }).byPage({ maxPageSize: 1 }).next();

@@ -102,7 +102,8 @@ definition without `pages` is read as one page. A stored address is not in the C
 (it stays in the JSON).
 
 Why R5: reusing the paged reader is the smallest change, and the order matches the Table and `listResults`. On
-Azure it inherits the cost of paging (each page scans the rows from its cursor on), which Step 14 measures. A
+Azure it inherits the cost of paging (Step 14 reads only the keys from the cursor on; that scan is still to measure
+on real volumes, later). A
 store failure after the first page cannot change the status: the server aborts the transfer, which most
 clients report as an incomplete or failed download, and the guide says how a client checks a file it kept.
 
@@ -175,8 +176,8 @@ without the surveyjs.io site header and footer. The visual comparison hides them
   the end of the JSON and the row count against `getResultStats`.
 - Public results of a survey over 60,000 responses cannot be read at once from one address with the default
   `PUBLIC_RATE_LIMIT`; the page says "Try again".
-- Delete all on a huge survey takes as many transactions as it has rows of 100, and holds the row keys in server
-  memory (Step 14 scale).
+- Delete all on a huge survey takes as many transactions as it has rows of 100. Since Step 14 (fcf2f68) it holds
+  one listing page of row keys at a time, not all of them.
 - The legacy file-share files of the old site are not deleted by **Delete Results**, as before: only the new
   container's respondent files are.
 - `passwordLogin` is the example of an operation that answers `501`; Step 11 moved the tests off `listMembers`
@@ -220,5 +221,5 @@ written.
 - **The private-list marks across tabs.** Saves no longer overwrite another tab's changes, but an open Summary
   does not redraw them: its marks show the list at mount plus its own changes until it mounts again.
 - **The scan of large tables on Azure** (the cost of export and of public results, layout gap 8): measure on real
-  volumes (Step 14).
+  volumes (later: Step 14 did not measure it).
 - **A locale picker and a visual match** with the old results page: Steps 13 and later.

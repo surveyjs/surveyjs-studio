@@ -281,7 +281,8 @@ written.
   change or a removal. The memory provider cannot hold such rows. A fix would make visibility require a known role.
 - **A survey created or moved into a project can race a delete of that project on Azure.** Under `READ COMMITTED` a
   survey inserted while the delete runs would keep the deleted project id and be orphaned. The memory provider
-  does both in one step. To measure and decide in Step 14, with the scan cost of the other large tables.
+  does both in one step. Open: carried to the hosted-migration track, with the scan cost of the other large tables
+  (to measure later).
 - **Accessibility of the links inside `<summary>`** (Rename, Remove, Leave Project): a link inside a summary is
   awkward for keyboard and screen-reader users. Step 13.
 - **The focus outline of Save and Add** is removed by the copied account styles (`account/index.scss`). A

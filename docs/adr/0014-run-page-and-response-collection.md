@@ -104,7 +104,7 @@ This also settles the Step 3 limitation of the sign-in limit.
 
 Why: the three public operations accept anything from anyone, and the only legacy defence is an unguessable id.
 The numbers are defaults to tune in production. The counters live in the process; a shared store for several
-instances is open for Step 14.
+instances is open for later (one instance is enough for mode 1.1).
 
 ### Respondent files (S11)
 
@@ -208,7 +208,7 @@ path. The Idempotency-Key no longer depends on `crypto.randomUUID`
   for all, and a stored address that is the proxy's. A `TRUST_PROXY` that is too wide lets callers pick their
   address.
 - The public rate limits are per process. Several instances count on their own until a shared store exists
-  (Step 14).
+  (later; mode 1.1 runs one instance).
 - Respondent files have no quota and no expiry. Total storage is bounded only by the rate limits, a file link is
   public, and a file that was never submitted stays until the survey is deleted.
 - Rows are written directly, without the legacy HTML cleaner, so new rows hold the text as typed while old rows

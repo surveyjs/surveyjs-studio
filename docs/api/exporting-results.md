@@ -189,12 +189,12 @@ It never holds the whole file.
 ### Cost on the old site's stores
 
 The export reads the survey the way `listResults` pages do, so the cost of paging on the `azure-legacy`
-provider applies ([Paging](paging.md#results-oldest-first-one-survey)): each page lists the rows from the
-cursor's time on, sorts them in memory and keeps 1,000. The first page reads all the rows and the last one
-reads the few that are left, so a walk over N rows reads about N²/2,000 rows in total. 1,500 rows are
-quick. A survey with 100,000 responses reads on the order of five million rows for one download, and
-the server holds the remaining rows of each page in memory until it has sent it. Step 14 measures this. The
-memory provider has no such cost.
+provider applies ([Paging](paging.md#results-oldest-first-one-survey)): each page lists the keys and times
+of the rows from the cursor's time on, sorts them in memory, then reads the full rows of its own 1,000 only.
+The first page lists all the keys and the last one the few that are left, so a walk over N rows lists about
+N²/2,000 keys in total, while the answers read and held stay about one page (Step 14). 1,500 rows are quick.
+A survey with 100,000 responses lists on the order of five million keys for one download; that cost is still to
+measure on real volumes (later). The memory provider has no such cost.
 
 ### Errors
 
