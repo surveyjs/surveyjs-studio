@@ -3,6 +3,7 @@
   "compilerOptions": { "types": ["node"] },
   "include": [
     "app-variables.d.mts",
+    "image-target.d.mts",
     "playwright.config.ts",
     "playwright.azurite.config.ts",
     "playwright.visual.config.ts",

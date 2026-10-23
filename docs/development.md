@@ -52,7 +52,8 @@ identity provider, and `dev` signs in as a user of the memory seed), `pnpm --fil
 
 ## Environment variables (server)
 
-Read at start-up. Every problem is reported at once and the process exits with code 1.
+Read at start-up. Every problem is reported at once and the process exits with code 1. Which of them each deployment
+mode needs, and their values in production: [Operations › Configuration by deployment mode](operations.md#configuration-by-deployment-mode).
 
 | Variable                                   | Values                                                                                                                                                                                           | Default                                                                                                                                                                    |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -91,8 +92,11 @@ Read at start-up. Every problem is reported at once and the process exits with c
 | `USER_DIRECTORY`                           | `memory`, `surveyjs-sql`, `surveyjs-api`, `local` (`local` is refused: not built yet)                                                                                                            | `memory` with `STORAGE_PROVIDER=memory`, else `surveyjs-sql`                                                                                                               |
 | `USER_API_URL`                             | absolute http(s) URL; plain http only on `localhost`, `127.0.0.1` or `[::1]`; a trailing slash is dropped                                                                                        | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
 | `USER_API_TOKEN`                           | string; **secret**                                                                                                                                                                               | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
-| `ACCOUNT_WEBHOOK_SECRET`                   | `whsec_` and the base64 of at least 24 bytes; **secret**                                                                                                                                         | unset: the account-deleted webhook answers `404`                                                                                                                           |
+| `ACCOUNT_WEBHOOK_SECRET`                   | `whsec_` and the base64 of at least 24 bytes; **secret**                                                                                                                                         | unset: the account-deleted webhook answers `404` (`503 read-only` while `READ_ONLY=true`)                                                                                  |
 | `SHELL_LINKS`                              | JSON object of name to absolute http(s) URL                                                                                                                                                      | unset; merged over the built-in account links (below)                                                                                                                      |
+| `WEB_ROOT`                                 | absolute path of a built `web/dist`; it must hold `index.html`                                                                                                                                   | unset: the server serves the API only. Set: also the web app, with its own headers (ADR 0021)                                                                              |
+| `READ_ONLY`                                | `true`, `false`                                                                                                                                                                                  | `false`. `true`: every write answers `503 read-only`; reads, sign-in and sign-out work                                                                                     |
+| `REQUEST_TIMEOUT_SECONDS`                  | positive integer of seconds                                                                                                                                                                      | `300`. The whole request, headers and body, must arrive within it, or the server answers `408`                                                                             |
 
 "Required in production" means `NODE_ENV=production`. `SESSION_SECRET` is also required whenever the
 public origin is not a loopback http origin, so a deployment that forgets `NODE_ENV` cannot run with
@@ -432,6 +436,71 @@ and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 - **The first request takes several seconds** while the SQL and storage connections open.
 - Tests and the e2e suites never read `server/.env`; they use their own env files.
 
+## Prod-like mode
+
+Prod-like mode runs the **production image** (`my-surveys:local`, see [Operations](operations.md#deployment)) in the
+mode 1 configuration on the offline replica, signing in through the mock OIDC server. Nothing real is touched. It
+uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
+before starting the other.
+
+| Command               | Does                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm prod-like:up`   | Builds the image, starts it with the replica and the mock, waits until all are healthy, loads the fixtures |
+| `pnpm prod-like:down` | Stops the containers and **deletes their volumes**                                                         |
+
+Open <http://localhost:8080> and sign in as `owner` on the mock's page
+([users](#signing-in-through-the-mock-oidc-server)). The files:
+
+- [`docker/compose.prod-like.yaml`](../docker/compose.prod-like.yaml) extends the services of
+  `docker/compose.azurite.yaml` (which stays as it is for Azurite mode) and adds `app`, the image;
+- [`docker/prod-like.env`](../docker/prod-like.env) is the app's settings: `APP_EDITION=hosted`,
+  `STORAGE_PROVIDER=azure-legacy`, `ACCOUNT_NOTICES=surveyjs-licenses`, `IDENTITY_PROVIDER=surveyjs-oidc` with the
+  mock, `PUBLIC_BASE_URL=http://localhost:8080` and a local `SESSION_SECRET`. All values are local placeholders.
+
+**Why the app shares the mock's network.** openid-client checks that the issuer's metadata names the configured
+issuer, so the browser and the app must reach the mock at the same address, and the server allows an http issuer
+only on localhost. The app, the mock and Azurite share one network namespace (the mock's), and the mock listens on
+18080 there: inside and on the host it is `http://127.0.0.1:18080/surveyjs`. Azurite is `127.0.0.1:10000` and
+`:10002` inside too, because the server allows plain http to storage only on loopback. SQL Server is reached by its
+service name, `legacy-sql,1433`. The app's port 3000 is published as 8080.
+
+To see the logs: `docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml logs app`.
+
+## The image on production data
+
+`pnpm image:prod-data` runs the **production image** on the stores and the sign-in in `server/.env`, like
+[production data mode](#production-data-mode) but without Vite: the app is at <http://localhost:3000>. It reads and
+writes production data.
+
+1. **Register the redirect URI** `http://localhost:3000/api/v1/auth/callback` in the the site's sign-in service client (and
+   `http://localhost:3000/` after sign-out, if the server checks it).
+2. **Start the site's sign-in service** on this machine, then run `pnpm image:prod-data`. Stop it with Ctrl+C.
+
+The launcher:
+
+- refuses to start while `server/.env` is not ready: the checks of `pnpm dev:prod-data`, plus a `SESSION_SECRET` of
+  at least 32 characters (the image runs with `NODE_ENV=production`), `IDENTITY_PROVIDER=surveyjs-oidc`, and an
+  issuer on localhost. It names the variable, never the value;
+- refuses a value with `$` that is not in single quotes: docker compose expands `$NAME` in an env file, Node does not;
+- for an https issuer, reads its certificate into `server/.local/issuer-ca.pem`, mounts it read-only at
+  `/certs/issuer-ca.pem` and sets `NODE_EXTRA_CA_CERTS` to it;
+- prints the "REAL DATA" banner (servers and accounts, never a key or password), then runs
+  `docker compose -f docker/image-prod-data.yaml up --build` and removes the containers when it stops.
+
+Only `server/.env` reaches the container: variables set in the shell do not override it here. The compose file sets
+`NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT` and `PUBLIC_BASE_URL=http://localhost:3000` over the file.
+
+**The issuer stays `https://localhost:7100`.** The issuer runs on the host, but `localhost` in a container is the
+container. The service `issuer-forward` (`alpine/socat`) owns the app's network namespace and forwards the issuer's
+port of its localhost to the same port on the host (`host.docker.internal`), so the metadata's issuer matches and
+the certificate's `localhost` name fits. It forwards every other endpoint of the file on this machine the same way.
+It also publishes the app's port 3000. On Docker Desktop this reaches a service the host runs on 127.0.0.1 (the site's sign-in service
+on `localhost` listens there and on ::1); on Linux, `host.docker.internal` is the bridge address, so the issuer must
+listen there too.
+
+`--env-file <path>` reads another file instead of `server/.env`. It is for testing the launcher on the replica and
+the mock (with `pnpm demo:azurite:up` running), not for real use.
+
 ## Golden fixtures
 
 `server/fixtures/legacy/` holds synthetic data in the **legacy storage formats**: SQL rows as JSON
@@ -441,8 +510,8 @@ each fixture covers. Three things read them: `MEMORY_SEED=legacy-fixtures`, the 
 and `pnpm legacy:load`.
 
 **The large survey (Step 9).** "API created" (`22222222-0000-4000-8000-a00000000008`, Olivia Owner's Personal
-survey: active, never published) holds **1,500 generated responses** and a definition with five questions
-(`color`, `score`, `subscribe`, `channels`, `comment`). It is for the results page: its Summary counts every
+survey: active, its published flag never set, so it reads as published) holds **1,500 generated responses** and
+a definition with five questions (`color`, `score`, `subscribe`, `channels`, `comment`). It is for the results page: its Summary counts every
 response, the Table pages through them (300 pages of 5), and `listResults` takes two pages of 1,000 to read
 them. The rows are not a JSON file: `server/src/providers/azure-legacy/large-survey.ts` makes them from a fixed
 rule, so the memory seed and the Azurite loader hold the same rows. Colour is Red, Green or Blue 500 times each;
@@ -560,6 +629,22 @@ the least privilege it needs, since it only reads:
   `.env.*` are git-ignored (except `.env.example`). Never commit it, and delete it when you are
   done.
 
+### Schema check
+
+`pnpm inspect:legacy-schema [--env-file <path>]` prints what the app depends on in the `Surveys` table:
+
+```text
+Surveys.theme: varchar(max) COLLATE SQL_Latin1_General_CP1_CI_AS
+Surveys triggers: none
+Surveys.ispublished: tinyint, nullable yes, default none
+Surveys with an empty ispublished: 17 of 24
+```
+
+It reads `LEGACY_SQL_CONNECTION_STRING` only, runs `SELECT` on the `sys.*` views and one `COUNT`, and writes
+nothing, so `READ_ONLY` does not matter. Exit codes: `0` success, `1` connection or query error (the message has
+no connection string, host or password), `2` usage error, an unreadable env file, or no connection string. Use
+the same least-privilege login as the inspector above. The output above is the local replica.
+
 ## Scripts
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
@@ -579,7 +664,8 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
 surveyjs.io). The visual run uses its own ports, **3002** (server) and **5175** (web), so it can run beside the
-functional e2e suite (3000/5173 and 3001/5174). See [Testing › Visual parity](testing.md#visual-parity).
+functional e2e suite (3000/5173 and 3001/5174); both runners stop with a message naming the process when one of
+their ports is taken. See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
 `pnpm --filter @my-surveys/contract generate`.
@@ -614,8 +700,9 @@ needs no server change until you implement it.
 - **Major upgrades** (a core dependency, Node.js, pnpm) get their own pull request, never mixed
   with feature work. The pull request adds an ADR in `docs/adr/` that records what changed and how
   it was verified (for the shape, see [ADR 0002](adr/0002-node-24-lts.md)).
-- **Node.js** is pinned in `.nvmrc` and `engines.node`. Keep both, and the Docker base image once
-  it exists, on the same major.
+- **Node.js** is pinned in `.nvmrc` and `engines.node`. Keep both on the same major, and the Docker
+  base image (`FROM node:<version>` in `Dockerfile`) on the exact `.nvmrc` version: `pnpm check:deps`
+  fails otherwise.
 
 To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dependency-rules).
 
@@ -627,19 +714,21 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
 2. `test:unit` and `test:conformance` (in-memory);
-3. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
+3. `docker build -t my-surveys:ci .`, the production image;
+4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
-4. `test:providers:azurite` and `test:conformance:azurite`;
-5. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
-   `azure-legacy` server and the mock OIDC server, Chromium);
-6. on failure, it uploads the Playwright report;
-7. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`);
+6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
+   `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`);
+7. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
+8. `pnpm demo:azurite:down`, which always runs (`if: always()`).
 
 The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see
 [Testing › Visual parity](testing.md#visual-parity)). CI typechecks, lints and unit-tests their helpers. Run
 `pnpm e2e:visual` locally before you merge a change to the look of a page.
 
-Run the same commands locally before you push. Steps 3, 4 and 7 need Docker.
+Run the same commands locally before you push. Steps 3, 4, 5 and 8 need Docker. The image targets of steps 5
+and 6 need Linux (`docker run --network host`); on Windows and macOS run those suites without them.
 
 ## Conventions
 

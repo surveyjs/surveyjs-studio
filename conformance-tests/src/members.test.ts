@@ -12,8 +12,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { call, codeOf, as, listPage, walkPages } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider, blocked } = fixtureUsers;
 
@@ -40,19 +40,6 @@ interface MemberPage {
   nextCursor: string | null;
 }
 
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 /** The same browser without the CSRF token header. */
 const withoutCsrf = (headers: Headers): Headers => ({ cookie: headers.cookie ?? "" });
 
@@ -72,13 +59,17 @@ async function ownProject(ctx: TestContext, purpose: string): Promise<string> {
   const { id } = (await response.json()) as { id: string };
   const candidates = [adam, await as(ctx, member)];
   onTestFinished(async () => {
+    const statuses: number[] = [];
     for (const headers of candidates) {
       const deleted = await call("DELETE", "/projects/{projectId}", {
         path: `/projects/${id}`,
         headers,
       });
       if (deleted.status === 204) return;
+      statuses.push(deleted.status);
     }
+    // A project nobody could delete would stay on the shared data.
+    expect.fail(`project ${id} was not cleaned up (answers ${statuses.join(", ")})`);
   });
   return id;
 }
@@ -87,11 +78,8 @@ function list(headers: Headers, projectId: string, query = ""): Promise<Response
   return call("GET", MEMBERS, { path: `/projects/${projectId}/members${query}`, headers });
 }
 
-async function page(headers: Headers, projectId: string, query = ""): Promise<MemberPage> {
-  const response = await list(headers, projectId, query);
-  expect(response.status).toBe(200);
-  return (await response.json()) as MemberPage;
-}
+const page = (headers: Headers, projectId: string, query = ""): Promise<MemberPage> =>
+  listPage<Member>(MEMBERS, `/projects/${projectId}/members${query}`, headers);
 
 function add(headers: Headers, projectId: string, body: unknown): Promise<Response> {
   return call("POST", MEMBERS, { path: `/projects/${projectId}/members`, headers, body });
@@ -137,14 +125,11 @@ describe("listMembers", () => {
 
   it("pages with a cursor that belongs to the project", async (ctx) => {
     const olivia = await as(ctx, owner);
-    const pages: MemberPage[] = [];
-    let cursor: string | null = null;
-    do {
-      const query: string = `?limit=1${cursor === null ? "" : `&cursor=${cursor}`}`;
-      const next = await page(olivia, MARKETING, query);
-      pages.push(next);
-      cursor = next.nextCursor;
-    } while (cursor !== null);
+    const pages = await walkPages<Member>(
+      MEMBERS,
+      `/projects/${MARKETING}/members?limit=1`,
+      olivia,
+    );
     expect(pages.map((p) => p.items.length)).toEqual([1, 1, 1]);
     expect(pages.flatMap((p) => p.items)).toEqual([
       memberOf(admin, "admin"),

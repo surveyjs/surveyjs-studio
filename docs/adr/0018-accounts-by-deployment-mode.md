@@ -229,8 +229,8 @@ code. Nothing else changed.
   members; the store decides again when erasing, so orphan rows can change the outcome. A project whose row is gone
   shows as `last-member` when the user has its only rows, while the store answers `remove`. Rows that cannot be read
   are listed by id without a name. The command says so.
-- **`listPersonalOwnerIds` on the real `Surveys` table is a full scan** (an index on `userid` exists). To measure at
-  Step 14, with the other large scans.
+- **`listPersonalOwnerIds` on the real `Surveys` table is a full scan** (an index on `userid` exists). To measure
+  later, with the other large scans (Step 14 did not).
 - **A session outlives its erased account.** The app session is a stateless sealed cookie, so after the webhook
   erases a user, a browser that is still signed in can create new personal surveys until the session expires. The
   next reconciliation run finds and erases them. Per-request user checks or session epochs are self-hosted-track

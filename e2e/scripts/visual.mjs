@@ -8,6 +8,8 @@ import { existsSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripAppVariables } from "../app-variables.mjs";
+import { visualPorts } from "../ports.mjs";
+import { requireFreePorts } from "./ports.mjs";
 
 const e2eDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -31,6 +33,8 @@ if (!self) {
     process.exit(1);
   }
 }
+
+await requireFreePorts(visualPorts);
 
 const baseEnv = stripAppVariables({ ...process.env });
 // Windows environment names ignore case, so every spelling goes.

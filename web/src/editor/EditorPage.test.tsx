@@ -44,6 +44,22 @@ function leavingIsQuestioned(): boolean {
   return event.defaultPrevented;
 }
 
+/**
+ * Whether the page asks before it is unloaded, checked as soon as the save status shows `text`:
+ * in the DOM mutation's own callback, before any later task (a passive effect) can run.
+ */
+function leavingIsQuestionedOnceShown(text: string): Promise<boolean> {
+  const status = screen.getByRole("status");
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (status.textContent !== text) return;
+      observer.disconnect();
+      resolve(leavingIsQuestioned());
+    });
+    observer.observe(status, { childList: true, characterData: true, subtree: true });
+  });
+}
+
 /** Asks the page to save `content` as the Creator does; resolves to the `done` outcome. */
 function save(document: "definition" | "theme", content: Record<string, unknown>) {
   return act(
@@ -75,6 +91,8 @@ describe("the editor page", () => {
     expect(screen.getByText("Customer feedback")).toBeTruthy();
     expect(screen.getByText("All changes saved")).toBeTruthy();
     expect(editor.props!.saves).not.toBeNull();
+    // No banner above the page: the Creator keeps the page's own height.
+    expect(document.getElementById("creator")!.className).not.toContain("belowBanner");
   });
 
   it("is read-only without modify rights", async () => {
@@ -120,23 +138,31 @@ describe("the editor page", () => {
   it("asks before the page is left while a save is in flight or has failed", async () => {
     await openEditor();
     let answer: () => void = () => {};
-    server.use(
-      mswHttp.put("*/api/v1/surveys/:surveyId/definition", async () => {
-        await new Promise<void>((resolve) => (answer = resolve));
-        return HttpResponse.json(
-          { type: "about:blank", title: "Server error", status: 500, code: "internal-error" },
-          { status: 500, headers: { "Content-Type": "application/problem+json" } },
-        );
-      }),
+    // Settles once the save has reached the server, which then holds it until `answer()`.
+    const held = new Promise<void>((hold) =>
+      server.use(
+        mswHttp.put("*/api/v1/surveys/:surveyId/definition", async () => {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+            hold();
+          });
+          return HttpResponse.json(
+            { type: "about:blank", title: "Server error", status: 500, code: "internal-error" },
+            { status: 500, headers: { "Content-Type": "application/problem+json" } },
+          );
+        }),
+      ),
     );
+    // Checked the moment the bar says "Saving…": the guard must not lag the status it shows.
+    const questionedWhileSaving = leavingIsQuestionedOnceShown("Saving…");
 
     // Not in act(): the save stays open while the test goes on.
     const saved = new Promise<boolean>((resolve) =>
       saves().definition({ title: "Second" }, (ok) => resolve(ok)),
     );
-    await screen.findByText("Saving…");
-    expect(leavingIsQuestioned()).toBe(true);
+    expect(await questionedWhileSaving).toBe(true);
 
+    await held;
     answer();
     expect(await saved).toBe(false);
     await screen.findByText("Changes are not saved");

@@ -5,9 +5,9 @@
  * may leave some behind, so the lists are checked through the fixture projects only: Marketing and
  * Engineering must be present, in list order, with the user's role. Each list is walked to the end.
  */
-import { describe, expect, it, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it } from "vitest";
+import { call, codeOf, as, listPage, walkItems } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider } = fixtureUsers;
 
@@ -47,43 +47,20 @@ const marketing = (role: string): Project => ({
   createdAt: "2025-11-21T10:00:00.000Z",
 });
 
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Record<string, string>> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 function list(headers: Record<string, string>, query = ""): Promise<Response> {
   return call("GET", "/projects", { path: `/projects${query}`, headers });
 }
 
-async function page(headers: Record<string, string>, query = ""): Promise<ProjectPage> {
-  const response = await list(headers, query);
-  expect(response.status).toBe(200);
-  return (await response.json()) as ProjectPage;
-}
+const page = (headers: Record<string, string>, query = ""): Promise<ProjectPage> =>
+  listPage<Project>("/projects", `/projects${query}`, headers);
 
 /** Every project of the user, following `nextCursor` to the end. */
-async function walk(headers: Record<string, string>, limit?: number): Promise<Project[]> {
-  const items: Project[] = [];
-  let cursor: string | null = null;
-  do {
-    const query = new URLSearchParams();
-    if (limit !== undefined) query.set("limit", String(limit));
-    if (cursor !== null) query.set("cursor", cursor);
-    const next = await page(headers, `?${query.toString()}`);
-    items.push(...next.items);
-    cursor = next.nextCursor;
-  } while (cursor !== null);
-  return items;
-}
+const walk = (headers: Record<string, string>, limit?: number): Promise<Project[]> =>
+  walkItems<Project>(
+    "/projects",
+    limit === undefined ? "/projects" : `/projects?limit=${limit}`,
+    headers,
+  );
 
 const FIXTURE_PROJECTS = new Set([MARKETING, ENGINEERING]);
 

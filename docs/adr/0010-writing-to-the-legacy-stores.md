@@ -387,7 +387,7 @@ deleted, the tables kept, the private list in the old blob) are in
 - **Batched deletes, no dropped tables.** The old code dropped both tables. Azure then refuses to create a table of
   that name for about 40 seconds (`TableBeingDeleted`), so a response sent right after **Delete Results** would fail.
   Deleting the rows has no such window. The cost is a longer delete on a very large survey and the row keys held in
-  memory while it runs (a Step 14 point).
+  memory while it runs. Done in Step 14 (fcf2f68): each listing page of keys is deleted before the next is read.
 - **`postdelete{postId}` stays.** It holds copies of results deleted one by one, a feature that does not exist
   yet; delete all never wrote to it in the old code either.
 - **The audit row.** After the rows are gone, a best-effort `SURVEY_DELETEALLRESULTS` row (survey id, the
@@ -479,12 +479,14 @@ rollback is ignored) and wraps the final error in `LegacyStoreError(operation)`.
 
 - The survey move of a project delete collects its ids with `OUTPUT … INTO` a table variable, because SQL Server
   refuses a bare `OUTPUT` on a table with enabled triggers and the production `Surveys` table may have some.
+  (Step 14: production has none, checked on 2026-10-22 with `pnpm inspect:legacy-schema`; the `OUTPUT … INTO` stays,
+  as it costs nothing and survives a trigger added later.)
 
 - A role change no longer replaces the row, so the legacy site, which reads `role` only, shows the same
   result, and the project's `createdAt` and creator marker survive.
 - A survey created or moved into a project can race a delete of that project on Azure: under `READ COMMITTED` a
   survey inserted while the delete runs would keep the deleted project id. The memory provider does both in one
-  step. Open (Step 14).
+  step. Open: carried to the hosted-migration track ([operations](../operations.md), the handover list).
 - The `SURVEY_TRANSFER` rows are appended one after the other, so a slow audit table stretches the delete.
 - SQL `datetime` rounds the `createdAt` of a new project to about 3 ms; the service answers the value it reads
   back, so one answer stays consistent, but memory and Azure differ in the last digit.

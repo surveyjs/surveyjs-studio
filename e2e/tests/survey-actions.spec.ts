@@ -104,7 +104,7 @@ test("rename: Esc keeps the name, Enter saves it, and it survives a reload", asy
   });
 });
 
-test("publish shows Run, which opens the run page in a new tab, and unpublish hides it", async ({
+test("a new survey shows Run, which opens the run page in a new tab; unpublish hides it, publish shows it", async ({
   page,
   context,
   browserName,
@@ -116,11 +116,10 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
   const survey = await createSurveyViaApi(page, name);
   await withCleanup(page, [], [survey.id], async () => {
     await page.goto("/");
+    // A new survey is published (its legacy flag is empty): Run and Unpublish, no Publish.
     let popup = await openRowMenu(surveyRow(page, name));
-    await expect(popup.getByRole("link", { name: "Run", exact: true })).toHaveCount(0);
-    await pickMenuItem(popup, "Publish");
-
-    popup = await openRowMenu(surveyRow(page, name));
+    await expect(popup.getByRole("link", { name: "Publish", exact: true })).toHaveCount(0);
+    await expect(popup.getByRole("link", { name: "Unpublish", exact: true })).toBeVisible();
     const run = popup.getByRole("link", { name: "Run", exact: true });
     await expect(run).toBeVisible();
     const opened = context.waitForEvent("page");
@@ -134,12 +133,19 @@ test("publish shows Run, which opens the run page in a new tab, and unpublish hi
     popup = await openRowMenu(surveyRow(page, name));
     await pickMenuItem(popup, "Unpublish");
     popup = await openRowMenu(surveyRow(page, name));
-    await expect(popup.getByRole("link", { name: "Publish", exact: true })).toBeVisible();
     await expect(popup.getByRole("link", { name: "Run", exact: true })).toHaveCount(0);
+    await pickMenuItem(popup, "Publish");
+    popup = await openRowMenu(surveyRow(page, name));
+    await expect(popup.getByRole("link", { name: "Unpublish", exact: true })).toBeVisible();
+    await expect(popup.getByRole("link", { name: "Run", exact: true })).toBeVisible();
+    expect((await getSurveyViaApi(page, survey.id))?.published).toBe(true);
   });
 });
 
-test("clone adds Copy of <name>, which is unpublished", async ({ page, browserName }) => {
+test("clone adds Copy of <name>, which is published, as a new survey", async ({
+  page,
+  browserName,
+}) => {
   await signInAt(page, "/", "admin");
   const name = uniqueName(browserName);
   const copyName = `Copy of ${name}`;
@@ -153,8 +159,8 @@ test("clone adds Copy of <name>, which is unpublished", async ({ page, browserNa
     await expect(surveyRow(page, name)).toBeVisible();
 
     const copyMenu = await openRowMenu(copyRow);
-    await expect(copyMenu.getByRole("link", { name: "Publish", exact: true })).toBeVisible();
-    await expect(copyMenu.getByRole("link", { name: "Run", exact: true })).toHaveCount(0);
+    await expect(copyMenu.getByRole("link", { name: "Unpublish", exact: true })).toBeVisible();
+    await expect(copyMenu.getByRole("link", { name: "Run", exact: true })).toBeVisible();
   });
 });
 

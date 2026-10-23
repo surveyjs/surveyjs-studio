@@ -32,11 +32,17 @@ test("an API answer through the preview keeps the server's own policy", async ({
   );
 });
 
-test("an old surveyjs.io run link shows the not-found page, without a redirect", async ({
-  page,
-}) => {
-  const path = `/published?id=${CAMPAIGN_SURVEY_ID}`;
-  await page.goto(path);
-  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
-  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(path);
+test.describe("an old surveyjs.io address", () => {
+  // The server that serves the web app (the image) answers the page with 404, which Chromium and
+  // WebKit log; `vite preview` answers 200.
+  test.use({ expectedErrorResponses: [{ path: "/published", status: 404 }] });
+
+  test("an old surveyjs.io run link shows the not-found page, without a redirect", async ({
+    page,
+  }) => {
+    const path = `/published?id=${CAMPAIGN_SURVEY_ID}`;
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+    expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(path);
+  });
 });

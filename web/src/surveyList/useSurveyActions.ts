@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { ApiError } from "../api/client";
 import {
   useCloneSurvey,
   useDeleteSurvey,
@@ -20,6 +21,10 @@ export const CLIPBOARD_ERROR = "Could not copy to the clipboard.";
 
 /** The message for a failed row action, by its verb (`rename`, `publish`, …). */
 export const actionError = (verb: string) => `Could not ${verb} the survey. Please try again.`;
+
+/** A refused write on a read-only server says so, in the server's words; others use `fallback`. */
+export const failureMessage = (error: unknown, fallback: string) =>
+  error instanceof ApiError && error.problem.code === "read-only" ? error.problem.title : fallback;
 
 /** A menu item that runs an action; Run, Edit, View Results and View History are links instead. */
 export type SurveyAction =
@@ -63,8 +68,8 @@ export function useSurveyActions(): { error: string | null; actions: SurveyActio
   const attempt = (verb: string, request: Promise<unknown>) =>
     request.then(
       () => true,
-      () => {
-        setError(actionError(verb));
+      (failure: unknown) => {
+        setError(failureMessage(failure, actionError(verb)));
         return false;
       },
     );

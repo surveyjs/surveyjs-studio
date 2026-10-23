@@ -7,9 +7,9 @@
  * to that one. The fixture survey `…a01` (Grant Access on, private question `receipt`) is read only.
  * Cleanup (archive, then delete) is registered with `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it } from "vitest";
+import { call, codeOf, as, ownSurvey, submitted } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { admin } = fixtureUsers;
 
@@ -17,7 +17,6 @@ const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
 const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
 
 const PUBLIC_RESULTS = "/public/surveys/{surveyId}/results";
-const RESPONSES = "/public/surveys/{surveyId}/responses";
 const MERGE_PATCH = "application/merge-patch+json";
 
 const NOT_AVAILABLE = { code: "survey-not-available", title: "This survey is not available" };
@@ -34,18 +33,6 @@ interface PublicPage {
   nextCursor: string | null;
 }
 
-const sessions = new Map<string, SignInResult>();
-
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 const merge = (headers: Headers): Headers => ({ "content-type": MERGE_PATCH, ...headers });
 
 function patch(headers: Headers, id: string, body: unknown): Promise<Response> {
@@ -56,36 +43,7 @@ function patch(headers: Headers, id: string, body: unknown): Promise<Response> {
   });
 }
 
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await patch(headers, id, { archived: true });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
-
-/** A published survey of the admin with the definition; its cleanup is registered. */
-async function ownSurvey(headers: Headers, definition: unknown): Promise<string> {
-  const response = await call("POST", "/surveys", { headers, body: { definition } });
-  expect(response.status).toBe(201);
-  const { id } = (await response.json()) as { id: string };
-  onTestFinished(() => cleanUp(headers, id));
-  expect((await patch(headers, id, { published: true })).status).toBe(200);
-  return id;
-}
-
 const TEXT_SURVEY = { pages: [{ name: "page1", elements: [{ type: "text", name: "q1" }] }] };
-
-const pause = () => new Promise((resolve) => setTimeout(resolve, 15));
-
-async function submitted(surveyId: string, data: Record<string, unknown>): Promise<void> {
-  const response = await call("POST", RESPONSES, {
-    path: `/public/surveys/${surveyId}/responses`,
-    body: { data },
-  });
-  expect(response.status).toBe(201);
-  await pause();
-}
 
 function results(surveyId: string, query = ""): Promise<Response> {
   return call("GET", PUBLIC_RESULTS, { path: `/public/surveys/${surveyId}/results${query}` });
@@ -129,8 +87,8 @@ describe("getPublicResults", () => {
 
   it("follows Grant Access, not publication or archiving, and pages like listResults", async (ctx) => {
     const adam = await as(ctx, admin);
-    const id = await ownSurvey(adam, TEXT_SURVEY);
-    for (const q1 of ["a", "b", "c"]) await submitted(id, { q1 });
+    const id = await ownSurvey(adam, { definition: TEXT_SURVEY });
+    for (const q1 of ["a", "b", "c"]) await submitted(id, { data: { q1 } });
 
     await expectNotAvailable(await results(id));
 
@@ -164,17 +122,19 @@ describe("getPublicResults", () => {
   it("leaves out the answers and comments of private questions", async (ctx) => {
     const adam = await as(ctx, admin);
     const id = await ownSurvey(adam, {
-      pages: [
-        {
-          name: "page1",
-          elements: [
-            { type: "text", name: "q1" },
-            { type: "radiogroup", name: "q2", choices: ["x"], showOtherItem: true },
-          ],
-        },
-      ],
+      definition: {
+        pages: [
+          {
+            name: "page1",
+            elements: [
+              { type: "text", name: "q1" },
+              { type: "radiogroup", name: "q2", choices: ["x"], showOtherItem: true },
+            ],
+          },
+        ],
+      },
     });
-    await submitted(id, { q1: "a", q2: "other", "q2-Comment": "secret" });
+    await submitted(id, { data: { q1: "a", q2: "other", "q2-Comment": "secret" } });
     const patched = await patch(adam, id, {
       settings: { publicResults: true, privateResultQuestions: ["q2"] },
     });
@@ -197,9 +157,9 @@ describe("getPublicResults", () => {
 
     const adam = await as(ctx, admin);
     const patchBoth = async (): Promise<string> => {
-      const id = await ownSurvey(adam, TEXT_SURVEY);
-      await submitted(id, { q1: "a" });
-      await submitted(id, { q1: "b" });
+      const id = await ownSurvey(adam, { definition: TEXT_SURVEY });
+      await submitted(id, { data: { q1: "a" } });
+      await submitted(id, { data: { q1: "b" } });
       expect((await patch(adam, id, { settings: { publicResults: true } })).status).toBe(200);
       return id;
     };

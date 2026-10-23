@@ -52,8 +52,8 @@ One module in the web package, `web/security-headers.ts` (pure data and `securit
 holds the policy for the app's pages. `vite preview` applies it through a small plugin in `web/vite.config.ts` and
 skips the proxied prefixes (`/api`, `/__dev`, `/healthz`, `/readyz`), which keep the server's own headers. **The Vite
 dev server sends none**, because it injects inline scripts: `pnpm demo` has no CSP and `pnpm demo:preview` has it.
-A production static host uses the same module (Step 14) or copies the values from
-[Operations](../operations.md#the-header-policy-for-the-static-host).
+The production image applies the same module (done in Step 14, below); another static host copies the values from
+[Operations](../operations.md#the-header-policy).
 
 | Header                      | Value                                                                                                                                                                                                                                                                                                                         |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -106,9 +106,11 @@ is limited, and the rest are cheap or reached only by a signed-in user or a sign
 | `getConfig`, `logout`                                                            | None                                            | Public but cheap: no store is read                                          |
 | Every other operation                                                            | None                                            | Needs a session (and CSRF for writes) or a bearer token                     |
 
-`/healthz` and `/readyz` sit outside `/api` and are not limited; `/readyz` touches the stores, so the reverse proxy
-must not expose it (it forwards `/api` only). The counters live in each process, which Step 14 must replace for
-several instances ([architecture](../architecture.md), "Open for later steps").
+`/healthz` and `/readyz` sit outside `/api` and are not limited. `/readyz` touches the stores, so the reverse proxy
+forwards it only for the monitor (it forwards every other path, since the Step 14 image serves the web app too), and
+concurrent calls share one check whose answer is reused for 5 s ([operations](../operations.md#health-and-readiness)).
+The counters live in each process: one instance is enough for mode 1.1, and a second one needs shared counters first
+(later; [architecture](../architecture.md), "Open for later steps").
 
 ### `/published` removed, `id` no longer reserved (R22)
 
@@ -138,9 +140,9 @@ every unknown address.
   run in CI.
 - **`style-src 'unsafe-inline'`** stays until the libraries stop needing it.
 - **A cookie-less run-page origin** (and the CORS and base URL it needs), after the hosted track's Step 3.
-- **The SPA policy in the production image.** Only `vite preview` applies `web/security-headers.ts`. If the server
-  serves the built front-end (plan Step 14), its `onSend` hook would give every page the API policy
-  (`default-src 'none'`) unless the SPA paths get `securityHeaders(pathname)` instead. Carried into plan Step 14.
+- **The SPA policy in the production image.** Done in Step 14: the module moved to
+  `server/src/web/security-headers.ts`, and the server applies it to the web app's answers when `WEB_ROOT` is set
+  ([ADR 0021](0021-production-image-and-web-serving.md)).
 
 ## To confirm
 

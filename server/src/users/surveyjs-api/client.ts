@@ -5,6 +5,7 @@ import { demoAccountNotices, type AccountNotices } from "../../notices/account-n
 import { licenceNotices } from "../../notices/licence-rule.js";
 import type { UserDirectory } from "../../providers/types.js";
 import { licenceExpiriesFromApi, userFromApi, usersFromLookup } from "./mapping.js";
+import { GUID } from "../../domain/guid.js";
 
 export interface SurveyjsApiOptions {
   /** USER_API_URL without a trailing slash. */
@@ -26,14 +27,14 @@ export class UserApiError extends Error {
   constructor(
     readonly operation: string,
     readonly status: number | null,
-    reason: string,
+    /** Safe to log: `timeout`, `network error`, `status N` or `malformed answer`. */
+    readonly reason: string,
   ) {
     super(`The surveyjs.io user API failed: ${operation} (${reason})`);
     this.name = "UserApiError";
   }
 }
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CHUNK = 100;
 
 const isTimeout = (error: unknown): boolean =>
@@ -48,9 +49,17 @@ function discardBody(response: Response): void {
   void response.body?.cancel().catch(() => undefined);
 }
 
+/** A user id nobody has: the readiness probe looks it up and expects a 404. */
+const PROBE_USER_ID = "00000000-0000-4000-8000-000000000000";
+
 export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   readonly users: UserDirectory;
   readonly notices: AccountNotices;
+  /**
+   * Ok when the API answers (a 404 for a user nobody has); a failure for anything else, with a
+   * safe category only.
+   */
+  probe(): Promise<{ readonly ok: boolean; readonly reason?: string }>;
 } {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
@@ -158,5 +167,14 @@ export function createSurveyjsApiDirectory(options: SurveyjsApiOptions): {
   const notices =
     setting === "surveyjs-licenses" ? licenceNoticesFromApi : demoAccountNotices(setting);
 
-  return { users, notices };
+  async function probe(): Promise<{ readonly ok: boolean; readonly reason?: string }> {
+    try {
+      const answer = await call("readiness probe", `/users/${PROBE_USER_ID}`);
+      return answer === null ? { ok: true } : { ok: false, reason: "status 200" };
+    } catch (error) {
+      return { ok: false, reason: error instanceof UserApiError ? error.reason : "error" };
+    }
+  }
+
+  return { users, notices, probe };
 }

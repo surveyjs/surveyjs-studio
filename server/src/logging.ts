@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+import type { AppConfig } from "./config.js";
 import { truncatedIp } from "./ip.js";
 
 /**
@@ -44,5 +45,24 @@ export function serializeRequest(request: FastifyRequest) {
     host: request.host,
     remoteAddress: truncatedIp(request.ip),
     remotePort: request.socket.remotePort,
+  };
+}
+
+/**
+ * The one `starting` line: which providers and settings this process runs with. Fixed keys, each a
+ * setting's name or mode, never a connection string, URL with credentials, secret or token.
+ */
+export function startupSummary(config: AppConfig): Record<string, string | boolean> {
+  return {
+    edition: config.edition,
+    shell: config.shell,
+    storageProvider: config.storageProvider,
+    userDirectory: config.userDirectory,
+    identityProvider: config.identityProvider,
+    accountNotices: config.accountNotices,
+    readOnly: config.readOnly,
+    webApp: config.webRoot !== null,
+    publicBaseUrl: config.publicBaseUrl,
+    nodeEnv: config.nodeEnv,
   };
 }

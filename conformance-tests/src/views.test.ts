@@ -7,9 +7,9 @@
  * the checks on them are reads and refusals. Cleanup (archive, then delete) is registered with
  * `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { call, codeOf, as, cleanUp, ownsServer } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
 
@@ -20,30 +20,6 @@ const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const VIEW = "/surveys/{surveyId}/views/{view}";
 
 type Headers = Record<string, string>;
-
-const sessions = new Map<string, SignInResult>();
-
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
 
 /** Creates a survey with the body and registers its cleanup by the same caller. */
 async function created(headers: Headers, body: Record<string, unknown> = {}): Promise<string> {
@@ -216,6 +192,11 @@ describe("views", () => {
     });
     expect(response.status).toBe(413);
     expect(await codeOf(response)).toBe("payload-too-large");
+    // The server reads a small overflow to its end and keeps the connection; with Connection: close
+    // it would cut the connection while the client is still sending, and the client could see
+    // EPIPE instead of this answer.
+    // Only the reference server is checked: a proxy in front decides this hop-by-hop header.
+    if (ownsServer) expect(response.headers.get("connection")).not.toBe("close");
   });
 
   it("refuses an unknown view, a missing CSRF token and a missing session", async (ctx) => {

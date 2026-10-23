@@ -5,9 +5,11 @@ Date: 2026-10-20
 ## Status
 
 Accepted. The product owner decided the dedicated account and the committed screenshots, and the public results page
-without the site shell (see "Decided by the product owner"). Still open for the owner: the header's account text, the
-live site's disclaimer and 1,000-responses banner staying out of the app, the library versions, the skipped history
-screen, the live publish flag and the local-only run; see "To confirm".
+without the site shell (see "Decided by the product owner"). Still open for the owner: the header's account text, and
+the live site's disclaimer and 1,000-responses banner staying out of the app; see "To confirm". Answered there on
+2026-10-21: the library versions (3.2.2), the history screen (back in the run; captured 2026-10-22), the local-only
+run (kept local) and the live publish flag (an empty flag means published, Step 14). New on 2026-10-22: the Firefox
+offset of `projects-expanded`.
 
 ## Context
 
@@ -34,8 +36,8 @@ One **visual data set** (`e2e/visual/data-set.ts`) describes the account content
 project, three responses. A person creates it once by hand in a **dedicated surveyjs.io account**. The visual run
 creates the same content through the HTTP API for Erin Erasable in a fresh memory server (ports 3002 and 5175; it never
 touches the functional servers on 3000, 3001, 5173 and 5174). One **manifest** (`e2e/visual/manifest.ts`) lists the 18
-screens (17 compared; `history` is skipped) with their live and app paths, the steps to reach the state, the element
-to shoot and the adjustments of each side. One **preparation module** (`e2e/visual/support/screen.ts`) opens and prepares a screen the same way on both
+screens (`history` awaits its first capture, see To confirm) with their live and app paths, the steps to reach the
+state, the element to shoot and the adjustments of each side. One **preparation module** (`e2e/visual/support/screen.ts`) opens and prepares a screen the same way on both
 sides.
 
 ### Normalize, hide, mask, with reasons
@@ -49,7 +51,7 @@ fails the screen, unless it is marked `optional`.
 ### Baselines and browsers
 
 The baselines are the live site, captured by a person on a Windows machine in one run, for Chromium, Firefox and
-WebKit: `e2e/visual/baselines/{platform}/{browser}/{id}.png`, 17 captured screens in 3 browsers (51 images; the 18th, `history`, is skipped, see To confirm), plus
+WebKit: `e2e/visual/baselines/{platform}/{browser}/{id}.png`, 18 screens in 3 browsers (54 images), plus
 `e2e/visual/baselines/states.json` (the live history length and the library versions the live pages report). One
 Chromium baseline for all three engines was rejected: the engines render fonts differently by more than any useful
 threshold.
@@ -58,7 +60,9 @@ threshold.
 
 Linux CI renders text differently and cannot sign in to surveyjs.io. CI typechecks, lints and unit-tests the harness
 and does not run `pnpm e2e:visual`. The tests are valid on the machine (or an identical setup: system, fonts, display
-settings) where the baselines were captured. A missing baseline fails the test; it never skips.
+settings) where the baselines were captured. A missing baseline fails the test; it never skips. (Until the capture of
+2026-10-22 the manifest could mark a screen `awaitingBaseline`, skipped until its first image; `history` was the only
+one, and the field is gone.)
 
 ### Thresholds
 
@@ -169,18 +173,45 @@ of them blocks Step 13; each one is due before the Step 14 point named in its _A
   _Answer by:_ rollout step 3, the redirects, after which respondents no longer see the old run page.
 - **No "first 1,000 responses" banner** ([ADR 0015](0015-results-summary-table-and-views.md), R12). It is hidden on the
   live side. Confirm. _Answer by:_ rollout step 2.
-- **Library versions.** Live Form Library and Creator run 3.2.2; the app runs 3.1.2. The live Dashboard version is not
-  exposed (`states.json`). Differences inside them are accepted as `library`. Upgrading is a separate decision.
-  _Answer by:_ Step 14 planning, which pins the production image; an upgrade that changes the look needs a recapture.
-- **The `history` screen is skipped** (`skip` in the manifest, 2026-10-20). The live history page is empty for the
-  dedicated account. Why? Find how surveyjs.io records history, then remove `skip` and capture it
-  (`pnpm visual:capture --grep history`). _Answer by:_ the Step 14 compatibility smoke test, which must cover how the
-  legacy records history.
+- **Library versions.** Live Form Library and Creator run 3.2.2; the app ran 3.1.2. The live Dashboard version is not
+  exposed (`states.json`). Differences inside them are accepted as `library`. **Answered (product owner, 2026-10-21):**
+  all five `survey-*` packages move to 3.2.2, as live runs (Step 14). If the look changes against the baselines, the
+  product owner recaptures (`pnpm visual:capture`).
+- **The `history` screen was skipped** (`skip` in the manifest, 2026-10-20). The live history page was empty for the
+  dedicated account. **Answered (2026-10-21):** the cause was on surveyjs.io. Its history page did not list the saved
+  points. The product owner fixed it in surveyjs.io commit `3389d6cd49` on `master` ("Fix empty survey editing history
+  page", 2026-10-20): the site writes `surveyjsonhistory/{surveyId}/{pointId}` append blobs and lists the direct
+  children of `{surveyId}/`, newest first. The app already writes that shape, so the app does not change. Points saved
+  before the fix are not listed. The screen is no longer skipped; it is marked `awaitingBaseline` until the product
+  owner captures it. Before the capture, the product owner makes **two editor saves** of `Customer feedback` on
+  surveyjs.io (change its title, then restore it; checklist step 9, `HISTORY_SAVES` in `data-set.ts`). The capture
+  refuses fewer than two entries and records the live count in `states.json`; the visual run gives the app's survey the
+  same number of entries through the API. Then `pnpm visual:capture --grep history`, and remove `awaitingBaseline` in
+  the same commit as the images. **Captured (product owner, 2026-10-22):** two entries; `awaitingBaseline` is removed.
+  The app's page now uses the live page's frame (`section.my-surveys-page__results-section`, the `.title` heading, the
+  entries in the `.action-link` font). The user after each time ("by {name}", ADR 0012 R23) and "Back to My Surveys"
+  are hidden on the app side; the times are not underlined, because the app has no JSON view (R23).
+- **The Firefox offset of `projects-expanded`.** Firefox's live capture of 2026-10-22 draws the section below the
+  heading 1 px lower than the capture of 2026-10-20 (3,639 px between the two live images, with no change on the site).
+  With the Projects heading (ADR 0017 R20, a residual) the app is 0.0134 from it, over the `element` default of 0.01.
+  The screen's ratio is 0.015 (cap 0.02) with that reason. _To do:_ the product owner recaptures it
+  (`pnpm visual:capture --project=firefox --grep projects-expanded`); if the offset is gone, the ratio goes back to
+  0.01.
 - **The live publish flag.** On the dedicated account `Customer feedback` may list as unpublished
   (`data-ispublished="false"`) after Publish (the list shows "true" only when `IsPublished == true`; the run page
   refuses only when it is `false`). It listed as published in the end (`states.json` has `feedbackPublished: true`).
   The capture records the flag as `feedbackPublished` in `states.json` and the row-menu screens use `Product poll`,
   so neither depends on it. Why it can lag is open. _Answer by:_ the Step 14 compatibility smoke test, because the app
-  writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2.
-- **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades. _Answer by:_ Step 14
-  planning, which completes the CI pipeline; visual tests in CI would need Linux baselines captured by a person.
+  writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2. **Answered (product owner,
+  2026-10-21; Step 14):** an empty flag means published in the app, as on the old run page
+  ([ADR 0014](0014-run-page-and-response-collection.md), S1); Publish and Unpublish write 1 and 0, and
+  `pnpm smoke:legacy` reads both back through `api.surveyjs.io` (`IsPublished` `true` and `false`). The old list still
+  shows **Publish** for an empty flag: an accepted difference
+  ([Legacy smoke test](../operations/smoke-test.md#manual-checklist-on-surveyjsio)). Why the live list lagged on
+  2026-10-20 is not known.
+- **Local-only visual tests on Windows**, three engines, recaptured after Playwright upgrades. **Answered (product
+  owner, 2026-10-21): kept local for now.** Visual tests in CI would need: a second baseline set for Linux
+  (`e2e/visual/baselines/linux/`), captured by a person on the same system image CI runs (the pinned Playwright Docker
+  image, for its fonts), because CI cannot sign in to surveyjs.io; a CI job that runs `pnpm e2e:visual` in that image
+  and uploads `e2e/visual-report/` on failure; and a Linux recapture with every Windows one (Playwright upgrades, live
+  site changes).

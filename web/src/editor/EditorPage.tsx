@@ -5,7 +5,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api/client";
 import {
   definitionQueryOptions,
@@ -85,6 +85,7 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
       definition={definition.data}
       theme={theme.data}
       maxAssetBytesPerSurvey={config.limits.maxAssetBytesPerSurvey}
+      serverReadOnly={config.readOnly}
     />
   );
 }
@@ -95,6 +96,7 @@ function EditorSession({
   definition,
   theme,
   maxAssetBytesPerSurvey,
+  serverReadOnly,
 }: {
   survey: Survey;
   /** The documents as first read; later reads come from "Reload latest". */
@@ -102,10 +104,12 @@ function EditorSession({
   theme: VersionedDocument<SurveyTheme>;
   /** The configured upload quota per survey. */
   maxAssetBytesPerSurvey: number;
+  /** The server refuses every write (`READ_ONLY`): open like a survey without modify rights. */
+  serverReadOnly: boolean;
 }) {
   const queryClient = useQueryClient();
   // Fixed for the session: the savers exist or not from the start.
-  const [readOnly] = useState(!survey.permissions.canModify);
+  const [readOnly] = useState(serverReadOnly || !survey.permissions.canModify);
   const [states, setStates] = useState<readonly SaverState[]>(["saved", "saved"]);
   const [savers] = useState(() =>
     readOnly
@@ -177,6 +181,7 @@ function EditorSession({
   return (
     <EditorFrame
       survey={survey}
+      readOnly={readOnly}
       status={status}
       notice={
         status.kind === "conflict" && (
@@ -218,21 +223,25 @@ function EditorSession({
  */
 function EditorFrame({
   survey,
+  readOnly = !survey.permissions.canModify,
   status,
   notice,
   children,
 }: {
   survey: Survey;
+  readOnly?: boolean;
   status?: EditorStatus;
   notice?: ReactNode;
   children?: ReactNode;
 }) {
   const [renameFailed, setRenameFailed] = useState(false);
+  // The root route shows the read-only banner above the page; the Creator makes room for it.
+  const belowBanner = rootRoute.useLoaderData().readOnly;
   return (
     <>
       <div
         id="creator"
-        className={`editor-editor v2-class---my-surveys-edit-survey ${styles.creator}`}
+        className={`editor-editor v2-class---my-surveys-edit-survey ${styles.creator}${belowBanner ? ` ${styles.belowBanner}` : ""}`}
       >
         {notice}
         {renameFailed && (
@@ -253,7 +262,7 @@ function EditorFrame({
         </span>
         <FooterNameEditor
           survey={survey}
-          readOnly={!survey.permissions.canModify}
+          readOnly={readOnly}
           onRenameStart={() => setRenameFailed(false)}
           onRenamed={(ok) => setRenameFailed(!ok)}
         />
@@ -266,9 +275,13 @@ function EditorFrame({
  * While `active`, closing the tab, reloading or leaving for another site asks first (the browser's
  * own prompt). Leaving within the app needs no prompt: the editor hands its pending changes to the
  * savers when it closes, and they finish on their own.
+ *
+ * A layout effect: the listener changes in the same commit as the status the bar shows. A passive
+ * effect runs in a later task, so for a moment the bar could say "Saving…" while leaving does not
+ * ask yet.
  */
 function useLeaveGuard(active: boolean): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return;
     const ask = (event: BeforeUnloadEvent) => {
       event.preventDefault();

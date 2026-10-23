@@ -21,7 +21,7 @@ export function envProblems(env: Record<string, string | undefined>): string[] {
 }
 
 /** `Key=Value;` pairs of a connection string, keys lower-cased. */
-function connectionPairs(value: string): Map<string, string> {
+export function connectionPairs(value: string): Map<string, string> {
   const pairs = new Map<string, string>();
   for (const part of value.split(";")) {
     const at = part.indexOf("=");

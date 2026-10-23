@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { configQueryOptions } from "../api/config";
 import { AnonymousShell } from "../shell/PlainShell";
+import { ReadOnlyBanner } from "../shell/ReadOnlyBanner";
 import { PageHeader } from "../surveyList/PageHeader";
 import { applySurveyJSLicense } from "../surveyjs/license";
 
@@ -22,10 +23,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     });
     return config;
   },
-  component: Outlet,
+  component: RootLayout,
   errorComponent: LoadError,
   notFoundComponent: PageNotFound,
 });
+
+function RootLayout() {
+  const config = Route.useLoaderData();
+  return (
+    <>
+      {config.readOnly && <ReadOnlyBanner />}
+      <Outlet />
+    </>
+  );
+}
 
 /**
  * An address the app does not know, surveyjs.io's old ones included (they are never redirected

@@ -117,7 +117,7 @@ All are exact versions in `web/package.json` `dependencies`, with the lockfile, 
 
 | Package            | Version                                                              | Why                                                                                                                                                                                   |
 | ------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `survey-analytics` | `3.1.2`                                                              | The Dashboard and the Table (US 46 to 49). Must equal `survey-core` (3.1.2); `check:deps` enforces that `survey-*` packages move together                                             |
+| `survey-analytics` | `3.2.2`                                                              | The Dashboard and the Table (US 46 to 49). Must equal `survey-core` (3.2.2); `check:deps` enforces that `survey-*` packages move together                                             |
 | `tabulator-tables` | `6.6.1`                                                              | The table's engine. A direct dependency for its CSS, at the version `survey-analytics` resolves (one copy in the lockfile)                                                            |
 | `jspdf`            | `4.2.1`                                                              | The PDF export of the table (US 48)                                                                                                                                                   |
 | `jspdf-autotable`  | `5.0.8`                                                              | The table layout in the PDF. Not `5.0.9`: it was three days old when chosen (the 14-day rule of Renovate)                                                                             |
@@ -159,9 +159,9 @@ characters). The quiet line follows the editor's rule that a failure never block
 
 ### The large fixture survey (R9, R10)
 
-"API created" (`22222222-0000-4000-8000-a00000000008`, Olivia Owner's Personal survey, never published) holds
-**1,500 generated responses** in both modes, and gets a definition with five chartable questions (`color`,
-`score`, `subscribe`, `channels`, `comment`). A deterministic generator (`large-survey.ts`: fixed ids, times and
+"API created" (`22222222-0000-4000-8000-a00000000008`, Olivia Owner's Personal survey; its published flag is
+never set, which reads as published since Step 14) holds **1,500 generated responses** in both modes, and gets
+a definition with five chartable questions (`color`, `score`, `subscribe`, `channels`, `comment`). A deterministic generator (`large-survey.ts`: fixed ids, times and
 answers, no 1 MB JSON file) is shared by the memory seed and the Azurite loader, and the loader writes the rows
 in batches. The survey was chosen because it needs the fewest changed expectations: `…a06` already has a
 definition that an editor test counts, `…a03` is archived and `…a07` is the stranger's. The tests read it and

@@ -105,7 +105,7 @@ export const surveyFeedback: SurveyRecord = {
   settings: { publicResults: true, storeRespondentIp: true, useCookies: true },
 };
 
-/** NULL ispublished and NULL usecookies, never saved (no definition blob). */
+/** NULL ispublished (so published) and NULL usecookies, never saved (no definition blob). */
 export const surveyDraft: SurveyRecord = {
   id: "22222222-0000-4000-8000-a00000000002",
   name: "Draft idea",
@@ -113,7 +113,7 @@ export const surveyDraft: SurveyRecord = {
   creatorId: OWNER_ID,
   postId: "33333333-0000-4000-8000-a00000000002",
   resultId: "44444444-0000-4000-8000-a00000000002",
-  published: false,
+  published: true,
   archived: false,
   createdAt: "2026-02-01T08:00:00.000Z",
   updatedAt: "2026-02-02T08:00:00.000Z",
@@ -195,7 +195,10 @@ export const surveyOutsider: SurveyRecord = {
   settings: { publicResults: false, storeRespondentIp: true, useCookies: true },
 };
 
-/** Created through the private API: all-zero creator id becomes null; NULL ispublished and allowaccessresult. */
+/**
+ * Created through the private API: all-zero creator id becomes null; NULL ispublished (so
+ * published) and NULL allowaccessresult.
+ */
 export const surveyApiCreated: SurveyRecord = {
   id: "22222222-0000-4000-8000-a00000000008",
   name: "API created",
@@ -203,7 +206,7 @@ export const surveyApiCreated: SurveyRecord = {
   creatorId: null,
   postId: "33333333-0000-4000-8000-a00000000008",
   resultId: "44444444-0000-4000-8000-a00000000008",
-  published: false,
+  published: true,
   archived: false,
   createdAt: "2026-05-30T21:00:00.000Z",
   updatedAt: "2026-06-01T07:45:10.000Z",

@@ -3,34 +3,14 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { connect } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import { readPeerCertificate } from "./issuer-certificate.js";
 import { describeTargets, envProblems, isLocalHttpsIssuer } from "./target.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const envFile = resolve(root, "server/.env");
 const caFile = resolve(root, "server/.local/issuer-ca.pem");
-
-/** The certificate the issuer presents, as PEM. Trust on first use: loopback issuers only. */
-function readPeerCertificate(issuer: URL): Promise<string> {
-  return new Promise((done, fail) => {
-    const socket = connect({
-      host: issuer.hostname,
-      port: Number(issuer.port || 443),
-      servername: issuer.hostname === "localhost" ? "localhost" : undefined,
-      rejectUnauthorized: false,
-    });
-    socket.setTimeout(5000, () => socket.destroy(new Error("timed out")));
-    socket.once("secureConnect", () => {
-      const certificate = socket.getPeerX509Certificate();
-      socket.end();
-      if (certificate) done(certificate.toString());
-      else fail(new Error("no certificate"));
-    });
-    socket.once("error", fail);
-  });
-}
 
 if (!existsSync(envFile)) {
   console.error("server/.env not found: copy server/.env.example to server/.env and fill it in.");

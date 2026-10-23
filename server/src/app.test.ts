@@ -1,9 +1,12 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp, type BuildOptions } from "./app.js";
+import { DRAINED_OVERFLOW_FACTOR } from "./body-limit.js";
 import { loadConfig } from "./config.js";
 import { newFileId } from "./domain/file-id.js";
 import { AppError } from "./errors.js";
@@ -44,12 +47,55 @@ describe("health", () => {
     const notReady: ProviderSet = {
       ...createMemoryProviders(),
       name: "down",
-      ready: () => Promise.resolve(false),
+      readinessNames: ["sql", "surveys-storage", "results-storage"],
+      ready: () =>
+        Promise.resolve([
+          { name: "sql", ok: false },
+          { name: "surveys-storage", ok: true },
+          { name: "results-storage", ok: true },
+        ]),
       close: () => Promise.resolve(),
     };
     const res = await (await start(notReady)).inject("/readyz");
     expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ status: "unavailable" });
+    expect(res.json()).toEqual({ status: "unavailable", failing: ["sql"] });
+  });
+
+  it("GET /readyz lists every check of the provider set when ready() throws", async () => {
+    const broken: ProviderSet = {
+      ...createMemoryProviders(),
+      name: "broken",
+      readinessNames: ["sql", "surveys-storage", "results-storage", "user-api"],
+      ready: () => Promise.reject(new Error("Password=canary-secret")),
+      close: () => Promise.resolve(),
+    };
+    const res = await (await start(broken)).inject("/readyz");
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({
+      status: "unavailable",
+      failing: ["sql", "surveys-storage", "results-storage", "user-api"],
+    });
+    expect(res.body).not.toContain("canary-secret");
+  });
+
+  it("GET /readyz runs one provider check for concurrent calls and reuses its answer", async () => {
+    let calls = 0;
+    const counted: ProviderSet = {
+      ...createMemoryProviders(),
+      name: "counted",
+      ready: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [{ name: "memory", ok: true }];
+      },
+      close: () => Promise.resolve(),
+    };
+    const instance = await start(counted);
+    const answers = await Promise.all(Array.from({ length: 10 }, () => instance.inject("/readyz")));
+    expect(answers.map((res) => res.statusCode)).toEqual(Array(10).fill(200));
+    expect(calls).toBe(1);
+    expect((await instance.inject("/readyz")).statusCode).toBe(200);
+    expect(calls).toBe(1);
   });
 
   it("closes providers when the app closes", async () => {
@@ -57,7 +103,7 @@ describe("health", () => {
     const spy: ProviderSet = {
       ...createMemoryProviders(),
       name: "spy",
-      ready: () => Promise.resolve(true),
+      ready: () => Promise.resolve([{ name: "memory", ok: true }]),
       close: () => {
         closed = true;
         return Promise.resolve();
@@ -193,6 +239,148 @@ describe("Problem responses", () => {
     });
     expect(res.statusCode).toBe(415);
     expect(res.json()).toMatchObject({ code: "unsupported-media-type" });
+  });
+});
+
+describe("a body over the limit (64 bytes in these tests)", () => {
+  const LIMIT = config.limits.maxResponseBytes;
+
+  async function oversized(length: number): Promise<{ status: number; connection: unknown }> {
+    const instance = await start();
+    instance.post("/t/json", () => ({}));
+    const res = await instance.inject({
+      method: "POST",
+      url: "/t/json",
+      headers: { "content-type": "application/json" },
+      payload: "x".repeat(length),
+    });
+    return { status: res.statusCode, connection: res.headers.connection };
+  }
+
+  it(`keeps the connection when the declared length is at most ${DRAINED_OVERFLOW_FACTOR} times the limit`, async () => {
+    expect(await oversized(LIMIT + 1)).toEqual({ status: 413, connection: undefined });
+    expect(await oversized(LIMIT * DRAINED_OVERFLOW_FACTOR)).toEqual({
+      status: 413,
+      connection: undefined,
+    });
+  });
+
+  it("closes the connection when the declared length is larger", async () => {
+    expect(await oversized(LIMIT * DRAINED_OVERFLOW_FACTOR + 1)).toEqual({
+      status: 413,
+      connection: "close",
+    });
+  });
+
+  it("closes the connection when no length is declared", async () => {
+    const instance = await start();
+    instance.post("/t/json", () => ({}));
+    const res = await instance.inject({
+      method: "POST",
+      url: "/t/json",
+      headers: { "content-type": "application/json" },
+      payload: Readable.from(["x".repeat(LIMIT), "x"]),
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.headers.connection).toBe("close");
+  });
+
+  it("is read to its end on a real socket, so the client gets the 413 and the next answer", async () => {
+    const instance = await start();
+    instance.post("/t/json", () => ({}));
+    await instance.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = instance.server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1");
+    socket.setEncoding("latin1");
+    let received = "";
+    const errors: unknown[] = [];
+    socket.on("data", (chunk: string) => (received += chunk));
+    socket.on("error", (error) => errors.push(error));
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+    /** Resolves once `text` has arrived; rejects if the socket closes first. */
+    const arrived = (text: string) =>
+      Promise.race([
+        new Promise<void>((resolve) => {
+          const check = () => received.includes(text) && resolve();
+          check();
+          socket.on("data", check);
+        }),
+        closed.then(() => {
+          if (!received.includes(text)) {
+            throw new Error(`closed before ${text}: ${JSON.stringify({ received, errors })}`);
+          }
+        }),
+      ]);
+
+    try {
+      // The server refuses on the declared length, before the body: the client is still sending.
+      socket.write(
+        "POST /t/json HTTP/1.1\r\nhost: x\r\ncontent-type: application/json\r\n" +
+          `content-length: ${LIMIT + 1}\r\n\r\n` +
+          "x".repeat(10),
+      );
+      await arrived("payload-too-large");
+      socket.write("x".repeat(LIMIT + 1 - 10));
+      socket.write("GET /healthz HTTP/1.1\r\nhost: x\r\n\r\n");
+      await arrived('{"status":"ok"}');
+      expect(received).toMatch(/^HTTP\/1\.1 413 [^]*HTTP\/1\.1 200 /);
+      expect(errors).toEqual([]);
+    } finally {
+      socket.destroy();
+    }
+  });
+});
+
+describe("request timeout and shutdown", () => {
+  /** Resolves with what the socket received once it closes. */
+  function collect(socket: Socket): Promise<string> {
+    let received = "";
+    socket.setEncoding("latin1");
+    socket.on("data", (chunk: string) => (received += chunk));
+    socket.on("error", () => undefined);
+    return new Promise((resolve) => socket.once("close", () => resolve(received)));
+  }
+
+  it("answers 408 to a body that trickles slower than REQUEST_TIMEOUT_SECONDS, and stays healthy", async () => {
+    const timed = await buildApp(
+      loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev", REQUEST_TIMEOUT_SECONDS: "1" }),
+      createMemoryProviders(),
+    );
+    app = timed;
+    timed.post("/t/json", () => ({}));
+    await timed.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = timed.server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1");
+    const closed = collect(socket);
+    const started = Date.now();
+    socket.write(
+      "POST /t/json HTTP/1.1\r\nhost: x\r\ncontent-type: application/json\r\ncontent-length: 1000\r\n\r\nx",
+    );
+    // Faster than the timeout would allow a 1000-byte body to be sent at, but never finishing it.
+    const trickle = setInterval(() => socket.writable && socket.write("x"), 300);
+    try {
+      const received = await closed;
+      expect(Date.now() - started).toBeLessThan(4000);
+      expect(received === "" || received.startsWith("HTTP/1.1 408")).toBe(true);
+    } finally {
+      clearInterval(trickle);
+      socket.destroy();
+    }
+    expect((await timed.inject("/healthz")).statusCode).toBe(200);
+  });
+
+  it("closes within a second while an idle keep-alive connection is open", async () => {
+    const instance = await start();
+    await instance.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = instance.server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1");
+    const closed = collect(socket);
+    socket.write("GET /healthz HTTP/1.1\r\nhost: x\r\n\r\n");
+    await new Promise<void>((resolve) => socket.once("data", () => resolve()));
+    const started = Date.now();
+    await instance.close();
+    expect(Date.now() - started).toBeLessThan(1000);
+    await closed;
   });
 });
 

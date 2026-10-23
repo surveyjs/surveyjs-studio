@@ -9,9 +9,9 @@
  * nothing. Cleanup (archive, then delete) is registered with `onTestFinished` right after a survey is
  * created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn, upload } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { call, codeOf, upload, as, cleanUp } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
 
@@ -54,32 +54,6 @@ const WEBM_HEADER = Buffer.from([
 ]);
 
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
-
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
-/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
 
 /** Creates a survey in the user's Personal scope and registers its cleanup; returns its id. */
 async function createdSurvey(headers: Headers): Promise<string> {

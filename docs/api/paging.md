@@ -74,10 +74,11 @@ used with `listMembers`, is `400 bad-request` ("Invalid cursor."). The server ch
   streams them as one file, so it has the cost described below ([Exporting results](exporting-results.md)).
 
 **Cost on the old site's stores.** The `azure-legacy` provider cannot ask Azure Tables for submission
-order: the row keys are random GUIDs. Each page therefore reads the survey's rows from the cursor's time
-on (a filter on the stored time), sorts them in memory and keeps the first `limit`. A page costs about as
-much as the rows that are **not yet paged**, so a walk over a very large survey reads a rising number of
-rows page by page (the first page reads them all). A larger `limit` means fewer pages and less total work.
+order: the row keys are random GUIDs. Each page therefore lists the keys and times of the survey's rows
+from the cursor's time on (a filter on the stored time), sorts them in memory, and then reads the full
+rows, answers included, of the page's own time window only. The key listing costs about as much as the
+rows that are **not yet paged**, so a walk over a very large survey lists a rising number of keys page by
+page (the first page lists them all). A larger `limit` means fewer pages and less total work.
 An index that avoids this later can replace it behind the same operation
 ([legacy data layout, gap 8](../architecture/legacy-data-layout.md#11-gaps-and-open-questions)). The memory
 provider keeps its rows sorted and has no such cost.

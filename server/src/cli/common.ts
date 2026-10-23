@@ -14,7 +14,7 @@ export interface CliIo {
 
 export type CliEnv = Readonly<Record<string, string | undefined>>;
 
-export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export { GUID } from "../domain/guid.js";
 
 export type ParsedFlags =
   | {
@@ -113,15 +113,21 @@ export interface StoreCommandDeps {
   readonly now?: () => number;
 }
 
+/** Printed by a command that would write when `READ_ONLY=true` (design D5). */
+export const READ_ONLY_REFUSAL = "Refused: READ_ONLY=true. Nothing was erased.";
+
 /**
  * Runs `body` with the configured providers and closes them after. Exit 2 for an unreadable env
- * file or a memory store (`makeProviders` is not called); exit 1 with `Error: <safe text>` when the
- * configuration or `body` fails.
+ * file, a memory store, or `writes` with `READ_ONLY=true` (`makeProviders` is not called); exit 1
+ * with `Error: <safe text>` when the configuration or `body` fails. `writes`: `body` may write
+ * (the command's `--yes` or `--apply`); its dry run is not refused. `readOnlyRefusal` replaces
+ * READ_ONLY_REFUSAL for a command that does not erase.
  */
 export async function withProviders(
   envFile: string | null,
   io: CliIo,
   deps: StoreCommandDeps,
+  options: { readonly writes: boolean; readonly readOnlyRefusal?: string },
   body: (providers: ProviderSet) => Promise<number>,
 ): Promise<number> {
   let env: CliEnv = deps.env ?? process.env;
@@ -141,6 +147,10 @@ export async function withProviders(
   let providers: ProviderSet | null = null;
   try {
     const config = loadConfig({ ...env }, { skipIdentityRules: true });
+    if (options.writes && config.readOnly) {
+      io.err(`${options.readOnlyRefusal ?? READ_ONLY_REFUSAL}\n`);
+      return 2;
+    }
     providers = await (deps.makeProviders ?? createProviders)(config, {
       logger: {
         warn: (details, message) => io.err(`warning: ${message} ${JSON.stringify(details)}\n`),

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { dockerfileNodeProblems, dockerignoreProblems } from "./dockerfile.js";
 import { checkDependencies, type Manifest, type PackageJson } from "./check-deps.js";
 
 export interface RunResult {
@@ -63,6 +64,14 @@ function readText(file: string, label: string): string {
   }
 }
 
+function readOptional(file: string): string | undefined {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 export function run(root: string): RunResult {
   try {
     const workspace = readText(join(root, "pnpm-workspace.yaml"), "pnpm-workspace.yaml");
@@ -75,6 +84,19 @@ export function run(root: string): RunResult {
         stdout: [],
         stderr: violations.map((v) => `${v.file}: ${v.dependency}@${v.version} violates ${v.rule}`),
       };
+    }
+    const dockerfile = readOptional(join(root, "Dockerfile"));
+    if (dockerfile !== undefined) {
+      const dockerignore = readOptional(join(root, ".dockerignore"));
+      const problems = [
+        ...dockerfileNodeProblems(dockerfile, readText(join(root, ".nvmrc"), ".nvmrc")),
+        ...(dockerignore === undefined
+          ? [
+              ".dockerignore: missing next to the Dockerfile (the build context would hold every file)",
+            ]
+          : dockerignoreProblems(dockerignore)),
+      ];
+      if (problems.length > 0) return { code: 1, stdout: [], stderr: problems };
     }
     return { code: 0, stdout: [`check:deps OK (${manifests.length} manifests)`], stderr: [] };
   } catch (error) {

@@ -19,6 +19,7 @@ import type {
   SurveyRecord,
 } from "../domain/types.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
+import { availableSurvey } from "../results/availability.js";
 import { localBlobServiceClient, localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./azure-legacy/index.js";
@@ -172,6 +173,35 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     }
     return rows;
   }
+
+  it("leaves ispublished NULL on create and clone, which reads as published (ADR 0014 S1)", async () => {
+    const survey = newSurvey(personal());
+    const created = await store().surveys.createSurvey(survey);
+    expect(created.published).toBe(true);
+    expect((await rawRow(survey.id))!.ispublished).toBeNull();
+    expect(await availableSurvey(store().surveys, survey.id)).toEqual(created);
+    expect(
+      (await store().surveys.listSurveys(survey.owner)).find((s) => s.id === survey.id)?.published,
+    ).toBe(true);
+
+    // The fixture with an empty flag runs, and a copy of it is published too.
+    expect((await rawRow(surveyDraft.id))!.ispublished).toBeNull();
+    expect((await availableSurvey(store().surveys, surveyDraft.id)).published).toBe(true);
+    const copy = newSurvey(personal());
+    expect((await store().surveys.cloneSurvey(surveyDraft.id, copy))?.published).toBe(true);
+    expect((await rawRow(copy.id))!.ispublished).toBeNull();
+
+    // Unpublish writes 0 and the survey stops being available; publish writes 1.
+    const UPDATED_AT = "2026-09-01T12:34:56.000Z";
+    await store().surveys.updateSurvey(survey.id, { published: false, updatedAt: UPDATED_AT });
+    expect((await rawRow(survey.id))!.ispublished).toBe(0);
+    await expect(availableSurvey(store().surveys, survey.id)).rejects.toMatchObject({
+      code: "survey-not-available",
+    });
+    await store().surveys.updateSurvey(survey.id, { published: true, updatedAt: UPDATED_AT });
+    expect((await rawRow(survey.id))!.ispublished).toBe(1);
+    expect((await availableSurvey(store().surveys, survey.id)).published).toBe(true);
+  });
 
   it("inserts exactly the legacy create columns, no blob, and a SURVEY_CREATE audit row", async () => {
     const survey = newSurvey(personal());

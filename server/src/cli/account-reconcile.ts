@@ -25,7 +25,10 @@ Options:
                       variables already set in the environment win
   --help              Show this text
 
-Exit codes: 0 success, 1 refused or store or directory error, 2 usage error or no persistent store`;
+With READ_ONLY=true, --apply is refused (exit 2); the dry run still works.
+
+Exit codes: 0 success, 1 refused or store or directory error, 2 usage error, no persistent store
+or READ_ONLY=true with --apply`;
 
 const DEFAULT_MAX = 10;
 
@@ -65,7 +68,7 @@ export async function run(
     return 2;
   }
   const now = deps.now ?? Date.now;
-  return withProviders(args.envFile, io, deps, async (providers) => {
+  return withProviders(args.envFile, io, deps, { writes: args.apply }, async (providers) => {
     // A directory failure rejects here: nothing is erased.
     const candidates = await findErasureCandidates(providers);
     io.out(`Users the directory does not know: ${candidates.length}\n`);

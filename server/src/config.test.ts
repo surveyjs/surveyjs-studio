@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ConfigError, DEV_SESSION_SECRET, loadConfig as load } from "./config.js";
 
@@ -67,6 +68,9 @@ describe("loadConfig", () => {
       userApi: null,
       accountWebhookSecret: null,
       shellLinks: {},
+      webRoot: null,
+      readOnly: false,
+      requestTimeoutMs: 300_000,
     });
   });
 
@@ -302,6 +306,7 @@ describe("loadConfig", () => {
         USER_API_TOKEN: "",
         ACCOUNT_WEBHOOK_SECRET: " ",
         SHELL_LINKS: " ",
+        READ_ONLY: "",
       });
       expect(config).toEqual(loadConfig({}));
     });
@@ -687,6 +692,49 @@ describe("loadConfig", () => {
       '{"a":"ftp://a.example"}',
     ])("rejects %s", (value) => {
       expect(messageOf(() => loadConfig({ SHELL_LINKS: value }))).toContain("SHELL_LINKS");
+    });
+  });
+
+  describe("REQUEST_TIMEOUT_SECONDS", () => {
+    it("defaults to 300 seconds, in milliseconds", () => {
+      expect(loadConfig({}).requestTimeoutMs).toBe(300_000);
+    });
+
+    it("takes a positive integer of seconds", () => {
+      expect(loadConfig({ REQUEST_TIMEOUT_SECONDS: "45" }).requestTimeoutMs).toBe(45_000);
+    });
+
+    it.each(["0", "-1", "1.5", "abc"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ REQUEST_TIMEOUT_SECONDS: value }))).toContain(
+        "REQUEST_TIMEOUT_SECONDS: ",
+      );
+    });
+  });
+
+  describe("READ_ONLY", () => {
+    it("takes true or false", () => {
+      expect(loadConfig({ READ_ONLY: "true" }).readOnly).toBe(true);
+      expect(loadConfig({ READ_ONLY: "false" }).readOnly).toBe(false);
+    });
+
+    it.each(["yes", "1", "TRUE", "on"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ READ_ONLY: value }))).toContain(
+        "READ_ONLY: must be true or false",
+      );
+    });
+  });
+
+  describe("WEB_ROOT", () => {
+    const absolute = resolve("web-root-for-tests");
+
+    it("takes an absolute path", () => {
+      expect(loadConfig({ WEB_ROOT: absolute }).webRoot).toBe(absolute);
+    });
+
+    it.each(["web/dist", "./dist", "dist"])("refuses the relative path %s", (value) => {
+      expect(messageOf(() => loadConfig({ WEB_ROOT: value }))).toContain(
+        "WEB_ROOT: must be an absolute path",
+      );
     });
   });
 });

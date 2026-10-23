@@ -18,6 +18,7 @@ export function createHandlers(config: AppConfig): Handlers {
       maxResponseBytes: config.limits.maxResponseBytes,
       maxDocumentBytes: config.limits.maxDocumentBytes,
     },
+    readOnly: config.readOnly,
     links: shellLinks(config.shellLinks),
   };
 

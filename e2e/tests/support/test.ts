@@ -5,7 +5,13 @@ interface ConsoleError {
   readonly url: string;
 }
 
-/** An API answer a test expects to fail, which browsers log as a resource-load console error. */
+/**
+ * An answer a test expects to fail, which browsers log as a resource-load console error: an API
+ * answer, or the 404 of a path that is not the app's. On the image target (E2E_TARGET=image) the
+ * server answers such a path with the web app's page and 404 (ADR 0021), where `vite preview`
+ * answers 200. An entry that never matches is fine (nothing is required to fail), so one list
+ * serves both targets.
+ */
 export interface ExpectedErrorResponse {
   /**
    * The URL path, without the query. A pattern matches paths that hold an id only known at run

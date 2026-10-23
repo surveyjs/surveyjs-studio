@@ -1,9 +1,10 @@
 import multipart from "@fastify/multipart";
 import type { operations } from "@my-surveys/contract";
-import type { FastifyPluginAsync, FastifyRequest, RouteHandlerMethod } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
 import { authenticationHook, type AuthenticationOptions } from "./auth/authenticate.js";
 import { isJsonMediaType, type Contract, type ContractOperation } from "./contract.js";
 import { AppError } from "./errors.js";
+import { refusedWhenReadOnly, refuseReadOnly } from "./read-only.js";
 
 export type OperationId = keyof operations;
 
@@ -34,6 +35,11 @@ export interface ApiOptions {
    * undefined when there is none.
    */
   readonly rawBodyOperations?: readonly OperationId[];
+  /**
+   * `READ_ONLY=true`: every operation `refusedWhenReadOnly` names answers `503 read-only` from its
+   * first `onRequest` hook, before authentication, body parsing, validation and the handler.
+   */
+  readonly readOnly?: boolean;
 }
 
 /**
@@ -105,6 +111,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
     rateLimits = {},
     bodyLimits = {},
     rawBodyOperations = [],
+    readOnly = false,
   } = options;
   api.setValidatorCompiler(contract.compileValidator);
   api.decorateRequest("user", null);
@@ -130,7 +137,18 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
   const raw = new Set<string>(rawBodyOperations);
   const route = (scope: typeof api, op: ContractOperation, rawBody: boolean) => {
     const operationId = op.operationId as OperationId;
-    const onRequest = authenticationHook(op.security, authentication);
+    // A refused operation's only hook is the refusal: no authentication, body parsing, validation
+    // or handler runs (the rate limit appends its hook after it).
+    const onRequest =
+      readOnly && refusedWhenReadOnly(op)
+        ? refuseReadOnly
+        : authenticationHook(op.security, authentication);
+    // The operation is known only here: its log lines, "request completed" included, carry it.
+    const tagOperation = (request: FastifyRequest, reply: FastifyReply, done: () => void) => {
+      request.log = request.log.child({ operationId });
+      reply.log = request.log;
+      done();
+    };
     const rateLimit = rateLimits[operationId];
     const bodyLimit = bodyLimits[operationId];
     // A raw-body handler checks the text itself: no body or header schema, no media-type guard.
@@ -142,7 +160,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
       method: op.method,
       url: op.url,
       schema,
-      ...(onRequest && { onRequest }),
+      onRequest: onRequest ? [tagOperation, onRequest] : [tagOperation],
       ...(rateLimit && {
         config: {
           rateLimit: {

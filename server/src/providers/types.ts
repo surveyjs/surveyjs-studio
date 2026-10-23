@@ -237,8 +237,8 @@ export interface SurveyStore {
    */
   listSurveyPage(query: SurveyPageQuery): Promise<SurveyPage>;
   /**
-   * Stores a new survey with the legacy defaults (published false, archived false, every setting
-   * false) and, when given, its first definition. Returns the record as stored (read back), which
+   * Stores a new survey with the legacy defaults (published flag left empty, which reads as
+   * published; archived false, every setting false) and, when given, its first definition. Returns the record as stored (read back), which
    * can differ from the input in timestamp precision (SQL `datetime`). Throws on a duplicate id.
    */
   createSurvey(survey: NewSurvey, definition?: SurveyDefinition): Promise<SurveyRecord>;
@@ -431,6 +431,21 @@ export interface ProviderSet {
   readonly views: ViewStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
-  ready(): Promise<boolean>;
+  /** Every check `ready()` runs, by name: `/readyz` lists them all when `ready()` itself fails. */
+  readonly readinessNames: readonly ReadinessName[];
+  /**
+   * One entry per dependency check, run in parallel. A failed check may carry a safe category
+   * (`reason`), never an error text.
+   */
+  ready(): Promise<readonly ReadinessCheck[]>;
   close(): Promise<void>;
+}
+
+export type ReadinessName = "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory";
+
+export interface ReadinessCheck {
+  readonly name: ReadinessName;
+  readonly ok: boolean;
+  /** Why a check failed, for the log only: `timeout`, a driver or SDK code, an HTTP status. */
+  readonly reason?: string;
 }

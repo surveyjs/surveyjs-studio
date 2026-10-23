@@ -27,12 +27,12 @@ describe("the screen manifest", () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
-  it("skips a screen only with a reason, and only history today", () => {
+  it("skips no screen today, and a skip needs a reason", () => {
     for (const screen of SCREENS) {
       if (screen.skip !== undefined) expect(screen.skip.trim(), screen.id).not.toBe("");
     }
     // A new skip is a deliberate change of this test.
-    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual(["history"]);
+    expect(SCREENS.filter((s) => s.skip !== undefined).map((s) => s.id)).toEqual([]);
   });
 
   it("gives every idle selector a value", () => {
@@ -175,5 +175,15 @@ describe("the screen manifest", () => {
     expect(table.normalize?.map((item) => item.app)).toContain(
       '.tabulator-row .tabulator-cell[tabulator-field="HappendAt"]',
     );
+  });
+
+  it("records the history page's known differences", () => {
+    const history = SCREENS.find((screen) => screen.id === "history")!;
+    const hidden = (history.app.hide ?? []).map((item) => item.selector);
+    // ADR 0012 R23: "by {name}" on each entry; legacy records no user.
+    expect(hidden).toContain(".my-surveys-history-item__user");
+    // The app's "Back to My Surveys" link has no live counterpart.
+    expect(hidden.some((s) => s.includes("v2-class---paragraph-link"))).toBe(true);
+    expect(history.live.hide ?? []).toEqual([]);
   });
 });

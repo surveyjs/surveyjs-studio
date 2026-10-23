@@ -11,7 +11,7 @@ import { ProjectSelector } from "./ProjectSelector";
 import { surveyListSearch, type SurveyListParams } from "./search";
 import styles from "./SurveyListPage.module.css";
 import { SurveyRow } from "./SurveyRow";
-import { useSurveyActions } from "./useSurveyActions";
+import { failureMessage, useSurveyActions } from "./useSurveyActions";
 
 /**
  * The My Surveys page in the markup of surveyjs.io's `the site's page markup` (D14):
@@ -85,7 +85,7 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
 
           {create.isError && (
             <p className={styles.error} role="alert">
-              Could not create a survey. Please try again.
+              {failureMessage(create.error, "Could not create a survey. Please try again.")}
             </p>
           )}
 

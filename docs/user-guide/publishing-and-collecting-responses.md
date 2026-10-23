@@ -16,8 +16,9 @@ That address is the **link to give to respondents**. It needs no sign-in.
 - **Archiving does not stop collecting.** An archived survey that is still published keeps accepting
   responses, as it does on surveyjs.io. Unpublish it to stop.
 - **Unpublish** stops new responses at once. The responses already stored stay.
-- A survey that was never switched on or off on the old site (its published flag is empty) counts as
-  **not** published here. Publish it once.
+- A survey that was never switched on or off on the old site counts as **published** here, as it did on
+  the old run page. A new survey is published too, so it runs at once. Unpublish a survey that should not
+  collect responses yet.
 
 ## Old links keep working
 

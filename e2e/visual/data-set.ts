@@ -21,6 +21,18 @@ export const PROJECT_SURVEYS = ["Team retro"] as const;
 /** The survey that is published, has responses and public results ("Grant Access"). */
 export const FEEDBACK_NAME = "Customer feedback";
 
+/**
+ * The surveys that are not published: all but `Customer feedback`. On surveyjs.io they were never
+ * published, so their flag is empty, which the site's list shows as unpublished. The app reads an
+ * empty flag as published (ADR 0014 S1), so the app setup unpublishes these through the API and
+ * both lists show the same Publish items.
+ */
+export const NOT_PUBLISHED: readonly string[] = [
+  ...PERSONAL_ARCHIVED,
+  ...PROJECT_SURVEYS,
+  ...PERSONAL_ACTIVE.filter((name) => name !== FEEDBACK_NAME),
+];
+
 export const FEEDBACK_DEFINITION = {
   title: "Customer feedback",
   pages: [
@@ -67,4 +79,12 @@ export interface VisualStates {
   liveVersions: Record<string, string | null>;
 }
 
-export const DEFAULT_STATES: VisualStates = { historyEntries: 2, liveVersions: {} };
+/**
+ * The editor saves of `Customer feedback` the product owner makes on surveyjs.io before a capture
+ * (change its title, then restore it). surveyjs.io lists history since its fix of 2026-10-20
+ * (3389d6cd49); earlier saves are not listed. The capture records the live count in `states.json`
+ * and the app side makes the same number of entries.
+ */
+export const HISTORY_SAVES = 2;
+
+export const DEFAULT_STATES: VisualStates = { historyEntries: HISTORY_SAVES, liveVersions: {} };

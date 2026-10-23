@@ -13,6 +13,13 @@ The pages that Edit, View Results, View History and Run open were placeholders (
 became real in Step 6). The full description for
 users is [Managing a survey](../user-guide/managing-a-survey.md).
 
+**Since Step 14 a new survey and a clone are published.** Create and clone leave the published flag empty, and since
+Step 14 an empty flag means published, as on the old run page
+([ADR 0014](../adr/0014-run-page-and-response-collection.md), S1). This script was written before that, so where it
+says a new survey or a clone is "not published" or "unpublished" (parts 2, 3 and 8, checklist rows 2 and 3), you now
+see **Run** and **Unpublish** instead, and the inspector shows Published `yes`. To follow part 2 as written, click
+**Unpublish** on **Pilot** first.
+
 ## Before you start
 
 You need what [the Step 1 demo](step-01.md#before-you-start) lists (Node.js 24.21.0, pnpm 12.11.2).
@@ -66,7 +73,7 @@ changing the name. Expected: the box closes and the name is unchanged.
 
 Open the three dots of **Pilot**. Expected: **Edit**, **Clone**, a separator, **Publish**, a separator,
 **Survey IDs**, **View Results**, **View History**, a separator, **Move to Project** and **Archive**.
-There is no **Run**: the survey is not published.
+There is no **Run**: the survey is not published (since Step 14 it is: see the note at the top).
 
 Click **Publish**. Expected: the menu closes. Open it again: **Run** is the first item and **Publish**
 has become **Unpublish**.
@@ -83,9 +90,10 @@ Click **Publish** once more (so the original is published), then open the menu a
 
 Expected: a new row **Copy of Pilot** appears at the top of the list, and the original **Pilot** is
 below it. Open the menu of **Copy of Pilot**: there is no **Run**, so the copy is **not published**,
-although the original is. (The copy has no definition because the original has none yet: a survey made
-with Create a Survey is empty until the editor exists. The clone of **Customer feedback**, which has a
-definition and a theme, carries both over; the provider tests check that.)
+although the original is (since Step 14 the copy is published: see the note at the top). (The copy
+has no definition because the original has none yet: a survey made with Create a Survey is empty until
+the editor exists. The clone of **Customer feedback**, which has a definition and a theme, carries both
+over; the provider tests check that.)
 
 ## 4. Copy the IDs (checklist 4)
 
@@ -200,7 +208,7 @@ Expected, after each step:
 | Archive                       | Archived `yes` for `Pilot`; **Restore** gives `no` again                            |
 | Delete                        | No row `Pilot` any more                                                             |
 
-Clone a fixture survey too: **Copy of Customer feedback** is a new, unpublished row. The inspector does
+Clone a fixture survey too: **Copy of Customer feedback** is a new, unpublished row (published since Step 14). The inspector does
 not print definitions or themes; the provider tests check that the copy has the source's, byte for byte.
 
 The replica keeps what you do, so the next run continues from there. To go back to the fixtures, run

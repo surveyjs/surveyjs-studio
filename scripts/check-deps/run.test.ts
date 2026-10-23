@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { REQUIRED_DOCKERIGNORE } from "./dockerfile.js";
 import { run } from "./run.js";
 
 let dirs: string[] = [];
@@ -85,5 +86,69 @@ describe("run", () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toHaveLength(1);
     expect(result.stderr[0]).toContain(what);
+  });
+});
+
+describe("run: Dockerfile node version", () => {
+  const base = {
+    "pnpm-workspace.yaml": workspace,
+    "package.json": pkg({}),
+    "web/package.json": pkg({}),
+    ".dockerignore": REQUIRED_DOCKERIGNORE.join("\n"),
+  };
+
+  it("reports nothing when there is no Dockerfile", () => {
+    expect(run(fixture({ ...base, ".nvmrc": "24.21.0\n" })).code).toBe(0);
+  });
+
+  it("passes when the Dockerfile matches .nvmrc", () => {
+    const root = fixture({
+      ...base,
+      ".nvmrc": "24.21.0\n",
+      Dockerfile: "FROM node:24.21.0-bookworm-slim\n",
+    });
+    expect(run(root).code).toBe(0);
+  });
+
+  it("fails when the Dockerfile differs from .nvmrc", () => {
+    const root = fixture({
+      ...base,
+      ".nvmrc": "24.21.0\n",
+      Dockerfile: "FROM node:24.20.0-bookworm-slim\n",
+    });
+    const result = run(root);
+    expect(result.code).toBe(1);
+    expect(result.stderr[0]).toContain("Dockerfile:1");
+  });
+});
+
+describe("run: .dockerignore", () => {
+  const base = {
+    "pnpm-workspace.yaml": workspace,
+    "package.json": pkg({}),
+    "web/package.json": pkg({}),
+    ".nvmrc": "24.21.0\n",
+    Dockerfile: "FROM node:24.21.0-bookworm-slim\n",
+  };
+
+  it("fails when a Dockerfile has no .dockerignore", () => {
+    const result = run(fixture(base));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toEqual([
+      ".dockerignore: missing next to the Dockerfile (the build context would hold every file)",
+    ]);
+  });
+
+  it("fails when .dockerignore lets *.env files in", () => {
+    const lines = REQUIRED_DOCKERIGNORE.filter((line) => line !== "**/*.env");
+    const result = run(fixture({ ...base, ".dockerignore": lines.join("\n") }));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toHaveLength(1);
+    expect(result.stderr[0]).toContain('"**/*.env"');
+  });
+
+  it("passes with the repository's own .dockerignore", () => {
+    const own = readFileSync(new URL("../../.dockerignore", import.meta.url), "utf8");
+    expect(run(fixture({ ...base, ".dockerignore": own })).code).toBe(0);
   });
 });

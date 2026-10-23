@@ -9,7 +9,8 @@ export interface MembershipFacts {
   readonly userExists: boolean;
 }
 
-const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+/** Ids are GUIDs, matched case-insensitively. */
+export const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 export const isAdminRole = (role: string | null): boolean => role?.toLowerCase() === "admin";
 

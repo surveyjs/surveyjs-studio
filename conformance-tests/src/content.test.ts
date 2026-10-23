@@ -8,9 +8,9 @@
  * (the 403 on Engineering retro, the 404s for the outsider), which write nothing. Cleanup (archive,
  * then delete) is registered with `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { walkItems, call, codeOf, as, cleanUp } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
 
@@ -44,34 +44,8 @@ interface HistoryPage {
   nextCursor: string | null;
 }
 
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 /** Lets the clock move on, so the next save is strictly newer (SQL `datetime` keeps ~1/300 s). */
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
-
-/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
 
 /** Creates a survey and registers its cleanup. */
 async function created(headers: Headers, body: unknown = {}): Promise<Survey> {
@@ -357,20 +331,12 @@ describe("the survey history", () => {
     const all = await history(headers, survey.id);
     expect(all).toHaveLength(3);
 
-    const walked: HistoryEntry[] = [];
-    let cursor: string | null = null;
-    do {
-      const query: string = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
-      const response = await call("GET", "/surveys/{surveyId}/history", {
-        path: `/surveys/${survey.id}/history?limit=1${query}`,
-        headers,
-      });
-      expect(response.status).toBe(200);
-      const page = (await response.json()) as HistoryPage;
-      expect(page.items).toHaveLength(1);
-      walked.push(...page.items);
-      cursor = page.nextCursor;
-    } while (cursor !== null);
+    const walked = await walkItems<HistoryEntry>(
+      "/surveys/{surveyId}/history",
+      `/surveys/${survey.id}/history?limit=1`,
+      headers,
+      (page) => expect(page.items).toHaveLength(1),
+    );
     expect(walked).toEqual(all);
     const times = walked.map((entry) => Date.parse(entry.at));
     expect(times).toEqual([...times].sort((a, b) => b - a));

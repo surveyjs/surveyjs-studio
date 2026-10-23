@@ -119,6 +119,13 @@ const EMBED_STEPS_APP: readonly Step[] = [
   { click: EMBED_POPUP_ITEM },
 ];
 
+/** The Projects page is the account page's section alone, with its own heading. */
+const PROJECTS_HEADING: Residual = {
+  what: 'the heading: "Projects" in a level-1 header in the app, "Manage MySurveys" in a level-3 header on live',
+  reason: "ADR 0017 R20: the page's heading is Projects, an h1 as the survey list's",
+  category: "departure",
+};
+
 /** The survey dates of the list cannot match: they are fixed to one text on both sides. */
 const SURVEY_DATES: Normalization = {
   live: SURVEY_DATE,
@@ -155,7 +162,7 @@ const EDITOR_HIDE_APP: readonly Adjustment[] = [
   {
     selector: ".svc-creator__banner",
     reason:
-      "survey-creator-core 3.1.2 shows its licence banner without a licence key; the live site has a key",
+      "survey-creator-core 3.2.2 shows its licence banner without a licence key; the live site has a key",
     category: "library",
     optional: true,
   },
@@ -350,9 +357,24 @@ export const SCREENS: readonly Screen[] = [
     id: "history",
     group: "pages",
     kind: "page",
-    skip: "Live history is empty for the dedicated account (2026-10-20); re-enable after finding how surveyjs.io records history",
     live: { path: "/Service/History/{feedbackId}", ready: ".my-surveys-history-item" },
-    app: { path: "/surveys/{feedbackId}/history", ready: ".my-surveys-history-item" },
+    app: {
+      path: "/surveys/{feedbackId}/history",
+      ready: ".my-surveys-history-item",
+      hide: [
+        {
+          selector: ".my-surveys-history-item__user",
+          reason: "ADR 0012 R23: the app names the user of each save; legacy records no user",
+          category: "departure",
+        },
+        {
+          selector:
+            ".my-surveys-page__results-section > p.v2-class---paragraph:has(> a.v2-class---paragraph-link)",
+          reason: "app navigation link, no live counterpart (as on the results pages, Step 9)",
+          category: "departure",
+        },
+      ],
+    },
     normalize: [
       ...HEADER_NORMALIZATIONS,
       {
@@ -361,6 +383,13 @@ export const SCREENS: readonly Screen[] = [
         text: "1/1/2026, 12:00:00 PM",
         reason: "the entry times are the moments the data was created",
         category: "live-data",
+      },
+    ],
+    residual: [
+      {
+        what: "the entry times are not underlined",
+        reason: "ADR 0012 R23: no JSON view, so the time is not a link",
+        category: "departure",
       },
     ],
     maxDiffPixelRatio: 0.005,
@@ -393,6 +422,7 @@ export const SCREENS: readonly Screen[] = [
       target: PROJECTS_SECTION,
     },
     app: { path: "/projects", ready: PROJECTS_SECTION, target: PROJECTS_SECTION },
+    residual: [PROJECTS_HEADING],
     maxDiffPixelRatio: 0.01,
   },
   {
@@ -420,7 +450,10 @@ export const SCREENS: readonly Screen[] = [
         category: "live-data",
       },
     ],
-    maxDiffPixelRatio: 0.01,
+    residual: [PROJECTS_HEADING],
+    maxDiffPixelRatio: 0.015,
+    thresholdReason:
+      "Firefox: the live capture of 2026-10-22 draws the section below the heading 1 px lower than the one of 2026-10-20 (3,639 px apart; no site change). With the heading residual the app is 0.0134 from it (ADR 0020)",
   },
   {
     id: "results-summary",

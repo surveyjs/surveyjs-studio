@@ -306,7 +306,7 @@ pnpm demo:azurite:down
   deleted results. It is stricter than the old site's deletion, which left memberships, projects and project surveys
   ([ADR 0018, Open](../adr/0018-accounts-by-deployment-mode.md#open)).
 - **`pnpm demo` has no content-security policy**; `pnpm demo:preview` has. A production host must send the same
-  headers ([Operations](../operations.md#the-header-policy-for-the-static-host)).
+  headers ([Operations](../operations.md#the-header-policy)).
 - **The dry run of `account:erase` is a preview.** The decision for each project is taken again when you erase.
 - **If the directory lookup of `account:erase --user <id>` fails**, the command stops with exit 1 and erases nothing,
   even though the lookup only prints a name.

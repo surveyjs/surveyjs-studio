@@ -1,6 +1,7 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { LegacyConfig } from "../../config.js";
+import { buildApp } from "../../app.js";
+import { loadConfig, type LegacyConfig } from "../../config.js";
 import { LegacyStoreError, createAzureLegacyProviders } from "./index.js";
 
 // Nothing listens on port 1: any call that reached SQL or storage would fail.
@@ -91,9 +92,55 @@ describe("azure-legacy provider without a reachable store", () => {
     expect(await providers.users.findUserByEmail(`${"a".repeat(200)}@example.com`)).toBeNull();
   });
 
-  it("ready resolves false instead of throwing", async () => {
-    expect(await providers.ready()).toBe(false);
+  it("ready names every check and fails each one instead of throwing", async () => {
+    expect(await providers.ready()).toEqual([
+      { name: "sql", ok: false, reason: expect.any(String) },
+      { name: "surveys-storage", ok: false, reason: expect.any(String) },
+      { name: "results-storage", ok: false, reason: expect.any(String) },
+    ]);
   });
+
+  it("/readyz and the log show neither the error text nor a connection-string value", async () => {
+    const canary = createAzureLegacyProviders(
+      {
+        ...unreachable,
+        sqlConnectionString: `Server=127.0.0.1,1;Database=d;User Id=sa;Password=canary-secret;Connect Timeout=2`,
+      },
+      { readyTimeoutMs: 3_000 },
+    );
+    const lines: string[] = [];
+    const app = await buildApp(loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev" }), canary, {
+      logStream: { write: (line) => lines.push(line) },
+    });
+    try {
+      const res = await app.inject("/readyz");
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({
+        status: "unavailable",
+        failing: ["sql", "surveys-storage", "results-storage"],
+      });
+      // The body names the checks only; the log adds a safe category (a code), never a message.
+      expect(res.body).not.toContain("ECONNREFUSED");
+      for (const text of [res.body, ...lines]) {
+        expect(text).not.toContain("canary-secret");
+        expect(text).not.toContain("127.0.0.1");
+        expect(text).not.toContain("devstoreaccount1");
+      }
+      const warnings = lines
+        .map((line) => JSON.parse(line) as { msg?: string; check?: string; reason?: string })
+        .filter((line) => line.msg === "readiness check failing");
+      expect(warnings.map((line) => line.check).sort()).toEqual([
+        "results-storage",
+        "sql",
+        "surveys-storage",
+      ]);
+      // Nothing listens on port 1: SQL fails with the driver's code, storage retries until the timeout.
+      expect(warnings.find((line) => line.check === "sql")?.reason).toBe("ESOCKET");
+      for (const line of warnings) expect(line.reason).toMatch(/^(timeout|[A-Z][A-Za-z]+)$/);
+    } finally {
+      await app.close();
+    }
+  }, 15_000);
 
   it("reports a failed query without any connection-string value", async () => {
     const error = await providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001").then(
@@ -285,7 +332,7 @@ describe("azure-legacy provider closing while SQL is connecting", () => {
       },
       { readyTimeoutMs: 200 },
     );
-    expect(await providers.ready()).toBe(false); // the SQL connect is still pending
+    expect((await providers.ready()).find((c) => c.name === "sql")?.ok).toBe(false); // the SQL connect is still pending
     const pending = providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001").then(
       () => "resolved",
       (e: unknown) => (e as Error).message,
@@ -298,7 +345,7 @@ describe("azure-legacy provider closing while SQL is connecting", () => {
     await expect(
       providers.surveys.getSurvey("22222222-0000-4000-8000-000000000001"),
     ).rejects.toThrow(/^Legacy store survey lookup failed/);
-    expect(await providers.ready()).toBe(false);
+    expect((await providers.ready()).find((c) => c.name === "sql")?.ok).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(accepted).toBe(before);
   }, 15_000);

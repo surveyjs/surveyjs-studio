@@ -4,7 +4,7 @@ import { createSurveyjsApiDirectory } from "../users/surveyjs-api/client.js";
 import { createAzureLegacyProviders, type LegacyWarningLogger } from "./azure-legacy/index.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createMemoryProviders } from "./memory.js";
-import type { ProviderSet } from "./types.js";
+import type { ProviderSet, ReadinessCheck } from "./types.js";
 
 export type { ProviderSet } from "./types.js";
 
@@ -74,5 +74,14 @@ export async function createProviders(
     accountNotices: config.accountNotices,
     ...(options.now && { now: options.now }),
   });
-  return { ...storage, users: api.users, notices: api.notices };
+  return {
+    ...storage,
+    users: api.users,
+    notices: api.notices,
+    readinessNames: [...storage.readinessNames, "user-api"],
+    async ready(): Promise<readonly ReadinessCheck[]> {
+      const [checks, probe] = await Promise.all([storage.ready(), api.probe()]);
+      return [...checks, { name: "user-api", ...probe }];
+    },
+  };
 }

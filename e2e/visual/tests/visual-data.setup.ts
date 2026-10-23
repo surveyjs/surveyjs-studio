@@ -7,6 +7,7 @@ import {
   FEEDBACK_DEFINITION,
   FEEDBACK_NAME,
   FEEDBACK_RESPONSES,
+  NOT_PUBLISHED,
   PERSONAL_ACTIVE,
   PERSONAL_ARCHIVED,
   PROJECT_NAME,
@@ -14,7 +15,6 @@ import {
   VISUAL_USER,
   type VisualStates,
 } from "../data-set.js";
-import { SCREENS } from "../manifest.js";
 import { putDefinitionViaApi } from "../../tests/support/editor.js";
 import { createProjectViaApi } from "../../tests/support/projects.js";
 import { submitViaApi } from "../../tests/support/results.js";
@@ -27,7 +27,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stateDir = resolve(here, "../.state");
 const statesPath = resolve(here, "../baselines/states.json");
 
-/** How many history entries the live survey has: from the capture's states, or the default for `--self`. */
+/**
+ * How many history entries the live survey has: from the capture's states, or the default for
+ * `--self`. The capture refuses fewer than `HISTORY_SAVES` (states.test.ts checks the committed file).
+ */
 function historyEntries(): number {
   if (process.env["VISUAL_BASELINES"] === "self") return DEFAULT_STATES.historyEntries;
   return (JSON.parse(readFileSync(statesPath, "utf8")) as VisualStates).historyEntries;
@@ -62,33 +65,34 @@ setup("create the visual data set for the visual user", async ({ page }) => {
   await page.context().storageState({ path: resolve(stateDir, "erin.json") });
 
   // The order of creation, and the touch of `Customer feedback` last, give the lists their order.
+  // A new survey is published; the ones not published on the live side are unpublished right after
+  // they are created, so the order stays.
+  const created = async (name: string, projectId?: string, patch: Record<string, unknown> = {}) => {
+    const survey = await createSurveyViaApi(page, name, projectId);
+    const changes = { ...patch, ...(NOT_PUBLISHED.includes(name) && { published: false }) };
+    if (Object.keys(changes).length > 0) await patchSurvey(page, survey.id, changes);
+    return survey;
+  };
   const project = await createProjectViaApi(page, PROJECT_NAME);
-  for (const name of PROJECT_SURVEYS) await createSurveyViaApi(page, name, project.id);
+  for (const name of PROJECT_SURVEYS) await created(name, project.id);
 
-  for (const name of PERSONAL_ARCHIVED) {
-    const survey = await createSurveyViaApi(page, name);
-    await patchSurvey(page, survey.id, { archived: true });
-  }
+  for (const name of PERSONAL_ARCHIVED) await created(name, undefined, { archived: true });
   const [feedbackName, ...others] = PERSONAL_ACTIVE;
   expect(feedbackName).toBe(FEEDBACK_NAME);
   // PERSONAL_ACTIVE is in display order; the creation order is the reverse of the others.
-  for (const name of [...others].reverse()) await createSurveyViaApi(page, name);
-  const feedback = await createSurveyViaApi(page, FEEDBACK_NAME);
+  for (const name of [...others].reverse()) await created(name);
+  const feedback = await created(FEEDBACK_NAME);
 
-  // The same number of history entries as the live survey; the last save is the feedback definition.
-  // Skipped with the history screen: nothing compares the count, so one definition save is enough.
-  if (SCREENS.find((screen) => screen.id === "history")?.skip === undefined) {
-    const wanted = historyEntries();
-    let count = await historyCount(page, feedback.id);
-    expect(count, "the new survey has more history than the live one").toBeLessThanOrEqual(wanted);
-    while (count < wanted) {
-      await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
-      count = await historyCount(page, feedback.id);
-    }
-    expect(count).toBe(wanted);
-  } else {
+  // The same number of history entries as the live survey; the last save is the feedback definition,
+  // so at least one save is needed (a new survey has fewer entries than the live one).
+  const wanted = historyEntries();
+  let count = await historyCount(page, feedback.id);
+  expect(count, "a new survey has fewer history entries than the live one").toBeLessThan(wanted);
+  while (count < wanted) {
     await putDefinitionViaApi(page, feedback.id, FEEDBACK_DEFINITION);
+    count = await historyCount(page, feedback.id);
   }
+  expect(count).toBe(wanted);
   const stored = await page.request.get(`/api/v1/surveys/${feedback.id}/definition`);
   expect(await stored.json()).toEqual(FEEDBACK_DEFINITION);
 
@@ -99,10 +103,11 @@ setup("create the visual data set for the visual user", async ({ page }) => {
 
   const list = await page.request.get("/api/v1/surveys?project=personal&archived=false&limit=50");
   expect(list.status()).toBe(200);
-  const names = ((await list.json()) as { items: { name: string }[] }).items.map(
-    (item) => item.name,
-  );
-  expect(names).toEqual([...PERSONAL_ACTIVE]);
+  const items = ((await list.json()) as { items: { name: string; published: boolean }[] }).items;
+  expect(items.map((item) => item.name)).toEqual([...PERSONAL_ACTIVE]);
+  for (const item of items) {
+    expect(item.published, item.name).toBe(!NOT_PUBLISHED.includes(item.name));
+  }
 
   writeFileSync(
     resolve(stateDir, "app-ids.json"),

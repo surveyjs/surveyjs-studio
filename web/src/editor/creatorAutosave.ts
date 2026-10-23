@@ -24,7 +24,7 @@ interface CreatorEvent {
 type CreatorSaveFunction = (saveNo: number, callback: (no: number, ok: boolean) => void) => void;
 
 /**
- * The members of `SurveyCreator` the wiring uses. Creator 3.1.2 also keeps a scheduled auto-save
+ * The members of `SurveyCreator` the wiring uses. Creator 3.2.2 also keeps a scheduled auto-save
  * in a private `autoSaveTimerId` (no public call cancels it); a private member cannot be part of a
  * type the Creator satisfies, so it is read through a cast (see `cancelAutoSave`).
  */
@@ -64,7 +64,7 @@ export interface AutoSave {
 }
 
 /**
- * Cancels a scheduled auto-save. Creator 3.1.2 keeps the timer in a private `autoSaveTimerId`: the
+ * Cancels a scheduled auto-save. Creator 3.2.2 keeps the timer in a private `autoSaveTimerId`: the
  * Creator's for the survey, the Themes tab plugin's for the theme. Should an upgrade rename it,
  * a late timer still saves nothing after `close` (the save functions check first).
  */

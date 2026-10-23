@@ -31,10 +31,13 @@ import type {
   HistoryPage,
   HistoryQuery,
   ProviderSet,
+  ReadinessCheck,
+  ReadinessName,
   SurveyPage,
   SurveyPageQuery,
   SurveyPosition,
 } from "../types.js";
+import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
 import { createAzureResultStore } from "./results.js";
@@ -288,7 +291,6 @@ export function createAzureLegacyProviders(
     "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
     legacy.resultsStorageConnectionString,
   );
-  const accounts = [surveysAccount, resultsAccount];
   const surveyEvents = surveyEventsTable(legacy.surveysStorageConnectionString);
 
   // The pool connects on first use, so the server starts (and /readyz answers 503) while the
@@ -723,14 +725,15 @@ export function createAzureLegacyProviders(
     return [...new Set(ids)].sort();
   }
 
+  // Not through select(): the check keeps the driver's error, whose code the log may show.
   async function sqlReady(): Promise<void> {
-    await select("readiness check", "SELECT 1 AS ok");
+    await (await connected()).request().query("SELECT 1 AS ok");
   }
 
   // Both probes are account-level calls. A least-privilege container SAS cannot make them, so
-  // /readyz would stay at 503 with such credentials. A narrower probe is open for Step 14
-  // (docs/architecture.md, "Open for later steps").
-  async function storageReady(account: (typeof accounts)[number], signal: AbortSignal) {
+  // /readyz would stay at 503 with such credentials. A narrower probe is open for later, with
+  // least-privilege credentials (docs/architecture.md, "Open for later steps").
+  async function storageReady(account: typeof surveysAccount, signal: AbortSignal) {
     await account.blobs.getProperties({ abortSignal: signal });
     await account.tables.listTables({ abortSignal: signal }).byPage({ maxPageSize: 1 }).next();
   }
@@ -918,24 +921,41 @@ export function createAzureLegacyProviders(
 
     notices,
 
+    readinessNames: ["sql", "surveys-storage", "results-storage"],
+
     async ready() {
       const signal = AbortSignal.timeout(readyTimeoutMs);
-      let timer: NodeJS.Timeout | undefined;
-      const timeout = new Promise<false>((resolve) => {
-        timer = setTimeout(() => resolve(false), readyTimeoutMs);
-      });
-      const checks = Promise.all([
-        sqlReady(),
-        ...accounts.map((account) => storageReady(account, signal)),
-      ]).then(
-        () => true,
-        () => false,
-      );
-      try {
-        return await Promise.race([checks, timeout]);
-      } finally {
-        clearTimeout(timer);
-      }
+      // Each check has its own bound. A failure carries a safe category only (safeErrorCategory):
+      // an error text never leaves here.
+      const run = async (
+        name: ReadinessName,
+        check: () => Promise<void>,
+      ): Promise<ReadinessCheck> => {
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<ReadinessCheck>((resolve) => {
+          timer = setTimeout(() => resolve({ name, ok: false, reason: "timeout" }), readyTimeoutMs);
+        });
+        try {
+          return await Promise.race([
+            check().then(
+              (): ReadinessCheck => ({ name, ok: true }),
+              (error: unknown): ReadinessCheck => ({
+                name,
+                ok: false,
+                reason: safeErrorCategory(error),
+              }),
+            ),
+            timeout,
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      return Promise.all([
+        run("sql", sqlReady),
+        run("surveys-storage", () => storageReady(surveysAccount, signal)),
+        run("results-storage", () => storageReady(resultsAccount, signal)),
+      ]);
     },
 
     close() {

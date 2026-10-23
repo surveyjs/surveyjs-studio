@@ -19,6 +19,7 @@ export const appConfig: components["schemas"]["AppConfig"] = {
     maxResponseBytes: 1048576,
     maxDocumentBytes: 30000000,
   },
+  readOnly: false,
 };
 
 export function configHandler(config = appConfig) {

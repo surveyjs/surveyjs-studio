@@ -1,8 +1,7 @@
 import type { CompletionState, SurveyRecord, SurveyResponse } from "../domain/types.js";
 import { isAfterResponse, responseOrder } from "./ordering.js";
 import type { ResultStore } from "./types.js";
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { GUID } from "../domain/guid.js";
 
 export interface MemoryResultsSeed {
   /** Responses by survey id. */

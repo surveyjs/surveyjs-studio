@@ -1,0 +1,32 @@
+.git
+.github
+.claude
+.superpowers
+.agents
+**/node_modules
+**/dist
+# Settings and key files never enter the build context, so none can reach the image
+# (scripts/check-deps checks these lines).
+**/.env
+**/.env.*
+!**/.env.example
+**/*.env
+**/*.pfx
+**/*.pem
+**/*.key
+**/secrets.*
+**/appsettings*.json
+**/SSL
+server/.local
+**/.local
+e2e/**
+!e2e/package.json
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+docker-logs
+**/*.tsbuildinfo
+*.log
+Dockerfile
+.dockerignore

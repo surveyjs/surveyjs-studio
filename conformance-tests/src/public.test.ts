@@ -12,9 +12,9 @@
  * address, see `global-setup.ts`), so no other test shares its counter.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it } from "vitest";
+import { call, codeOf, as, newSurvey, ownSurvey, ownsServer, setPublished } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
 
@@ -22,7 +22,10 @@ const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
 
 const fixture = {
   customerFeedback: "22222222-0000-4000-8000-a00000000001",
-  unpublished: "22222222-0000-4000-8000-a00000000002",
+  /** "Draft idea": an empty (NULL) published flag, which means published. */
+  emptyFlag: "22222222-0000-4000-8000-a00000000002",
+  /** "Old poll": unpublished (0) and archived. */
+  unpublishedArchived: "22222222-0000-4000-8000-a00000000003",
   archivedPublished: "22222222-0000-4000-8000-a00000000005",
   unpublishedRetro: "22222222-0000-4000-8000-a00000000006",
 };
@@ -34,56 +37,6 @@ const STATS = "/surveys/{surveyId}/results/stats";
 const NOT_AVAILABLE = { code: "survey-not-available", title: "This survey is not available" };
 
 type Headers = Record<string, string>;
-
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
-/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
-
-/**
- * Creates a survey in the admin's Personal scope with the definition, publishes it unless told
- * not to, and registers its cleanup; returns its id.
- */
-async function ownSurvey(
-  headers: Headers,
-  definition: Record<string, unknown> = {},
-  published = true,
-): Promise<string> {
-  const response = await call("POST", "/surveys", { headers, body: { definition } });
-  expect(response.status).toBe(201);
-  const { id } = (await response.json()) as { id: string };
-  onTestFinished(() => cleanUp(headers, id));
-  if (published) {
-    const patched = await call("PATCH", "/surveys/{surveyId}", {
-      path: `/surveys/${id}`,
-      headers: { "content-type": "application/merge-patch+json", ...headers },
-      body: { published: true },
-    });
-    expect(patched.status).toBe(200);
-  }
-  return id;
-}
 
 /** A definition with one text question. */
 const ONE_QUESTION = {
@@ -171,9 +124,15 @@ describe("getPublishedSurvey", () => {
     expect((await load(fixture.archivedPublished)).status).toBe(200);
   });
 
+  it("serves a survey whose published flag is empty, as the old run page did", async () => {
+    const response = await load(fixture.emptyFlag);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: fixture.emptyFlag, name: "Draft idea" });
+  });
+
   it("does not tell an unpublished survey from an unknown one", async () => {
     const responses = [
-      await load(fixture.unpublished),
+      await load(fixture.unpublishedArchived),
       await load(fixture.unpublishedRetro),
       await load(UNKNOWN_ID),
     ];
@@ -195,10 +154,35 @@ describe("getPublishedSurvey", () => {
   });
 });
 
+describe("a new survey", () => {
+  it("runs at once, stops when unpublished and runs again when published", async (ctx) => {
+    const headers = await as(ctx, admin);
+    // No PATCH: the new survey's published flag is empty, which means published.
+    const surveyId = await newSurvey(headers, { definition: ONE_QUESTION });
+    const read = await call("GET", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers,
+    });
+    expect(await read.json()).toMatchObject({ published: true });
+    expect((await load(surveyId)).status).toBe(200);
+    expect((await submit(surveyId, { data: { q1: "a" } })).status).toBe(201);
+    expect(await countOf(surveyId, headers)).toBe(1);
+
+    await setPublished(headers, surveyId, false);
+    await expectNotAvailable(await load(surveyId));
+    await expectNotAvailable(await submit(surveyId, { data: { q1: "b" } }));
+
+    await setPublished(headers, surveyId, true);
+    expect((await load(surveyId)).status).toBe(200);
+    expect((await submit(surveyId, { data: { q1: "c" } })).status).toBe(201);
+    expect(await countOf(surveyId, headers)).toBe(2);
+  });
+});
+
 describe("submitResponse", () => {
   it("stores a response once per Idempotency-Key", async (ctx) => {
     const headers = await as(ctx, admin);
-    const surveyId = await ownSurvey(headers, ONE_QUESTION);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     const key = `k-${randomUUID()}`;
 
     const first = await submit(surveyId, { data: { q1: "a" } }, { key });
@@ -226,7 +210,9 @@ describe("submitResponse", () => {
 
   it("limits a client to one response when the definition names a cookie", async (ctx) => {
     const headers = await as(ctx, admin);
-    const surveyId = await ownSurvey(headers, { ...ONE_QUESTION, cookieName: "limit-test" });
+    const surveyId = await ownSurvey(headers, {
+      definition: { ...ONE_QUESTION, cookieName: "limit-test" },
+    });
     const clientId = `client-${randomUUID()}`;
     const body = { data: { q1: "a" }, clientId };
 
@@ -255,7 +241,7 @@ describe("submitResponse", () => {
 
   it("accepts a client again when no cookie name limits the survey", async (ctx) => {
     const headers = await as(ctx, admin);
-    const surveyId = await ownSurvey(headers, ONE_QUESTION);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     const body = { data: { q1: "a" }, clientId: `client-${randomUUID()}` };
     expect((await submit(surveyId, body)).status).toBe(201);
     expect((await submit(surveyId, body)).status).toBe(201);
@@ -264,7 +250,7 @@ describe("submitResponse", () => {
 
   it("stores a partial response as complete", async (ctx) => {
     const headers = await as(ctx, admin);
-    const surveyId = await ownSurvey(headers, ONE_QUESTION);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     const clientId = `client-${randomUUID()}`;
     const response = await submit(surveyId, { data: { q1: "a" }, clientId, partial: true });
     expect(response.status).toBe(201);
@@ -273,13 +259,13 @@ describe("submitResponse", () => {
 
   it("refuses what it cannot store", async (ctx) => {
     const headers = await as(ctx, admin);
-    const unpublished = await ownSurvey(headers, ONE_QUESTION, false);
+    const unpublished = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
     await expectNotAvailable(await submit(unpublished, { data: { q1: "a" } }));
-    await expectNotAvailable(await submit(fixture.unpublished, { data: { q1: "a" } }));
+    await expectNotAvailable(await submit(fixture.unpublishedArchived, { data: { q1: "a" } }));
     await expectNotAvailable(await submit(UNKNOWN_ID, { data: { q1: "a" } }));
     expect(await countOf(unpublished, headers)).toBe(0);
 
-    const surveyId = await ownSurvey(headers, ONE_QUESTION);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     expect((await submit(surveyId, {})).status).toBe(422);
     expect((await submit(surveyId, { data: 1 })).status).toBe(422);
     const text = await call("POST", RESPONSES, {
@@ -303,7 +289,7 @@ describe("submitResponse", () => {
     const limit = ((await config.json()) as { limits: { maxResponseBytes: number } }).limits
       .maxResponseBytes;
     const headers = await as(ctx, admin);
-    const surveyId = await ownSurvey(headers, ONE_QUESTION);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     const frame = JSON.stringify({ data: { t: "" } });
     const rawBody = JSON.stringify({ data: { t: "x".repeat(limit + 1 - frame.length) } });
     expect(Buffer.byteLength(rawBody)).toBe(limit + 1);
@@ -313,6 +299,11 @@ describe("submitResponse", () => {
     });
     expect(response.status).toBe(413);
     expect(await codeOf(response)).toBe("payload-too-large");
+    // The server reads a small overflow to its end and keeps the connection; with Connection: close
+    // it would cut the connection while the client is still sending, and the client could see
+    // EPIPE instead of this answer.
+    // Only the reference server is checked: a proxy in front decides this hop-by-hop header.
+    if (ownsServer) expect(response.headers.get("connection")).not.toBe("close");
     expect(await countOf(surveyId, headers)).toBe(0);
   });
 });

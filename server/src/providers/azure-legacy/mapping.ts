@@ -20,6 +20,7 @@ import type {
   LegacySurveyRow,
   LegacyUserRow,
 } from "./rows.js";
+import { GUID } from "../../domain/guid.js";
 
 /**
  * Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9.
@@ -43,11 +44,16 @@ export class UnmappableLegacyRowError extends Error {
 
 const guid = (value: string): string => value.toLowerCase();
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A GUID with dashes, in any case: the only id form the legacy stores hold. */
 export const isGuid = (value: string): boolean => GUID.test(value);
 
 const flag = (value: number | null): boolean => value === 1;
+
+/**
+ * `Surveys.ispublished`: only 0 is unpublished. An empty (NULL) flag, which every survey has until
+ * its first Publish or Unpublish, means published, as the old run page treats it (ADR 0014 S1).
+ */
+export const publishedFlag = (value: number | null): boolean => value !== 0;
 
 export function surveyFromLegacy(
   row: LegacySurveyRow,
@@ -75,7 +81,7 @@ export function surveyFromLegacy(
     creatorId: creatorId === ZERO_GUID ? null : creatorId,
     postId,
     resultId,
-    published: flag(row.ispublished),
+    published: publishedFlag(row.ispublished),
     archived: flag(row.isarchived),
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),

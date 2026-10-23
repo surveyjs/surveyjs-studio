@@ -158,7 +158,10 @@ injected output, the provider interface or a pure function):
   the exit codes, nothing written without `--yes` or `--apply`, no secret in any output), and
   `account-cli.integration.test.ts` (the two erase commands spawned, for the wiring).
 - `security-headers.test.ts` (server) and `web/security-headers.test.ts` (the SPA policy and the `frame-ancestors`
-  split).
+  split; in `server/src` since Step 14).
+- `web/static.test.ts` and `web/client-routes.test.ts` (Step 14): the server with `WEB_ROOT` (status, content type,
+  headers and cache rule of each answer, no file outside the root or under `.vite/`), and the client routes against
+  `web/src/routes`.
 - `results/respondent-logs.test.ts`: **the log check.** The server runs with `LOG_LEVEL=trace` and a captured log
   stream; a submission with marker answers and a client id (success, an idempotent replay, `422`, `413`, IP capture
   on, a store failure) and a respondent file upload are made; no captured line contains a marker answer. It is a unit
@@ -205,6 +208,23 @@ Remove-Item Env:CONFORMANCE_BASE_URL
 ```
 
 A port is accepted when this suite passes against it.
+
+### The conformance suite on the production image
+
+With `CONFORMANCE_IMAGE` set to an image tag, the suite runs the reference server as that image instead of tsx, with
+the same settings. CI builds `my-surveys:ci` and runs `pnpm test:conformance:azurite` this way. Details:
+
+- The container is `my-surveys-conformance`, started with `docker run --network host` on a free port, so it reaches
+  the replica and the mock OIDC server on the host's loopback ports. This works on **Linux only**; on Windows and
+  macOS the suite stops with a message.
+- The values are passed by name (`-e NAME`), never on the command line.
+- `NODE_ENV` is `development` on memory (the dev sign-in is refused in production) and `production` on
+  `azure-legacy`, with a local-only `SESSION_SECRET`. Both keep the server's log (`NODE_ENV=test` turns it off).
+- When the suite ends, it saves the container's log to `docker-logs/my-surveys-conformance.log` and removes the
+  container. CI uploads `docker-logs/` on failure.
+- It cannot be combined with `CONFORMANCE_BASE_URL`.
+
+The provider suite (`pnpm test:providers:azurite`) tests the provider in-process, so it has no image target.
 
 ### Files and the shared harness
 
@@ -304,13 +324,16 @@ types, the required headers, and nothing else, so it never reads binary content 
 `getResultStats` with one). **Every test that stores something creates its own survey** in the admin's Personal
 scope, gives it a definition through `POST /surveys { definition }`, publishes it with `PATCH { published: true }`,
 and archives and deletes it at its end. No fixture survey gets a response, a marker or a file: on fixtures the
-tests only read (`01` published and not archived, `05` published and archived: both run; `02` and `06`
-unpublished) and refuse (`404`, nothing stored). "Stored once" is read back with `getResultStats`.
+tests only read (`01` published and not archived, `05` published and archived, `02` with an empty published
+flag: all run; `03` and `06` unpublished) and refuse (`404`, nothing stored). "Stored once" is read back with
+`getResultStats`. Since Step 14 a new survey is published (its flag stays empty, ADR 0014 S1): `public.test.ts`
+checks that one runs at once, stops when unpublished and runs again when published, and `ownSurvey({ published:
+false })` unpublishes it.
 
 | File                   | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `public.test.ts`       | `getPublishedSurvey`: a published survey with its theme and, with a `clientId`, `completed`; an archived published survey runs; an unpublished and an unknown survey give the same `404`; a `clientId` that is too long or holds a reserved character is `400`. `submitResponse`: one response for each `Idempotency-Key` (a replay answers `201` with the same `id`, its data is ignored and the count stays 1; a request without a key is a new response); the one-response limit (a `cookieName` in the definition: the second submit of a client is `409`, but a retry of the first still answers `201`; a survey without a cookie name accepts the client again); a partial response is stored as complete; what the server cannot store (`404`, `422`, `415`, `400`, a bad `Idempotency-Key`); and a body of `limits.maxResponseBytes + 1` bytes is `413`. The `429` test (below). `getResultStats`: the fixture survey's 5 responses for Olivia, `count` 0 and `null` times for a new survey, `404` for Oscar and for an unknown survey, `401` without a session |
-| `public-files.test.ts` | `uploadResponseFile`: a PNG is stored and served inline to anyone; another type is stored as `application/octet-stream` and served as an attachment; a file of exactly `limits.maxFileBytes` is accepted and one byte more is `413`; `422` for a form without a file and for an empty file; `415` for a JSON body; `400` for a cut body; `404 survey-not-available` for an unpublished and an unknown survey; the file is gone with its survey                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `public-files.test.ts` | `uploadResponseFile`: a PNG is stored and served inline to anyone; another type is stored as `application/octet-stream` and served as an attachment; a file of exactly `limits.maxFileBytes` is accepted and one byte more is `413`; `422` for a form without a file and for an empty file; `415` for a JSON body; `400` for a cut body; a new survey (empty published flag) takes a file; `404 survey-not-available` for an unpublished and an unknown survey; the file is gone with its survey                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 **Server values.** The suite starts the reference server (in `global-setup.ts`) with `TRUST_PROXY=127.0.0.1,::1`
 (the test client connects from the loopback address, so the server believes its `X-Forwarded-For`),
@@ -408,12 +431,17 @@ invalid-signature`; a valid one for a body that is not an account event is `400`
 - `security-headers.test.ts`: the headers of [ADR 0019](adr/0019-run-page-isolation-and-security-headers.md) on an
   API answer, a problem answer and an unknown path; HSTS only when the server is reached over https (a port behind
   a TLS proxy cannot be judged otherwise).
-- `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`.
+- `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`. The body
+  is a `not-found` Problem, or the web app's HTML page when the server serves the app (`WEB_ROOT`, the image).
 - `user-directory.test.ts`: runs only in the user-API mode and checks the licence notices that come from the API.
+- `read-only.test.ts`: runs only when the server reports `readOnly: true`; every operation that documents the
+  `503 ReadOnly` response must answer `503 read-only`, and reads and sign-out must keep working.
 - **The user-API run**, `pnpm test:conformance:user-api`: the whole suite with the reference server on
   `USER_DIRECTORY=surveyjs-api`, against the stub the run starts itself. Sign-in, members by email and the notices
   go through the API. It is not run on the replica; `CONFORMANCE_USER_DIRECTORY` cannot be combined with
   `CONFORMANCE_BASE_URL`.
+- **The read-only run**, `pnpm test:conformance:read-only`: only `read-only.test.ts`, with the reference server on
+  memory and `READ_ONLY=true`. CI runs it after the in-memory run.
 
 ### Test data
 
@@ -488,8 +516,11 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   server variables) from the environment before starting the servers and the previews. The list is
   in `e2e/app-variables.mjs`, shared by the config and the runner script. Results do not depend on
   what you have exported.
-- Locally it reuses servers already running on 3000 and 5173 (for example `pnpm demo`). Those servers must use the default configuration, or the home page spec fails. With `CI` set it does not
-  reuse them, and fails if the ports are busy.
+- It never reuses a running server (`reuseExistingServer: false`, locally and in CI). Before the build,
+  `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
+  `Port 3000 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
+  `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
+  target 5173 and 5174. They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
   page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
   message of Firefox, and the error responses a test allows (below).
@@ -660,12 +691,34 @@ WebKit are left to CI.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
 actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
-memory-mode servers first). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+memory-mode servers first; the runner names a port that is taken). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+
+### The end-to-end suites on the production image
+
+With `E2E_TARGET=image`, both suites run against the production image instead of the tsx server and `vite preview`.
+CI sets it, with `E2E_IMAGE=my-surveys:ci` (the default). The image serves the web app itself (`WEB_ROOT`), so
+`pnpm e2e` does not build it.
+
+| Mode    | Containers (`docker run --network host`)                                 | Settings                                                                                        |
+| ------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| memory  | `my-surveys-e2e-memory-5173`, and `my-surveys-e2e-memory-5174` (licence) | The memory settings with `NODE_ENV=development` (the dev sign-in needs it)                      |
+| Azurite | `my-surveys-e2e-azurite-5173`                                            | The app variables of `docker/azurite.env`; `NODE_ENV=production`, a local-only `SESSION_SECRET` |
+
+- Each container listens on the preview's port, on `localhost`, with `PUBLIC_BASE_URL` on that port. Playwright
+  waits for `http://127.0.0.1:<port>/readyz`.
+- The rate limits, `LIMIT_MAX_ASSET_BYTES_PER_SURVEY`, `APP_EDITION`, `APP_SHELL` and `LOG_LEVEL` are those of the
+  tsx servers. The values are passed by name (`-e NAME`), never on the command line. `docker/azurite.env` is read
+  by the config, because `docker run --env-file` would keep the quotes in its values.
+- `--network host` works on **Linux only**, so the image target is for CI (or Linux). On Windows and macOS, `pnpm e2e`
+  stops at once with a message.
+- A container left by an earlier run is removed before its server starts. The global teardown
+  (`e2e/image-teardown.mjs`) saves each container's log to `docker-logs/<name>.log` and removes it. CI uploads
+  `docker-logs/` on failure.
 
 ## Visual parity
 
-The visual specs answer one question: does a page of the app look like the same page on surveyjs.io? For each of 17
-compared screens (the manifest has 18; `history` is skipped) the test opens the app, takes a screenshot and compares
+The visual specs answer one question: does a page of the app look like the same page on surveyjs.io? For each of the
+18 screens of the manifest (`history` awaits its first capture) the test opens the app, takes a screenshot and compares
 it with a **baseline**, a screenshot of the live site that a person captured earlier. The reasons are in [ADR 0020](adr/0020-visual-parity-baselines.md).
 
 The tests are **local only**. The baselines are rendered on a Windows machine, Linux CI renders text differently, and CI
@@ -691,6 +744,7 @@ never touches the functional servers.
 | `maxDiffPixelRatio` | The share of pixels that may differ                                           |
 | `thresholdReason`   | Required when the ratio is above the kind's default                           |
 | `cookieBanner`      | `true` when the consent flag must not be preset                               |
+| `skip`              | A reason: the screen is neither captured nor compared (none today)            |
 
 `idle` is a selector (a loading overlay) that must be hidden or gone before the shot; a timeout fails with
 `Still loading on <side> for <id>: …`. A step is a `click` or a `hover` and nothing else. Every hide, mask and normalization has a non-empty `reason` and a
@@ -772,11 +826,14 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
 1. Print the checklist: `pnpm visual:capture --checklist`. It lists ten steps, the JSON of `Customer feedback` and the
    three responses to submit. Do them in the account. In short: create the project `Visual project` with the survey
    `Team retro`; archive `Old poll`; create `Product poll`, `Event registration` and `Customer feedback` (paste the
-   JSON, publish, submit the three responses, and turn **Grant Access** on in View Results › Details); make sure
-   `Customer feedback` is first in the list. The capture does not need `Customer feedback` to list as published (on
+   JSON, publish, submit the three responses, and turn **Grant Access** on in View Results › Details); save
+   `Customer feedback` twice in the editor (change its title, then restore it) for the history screen, which also puts
+   it first in the list. The capture does not need `Customer feedback` to list as published (on
    live it may list as unpublished); it records the flag as `feedbackPublished` in `states.json`. The two row-menu
-   screens open the menu of `Product poll`, which is unpublished on both sides. Do not open the editor tour or change
-   anything else.
+   screens open the menu of `Product poll`, which shows **Publish** on both sides. On live its flag stays empty, and
+   the old list offers Publish for an empty flag. The app reads an empty flag as published (Step 14), so the app
+   setup unpublishes every survey but `Customer feedback` (`NOT_PUBLISHED` in
+   `data-set.ts`). Do not open the editor tour or change anything else.
 
    **Publish only once.** In the live "..." menu, Publish and Unpublish are one toggle, and a second click
    unpublishes. After you publish `Customer feedback`, reload the page and open "..." again. It must show
@@ -787,13 +844,12 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
    It waits up to ten minutes.
 4. The sign-in may not carry over to Firefox or WebKit. If another window asks again, sign in once per browser (up to
    three times in all).
-5. The script checks the account against the data set, then captures the 17 screens that are not skipped in each browser. It writes
+5. The script checks the account against the data set, then captures the 18 screens in each browser. It writes
    `e2e/visual/baselines/win32/<browser>/<id>.png` and `e2e/visual/baselines/states.json`.
 
-   **A good run** ends with Playwright's summary `54 passed, 3 skipped` (3 sign-ins and 17 captures in each of 3
-   browsers; the 3 skipped are the `history` screen, see Skipped screens below) and no `failed` or `did not run`
-   line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`, `firefox/` and `webkit/` hold 17
-   PNGs each (51 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed, fix the cause and
+   **A good run** ends with Playwright's summary `57 passed` (3 sign-ins and 18 captures in each of 3 browsers) and no
+   `failed` or `did not run` line. Check the files before you go on: `e2e/visual/baselines/win32/chromium/`,
+   `firefox/` and `webkit/` hold 18 PNGs each (54 in all), and `e2e/visual/baselines/states.json` exists. If a screen failed, fix the cause and
    recapture it with `--grep <id>` first. Do not commit a partial set. The `results` screens wait for the live
    "loading..." overlay (`#loadingIndicator`) to go. If a results screenshot still shows it, recapture that screen.
 
@@ -804,26 +860,34 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
 
 **Skipped screens**
 
-A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped.
+A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compared; its test reports as skipped. No
+screen is skipped today.
 
-| Screen    | Reason                                                                                            | How to re-enable                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `history` | Live history is empty on a fresh account (2026-10-20); find how surveyjs.io records history first | Remove `skip` from the screen in the manifest, then run `pnpm visual:capture --grep history` |
+**The history screen**
+
+The capture refuses a history with fewer than two entries and records the live count in `states.json`; the visual run
+gives the app's survey the same number of entries. `e2e/visual/states.test.ts` (part of `pnpm test:unit`) fails when
+`states.json` records fewer than two while a `history.png` is committed: the states file must come from the same
+capture as the images.
 
 **If something fails**
 
-| What you see                                                                                                                                                                    | What to do                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                      |
-| `The page tried to write to the live site (blocked): POST …`                                                                                                                    | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry |
-| `Selectors matched nothing on live for <id>: …`                                                                                                                                 | The live page changed, or the account state differs. Tell the developers the id                                                      |
-| `Selectors matched nothing on live for run: .sd-question__title`                                                                                                                | `Customer feedback` is unpublished (the run page says "not currently available"). Publish it once, then run with `--grep run`        |
-| `Still loading on live for <id>: #loadingIndicator`                                                                                                                             | The live results page took over 30 s to load. Run again with `--grep <id>`                                                           |
-| Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                            | Delete `e2e/visual/.auth/` and run again                                                                                             |
-| One screen fails and the later screens of that browser are skipped                                                                                                              | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                        |
+| What you see                                                                                                                                                                    | What to do                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `The live account is not as the data set needs:` and a list (`missing "…"`, `unexpected "…"`, `expected "…" first, found "…"`, `access is not granted: turn Grant Access on …`) | Fix the account as the list says, then run again. Nothing is captured until the account matches                                                                                                                                                                                                                          |
+| `History: 0 entries, expected at least 2 (survey id …, page …, status …, h1 "…", screenshot …)`                                                                                 | The live History page showed fewer saves than the checklist makes. The message names the page the capture reached (no query string) and a full-page screenshot in `e2e/visual/.state/` (git-ignored, kept after the run). Send both to the developers; if the page is not History, the survey id or the sign-in is wrong |
+| `The page tried to write to the live site (blocked): POST …`                                                                                                                    | The page sent a request that changes data. The script blocked it and kept no image of that screen. Tell the developers; do not retry                                                                                                                                                                                     |
+| `Selectors matched nothing on live for <id>: …`                                                                                                                                 | The live page changed, or the account state differs. Tell the developers the id                                                                                                                                                                                                                                          |
+| `Selectors matched nothing on live for run: .sd-question__title`                                                                                                                | `Customer feedback` is unpublished (the run page says "not currently available"). Publish it once, then run with `--grep run`                                                                                                                                                                                            |
+| `Still loading on live for <id>: #loadingIndicator`                                                                                                                             | The live results page took over 30 s to load. Run again with `--grep <id>`                                                                                                                                                                                                                                               |
+| Sign-in fails when a kept sign-in state is reused (`--keep-sign-in`)                                                                                                            | Delete `e2e/visual/.auth/` and run again                                                                                                                                                                                                                                                                                 |
+| One screen fails and the later screens of that browser are skipped                                                                                                              | The capture runs in serial mode per browser. Fix the cause, then recapture with `--grep <id>`                                                                                                                                                                                                                            |
 
 **Good to know**
 
+- The capture writes `states.json` before the screenshots. Do not commit, stash, check out or restore files under
+  `e2e/visual/baselines/` while it runs: on 2026-10-22 a commit and its amend in another terminal put the old file
+  back, and the capture's states had to be recovered from git.
 - The script deletes the sign-in state (`e2e/visual/.auth/`) when it ends. If a run was killed, delete the folder by
   hand. It is git-ignored; never commit it. `--keep-sign-in` keeps it for the next run.
 - Recapture one screen, or some, with `pnpm visual:capture --grep <id>`. The account checks run again. To recapture
@@ -850,20 +914,26 @@ A screen with `skip` in `e2e/visual/manifest.ts` is neither captured nor compare
 ### Accepted differences
 
 Each difference the team accepts instead of fixing is one row. The table matches the `hide`, `mask`, `normalize` and
-`residual` entries of `e2e/visual/manifest.ts` one to one. No screen has a `maxDiffPixelRatio` above its kind's default. Live
-Form Library and Creator run 3.2.2 and the app runs 3.1.2; the live Dashboard version is not exposed
+`residual` entries of `e2e/visual/manifest.ts` one to one. One screen has a `maxDiffPixelRatio` above its kind's default:
+`projects-expanded` (0.015; `element` 0.01), because Firefox's live capture of 2026-10-22 draws the section 1 px lower
+than the one of 2026-10-20 (ADR 0020 › To confirm). Live
+Form Library and Creator run 3.2.2, as the app does since Step 14; the live Dashboard version is not exposed
 (`states.json`).
 
 | Screen                                                                                                                                  | What                                                                                                                                               | Category  | Reason                                                                                                     |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
-| The six `list-*` screens, `editor-designer`, `editor-embed`, `history` (skipped), `results-summary`, `results-table`, `results-details` | The header's account item reads "Account" on both sides                                                                                            | departure | Step 3 shows the user's name where live shows the constant "Account"; open in ADR 0020 › To confirm        |
+| Six `list-*` screens, `editor-designer`, `editor-embed`, `history`, `results-summary`, `results-table`, `results-details` (with header) | The header's account item reads "Account" on both sides                                                                                            | departure | Step 3 shows the user's name where live shows the constant "Account"; open in ADR 0020 › To confirm        |
 | The same screens                                                                                                                        | The GitHub star count reads "4.7k" on both sides                                                                                                   | live-data | The star count changes daily                                                                               |
 | `list-active`, `list-archived`, `list-project`, `list-project-selector`, `list-row-menu`, `list-row-menu-ids`                           | The survey dates read "1/1/2026" on both sides                                                                                                     | live-data | The dates are the days the data was created                                                                |
-| `editor-designer`, `editor-embed`                                                                                                       | The Creator licence banner is hidden on the app side                                                                                               | library   | survey-creator-core 3.1.2 shows it without a licence key; the live site (3.2.2) has a key                  |
+| `editor-designer`, `editor-embed`                                                                                                       | The Creator licence banner is hidden on the app side                                                                                               | library   | survey-creator-core 3.2.2 shows it without a licence key; the live site has a key                          |
 | `editor-designer`, `editor-embed`                                                                                                       | The app's save status in the bottom bar is hidden                                                                                                  | departure | ADR 0012 R18: the save status is ours; the live bottom bar has none                                        |
 | `editor-embed`                                                                                                                          | The embed code box is masked                                                                                                                       | live-data | The code shows the survey ids                                                                              |
-| `history` (skipped)                                                                                                                     | The entry times read "1/1/2026, 12:00:00 PM" on both sides                                                                                         | live-data | The times are the moments the data was created. The screen is skipped, see Skipped screens                 |
+| `history`                                                                                                                               | The entry times read "1/1/2026, 12:00:00 PM" on both sides                                                                                         | live-data | The times are the moments the data was created                                                             |
+| `history`                                                                                                                               | The app's "by {name}" after each entry time is hidden on the app side                                                                              | departure | ADR 0012 R23: the app names the user of each save; legacy records no user                                  |
+| `history`                                                                                                                               | The app's "Back to My Surveys" link is hidden on the app side                                                                                      | departure | App navigation link, no live counterpart (as on the results pages, Step 9)                                 |
+| `history`                                                                                                                               | The entry times are not underlined in the app. Nothing hides it; it fits within the default ratio                                                  | departure | ADR 0012 R23: no JSON view, so the time is not a link                                                      |
 | `run`                                                                                                                                   | The "Disclaimer of liability" banner is hidden on the live side                                                                                    | departure | ADR 0014 S13: the disclaimer is not built                                                                  |
+| `projects`, `projects-expanded`                                                                                                         | The heading: "Projects" in a level-1 header in the app, "Manage MySurveys" in a level-3 header on live. Nothing hides it                           | departure | ADR 0017 R20: the page's heading is Projects, an h1 as the survey list's                                   |
 | `projects-expanded`                                                                                                                     | The member's display name reads "Visual User" on both sides                                                                                        | live-data | The name belongs to the account that made the data                                                         |
 | `results-summary`, `results-table`, `results-details`, `public-results`                                                                 | The "first 1,000 responses" banner is hidden on the live side                                                                                      | departure | ADR 0015 R12: no 1,000 banner                                                                              |
 | `results-summary`, `results-table`, `public-results`                                                                                    | The Dashboard licence banner is hidden on the app side                                                                                             | library   | The Dashboard library shows it without a licence key; the live site has a key (its version is not exposed) |

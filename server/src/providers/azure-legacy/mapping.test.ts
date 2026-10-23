@@ -10,6 +10,7 @@ import {
   privateQuestionsFromLegacy,
   privateQuestionsToLegacy,
   projectFromLegacy,
+  publishedFlag,
   responseFromLegacy,
   surveyFromLegacy,
   themeFromLegacy,
@@ -77,10 +78,16 @@ describe("surveyFromLegacy", () => {
     expect(s.updatedAt).toBe("2024-01-02T03:04:05.678Z");
   });
 
-  it("maps ispublished 1 to true and 0 or NULL to false", () => {
+  it("reads an empty (NULL) published flag as published, as the old run page does", () => {
+    expect(publishedFlag(null)).toBe(true);
+    expect(publishedFlag(1)).toBe(true);
+    expect(publishedFlag(0)).toBe(false);
+  });
+
+  it("maps ispublished 1 or NULL to true and 0 to false", () => {
     expect(surveyFromLegacy(surveyRow({ ispublished: 1 }), "personal").published).toBe(true);
     expect(surveyFromLegacy(surveyRow({ ispublished: 0 }), "personal").published).toBe(false);
-    expect(surveyFromLegacy(surveyRow({ ispublished: null }), "personal").published).toBe(false);
+    expect(surveyFromLegacy(surveyRow({ ispublished: null }), "personal").published).toBe(true);
   });
 
   it("maps the tinyint flags: 1 is true, anything else false", () => {

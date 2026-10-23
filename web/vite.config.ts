@@ -1,7 +1,7 @@
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import { securityHeaders } from "./security-headers";
+import { securityHeaders } from "../server/src/web/security-headers.ts";
 
 // E2E_API_PROXY_TARGET points a second preview at another server (the e2e licence-notice run).
 const backend = process.env["E2E_API_PROXY_TARGET"] ?? "http://127.0.0.1:3000";

@@ -4,7 +4,8 @@ Date: 2026-10-17
 
 ## Status
 
-Accepted. The product owner has not confirmed rulings S1, S11 and S13 yet (see "To confirm").
+Accepted. The product owner has not confirmed rulings S1, S11 and S13 yet (see "To confirm"). In Step 14 the
+product owner decided S1's empty published flag: it means published.
 
 ## Context
 
@@ -31,13 +32,21 @@ The rulings are numbered S1 to S25 and grouped by topic. "Keeps" means the legac
 
 | #   | Question               | Ruling                                                                                                                                                                                                                                                                                                         | Legacy                                                                                                                                                                                                                                                                                        |
 | --- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | Who can run a survey   | A survey is **available** when it exists **and** `published` is true. Archived does **not** block. Otherwise `404 survey-not-available`, title "This survey is not available", the same for an unknown and an unpublished survey. One rule for `getPublishedSurvey`, `submitResponse` and `uploadResponseFile` | Keeps: an archived published survey runs. Departs: the run page refused only `ispublished = 0`, so an empty (`NULL`) flag ran; an unknown id gave a blank page; the post and upload endpoints never looked at the published state. A blocked owner also made the page unavailable (not built) |
+| S1  | Who can run a survey   | A survey is **available** when it exists and is published; an empty (`NULL`) flag is published (Step 14). Archived does not block. Else `404 survey-not-available`, "This survey is not available", same for unknown and unpublished. The rule of `getPublishedSurvey`, `submitResponse`, `uploadResponseFile` | Keeps: an archived published survey runs; an empty (`NULL`) flag runs (the page refused only when `ispublished = 0`). Departs: an unknown id gave a blank page; the post and upload endpoints never looked at the published state. A blocked owner also made the page unavailable (not built) |
 | S14 | `PublishedSurvey.name` | The name may be empty (a string of at most 200 characters, like `Survey.name`)                                                                                                                                                                                                                                 | The page showed no name and had an empty title                                                                                                                                                                                                                                                |
 
-Why: one answer for "unknown" and "unpublished" tells a stranger nothing about surveys that exist. The
-mapping of the provider already reads an empty flag as "not published" (layout, 9.1), so S1 follows it, and the
-cost is that a survey that was never switched on the old site needs one **Publish**. Archived surveys keep
-collecting until they are unpublished, as on the old site: archiving is a list view, not a switch off.
+Why: one answer for "unknown" and "unpublished" tells a stranger nothing about surveys that exist. Archived
+surveys keep collecting until they are unpublished, as on the old site: archiving is a list view, not a switch
+off.
+
+**Step 14 change (product owner, 2026-10-21): an empty flag means published.** Until Step 14 the mapping read an
+empty (`NULL`) `ispublished` as "not published", so a survey never switched on the old site needed one
+**Publish**. On production N of N surveys (most) have an empty flag, and the old run page ran them.
+Once surveyjs.io redirects old run links to the app, they must keep running. So only `ispublished = 0` is
+unpublished, everywhere in the app: the run page and its two public writes, the survey list and the API's
+`published` field (`publishedFlag` in `mapping.ts`, layout 9.1). Existing rows are not rewritten. Create and clone
+still write no `ispublished` (`NULL`), as the old site and the app always did, so a new or cloned survey is
+published from the start; Publish and Unpublish write 1 and 0 as before. The memory provider matches.
 
 ### One response per respondent (S2 to S4)
 
@@ -95,7 +104,7 @@ This also settles the Step 3 limitation of the sign-in limit.
 
 Why: the three public operations accept anything from anyone, and the only legacy defence is an unguessable id.
 The numbers are defaults to tune in production. The counters live in the process; a shared store for several
-instances is open for Step 14.
+instances is open for later (one instance is enough for mode 1.1).
 
 ### Respondent files (S11)
 
@@ -140,7 +149,7 @@ of the old site that put answers in the query string, which the old page did wit
 
 | #   | Question                | Ruling                                                                                                                                                                                                                                                                                                                                                                                                                     | Legacy        |
 | --- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| S23 | Conformance strategy    | Tests write only to surveys they create in the admin's Personal scope: a definition through `POST /surveys { definition }`, publish through `PATCH`, archive and delete at the end. Fixtures are read only (`01` published, `02` and `06` unpublished, `05` published and archived, so available). "Stored once" is read with `getResultStats`. The IP is checked in server tests and the Azurite writes test until Step 9 | Not in legacy |
+| S23 | Conformance strategy    | Tests write only to surveys they create in the admin's Personal scope: a definition through `POST /surveys { definition }`, publish through `PATCH`, archive and delete at the end. Fixtures are read only (`01`, `02` with an empty flag and archived `05` available; `03` and `06` unpublished). "Stored once" is read with `getResultStats`. The IP is checked in server tests and the Azurite writes test until Step 9 | Not in legacy |
 | S24 | End-to-end minimisation | Only the e2e task runs Playwright, and only the new spec (once on Chromium while iterating, once on all three browsers, once in Azurite mode), the changed `survey-actions.spec.ts` once, and `editor.spec.ts` once on Chromium. Never the full suite. The e2e servers run with `PUBLIC_RATE_LIMIT` and `PUBLIC_FILE_RATE_LIMIT` at 100000                                                                                 | Not in legacy |
 | S25 | Records                 | This ADR (S1 to S23); a "Step 8" section in [ADR 0010](0010-writing-to-the-legacy-stores.md#step-8-result-rows-and-completion-markers); an addendum to [ADR 0004](0004-body-limit.md#addendum-step-8); a note on [ADR 0005](0005-respondent-files-as-urls.md#note-step-8)                                                                                                                                                  | Not in legacy |
 
@@ -186,8 +195,9 @@ page's `id` search member is no longer reserved (only `locale` is), because the 
 path. The Idempotency-Key no longer depends on `crypto.randomUUID`
 ([ADR 0019](0019-run-page-isolation-and-security-headers.md)). S21 below stays as the record of Step 8.
 
-- A survey runs while it is published, archived or not, and a survey that was never switched on the old site
-  needs one Publish.
+- A survey runs while it is published, archived or not. Since Step 14 a survey never switched on the old site
+  runs too (its flag is empty), and a new or cloned survey runs from the start: an author who does not want
+  answers yet unpublishes it.
 - "Limit to one response" is a courtesy limit. It stops the ordinary repeat visit from the same browser. It does
   not stop a respondent who clears the data, changes browser or device, or calls the API. Two simultaneous first
   submissions of one client may both be stored.
@@ -198,7 +208,7 @@ path. The Idempotency-Key no longer depends on `crypto.randomUUID`
   for all, and a stored address that is the proxy's. A `TRUST_PROXY` that is too wide lets callers pick their
   address.
 - The public rate limits are per process. Several instances count on their own until a shared store exists
-  (Step 14).
+  (later; mode 1.1 runs one instance).
 - Respondent files have no quota and no expiry. Total storage is bounded only by the rate limits, a file link is
   public, and a file that was never submitted stays until the survey is deleted.
 - Rows are written directly, without the legacy HTML cleaner, so new rows hold the text as typed while old rows
@@ -221,9 +231,15 @@ earlier response to a limited survey; the library's cookie still does. See [ADR 
 These rulings are decisions of the team, not of the product owner. Until the owner confirms them, they stand as
 written.
 
-- **S1:** an archived survey that is still published keeps collecting responses (as on the old site), and a
-  survey whose published flag is empty on the old site counts as not published (the old page ran it).
+- **S1:** an archived survey that is still published keeps collecting responses (as on the old site). The
+  empty published flag is decided (Step 14, 2026-10-21): it means published, as the old page ran it.
 - **S11:** any file type is accepted, there is no quota for respondent files, and files uploaded but never
   submitted stay until the survey is deleted. Total respondent storage is bounded only by the rate limits.
 - **S13:** the "Disclaimer of liability" banner for owners without a licence is not built. It needs a decision in
   Step 13: whether it belongs to "today's footer", and what licence data it reads.
+
+## Open
+
+- **The initial published state of a new survey.** A setting such as `NEW_SURVEY_PUBLISHED=unset|false` would
+  let an operator choose whether create and clone leave the flag empty (published, as today) or write 0
+  (unpublished). The product owner offered it as optional in Step 14; it is not built.

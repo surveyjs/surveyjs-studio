@@ -62,6 +62,7 @@ describe("getConfig", () => {
         maxResponseBytes: 1048576,
         maxDocumentBytes: 30000000,
       },
+      readOnly: false,
       links: {
         settings: "https://surveyjs.io/manage",
         helpDesk: "https://surveyjs.answerdesk.io/ticket/list?preset=mytickets",
@@ -103,6 +104,7 @@ describe("getConfig", () => {
         maxResponseBytes: 100,
         maxDocumentBytes: 400,
       },
+      readOnly: false,
       // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
       links: {
         settings: "https://surveyjs.io/manage",

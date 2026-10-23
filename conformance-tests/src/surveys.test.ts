@@ -10,9 +10,9 @@
  * Never leave or create an archived survey in the outsider's Personal scope: e2e asserts it has none.
  * (This file archives nothing; `survey-actions.test.ts` archives only in the admin's scope.)
  */
-import { describe, expect, it, type TestContext } from "vitest";
-import { call, codeOf, sessionHeaders, signedIn } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { GUID, cleanUp, call, codeOf, as, listPage, walkPages } from "./harness.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider } = fixtureUsers;
 
@@ -31,8 +31,6 @@ const fixture = {
   outsiderQuiz: "22222222-0000-4000-8000-a00000000007",
   apiCreated: "22222222-0000-4000-8000-a00000000008",
 };
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Survey {
   id: string;
@@ -55,19 +53,6 @@ interface SurveyPage {
 
 type ListQuery = Record<string, string | number | boolean>;
 
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Record<string, string>> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
 function listPath(query: ListQuery): string {
   const text = new URLSearchParams(
     Object.entries(query).map(([name, value]): [string, string] => [name, String(value)]),
@@ -79,11 +64,8 @@ function list(headers: Record<string, string>, query: ListQuery = {}): Promise<R
   return call("GET", "/surveys", { path: listPath(query), headers });
 }
 
-async function page(headers: Record<string, string>, query: ListQuery = {}): Promise<SurveyPage> {
-  const response = await list(headers, query);
-  expect(response.status).toBe(200);
-  return (await response.json()) as SurveyPage;
-}
+const page = (headers: Record<string, string>, query: ListQuery = {}): Promise<SurveyPage> =>
+  listPage<Survey>("/surveys", listPath(query), headers);
 
 /** Negative when `a` comes first in list order: updatedAt newest first, then id (code points). */
 function listOrder(a: Survey, b: Survey): number {
@@ -104,19 +86,13 @@ function expectSorted(items: readonly Survey[]): void {
 
 /** Every page of a list, each checked for order, and the whole list checked again. */
 async function walk(headers: Record<string, string>, query: ListQuery = {}): Promise<Survey[]> {
-  const all: Survey[] = [];
-  let cursor: string | null = null;
-  for (let pages = 1; ; pages += 1) {
-    if (pages > 1000) throw new Error("the list does not end");
-    const current = await page(headers, { ...query, ...(cursor !== null && { cursor }) });
+  const pages = await walkPages<Survey>("/surveys", listPath(query), headers, (current) => {
     if (query.limit !== undefined) {
       expect(current.items.length).toBeLessThanOrEqual(Number(query.limit));
     }
     expectSorted(current.items);
-    all.push(...current.items);
-    if (current.nextCursor === null) break;
-    cursor = current.nextCursor;
-  }
+  });
+  const all = pages.flatMap((current) => current.items);
   expectSorted(all);
   return all;
 }
@@ -129,8 +105,17 @@ function find(items: readonly Survey[], id: string): Survey {
   return found as Survey;
 }
 
+/** Creates a survey; one that was created is deleted at the end of the test. */
 async function create(headers: Record<string, string>, body?: unknown): Promise<Response> {
-  return call("POST", "/surveys", { headers, ...(body !== undefined && { body }) });
+  const response = await call("POST", "/surveys", {
+    headers,
+    ...(body !== undefined && { body }),
+  });
+  if (response.status === 201) {
+    const { id } = (await response.clone().json()) as { id: string };
+    onTestFinished(() => cleanUp(headers, id));
+  }
+  return response;
 }
 
 async function created(headers: Record<string, string>, body?: unknown): Promise<Survey> {
@@ -191,6 +176,8 @@ describe("listSurveys", () => {
       permissions: { canModify: true },
       settings: { publicResults: true, storeRespondentIp: true },
     });
+    // Draft idea's published flag is empty (NULL), which means published.
+    expect(find(items, fixture.draftIdea)?.published).toBe(true);
   });
 
   it("lists archived surveys with archived=true", async (ctx) => {
@@ -318,7 +305,8 @@ describe("createSurvey", () => {
     expect(response.headers.get("location")).toBe(`/api/v1/surveys/${survey.id}`);
     expect(survey).toMatchObject({
       projectId: null,
-      published: false,
+      // The legacy published flag stays empty, which means published.
+      published: true,
       archived: false,
       permissions: { canModify: true },
       settings: { publicResults: false, storeRespondentIp: false },
@@ -431,6 +419,19 @@ describe("getSurvey", () => {
       projectId: null,
       permissions: { canModify: true },
     });
+  });
+
+  it("reads an empty published flag as published and 0 as unpublished", async (ctx) => {
+    const headers = await as(ctx, owner);
+    for (const [id, published] of [
+      [fixture.draftIdea, true],
+      [fixture.apiCreated, true],
+      [fixture.oldPoll, false],
+    ] as const) {
+      const response = await get(headers, id);
+      expect(response.status, id).toBe(200);
+      expect(await response.json(), id).toMatchObject({ published });
+    }
   });
 
   it("answers a project survey to a member", async (ctx) => {

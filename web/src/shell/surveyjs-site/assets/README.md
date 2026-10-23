@@ -187,6 +187,18 @@ The page uses the `.my-surveys-history-item` and `.my-surveys-page__clock-icon` 
 `pages/my-surveys.scss` copy. It shows the time in the browser's locale and time zone with the zone
 named (the site shows the server's `DateTime.ToString()` without a zone).
 
+Step 14 (visual parity) copies the frame of `the site's page markup` into `src/history/HistoryPage.tsx`:
+`section.my-surveys-page__results-section`, `div.mod-pt-40 > div.my-surveys-page__header-content >
+h1.title.my-surveys-page__title`, and the entries in `div.mod-mt-50.mod-mb-50`. Changes to the markup:
+
+- The entries are a `ul` of `li.my-surveys-history-item`, not `div`s, and the time is a `time`. The site
+  wraps the clock and the time in `span.action-link`, a link that opens the saved JSON. The app has no
+  JSON view (ADR 0012 R23): the entry takes the link's font and colour (`history.module.css`), not its
+  underline or pointer.
+- " by {name}" follows the time in `span.my-surveys-history-item__user` when the user is known.
+- The loading, error, "No edits yet." and Show more texts sit in the entries' `div`; "Back to My
+  Surveys" follows it. All of them are the app's own.
+
 Step 8 (the run page, `src/run/`) copies one piece of markup, from commit `adeaa47cbd`
 (2026-10-16; `the site's page markup` has not changed since `a1fd364fb4`, 2026-10-02, so it is
 the same in the commits above):

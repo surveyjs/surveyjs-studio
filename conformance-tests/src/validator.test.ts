@@ -168,6 +168,7 @@ describe("validator (real contract, smoke)", () => {
         maxResponseBytes: 1,
         maxDocumentBytes: 1,
       },
+      readOnly: false,
     };
     expect(await v.check("GET", "/config", respond(200, config, JSON_TYPE))).toEqual([]);
     const bad = respond(200, { ...config, edition: "x" }, JSON_TYPE);

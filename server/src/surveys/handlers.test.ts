@@ -111,6 +111,16 @@ describe("createSurvey", () => {
     expect(res.json()).toMatchObject({ name: "New Survey 3", projectId: null });
   });
 
+  it("creates a published survey, which the run page serves at once", async () => {
+    const { server, headers } = await start();
+    const res = await create(server, headers);
+    expect(res.json()).toMatchObject({ published: true });
+    const run = await server.inject({
+      url: `/api/v1/public/surveys/${res.json<{ id: string }>().id}`,
+    });
+    expect(run.statusCode).toBe(200);
+  });
+
   it("names a project survey from that project's surveys only", async () => {
     const { server, headers } = await start();
     const res = await create(server, headers, { projectId: PROJECT_ID });
@@ -355,7 +365,7 @@ describe("deleteSurvey", () => {
 });
 
 describe("cloneSurvey", () => {
-  it("answers 201 with Location and the clock as createdAt and updatedAt", async () => {
+  it("answers 201 with Location, the clock as createdAt and updatedAt, and a published copy of an unpublished source", async () => {
     const { server, headers } = await start();
     const res = await server.inject({
       method: "POST",
@@ -367,7 +377,7 @@ describe("cloneSurvey", () => {
     expect(body).toMatchObject({
       name: "Copy of New Survey 4",
       projectId: PROJECT_ID,
-      published: false,
+      published: true,
       createdAt: NOW,
       updatedAt: NOW,
     });

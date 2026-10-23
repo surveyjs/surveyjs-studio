@@ -9,6 +9,7 @@ import type { IdentityProvider } from "./auth/identity.js";
 import { createIdentityProvider } from "./auth/providers/index.js";
 import type { Clock } from "./auth/session.js";
 import { createSessionHandlers } from "./auth/session-handlers.js";
+import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
@@ -17,12 +18,15 @@ import { createHandlers } from "./handlers.js";
 import { REDACTED_LOG_PATHS, serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
+import { createReadiness } from "./readiness.js";
 import { createContentHandlers } from "./content/handlers.js";
 import { createFileHandlers } from "./files/handlers.js";
 import { createResultHandlers } from "./results/handlers.js";
 import { serverSecurityHeaders } from "./security-headers.js";
 import { createSurveyHandlers } from "./surveys/handlers.js";
 import { createViewHandlers } from "./views/handlers.js";
+import { securityHeaders } from "./web/security-headers.js";
+import { isServerPath, registerWebApp, requestPathname } from "./web/static.js";
 
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
@@ -78,24 +82,54 @@ export async function buildApp(
       return sendProblem(reply, body);
     },
     bodyLimit: config.limits.maxResponseBytes,
+    // Node answers 408 and closes a request whose headers and body have not all arrived in time
+    // (Fastify's default, 0, waits forever); this also bounds the drain of an early answer.
+    requestTimeout: config.requestTimeoutMs,
+    // Node checks the timeouts only every `connectionsCheckingInterval` (default 30 s). Node's own
+    // `headersTimeout` (60 s) must not exceed `requestTimeout`, or the request one is not enforced:
+    // Fastify sets `requestTimeout` after creating the server and does not adjust it.
+    http: {
+      connectionsCheckingInterval: Math.min(30_000, config.requestTimeoutMs),
+      headersTimeout: Math.min(60_000, config.requestTimeoutMs),
+    },
+    // `app.close()` closes idle keep-alive sockets and waits for requests in flight (Fastify's
+    // default on Node 18.2+, named here so a shutdown never hangs on an idle client).
+    forceCloseConnections: "idle",
     // Empty trusts nobody: `request.ip` is then the socket's peer, whatever X-Forwarded-For says.
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
 
   const https = new URL(config.publicBaseUrl).protocol === "https:";
+  /** With `WEB_ROOT`, any path but the server's own is the web app's and gets its policy (ADR 0021). */
+  function headersFor(url: string): Record<string, string> {
+    const pathname = requestPathname(url);
+    if (config.webRoot === null || isServerPath(pathname)) {
+      return serverSecurityHeaders(url, { https });
+    }
+    return Object.fromEntries(
+      Object.entries(securityHeaders(pathname, { https })).map(([name, value]) => [
+        name.toLowerCase(),
+        value,
+      ]),
+    );
+  }
   app.addHook("onSend", (request, reply, payload, done) => {
     void reply.header("x-request-id", request.id);
     // A route's own header wins: the dev sign-in page and file downloads set a CSP of their own.
-    for (const [name, value] of Object.entries(serverSecurityHeaders(request.url, { https }))) {
+    for (const [name, value] of Object.entries(headersFor(request.url))) {
       if (!reply.hasHeader(name)) void reply.header(name, value);
     }
     done(null, payload);
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      drainSmallOverflow(request, reply);
+    }
     const body = toProblem(error);
-    // A 501 for a not-yet-implemented operation is an expected answer, not a server fault.
-    if (body.status >= 500 && body.code !== "not-implemented") {
+    // A 501 for a not-yet-implemented operation and a read-only refusal are expected answers, not
+    // server faults.
+    if (body.status >= 500 && body.code !== "not-implemented" && body.code !== "read-only") {
       request.log.error({ err: error }, "unhandled error");
     }
     return sendProblem(reply, body);
@@ -110,9 +144,12 @@ export async function buildApp(
 
   app.get("/healthz", () => ({ status: "ok" }));
 
+  // Not rate limited: concurrent calls share one check, and its answer is reused for a few seconds.
+  const readiness = createReadiness(providers, app.log, options.now);
   app.get("/readyz", async (_request, reply) => {
-    const ready = await providers.ready().catch(() => false);
-    return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable" });
+    const { failing } = await readiness.check();
+    if (failing.length === 0) return reply.send({ status: "ok" });
+    return reply.code(503).send({ status: "unavailable", failing });
   });
 
   // Only routes with a `rateLimit` config are limited (sign-in and the public operations); each
@@ -222,9 +259,13 @@ export async function buildApp(
     },
     // The webhook's signature covers the body exactly as sent: it is checked before parsing.
     rawBodyOperations: ["receiveAccountDeleted"],
+    readOnly: config.readOnly,
   });
 
   if (config.apiDocs) registerApiDocs(app, options.apiDocsPath ?? defaultApiDocsPath);
+
+  // Last: its catch-all answers only the GET and HEAD paths no route above took.
+  if (config.webRoot !== null) await registerWebApp(app, config.webRoot);
 
   app.addHook("onClose", async () => {
     await providers.close();

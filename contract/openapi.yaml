@@ -253,6 +253,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /projects/{projectId}:
     parameters:
       - { $ref: '#/components/parameters/ProjectId' }
@@ -296,6 +297,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Projects]
       operationId: deleteProject
@@ -317,6 +319,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Members
   /projects/{projectId}/members:
@@ -372,6 +375,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /projects/{projectId}/members/{userId}:
     parameters:
       - { $ref: '#/components/parameters/ProjectId' }
@@ -407,6 +411,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Members]
       operationId: removeMember
@@ -427,6 +432,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Surveys
   /surveys:
@@ -464,6 +470,7 @@ paths:
         more than the highest number among the active surveys of the target scope
         whose names are `New Survey N`. Without a `definition`, the survey starts
         from the default template. The default template is an empty survey (`{}`).
+        A new survey is published: it runs at once, as on surveyjs.io.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -485,6 +492,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -541,6 +549,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Surveys]
       operationId: deleteSurvey
@@ -559,6 +568,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/clones:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -567,7 +577,7 @@ paths:
       operationId: cloneSurvey
       summary: Clone a survey
       description: |
-        Copies the definition and theme into a new, unpublished, active survey.
+        Copies the definition and theme into a new, published, active survey.
         Anyone who can read the source may clone it. The copy goes to the source's
         project (or Personal), unless `projectId` is given (`null` = the caller's
         Personal surveys; a project requires membership). The caller becomes the
@@ -599,6 +609,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # --------------------------------------------------------- Survey content
   /surveys/{surveyId}/definition:
@@ -652,6 +663,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/theme:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -703,6 +715,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ------------------------------------------------------------------ Files
   /surveys/{surveyId}/assets:
@@ -748,6 +761,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- History
   /surveys/{surveyId}/history:
@@ -824,6 +838,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}/results/stats:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -943,6 +958,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
     delete:
       tags: [Views]
       operationId: resetResultsView
@@ -962,6 +978,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ----------------------------------------------------------------- Public
   /public/surveys/{surveyId}:
@@ -1043,6 +1060,7 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /public/surveys/{surveyId}/files:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -1080,6 +1098,7 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /public/files/{fileId}:
     parameters:
       - name: fileId
@@ -1204,7 +1223,8 @@ paths:
         and the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`. A missing or wrong
         signature, or a timestamp more than five minutes from the server clock, fails with
         `401 invalid-signature` before the body is read. A server without a webhook secret answers
-        `404`.
+        `404` (`503 read-only` while `READ_ONLY=true`, which refuses every call before the
+        signature is checked).
 
         `204` means the erasure is finished. Repeating a call is harmless: the second erasure finds
         nothing. Events of another `type` answer `204` and change nothing.
@@ -1237,6 +1257,7 @@ paths:
         '401': { $ref: '#/components/responses/InvalidSignature' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
 components:
   securitySchemes:
@@ -1437,6 +1458,19 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ReadOnly:
+      description: |
+        The server runs read-only (`read-only`): it refuses every write before reading the
+        request, whoever sends it. Reads, sign-in and sign-out keep working. `AppConfig.readOnly`
+        says so in advance.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://my-surveys.surveyjs.io/problems/read-only
+            title: My Surveys is read-only at the moment. Changes cannot be saved.
+            status: 503
+            code: read-only
 
   schemas:
     # ------------------------------------------------------------- Basics
@@ -1504,6 +1538,7 @@ components:
             - validation-failed
             - rate-limited
             - not-implemented
+            - read-only
             - internal-error
         errors:
           type: array
@@ -1545,7 +1580,7 @@ components:
 
     AppConfig:
       type: object
-      required: [edition, shell, authMethods, limits]
+      required: [edition, shell, authMethods, limits, readOnly]
       properties:
         edition:
           type: string
@@ -1583,6 +1618,11 @@ components:
             maxDocumentBytes:
               type: integer
               description: Largest survey definition or theme body accepted, in bytes.
+        readOnly:
+          type: boolean
+          description: |
+            True while the server refuses every write with `503 read-only` (`READ_ONLY=true`); the
+            front-end shows a banner and opens the editor read-only.
         links:
           type: object
           description: Shell links, such as account settings and help desk.
@@ -1715,7 +1755,11 @@ components:
           maxLength: 200
           description: May be empty for legacy records.
         projectId: { $ref: '#/components/schemas/NullableProjectId' }
-        published: { type: boolean }
+        published:
+          type: boolean
+          description: |
+            Whether the survey runs. False only after Unpublish: a new survey, and a legacy
+            survey whose flag was never set, is published.
         archived: { type: boolean }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }

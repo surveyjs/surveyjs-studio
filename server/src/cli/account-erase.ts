@@ -25,7 +25,10 @@ Options:
                       variables already set in the environment win
   --help              Show this text
 
-Exit codes: 0 success, 1 user not found or store error, 2 usage error or no persistent store`;
+With READ_ONLY=true, --yes is refused (exit 2); the dry run still works.
+
+Exit codes: 0 success, 1 user not found or store error, 2 usage error, no persistent store or
+READ_ONLY=true with --yes`;
 
 export type ParsedArgs =
   | { kind: "run"; user: string; yes: boolean; envFile: string | null }
@@ -104,7 +107,7 @@ export async function run(
     return 2;
   }
   const now = deps.now ?? Date.now;
-  return withProviders(args.envFile, io, deps, async (providers) => {
+  return withProviders(args.envFile, io, deps, { writes: args.yes }, async (providers) => {
     let user: User | null;
     if (GUID.test(args.user)) {
       user = await providers.users.getUser(args.user);

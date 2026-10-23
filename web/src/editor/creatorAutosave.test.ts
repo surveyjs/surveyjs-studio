@@ -20,7 +20,7 @@ function fakeEvent() {
 type Timer = ReturnType<typeof setTimeout> | null;
 
 /**
- * What the wiring sees of the Creator and its Themes tab, behaving as Creator 3.1.2 does: a change
+ * What the wiring sees of the Creator and its Themes tab, behaving as Creator 3.2.2 does: a change
  * fires the event, then (re)schedules the save function after the delay in `autoSaveTimerId`.
  * `log` records the saves handed over and the dispose, in order; `outcomes` what reaches the
  * Creator's save callback.

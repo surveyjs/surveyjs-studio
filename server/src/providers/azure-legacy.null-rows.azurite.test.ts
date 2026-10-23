@@ -212,7 +212,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
     expect(await store().users.findUserByEmail(" ")).toBeNull();
   });
 
-  it("lists a survey with NULL name, creatorid and createdat using the defaults", async () => {
+  it("lists a survey with NULL name, creatorid, createdat and ispublished using the defaults", async () => {
     const expected: SurveyRecord = {
       id: NULL_NAME_SURVEY,
       name: "",
@@ -220,7 +220,8 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
       creatorId: null,
       postId: "eeeeeeee-0000-4000-8000-0000000000d1",
       resultId: "eeeeeeee-0000-4000-8000-0000000000c1",
-      published: false,
+      // An empty published flag means published (ADR 0014 S1).
+      published: true,
       archived: false,
       createdAt: OLDEST,
       updatedAt: OLDEST,

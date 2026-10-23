@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse, http as mswHttp } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import type { Survey, SurveyPage } from "../api/surveys";
 import { definitionHandler, themeHandler } from "../test/content-handlers";
@@ -188,6 +189,34 @@ describe("renaming a survey in the list", () => {
 
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Could not rename the survey. Please try again.",
+    );
+    expect(shownName().textContent).toBe("Customer feedback");
+  });
+});
+
+describe("a refused write on a read-only server", () => {
+  it("shows the Problem title when the rename is refused", async () => {
+    await renderList("/", sampleSurvey);
+    server.use(
+      mswHttp.patch("*/api/v1/surveys/:surveyId", () =>
+        HttpResponse.json(
+          {
+            type: "https://my-surveys.surveyjs.io/problems/read-only",
+            title: "My Surveys is read-only at the moment. Changes cannot be saved.",
+            status: 503,
+            code: "read-only",
+          },
+          { status: 503, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+
+    const box = startRename();
+    fireEvent.change(box, { target: { value: "Renamed" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "My Surveys is read-only at the moment. Changes cannot be saved.",
     );
     expect(shownName().textContent).toBe("Customer feedback");
   });

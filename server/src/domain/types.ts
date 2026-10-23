@@ -10,7 +10,7 @@ export interface SurveyRecord {
   readonly creatorId: string | null; // legacy all-zero GUID -> null
   readonly postId: string;
   readonly resultId: string;
-  readonly published: boolean; // legacy NULL -> false
+  readonly published: boolean; // legacy NULL -> true (only 0 is unpublished, ADR 0014 S1)
   readonly archived: boolean;
   readonly createdAt: string; // ISO 8601 UTC, Date#toISOString() format
   readonly updatedAt: string; // ISO 8601 UTC (legacy Surveys.timestamp)

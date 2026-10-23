@@ -1,8 +1,8 @@
 /**
- * The security headers of the web app's pages (ADR 0019). `vite preview` applies them through the
- * plugin in vite.config.ts; a production static host uses the same values (docs/operations.md).
- * Scripts come only from the app's origin; images, media, data (`choicesByUrl`) and frames of a
- * survey may come from any https site.
+ * The security headers of the web app's pages (ADR 0019). The server applies them when `WEB_ROOT`
+ * is set (ADR 0021), `vite preview` through the plugin in web/vite.config.ts, and another static
+ * host must send the same values (docs/operations.md). Scripts come only from the app's origin;
+ * images, media, data (`choicesByUrl`) and frames of a survey may come from any https site.
  */
 export interface SecurityHeaderOptions {
   /** The site is served over HTTPS: adds HSTS. */

@@ -7,27 +7,28 @@
  * fixture survey gets a file: the checks on fixtures are refused uploads. Cleanup (archive, then
  * delete) is registered with `onTestFinished` right after a survey is created.
  */
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   baseUrl,
   call,
   codeOf,
   expectConforms,
-  sessionHeaders,
-  signedIn,
   upload,
+  as,
+  cleanUp,
+  newSurvey,
+  ownSurvey,
 } from "./harness.js";
-import { fixtureUsers, type SignInResult } from "./sign-in.js";
+import { fixtureUsers } from "./sign-in.js";
 
 const { admin } = fixtureUsers;
 
 const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
-const UNPUBLISHED_FIXTURE = "22222222-0000-4000-8000-a00000000002";
+/** "Engineering retro": its published flag is 0. */
+const UNPUBLISHED_FIXTURE = "22222222-0000-4000-8000-a00000000006";
 
 const UPLOAD = "/public/surveys/{surveyId}/files";
 const DOWNLOAD = "/public/files/{fileId}";
-
-type Headers = Record<string, string>;
 
 interface StoredFile {
   id: string;
@@ -50,49 +51,6 @@ function pngOfSize(size: number): Buffer {
 
 /** The start of a PDF: not an allowed image or video type, so it is stored as octet-stream. */
 const PDF_LIKE = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n");
-
-const sessions = new Map<string, SignInResult>();
-
-/** Request headers of the user's browser; signs in once per user and test file. */
-async function as(ctx: TestContext, user: { id: string }): Promise<Headers> {
-  let session = sessions.get(user.id);
-  if (!session) {
-    session = await signedIn(ctx, user.id);
-    expect(session.callback.status).toBe(302);
-    sessions.set(user.id, session);
-  }
-  return sessionHeaders(session);
-}
-
-/** Archives and deletes a survey the test created; a survey that is already gone is fine. */
-async function cleanUp(headers: Headers, id: string): Promise<void> {
-  const archived = await call("PATCH", "/surveys/{surveyId}", {
-    path: `/surveys/${id}`,
-    headers: { "content-type": "application/merge-patch+json", ...headers },
-    body: { archived: true },
-  });
-  if (archived.status === 404) return;
-  expect(archived.status).toBe(200);
-  const deleted = await call("DELETE", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
-  expect([204, 404]).toContain(deleted.status);
-}
-
-/** Creates a survey in the admin's Personal scope, publishes it unless told not to, and registers its cleanup. */
-async function ownSurvey(headers: Headers, published = true): Promise<string> {
-  const response = await call("POST", "/surveys", { headers, body: { definition: {} } });
-  expect(response.status).toBe(201);
-  const { id } = (await response.json()) as { id: string };
-  onTestFinished(() => cleanUp(headers, id));
-  if (published) {
-    const patched = await call("PATCH", "/surveys/{surveyId}", {
-      path: `/surveys/${id}`,
-      headers: { "content-type": "application/merge-patch+json", ...headers },
-      body: { published: true },
-    });
-    expect(patched.status).toBe(200);
-  }
-  return id;
-}
 
 /** A form with one file part named `file` (or `field`), with the declared type and name. */
 function fileForm(bytes: Buffer, name = "a.png", type = "image/png", field = "file"): FormData {
@@ -147,6 +105,12 @@ describe("uploadResponseFile", () => {
     expect(file.headers.get("content-type")).toBe("image/png");
     expect(file.headers.get("content-disposition")).toMatch(/^inline; /);
     expect(Buffer.from(await file.arrayBuffer())).toStrictEqual(PNG_1X1);
+  });
+
+  it("stores a file for a new survey, whose empty published flag means published", async (ctx) => {
+    const surveyId = await newSurvey(await as(ctx, admin));
+    const { stored } = await uploaded(surveyId, fileForm(PNG_1X1, "new.png"));
+    expect((await download(stored.id)).status).toBe(200);
   });
 
   it("stores a file of another type as octet-stream and serves it as an attachment", async (ctx) => {
@@ -220,7 +184,7 @@ describe("uploadResponseFile", () => {
   });
 
   it("answers 404 survey-not-available for unpublished and unknown surveys", async (ctx) => {
-    const unpublished = await ownSurvey(await as(ctx, admin), false);
+    const unpublished = await ownSurvey(await as(ctx, admin), { published: false });
     for (const surveyId of [unpublished, UNPUBLISHED_FIXTURE, UNKNOWN_ID]) {
       const response = await uploadTo(surveyId, fileForm(PNG_1X1));
       expect(response.status).toBe(404);

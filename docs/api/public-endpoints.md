@@ -37,7 +37,9 @@ HTTP/1.1 404 Not Found
 {"type":"https://my-surveys.surveyjs.io/problems/survey-not-available","title":"This survey is not available","status":404,"code":"survey-not-available"}
 ```
 
-A survey whose published flag is empty in the old site's table (it was never switched) is not published.
+Only a survey that was unpublished is not published. A survey whose published flag is empty in the old site's
+table (it was never switched) is published, as the old run page treated it. A new or cloned survey also starts
+published. See [ADR 0014](../adr/0014-run-page-and-response-collection.md) S1.
 
 ## Load a survey
 
@@ -216,7 +218,7 @@ Several respondents behind one address (a school, an office) share a counter. Th
 "Limit to one response" reads `getPublishedSurvey` twice for a browser that has a client id (once to learn
 whether the limit is on, once with the id), so such page loads use the budget twice as fast. Raise
 `PUBLIC_RATE_LIMIT` for such a deployment. The counters live in the process: with several server instances each one counts on its
-own (a shared store is open for Step 14).
+own (a shared store is open for later; one instance is enough for mode 1.1).
 
 ## Respondent files
 

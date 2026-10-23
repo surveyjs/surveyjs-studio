@@ -1,0 +1,18 @@
+/* The banner's fixed height: the editor subtracts it from its own (editor.module.css). */
+:global(:root) {
+  --read-only-banner-height: 36px;
+}
+
+.banner {
+  box-sizing: border-box;
+  height: var(--read-only-banner-height);
+  padding: 8px 16px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font: 14px/20px sans-serif;
+  color: #5c3b00;
+  background: #fff3cd;
+  border-bottom: 1px solid #e6cf85;
+}
