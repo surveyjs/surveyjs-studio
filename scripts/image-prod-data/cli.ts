@@ -25,7 +25,11 @@ const envFile = resolve(root, values["env-file"] ?? "server/.env");
 const shown = values["env-file"] ?? "server/.env";
 
 if (!existsSync(envFile)) {
-  console.error(`${shown} not found: copy server/.env.example to server/.env and fill it in.`);
+  console.error(
+    values["env-file"] === undefined
+      ? `${shown} not found: copy server/.env.example to server/.env and fill it in.`
+      : `${shown} not found: check the --env-file path.`,
+  );
   process.exit(2);
 }
 const text = readFileSync(envFile, "utf8");

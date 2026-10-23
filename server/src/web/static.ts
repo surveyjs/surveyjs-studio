@@ -78,8 +78,13 @@ export async function registerWebApp(app: FastifyInstance, webRoot: string): Pro
       return reply.sendFile(file, root);
     }
     // The SPA renders its own "Page not found"; the status tells crawlers and tools the truth.
+    // Always the whole page: a Range request would otherwise get a 206 part of it, even a 404.
     const found = isClientRoute(pathname);
     void reply.code(found ? 200 : 404).header("cache-control", "no-cache");
-    return reply.sendFile("index.html", root, found ? {} : { etag: false, lastModified: false });
+    return reply.sendFile(
+      "index.html",
+      root,
+      found ? { acceptRanges: false } : { acceptRanges: false, etag: false, lastModified: false },
+    );
   });
 }

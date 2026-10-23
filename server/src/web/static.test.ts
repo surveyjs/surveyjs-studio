@@ -118,6 +118,17 @@ describe("with WEB_ROOT", () => {
     },
   );
 
+  it.each(["/no-such-page", "/projects"])(
+    "GET %s with a Range header answers the whole index, not a part",
+    async (url) => {
+      const res = await (await withWebRoot()).inject({ url, headers: { range: "bytes=0-4" } });
+      expect(res.statusCode).toBe(url === "/projects" ? 200 : 404);
+      expect(res.body).toBe(INDEX);
+      expect(res.headers["content-range"]).toBeUndefined();
+      expect(res.headers["accept-ranges"]).toBeUndefined();
+    },
+  );
+
   it("serves a hashed asset as immutable", async () => {
     const res = await (await withWebRoot()).inject("/assets/app-abc123.js");
     expect(res.statusCode).toBe(200);

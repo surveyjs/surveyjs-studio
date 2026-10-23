@@ -242,6 +242,8 @@ describe("canary run", () => {
       },
     );
     expect(bodies.join("")).not.toContain("canary");
+    // The failure is logged (with a safe category), but never its text.
+    expect(lines.join("")).toContain("readiness check failing");
     expect(lines.join("")).not.toContain("canary");
   });
 });
