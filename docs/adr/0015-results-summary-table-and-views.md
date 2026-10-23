@@ -184,8 +184,8 @@ from `listResults` to `exportResults`.
 - On the old site's stores each page of a very large survey scans the rows from the cursor's time on (R3). The
   first page reads the whole partition, and each page holds every remaining row, answers included, in server
   memory until it answers: a walk over N rows reads about N²/2,000 rows, and one page of a survey with 100,000
-  responses holds all of them. The interim option (Step 14) is to `select` only `RowKey` and `happendat` to find
-  the page, then read the full rows of that time window.
+  responses holds all of them. Step 14 did the interim option: a page `select`s only `RowKey` and `happendat` to
+  find its rows, then reads the full rows of that time window. The key scan stays, to measure on real volumes.
 - A legacy survey with partial rows (the same client twice) shows extra rows (R1), and the Summary counts them.
 - A user who has never saved sees the survey's old layout, and a user who resets does not (R4). The old site
   keeps showing its own layout, and a layout saved here never reaches it.

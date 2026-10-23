@@ -1,6 +1,6 @@
 # My Surveys: product idea
 
-Status: agreed, ready for the specification · Last updated: 2026-10-19 (deployment modes, D16–D22)
+Status: agreed; Phase 1 built (2026-10-23) · Last updated: 2026-10-19 (deployment modes, D16–D22)
 
 ## 1. Summary
 
@@ -174,7 +174,7 @@ The modes share one build. Configuration chooses the storage provider, the user 
 - **Hosted migration:** mode 1.3.
 - **Self-hosted:** modes 2a, 2b and 3.
 
-They share the SQL providers and the account seam built in Phase 1 (`plan.md` Step 12).
+They share the SQL providers (built by the self-hosted track) and the account seam built in Phase 1 (`plan.md` Step 12).
 
 ### 3.1 Phase 1: parity and replacement
 

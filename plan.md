@@ -1,6 +1,6 @@
 # Implementation plan: My Surveys, Phase 1
 
-Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0) · Steps 1–13 done 2026-10-21; Step 14 in progress (built; checkpoints 1–3 passed 2026-10-22, checkpoint 4 open)
+Status: draft · 2026-10-13 · Steps 12 and 14 revised 2026-10-19 for the deployment modes (idea §3.0) · Steps 1–13 done 2026-10-21; Step 14 done 2026-10-23 (production smoke test passed). Phase 1 is complete; hosting is a separate step
 Implements: [spec.md](spec.md) (Phase 1, which is deployment modes 1.1 and 1.2), within the brief in [idea.md](idea.md) and the contract [contract/openapi.yaml](contract/openapi.yaml). The work after Phase 1 runs as two track plans; see [After Phase 1](#after-phase-1).
 
 ## How to use this plan
@@ -41,7 +41,7 @@ These are the **development configuration** (deployment mode 4, idea §3.0). Don
 
 | Mode | Command (proposed) | Storage | Sign-in | Needs |
 |---|---|---|---|---|
-| **Memory** | `pnpm demo` | In-memory provider, loaded from a seed. Optionally saved to a local JSON file (`DEMO_PERSIST=1`) so data survives restarts. | **Dev identity provider**: a "Sign in as…" page listing the seed users. It is refused at start-up when `NODE_ENV=production` or the edition is hosted. | Node and pnpm only |
+| **Memory** | `pnpm demo` | In-memory provider, loaded from a seed. Optionally saved to a local JSON file (`DEMO_PERSIST=1`) so data survives restarts (not built: data resets on restart). | **Dev identity provider**: a "Sign in as…" page listing the seed users. It is refused at start-up when `NODE_ENV=production` or the edition is hosted. | Node and pnpm only |
 | **Azurite** | `pnpm demo:azurite` | Azure legacy provider on **Azurite**, seeded with the **legacy-format golden fixtures** (Step 2), plus a local site-database container if Step 2 finds one is needed. | **Mock OIDC server** container (`mock-oauth2-server`). The real OIDC code path runs against it. | Docker |
 
 - **Seed data.** One shared seed:
@@ -50,7 +50,7 @@ These are the **development configuration** (deployment mode 4, idea §3.0). Don
   - results, including more than 1,000 responses on one survey;
   - themes, history and files.
 
-  `pnpm seed` (re)loads it into either mode.
+  `pnpm seed` (re)loads it into either mode. (As built: `MEMORY_SEED` loads it into memory at start-up, and `pnpm legacy:load` into the replica.)
 - **Seed accounts are listed** in `docs/development.md`.
 
 ### Documentation set
@@ -86,7 +86,7 @@ The documentation is created in Step 1 and grown by every step:
 | 11 | Projects and members | ☑ |
 | 12 | Accounts by deployment mode, data protection and hardening | ☑ |
 | 13 | Visual parity with surveyjs.io | ☑ |
-| 14 | Production readiness and rollout kit | ☐ in progress: checkpoints 1–3 passed 2026-10-22; checkpoint 4 (the production smoke test, the runbook review) open |
+| 14 | Production readiness and rollout kit | ☑ (`pnpm smoke:legacy` passed on production 2026-10-23) |
 
 ---
 
@@ -814,10 +814,10 @@ The documentation is created in Step 1 and grown by every step:
 - `docs/demo/step-14.md`.
 
 **Demo checklist**
-1. `docker compose -f compose.prod-like.yml up` runs the production image with Azurite and the mock OIDC server, in the mode 1 configuration. The full demo from Steps 3–12 works on it.
-2. With `READ_ONLY=1` the app browses data, and any save is refused with a clear message.
+1. `pnpm prod-like:up` (`docker/compose.prod-like.yaml`) runs the production image with Azurite and the mock OIDC server, in the mode 1 configuration. The full demo from Steps 3–12 works on it.
+2. With `READ_ONLY=true` the app browses data, and any save is refused with a clear message.
 3. Stop the user directory (the stub, or the SQL container). `/readyz` reports not ready.
-4. Review the runbook and the redirect map with the site team. The staging smoke test checklist is ready for the SurveyJS team.
+4. Review the runbook and the redirect map with the site team. The smoke test checklist is ready for the SurveyJS team (there is no staging copy: it runs on production with a dedicated test account).
 
 ---
 
@@ -869,7 +869,7 @@ The documentation is created in Step 1 and grown by every step:
 ### Additions the plan makes beyond spec.md (please confirm)
 
 1. **Dev identity provider** for the memory demo mode. spec › Back-end modules 2 says Phase 1 implements surveyjs.io OIDC only. The plan adds a dev-only provider that start-up refuses in production. The mock OIDC server covers the real code path in Azurite mode and CI.
-2. **Optional saving of the in-memory provider to a JSON file** (`DEMO_PERSIST`), so demos survive restarts. spec › Back-end modules 5 describes the in-memory provider only for tests and development.
+2. **Optional saving of the in-memory provider to a JSON file** (`DEMO_PERSIST`), so demos survive restarts. Not built. spec › Back-end modules 5 describes the in-memory provider only for tests and development.
 3. **AccountNotices provider.** The spec requires the licence notice (US 7, `CurrentUser.notices`), but the provider interfaces in spec › Back-end modules 4 have no source for licence data. The plan adds this interface in Step 3.
 4. **Documentation from Step 1.** idea §3.3 schedules developer documentation for Phase 3, and spec.md doesn't list documentation. The plan builds the user guide, API reference, architecture, development, testing and operations documents step by step.
 5. **Read-only inspector CLI, read-only mode and an account erasure command.** Operational tools that come from spec › Further Notes and › Data protection, but that the spec doesn't name.
@@ -888,7 +888,7 @@ The documentation is created in Step 1 and grown by every step:
 
 ## After Phase 1
 
-Phase 1 (Steps 1–14) delivers deployment modes 1.1 and 1.2 (idea §3.0). The rest of the work runs as **two track plans at the same time**. Each track has its own spec and plan.
+Phase 1 (Steps 1–14) builds deployment modes 1.1 and 1.2 (idea §3.0). They go live through the hosting step and the rollout ([runbook](docs/operations.md#rollout-and-rollback-runbook)); 1.2 starts at rollout step 4. The rest of the work runs as **two track plans at the same time**. Each track has its own spec and plan.
 
 | Track | Delivers | Starts with |
 |---|---|---|

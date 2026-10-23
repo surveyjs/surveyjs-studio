@@ -2,7 +2,7 @@
 
 Status: draft · 2026-10-19
 Implements: [spec-hosted.md](spec-hosted.md), within [idea.md](idea.md) (§3.0, D16–D22) and the contract [contract/openapi.yaml](contract/openapi.yaml).
-Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same time as [plan-self-hosted.md](plan-self-hosted.md).
+Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It runs at the same time as [plan-self-hosted.md](plan-self-hosted.md).
 
 ## How to use this plan
 
@@ -498,7 +498,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Build**
 
 - **Maintenance states:**
-  - with `READ_ONLY=1`, `/config` reports `maintenance`;
+  - with `READ_ONLY=true`, `/config` reports `maintenance` (Step 14's `/config` has only the `readOnly` flag);
   - the signed-in app shows a banner ("Saving is paused for maintenance until about …"), and editors are read-only;
   - the run page shows "temporarily unavailable, please try again shortly";
   - legacy `post` answers a legacy-shaped error.

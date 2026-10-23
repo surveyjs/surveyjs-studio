@@ -261,7 +261,7 @@ The packaging is our choice (2026-10-19):
   - `my-surveys backup` makes an online SQLite backup plus a copy of the files;
   - PostgreSQL is backed up with `pg_dump`;
   - restore is documented and tested in CI.
-- **Behind a proxy (S10):** `TRUSTED_PROXIES` sets which proxies are trusted for the client IP and the protocol. Cookies are `Secure` when `PUBLIC_BASE_URL` is HTTPS.
+- **Behind a proxy (S10):** `TRUST_PROXY` (built in Phase 1) sets which proxies are trusted for the client IP and the protocol. Cookies are `Secure` when `PUBLIC_BASE_URL` is HTTPS.
 - **No outbound calls (S11):**
   - fonts and assets are bundled;
   - an e2e run with outbound network blocked must pass;

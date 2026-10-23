@@ -1,6 +1,6 @@
 # Spec: My Surveys, Phase 1 (parity and replacement)
 
-Status: ready for implementation · 2026-10-14 · revised 2026-10-19 for the deployment modes (idea §3.0, D16–D22)
+Status: implemented (Phase 1 done 2026-10-23, see `plan.md`) · 2026-10-14 · revised 2026-10-19 for the deployment modes (idea §3.0, D16–D22)
 Inputs: `idea.md` (product brief and decisions D1–D22), `contract/openapi.yaml` (HTTP contract).
 
 This spec covers deployment modes 1.1 and 1.2 (hosted on the surveyjs.io data) and 4 (development). Modes 1.3, 2a, 2b and 3 get their own specs in the two track plans (D22).

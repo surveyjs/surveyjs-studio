@@ -20,7 +20,7 @@ After Phase 1 (modes 1.1 and 1.2), `my-surveys.surveyjs.io` is the only My Surve
   - event rows;
   - lower-case columns;
   - one table per survey's results.
-- **Reading results is expensive.** Azure Tables cannot page or aggregate by anything other than keys. For a large survey, listing, exporting and public results scan a whole partition (plan Step 14).
+- **Reading results is expensive.** Azure Tables cannot page or aggregate by anything other than keys. For a large survey, listing, exporting and public results read every row key of a partition before the rows they show (plan Step 14 reduced the whole-partition scan to that).
 - **Users are read straight from the site's SQL tables.** The site team cannot change its user schema without breaking the app.
 - **`api.surveyjs.io` still serves legacy clients from the same data.** It is old code that the site team wants to remove:
   - Form Library v1.x with `surveyId`/`surveyPostId`;
@@ -235,7 +235,7 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
 1. **Announce** the window to users and integrators **one to two weeks** before.
 2. **Pre-copy** a few days before, then run `verify` against the live data. Differences are expected only from recent changes.
 3. **In the window:**
-   - Turn on `READ_ONLY=1` (plan Step 14) for the app and the compatibility layer.
+   - Turn on `READ_ONLY=true` (plan Step 14) for the app and the compatibility layer.
      - Respondents see the "temporarily unavailable" page.
      - Legacy `post` calls get a legacy-shaped error.
      - Signed-in users see the maintenance notice (H3, H4).

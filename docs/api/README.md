@@ -57,11 +57,11 @@ suppressed. The three operations that legitimately lack a 2xx or 4xx response (`
 
 ## Outside `/api/v1`
 
-| Path        | Purpose                                                                      |
-| ----------- | ---------------------------------------------------------------------------- |
-| `/healthz`  | Process is up: `200 {"status":"ok"}`                                         |
-| `/readyz`   | Providers are ready: `200 {"status":"ok"}` or `503 {"status":"unavailable"}` |
-| `/api/docs` | The API reference (not in production by default)                             |
+| Path        | Purpose                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| `/healthz`  | Process is up: `200 {"status":"ok"}`                                                           |
+| `/readyz`   | Providers are ready: `200 {"status":"ok"}` or `503 {"status":"unavailable","failing":["sql"]}` |
+| `/api/docs` | The API reference (not in production by default)                                               |
 
 ## What is implemented
 

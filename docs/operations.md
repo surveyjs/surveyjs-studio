@@ -488,7 +488,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<host>/no-such-page          # 
 
 For the SurveyJS team and the surveyjs.io site team. It takes My Surveys from the old section of surveyjs.io to
 `https://my-surveys.surveyjs.io` in four steps, then lists the rollback of each step and the handover to the
-hosted-migration track (plan.md › Step 14). Phase 1 moves no data: the app reads and writes the existing stores in
+hosted-migration track ([plan.md › After Phase 1](../plan.md#after-phase-1)). Phase 1 moves no data: the app reads and writes the existing stores in
 their formats, and the old section and `api.surveyjs.io` keep working on the same data. Go to the next step only when
 the current one has run without problems for as long as the team wants.
 

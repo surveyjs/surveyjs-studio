@@ -37,22 +37,23 @@ type `application/problem+json`:
 
 Problem codes by status:
 
-| Status | Codes                                                                      |
-| ------ | -------------------------------------------------------------------------- |
-| 400    | `bad-request` (malformed request, or invalid path, query or header)        |
-| 401    | `unauthenticated`                                                          |
-| 403    | `forbidden`, `csrf-token-invalid`                                          |
-| 404    | `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`    |
-| 406    | `not-acceptable`                                                           |
-| 409    | `survey-not-archived`, `already-member`, `last-admin`, `already-completed` |
-| 412    | `edit-conflict`                                                            |
-| 413    | `payload-too-large`, `quota-exceeded`                                      |
-| 415    | `unsupported-media-type`                                                   |
-| 422    | `validation-failed` (valid JSON, wrong content; see `errors`)              |
-| 428    | `if-match-required`                                                        |
-| 429    | `rate-limited` (with `Retry-After`)                                        |
-| 500    | `internal-error` (no internal detail in the body)                          |
-| 501    | `not-implemented`                                                          |
+| Status | Codes                                                                       |
+| ------ | --------------------------------------------------------------------------- |
+| 400    | `bad-request` (malformed request, or invalid path, query or header)         |
+| 401    | `unauthenticated`, `invalid-signature` (the account-deleted webhook)        |
+| 403    | `forbidden`, `csrf-token-invalid`                                           |
+| 404    | `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`     |
+| 406    | `not-acceptable`                                                            |
+| 409    | `survey-not-archived`, `already-member`, `last-admin`, `already-completed`  |
+| 412    | `edit-conflict`                                                             |
+| 413    | `payload-too-large`, `quota-exceeded`                                       |
+| 415    | `unsupported-media-type`                                                    |
+| 422    | `validation-failed` (valid JSON, wrong content; see `errors`)               |
+| 428    | `if-match-required`                                                         |
+| 429    | `rate-limited` (with `Retry-After`)                                         |
+| 500    | `internal-error` (no internal detail in the body)                           |
+| 501    | `not-implemented`                                                           |
+| 503    | `read-only` (the server runs with `READ_ONLY=true`; every write is refused) |
 
 The `Problem` schema in the contract holds the full list of codes.
 

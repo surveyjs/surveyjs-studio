@@ -36,7 +36,7 @@ One **visual data set** (`e2e/visual/data-set.ts`) describes the account content
 project, three responses. A person creates it once by hand in a **dedicated surveyjs.io account**. The visual run
 creates the same content through the HTTP API for Erin Erasable in a fresh memory server (ports 3002 and 5175; it never
 touches the functional servers on 3000, 3001, 5173 and 5174). One **manifest** (`e2e/visual/manifest.ts`) lists the 18
-screens (`history` awaits its first capture, see To confirm) with their live and app paths, the steps to reach the
+screens (`history` was captured last, on 2026-10-22; see To confirm) with their live and app paths, the steps to reach the
 state, the element to shoot and the adjustments of each side. One **preparation module** (`e2e/visual/support/screen.ts`) opens and prepares a screen the same way on both
 sides.
 
@@ -163,7 +163,8 @@ the same behaviour, and parity is the goal, so the app does not change it.
 ## To confirm
 
 These are decisions of the team, not of the product owner. Until the owner confirms them they stand as written. None
-of them blocks Step 13; each one is due before the Step 14 point named in its _Answer by_ (plan.md › Step 14).
+of them blocks Step 13; each one is due by the point named in its _Answer by_: a Step 14 point, or a step of the rollout
+([runbook](../operations.md#rollout-and-rollback-runbook)).
 
 - **The header's account item.** Live reads "Account"; the app shows the user's name (plan Step 3). Both sides are
   normalized to "Account", so the test does not decide it. Keep the name, or show "Account"? _Answer by:_ rollout step
@@ -205,7 +206,7 @@ of them blocks Step 13; each one is due before the Step 14 point named in its _A
   writes the flag that the legacy site and `api.surveyjs.io` read in modes 1.1 and 1.2. **Answered (product owner,
   2026-10-21; Step 14):** an empty flag means published in the app, as on the old run page
   ([ADR 0014](0014-run-page-and-response-collection.md), S1); Publish and Unpublish write 1 and 0, and
-  `pnpm smoke:legacy` reads both back through `api.surveyjs.io` (`IsPublished` `true` and `false`). The old list still
+  `pnpm smoke:legacy` reads both back through `api.surveyjs.io` (`IsPublished` `true` and `false`); it passed on production on 2026-10-23. The old list still
   shows **Publish** for an empty flag: an accepted difference
   ([Legacy smoke test](../operations/smoke-test.md#manual-checklist-on-surveyjsio)). Why the live list lagged on
   2026-10-20 is not known.

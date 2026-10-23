@@ -329,7 +329,8 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
   ([Paging](paging.md#results-oldest-first-one-survey)).
 - **Compared with the old site.** The old public data call returned the first 1,000 rows in storage order and
   filtered the columns only when an old column list existed, so the IP address and client id could leak. This
-  endpoint always leaves them out and pages all rows. The old links (`/Results/Survey/<result id>`) are Step 12.
+  endpoint always leaves them out and pages all rows. The old links (`/Results/Survey/<result id>`) are not served by the app: the surveyjs.io site redirects them to
+  `/results/{id}` ([redirect map](../operations/surveyjs-redirects.md)).
 
 ## Errors
 

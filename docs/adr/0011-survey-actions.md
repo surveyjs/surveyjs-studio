@@ -139,7 +139,7 @@ a request. The audit rows are written afterwards, one per change, and are best e
 - Two quick clicks on Clone create two copies: the page has no double-click guard, as the legacy page has
   none.
 - The menu's last items can sit under the fixed cookie banner and the footer on a short viewport for a
-  first-time visitor. Step 13 (surveyjs.io parity polish) settles it.
+  first-time visitor. Settled in Step 13: it stays as surveyjs.io has it (ADR 0020).
 - The page checks nothing the server does not check: hiding items is a convenience, and the server answers
   `403` or `404` for every request regardless.
 

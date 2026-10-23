@@ -235,8 +235,8 @@ written.
   empty published flag is decided (Step 14, 2026-10-21): it means published, as the old page ran it.
 - **S11:** any file type is accepted, there is no quota for respondent files, and files uploaded but never
   submitted stay until the survey is deleted. Total respondent storage is bounded only by the rate limits.
-- **S13:** the "Disclaimer of liability" banner for owners without a licence is not built. It needs a decision in
-  Step 13: whether it belongs to "today's footer", and what licence data it reads.
+- **S13:** the "Disclaimer of liability" banner for owners without a licence is not built. It needs a decision before
+  rollout step 3, the redirects (ADR 0020 › To confirm): whether it belongs to "today's footer", and what licence data it reads.
 
 ## Open
 

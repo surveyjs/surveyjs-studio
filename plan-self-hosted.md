@@ -2,7 +2,7 @@
 
 Status: draft · 2026-10-19
 Implements: [spec-self-hosted.md](spec-self-hosted.md), within [idea.md](idea.md) (§3.0, D15–D22) and the contract [contract/openapi.yaml](contract/openapi.yaml).
-Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same time as [plan-hosted.md](plan-hosted.md).
+Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It runs at the same time as [plan-hosted.md](plan-hosted.md).
 
 ## How to use this plan
 
@@ -373,7 +373,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 **Build**
 
-- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080`, volume `/data`, non-root.
+- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080` (the Step 14 image sets `PORT=3000` today), volume `/data`, non-root.
 - **Images for `linux/amd64` and `linux/arm64`.**
 - **Start-up:** migrations under a lock, the first-admin bootstrap, `/healthz` and `/readyz`, `TRUSTED_PROXIES`, secure cookies on HTTPS.
 - **`my-surveys backup` and `my-surveys restore`** inside the image, for SQLite and local files. The documentation covers `pg_dump` and S3 versioning.

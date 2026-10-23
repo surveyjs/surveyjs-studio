@@ -123,7 +123,7 @@ reverse proxy set `TRUST_PROXY` to the proxy's address (or range)**: the server 
 `X-Forwarded-For` for requests that come from that proxy. Without it every user shares the proxy's counter,
 and a stored respondent address is the proxy's. List only proxies you run: a header from any other peer is
 ignored, but a listed range that is too wide lets a caller choose its address. The counters live in the
-process, so several instances each count alone (Step 14).
+process, so several instances each count alone ([Operations › One instance](operations.md#running-the-image)).
 
 `pnpm demo` reads `server/demo.env` (dev sign-in, the legacy fixture users, `PUBLIC_BASE_URL=http://localhost:5173`).
 Variables set in the shell win over that file. To see a licence dialog of the surveyjs.io shell, run
@@ -649,17 +649,18 @@ the same least-privilege login as the inspector above. The output above is the l
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 
-| Package             | Script                                         | Purpose                                                                                                                                                 |
-| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server`            | `dev`, `start`, `typecheck`                    | Watch mode, plain start, type check                                                                                                                     |
-| `server`            | `dev:prod-data`                                | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
-| `web`               | `dev`, `build`, `preview`, `test`, `typecheck` | Vite dev server, build (type check first), preview, unit tests                                                                                          |
-| `contract`          | `generate`                                     | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
-| `contract`          | `lint`, `check:generated`                      | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
-| `contract`          | `build:docs`                                   | Write the self-contained `contract/dist/reference.html`                                                                                                 |
-| `conformance-tests` | `test`, `test:azurite`, `test:user-api`        | See [testing](testing.md)                                                                                                                               |
-| `e2e`               | `test`                                         | Playwright                                                                                                                                              |
-| `e2e`               | `test:visual`, `capture`                       | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
+| Package             | Script                                                    | Purpose                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`            | `dev`, `start`, `typecheck`                               | Watch mode, plain start, type check                                                                                                                     |
+| `server`            | `dev:demo`, `dev:demo:azurite`                            | The server half of the root `pnpm demo` and `pnpm demo:azurite`; run those instead                                                                      |
+| `server`            | `dev:prod-data`                                           | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
+| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`            | Vite dev server, build (type check first), preview, unit tests                                                                                          |
+| `contract`          | `generate`                                                | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
+| `contract`          | `lint`, `check:generated`                                 | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
+| `contract`          | `build:docs`                                              | Write the self-contained `contract/dist/reference.html`                                                                                                 |
+| `conformance-tests` | `test`, `test:azurite`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                               |
+| `e2e`               | `test`, `test:azurite`                                    | Playwright                                                                                                                                              |
+| `e2e`               | `test:visual`, `capture`                                  | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
 
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
@@ -713,7 +714,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
-2. `test:unit` and `test:conformance` (in-memory);
+2. `test:unit`, `test:conformance` (in-memory) and `test:conformance:read-only` (in-memory, `READ_ONLY=true`);
 3. `docker build -t my-surveys:ci .`, the production image;
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;

@@ -718,7 +718,7 @@ CI sets it, with `E2E_IMAGE=my-surveys:ci` (the default). The image serves the w
 ## Visual parity
 
 The visual specs answer one question: does a page of the app look like the same page on surveyjs.io? For each of the
-18 screens of the manifest (`history` awaits its first capture) the test opens the app, takes a screenshot and compares
+18 screens of the manifest the test opens the app, takes a screenshot and compares
 it with a **baseline**, a screenshot of the live site that a person captured earlier. The reasons are in [ADR 0020](adr/0020-visual-parity-baselines.md).
 
 The tests are **local only**. The baselines are rendered on a Windows machine, Linux CI renders text differently, and CI

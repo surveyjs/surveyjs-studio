@@ -127,7 +127,8 @@ on **Publish**. A survey that nobody can fill in now can still show its results.
 A survey that does not exist, and a survey with Grant Access off, show the same page ("These survey results
 are not available."), so nobody can tell whether a survey exists.
 
-**The old links** of the form `/Results/Survey/<result id>` do not work yet (Step 12).
+**The old links** of the form `/Results/Survey/<result id>` are sent to this page by surveyjs.io
+([Moving from the old My Surveys](moving-from-the-old-my-surveys.md)).
 
 ### Make a question private
 
@@ -241,7 +242,6 @@ modify the survey is refused.
 - The old page's **Show in Survey** and **Delete Result** for one response in the Table. There is no way yet
   to delete one response.
 - The **make public** action of the Table's columns. Use the Summary's **Make private** and **Make public**.
-- The old page's links, `/Results/Survey/<result id>` and the `#summary` links (Step 12).
 - Excel and PDF files of all results made by the server. The Table's **Export As...** makes Excel and PDF in
   your browser.
 - Special handling of files and pictures that the old site stored in answers as `dxsimage:` or `dxsfile:`

@@ -1,7 +1,9 @@
 # Legacy smoke test
 
-`pnpm smoke:legacy` proves on **production** that the old `api.surveyjs.io` reads what the new app writes. The
-product owner runs it once the app writes to the real stores (Step 14, checkpoint 4). The old site's pages are not
+`pnpm smoke:legacy` proves on **production** that the old `api.surveyjs.io` reads what the new app writes. It
+runs in rollout step 1, while the app is still read-only, before anyone writes through it
+([runbook](../operations.md#step-1-internal-use-on-production-data-read-only-first)). It passed on production on
+2026-10-23 (Step 14). The old site's pages are not
 covered by the script: check them by hand with the [checklist](#manual-checklist-on-surveyjsio) below.
 
 The script acts as one **test account**, which the product owner owns and which is used for nothing else. It
