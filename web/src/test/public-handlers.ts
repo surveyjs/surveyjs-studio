@@ -34,7 +34,7 @@ const titles: Readonly<Record<string, string>> = {
 function problem(status: number, code: string) {
   return HttpResponse.json(
     {
-      type: `https://my-surveys.surveyjs.io/problems/${code}`,
+      type: `https://studio.surveyjs.io/problems/${code}`,
       title: titles[code] ?? code,
       status,
       code,

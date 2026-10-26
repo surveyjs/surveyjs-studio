@@ -13,7 +13,7 @@ https in front of it.
 ## Deployment
 
 My Surveys ships as one Docker image: the server, which also serves the built web app. Build it from the repository
-root with `pnpm image:build` (`docker build -t my-surveys:local .`). Try it locally with `pnpm prod-like:up`
+root with `pnpm image:build` (`docker build -t surveyjs-studio:local .`). Try it locally with `pnpm prod-like:up`
 ([prod-like mode](development.md#prod-like-mode)). The same image serves every deployment mode: only its settings
 differ ([below](#configuration-by-deployment-mode)).
 
@@ -50,8 +50,8 @@ this timeout; if its own limits are lower, it answers first, with its own page.
 2. **Start one container**, with the port published to the reverse proxy only, never to the internet:
 
    ```sh
-   docker run -d --name my-surveys --restart unless-stopped \
-     --env-file /etc/my-surveys/app.env -p 127.0.0.1:3000:3000 my-surveys:<tag>
+   docker run -d --name surveyjs-studio --restart unless-stopped \
+     --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio:<tag>
    ```
 
 3. **The reverse proxy** terminates https for `PUBLIC_BASE_URL`, forwards every path to port 3000, sets
@@ -75,25 +75,30 @@ with: `docker restart` does **not** read the env file again. After any change to
 image tag, remove the container and run it again with the same command:
 
 ```sh
-docker stop --time 60 my-surveys   # SIGTERM: requests in flight may finish; SIGKILL after 60 s
-docker rm my-surveys
-docker run -d --name my-surveys --restart unless-stopped \
-  --env-file /etc/my-surveys/app.env -p 127.0.0.1:3000:3000 my-surveys:<tag>
+docker stop --time 60 surveyjs-studio   # SIGTERM: requests in flight may finish; SIGKILL after 60 s
+docker rm surveyjs-studio
+docker run -d --name surveyjs-studio --restart unless-stopped \
+  --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio:<tag>
 ```
 
-Then check the `starting` log line (`docker logs my-surveys`; [Logs](#logs)): it shows the settings the process
+Then check the `starting` log line (`docker logs surveyjs-studio`; [Logs](#logs)): it shows the settings the process
 really runs with. (`docker rm -f` would kill it at once, cutting requests in flight.) The app has no database
 migrations: the stores keep the legacy formats, so any earlier image runs on the same data, and rolling back the app
 is re-creating the container with the previous tag.
 
-**Where the images come from.** For now an image is built from a commit of `master` (`docker build -t
-my-surveys:<commit> .`). The registry is chosen for the hosting step: `surveyjs/my-surveys` on Docker Hub, mirrored
-to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
+**Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
+`ghcr.io/surveyjs/surveyjs-studio:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
+There is no `latest` tag: a deployment names the commit it runs. The package is private while the repository is;
+pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/surveyjs-studio`) comes with the self-hosted
+track.
+
+**A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server, its
+firewall, Docker, Caddy for https, and the first deploy.
 
 **No settings in the image.** `.dockerignore` keeps every `.env`, `*.env`, key and certificate file out of the build
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
 (`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
-`docker run --rm --entrypoint sh my-surveys:<tag> -c 'find /app -name "*.env*"'`.
+`docker run --rm --entrypoint sh surveyjs-studio:<tag> -c 'find /app -name "*.env*"'`.
 
 ## Monitoring
 
@@ -177,7 +182,7 @@ repository, a ticket or a chat.
 
 ### Mode 1.1: hosted, side by side with the old section
 
-The app at `https://my-surveys.surveyjs.io` on the surveyjs.io SQL database and Azure storage accounts, with
+The app at `https://studio.surveyjs.io` on the surveyjs.io SQL database and Azure storage accounts, with
 surveyjs.io sign-in, while the old My Surveys section still runs.
 
 | Variable                                   | Value                                                                      |
@@ -208,7 +213,7 @@ sign-out.
 An env file for mode 1.1, with placeholders:
 
 ```text
-PUBLIC_BASE_URL=https://my-surveys.surveyjs.io
+PUBLIC_BASE_URL=https://studio.surveyjs.io
 SESSION_SECRET=<at least 32 random characters>
 APP_EDITION=hosted
 STORAGE_PROVIDER=azure-legacy
@@ -395,7 +400,7 @@ repository with restricted permissions. For example, a cron job that first only 
 `--apply --max 10` after you have reviewed the first list:
 
 ```text
-0 3 * * *  cd /srv/my-surveys && node --import tsx server/src/cli/account-reconcile.ts -- --env-file /etc/my-surveys/accounts.env >> /var/log/my-surveys/reconcile.log 2>&1
+0 3 * * *  cd /srv/surveyjs-studio && node --import tsx server/src/cli/account-reconcile.ts -- --env-file /etc/surveyjs-studio/accounts.env >> /var/log/surveyjs-studio/reconcile.log 2>&1
 ```
 
 Alert on a non-zero exit: it means a refusal (more candidates than `--max`, which is worth a look), or a store or
@@ -487,8 +492,8 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<host>/no-such-page          # 
 ## Rollout and rollback runbook
 
 For the SurveyJS team and the surveyjs.io site team. It takes My Surveys from the old section of surveyjs.io to
-`https://my-surveys.surveyjs.io` in four steps, then lists the rollback of each step and the handover to the
-hosted-migration track (plan.md › Step 14). Phase 1 moves no data: the app reads and writes the existing stores in
+`https://studio.surveyjs.io` in four steps, then lists the rollback of each step and the handover to the
+hosted-migration track ([plan.md › After Phase 1](../plan.md#after-phase-1)). Phase 1 moves no data: the app reads and writes the existing stores in
 their formats, and the old section and `api.surveyjs.io` keep working on the same data. Go to the next step only when
 the current one has run without problems for as long as the team wants.
 
@@ -496,7 +501,7 @@ the current one has run without problems for as long as the team wants.
 
 | Input                                                                      | From                   | Step |
 | -------------------------------------------------------------------------- | ---------------------- | ---- |
-| The host, its outbound address, DNS for `my-surveys.surveyjs.io`, https    | The hosting step       | 1    |
+| The host, its outbound address, DNS for `studio.surveyjs.io`, https        | The hosting step       | 1    |
 | The client registration at `auth.surveyjs.io` (id and secret)              | Site team              | 1    |
 | Network rules for the host on the SQL server and both storage accounts     | Whoever runs Azure     | 1    |
 | The store connection strings (account key or account SAS)                  | Whoever runs Azure     | 1    |
@@ -514,8 +519,8 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
 ### Step 1: internal use on production data, read-only first
 
 1. **Register the app at `auth.surveyjs.io`** (site team): a confidential client with the redirect URI
-   `https://my-surveys.surveyjs.io/api/v1/auth/callback` and the address after sign-out
-   `https://my-surveys.surveyjs.io/`. Hand the client id and secret to the operator through a secure channel.
+   `https://studio.surveyjs.io/api/v1/auth/callback` and the address after sign-out
+   `https://studio.surveyjs.io/`. Hand the client id and secret to the operator through a secure channel.
 2. **Open the network** (Azure): add the host's outbound address to the Azure SQL server's firewall rules and to the
    network rules of the surveys and the results storage accounts. Keep the address of the machine that runs the
    commands below allowed too, or run them from the host.
@@ -588,7 +593,7 @@ address allow-list, for example).
 **Before:** the product owner has answered the header's account item and the 1,000-responses banner
 ([ADR 0020 › To confirm](adr/0020-visual-parity-baselines.md#to-confirm)): real users see both from this step on.
 
-1. The site team adds a link from the old My Surveys page to `https://my-surveys.surveyjs.io/` (for example "Try the
+1. The site team adds a link from the old My Surveys page to `https://studio.surveyjs.io/` (for example "Try the
    new My Surveys"). Both sections keep working on the same data; a user can go back at any time.
 2. Watch `/readyz`, the `5xx` answers and the errors in the logs; a support report can be matched to the logs by the
    time, and by `x-request-id` if the user can send it.
@@ -615,7 +620,7 @@ This step makes it mode 1.2.
 
    ```sh
    curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'content-type: application/json' -d '{}' \
-     https://my-surveys.surveyjs.io/api/v1/webhooks/account-deleted
+     https://studio.surveyjs.io/api/v1/webhooks/account-deleted
    ```
 
 2. **The site** removes the My Surveys section and **Settings → Manage MySurveys** (D13), and calls the

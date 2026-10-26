@@ -269,7 +269,7 @@ pnpm demo:azurite:down
   the server without `IDENTITY_PROVIDER=dev` and without the `OIDC_*` settings. Use `pnpm demo`, or
   `node --env-file=docker/azurite.env --import tsx server/src/main.ts` for the replica.
 - "Sign-in is unavailable" (`500`) in Azurite mode: the mock OIDC server is not running. Check
-  `docker ps` for `my-surveys-legacy-mock-oidc-1`.
+  `docker ps` for `surveyjs-studio-legacy-mock-oidc-1`.
 - Port 18080 is in use: stop what holds it; the port is fixed and bound to 127.0.0.1 only.
 - The licence dialog does not appear: you dismissed it before. Delete `expiredNotificationDateTime` (or
   `expiresSoonNotificationDateTime`) from the local storage of the site.

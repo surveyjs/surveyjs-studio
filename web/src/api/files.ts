@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { client, toApiError } from "./client";
 
 export type StoredFile = components["schemas"]["StoredFile"];

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadContract } from "./contract.js";
 

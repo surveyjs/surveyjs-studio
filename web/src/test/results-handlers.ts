@@ -1,5 +1,5 @@
 import { HttpResponse, http as mswHttp } from "msw";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 
 type SurveyResponse = components["schemas"]["SurveyResponse"];
 type ViewState = components["schemas"]["ViewState"];
@@ -9,7 +9,7 @@ const PREFIX = "*/api/v1/surveys/:surveyId";
 
 function problem(status: number, code: string, title = code) {
   return HttpResponse.json(
-    { type: `https://my-surveys.surveyjs.io/problems/${code}`, title, status, code },
+    { type: `https://studio.surveyjs.io/problems/${code}`, title, status, code },
     { status, headers: { "Content-Type": "application/problem+json" } },
   );
 }

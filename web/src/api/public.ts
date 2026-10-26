@@ -1,6 +1,6 @@
 // The respondent's endpoints (`/public/surveys/…`): no session, used by the run page.
 import { queryOptions } from "@tanstack/react-query";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { client, toApiError } from "./client";
 import type { StoredFile } from "./files";
 import { RESULTS_PAGE_SIZE } from "./results";

@@ -42,7 +42,7 @@ gives 128 bits. The cost is that the survey id shows in file links. Survey ids a
 links, embed code) and grant nothing. Changing the format later needs a lookup for old ids.
 
 Why a new container: the editor's links use `api.surveyjs.io` until that site is retired. Those links
-break then, so a migration belongs to the rollout (Step 14). A stale preview image, if any exists in
+break then, so a migration belongs to the hosted-migration track, before the old API retires (mode 1.3). A stale preview image, if any exists in
 production, stays.
 
 The writes (`uploadData`, `createIfNotExists`, blob delete) are in

@@ -2,7 +2,7 @@
  * Shared helpers of the conformance test files: calls to the server under test, each response
  * checked against the contract, and signed-in sessions.
  */
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import { expect, inject, onTestFinished, type TestContext } from "vitest";
 import { fixtureUsers, signIn, SignInUnsupportedError, type SignInResult } from "./sign-in.js";
 import { createValidator, type Validator } from "./validator.js";

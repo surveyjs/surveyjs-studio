@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: My Surveys API
   version: 1.0.0-draft
-  summary: HTTP contract of the My Surveys application (my-surveys.surveyjs.io).
+  summary: HTTP contract of the My Surveys application (studio.surveyjs.io).
   license:
     name: MIT
     identifier: MIT
@@ -46,7 +46,7 @@ info:
       contract but are implemented in Phase 2 (P1). Until then a server answers
       them with `501 Not Implemented`, or ignores the marked properties.
 servers:
-  - url: https://my-surveys.surveyjs.io/api/v1
+  - url: https://studio.surveyjs.io/api/v1
     description: Hosted (production)
   - url: http://localhost:3000/api/v1
     description: Local development
@@ -1348,7 +1348,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/unauthenticated
+            type: https://studio.surveyjs.io/problems/unauthenticated
             title: Sign-in required
             status: 401
             code: unauthenticated
@@ -1358,7 +1358,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/invalid-signature
+            type: https://studio.surveyjs.io/problems/invalid-signature
             title: Invalid signature
             status: 401
             code: invalid-signature
@@ -1368,7 +1368,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/forbidden
+            type: https://studio.surveyjs.io/problems/forbidden
             title: You cannot modify this survey
             status: 403
             code: forbidden
@@ -1380,7 +1380,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/survey-not-available
+            type: https://studio.surveyjs.io/problems/survey-not-available
             title: This survey is not available
             status: 404
             code: survey-not-available
@@ -1392,7 +1392,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/survey-not-archived
+            type: https://studio.surveyjs.io/problems/survey-not-archived
             title: Archive the survey before deleting it
             status: 409
             code: survey-not-archived
@@ -1402,7 +1402,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/edit-conflict
+            type: https://studio.surveyjs.io/problems/edit-conflict
             title: The survey was changed by someone else
             status: 412
             code: edit-conflict
@@ -1418,7 +1418,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/quota-exceeded
+            type: https://studio.surveyjs.io/problems/quota-exceeded
             title: File quota exceeded
             status: 413
             code: quota-exceeded
@@ -1439,7 +1439,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/validation-failed
+            type: https://studio.surveyjs.io/problems/validation-failed
             title: The request is invalid
             status: 422
             code: validation-failed
@@ -1467,7 +1467,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://my-surveys.surveyjs.io/problems/read-only
+            type: https://studio.surveyjs.io/problems/read-only
             title: My Surveys is read-only at the moment. Changes cannot be saved.
             status: 503
             code: read-only

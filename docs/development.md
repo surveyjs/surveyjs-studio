@@ -11,7 +11,7 @@
      `corepack pnpm install`;
    - `npm install -g pnpm@12.11.2`.
 3. `pnpm install`. For the e2e suite, install the browsers once:
-   `pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`
+   `pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit`
    (on Linux add `--with-deps`, as CI does).
 
 ## Demo modes
@@ -44,11 +44,11 @@ sealed with `SESSION_SECRET`, or the fixed development constant when it is unset
 at start-up). Walkthrough: [Step 3 demo](demo/step-03.md). How sign-in works:
 [Authentication](api/authentication.md).
 
-To run one part alone: `pnpm --filter @my-surveys/server dev:demo` (watch mode, reads `server/demo.env`),
-`IDENTITY_PROVIDER=dev pnpm --filter @my-surveys/server start` (no watching; the server needs an
-identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @my-surveys/web dev`, or
-`pnpm --filter @my-surveys/web preview` (serves the production build; run
-`pnpm --filter @my-surveys/web build` first).
+To run one part alone: `pnpm --filter @surveyjs-studio/server dev:demo` (watch mode, reads `server/demo.env`),
+`IDENTITY_PROVIDER=dev pnpm --filter @surveyjs-studio/server start` (no watching; the server needs an
+identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @surveyjs-studio/web dev`, or
+`pnpm --filter @surveyjs-studio/web preview` (serves the production build; run
+`pnpm --filter @surveyjs-studio/web build` first).
 
 ## Environment variables (server)
 
@@ -123,7 +123,7 @@ reverse proxy set `TRUST_PROXY` to the proxy's address (or range)**: the server 
 `X-Forwarded-For` for requests that come from that proxy. Without it every user shares the proxy's counter,
 and a stored respondent address is the proxy's. List only proxies you run: a header from any other peer is
 ignored, but a listed range that is too wide lets a caller choose its address. The counters live in the
-process, so several instances each count alone (Step 14).
+process, so several instances each count alone ([Operations › One instance](operations.md#running-the-image)).
 
 `pnpm demo` reads `server/demo.env` (dev sign-in, the legacy fixture users, `PUBLIC_BASE_URL=http://localhost:5173`).
 Variables set in the shell win over that file. To see a licence dialog of the surveyjs.io shell, run
@@ -138,13 +138,13 @@ Set them in the shell that starts the server.
 Git Bash:
 
 ```sh
-IDENTITY_PROVIDER=dev APP_SHELL=demo pnpm --filter @my-surveys/server start
+IDENTITY_PROVIDER=dev APP_SHELL=demo pnpm --filter @surveyjs-studio/server start
 ```
 
 PowerShell (the variables stay set for the whole session; remove one with `Remove-Item Env:APP_SHELL`):
 
 ```powershell
-$env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @my-surveys/server start
+$env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @surveyjs-studio/server start
 ```
 
 The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `/api/v1`).
@@ -349,7 +349,7 @@ port 3000):
 node --env-file=docker/azurite.env --import tsx server/src/main.ts
 ```
 
-(`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
+(`pnpm --filter @surveyjs-studio/server start` does not read the file; export the variables or use
 the command above.) The hosted edition runs too: `APP_EDITION=hosted pnpm demo:azurite` (Git Bash).
 `ACCOUNT_NOTICES=surveyjs-licenses pnpm demo:azurite` reads the licence notices from the replica's
 licence tables ([layout, 3.15](architecture/legacy-data-layout.md#315-licences-and-the-licence-expiry-dialogs)).
@@ -438,7 +438,7 @@ and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 
 ## Prod-like mode
 
-Prod-like mode runs the **production image** (`my-surveys:local`, see [Operations](operations.md#deployment)) in the
+Prod-like mode runs the **production image** (`surveyjs-studio:local`, see [Operations](operations.md#deployment)) in the
 mode 1 configuration on the offline replica, signing in through the mock OIDC server. Nothing real is touched. It
 uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
 before starting the other.
@@ -649,17 +649,18 @@ the same least-privilege login as the inspector above. The output above is the l
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 
-| Package             | Script                                         | Purpose                                                                                                                                                 |
-| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server`            | `dev`, `start`, `typecheck`                    | Watch mode, plain start, type check                                                                                                                     |
-| `server`            | `dev:prod-data`                                | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
-| `web`               | `dev`, `build`, `preview`, `test`, `typecheck` | Vite dev server, build (type check first), preview, unit tests                                                                                          |
-| `contract`          | `generate`                                     | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
-| `contract`          | `lint`, `check:generated`                      | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
-| `contract`          | `build:docs`                                   | Write the self-contained `contract/dist/reference.html`                                                                                                 |
-| `conformance-tests` | `test`, `test:azurite`, `test:user-api`        | See [testing](testing.md)                                                                                                                               |
-| `e2e`               | `test`                                         | Playwright                                                                                                                                              |
-| `e2e`               | `test:visual`, `capture`                       | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
+| Package             | Script                                                    | Purpose                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`            | `dev`, `start`, `typecheck`                               | Watch mode, plain start, type check                                                                                                                     |
+| `server`            | `dev:demo`, `dev:demo:azurite`                            | The server half of the root `pnpm demo` and `pnpm demo:azurite`; run those instead                                                                      |
+| `server`            | `dev:prod-data`                                           | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
+| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`            | Vite dev server, build (type check first), preview, unit tests                                                                                          |
+| `contract`          | `generate`                                                | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
+| `contract`          | `lint`, `check:generated`                                 | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
+| `contract`          | `build:docs`                                              | Write the self-contained `contract/dist/reference.html`                                                                                                 |
+| `conformance-tests` | `test`, `test:azurite`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                               |
+| `e2e`               | `test`, `test:azurite`                                    | Playwright                                                                                                                                              |
+| `e2e`               | `test:visual`, `capture`                                  | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
 
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
@@ -668,12 +669,12 @@ functional e2e suite (3000/5173 and 3001/5174); both runners stop with a message
 their ports is taken. See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
-`pnpm --filter @my-surveys/contract generate`.
+`pnpm --filter @surveyjs-studio/contract generate`.
 
 ## Changing the contract
 
 1. Edit `contract/openapi.yaml` (hand-formatted; Prettier ignores it).
-2. `pnpm --filter @my-surveys/contract generate`, and commit the changed `generated/openapi.d.ts`.
+2. `pnpm --filter @surveyjs-studio/contract generate`, and commit the changed `generated/openapi.d.ts`.
 3. `pnpm lint:contract`.
 4. Implement the change and add conformance tests **in the same pull request**.
 
@@ -713,21 +714,29 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
-2. `test:unit` and `test:conformance` (in-memory);
-3. `docker build -t my-surveys:ci .`, the production image;
+2. `test:unit`, `test:conformance` (in-memory) and `test:conformance:read-only` (in-memory, `READ_ONLY=true`);
+3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
+   `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
 5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`);
 6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
    `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`);
-7. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
-8. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
+8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
+9. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+
+The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
+same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is
+the only job with `packages: write`, and it runs no installed packages, only `docker`. The image's
+`org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
+repository's access rules.
 
 The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see
 [Testing › Visual parity](testing.md#visual-parity)). CI typechecks, lints and unit-tests their helpers. Run
 `pnpm e2e:visual` locally before you merge a change to the look of a page.
 
-Run the same commands locally before you push. Steps 3, 4, 5 and 8 need Docker. The image targets of steps 5
+Run the same commands locally before you push. Steps 3, 4, 5 and 9 need Docker. The image targets of steps 5
 and 6 need Linux (`docker run --network host`); on Windows and macOS run those suites without them.
 
 ## Conventions

@@ -12,7 +12,7 @@ for now). A local test opens the same pages in the app, with the same data, and 
 
 You need what [the Step 1 demo](step-01.md#before-you-start) lists (Node.js 24.21.0, pnpm 12.11.2). Run `pnpm install`
 once, and install the browsers once:
-`pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`.
+`pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit`.
 
 If the default `node` of your machine is older than 24 (for example with nvm on Windows), put Node 24 first once in
 each Git Bash window, before any `pnpm` command: `export PATH="$APPDATA/nvm/v24.21.0:$PATH"`. Check with

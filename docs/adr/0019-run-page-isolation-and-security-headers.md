@@ -48,7 +48,8 @@ If this is wrong: a later step adds the isolated origin; nothing built now preve
 
 ### The header policy (R17, R18)
 
-One module in the web package, `web/security-headers.ts` (pure data and `securityHeaders(pathname, { https })`),
+One module in the web package, `web/security-headers.ts` (moved to `server/src/web/security-headers.ts` in Step 14,
+[ADR 0021](0021-production-image-and-web-serving.md); pure data and `securityHeaders(pathname, { https })`),
 holds the policy for the app's pages. `vite preview` applies it through a small plugin in `web/vite.config.ts` and
 skips the proxied prefixes (`/api`, `/__dev`, `/healthz`, `/readyz`), which keep the server's own headers. **The Vite
 dev server sends none**, because it injects inline scripts: `pnpm demo` has no CSP and `pnpm demo:preview` has it.

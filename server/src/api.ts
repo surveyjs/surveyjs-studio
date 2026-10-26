@@ -1,5 +1,5 @@
 import multipart from "@fastify/multipart";
-import type { operations } from "@my-surveys/contract";
+import type { operations } from "@surveyjs-studio/contract";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
 import { authenticationHook, type AuthenticationOptions } from "./auth/authenticate.js";
 import { isJsonMediaType, type Contract, type ContractOperation } from "./contract.js";

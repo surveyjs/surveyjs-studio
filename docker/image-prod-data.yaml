@@ -1,4 +1,4 @@
-# The production image (my-surveys:local) on the stores and the sign-in named in server/.env: the
+# The production image (surveyjs-studio:local) on the stores and the sign-in named in server/.env: the
 # REAL surveyjs.io data. Run it through `pnpm image:prod-data` (scripts/image-prod-data/cli.ts),
 # which checks the file, reads the issuer's certificate and sets the variables used below.
 #
@@ -7,7 +7,7 @@
 # development certificate is for localhost). issuer-forward owns the app's network namespace and
 # maps that port of its localhost (and any other endpoint of the env file on this machine) to the
 # same port on the host. The app answers on its port 3000, published as 127.0.0.1:3000.
-name: my-surveys-image-prod-data
+name: surveyjs-studio-image-prod-data
 services:
   issuer-forward:
     image: alpine/socat:1.8.1.1
@@ -20,7 +20,7 @@ services:
 
   app:
     build: ..
-    image: my-surveys:local
+    image: surveyjs-studio:local
     env_file: ${APP_ENV_FILE:-../server/.env}
     # These win over the env file: the image's own layout and the browser origin of this run.
     environment:

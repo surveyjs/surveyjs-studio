@@ -235,7 +235,7 @@ name in the form) and repeat parts 1 to 6. Everything works as in memory mode. W
   repository root):
 
 ```sh
-pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env -e '
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env -e '
 const { BlobServiceClient } = require("@azure/storage-blob");
 const c = BlobServiceClient.fromConnectionString(process.env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING).getContainerClient("surveyresultpermissions");
 (async () => { for await (const b of c.listBlobsFlat()) console.log(b.name, (await c.getBlobClient(b.name).downloadToBuffer()).toString("utf8")); })();

@@ -1,5 +1,5 @@
 {
-  "name": "@my-surveys/contract",
+  "name": "@surveyjs-studio/contract",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",

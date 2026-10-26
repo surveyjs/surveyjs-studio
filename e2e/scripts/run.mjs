@@ -28,5 +28,5 @@ await requireFreePorts(
     azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
   }),
 );
-if (!imageTarget) run("pnpm --filter @my-surveys/web build");
+if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");
 run(["playwright test", ...process.argv.slice(2)].join(" "));

@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { SurveyRecord, SurveyResponse } from "../domain/types.js";
 import type { ResponsePage, ResultStore } from "../providers/types.js";
 import { CSV_BOM, csvHeader, csvRow, type CsvColumn } from "./csv.js";

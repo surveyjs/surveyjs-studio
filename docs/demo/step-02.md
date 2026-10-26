@@ -22,8 +22,8 @@ Ports 10000, 10002 and 14333 on 127.0.0.1 must be free (Step 3 adds 18080 for th
 pnpm demo:azurite:up
 ```
 
-Expected: Docker creates the containers `my-surveys-legacy-azurite-1` and
-`my-surveys-legacy-legacy-sql-1` (Step 3 adds `my-surveys-legacy-mock-oidc-1`, the mock sign-in
+Expected: Docker creates the containers `surveyjs-studio-legacy-azurite-1` and
+`surveyjs-studio-legacy-legacy-sql-1` (Step 3 adds `surveyjs-studio-legacy-mock-oidc-1`, the mock sign-in
 server), and waits until all are `Healthy` (SQL Server takes up to a minute). Then the fixture loader
 prints its summary:
 

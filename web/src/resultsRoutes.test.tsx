@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { definitionHandler } from "./test/content-handlers";
 import { changedLayout } from "./test/fakeResultsWidget";
 import { renderApp } from "./test/renderApp";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import {
   deleteResultsHandler,
   resetViewHandler,

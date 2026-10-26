@@ -9,7 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import { parse } from "yaml";
 import { describe, expect, inject, it } from "vitest";
 import { baseUrl, call, sessionHeaders, signedIn, upload } from "./harness.js";

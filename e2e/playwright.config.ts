@@ -54,11 +54,11 @@ export const memoryServerEnv = {
   MEMORY_SEED: "legacy-fixtures",
 };
 
-const serverCommand = "pnpm --filter @my-surveys/server start";
+const serverCommand = "pnpm --filter @surveyjs-studio/server start";
 
 // The web app is built by the `e2e` scripts before Playwright starts; the previews only serve it.
 const preview = (port: number) =>
-  `pnpm --filter @my-surveys/web exec vite preview --port ${port} --strictPort`;
+  `pnpm --filter @surveyjs-studio/web exec vite preview --port ${port} --strictPort`;
 
 const memoryWebServers: WebServers = [
   {
@@ -102,7 +102,7 @@ const azuriteWebServers: WebServers = [
   {
     // The replica's and the mock OIDC server's local-only settings come from docker/azurite.env.
     command:
-      "pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env --import tsx src/main.ts",
+      "pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env --import tsx src/main.ts",
     url: `http://127.0.0.1:${ports.server}/readyz`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -150,13 +150,13 @@ function imageWebServers(): WebServers {
   if (!azurite) {
     // The dev sign-in is refused under NODE_ENV=production (the image's default), so development.
     return [
-      imageWebServer("my-surveys-e2e-memory-5173", ports.web, {
+      imageWebServer("surveyjs-studio-e2e-memory-5173", ports.web, {
         ...memoryServerEnv,
         ...imageServerEnv(ports.web),
         NODE_ENV: "development",
       }),
       // The licence-notice server (see memoryWebServers).
-      imageWebServer("my-surveys-e2e-memory-5174", ports.licenceWeb, {
+      imageWebServer("surveyjs-studio-e2e-memory-5174", ports.licenceWeb, {
         ...memoryServerEnv,
         ...imageServerEnv(ports.licenceWeb),
         NODE_ENV: "development",
@@ -173,7 +173,7 @@ function imageWebServers(): WebServers {
   ) as Record<string, string>;
   return [
     // NODE_ENV stays production, as in a deployment, so the server needs a session secret.
-    imageWebServer("my-surveys-e2e-azurite-5173", ports.web, {
+    imageWebServer("surveyjs-studio-e2e-azurite-5173", ports.web, {
       ...azuriteEnv,
       ...imageServerEnv(ports.web),
       NODE_ENV: "production",

@@ -172,7 +172,7 @@ Without the header:
 
 ```text
 HTTP/1.1 403 Forbidden
-{"type":"https://my-surveys.surveyjs.io/problems/csrf-token-invalid","title":"Invalid CSRF token","status":403,"code":"csrf-token-invalid","detail":"Send the value of the msid_csrf cookie in the X-CSRF-Token header."}
+{"type":"https://studio.surveyjs.io/problems/csrf-token-invalid","title":"Invalid CSRF token","status":403,"code":"csrf-token-invalid","detail":"Send the value of the msid_csrf cookie in the X-CSRF-Token header."}
 ```
 
 | Status | Code                 | Means                                           | The client should                                            |
@@ -216,7 +216,7 @@ otherwise). The web app always navigates to `redirectUrl`.
 ```text
 HTTP/1.1 429 Too Many Requests
 retry-after: 60
-{"type":"https://my-surveys.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many sign-in attempts. Try again in 1 minute."}
+{"type":"https://studio.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many sign-in attempts. Try again in 1 minute."}
 ```
 
 **The client is the address of the connection**, unless the server was told to believe a reverse proxy.

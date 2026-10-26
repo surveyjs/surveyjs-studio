@@ -44,7 +44,7 @@ The run page never loads the editor or the results code, so it opens quickly.
 **The brand footer loads its logo from `surveyjs.io`.** Offline, the logo is a missing image.
 
 **Not built yet:** the orange "Disclaimer of liability" banner that surveyjs.io shows for owners without a
-licence. It is open for Step 13.
+licence. Whether it is built is decided before the old run links are redirected here.
 
 ## Limit to one response
 

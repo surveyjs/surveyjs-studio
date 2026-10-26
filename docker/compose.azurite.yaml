@@ -1,6 +1,6 @@
 # Offline replica of the legacy stores: Azurite (Blob and Table) and SQL Server.
 # Start with `pnpm demo:azurite:up`; stop and wipe with `pnpm demo:azurite:down`.
-name: my-surveys-legacy
+name: surveyjs-studio-legacy
 services:
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.37.0

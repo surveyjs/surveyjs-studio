@@ -178,7 +178,7 @@ differences you can see:
   project's own packages; it only reads, from the repository root):
 
 ```sh
-pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env -e '
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env -e '
 const { BlobServiceClient } = require("@azure/storage-blob");
 const c = BlobServiceClient.fromConnectionString(process.env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING).getContainerClient("my-surveys-views");
 (async () => { for await (const b of c.listBlobsFlat()) console.log(b.name, b.properties.contentLength); })();

@@ -1,5 +1,5 @@
 {
-  "name": "@my-surveys/e2e",
+  "name": "@surveyjs-studio/e2e",
   "private": true,
   "type": "module",
   "scripts": {

@@ -142,7 +142,7 @@ describe("Problem responses", () => {
     expect(res.statusCode).toBe(404);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toMatchObject({
-      type: "https://my-surveys.surveyjs.io/problems/not-found",
+      type: "https://studio.surveyjs.io/problems/not-found",
       status: 404,
       code: "not-found",
     });

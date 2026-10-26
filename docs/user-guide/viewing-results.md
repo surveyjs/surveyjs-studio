@@ -131,5 +131,5 @@ usable. The key is set with `SURVEYJS_LICENSE_KEY` (see
 - The locale picker of the old table ("Choose locale...").
 - The table's row actions of the old page, **Show in Survey** and **Delete Result**. There is no way yet to
   delete one response.
-- The old page's heading "My Surveys. Results" (this page shows the survey name) and the old `#summary`,
-  `#table` and `#info` links. They are open for Steps 12 and 13.
+- The tab named in an old `#summary`, `#table` or `#info` link. An old results link opens on the Summary tab
+  ([Moving from the old My Surveys](moving-from-the-old-my-surveys.md)).

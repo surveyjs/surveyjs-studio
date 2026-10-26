@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import rateLimit from "@fastify/rate-limit";
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createEraseAccount } from "./accounts/erasure.js";
 import { createAccountHandlers } from "./accounts/handlers.js";

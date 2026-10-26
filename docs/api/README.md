@@ -35,7 +35,7 @@ Then open <http://localhost:3000/api/docs>. `pnpm demo` builds the reference fir
 the server another way and the page says `404` with "Run pnpm build:docs", build it:
 
 ```sh
-pnpm --filter @my-surveys/contract build:docs
+pnpm --filter @surveyjs-studio/contract build:docs
 ```
 
 (`pnpm build` does this too.) The output is one self-contained HTML file,
@@ -50,18 +50,18 @@ Lint runs with Redocly telemetry off (`telemetry: off` in `contract/redocly.yaml
 suppressed. The three operations that legitimately lack a 2xx or 4xx response (`GET /auth/login`,
 `GET /auth/callback`, `GET /config`) are listed in `contract/.redocly.lint-ignore.yaml`.
 
-| Command                                       | Purpose                                                     |
-| --------------------------------------------- | ----------------------------------------------------------- |
-| `pnpm lint:contract`                          | Redocly lint, and fail if `generated/openapi.d.ts` is stale |
-| `pnpm --filter @my-surveys/contract generate` | Regenerate the TypeScript types from the contract           |
+| Command                                            | Purpose                                                     |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| `pnpm lint:contract`                               | Redocly lint, and fail if `generated/openapi.d.ts` is stale |
+| `pnpm --filter @surveyjs-studio/contract generate` | Regenerate the TypeScript types from the contract           |
 
 ## Outside `/api/v1`
 
-| Path        | Purpose                                                                      |
-| ----------- | ---------------------------------------------------------------------------- |
-| `/healthz`  | Process is up: `200 {"status":"ok"}`                                         |
-| `/readyz`   | Providers are ready: `200 {"status":"ok"}` or `503 {"status":"unavailable"}` |
-| `/api/docs` | The API reference (not in production by default)                             |
+| Path        | Purpose                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| `/healthz`  | Process is up: `200 {"status":"ok"}`                                                           |
+| `/readyz`   | Providers are ready: `200 {"status":"ok"}` or `503 {"status":"unavailable","failing":["sql"]}` |
+| `/api/docs` | The API reference (not in production by default)                                               |
 
 ## What is implemented
 
@@ -238,7 +238,7 @@ curl -i -b cookies.txt -X DELETE -H "X-CSRF-Token: $CSRF" "$API/surveys/$ID"
 
 ```text
 HTTP/1.1 409 Conflict
-{"type":"https://my-surveys.surveyjs.io/problems/survey-not-archived","title":"Archive the survey before deleting it","status":409,"code":"survey-not-archived"}
+{"type":"https://studio.surveyjs.io/problems/survey-not-archived","title":"Archive the survey before deleting it","status":409,"code":"survey-not-archived"}
 ```
 
 After `{"archived":true}` the same request answers `204 No Content`, and a third one `404`.
@@ -296,7 +296,7 @@ The second one answers `204 No Content` and an `ETag`. With a stale `If-Match` i
 
 ```text
 HTTP/1.1 412 Precondition Failed
-{"type":"https://my-surveys.surveyjs.io/problems/edit-conflict","title":"The survey was changed by someone else","status":412,"code":"edit-conflict","detail":"Reload the survey to see the latest version."}
+{"type":"https://studio.surveyjs.io/problems/edit-conflict","title":"The survey was changed by someone else","status":412,"code":"edit-conflict","detail":"Reload the survey to see the latest version."}
 ```
 
 The history, with the entries of the survey just saved:

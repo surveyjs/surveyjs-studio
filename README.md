@@ -3,8 +3,13 @@
 My Surveys is the survey section of [surveyjs.io](https://surveyjs.io). You create surveys with
 Survey Creator, publish them, collect responses and look at the results. This repository is the
 SurveyJS team's rebuild of that section as a standalone application. It will run at
-`my-surveys.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
+`studio.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
 free Docker image for running your own copy.
+
+**Naming.** The repository is [`surveyjs/surveyjs-studio`](https://github.com/surveyjs/surveyjs-studio), and the
+image, the packages (`@surveyjs-studio/*`) and the hosting address (`studio.surveyjs.io`) use that name. The app's
+pages still say "My Surveys" until the interface is renamed. The app's Azure containers keep their names
+(`my-surveys-files`, `my-surveys-views`), because they hold data.
 
 The back end is described by one OpenAPI 3.1 file, [`contract/openapi.yaml`](contract/openapi.yaml).
 The Node.js server in this repository is the reference implementation. A back end in another
@@ -15,19 +20,19 @@ language is accepted when it passes the conformance suite in this repository.
 The same code is meant to run in several modes. Configuration chooses the storage, the user
 directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)).
 
-| Mode                                       | What it is                                                                                                                                       | State                                                                                  |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| **1.1–1.2 Hosted on the surveyjs.io data** | `my-surveys.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
-| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                          | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
-| **2a Sandbox**                             | `my-surveys.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
-| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                                | Same as 2a                                                                             |
-| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                             | Same as 2a                                                                             |
-| **4 Development**                          | Local modes for development and tests: in memory, or on a replica of the legacy stores                                                           | Available now (see [Quick start](#quick-start))                                        |
+| Mode                                       | What it is                                                                                                                                   | State                                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **1.1–1.2 Hosted on the surveyjs.io data** | `studio.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
+| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                      | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
+| **2a Sandbox**                             | `studio.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
+| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                            | Same as 2a                                                                             |
+| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                         | Same as 2a                                                                             |
+| **4 Development**                          | Local modes for development and tests: in memory, on a replica of the legacy stores, or (product owner) on the real stores                   | Available now (see [Quick start](#quick-start))                                        |
 
 ## Status
 
-Phase 1, **Steps 1–13 of 14 are done, and Step 14 is built**: its last checkpoint, the compatibility smoke test on
-production and the review of the runbook, is open ([progress](plan.md#progress)). What works:
+**Phase 1 is done**: Steps 1–14 are merged, and the compatibility smoke test passed on production on 2026-10-23
+([progress](plan.md#progress)). The app is not deployed yet: hosting is the next step. What works:
 
 - **Every screen of the current My Surveys.**
   - **Survey list:**
@@ -79,10 +84,9 @@ production and the review of the runbook, is open ([progress](plan.md#progress))
 
 **Next:**
 
-- Step 14's last checkpoint: the smoke test on production with the dedicated test account, and the review of the
-  [runbook](docs/operations.md#rollout-and-rollback-runbook) with the site team.
-- Hosting (most likely Hetzner) as a separate step, then the rollout: internal use read-only, a beta link, the
-  redirects, and the removal of the old section.
+- Hosting (most likely Hetzner) as a separate step: the host, the https proxy, DNS, the image registry, the Azure
+  network rules, and the inputs the [runbook](docs/operations.md#what-each-step-needs) lists for its step 1.
+- Then the rollout: internal use read-only, a beta link, the redirects, and the removal of the old section.
 
 After that, the hosted-migration and self-hosted tracks run at the same time ([After Phase 1](plan.md#after-phase-1)).
 
@@ -151,59 +155,60 @@ One image serves every deployment mode; its settings choose the mode. Build it w
 
 ## Repository layout
 
-| Directory            | Package                         | Purpose                                                           |
-| -------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `contract/`          | `@my-surveys/contract`          | `openapi.yaml`, generated TypeScript types, API reference build   |
-| `server/`            | `@my-surveys/server`            | Fastify server; routes and validation are built from the contract |
-| `web/`               | `@my-surveys/web`               | React app built with Vite                                         |
-| `conformance-tests/` | `@my-surveys/conformance-tests` | HTTP suite that checks any server against the contract            |
-| `e2e/`               | `@my-surveys/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
-| `scripts/`           | (root)                          | Repository checks, for example `check:deps`                       |
-| `docker/`            |                                 | The legacy replica, the mock OIDC server, and the prod-like setup |
-| `docs/`              |                                 | Documentation                                                     |
+| Directory            | Package                              | Purpose                                                           |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `contract/`          | `@surveyjs-studio/contract`          | `openapi.yaml`, generated TypeScript types, API reference build   |
+| `server/`            | `@surveyjs-studio/server`            | Fastify server; routes and validation are built from the contract |
+| `web/`               | `@surveyjs-studio/web`               | React app built with Vite                                         |
+| `conformance-tests/` | `@surveyjs-studio/conformance-tests` | HTTP suite that checks any server against the contract            |
+| `e2e/`               | `@surveyjs-studio/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
+| `scripts/`           | (root)                               | Repository checks, for example `check:deps`                       |
+| `docker/`            |                                      | The legacy replica, the mock OIDC server, and the prod-like setup |
+| `docs/`              |                                      | Documentation                                                     |
 
 ## Scripts
 
 Run from the repository root.
 
-| Script                           | What it does                                                                                                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm demo`                      | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
-| `pnpm demo:preview`              | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none            |
-| `pnpm build`                     | Builds the API reference and the production web bundle                                                                    |
-| `pnpm test`                      | `test:unit`, then `test:conformance`                                                                                      |
-| `pnpm test:unit`                 | Vitest across contract, server, web and repository scripts                                                                |
-| `pnpm test:conformance`          | Conformance suite against a server it starts itself                                                                       |
-| `pnpm demo:azurite:up`           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
-| `pnpm demo:azurite`              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
-| `pnpm demo:azurite:down`         | Stops the replica and deletes its data                                                                                    |
-| `pnpm dev:prod-data`             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
-| `pnpm image:build`               | Builds the production image `my-surveys:local` (needs Docker)                                                             |
-| `pnpm prod-like:up`              | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
-| `pnpm prod-like:down`            | Stops the prod-like containers and deletes their data                                                                     |
-| `pnpm image:prod-data`           | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
-| `pnpm legacy:load`               | Loads the golden fixtures into a running replica                                                                          |
-| `pnpm inspect:legacy`            | Read-only inspector: lists one user's surveys from the configured store                                                   |
-| `pnpm inspect:legacy-schema`     | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
-| `pnpm user-api:stub`             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
-| `pnpm account:erase`             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
-| `pnpm smoke:legacy`              | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                  |
-| `pnpm account:reconcile`         | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
-| `pnpm webhook:account-deleted`   | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
-| `pnpm test:conformance:user-api` | Conformance suite with the server on the user-API stub                                                                    |
-| `pnpm test:providers:azurite`    | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
-| `pnpm test:conformance:azurite`  | Conformance suite on the `azure-legacy` provider and the replica                                                          |
-| `pnpm e2e`                       | Playwright tests in three browsers (starts server and web app)                                                            |
-| `pnpm e2e:azurite`               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
-| `pnpm e2e:visual`                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))       |
-| `pnpm e2e:visual:report`         | Opens the visual parity report                                                                                            |
-| `pnpm visual:capture`            | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                             |
-| `pnpm lint`                      | ESLint                                                                                                                    |
-| `pnpm typecheck`                 | `tsc` in every package                                                                                                    |
-| `pnpm format`                    | Prettier, write                                                                                                           |
-| `pnpm format:check`              | Prettier, check only                                                                                                      |
-| `pnpm lint:contract`             | Redocly lint of the contract, and a check that generated types are current                                                |
-| `pnpm check:deps`                | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
+| Script                            | What it does                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm demo`                       | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
+| `pnpm demo:preview`               | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none            |
+| `pnpm build`                      | Builds the API reference and the production web bundle                                                                    |
+| `pnpm test`                       | `test:unit`, then `test:conformance`                                                                                      |
+| `pnpm test:unit`                  | Vitest across contract, server, web and repository scripts                                                                |
+| `pnpm test:conformance`           | Conformance suite against a server it starts itself                                                                       |
+| `pnpm demo:azurite:up`            | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
+| `pnpm demo:azurite`               | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
+| `pnpm demo:azurite:down`          | Stops the replica and deletes its data                                                                                    |
+| `pnpm dev:prod-data`              | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
+| `pnpm image:build`                | Builds the production image `surveyjs-studio:local` (needs Docker)                                                        |
+| `pnpm prod-like:up`               | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
+| `pnpm prod-like:down`             | Stops the prod-like containers and deletes their data                                                                     |
+| `pnpm image:prod-data`            | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
+| `pnpm legacy:load`                | Loads the golden fixtures into a running replica                                                                          |
+| `pnpm inspect:legacy`             | Read-only inspector: lists one user's surveys from the configured store                                                   |
+| `pnpm inspect:legacy-schema`      | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
+| `pnpm user-api:stub`              | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
+| `pnpm account:erase`              | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
+| `pnpm smoke:legacy`               | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                  |
+| `pnpm account:reconcile`          | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
+| `pnpm webhook:account-deleted`    | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
+| `pnpm test:conformance:read-only` | Conformance suite with the server in `READ_ONLY=true`                                                                     |
+| `pnpm test:conformance:user-api`  | Conformance suite with the server on the user-API stub                                                                    |
+| `pnpm test:providers:azurite`     | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
+| `pnpm test:conformance:azurite`   | Conformance suite on the `azure-legacy` provider and the replica                                                          |
+| `pnpm e2e`                        | Playwright tests in three browsers (starts server and web app)                                                            |
+| `pnpm e2e:azurite`                | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
+| `pnpm e2e:visual`                 | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))       |
+| `pnpm e2e:visual:report`          | Opens the visual parity report                                                                                            |
+| `pnpm visual:capture`             | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                             |
+| `pnpm lint`                       | ESLint                                                                                                                    |
+| `pnpm typecheck`                  | `tsc` in every package                                                                                                    |
+| `pnpm format`                     | Prettier, write                                                                                                           |
+| `pnpm format:check`               | Prettier, check only                                                                                                      |
+| `pnpm lint:contract`              | Redocly lint of the contract, and a check that generated types are current                                                |
+| `pnpm check:deps`                 | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
 
 ## Documentation
 

@@ -178,7 +178,7 @@ curl -i http://localhost:5173/api/v1/public/surveys/<id>
 ```
 
 Expected: `429 Too Many Requests`, a `retry-after` header (seconds), `x-ratelimit-limit: 5`, and the body
-`{"type":"https://my-surveys.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many requests. Try again in ..."}`.
+`{"type":"https://studio.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many requests. Try again in ..."}`.
 Wait for a minute and it works again. (Other operations have their own counters: a `POST` of a response is
 not limited by the `GET`s.) Unset the variable and restart before the next part.
 
@@ -204,7 +204,7 @@ A script with the project's own packages (Git Bash, from the repository root; it
 Post ID after the last quotation mark.
 
 ```sh
-pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env -e '
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env -e '
 const { TableClient } = require("@azure/data-tables");
 const name = "post" + process.argv[1].replaceAll("-", "").toLowerCase();
 const t = TableClient.fromConnectionString(process.env.LEGACY_RESULTS_STORAGE_CONNECTION_STRING, name, { allowInsecureConnection: true });

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import type { FastifyInstance } from "fastify";
 import { parse } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -40,7 +40,7 @@ const REFUSED = [
 ];
 
 const READ_ONLY_PROBLEM = {
-  type: "https://my-surveys.surveyjs.io/problems/read-only",
+  type: "https://studio.surveyjs.io/problems/read-only",
   title: "My Surveys is read-only at the moment. Changes cannot be saved.",
   status: 503,
   code: "read-only",

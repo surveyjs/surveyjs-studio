@@ -2,7 +2,7 @@
 
 Status: draft · 2026-10-19
 Implements: [spec-self-hosted.md](spec-self-hosted.md), within [idea.md](idea.md) (§3.0, D15–D22) and the contract [contract/openapi.yaml](contract/openapi.yaml).
-Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same time as [plan-hosted.md](plan-hosted.md).
+Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It runs at the same time as [plan-hosted.md](plan-hosted.md).
 
 ## How to use this plan
 
@@ -364,7 +364,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 **Goal:** the official image of mode 2b: one command to run, safe upgrades, backups, no outbound calls, and a release pipeline.
 
-**Inputs needed:** push access to `surveyjs/my-surveys` on Docker Hub and `ghcr.io/surveyjs/my-surveys`; the published licence key once open question 1 is resolved. Until then, the pipeline publishes to a private test repository only.
+**Inputs needed:** push access to `surveyjs/surveyjs-studio` on Docker Hub and `ghcr.io/surveyjs/surveyjs-studio`; the published licence key once open question 1 is resolved. Until then, the pipeline publishes to a private test repository only.
 
 **References**
 
@@ -373,10 +373,10 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 **Build**
 
-- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080`, volume `/data`, non-root.
+- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080` (the Step 14 image sets `PORT=3000` today), volume `/data`, non-root.
 - **Images for `linux/amd64` and `linux/arm64`.**
 - **Start-up:** migrations under a lock, the first-admin bootstrap, `/healthz` and `/readyz`, `TRUSTED_PROXIES`, secure cookies on HTTPS.
-- **`my-surveys backup` and `my-surveys restore`** inside the image, for SQLite and local files. The documentation covers `pg_dump` and S3 versioning.
+- **`surveyjs-studio backup` and `surveyjs-studio restore`** inside the image, for SQLite and local files. The documentation covers `pg_dump` and S3 versioning.
 - **No outbound calls:** fonts and assets bundled, and the absence of other calls checked.
 - **Compose examples:** `compose.sqlite.yml`, `compose.postgres.yml` (PostgreSQL and MinIO).
 - **Release pipeline:**
@@ -399,7 +399,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 **Demo checklist**
 
-1. `docker run -p 8080:8080 -v my-surveys:/data -e ADMIN_EMAIL=… -e ADMIN_PASSWORD=… <image>`. Sign in, change the password, create and publish a survey, and submit a response.
+1. `docker run -p 8080:8080 -v surveyjs-studio:/data -e ADMIN_EMAIL=… -e ADMIN_PASSWORD=… <image>`. Sign in, change the password, create and publish a survey, and submit a response.
 2. Stop it, run a newer build on the same volume, and the data is there.
 3. `docker compose -f compose.postgres.yml up`. The same flow works on PostgreSQL and MinIO.
 4. Back up, delete the volume, restore, and the survey and response are back.
@@ -515,7 +515,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 ## Step 10: Publishing the sandbox
 
-**Goal:** the sandbox is live at `my-surveys.demo.surveyjs.io`, deployed from CI.
+**Goal:** the sandbox is live at `studio.demo.surveyjs.io`, deployed from CI.
 
 **Inputs needed:** the static hosting or CDN, DNS for the subdomain, and a licence key for that domain.
 
@@ -544,7 +544,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14). It runs at the same tim
 
 **Demo checklist**
 
-1. Open `https://my-surveys.demo.surveyjs.io`, pick an account and try the full loop.
+1. Open `https://studio.demo.surveyjs.io`, pick an account and try the full loop.
 2. Deploy a release with a changed seed version. Returning visitors are offered a reset.
 
 ---

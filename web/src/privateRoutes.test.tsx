@@ -201,7 +201,7 @@ describe("shell in the private layout", () => {
 function logoutHandler(status: number, code: string, title: string) {
   return mswHttp.post("*/api/v1/auth/logout", () =>
     HttpResponse.json(
-      { type: `https://my-surveys.surveyjs.io/problems/${code}`, title, status, code },
+      { type: `https://studio.surveyjs.io/problems/${code}`, title, status, code },
       { status, headers: { "Content-Type": "application/problem+json" } },
     ),
   );

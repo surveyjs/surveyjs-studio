@@ -49,7 +49,7 @@ The `412` body is:
 
 ```json
 {
-  "type": "https://my-surveys.surveyjs.io/problems/edit-conflict",
+  "type": "https://studio.surveyjs.io/problems/edit-conflict",
   "title": "The survey was changed by someone else",
   "status": 412,
   "code": "edit-conflict",

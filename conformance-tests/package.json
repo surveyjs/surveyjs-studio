@@ -1,5 +1,5 @@
 {
-  "name": "@my-surveys/conformance-tests",
+  "name": "@surveyjs-studio/conformance-tests",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@my-surveys/contract": "workspace:*",
+    "@surveyjs-studio/contract": "workspace:*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "yaml": "2.9.1"
