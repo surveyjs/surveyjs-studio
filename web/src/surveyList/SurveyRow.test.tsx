@@ -201,7 +201,7 @@ describe("a refused write on a read-only server", () => {
       mswHttp.patch("*/api/v1/surveys/:surveyId", () =>
         HttpResponse.json(
           {
-            type: "https://my-surveys.surveyjs.io/problems/read-only",
+            type: "https://studio.surveyjs.io/problems/read-only",
             title: "My Surveys is read-only at the moment. Changes cannot be saved.",
             status: 503,
             code: "read-only",

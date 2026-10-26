@@ -13,7 +13,7 @@ Plan: [plan-hosted.md](plan-hosted.md). The self-hosted track ([spec-self-hosted
 
 ## Problem Statement
 
-After Phase 1 (modes 1.1 and 1.2), `my-surveys.surveyjs.io` is the only My Surveys UI. It still runs on the legacy surveyjs.io data:
+After Phase 1 (modes 1.1 and 1.2), `studio.surveyjs.io` is the only My Surveys UI. It still runs on the legacy surveyjs.io data:
 
 - **Survey, project and member records** live in the surveyjs.io site's SQL database, next to data the app does not own (users, licences, billing).
 - **Definitions, history, results and files** live in Azure Tables, Blobs and file shares, in formats designed for the old .NET service. Every write must keep those formats readable by legacy code:

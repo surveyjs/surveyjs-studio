@@ -202,7 +202,7 @@ importers:
 
   conformance-tests:
     dependencies:
-      '@my-surveys/contract':
+      '@surveyjs-studio/contract':
         specifier: workspace:*
         version: link:../contract
       ajv:
@@ -263,7 +263,7 @@ importers:
       '@fastify/static':
         specifier: 10.1.6
         version: 10.1.6
-      '@my-surveys/contract':
+      '@surveyjs-studio/contract':
         specifier: workspace:*
         version: link:../contract
       ajv:
@@ -300,7 +300,7 @@ importers:
 
   web:
     dependencies:
-      '@my-surveys/contract':
+      '@surveyjs-studio/contract':
         specifier: workspace:*
         version: link:../contract
       '@tanstack/react-query':

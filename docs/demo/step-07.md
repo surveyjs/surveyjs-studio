@@ -177,7 +177,7 @@ A script with the project's own packages (Git Bash, from the repository root; it
 survey's id after the last quotation mark; the id is in the editor's address.
 
 ```sh
-pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env -e '
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env -e '
 const { BlobServiceClient } = require("@azure/storage-blob");
 const id = process.argv[1];
 const c = BlobServiceClient.fromConnectionString(process.env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING).getContainerClient("my-surveys-files");

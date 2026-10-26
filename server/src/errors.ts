@@ -1,10 +1,10 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 
 export type Problem = components["schemas"]["Problem"];
 export type ProblemCode = Problem["code"];
 export type ProblemFieldError = NonNullable<Problem["errors"]>[number];
 
-export const PROBLEM_TYPE_BASE = "https://my-surveys.surveyjs.io/problems/";
+export const PROBLEM_TYPE_BASE = "https://studio.surveyjs.io/problems/";
 export const PROBLEM_CONTENT_TYPE = "application/problem+json";
 
 export interface AppErrorInit {

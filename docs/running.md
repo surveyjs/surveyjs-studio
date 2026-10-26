@@ -11,7 +11,7 @@ Every configuration on this page is **mode 4, development** ([idea §3.0](../ide
 - for the product owner only, two runs on the real production SQL database and storage accounts: mode 1.1's data,
   signing in through a local the site's sign-in service.
 
-Mode 1.1 itself (`https://my-surveys.surveyjs.io`) is the image behind an https proxy and needs the hosting step.
+Mode 1.1 itself (`https://studio.surveyjs.io`) is the image behind an https proxy and needs the hosting step.
 Mode 1.2 is mode 1.1 plus changes on surveyjs.io (its redirects and the account-deleted webhook), so it needs no other
 app configuration than the webhook secret. Modes 1.3, 2a, 2b and 3 are not built yet. A real deployment (the image
 behind an https proxy, its settings by mode, the rollout) is described in [Operations](operations.md).

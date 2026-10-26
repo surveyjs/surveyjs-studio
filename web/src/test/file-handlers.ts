@@ -1,5 +1,5 @@
 import { HttpResponse, http as mswHttp } from "msw";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { http, sampleSurvey } from "./server";
 
 type StoredFile = components["schemas"]["StoredFile"];
@@ -90,7 +90,7 @@ export function uploadProblemHandler(status: UploadProblemStatus) {
   const { code, title } = problems[status];
   return mswHttp.post("*/api/v1/surveys/:surveyId/assets", () =>
     HttpResponse.json(
-      { type: `https://my-surveys.surveyjs.io/problems/${code}`, title, status, code },
+      { type: `https://studio.surveyjs.io/problems/${code}`, title, status, code },
       { status, headers: { "Content-Type": "application/problem+json" } },
     ),
   );

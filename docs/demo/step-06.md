@@ -219,7 +219,7 @@ metadata. Two ways to see them:
 survey's id after the last quotation mark. The id is in the editor's address.
 
 ```sh
-pnpm --filter @my-surveys/server exec node --env-file=../docker/azurite.env -e '
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env -e '
 const { BlobServiceClient } = require("@azure/storage-blob");
 const id = process.argv[1];
 const c = BlobServiceClient.fromConnectionString(process.env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING).getContainerClient("surveyjsonhistory");

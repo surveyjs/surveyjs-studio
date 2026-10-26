@@ -89,7 +89,7 @@ When a user deletes their surveyjs.io account, the site sends one signed message
 user's data: their personal surveys with results and files, and their place in every project. A project that would
 lose its last admin passes to its next member; a project with no other member is deleted with its surveys.
 
-`POST https://<my-surveys origin>/api/v1/webhooks/account-deleted`
+`POST https://<app origin>/api/v1/webhooks/account-deleted`
 
 ### Signing
 

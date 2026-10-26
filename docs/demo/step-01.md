@@ -132,7 +132,7 @@ content-type: application/problem+json; charset=utf-8
 x-request-id: <a UUID>
 ...
 
-{"type":"https://my-surveys.surveyjs.io/problems/not-implemented","title":"Not implemented","status":501,"code":"not-implemented","detail":"Operation listSurveys is not implemented yet."}
+{"type":"https://studio.surveyjs.io/problems/not-implemented","title":"Not implemented","status":501,"code":"not-implemented","detail":"Operation listSurveys is not implemented yet."}
 ```
 
 An unknown URL gives a `404` Problem (`code: not-found`):
@@ -158,7 +158,7 @@ matters is that all pass and nothing prints warnings.
 Install the browsers once, then run the end-to-end tests:
 
 ```sh
-pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit
+pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit
 pnpm e2e
 ```
 
@@ -232,7 +232,7 @@ or `pnpm-lock.yaml`.
 - `Unsupported engine` on install: wrong Node version. Run `nvm use` and check `node -v`.
 - `Port 5173 is already in use`: stop whatever holds the port; the port is fixed on purpose.
 - `/api/docs` shows `404` and "Run pnpm build:docs": build the reference with
-  `pnpm --filter @my-surveys/contract build:docs` (`pnpm demo` does it for you).
+  `pnpm --filter @surveyjs-studio/contract build:docs` (`pnpm demo` does it for you).
 - The home page shows "Could not load the application configuration": the server is not
   running on port 3000.
 - Server exits at start-up with `Invalid configuration:`: it lists every bad environment

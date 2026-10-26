@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { Handlers } from "../api.js";
 import { requireUser } from "../auth/authenticate.js";
 import {

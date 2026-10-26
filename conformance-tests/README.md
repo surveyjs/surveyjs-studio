@@ -26,7 +26,7 @@ A port in another language (.NET, PHP, ...) is accepted when this suite passes a
 pnpm test:conformance
 ```
 
-With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @my-surveys/server start`
+With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @surveyjs-studio/server start`
 on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=dev`, `MEMORY_SEED=legacy-fixtures`), waits up to 30 s for
 `/readyz`, and stops it (and its process tree) afterwards. `PUBLIC_BASE_URL` is the server's own
 origin, and `SIGN_IN_RATE_LIMIT` is high enough that the suite never reaches it.

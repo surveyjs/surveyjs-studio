@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { Handlers } from "./api.js";
 import type { AppConfig } from "./config.js";
 import { shellLinks } from "./shell-links.js";

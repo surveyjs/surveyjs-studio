@@ -3,8 +3,13 @@
 My Surveys is the survey section of [surveyjs.io](https://surveyjs.io). You create surveys with
 Survey Creator, publish them, collect responses and look at the results. This repository is the
 SurveyJS team's rebuild of that section as a standalone application. It will run at
-`my-surveys.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
+`studio.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
 free Docker image for running your own copy.
+
+**Naming.** The repository is [`surveyjs/surveyjs-studio`](https://github.com/surveyjs/surveyjs-studio), and the
+image, the packages (`@surveyjs-studio/*`) and the hosting address (`studio.surveyjs.io`) use that name. The app's
+pages still say "My Surveys" until the interface is renamed. The app's Azure containers keep their names
+(`my-surveys-files`, `my-surveys-views`), because they hold data.
 
 The back end is described by one OpenAPI 3.1 file, [`contract/openapi.yaml`](contract/openapi.yaml).
 The Node.js server in this repository is the reference implementation. A back end in another
@@ -15,14 +20,14 @@ language is accepted when it passes the conformance suite in this repository.
 The same code is meant to run in several modes. Configuration chooses the storage, the user
 directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)).
 
-| Mode                                       | What it is                                                                                                                                       | State                                                                                  |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| **1.1–1.2 Hosted on the surveyjs.io data** | `my-surveys.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
-| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                          | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
-| **2a Sandbox**                             | `my-surveys.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
-| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                                | Same as 2a                                                                             |
-| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                             | Same as 2a                                                                             |
-| **4 Development**                          | Local modes for development and tests: in memory, on a replica of the legacy stores, or (product owner) on the real stores                       | Available now (see [Quick start](#quick-start))                                        |
+| Mode                                       | What it is                                                                                                                                   | State                                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **1.1–1.2 Hosted on the surveyjs.io data** | `studio.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
+| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                      | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
+| **2a Sandbox**                             | `studio.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
+| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                            | Same as 2a                                                                             |
+| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                         | Same as 2a                                                                             |
+| **4 Development**                          | Local modes for development and tests: in memory, on a replica of the legacy stores, or (product owner) on the real stores                   | Available now (see [Quick start](#quick-start))                                        |
 
 ## Status
 
@@ -150,16 +155,16 @@ One image serves every deployment mode; its settings choose the mode. Build it w
 
 ## Repository layout
 
-| Directory            | Package                         | Purpose                                                           |
-| -------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `contract/`          | `@my-surveys/contract`          | `openapi.yaml`, generated TypeScript types, API reference build   |
-| `server/`            | `@my-surveys/server`            | Fastify server; routes and validation are built from the contract |
-| `web/`               | `@my-surveys/web`               | React app built with Vite                                         |
-| `conformance-tests/` | `@my-surveys/conformance-tests` | HTTP suite that checks any server against the contract            |
-| `e2e/`               | `@my-surveys/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
-| `scripts/`           | (root)                          | Repository checks, for example `check:deps`                       |
-| `docker/`            |                                 | The legacy replica, the mock OIDC server, and the prod-like setup |
-| `docs/`              |                                 | Documentation                                                     |
+| Directory            | Package                              | Purpose                                                           |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `contract/`          | `@surveyjs-studio/contract`          | `openapi.yaml`, generated TypeScript types, API reference build   |
+| `server/`            | `@surveyjs-studio/server`            | Fastify server; routes and validation are built from the contract |
+| `web/`               | `@surveyjs-studio/web`               | React app built with Vite                                         |
+| `conformance-tests/` | `@surveyjs-studio/conformance-tests` | HTTP suite that checks any server against the contract            |
+| `e2e/`               | `@surveyjs-studio/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
+| `scripts/`           | (root)                               | Repository checks, for example `check:deps`                       |
+| `docker/`            |                                      | The legacy replica, the mock OIDC server, and the prod-like setup |
+| `docs/`              |                                      | Documentation                                                     |
 
 ## Scripts
 
@@ -177,7 +182,7 @@ Run from the repository root.
 | `pnpm demo:azurite`               | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
 | `pnpm demo:azurite:down`          | Stops the replica and deletes its data                                                                                    |
 | `pnpm dev:prod-data`              | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
-| `pnpm image:build`                | Builds the production image `my-surveys:local` (needs Docker)                                                             |
+| `pnpm image:build`                | Builds the production image `surveyjs-studio:local` (needs Docker)                                                        |
 | `pnpm prod-like:up`               | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
 | `pnpm prod-like:down`             | Stops the prod-like containers and deletes their data                                                                     |
 | `pnpm image:prod-data`            | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |

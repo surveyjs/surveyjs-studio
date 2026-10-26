@@ -18,7 +18,7 @@ try {
   });
   if (normalize(readFileSync(fresh, "utf8")) !== normalize(readFileSync(committed, "utf8"))) {
     console.error(
-      "contract/generated/openapi.d.ts is stale. Run: pnpm --filter @my-surveys/contract generate",
+      "contract/generated/openapi.d.ts is stale. Run: pnpm --filter @surveyjs-studio/contract generate",
     );
     process.exitCode = 1;
   }

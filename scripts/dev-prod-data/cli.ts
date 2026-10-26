@@ -46,7 +46,7 @@ for (const line of describeTargets(env)) console.log(`  ${line}`);
 console.log("");
 
 const command =
-  "pnpm --filter @my-surveys/contract build:docs && concurrently -n server,web -c blue,green " +
-  '"pnpm --filter @my-surveys/server dev:prod-data" "pnpm --filter @my-surveys/web dev"';
+  "pnpm --filter @surveyjs-studio/contract build:docs && concurrently -n server,web -c blue,green " +
+  '"pnpm --filter @surveyjs-studio/server dev:prod-data" "pnpm --filter @surveyjs-studio/web dev"';
 const child = spawn(command, { cwd: root, env: childEnv, shell: true, stdio: "inherit" });
 child.on("exit", (code) => process.exit(code ?? 1));

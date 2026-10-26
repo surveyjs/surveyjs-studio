@@ -1,6 +1,6 @@
 import createClient from "openapi-fetch";
 import createQueryClient from "openapi-react-query";
-import type { components, paths } from "@my-surveys/contract/types";
+import type { components, paths } from "@surveyjs-studio/contract/types";
 import { csrfMiddleware } from "./csrf";
 
 export type Problem = components["schemas"]["Problem"];

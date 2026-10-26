@@ -26,7 +26,7 @@ const IMAGE_READY_TIMEOUT_MS = 60_000;
 
 // The image target (CONFORMANCE_IMAGE): the container's name, and the local-only session secret of
 // a NODE_ENV=production server (production requires one).
-const IMAGE_CONTAINER = "my-surveys-conformance";
+const IMAGE_CONTAINER = "surveyjs-studio-conformance";
 const IMAGE_SESSION_SECRET = "conformance-local-only-session-secret-not-a-real-value";
 
 // The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
@@ -184,7 +184,7 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /**
  * `CONFORMANCE_IMAGE=<tag>` runs the reference server as that image of the production build
- * (`docker build -t my-surveys:ci .`) instead of tsx, with the same settings. It uses
+ * (`docker build -t surveyjs-studio:ci .`) instead of tsx, with the same settings. It uses
  * `docker run --network host`, so it works on Linux only (CI). Null when unset.
  */
 function imageTag(): string | null {
@@ -340,7 +340,7 @@ async function startReferenceServer(
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const command = "pnpm --filter @my-surveys/server start";
+  const command = "pnpm --filter @surveyjs-studio/server start";
   // On Windows `pnpm` is a .cmd shim, so it needs a shell (the command has no user input).
   const child =
     image === null

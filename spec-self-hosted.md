@@ -39,7 +39,7 @@ Three deliverables, built from one codebase and one contract.
 - **Licensing.** The image runs Survey Creator, Dashboard and PDF free of charge under a **branding-bound licence key**. A paid licence removes the branding (D20).
 - **What can change:** configuration only, never code (D20).
 
-**2a: a hosted sandbox at `my-surveys.demo.surveyjs.io`.**
+**2a: a hosted sandbox at `studio.demo.surveyjs.io`.**
 
 - The same front-end, built as a static site with a **separate mock back-end** that runs in the browser.
 - Each visitor gets their own seeded copy of users, projects, surveys and results, kept in their browser. They sign in by picking a listed account, can try every feature, and can reset it all.
@@ -57,7 +57,7 @@ Numbered S1–S45, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### Self-hosting admin (2b)
 
-- S1. As a self-hosting admin, I want `docker run -p 8080:8080 -v my-surveys:/data <image>` to give me a working service with a built-in database, so that trying it takes one command.
+- S1. As a self-hosting admin, I want `docker run -p 8080:8080 -v surveyjs-studio:/data <image>` to give me a working service with a built-in database, so that trying it takes one command.
 - S2. As a self-hosting admin, I want to point the service at my PostgreSQL with one connection setting, so that I can run it on my production database.
 - S3. As a self-hosting admin, I want files stored on the data volume or in S3-compatible storage, so that I choose where uploads live.
 - S4. As a self-hosting admin, I want the first instance admin created from configuration on an empty database, or from a one-time setup link printed in the log, and to be made to change that password at first sign-in, so that no default password survives.
@@ -95,7 +95,7 @@ Numbered S1–S45, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### Sandbox visitor (2a)
 
-- S27. As a visitor, I want to open `my-surveys.demo.surveyjs.io` and pick an account (owner, project admin, member, outsider) without a password, so that I'm trying the product within seconds.
+- S27. As a visitor, I want to open `studio.demo.surveyjs.io` and pick an account (owner, project admin, member, outsider) without a password, so that I'm trying the product within seconds.
 - S28. As a visitor, I want a small set of seeded projects, surveys and results, so that every screen has something to show.
 - S29. As a visitor, I want my changes kept in my browser across reloads, and invisible to other visitors, so that I can explore at my own pace.
 - S30. As a visitor, I want to switch accounts and see shared projects from another member's side, so that I understand collaboration.
@@ -139,7 +139,7 @@ Numbered S1–S45, to keep them apart from the Phase 1 stories (US 1–81) and t
   JSON documents are stored as `jsonb` in PostgreSQL and as JSON text in SQLite. Indexes serve the contract's paging, so result paging is a keyed seek, never a scan.
 
 - **The hosted track adds optional hosted-only tables** ([spec-hosted.md](spec-hosted.md) › Data model) through the same migrations. They stay empty here.
-- **Configuration:** `STORAGE_PROVIDER=sqlite|postgres`. `DATABASE_URL` is used for PostgreSQL. SQLite defaults to `/data/my-surveys.db`.
+- **Configuration:** `STORAGE_PROVIDER=sqlite|postgres`. `DATABASE_URL` is used for PostgreSQL. SQLite defaults to `/data/surveyjs-studio.db`.
 
 ### File storage (S3)
 
@@ -243,7 +243,7 @@ Numbered S1–S45, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 The packaging is our choice (2026-10-19):
 
-- **One image**, published as `surveyjs/my-surveys` on Docker Hub and mirrored as `ghcr.io/surveyjs/my-surveys` (approved 2026-10-19):
+- **One image**, published as `surveyjs/surveyjs-studio` on Docker Hub and mirrored as `ghcr.io/surveyjs/surveyjs-studio` (approved 2026-10-19):
   - for `linux/amd64` and `linux/arm64`;
   - running as non-root;
   - with port `8080`;
@@ -258,7 +258,7 @@ The packaging is our choice (2026-10-19):
   - CI starts the previous release on a seeded volume, then the new one, and runs the user-story suite (S5);
   - a downgrade is refused (S6).
 - **Backups (S8):**
-  - `my-surveys backup` makes an online SQLite backup plus a copy of the files;
+  - `surveyjs-studio backup` makes an online SQLite backup plus a copy of the files;
   - PostgreSQL is backed up with `pg_dump`;
   - restore is documented and tested in CI.
 - **Behind a proxy (S10):** `TRUST_PROXY` (built in Phase 1) sets which proxies are trusted for the client IP and the protocol. Cookies are `Secure` when `PUBLIC_BASE_URL` is HTTPS.
@@ -298,7 +298,7 @@ The packaging is our choice (2026-10-19):
   The demo banner states the browser-only nature.
 
 - **Shell:** `powered-by`, with a demo banner and links to the image and the source code. The Embed tab, the API docs and the API tokens page are hidden.
-- **Hosting:** static files on a CDN at `my-surveys.demo.surveyjs.io`, with the licence key issued for that domain.
+- **Hosting:** static files on a CDN at `studio.demo.surveyjs.io`, with the licence key issued for that domain.
 - **Keeping it honest (S44):**
   - the handlers also run in Node through `msw/node`, and a **sandbox subset** of the conformance suite runs against them;
   - the Playwright user-story suites tagged `@sandbox` run against the sandbox build.
@@ -361,7 +361,7 @@ The rules of `spec.md` › Testing Decisions apply. This track adds:
 
 **Decided on 2026-10-19:**
 
-- **Registry names:** `surveyjs/my-surveys` on Docker Hub, mirrored as `ghcr.io/surveyjs/my-surveys`.
+- **Registry names:** `surveyjs/surveyjs-studio` on Docker Hub, mirrored as `ghcr.io/surveyjs/surveyjs-studio`.
 - **OAuth2 sign-up:** invited emails and allowed domains, plus open sign-up as an opt-in setting that is off by default.
 - **Sandbox storage:** localStorage, with a small sandbox seed and small uploads.
 - **The instance admin manages every project** (S17), not only the projects they belong to.

@@ -203,7 +203,7 @@ describe("orphan rows", () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toStrictEqual({
-      type: "https://my-surveys.surveyjs.io/problems/last-admin",
+      type: "https://studio.surveyjs.io/problems/last-admin",
       code: "last-admin",
       status: 409,
       title: "Last admin",
@@ -262,7 +262,7 @@ describe("createProject", () => {
     const res = await send("POST", "/projects", await as(DAN), { name: "   " });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toStrictEqual({
-      type: "https://my-surveys.surveyjs.io/problems/validation-failed",
+      type: "https://studio.surveyjs.io/problems/validation-failed",
       code: "validation-failed",
       status: 422,
       title: "Validation failed",
@@ -280,7 +280,7 @@ describe("check order", () => {
     const byMember = await send("PATCH", `/projects/${TEAM}`, bob, { name: "Mine" });
     expect(byMember.statusCode).toBe(403);
     expect(byMember.json()).toStrictEqual({
-      type: "https://my-surveys.surveyjs.io/problems/forbidden",
+      type: "https://studio.surveyjs.io/problems/forbidden",
       code: "forbidden",
       status: 403,
       title: "Forbidden",

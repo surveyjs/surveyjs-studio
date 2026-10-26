@@ -21,7 +21,7 @@ const ERASABLE_EMAIL = "erasable@example.com";
 const deleted = (userId: unknown) => JSON.stringify({ type: "account.deleted", data: { userId } });
 
 const invalidSignature = {
-  type: "https://my-surveys.surveyjs.io/problems/invalid-signature",
+  type: "https://studio.surveyjs.io/problems/invalid-signature",
   code: "invalid-signature",
   status: 401,
   title: "Invalid signature",

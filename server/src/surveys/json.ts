@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { SurveyRecord } from "../domain/types.js";
 
 export type SurveyJson = components["schemas"]["Survey"];

@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 
 export type ShellUser = components["schemas"]["CurrentUser"];
 export type ShellNotice = components["schemas"]["Notice"];

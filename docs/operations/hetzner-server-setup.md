@@ -1,11 +1,11 @@
 # Setting up a Hetzner server
 
-How to get a server at Hetzner and prepare it to run My Surveys at `https://my-surveys.surveyjs.io` in mode 1.1 (the
+How to get a server at Hetzner and prepare it to run My Surveys at `https://studio.surveyjs.io` in mode 1.1 (the
 app on the surveyjs.io SQL database and Azure storage). The app's settings, the checks after start-up and the rollout
 are in [Operations](../operations.md); this page covers the server around it.
 
 The server runs two containers with Docker Compose: the app, from a ready image in the GitHub registry
-(`ghcr.io/surveyjs/my-surveys`), and Caddy, which serves https and forwards every request to the app.
+(`ghcr.io/surveyjs/surveyjs-studio`), and Caddy, which serves https and forwards every request to the app.
 
 CI publishes an image for each `master` commit that passes it, tagged with the full commit id
 ([Operations › Deployment](../operations.md#deployment)). **Not in the repository yet:** the `compose.yaml` and
@@ -15,11 +15,11 @@ CI publishes an image for each `master` commit that passes it, tagged with the f
 
 1. Sign up at hetzner.com and open the **Cloud Console**. A new account may be asked for an ID check or a prepayment;
    allow a day for it.
-2. Create a **Project**, for example `my-surveys`.
+2. Create a **Project**, for example `surveyjs-studio`.
 3. On your computer (Git Bash), make an SSH key:
 
    ```sh
-   ssh-keygen -t ed25519 -C "my-surveys-hetzner"
+   ssh-keygen -t ed25519 -C "surveyjs-studio-hetzner"
    cat ~/.ssh/id_ed25519.pub     # the public key, for Hetzner
    ```
 
@@ -101,15 +101,15 @@ Do not add `deploy` to the `docker` group: that group is as good as root. Run Do
 
 ## 6. DNS
 
-Whoever runs the surveyjs.io DNS adds an **A record** (and an AAAA record for IPv6) for `my-surveys.surveyjs.io`
+Whoever runs the surveyjs.io DNS adds an **A record** (and an AAAA record for IPv6) for `studio.surveyjs.io`
 with the server's address. Caddy gets the https certificate only after the record exists.
 
 ## 7. The deployment files
 
 ```text
-/opt/my-surveys/compose.yaml     # how the app and Caddy run
-/opt/my-surveys/Caddyfile        # https and forwarding
-/etc/my-surveys/app.env          # the settings and secrets: owned by root, chmod 600
+/opt/surveyjs-studio/compose.yaml     # how the app and Caddy run
+/opt/surveyjs-studio/Caddyfile        # https and forwarding
+/etc/surveyjs-studio/app.env          # the settings and secrets: owned by root, chmod 600
 ```
 
 ### `compose.yaml`
@@ -117,8 +117,8 @@ with the server's address. Caddy gets the https certificate only after the recor
 ```yaml
 services:
   app:
-    image: ghcr.io/surveyjs/my-surveys:${TAG}
-    env_file: /etc/my-surveys/app.env
+    image: ghcr.io/surveyjs/surveyjs-studio:${TAG}
+    env_file: /etc/surveyjs-studio/app.env
     restart: unless-stopped
     stop_grace_period: 60s # requests in flight may finish
     networks: [web]
@@ -145,7 +145,7 @@ The app's port is not published: only Caddy reaches it, inside the `web` network
 ### `Caddyfile`
 
 ```text
-my-surveys.surveyjs.io {
+studio.surveyjs.io {
 	encode zstd gzip
 	@readyz_blocked {
 		path /readyz
@@ -172,9 +172,9 @@ Compose reads this file and expands `$`: a value that contains `$` goes in **sin
 ([Running the app › Changing settings](../running.md#changing-settings)).
 
 ```sh
-sudo install -d -m 700 /etc/my-surveys
-sudo nano /etc/my-surveys/app.env
-sudo chmod 600 /etc/my-surveys/app.env
+sudo install -d -m 700 /etc/surveyjs-studio
+sudo nano /etc/surveyjs-studio/app.env
+sudo chmod 600 /etc/surveyjs-studio/app.env
 ```
 
 ## 8. Deploy, update and roll back
@@ -190,11 +190,11 @@ Start the app. `TAG` is the full 40-character id of a `master` commit whose CI p
 `publish` job's summary prints it too):
 
 ```sh
-cd /opt/my-surveys
+cd /opt/surveyjs-studio
 sudo TAG=<commit-sha> docker compose pull
 sudo TAG=<commit-sha> docker compose up -d
 sudo docker compose logs app | head            # the "starting" line: readOnly, storageProvider, publicBaseUrl
-curl -sI https://my-surveys.surveyjs.io/ | grep -i content-security-policy
+curl -sI https://studio.surveyjs.io/ | grep -i content-security-policy
 ```
 
 - **Update:** the same two commands with the new `TAG`.

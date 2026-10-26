@@ -18,7 +18,7 @@ type `application/problem+json`:
 
 ```json
 {
-  "type": "https://my-surveys.surveyjs.io/problems/not-implemented",
+  "type": "https://studio.surveyjs.io/problems/not-implemented",
   "title": "Not implemented",
   "status": 501,
   "code": "not-implemented",
@@ -28,7 +28,7 @@ type `application/problem+json`:
 
 | Member   | Meaning                                                                                                                                                                                 |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`   | `https://my-surveys.surveyjs.io/problems/<code>`                                                                                                                                        |
+| `type`   | `https://studio.surveyjs.io/problems/<code>`                                                                                                                                            |
 | `title`  | Short, human-readable                                                                                                                                                                   |
 | `status` | The HTTP status                                                                                                                                                                         |
 | `code`   | Stable machine-readable identifier. Clients should switch on this                                                                                                                       |

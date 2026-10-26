@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { AccountNoticesSetting } from "../config.js";
 import { DEFAULT_SHELL_LINKS } from "../shell-links.js";
 

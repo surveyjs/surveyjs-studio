@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 
 /** Every container the image target may start (memory mode: 5173 and 5174; Azurite mode: 5173). */
 export const imageContainers = [
-  "my-surveys-e2e-memory-5173",
-  "my-surveys-e2e-memory-5174",
-  "my-surveys-e2e-azurite-5173",
+  "surveyjs-studio-e2e-memory-5173",
+  "surveyjs-studio-e2e-memory-5174",
+  "surveyjs-studio-e2e-azurite-5173",
 ];
 
 // `docker logs` of each container goes here before it is removed; CI uploads the folder on failure.
@@ -33,9 +33,9 @@ export function isImageTarget(env) {
   return target === "image";
 }
 
-/** The image under test: `E2E_IMAGE`, default `my-surveys:ci` (built by `docker build -t my-surveys:ci .`). */
+/** The image under test: `E2E_IMAGE`, default `surveyjs-studio:ci` (built by `docker build -t surveyjs-studio:ci .`). */
 export function imageTag(env) {
-  const tag = env["E2E_IMAGE"]?.trim() || "my-surveys:ci";
+  const tag = env["E2E_IMAGE"]?.trim() || "surveyjs-studio:ci";
   if (!/^[\w][\w.\-/:@]*$/.test(tag)) throw new Error(`E2E_IMAGE is not an image name: "${tag}"`);
   return tag;
 }

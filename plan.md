@@ -37,7 +37,7 @@ A step is done only when all of these hold:
 
 Both modes work offline, without real surveyjs.io or Azure. They are introduced in Steps 1–3 and kept working by every later step.
 
-These are the **development configuration** (deployment mode 4, idea §3.0). Don't confuse them with the hosted sandbox at `my-surveys.demo.surveyjs.io` (mode 2a), which the self-hosted track builds.
+These are the **development configuration** (deployment mode 4, idea §3.0). Don't confuse them with the hosted sandbox at `studio.demo.surveyjs.io` (mode 2a), which the self-hosted track builds.
 
 | Mode | Command (proposed) | Storage | Sign-in | Needs |
 |---|---|---|---|---|

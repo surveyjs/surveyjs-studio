@@ -54,7 +54,7 @@ const quote = (arg) => (/^[\w./:=@-]+$/.test(arg) ? arg : JSON.stringify(arg));
 const playwright = (extra) =>
   ["playwright test -c playwright.visual.config.ts", ...extra, ...passThrough.map(quote)].join(" ");
 
-let status = run("pnpm --filter @my-surveys/web build");
+let status = run("pnpm --filter @surveyjs-studio/web build");
 if (status !== 0) process.exit(status);
 
 if (!self) process.exit(run(playwright([])));

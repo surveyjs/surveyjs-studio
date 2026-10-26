@@ -34,7 +34,7 @@ cannot tell them apart:
 
 ```text
 HTTP/1.1 404 Not Found
-{"type":"https://my-surveys.surveyjs.io/problems/survey-not-available","title":"This survey is not available","status":404,"code":"survey-not-available"}
+{"type":"https://studio.surveyjs.io/problems/survey-not-available","title":"This survey is not available","status":404,"code":"survey-not-available"}
 ```
 
 Only a survey that was unpublished is not published. A survey whose published flag is empty in the old site's
@@ -145,7 +145,7 @@ and a second submit of that client, with the limit on, is refused:
 
 ```text
 HTTP/1.1 409 Conflict
-{"type":"https://my-surveys.surveyjs.io/problems/already-completed","title":"Already completed","status":409,"code":"already-completed","detail":"This survey accepts one response per respondent, and this one has already completed it."}
+{"type":"https://studio.surveyjs.io/problems/already-completed","title":"Already completed","status":409,"code":"already-completed","detail":"This survey accepts one response per respondent, and this one has already completed it."}
 ```
 
 Rules:
@@ -207,7 +207,7 @@ the limit answers `429` with `Retry-After` in seconds:
 ```text
 HTTP/1.1 429 Too Many Requests
 retry-after: 41
-{"type":"https://my-surveys.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many requests. Try again in 41 seconds."}
+{"type":"https://studio.surveyjs.io/problems/rate-limited","title":"Too many requests","status":429,"code":"rate-limited","detail":"Too many requests. Try again in 41 seconds."}
 ```
 
 Every answer of a limited operation also carries the limit headers of `@fastify/rate-limit`:

@@ -212,15 +212,15 @@ A port is accepted when this suite passes against it.
 ### The conformance suite on the production image
 
 With `CONFORMANCE_IMAGE` set to an image tag, the suite runs the reference server as that image instead of tsx, with
-the same settings. CI builds `my-surveys:ci` and runs `pnpm test:conformance:azurite` this way. Details:
+the same settings. CI builds `surveyjs-studio:ci` and runs `pnpm test:conformance:azurite` this way. Details:
 
-- The container is `my-surveys-conformance`, started with `docker run --network host` on a free port, so it reaches
+- The container is `surveyjs-studio-conformance`, started with `docker run --network host` on a free port, so it reaches
   the replica and the mock OIDC server on the host's loopback ports. This works on **Linux only**; on Windows and
   macOS the suite stops with a message.
 - The values are passed by name (`-e NAME`), never on the command line.
 - `NODE_ENV` is `development` on memory (the dev sign-in is refused in production) and `production` on
   `azure-legacy`, with a local-only `SESSION_SECRET`. Both keep the server's log (`NODE_ENV=test` turns it off).
-- When the suite ends, it saves the container's log to `docker-logs/my-surveys-conformance.log` and removes the
+- When the suite ends, it saves the container's log to `docker-logs/surveyjs-studio-conformance.log` and removes the
   container. CI uploads `docker-logs/` on failure.
 - It cannot be combined with `CONFORMANCE_BASE_URL`.
 
@@ -696,13 +696,13 @@ memory-mode servers first; the runner names a port that is taken). It sets `E2E_
 ### The end-to-end suites on the production image
 
 With `E2E_TARGET=image`, both suites run against the production image instead of the tsx server and `vite preview`.
-CI sets it, with `E2E_IMAGE=my-surveys:ci` (the default). The image serves the web app itself (`WEB_ROOT`), so
+CI sets it, with `E2E_IMAGE=surveyjs-studio:ci` (the default). The image serves the web app itself (`WEB_ROOT`), so
 `pnpm e2e` does not build it.
 
-| Mode    | Containers (`docker run --network host`)                                 | Settings                                                                                        |
-| ------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| memory  | `my-surveys-e2e-memory-5173`, and `my-surveys-e2e-memory-5174` (licence) | The memory settings with `NODE_ENV=development` (the dev sign-in needs it)                      |
-| Azurite | `my-surveys-e2e-azurite-5173`                                            | The app variables of `docker/azurite.env`; `NODE_ENV=production`, a local-only `SESSION_SECRET` |
+| Mode    | Containers (`docker run --network host`)                                           | Settings                                                                                        |
+| ------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| memory  | `surveyjs-studio-e2e-memory-5173`, and `surveyjs-studio-e2e-memory-5174` (licence) | The memory settings with `NODE_ENV=development` (the dev sign-in needs it)                      |
+| Azurite | `surveyjs-studio-e2e-azurite-5173`                                                 | The app variables of `docker/azurite.env`; `NODE_ENV=production`, a local-only `SESSION_SECRET` |
 
 - Each container listens on the preview's port, on `localhost`, with `PUBLIC_BASE_URL` on that port. Playwright
   waits for `http://127.0.0.1:<port>/readyz`.
@@ -816,7 +816,7 @@ account and then a few minutes for the run. Nothing on surveyjs.io is changed: t
   before any `pnpm` command. In Git Bash: `export PATH="$APPDATA/nvm/v24.21.0:$PATH"`. In PowerShell:
   `$env:PATH = "$env:APPDATA\nvm\v24.21.0;$env:PATH"`. Check with `node --version`; it must print `v24.21.0`. Run every
   command below in that window.
-- The three browsers: `pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`
+- The three browsers: `pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit`
 - A **dedicated surveyjs.io account**: not a site administrator, no licence, an empty cart, no other surveys or
   projects. A fresh registration is easiest. Its name and email never reach the images (the header is normalized to
   "Account").

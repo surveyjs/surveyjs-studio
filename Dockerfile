@@ -15,10 +15,10 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
-RUN pnpm --filter @my-surveys/server deploy --prod /out/server
+RUN pnpm --filter @surveyjs-studio/server deploy --prod /out/server
 # The docs route reads reference.html next to the contract package's openapi.yaml; the build fails
 # when that folder is not found (API_DOCS=true would answer 404 otherwise).
-RUN openapi="$(find /out/server/node_modules/@my-surveys/contract/ -maxdepth 1 -name openapi.yaml)" \
+RUN openapi="$(find /out/server/node_modules/@surveyjs-studio/contract/ -maxdepth 1 -name openapi.yaml)" \
     && test -n "$openapi" \
     && contract="$(dirname "$openapi")" \
     && mkdir -p "$contract/dist" \
@@ -27,7 +27,7 @@ RUN openapi="$(find /out/server/node_modules/@my-surveys/contract/ -maxdepth 1 -
 
 FROM node:24.21.0-bookworm-slim AS runtime
 # Links the package in ghcr.io to the repository, so it takes the repository's access rules.
-LABEL org.opencontainers.image.source="https://github.com/surveyjs/my-surveys"
+LABEL org.opencontainers.image.source="https://github.com/surveyjs/surveyjs-studio"
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 WEB_ROOT=/app/web
 COPY --from=build /out/server /app/server
 COPY --from=build /src/web/dist /app/web

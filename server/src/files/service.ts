@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { RequestUser } from "../auth/authenticate.js";
 import { publicUrl } from "../auth/identity.js";
 import type { Clock } from "../auth/session.js";

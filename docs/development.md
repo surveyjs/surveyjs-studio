@@ -11,7 +11,7 @@
      `corepack pnpm install`;
    - `npm install -g pnpm@12.11.2`.
 3. `pnpm install`. For the e2e suite, install the browsers once:
-   `pnpm --filter @my-surveys/e2e exec playwright install chromium firefox webkit`
+   `pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit`
    (on Linux add `--with-deps`, as CI does).
 
 ## Demo modes
@@ -44,11 +44,11 @@ sealed with `SESSION_SECRET`, or the fixed development constant when it is unset
 at start-up). Walkthrough: [Step 3 demo](demo/step-03.md). How sign-in works:
 [Authentication](api/authentication.md).
 
-To run one part alone: `pnpm --filter @my-surveys/server dev:demo` (watch mode, reads `server/demo.env`),
-`IDENTITY_PROVIDER=dev pnpm --filter @my-surveys/server start` (no watching; the server needs an
-identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @my-surveys/web dev`, or
-`pnpm --filter @my-surveys/web preview` (serves the production build; run
-`pnpm --filter @my-surveys/web build` first).
+To run one part alone: `pnpm --filter @surveyjs-studio/server dev:demo` (watch mode, reads `server/demo.env`),
+`IDENTITY_PROVIDER=dev pnpm --filter @surveyjs-studio/server start` (no watching; the server needs an
+identity provider, and `dev` signs in as a user of the memory seed), `pnpm --filter @surveyjs-studio/web dev`, or
+`pnpm --filter @surveyjs-studio/web preview` (serves the production build; run
+`pnpm --filter @surveyjs-studio/web build` first).
 
 ## Environment variables (server)
 
@@ -138,13 +138,13 @@ Set them in the shell that starts the server.
 Git Bash:
 
 ```sh
-IDENTITY_PROVIDER=dev APP_SHELL=demo pnpm --filter @my-surveys/server start
+IDENTITY_PROVIDER=dev APP_SHELL=demo pnpm --filter @surveyjs-studio/server start
 ```
 
 PowerShell (the variables stay set for the whole session; remove one with `Remove-Item Env:APP_SHELL`):
 
 ```powershell
-$env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @my-surveys/server start
+$env:IDENTITY_PROVIDER = "dev"; $env:APP_SHELL = "demo"; pnpm --filter @surveyjs-studio/server start
 ```
 
 The web app has one optional build-time variable: `VITE_API_BASE_URL` (default `/api/v1`).
@@ -349,7 +349,7 @@ port 3000):
 node --env-file=docker/azurite.env --import tsx server/src/main.ts
 ```
 
-(`pnpm --filter @my-surveys/server start` does not read the file; export the variables or use
+(`pnpm --filter @surveyjs-studio/server start` does not read the file; export the variables or use
 the command above.) The hosted edition runs too: `APP_EDITION=hosted pnpm demo:azurite` (Git Bash).
 `ACCOUNT_NOTICES=surveyjs-licenses pnpm demo:azurite` reads the licence notices from the replica's
 licence tables ([layout, 3.15](architecture/legacy-data-layout.md#315-licences-and-the-licence-expiry-dialogs)).
@@ -438,7 +438,7 @@ and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 
 ## Prod-like mode
 
-Prod-like mode runs the **production image** (`my-surveys:local`, see [Operations](operations.md#deployment)) in the
+Prod-like mode runs the **production image** (`surveyjs-studio:local`, see [Operations](operations.md#deployment)) in the
 mode 1 configuration on the offline replica, signing in through the mock OIDC server. Nothing real is touched. It
 uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
 before starting the other.
@@ -669,12 +669,12 @@ functional e2e suite (3000/5173 and 3001/5174); both runners stop with a message
 their ports is taken. See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example
-`pnpm --filter @my-surveys/contract generate`.
+`pnpm --filter @surveyjs-studio/contract generate`.
 
 ## Changing the contract
 
 1. Edit `contract/openapi.yaml` (hand-formatted; Prettier ignores it).
-2. `pnpm --filter @my-surveys/contract generate`, and commit the changed `generated/openapi.d.ts`.
+2. `pnpm --filter @surveyjs-studio/contract generate`, and commit the changed `generated/openapi.d.ts`.
 3. `pnpm lint:contract`.
 4. Implement the change and add conformance tests **in the same pull request**.
 
@@ -715,7 +715,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
 2. `test:unit`, `test:conformance` (in-memory) and `test:conformance:read-only` (in-memory, `READ_ONLY=true`);
-3. `docker build -t my-surveys:ci .`, the production image (labelled with the commit as
+3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
    `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
@@ -727,7 +727,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 9. `pnpm demo:azurite:down`, which always runs (`if: always()`).
 
 The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
-same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/my-surveys:<commit sha>`. It is
+same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is
 the only job with `packages: write`, and it runs no installed packages, only `docker`. The image's
 `org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
 repository's access rules.

@@ -22,7 +22,7 @@ For the SurveyJS team, the section also can't be the basis of the planned open-s
 
 ## Solution
 
-A standalone application at **`my-surveys.surveyjs.io`** replaces the section. Existing users notice only the new address and the lifted limits.
+A standalone application at **`studio.surveyjs.io`** replaces the section. Existing users notice only the new address and the lifted limits.
 
 **What users see**
 - The app looks exactly like surveyjs.io and reproduces every current screen 1:1: survey list, editor, run page, results (Summary, Table, Details), history, and project management.
@@ -387,7 +387,7 @@ On the front-end, the query layer's cache refresh rules are tested with React Te
 ## Further Notes
 
 - **Dependencies on the surveyjs.io side:**
-  - an OIDC client registration for `my-surveys.surveyjs.io`, including post-logout redirect URIs;
+  - an OIDC client registration for `studio.surveyjs.io`, including post-logout redirect URIs;
   - least-privilege credentials for the Azure storage accounts and any site data the Directory needs;
   - documentation or source of the legacy storage layout and of how `api.surveyjs.io` reads results;
   - the redirect change on surveyjs.io;

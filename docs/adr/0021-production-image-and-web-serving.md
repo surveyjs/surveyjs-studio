@@ -17,7 +17,7 @@ Two more facts shape the choice:
 
 - The app handles no legacy URL (D19, [ADR 0018](0018-accounts-by-deployment-mode.md)): surveyjs.io redirects old
   links. A legacy address such as `/published?id=…` must stay a real `404`, not a page that looks found.
-- The sources import `./x.js` meaning `.ts`, and `@my-surveys/contract` exports `src/index.ts`. Node's own type
+- The sources import `./x.js` meaning `.ts`, and `@surveyjs-studio/contract` exports `src/index.ts`. Node's own type
   stripping resolves neither.
 
 ## Decision

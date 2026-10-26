@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { responseIdFor } from "../domain/response-id.js";

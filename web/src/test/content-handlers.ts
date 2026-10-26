@@ -1,5 +1,5 @@
 import { HttpResponse, http as mswHttp } from "msw";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { http } from "./server";
 
 type HistoryPage = components["schemas"]["HistoryPage"];
@@ -49,7 +49,7 @@ export function editConflictHandler(document: "definition" | "theme") {
   return mswHttp.put(`*/api/v1/surveys/:surveyId/${document}`, () =>
     HttpResponse.json(
       {
-        type: "https://my-surveys.surveyjs.io/problems/edit-conflict",
+        type: "https://studio.surveyjs.io/problems/edit-conflict",
         title: "The survey was changed by someone else",
         status: 412,
         code: "edit-conflict",

@@ -1,5 +1,5 @@
 import { HttpResponse, http as mswHttp, type HttpHandler } from "msw";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { currentUser } from "./server";
 
 type Member = components["schemas"]["Member"];
@@ -47,7 +47,7 @@ export interface WriteAnswer {
 
 export const problemAnswer = (status: number, code: string): WriteAnswer => ({
   status,
-  body: { type: `https://my-surveys.surveyjs.io/problems/${code}`, title: code, status, code },
+  body: { type: `https://studio.surveyjs.io/problems/${code}`, title: code, status, code },
 });
 
 /**

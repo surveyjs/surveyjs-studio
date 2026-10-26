@@ -46,7 +46,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "pnpm --filter @my-surveys/server start",
+      command: "pnpm --filter @surveyjs-studio/server start",
       url: `http://127.0.0.1:${ports.visualServer}/readyz`,
       reuseExistingServer: false,
       timeout: 60_000,
@@ -57,7 +57,7 @@ export default defineConfig({
       },
     },
     {
-      command: `pnpm --filter @my-surveys/web exec vite preview --port ${ports.visualWeb} --strictPort`,
+      command: `pnpm --filter @surveyjs-studio/web exec vite preview --port ${ports.visualWeb} --strictPort`,
       url: `http://localhost:${ports.visualWeb}/`,
       reuseExistingServer: false,
       timeout: 60_000,

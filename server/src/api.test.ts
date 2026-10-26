@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openapiPath } from "@my-surveys/contract";
+import { openapiPath } from "@surveyjs-studio/contract";
 import Fastify, { type FastifyInstance } from "fastify";
 import { parse } from "yaml";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -128,7 +128,7 @@ describe("request validation", () => {
     expect(res.statusCode).toBe(422);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toMatchObject({
-      type: "https://my-surveys.surveyjs.io/problems/validation-failed",
+      type: "https://studio.surveyjs.io/problems/validation-failed",
       status: 422,
       code: "validation-failed",
       errors: [{ pointer: "/name" }],
@@ -240,7 +240,7 @@ describe("operations without a handler", () => {
     expect(res.statusCode).toBe(501);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toStrictEqual({
-      type: "https://my-surveys.surveyjs.io/problems/not-implemented",
+      type: "https://studio.surveyjs.io/problems/not-implemented",
       title: "Not implemented",
       status: 501,
       code: "not-implemented",
@@ -421,7 +421,7 @@ describe("/api/docs", () => {
     ).inject("/api/docs");
     expect(res.statusCode).toBe(404);
     expect(res.json()).toStrictEqual({
-      type: "https://my-surveys.surveyjs.io/problems/not-found",
+      type: "https://studio.surveyjs.io/problems/not-found",
       title: "Not found",
       status: 404,
       code: "not-found",

@@ -65,7 +65,7 @@ curl -i -b "msid=<cookie value>" -H "Accept: application/xml" "$API/surveys/$ID/
 HTTP/1.1 406 Not Acceptable
 content-type: application/problem+json; charset=utf-8
 
-{"type":"https://my-surveys.surveyjs.io/problems/not-acceptable","title":"Not acceptable","status":406,"code":"not-acceptable","detail":"Ask for application/json or text/csv, or use format=json or format=csv."}
+{"type":"https://studio.surveyjs.io/problems/not-acceptable","title":"Not acceptable","status":406,"code":"not-acceptable","detail":"Ask for application/json or text/csv, or use format=json or format=csv."}
 ```
 
 ### The answer

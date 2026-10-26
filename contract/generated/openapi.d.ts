@@ -1180,7 +1180,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/unauthenticated",
+                 *       "type": "https://studio.surveyjs.io/problems/unauthenticated",
                  *       "title": "Sign-in required",
                  *       "status": 401,
                  *       "code": "unauthenticated"
@@ -1197,7 +1197,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/invalid-signature",
+                 *       "type": "https://studio.surveyjs.io/problems/invalid-signature",
                  *       "title": "Invalid signature",
                  *       "status": 401,
                  *       "code": "invalid-signature"
@@ -1214,7 +1214,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/forbidden",
+                 *       "type": "https://studio.surveyjs.io/problems/forbidden",
                  *       "title": "You cannot modify this survey",
                  *       "status": 403,
                  *       "code": "forbidden"
@@ -1234,7 +1234,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/survey-not-available",
+                 *       "type": "https://studio.surveyjs.io/problems/survey-not-available",
                  *       "title": "This survey is not available",
                  *       "status": 404,
                  *       "code": "survey-not-available"
@@ -1254,7 +1254,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/survey-not-archived",
+                 *       "type": "https://studio.surveyjs.io/problems/survey-not-archived",
                  *       "title": "Archive the survey before deleting it",
                  *       "status": 409,
                  *       "code": "survey-not-archived"
@@ -1271,7 +1271,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/edit-conflict",
+                 *       "type": "https://studio.surveyjs.io/problems/edit-conflict",
                  *       "title": "The survey was changed by someone else",
                  *       "status": 412,
                  *       "code": "edit-conflict",
@@ -1298,7 +1298,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/quota-exceeded",
+                 *       "type": "https://studio.surveyjs.io/problems/quota-exceeded",
                  *       "title": "File quota exceeded",
                  *       "status": 413,
                  *       "code": "quota-exceeded",
@@ -1334,7 +1334,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/validation-failed",
+                 *       "type": "https://studio.surveyjs.io/problems/validation-failed",
                  *       "title": "The request is invalid",
                  *       "status": 422,
                  *       "code": "validation-failed",
@@ -1380,7 +1380,7 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "type": "https://my-surveys.surveyjs.io/problems/read-only",
+                 *       "type": "https://studio.surveyjs.io/problems/read-only",
                  *       "title": "My Surveys is read-only at the moment. Changes cannot be saved.",
                  *       "status": 503,
                  *       "code": "read-only"

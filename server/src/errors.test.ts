@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AppError, toProblem } from "./errors.js";
 
-const base = "https://my-surveys.surveyjs.io/problems/";
+const base = "https://studio.surveyjs.io/problems/";
 
 function fastifyError(code: string, message: string, extra: object = {}): Error {
   return Object.assign(new Error(message), { code }, extra);

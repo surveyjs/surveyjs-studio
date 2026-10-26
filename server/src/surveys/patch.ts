@@ -1,4 +1,4 @@
-import type { components } from "@my-surveys/contract";
+import type { components } from "@surveyjs-studio/contract";
 import type { SurveyChanges, SurveyOwner, SurveyRecord } from "../domain/types.js";
 
 type SurveyPatch = components["schemas"]["SurveyPatch"];

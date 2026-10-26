@@ -1,5 +1,5 @@
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
-import type { components } from "@my-surveys/contract/types";
+import type { components } from "@surveyjs-studio/contract/types";
 import { ApiError, client, toApiError } from "./client";
 import { scopeOf, surveyKeys, type Survey } from "./surveys";
 
