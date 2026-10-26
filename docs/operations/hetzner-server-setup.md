@@ -17,6 +17,9 @@ Caddy, which serves https and forwards every request to the app. Two scripts in
 
 Sections 1 to 4 happen in the Hetzner console and in DNS; section 5 runs the script.
 
+To do the same with Terraform and Ansible instead of the console and `ssh`, see
+[Automating the Hetzner server](automating-hetzner.md).
+
 ## 1. Account and SSH key
 
 1. Sign up at hetzner.com and open the **Cloud Console**. A new account may be asked for an ID check or a prepayment;
