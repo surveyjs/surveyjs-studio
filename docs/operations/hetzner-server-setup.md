@@ -7,8 +7,9 @@ are in [Operations](../operations.md); this page covers the server around it.
 The server runs two containers with Docker Compose: the app, from a ready image in the GitHub registry
 (`ghcr.io/surveyjs/my-surveys`), and Caddy, which serves https and forwards every request to the app.
 
-**Not in the repository yet:** the CI job that pushes the image to `ghcr.io`, and the `compose.yaml` and `Caddyfile`
-below as files. Until the CI job exists, there is no image to pull.
+CI publishes an image for each `master` commit that passes it, tagged with the full commit id
+([Operations › Deployment](../operations.md#deployment)). **Not in the repository yet:** the `compose.yaml` and
+`Caddyfile` below as files.
 
 ## 1. Account and SSH key
 
@@ -185,7 +186,8 @@ it in `/root/.docker/config.json`.
 sudo docker login ghcr.io -u <github-user>
 ```
 
-Start the app:
+Start the app. `TAG` is the full 40-character id of a `master` commit whose CI passed (`git rev-parse <commit>`; the
+`publish` job's summary prints it too):
 
 ```sh
 cd /opt/my-surveys

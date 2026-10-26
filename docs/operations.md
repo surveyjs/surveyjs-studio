@@ -86,9 +86,11 @@ really runs with. (`docker rm -f` would kill it at once, cutting requests in fli
 migrations: the stores keep the legacy formats, so any earlier image runs on the same data, and rolling back the app
 is re-creating the container with the previous tag.
 
-**Where the images come from.** For now an image is built from a commit of `master` (`docker build -t
-my-surveys:<commit> .`). The registry is chosen for the hosting step: `surveyjs/my-surveys` on Docker Hub, mirrored
-to `ghcr.io/surveyjs/my-surveys`. No image is pushed yet.
+**Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
+`ghcr.io/surveyjs/my-surveys:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
+There is no `latest` tag: a deployment names the commit it runs. The package is private while the repository is;
+pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/my-surveys`) comes with the self-hosted
+track.
 
 **A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server, its
 firewall, Docker, Caddy for https, and the first deploy.

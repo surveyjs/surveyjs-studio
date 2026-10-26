@@ -715,20 +715,28 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
 2. `test:unit`, `test:conformance` (in-memory) and `test:conformance:read-only` (in-memory, `READ_ONLY=true`);
-3. `docker build -t my-surveys:ci .`, the production image;
+3. `docker build -t my-surveys:ci .`, the production image (labelled with the commit as
+   `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
 5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`);
 6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
    `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`);
-7. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
-8. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
+8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
+9. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+
+The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
+same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/my-surveys:<commit sha>`. It is
+the only job with `packages: write`, and it runs no installed packages, only `docker`. The image's
+`org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
+repository's access rules.
 
 The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see
 [Testing › Visual parity](testing.md#visual-parity)). CI typechecks, lints and unit-tests their helpers. Run
 `pnpm e2e:visual` locally before you merge a change to the look of a page.
 
-Run the same commands locally before you push. Steps 3, 4, 5 and 8 need Docker. The image targets of steps 5
+Run the same commands locally before you push. Steps 3, 4, 5 and 9 need Docker. The image targets of steps 5
 and 6 need Linux (`docker run --network host`); on Windows and macOS run those suites without them.
 
 ## Conventions

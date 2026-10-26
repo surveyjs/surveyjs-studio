@@ -26,6 +26,8 @@ RUN openapi="$(find /out/server/node_modules/@my-surveys/contract/ -maxdepth 1 -
     && rm -rf web/dist/.vite
 
 FROM node:24.21.0-bookworm-slim AS runtime
+# Links the package in ghcr.io to the repository, so it takes the repository's access rules.
+LABEL org.opencontainers.image.source="https://github.com/surveyjs/my-surveys"
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 WEB_ROOT=/app/web
 COPY --from=build /out/server /app/server
 COPY --from=build /src/web/dist /app/web
