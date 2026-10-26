@@ -92,8 +92,9 @@ There is no `latest` tag: a deployment names the commit it runs. The package is 
 pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/surveyjs-studio`) comes with the self-hosted
 track.
 
-**A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server, its
-firewall, Docker, Caddy for https, and the first deploy.
+**A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server and its
+firewall; then `deploy/hetzner/setup.sh` installs Docker and Caddy for https and starts the app, and
+`deploy/hetzner/update.sh <tag>` deploys later tags, with a rollback when the new one is not healthy.
 
 **No settings in the image.** `.dockerignore` keeps every `.env`, `*.env`, key and certificate file out of the build
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`

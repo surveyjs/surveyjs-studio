@@ -30,3 +30,5 @@ docker-logs
 *.log
 Dockerfile
 .dockerignore
+# The Hetzner scripts and settings template are for the server, not the image.
+deploy
