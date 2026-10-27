@@ -4,6 +4,8 @@ on:
   push:
     branches: [master, "step/**"]
   pull_request:
+  # A manual run (Actions › CI › Run workflow); on master it publishes, as a push does.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -70,7 +72,9 @@ jobs:
         env:
           CONFORMANCE_IMAGE: surveyjs-studio:ci
 
+      # The download sometimes hangs: fail fast, so a re-run starts soon.
       - name: Install Playwright browsers
+        timeout-minutes: 10
         run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium firefox webkit
 
       - name: End-to-end tests (on the image)
@@ -85,13 +89,13 @@ jobs:
           E2E_TARGET: image
           E2E_IMAGE: surveyjs-studio:ci
 
-      # Only a push to master publishes; the publish job pushes this same, tested image.
+      # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
         run: docker save surveyjs-studio:ci | gzip > surveyjs-studio-image.tar.gz
 
       - name: Upload the image for the publish job
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: surveyjs-studio-image
@@ -135,7 +139,7 @@ jobs:
   # third-party code, so only this job gets write access to packages.
   publish:
     needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
