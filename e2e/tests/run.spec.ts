@@ -75,6 +75,8 @@ test("a new survey runs from the list in a new tab with its theme and stores the
     await expect(tab).toHaveURL(new RegExp(`/s/${survey.id}$`));
     await expect(tab.getByText("Your name")).toBeVisible();
     await expect(tab.getByText("Try and see how easy it is to")).toBeVisible();
+    // The brand footer is centred (the library aligns it right on a desktop width).
+    await expect(tab.locator(".sv-brand-info")).toHaveCSS("text-align", "center");
     // The library's default primary colour is green: red comes from the stored theme.
     await expect(completeButton(tab)).toHaveCSS("background-color", "rgb(255, 0, 0)");
 

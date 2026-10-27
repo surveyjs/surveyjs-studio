@@ -215,7 +215,8 @@ Changes and additions:
 - `src/run/run-page.css` sets `margin: 0` on the `body` of a run page, as the site's
   `<body style="margin: 0">` (`the site's page markup`).
 - The footer is the Form Library's own brand block (`showBrandInfo`), as on the site: nothing is
-  copied for it. The run page's other texts (loading, load failure, saving and upload messages) are
+  copied for it. `src/run/run-page.css` centres it (`text-align: center`); the library, and so the
+  site, aligns it right except on mobile. The run page's other texts (loading, load failure, saving and upload messages) are
   the app's own.
 
 Step 9 (the results page, `src/results/`) copies markup and texts from `the site's page markup`
