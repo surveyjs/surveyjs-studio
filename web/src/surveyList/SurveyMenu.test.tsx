@@ -342,7 +342,7 @@ describe("the row menu's actions", () => {
     expect(current.classList).toContain("v2-class---drop-down-menu-item__link--selected");
     fireEvent.click(menu.getByRole("link", { name: "Personal Surveys" }));
 
-    await waitFor(() => expect(router.state.location.href).toBe("/"));
+    await waitFor(() => expect(router.state.location.href).toBe("/?project=personal"));
     expect(bodies).toEqual([{ projectId: null }]);
   });
 
@@ -359,7 +359,7 @@ describe("the row menu's actions", () => {
     expect(confirm).toHaveBeenCalledExactlyOnceWith(MOVE_TEXT);
     await settle();
     expect(bodies).toEqual([]);
-    expect(router.state.location.href).toBe("/");
+    expect(router.state.location.href).toBe("/?project=personal");
   });
 
   it.each([

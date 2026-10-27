@@ -54,14 +54,20 @@ The view is part of the page address, so a reload, a bookmark or a link you send
 
 | View                         | Address                                |
 | ---------------------------- | -------------------------------------- |
-| Your active surveys          | `/`                                    |
-| Your archived surveys        | `/?archived=true`                      |
+| Your active surveys          | `/?project=personal`                   |
+| Your archived surveys        | `/?project=personal&archived=true`     |
 | A project's active surveys   | `/?project=<project id>`               |
 | A project's archived surveys | `/?project=<project id>&archived=true` |
 
-The browser's Back button returns to the previous view. My Surveys does not remember your last
-project: with no `project` in the address you see Personal Surveys (surveyjs.io keeps the last
-project in a cookie for a day; this app does not).
+The browser's Back button returns to the previous view.
+
+My Surveys remembers the list you looked at last, Personal Surveys or a project, in this browser.
+The address `/` (a bookmark, the **My Surveys** button in the header, signing in) opens that list,
+and the address bar then shows the list's own address; `/?archived=true` opens its archived view.
+Until you have looked at a list, or when the remembered project can no longer be opened (you left
+it, or it was deleted), `/` opens Personal Surveys. Each user of a shared browser has their own
+remembered list. surveyjs.io remembers the last project too, in a cookie that lasts a day; here it
+stays until you look at another list.
 
 ## Create a Survey
 

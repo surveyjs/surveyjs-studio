@@ -54,12 +54,17 @@ describe("validateSurveyListSearch", () => {
 });
 
 describe("surveyListSearch", () => {
-  it("omits defaults", () => {
-    expect(surveyListSearch({ project: "personal", archived: false })).toEqual({});
+  it("always names the list, Personal Surveys too (plain `/` opens the remembered one)", () => {
+    expect(surveyListSearch({ project: "personal", archived: false })).toEqual({
+      project: "personal",
+    });
   });
 
-  it("keeps non-default values", () => {
-    expect(surveyListSearch({ project: "personal", archived: true })).toEqual({ archived: true });
+  it("adds archived only when true", () => {
+    expect(surveyListSearch({ project: "personal", archived: true })).toEqual({
+      project: "personal",
+      archived: true,
+    });
     expect(surveyListSearch({ project: "p1", archived: false })).toEqual({ project: "p1" });
     expect(surveyListSearch({ project: "p1", archived: true })).toEqual({
       project: "p1",

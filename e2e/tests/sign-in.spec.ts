@@ -9,9 +9,11 @@ test("an anonymous visit to a private page goes to sign-in, not an error page", 
   await expect(page.getByText(/not found|something went wrong/i)).toHaveCount(0);
 });
 
-test("signing in from / lands on / with the user's name in the header", async ({ page }) => {
+test("signing in from / lands on My Surveys with the user's name in the header", async ({
+  page,
+}) => {
   await signInAt(page, "/");
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/?project=personal");
   await expect(accountTrigger(page)).toContainText(users.owner.name);
 });
 
