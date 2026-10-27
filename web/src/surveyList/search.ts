@@ -42,10 +42,12 @@ export function surveyListParams(search: SurveyListSearch): SurveyListParams {
   return { project: search.project ?? PERSONAL, archived: search.archived ?? false };
 }
 
-/** Search for a link to a list: defaults are omitted, so Active personal is plain `/`. */
+/**
+ * Search for a link to a list. It always names the list, Personal Surveys too (`project=personal`):
+ * plain `/` opens the list the user looked at last. `archived` is omitted when false.
+ */
 export function surveyListSearch(params: SurveyListParams): SurveyListSearch {
-  const search: SurveyListSearch = {};
-  if (params.project !== PERSONAL) search.project = params.project;
+  const search: SurveyListSearch = { project: params.project };
   if (params.archived) search.archived = true;
   return search;
 }

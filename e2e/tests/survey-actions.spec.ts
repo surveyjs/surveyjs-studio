@@ -26,13 +26,14 @@ import { expect, test } from "./support/test.js";
 // delete) would leave for a moment. Never the owner's Personal scope or Marketing (other specs count
 // their rows), never a fixture survey. Every test creates surveys with unique names and removes them
 // at the end. Assertions are about one named row, never about how many surveys a scope holds. The
-// "cannot modify" tests only read fixtures.
+// tests that look at a fixture survey's menu only read it.
 
 // Each test signs in, creates a survey and acts on its row; Firefox on a busy machine needs the time.
 test.describe.configure({ timeout: 60_000 });
 
 const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const MARKETING = "55555555-0000-4000-8000-a00000000001";
+const CUSTOMER_FEEDBACK = "22222222-0000-4000-8000-a00000000001";
 const MOVE_CONFIRM =
   "Do you want to move this survey to another organization? This operation can't be undone.";
 
@@ -102,6 +103,72 @@ test("rename: Esc keeps the name, Enter saves it, and it survives a reload", asy
     await expect(surveyRow(page, name)).toHaveCount(0);
     expect((await getSurveyViaApi(page, survey.id))?.name).toBe(renamed);
   });
+});
+
+test("rename with the mouse: Cancel keeps the name, Save saves it", async ({
+  page,
+  browserName,
+}) => {
+  await signInAt(page, "/", "admin");
+  const name = uniqueName(browserName);
+  const renamed = `${name} renamed`;
+  const survey = await createSurveyViaApi(page, name);
+  await withCleanup(page, [], [survey.id], async () => {
+    await page.goto("/");
+    const row = surveyRow(page, name);
+    await expect(row).toBeVisible();
+    const input = page.getByRole("textbox", { name: "Survey name" });
+
+    await row.hover();
+    await row.locator(".v2-class---my-surveys-page__edit-icon").click();
+    await expect(input).toHaveValue(name);
+    await input.fill("Discarded name");
+    await row.getByRole("link", { name: "Cancel", exact: true }).click();
+    await expect(input).toHaveCount(0);
+    await expect(surveyRow(page, name)).toBeVisible();
+    expect((await getSurveyViaApi(page, survey.id))?.name).toBe(name);
+
+    await row.hover();
+    await row.locator(".v2-class---my-surveys-page__edit-icon").click();
+    await input.fill(renamed);
+    await row.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(surveyRow(page, renamed)).toBeVisible();
+    await expect.poll(async () => (await getSurveyViaApi(page, survey.id))?.name).toBe(renamed);
+
+    await page.reload();
+    await expect(surveyRow(page, renamed)).toBeVisible();
+    await expect(surveyRow(page, name)).toHaveCount(0);
+  });
+});
+
+test("the menu of a published survey the user may modify offers every action, in the site's order", async ({
+  page,
+}) => {
+  // Olivia's Customer feedback: published, in her Personal scope; she has projects. Only read.
+  await signInAt(page, "/", "owner");
+  const popup = await openRowMenu(surveyRow(page, "Customer feedback"));
+  expect(await menuEntries(popup).allInnerTexts()).toEqual([
+    "Run",
+    "Edit",
+    "Clone",
+    "Unpublish",
+    "Survey IDs",
+    "View Results",
+    "View History",
+    "Move to Project",
+    "Archive",
+  ]);
+
+  const run = popup.getByRole("link", { name: "Run", exact: true });
+  await expect(run).toHaveAttribute("href", `/s/${CUSTOMER_FEEDBACK}`);
+  await expect(run).toHaveAttribute("target", "_blank");
+  const pages = { Edit: "edit", "View Results": "results", "View History": "history" };
+  for (const [item, path] of Object.entries(pages)) {
+    await expect(popup.getByRole("link", { name: item, exact: true })).toHaveAttribute(
+      "href",
+      `/surveys/${CUSTOMER_FEEDBACK}/${path}`,
+    );
+  }
 });
 
 test("a new survey shows Run, which opens the run page in a new tab; unpublish hides it, publish shows it", async ({
@@ -246,7 +313,7 @@ test("Move to Project moves a Personal survey to Engineering and back, after a c
     let asked = answerNextConfirm(page, false);
     await flyout.getByRole("link", { name: "Engineering", exact: true }).click();
     expect(await asked).toBe(MOVE_CONFIRM);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL("/?project=personal");
     await expect(surveyRow(page, name)).toBeVisible();
     expect((await getSurveyViaApi(page, survey.id))?.projectId).toBeNull();
 
@@ -264,7 +331,7 @@ test("Move to Project moves a Personal survey to Engineering and back, after a c
     asked = answerNextConfirm(page, true);
     await flyout.getByRole("link", { name: "Personal Surveys", exact: true }).click();
     await asked;
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL("/?project=personal");
     await expect(surveyRow(page, name)).toBeVisible();
     expect((await getSurveyViaApi(page, survey.id))?.projectId).toBeNull();
   });

@@ -63,6 +63,8 @@ server.listen({ onUnhandledRequest: "error" });
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  // My Surveys remembers the list it shows there; a test must not open the previous test's list.
+  window.localStorage.clear();
 });
 afterAll(() => server.close());
 
