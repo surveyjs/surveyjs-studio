@@ -137,6 +137,10 @@ address the Azure firewall allows) and the switch to read-write.
 
 ## 6. Update, roll back, status
 
+The tag is the full commit id of a `master` commit whose CI passed: each push to `master` publishes
+`ghcr.io/surveyjs/surveyjs-studio:<full commit id>`, and so does a manual run (Actions › CI › Run workflow). Sign in
+with `ssh deploy@<server-ip>`, then:
+
 ```sh
 sudo surveyjs-studio-update <tag>       # deploy a tag
 sudo surveyjs-studio-update --status    # the running tag, the container's health and /readyz
@@ -151,6 +155,17 @@ sudo surveyjs-studio-update --status    # the running tag, the container's healt
   last log lines, goes back to the previous tag and exits with `1`.
 - **Healthy, but `/readyz` fails** (SQL or storage unreachable): it warns and keeps the new tag. The cause is outside
   the image, often the Azure firewall.
+
+**Without the script**, the same with plain Docker, but with no health check, no automatic rollback and no clean-up of
+old images:
+
+```sh
+cd /opt/surveyjs-studio
+sudo docker pull ghcr.io/surveyjs/surveyjs-studio:<tag>
+sudo sed -i 's/^TAG=.*/TAG=<tag>/' .env
+sudo docker compose up -d --remove-orphans
+sudo docker compose ps                  # wait for "healthy"
+```
 
 **Roll back** by deploying the earlier tag: the app has no database migrations, so an earlier image runs on the same
 data, and the previous tag's image is still on the server.

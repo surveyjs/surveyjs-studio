@@ -153,6 +153,9 @@ One image serves every deployment mode; its settings choose the mode. Build it w
 - [The rollout and rollback runbook](docs/operations.md#rollout-and-rollback-runbook), for the SurveyJS team and the
   surveyjs.io site team.
 
+- [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status): deploying a
+  published image tag, the status and the rollback.
+
 ## Repository layout
 
 | Directory            | Package                              | Purpose                                                           |
