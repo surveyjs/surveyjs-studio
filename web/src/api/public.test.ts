@@ -90,6 +90,33 @@ describe("submitResponse", () => {
     ]);
   });
 
+  it.each([
+    ["small answers", { a: "x" }, true],
+    ["ASCII answers over 60,000 bytes", { a: "x".repeat(60_000) }, false],
+    // 25,000 characters of 3 bytes each: under 60,000 characters, over 60,000 bytes.
+    [
+      "non-ASCII answers under 60,000 characters but over 60,000 bytes",
+      { a: "€".repeat(25_000) },
+      false,
+    ],
+  ])("sets keepalive for %s: %s", async (_name, data, keepalive) => {
+    const seen: { keepalive: boolean; contentType: string | null; body: unknown }[] = [];
+    server.use(
+      mswHttp.post("*/api/v1/public/surveys/:surveyId/responses", async ({ request }) => {
+        seen.push({
+          keepalive: request.keepalive,
+          contentType: request.headers.get("Content-Type"),
+          body: await request.json(),
+        });
+        return HttpResponse.json({ id: sampleResponseId }, { status: 201 });
+      }),
+    );
+
+    await submitResponse(surveyId, { data }, "key-1");
+
+    expect(seen).toEqual([{ keepalive, contentType: "application/json", body: { data } }]);
+  });
+
   it("rejects a 409 with the already-completed ApiError", async () => {
     server.use(
       publicProblemHandler("post", "/public/surveys/:surveyId/responses", 409, "already-completed"),

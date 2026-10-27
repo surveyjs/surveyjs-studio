@@ -46,12 +46,17 @@ export interface SubmitSender {
  * The library's cookie is kept once the answers are stored (or the server says this respondent
  * has completed the survey) and deleted when sending fails: otherwise a reload after a failure
  * would show the library's "already completed" content with nothing stored.
+ *
+ * While a request is in flight (from before the client id is read until the server answers), the
+ * page asks before it is left: closing the tab then may lose the answers.
  */
 export function createSubmitHandler(deps: {
   readonly submit: (body: ResponseBody, idempotencyKey: string) => Promise<{ id: string }>;
   /** The client id when the limit is on (clientIds.ensure()), else undefined. */
   readonly clientId: () => Promise<string | undefined>;
   readonly newKey?: () => string;
+  /** Makes the page ask before it is left; the answer stops asking (guardLeaving in leaveGuard.ts). */
+  readonly guardLeaving: () => () => void;
 }): (sender: SubmitSender, options: SaveOptions) => void {
   // randomId, not crypto.randomUUID: the run page also works over plain HTTP (R20).
   const newKey = deps.newKey ?? (() => randomId());
@@ -67,6 +72,7 @@ export function createSubmitHandler(deps: {
     }
     if (sending) return;
     sending = true;
+    const release = deps.guardLeaving();
     key ??= newKey();
     options.showSaveInProgress();
     const idempotencyKey = key;
@@ -80,12 +86,14 @@ export function createSubmitHandler(deps: {
       .then(
         () => {
           sending = false;
+          release();
           done = [];
           sender.setCookie();
           options.showSaveSuccess();
         },
         (error: unknown) => {
           sending = false;
+          release();
           if (error instanceof ApiError && error.problem.status === 409) {
             done = [SUBMIT_MESSAGES.alreadyCompleted];
             sender.setCookie();

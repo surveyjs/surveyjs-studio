@@ -37,6 +37,18 @@ export function toApiError(body: unknown, response: Response): ApiError {
   });
 }
 
+/**
+ * Below this many UTF-8 bytes a request may be sent with `keepalive`, so it survives the page
+ * closing. Browsers cap a keepalive body at 64 KiB of bytes (not characters), and a fetch over the
+ * cap rejects, so the size is measured in bytes.
+ */
+const KEEPALIVE_LIMIT_BYTES = 60_000;
+
+/** Whether a request with this JSON body can be sent with `keepalive`. */
+export function fitsKeepalive(json: string): boolean {
+  return new TextEncoder().encode(json).length < KEEPALIVE_LIMIT_BYTES;
+}
+
 /** Where the API lives; the download links use it too. */
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 

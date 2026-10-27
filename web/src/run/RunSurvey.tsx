@@ -6,6 +6,7 @@ import { submitResponse, uploadResponseFile } from "../api/public";
 import type { ClientIds } from "./clientId";
 import { completedBeforeCookie, runCookieName } from "./cookie";
 import { forRunPage } from "./definition";
+import { guardLeaving } from "./leaveGuard";
 import type { RunSurveyData } from "./load";
 import { createResponseUploadHandler } from "./responseUploads";
 import { localeOf, needsLocales, prefillValues, type RunSearch } from "./search";
@@ -44,6 +45,7 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
       submit: (body, key) => submitResponse(surveyId, body, key),
       // The client id is sent only when the survey limits responses.
       clientId: () => (limitCookie === null ? Promise.resolve(undefined) : clientIds.ensure()),
+      guardLeaving,
     }),
   );
   const upload = createResponseUploadHandler({
