@@ -1,7 +1,7 @@
 // The respondent's endpoints (`/public/surveys/…`): no session, used by the run page.
 import { queryOptions } from "@tanstack/react-query";
 import type { components } from "@surveyjs-studio/contract/types";
-import { client, toApiError } from "./client";
+import { client, fitsKeepalive, toApiError } from "./client";
 import type { StoredFile } from "./files";
 import { RESULTS_PAGE_SIZE } from "./results";
 
@@ -35,18 +35,22 @@ export async function getPublishedSurvey(
 
 /**
  * Stores a response (`POST /public/surveys/{id}/responses`). The same `idempotencyKey` for the
- * same survey stores nothing more and answers the first response's id. Rejects with `ApiError`
- * (`already-completed`, `payload-too-large`, `rate-limited`, …).
+ * same survey stores nothing more and answers the first response's id. Small enough answers are
+ * sent with `keepalive`, so a respondent who closes the tab while they are sent does not lose
+ * them. Rejects with `ApiError` (`already-completed`, `payload-too-large`, `rate-limited`, …).
  */
 export async function submitResponse(
   surveyId: string,
   body: ResponseBody,
   idempotencyKey: string,
 ): Promise<{ id: string }> {
+  const json = JSON.stringify(body);
   const { data, error, response } = await client.POST("/public/surveys/{surveyId}/responses", {
     params: { path: { surveyId }, header: { "Idempotency-Key": idempotencyKey } },
     // `partial` has a default in the contract, which the generated type lists as required.
     body: body as ResponseSubmission,
+    bodySerializer: () => json,
+    keepalive: fitsKeepalive(json),
   });
   if (!response.ok || data === undefined) throw toApiError(error, response);
   return data;

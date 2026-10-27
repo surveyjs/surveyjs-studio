@@ -31,6 +31,8 @@ function setUp(clientId?: string) {
   const requests: { body: ResponseBody; key: string }[] = [];
   let answer: { resolve: () => void; reject: (error: unknown) => void } | null = null;
   let keys = 0;
+  /** Whether the handler asks before the page is left, as each guard and release changed it. */
+  const guarded: boolean[] = [];
   const handle = createSubmitHandler({
     submit: (body, key) => {
       requests.push({ body, key });
@@ -40,11 +42,16 @@ function setUp(clientId?: string) {
     },
     clientId: () => Promise.resolve(clientId),
     newKey: () => `key-${++keys}`,
+    guardLeaving: () => {
+      guarded.push(true);
+      return () => guarded.push(false);
+    },
   });
   const setCookie = vi.fn<() => void>();
   const deleteCookie = vi.fn<() => void>();
   return {
     requests,
+    guarded,
     setCookie,
     deleteCookie,
     send: (options: SaveOptions, data: Record<string, unknown> = { satisfaction: 4 }) =>
@@ -76,6 +83,40 @@ describe("the submit handler", () => {
 
     expect(options.showSaveSuccess).toHaveBeenCalledExactlyOnceWith();
     expect(options.showSaveError).not.toHaveBeenCalled();
+  });
+
+  it("asks before the page is left from the start of sending until the answers are stored", async () => {
+    const submit = setUp("client-1");
+
+    submit.send(saveOptions());
+    // At once, before the client id is read: closing the tab now would send nothing.
+    expect(submit.guarded).toEqual([true]);
+    await submit.succeed();
+
+    expect(submit.guarded).toEqual([true, false]);
+  });
+
+  it("stops asking before the page is left once sending fails, and asks again on a retry", async () => {
+    const submit = setUp();
+    const options = saveOptions();
+
+    submit.send(options);
+    await submit.fail(new TypeError("Failed to fetch"));
+    expect(submit.guarded).toEqual([true, false]);
+
+    submit.send(options);
+    expect(submit.guarded).toEqual([true, false, true]);
+  });
+
+  it("does not ask before the page is left once the answers are stored", async () => {
+    const submit = setUp();
+    const options = saveOptions();
+
+    submit.send(options);
+    await submit.succeed();
+    submit.send(options);
+
+    expect(submit.guarded).toEqual([true, false]);
   });
 
   it("keeps the library's cookie once the answers are stored", async () => {
@@ -242,6 +283,7 @@ describe("the submit handler's own key", () => {
             : Promise.resolve({ id: "response-1" });
         },
         clientId: () => Promise.resolve(undefined),
+        guardLeaving: () => () => undefined,
       });
       const sender = { data: { satisfaction: 4 }, setCookie: vi.fn(), deleteCookie: vi.fn() };
       const options = saveOptions();
