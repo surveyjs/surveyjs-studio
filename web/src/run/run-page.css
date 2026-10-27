@@ -3,3 +3,9 @@
 body:has(.running-survey) {
   margin: 0;
 }
+
+/* The Form Library's brand footer (`showBrandInfo`, RunSurvey.tsx) is centred; the library aligns it
+   right except on mobile. Scoped to the page so it outranks survey-core.css whatever the load order. */
+.running-survey .sv-brand-info {
+  text-align: center;
+}
