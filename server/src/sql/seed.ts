@@ -1,7 +1,7 @@
 import type { MemorySeed } from "../providers/memory.js";
 import type { SqlDatabase } from "./database.js";
 import { insertResponses } from "./result-store.js";
-import { insertSurvey } from "./survey-store.js";
+import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
 
 export interface SeedReport {
   readonly surveys: number;
@@ -18,7 +18,7 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
   await database.db.transaction().execute(async (trx) => {
     for (const survey of seed.surveys) {
       const id = survey.id.toLowerCase();
-      await trx.deleteFrom("surveys").where("id", "=", id).execute();
+      await deleteSurveyRows(trx, id);
       const definition = byId(seed.definitions, id);
       const theme = byId(seed.themes, id);
       await insertSurvey(trx, survey, {
@@ -39,6 +39,26 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
               partial,
             })),
           )
+          .execute();
+      }
+      const legacyViews = Object.entries(byId(seed.legacyViews, id) ?? {});
+      if (legacyViews.length > 0) {
+        await trx
+          .insertInto("legacy_views")
+          .values(
+            legacyViews.map(([view, state]) => ({
+              survey_id: id,
+              view: view as "summary" | "table",
+              state: JSON.stringify(state),
+            })),
+          )
+          .execute();
+      }
+      const privateQuestions = byId(seed.privateResultQuestions, id);
+      if (privateQuestions !== undefined) {
+        await trx
+          .insertInto("private_questions")
+          .values({ survey_id: id, names: JSON.stringify(privateQuestions) })
           .execute();
       }
     }

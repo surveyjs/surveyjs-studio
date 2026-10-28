@@ -4,6 +4,7 @@ import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
 import { createSqlResultStore } from "../sql/result-store.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
+import { createSqlViewStore } from "../sql/view-store.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import type { LegacyWarningLogger } from "./azure-legacy/index.js";
 import { createMemoryProviders, type MemorySeed } from "./memory.js";
@@ -107,7 +108,7 @@ export function createSqlProviders(
     projects: fallback.projects,
     files: fallback.files,
     results: createSqlResultStore(database),
-    views: fallback.views,
+    views: createSqlViewStore(database),
     notices: fallback.notices,
     readinessNames: ["database"],
     ready: async () => [{ name: "database", ...(await probe(database)) }],
