@@ -46,6 +46,7 @@ describe("loadConfig", () => {
       storageProvider: "memory",
       memorySeed: "empty",
       legacy: null,
+      database: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -272,6 +273,87 @@ describe("loadConfig", () => {
     });
   });
 
+  describe("SQL storage providers", () => {
+    const URL_SECRET = "Pg-Secret-Value-55";
+    const DATABASE_URL = `postgres://studio:${URL_SECRET}@db.example.net:5432/studio`;
+
+    it("puts SQLite at /data/surveyjs-studio.db unless SQLITE_PATH says otherwise", () => {
+      expect(loadConfig({ STORAGE_PROVIDER: "sqlite" })).toMatchObject({
+        storageProvider: "sqlite",
+        database: { dialect: "sqlite", path: resolve("/data/surveyjs-studio.db") },
+      });
+      expect(
+        loadConfig({ STORAGE_PROVIDER: "sqlite", SQLITE_PATH: ".data/studio.db" }).database,
+      ).toEqual({ dialect: "sqlite", path: resolve(".data/studio.db") });
+    });
+
+    it("reads DATABASE_URL for PostgreSQL", () => {
+      const config = loadConfig({ STORAGE_PROVIDER: "postgres", DATABASE_URL });
+      expect(config.database).toEqual({ dialect: "postgres", url: DATABASE_URL });
+      expect(Object.isFrozen(config.database)).toBe(true);
+      expect(
+        loadConfig({ STORAGE_PROVIDER: "postgres", DATABASE_URL: "postgresql://h/d" }).database,
+      ).toEqual({ dialect: "postgres", url: "postgresql://h/d" });
+    });
+
+    it("requires a postgres URL in DATABASE_URL, without echoing it", () => {
+      expect(messageOf(() => loadConfig({ STORAGE_PROVIDER: "postgres" }))).toContain(
+        "  - DATABASE_URL: required when STORAGE_PROVIDER=postgres",
+      );
+      for (const url of [`mysql://u:${URL_SECRET}@h/d`, `not a url ${URL_SECRET}`]) {
+        const message = messageOf(() =>
+          loadConfig({ STORAGE_PROVIDER: "postgres", DATABASE_URL: url }),
+        );
+        expect(message).toContain("  - DATABASE_URL: must be a postgres:// or postgresql:// URL");
+        expect(message).not.toContain(URL_SECRET);
+      }
+    });
+
+    it("never echoes DATABASE_URL next to other problems", () => {
+      const message = messageOf(() =>
+        loadConfig({ STORAGE_PROVIDER: "postgres", DATABASE_URL, PORT: "99999" }),
+      );
+      expect(message).toContain("PORT");
+      expect(message).not.toContain(URL_SECRET);
+    });
+
+    it("leaves database null for the other providers", () => {
+      expect(loadConfig({ DATABASE_URL, SQLITE_PATH: "/x.db" }).database).toBeNull();
+    });
+
+    it.each(["sqlite", "postgres"])(
+      "uses the memory directory and allows the dev sign-in with %s (until local accounts)",
+      (provider) => {
+        const config = loadConfig({ STORAGE_PROVIDER: provider, DATABASE_URL });
+        expect(config.userDirectory).toBe("memory");
+        expect(config.identityProvider).toBe("dev");
+        expect(
+          loadConfig({ STORAGE_PROVIDER: provider, DATABASE_URL, USER_DIRECTORY: "memory" })
+            .userDirectory,
+        ).toBe("memory");
+      },
+    );
+
+    it.each(["sqlite", "postgres"])(
+      "refuses %s in production until every store is on SQL",
+      (provider) => {
+        const message = messageOf(() =>
+          load({
+            ...oidc,
+            SESSION_SECRET,
+            NODE_ENV: "production",
+            PUBLIC_BASE_URL: "https://surveys.example.com",
+            STORAGE_PROVIDER: provider,
+            DATABASE_URL,
+          }),
+        );
+        expect(message).toContain(
+          `  - STORAGE_PROVIDER: ${provider} is not allowed when NODE_ENV=production until every store is on SQL (self-hosted track)`,
+        );
+      },
+    );
+  });
+
   describe("empty and blank values", () => {
     it("treat every variable as unset", () => {
       const config = loadConfig({
@@ -405,7 +487,7 @@ describe("loadConfig", () => {
         /IDENTITY_PROVIDER: dev is not allowed when APP_EDITION=hosted/,
       );
       expect(() => loadConfig(legacyStores)).toThrow(
-        /IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory/,
+        /IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory, sqlite or postgres/,
       );
     });
 
@@ -579,7 +661,7 @@ describe("loadConfig", () => {
     it.each([
       [
         { USER_DIRECTORY: "memory", ...legacy },
-        "USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory",
+        "USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory, sqlite or postgres",
       ],
       [
         { USER_DIRECTORY: "surveyjs-sql" },

@@ -1,7 +1,8 @@
 import { isIP } from "node:net";
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import { isWebhookSecret } from "./accounts/webhook-secret.js";
+import type { DatabaseTarget } from "./sql/database.js";
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -9,6 +10,12 @@ export class ConfigError extends Error {
     this.name = "ConfigError";
   }
 }
+
+export const STORAGE_PROVIDERS = ["memory", "azure-legacy", "sqlite", "postgres"] as const;
+export type StorageProvider = (typeof STORAGE_PROVIDERS)[number];
+
+/** Providers whose users and other stores are still the memory ones (self-hosted track Steps 1–4). */
+const SQL_PROVIDERS: readonly string[] = ["sqlite", "postgres"];
 
 export const AUTH_METHODS = ["surveyjs", "password", "google", "github", "facebook"] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
@@ -36,10 +43,12 @@ export interface AppConfig {
   readonly shell: string;
   readonly authMethods: readonly AuthMethod[];
   readonly surveyjsLicenseKey: string | null;
-  readonly storageProvider: "memory" | "azure-legacy";
+  readonly storageProvider: StorageProvider;
   readonly memorySeed: "empty" | "legacy-fixtures";
   /** Set only when storageProvider is `azure-legacy`. Secrets: never log or echo these values. */
   readonly legacy: LegacyConfig | null;
+  /** Set only when storageProvider is `sqlite` or `postgres`. Secret (the URL): never log or echo. */
+  readonly database: DatabaseTarget | null;
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -212,8 +221,11 @@ const envSchema = z.object({
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
-  STORAGE_PROVIDER: z.enum(["memory", "azure-legacy"]).default("memory"),
+  STORAGE_PROVIDER: z.enum(STORAGE_PROVIDERS).default("memory"),
   MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
+  // Plain string (checked in loadConfig): a schema check here could echo the password.
+  DATABASE_URL: z.string().optional(),
+  SQLITE_PATH: z.string().min(1).default("/data/surveyjs-studio.db"),
   PUBLIC_BASE_URL: publicBaseUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
@@ -309,8 +321,8 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const storage = env.STORAGE_PROVIDER ?? "memory";
   const directory = env.USER_DIRECTORY;
-  if (directory === "memory" && storage !== "memory") {
-    problems.push("USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory");
+  if (directory === "memory" && storage !== "memory" && !SQL_PROVIDERS.includes(storage)) {
+    problems.push("USER_DIRECTORY: memory requires STORAGE_PROVIDER=memory, sqlite or postgres");
   }
   if (directory === "surveyjs-sql" && storage !== "azure-legacy") {
     problems.push("USER_DIRECTORY: surveyjs-sql requires STORAGE_PROVIDER=azure-legacy");
@@ -360,6 +372,30 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** The SQL providers' settings (self-hosted track). Never echoes DATABASE_URL, which holds a password. */
+function databaseProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const storage = env.STORAGE_PROVIDER;
+  if (storage === undefined || !SQL_PROVIDERS.includes(storage)) return problems;
+  if (env.NODE_ENV === "production") {
+    problems.push(
+      `STORAGE_PROVIDER: ${storage} is not allowed when NODE_ENV=production until every store is on SQL (self-hosted track)`,
+    );
+  }
+  if (storage === "postgres") {
+    const url = env.DATABASE_URL;
+    if (url === undefined) {
+      problems.push("DATABASE_URL: required when STORAGE_PROVIDER=postgres");
+    } else if (
+      !URL.canParse(url) ||
+      !["postgres:", "postgresql:"].includes(new URL(url).protocol)
+    ) {
+      problems.push("DATABASE_URL: must be a postgres:// or postgresql:// URL");
+    }
+  }
+  return problems;
+}
+
 function identityProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const provider = env.IDENTITY_PROVIDER ?? "surveyjs-oidc";
@@ -370,8 +406,9 @@ function identityProblems(env: Record<string, string | undefined>): string[] {
     if (env.APP_EDITION === "hosted") {
       problems.push("IDENTITY_PROVIDER: dev is not allowed when APP_EDITION=hosted");
     }
-    if (env.STORAGE_PROVIDER !== undefined && env.STORAGE_PROVIDER !== "memory") {
-      problems.push("IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory");
+    const storage = env.STORAGE_PROVIDER ?? "memory";
+    if (storage !== "memory" && !SQL_PROVIDERS.includes(storage)) {
+      problems.push("IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory, sqlite or postgres");
     }
   } else if (provider === "surveyjs-oidc") {
     for (const name of ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"]) {
@@ -401,6 +438,17 @@ function identityProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** Where the SQL providers keep their data; null for the other providers. */
+function databaseOf(e: z.infer<typeof envSchema>): DatabaseTarget | null {
+  if (e.STORAGE_PROVIDER === "sqlite") {
+    return Object.freeze({ dialect: "sqlite", path: resolve(e.SQLITE_PATH) });
+  }
+  if (e.STORAGE_PROVIDER === "postgres") {
+    return Object.freeze({ dialect: "postgres", url: e.DATABASE_URL ?? "" });
+  }
+  return null;
+}
+
 export function loadConfig(
   rawEnv: Record<string, string | undefined>,
   options: LoadConfigOptions = {},
@@ -424,6 +472,7 @@ export function loadConfig(
       }
     }
   }
+  problems.push(...databaseProblems(env));
   if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
     problems.push("SESSION_SECRET: must be at least 32 characters");
   }
@@ -453,6 +502,7 @@ export function loadConfig(
             resultsStorageConnectionString: e.LEGACY_RESULTS_STORAGE_CONNECTION_STRING ?? "",
           })
         : null,
+    database: databaseOf(e),
     publicBaseUrl: e.PUBLIC_BASE_URL ?? "http://localhost:3000",
     limits: Object.freeze({
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,

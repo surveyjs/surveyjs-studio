@@ -9,8 +9,23 @@ export default defineConfig({
         test: {
           name: "server",
           include: ["server/src/**/*.test.ts"],
-          // Needs the Docker replica; run by the providers-azurite project.
-          exclude: ["**/node_modules/**", "server/src/**/*.azurite.test.ts"],
+          // Need Docker: run by the providers-azurite and providers-postgres projects.
+          exclude: [
+            "**/node_modules/**",
+            "server/src/**/*.azurite.test.ts",
+            "server/src/**/*.postgres.test.ts",
+          ],
+        },
+      },
+      {
+        // Needs PostgreSQL (`pnpm postgres:up`). Not part of `pnpm test:unit`; run with
+        // `pnpm test:providers:postgres`, which reads docker/postgres.env. Each test file makes
+        // its own scratch databases, so the files run in parallel.
+        test: {
+          name: "providers-postgres",
+          include: ["server/src/**/*.postgres.test.ts"],
+          testTimeout: 30_000,
+          hookTimeout: 60_000,
         },
       },
       "web",

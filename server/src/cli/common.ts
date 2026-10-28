@@ -3,6 +3,7 @@ import { parseEnv } from "node:util";
 import { ConfigError, loadConfig } from "../config.js";
 import { LegacyStoreError } from "../providers/azure-legacy/index.js";
 import { createProviders, type ProviderSet } from "../providers/index.js";
+import { DatabaseTooNewError, MigrationMismatchError } from "../sql/migrator.js";
 import { UserApiError } from "../users/surveyjs-api/client.js";
 
 /** Shared parts of the operator commands (`inspect:legacy`, `account:erase`, `account:reconcile`, `webhook:account-deleted`). */
@@ -78,7 +79,9 @@ export function safeErrorText(error: unknown): string {
   const safe =
     error instanceof ConfigError ||
     error instanceof LegacyStoreError ||
-    error instanceof UserApiError;
+    error instanceof UserApiError ||
+    error instanceof DatabaseTooNewError ||
+    error instanceof MigrationMismatchError;
   return safe ? error.message : describeUnexpected(error);
 }
 

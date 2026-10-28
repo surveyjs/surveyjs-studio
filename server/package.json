@@ -5,7 +5,8 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
-    "fixtures"
+    "fixtures",
+    "sql"
   ],
   "scripts": {
     "dev": "node --watch --import tsx src/main.ts",
