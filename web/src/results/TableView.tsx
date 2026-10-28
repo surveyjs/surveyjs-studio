@@ -9,6 +9,7 @@ import type { ResultsWidgetProps } from "./ResultsPage";
 import { extraTableColumns, tableRows } from "./tableRows";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
 import { withoutQuestions } from "./publicDefinition";
+import styles from "./results.module.css";
 
 type TableViewState = Tabulator["state"];
 
@@ -117,7 +118,7 @@ export function TableView({
           The export could not be prepared. Please try again.
         </p>
       )}
-      <div ref={container} />
+      <div ref={container} className={styles.table} />
     </>
   );
 }
