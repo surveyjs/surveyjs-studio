@@ -241,7 +241,10 @@ EOF
     cat <<EOF
 # Written by setup.sh; run it again to change this file.
 $DOMAIN {
-	encode zstd gzip
+	# Not the survey documents: compressing rewrites their ETag ("v" becomes "v-zstd"), and every
+	# save with it would fail as "changed by someone else". The app also asks with no-transform.
+	@compressible not path /api/v1/surveys/*/definition /api/v1/surveys/*/theme
+	encode @compressible zstd gzip
 	@readyz_blocked {
 		path /readyz
 		not remote_ip 127.0.0.1${READYZ_ALLOW:+ $READYZ_ALLOW}

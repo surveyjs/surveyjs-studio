@@ -1409,6 +1409,12 @@ export interface components {
         Location: string;
         /** @description Strong, opaque version tag of the document; send it back in `If-Match`. */
         ETag: string;
+        /**
+         * @description Always `no-transform`: a proxy must not compress the document, because compressing
+         *     proxies rewrite the `ETag` (Caddy turns `"v"` into `"v-zstd"`), and the rewritten
+         *     tag never matches in `If-Match`.
+         */
+        NoTransform: "no-transform";
         /** @description Session cookies `msid` (HttpOnly) and `msid_csrf` (readable). */
         SetCookie: string;
         /** @description `attachment; filename="…"; filename*=UTF-8''…`: the ASCII fallback, then the UTF-8 name. */
@@ -2037,6 +2043,7 @@ export interface operations {
             200: {
                 headers: {
                     ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["NoTransform"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2100,6 +2107,7 @@ export interface operations {
             200: {
                 headers: {
                     ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["NoTransform"];
                     [name: string]: unknown;
                 };
                 content: {

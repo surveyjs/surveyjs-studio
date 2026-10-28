@@ -74,6 +74,10 @@ ETag from your last read in If-Match."
 - **For a survey without a definition** (`{}`), the `GET` still returns an `ETag`, and a first `PUT`
   with it works.
 - A `404` has no `ETag`.
+- **Not compressed by proxies.** The two `GET`s send `Cache-Control: no-transform`. A compressing proxy
+  rewrites the ETag of what it compresses (Caddy's `encode` turns `"v"` into `"v-zstd"`), and the
+  rewritten tag never matches, so every save would fail with `412`. A proxy that ignores
+  `no-transform` must be told not to compress these two paths, as the Hetzner `Caddyfile` does.
 
 ## Body size
 

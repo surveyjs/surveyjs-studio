@@ -115,7 +115,9 @@ from here on, `ssh deploy@<server-ip>` and `sudo`.
 **Running it again** is safe, also on a server set up by hand before: each step checks what is there. It rewrites
 `compose.yaml`, the `Caddyfile` and `.env` in `/opt/surveyjs-studio`, keeps `/etc/surveyjs-studio/app.env` unless
 `--env-file` is given, and keeps the running tag unless `--tag` is given. That is how to change the domain, the
-`/readyz` addresses or the restriction: run it again with other options.
+`/readyz` addresses or the restriction: run it again with other options. A changed `Caddyfile` is applied by
+restarting Caddy, so a new version of the script (such as the one that stopped compressing the survey documents) takes
+effect when it is run again with the same options.
 
 Then continue with [rollout step 1](../operations.md#step-1-internal-use-on-production-data-read-only-first) from its
 item 4: the schema check, the checks after start-up, the read-only browse, `pnpm smoke:legacy` (from a checkout whose
@@ -131,7 +133,8 @@ address the Azure firewall allows) and the switch to read-write.
 5. Installs Docker from Docker's own package repository, with log rotation (the app logs every request, and Docker's
    default log driver never rotates).
 6. Writes `/opt/surveyjs-studio/compose.yaml` (the app and Caddy on the `172.30.0.0/24` network; only Caddy publishes
-   ports), the `Caddyfile` (https for the domain, `/readyz` only for the monitor) and `.env` (`IMAGE` and `TAG`);
+   ports), the `Caddyfile` (https for the domain, compression except for the survey definition and theme, whose
+   `ETag` it would rewrite, `/readyz` only for the monitor) and `.env` (`IMAGE` and `TAG`);
    installs `update.sh` as `/opt/surveyjs-studio/update.sh` and the command `surveyjs-studio-update`.
 7. Signs in to ghcr.io, checks the DNS record, and starts the app with `update.sh <tag>`.
 

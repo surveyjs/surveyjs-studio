@@ -624,6 +624,7 @@ paths:
           description: The SurveyJS survey JSON.
           headers:
             ETag: { $ref: '#/components/headers/ETag' }
+            Cache-Control: { $ref: '#/components/headers/NoTransform' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SurveyDefinition' }
@@ -676,6 +677,7 @@ paths:
           description: The SurveyJS theme JSON; `{}` when the survey uses the default theme.
           headers:
             ETag: { $ref: '#/components/headers/ETag' }
+            Cache-Control: { $ref: '#/components/headers/NoTransform' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SurveyTheme' }
@@ -1325,6 +1327,13 @@ components:
       description: Strong, opaque version tag of the document; send it back in `If-Match`.
       required: true
       schema: { type: string }
+    NoTransform:
+      description: |
+        Always `no-transform`: a proxy must not compress the document, because compressing
+        proxies rewrite the `ETag` (Caddy turns `"v"` into `"v-zstd"`), and the rewritten
+        tag never matches in `If-Match`.
+      required: true
+      schema: { type: string, enum: [no-transform] }
     SetCookie:
       description: Session cookies `msid` (HttpOnly) and `msid_csrf` (readable).
       schema: { type: string }
