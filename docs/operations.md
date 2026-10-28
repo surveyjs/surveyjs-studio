@@ -252,9 +252,8 @@ The same as 1.1, after the site has removed My Surveys (rollout step 4). The app
 
 How to make it and share it: [the webhook secret](#the-webhook-secret).
 
-When surveyjs.io has built its user API, switch to it at any time in mode 1.1 or 1.2: `USER_DIRECTORY=surveyjs-api`,
-`USER_API_URL` and `USER_API_TOKEN` (**secret**). `/readyz` then also checks `user-api`
-([Configuring accounts](#configuring-accounts)).
+Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API will not be built
+([ADR 0022](adr/0022-users-from-sign-in.md)); after the cutover users come from sign-in (hosted plan Step 2).
 
 ### Mode 4: development
 
@@ -284,8 +283,8 @@ and today the server refuses them at start-up with a message that names the trac
 | `APP_EDITION`    | `self-hosted` | `self-hosted`                                                    |
 
 The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Mode 1.3 (the
-hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come through
-`USER_DIRECTORY=surveyjs-api`.
+hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come from sign-in
+([ADR 0022](adr/0022-users-from-sign-in.md)).
 
 ## Configuring accounts
 
@@ -316,7 +315,7 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
 STORAGE_PROVIDER=azure-legacy        # with the three LEGACY_* connection strings
 ACCOUNT_NOTICES=surveyjs-licenses    # USER_DIRECTORY defaults to surveyjs-sql
 
-# When the surveyjs.io user API exists
+# Local tests of the surveyjs-api client only: the user API will not be built (ADR 0022)
 USER_DIRECTORY=surveyjs-api
 USER_API_URL=https://<the site's API address>
 USER_API_TOKEN=<the service key>     # secret

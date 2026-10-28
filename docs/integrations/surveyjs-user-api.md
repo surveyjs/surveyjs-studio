@@ -4,6 +4,12 @@ For the surveyjs.io team. This page says what My Surveys needs from surveyjs.io,
 it, so that deleting a surveyjs.io account also erases the user's surveys in My Surveys. We specify both; nothing
 here exists on the site yet. We ask for your changes before anything is built.
 
+> **The user API is withdrawn (2026-10-28, [ADR 0022](../adr/0022-users-from-sign-in.md)).** Please do not build the
+> four calls. The account-deleted webhook below still stands. What My Surveys needs from the site instead: a `blocked`
+> claim in `/OAuth/UserInfo` with the account re-read on each `/OAuth/Authorize`, and a licence-state endpoint for
+> the signed-in user (to be designed with you). The API sections are kept because the app's `surveyjs-api` client
+> and stub still implement them until hosted plan Step 2 removes them.
+
 ## Purpose and the two halves
 
 My Surveys does not keep its own users in mode 1. It reads them from surveyjs.io. Today it reads the site's SQL

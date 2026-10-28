@@ -4,7 +4,8 @@ Date: 2026-10-19
 
 ## Status
 
-Accepted. The product owner has not confirmed the successor rule (the first member by name), that the signed webhook
+Accepted. **The user API of R9 is superseded by [ADR 0022](0022-users-from-sign-in.md)**; the account-deleted
+webhook of R9 stands. The product owner has not confirmed the successor rule (the first member by name), that the signed webhook
 is trusted without asking the user directory, that saved layouts and history entries are kept, that `oidc` is dropped
 from `AUTH_METHODS`, the erasure fixture user, that reconciliation is a capped, dry-run-first command, that
 `account:erase` stops when the directory lookup fails, and the promotion of a plain member when a project has no

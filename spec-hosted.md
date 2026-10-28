@@ -50,7 +50,7 @@ Move everything except users into the app's own stores, and retire the legacy co
 **What the SurveyJS team gets**
 
 - **The app's own database and object storage**, chosen from a shortlist of non-Azure options. The recommended choice is PostgreSQL plus S3-compatible storage, the same providers the self-hosted image uses.
-- **Users stay on surveyjs.io.** The app reads them only through the **surveyjs.io user API** and erases data on the **account-deleted webhook**. Both were specified in plan Step 12 (D17). The app keeps no credentials for the site database.
+- **Users stay on surveyjs.io.** After the cutover the app learns about users only from **sign-in** (UserInfo) and erases data on the **account-deleted webhook** ([ADR 0022](docs/adr/0022-users-from-sign-in.md)). There is no user API. The app keeps no credentials for the site database.
 - **No legacy code left.** After the cutover the site removes its My Surveys code and the old `api.surveyjs.io` implementation. After a stabilisation period, this repository removes the Azure legacy provider and the replica.
 
 **How it is done**
@@ -103,7 +103,7 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### SurveyJS team: architecture
 
-- H27. As the site team, I want the app to read users only through the user API, so that we can change the site's database freely.
+- H27. As the site team, I want the app to need nothing from the site's user tables after the cutover, only sign-in, the account-deleted webhook and a licence endpoint, so that we can change the site's database freely.
 - H28. As the site team, I want to remove all My Surveys code from surveyjs.io and `api.surveyjs.io` after the cutover, so that we maintain only one implementation.
 - H29. As a maintainer of this repository, I want the Azure legacy provider, the replica and the legacy-format rules removed after stabilisation, so that the code no longer carries the old formats.
 - H30. As a back-end porter, I want the compatibility layer to stay outside the contract, so that a port does not have to implement legacy endpoints.
@@ -139,9 +139,16 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### Users (H27)
 
-- The hosted configuration uses `USER_DIRECTORY=surveyjs-api` (plan Step 12): user by ID, user by email, licence state, plus the account-deleted webhook.
-- **The switch happens before the cutover**, so the cutover changes only storage. After it the hosted configuration holds no site-database credentials.
-- `ProjectStore` and the other stores move with the data. `UserDirectory` does not move.
+The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes the user API of plan Step 12.
+
+- **Until the cutover nothing changes:** `USER_DIRECTORY=surveyjs-sql` reads the site's `Users` table and licences.
+- **After it, users come from sign-in.** A new user directory keeps app-owned profiles, written from UserInfo at every sign-in (id, email, display name, `blocked`). They serve history author names and adding members by email.
+- **The migration seeds a profile** for every user the copied data names (survey owners, members, history authors), from the site's `Users` table.
+- **Adding a member whose email has no profile** creates a pending invitation, which becomes a membership when someone signs in with that email. Admins can list and cancel invitations.
+- **Blocked users** get no session, from UserInfo's `blocked` claim. The sign-in server re-reads the account on every authorization (built in `the site's sign-in service`, 2026-10-28).
+- **Licence notices** come from a surveyjs.io site endpoint for the signed-in user, asked by the web app's shell, in the hosted edition only.
+- **Deleted accounts:** the account-deleted webhook only. Reconciliation is not available with profiles, because "no profile" does not mean "deleted".
+- `ProjectStore` and the other stores move with the data. Profiles and invitations are app-owned tables in the target.
 
 ### API tokens and CORS (H12–H14)
 
@@ -315,7 +322,7 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
 
 **Dependencies on the surveyjs.io side**
 
-- the user API and the webhook, built to `docs/integrations/surveyjs-user-api.md` (plan Step 12);
+- the account-deleted webhook, built to `docs/integrations/surveyjs-user-api.md` (plan Step 12), and the licence endpoint ([ADR 0022](docs/adr/0022-users-from-sign-in.md));
 - 30 days of `api.surveyjs.io` access logs, or per-endpoint statistics;
 - the reverse-proxy rule, or the DNS change, for `api.surveyjs.io`;
 - removing the access key from the manage account page at the cutover;

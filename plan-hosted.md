@@ -31,7 +31,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Step 8 (target provider readiness)        | The logical schema, the SQL provider for the chosen database, and the S3-compatible file store | SH Steps 1–3, if the choice in Step 1 is PostgreSQL and S3-compatible storage. Otherwise Step 8 builds the chosen provider against the same suites   |
 | Steps 3 and 4 (tokens, partial responses) | Storage on the SQL providers                                                                   | **The later of the two pieces adds the SQL side.** If SH Step 2 is merged first, Steps 3 and 4 add their SQL tables. If not, SH Step 2 includes them |
-| Step 2 (user API)                         | The `UserDirectory` seam and the `surveyjs-api` client                                         | plan.md Step 12                                                                                                                                      |
+| Step 2 (users from sign-in)               | The `UserDirectory` seam and the webhook; SQL storage for profiles and invitations             | plan.md Step 12; the SQL side follows the rule of Steps 3 and 4                                                                                      |
 | Step 10 (maintenance states)              | `READ_ONLY`                                                                                    | plan.md Step 14                                                                                                                                      |
 
 ## Progress
@@ -39,7 +39,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 | Step | Name                                                              | Status |
 | ---- | ----------------------------------------------------------------- | ------ |
 | 1    | Decisions and evidence: target stores, legacy traffic, mapping    | ☐      |
-| 2    | Switching to the surveyjs.io user API                             | ☐      |
+| 2    | Users from sign-in: profiles, invitations and licence notices     | ☐      |
 | 3    | API tokens and CORS                                               | ☐      |
 | 4    | Partial responses                                                 | ☐      |
 | 5    | Compatibility layer: public endpoints and legacy files            | ☐      |
@@ -106,41 +106,51 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ---
 
-## Step 2: Switching to the surveyjs.io user API
+## Step 2: Users from sign-in: profiles, invitations and licence notices
 
-**Goal:** the hosted configuration reads users, emails and licence state only through the surveyjs.io user API, and receives the account-deleted webhook from the real site. It holds no credentials for user tables.
+**Goal:** after the cutover the app needs nothing from the site's user tables. Users come from sign-in, members are added by email through profiles or invitations, licence notices come from a site endpoint, and deleted accounts arrive by the webhook ([ADR 0022](docs/adr/0022-users-from-sign-in.md)). Until the cutover the hosted configuration stays on `surveyjs-sql`.
 
-**Inputs needed:** the user API and webhook on the surveyjs.io staging site, built to `docs/integrations/surveyjs-user-api.md` (plan.md Step 12).
+**Inputs needed:**
+
+- the `blocked` claim in `/OAuth/UserInfo` and the re-read on `/OAuth/Authorize`, in `the site's sign-in service` (built 2026-10-28), deployed to staging;
+- the licence endpoint on the surveyjs.io staging site, designed with the site team;
+- the account-deleted webhook on staging, built to `docs/integrations/surveyjs-user-api.md` (plan.md Step 12).
 
 **References**
 
-- HS › Users; idea D17; plan.md Step 12 (the `surveyjs-api` directory, the webhook, reconciliation).
+- HS › Users; ADR 0022; ADR 0018 (the seam, the webhook, erasure).
 - H27.
 
 **Build**
 
-- **Hardening the `surveyjs-api` client for production:**
-  - time-outs and retries with back-off;
-  - a short cache for user-by-ID lookups, which happen on every request;
-  - mapping of every error the API can return;
-  - readiness reports the API.
-- **`AccountNotices` from the API's licence state.** The SQL licence reader is no longer used in the hosted configuration.
-- **A contract test against staging** (`pnpm test:user-api --base <url>`): the same cases as the stub tests, run against the real API.
-- **Configuration:** the hosted profile in `docs/operations.md` switches to `USER_DIRECTORY=surveyjs-api`. Credentials for the site's `Users` table are removed from the hosted profile. The Azure legacy provider still reads the site database for surveys and projects until the cutover.
+- **`blocked` from UserInfo.** The identity claims carry it; a blocked user gets the `403` "Account blocked", as with `surveyjs-sql`.
+- **The profile directory** (working name `profiles`) on the memory provider and the SQL providers:
+  - every sign-in writes the profile: id, email, display name, `blocked`, last sign-in;
+  - `getUser` and `findUserByEmail` read profiles;
+  - `missingUsers` refuses, and `account:reconcile` says it is not available with this directory.
+- **Invitations.** Contract changes, with exact names and paths fixed in this step:
+  - `addMember` with an email that has no profile answers with a pending invitation instead of `user-not-found`;
+  - admins list and cancel a project's invitations;
+  - a sign-in whose email matches turns each invitation into a membership with its role.
+- **Licence notices from the site.** In the hosted edition the web app's shell asks the site endpoint for the signed-in user. The server's `surveyjs-licenses` stays for `surveyjs-sql`.
+- **Profiles in the migration.** Step 9 exports a profile for every user the copied data names, from the site's `Users` table.
+- **Removing the user API client:** the `surveyjs-api` directory, its stub and conformance run, `USER_API_URL`, `USER_API_TOKEN` and the `user-api` readiness check. The API sections of the user API document go too.
 
 **Tests**
 
-- **Back-end unit:** retry and cache rules; error mapping.
-- **Back-end e2e:** the conformance and provider suites with `surveyjs-api` against the stub. The contract test against staging is run manually and its result recorded.
-- **Front-end e2e:** sign-in, the account menu and the licence notices with `surveyjs-api` against the stub.
+- **Back-end unit:** the profile write at sign-in; invitation matching (email case, already a member, a cancelled invitation); `blocked`.
+- **Back-end e2e:** the provider suite for profiles and invitations on memory and SQL; the conformance suite for the invitation operations.
+- **Front-end e2e:** inviting an unknown email, the pending list and cancelling; the licence notice from a stubbed site endpoint.
 
-**Documentation:** `docs/operations.md` (the hosted profile and the user API settings), `docs/architecture.md` (the user API client), `docs/demo/hosted-02.md`.
+**Documentation:** `docs/operations.md` (the directory settings), `docs/architecture.md` (profiles and invitations), the API reference, the user guide on projects and members, `docs/demo/hosted-02.md`.
 
 **Demo checklist**
 
-1. On staging, sign in. The name, avatar and licence notice come from the user API. The hosted profile has no user-table credentials.
-2. Delete a test account on the staging site. The webhook arrives, and the account's personal surveys are gone.
-3. Stop the user API stub locally. `/readyz` fails, and signed-in pages show the service error, not a crash.
+1. Locally on `profiles`, sign in as a new user. The profile is written, and the account menu shows the name.
+2. As a project admin, add an email nobody has signed in with. It is listed as pending. Sign in with that email: the project is there, with the invited role.
+3. On staging, block a test account in the site admin and sign in to the app with it: "Account blocked".
+4. On staging, the licence notice of a user with an expired licence comes from the site endpoint.
+5. Delete a test account on the staging site. The webhook arrives, and the account's personal surveys are gone.
 
 ---
 
@@ -448,7 +458,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Build**
 
 - **Exporter** (the Azure legacy provider and the file shares) to a neutral NDJSON record stream:
-  - record types: survey, definition, theme, history entry with snapshot, response, completion, view, file, legacy file name, project, member, access key, event, deleted response;
+  - record types: survey, definition, theme, history entry with snapshot, response, completion, view, file, legacy file name, project, member, profile (for every user the data names, from `Users`), access key, event, deleted response;
   - the normalisation rules from the mapping.
 - **Importer** (the target), with idempotent upserts keyed by ID and exact timestamps. It is a separate port from the request-path interfaces.
 - **Commands:**
