@@ -9,3 +9,11 @@
   margin: 0;
   text-align: right;
 }
+
+/*
+ * The site scrolls the whole `.tabulator` sideways (survey-results.scss); Tabulator's own rows holder
+ * would add a second scrollbar above it.
+ */
+.table :global(.tabulator .tabulator-tableholder) {
+  overflow: visible;
+}
