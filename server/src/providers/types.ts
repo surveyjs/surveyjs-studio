@@ -441,7 +441,8 @@ export interface ProviderSet {
   close(): Promise<void>;
 }
 
-export type ReadinessName = "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory";
+export type ReadinessName =
+  "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory" | "database";
 
 export interface ReadinessCheck {
   readonly name: ReadinessName;

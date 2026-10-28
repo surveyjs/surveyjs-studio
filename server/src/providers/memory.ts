@@ -17,7 +17,7 @@ import type {
 } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
 import { contentVersion } from "../domain/content-version.js";
-import { applySurveyChanges } from "../domain/survey-changes.js";
+import { applySurveyChanges, newSurveyRecord } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
 import {
   decideMemberErasure,
@@ -97,11 +97,6 @@ const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 /** Distinct values in ascending code-point order. */
 const distinctSorted = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
-const lowerOwner = (owner: SurveyOwner): SurveyOwner =>
-  owner.kind === "personal"
-    ? { kind: "personal", userId: lower(owner.userId) }
-    : { kind: "project", projectId: lower(owner.projectId) };
-
 /** `stored` holds lower-case ids; `wanted` comes from the caller. */
 function sameOwner(stored: SurveyOwner, wanted: SurveyOwner): boolean {
   return stored.kind === "personal"
@@ -111,24 +106,6 @@ function sameOwner(stored: SurveyOwner, wanted: SurveyOwner): boolean {
 
 const copySurvey = (s: SurveyRecord): SurveyRecord => structuredClone(s);
 const copyUser = (u: User): User => ({ ...u });
-
-/**
- * A stored survey for a new one (create and clone): the legacy defaults (layout section 5.3) and
- * lower-case ids. Published, as the legacy store's empty flag reads (ADR 0014 S1).
- */
-const surveyFromNew = (survey: NewSurvey): SurveyRecord => ({
-  id: lower(survey.id),
-  name: survey.name,
-  owner: lowerOwner(survey.owner),
-  creatorId: lower(survey.creatorId),
-  postId: lower(survey.postId),
-  resultId: lower(survey.resultId),
-  published: true,
-  archived: false,
-  createdAt: survey.createdAt,
-  updatedAt: survey.updatedAt,
-  settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
-});
 
 /** In-memory provider, empty unless a seed is given. Returns copies, so callers cannot change the store. */
 export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions = {}): ProviderSet {
@@ -185,7 +162,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
 
   /** Stores a new survey; throws on a duplicate id. */
   const add = (survey: NewSurvey, definition: SurveyDefinition | undefined): SurveyRecord => {
-    const record = surveyFromNew(survey);
+    const record = newSurveyRecord(survey);
     if (findSurvey(record.id)) throw new Error(`survey ${record.id} already exists`);
     surveys.push(record);
     if (definition !== undefined) {
