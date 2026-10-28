@@ -27,8 +27,12 @@ stripAppVariables(process.env);
 //   editor, history, uploads, run, results, results-details, projects and xss specs, on Chromium.
 // - sqlite (E2E_MODE=sqlite, `pnpm e2e:sqlite`): the sqlite provider on a new database file seeded
 //   with the golden fixtures, and the dev sign-in; the survey list and editor specs, on Chromium.
+// - postgres (E2E_MODE=postgres, `pnpm e2e:postgres`): the postgres provider on a new database
+//   (`pnpm postgres:up` first), seeded the same way; every functional spec but the licence notices
+//   (which need the second server), on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
+const postgres = process.env["E2E_MODE"] === "postgres";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below).
@@ -122,8 +126,9 @@ const azuriteWebServers: WebServers = [
 ];
 
 // The server seeds its new database (`seed` migrates it first), then starts on it. The users and
-// projects come from the memory fallback's seed until self-hosted Step 4.
-const sqliteWebServers = (): WebServers => [
+// files come from the memory provider's seed until self-hosted Steps 3 and 4. The database is made
+// by playwright.sqlite.config.ts (E2E_SQLITE_DIR) or playwright.postgres.config.ts (E2E_DATABASE_URL).
+const sqlWebServers = (): WebServers => [
   {
     command:
       "pnpm --filter @surveyjs-studio/server exec node --import tsx src/cli/db.ts seed && " +
@@ -133,8 +138,12 @@ const sqliteWebServers = (): WebServers => [
     timeout: 60_000,
     env: {
       ...memoryServerEnv,
-      STORAGE_PROVIDER: "sqlite",
-      SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
+      ...(sqlite
+        ? {
+            STORAGE_PROVIDER: "sqlite",
+            SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
+          }
+        : { STORAGE_PROVIDER: "postgres", DATABASE_URL: process.env["E2E_DATABASE_URL"] ?? "" }),
       PORT: String(ports.server),
     },
   },
@@ -242,35 +251,43 @@ export default defineConfig({
           use: { ...devices["Desktop Chrome"], viewport },
         },
       ]
-    : azurite
+    : postgres
       ? [
           {
-            name: "azurite-chromium",
-            testMatch: [
-              "sign-in.spec.ts",
-              "survey-list.spec.ts",
-              "survey-actions.spec.ts",
-              "editor.spec.ts",
-              "history.spec.ts",
-              "uploads.spec.ts",
-              "run.spec.ts",
-              "results.spec.ts",
-              "results-details.spec.ts",
-              "projects.spec.ts",
-              "xss.spec.ts",
-            ],
+            name: "postgres-chromium",
+            testIgnore: ["notices.spec.ts"],
             use: { ...devices["Desktop Chrome"], viewport },
           },
         ]
-      : [
-          { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
-          { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
-          { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
-        ],
+      : azurite
+        ? [
+            {
+              name: "azurite-chromium",
+              testMatch: [
+                "sign-in.spec.ts",
+                "survey-list.spec.ts",
+                "survey-actions.spec.ts",
+                "editor.spec.ts",
+                "history.spec.ts",
+                "uploads.spec.ts",
+                "run.spec.ts",
+                "results.spec.ts",
+                "results-details.spec.ts",
+                "projects.spec.ts",
+                "xss.spec.ts",
+              ],
+              use: { ...devices["Desktop Chrome"], viewport },
+            },
+          ]
+        : [
+            { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
+            { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
+            { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
+          ],
   webServer: imageTarget
     ? imageWebServers()
-    : sqlite
-      ? sqliteWebServers()
+    : sqlite || postgres
+      ? sqlWebServers()
       : azurite
         ? azuriteWebServers
         : memoryWebServers,

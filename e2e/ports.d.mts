@@ -9,8 +9,8 @@ export declare const ports: {
 export declare function functionalPorts(mode: {
   image: boolean;
   azurite: boolean;
-  sqlite?: boolean;
+  sql?: boolean;
 }): number[];
 export declare const visualPorts: number[];
 export declare function usesAzuriteConfig(args: readonly string[]): boolean;
-export declare function usesSqliteConfig(args: readonly string[]): boolean;
+export declare function usesSqlConfig(args: readonly string[]): boolean;

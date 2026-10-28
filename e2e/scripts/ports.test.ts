@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { functionalPorts, usesAzuriteConfig, usesSqliteConfig, visualPorts } from "../ports.mjs";
+import { functionalPorts, usesAzuriteConfig, usesSqlConfig, visualPorts } from "../ports.mjs";
 import { busyMessage, checkPorts } from "./ports.mjs";
 
 const servers: Server[] = [];
@@ -90,7 +90,7 @@ describe("the ports of each configuration", () => {
     expect(functionalPorts({ image: true, azurite: false })).toEqual([5173, 5174]);
     expect(functionalPorts({ image: false, azurite: true })).toEqual([3000, 5173]);
     expect(functionalPorts({ image: true, azurite: true })).toEqual([5173]);
-    expect(functionalPorts({ image: false, azurite: false, sqlite: true })).toEqual([3000, 5173]);
+    expect(functionalPorts({ image: false, azurite: false, sql: true })).toEqual([3000, 5173]);
     expect(visualPorts).toEqual([3002, 5175]);
   });
 
@@ -100,10 +100,10 @@ describe("the ports of each configuration", () => {
     expect(usesAzuriteConfig(["--project=chromium", "tests/home.spec.ts"])).toBe(false);
   });
 
-  it("detects the SQLite config in the arguments", () => {
-    expect(usesSqliteConfig(["--config", "playwright.sqlite.config.ts"])).toBe(true);
-    expect(usesSqliteConfig(["--config=e2e\\playwright.sqlite.config.ts"])).toBe(true);
-    expect(usesSqliteConfig(["--config", "playwright.azurite.config.ts"])).toBe(false);
-    expect(usesSqliteConfig(["playwrightXsqliteXconfig.ts"])).toBe(false);
+  it("detects the SQL configs in the arguments", () => {
+    expect(usesSqlConfig(["--config", "playwright.sqlite.config.ts"])).toBe(true);
+    expect(usesSqlConfig(["--config=e2e\\playwright.postgres.config.ts"])).toBe(true);
+    expect(usesSqlConfig(["--config", "playwright.azurite.config.ts"])).toBe(false);
+    expect(usesSqlConfig(["playwrightXsqliteXconfig.ts"])).toBe(false);
   });
 });
