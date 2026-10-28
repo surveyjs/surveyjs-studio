@@ -13,8 +13,8 @@ import type { ProviderSet, ReadinessCheck } from "./types.js";
 
 export interface SqlProviderOptions {
   /**
-   * Seeds the memory fallback (`MEMORY_SEED`): users, projects, results, views and files stay in
-   * memory until self-hosted Steps 2–4 move them to SQL.
+   * Seeds the memory provider behind the users and files (`MEMORY_SEED`), which stay in memory
+   * until self-hosted Steps 3 (files) and 4 (local users).
    */
   readonly fallbackSeed?: MemorySeed;
   /** `ACCOUNT_NOTICES`; default `none`. */
@@ -90,10 +90,10 @@ async function probe(database: SqlDatabase): Promise<Omit<ReadinessCheck, "name"
 }
 
 /**
- * The SQL provider set on an open, migrated database (self-hosted track). Surveys are in the
- * database; until Steps 2–4 the other stores are the memory provider's (`fallbackSeed`), so they
- * are lost on restart and erasure and project deletion do not reach the database. `close` closes
- * the database.
+ * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views
+ * and projects in the database. The users and files are still the memory provider's
+ * (`fallbackSeed`) until Steps 3 and 4, so they are lost on restart. Member users are looked up in
+ * that directory. `close` closes the database.
  */
 export function createSqlProviders(
   database: SqlDatabase,

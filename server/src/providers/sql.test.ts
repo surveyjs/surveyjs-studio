@@ -65,7 +65,7 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
     const error = await createProviders(config).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PendingMigrationsError);
     expect((error as Error).message).toBe(
-      "READ_ONLY=true, but the database lacks migration 0001-surveys: run pnpm db:migrate (or start once without READ_ONLY) first.",
+      "READ_ONLY=true, but the database lacks migrations 0001-surveys, 0002-results-views-projects: run pnpm db:migrate (or start once without READ_ONLY) first.",
     );
     const database = openDatabase({ dialect: "sqlite", path });
     expect((await migrationStatus(database)).applied).toEqual([]);

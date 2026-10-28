@@ -156,7 +156,7 @@ describe("startupSummary", () => {
 });
 
 describe("storageWarning", () => {
-  it("warns that the SQL providers keep all but surveys in memory", () => {
+  it("warns that the SQL providers still keep users and files in memory", () => {
     for (const STORAGE_PROVIDER of ["sqlite", "postgres"]) {
       const config = loadConfig({
         IDENTITY_PROVIDER: "dev",
@@ -165,7 +165,7 @@ describe("storageWarning", () => {
       });
       const warning = storageWarning(config);
       expect(warning).toBe(
-        `STORAGE_PROVIDER=${STORAGE_PROVIDER} stores surveys in the database; users, projects, results, views and files are still kept in memory and lost on restart (self-hosted track Step 2)`,
+        `STORAGE_PROVIDER=${STORAGE_PROVIDER} keeps users and uploaded files in memory: they are lost on restart (self-hosted track Steps 3 and 4)`,
       );
     }
   });
