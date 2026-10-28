@@ -2,7 +2,7 @@ import type { MemorySeed } from "../providers/memory.js";
 import type { SqlDatabase } from "./database.js";
 import { insertResponses } from "./result-store.js";
 import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
-import { isoOf } from "./values.js";
+import { isoOf, jsonText } from "./values.js";
 
 export interface SeedReport {
   readonly surveys: number;
@@ -24,13 +24,13 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
       await deleteSurveyRows(trx, id);
       const definition = byId(seed.definitions, id);
       const theme = byId(seed.themes, id);
-      await insertSurvey(trx, survey, {
+      await insertSurvey(trx, database.dialect, survey, {
         ...(definition !== undefined && { definition }),
         ...(theme !== undefined && { theme }),
         history: byId(seed.history, id) ?? [],
       });
       // The survey's responses and markers went with it (cascade).
-      await insertResponses(trx, id, byId(seed.responses, id) ?? []);
+      await insertResponses(trx, database.dialect, id, byId(seed.responses, id) ?? []);
       const markers = Object.entries(byId(seed.completions, id) ?? {});
       if (markers.length > 0) {
         await trx
@@ -52,7 +52,7 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
             legacyViews.map(([view, state]) => ({
               survey_id: id,
               view: view as "summary" | "table",
-              state: JSON.stringify(state),
+              state: jsonText(database.dialect, state),
             })),
           )
           .execute();
@@ -61,7 +61,7 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
       if (privateQuestions !== undefined) {
         await trx
           .insertInto("private_questions")
-          .values({ survey_id: id, names: JSON.stringify(privateQuestions) })
+          .values({ survey_id: id, names: jsonText(database.dialect, privateQuestions) })
           .execute();
       }
     }

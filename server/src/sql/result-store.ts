@@ -1,10 +1,10 @@
 import type { Kysely, Selectable } from "kysely";
 import { GUID } from "../domain/guid.js";
 import type { CompletionState, SurveyResponse } from "../domain/types.js";
-import type { ResultStore } from "../providers/types.js";
-import type { SqlDatabase } from "./database.js";
+import type { ResponsePosition, ResultStore } from "../providers/types.js";
+import type { SqlDatabase, SqlDialectName } from "./database.js";
 import type { DatabaseSchema, SurveyResponsesTable } from "./schema.js";
-import { flagOf, isoOf, jsonOf } from "./values.js";
+import { flagOf, isoOf, jsonOf, jsonText } from "./values.js";
 
 const RESPONSE_COLUMNS = [
   "id",
@@ -29,6 +29,7 @@ const responseOf = (row: ResponseRow): SurveyResponse => ({
 /** Stores responses (the seed and the hosted migration keep their ids, times and partial flags). */
 export async function insertResponses(
   db: Kysely<DatabaseSchema>,
+  dialect: SqlDialectName,
   surveyId: string,
   responses: readonly SurveyResponse[],
 ): Promise<void> {
@@ -41,7 +42,7 @@ export async function insertResponses(
           survey_id: surveyId.toLowerCase(),
           id: response.id.toLowerCase(),
           submitted_at: isoOf(response.submittedAt),
-          data: JSON.stringify(response.data),
+          data: jsonText(dialect, response.data),
           client_id: response.clientId ?? null,
           respondent_ip: response.respondentIp ?? null,
           partial: response.partial,
@@ -49,6 +50,30 @@ export async function insertResponses(
       )
       .execute();
   }
+}
+
+/**
+ * One page of a survey's responses in submission order, strictly after `after`: at most `limit`
+ * rows. Exported for the test that checks its query plan.
+ */
+export function responsePageQuery(
+  db: Kysely<DatabaseSchema>,
+  surveyId: string,
+  after: ResponsePosition | undefined,
+  limit: number,
+) {
+  let query = db
+    .selectFrom("survey_responses")
+    .select(RESPONSE_COLUMNS)
+    .where("survey_id", "=", surveyId.toLowerCase());
+  if (after) {
+    const at = isoOf(after.submittedAt);
+    const afterId = after.id.toLowerCase();
+    // A row-value comparison, which both databases seek in survey_responses_order; the equivalent
+    // `submitted_at > ? or (submitted_at = ? and id > ?)` only seeks the survey and filters its rows.
+    query = query.where((eb) => eb(eb.refTuple("submitted_at", "id"), ">", eb.tuple(at, afterId)));
+  }
+  return query.orderBy("submitted_at").orderBy("id").limit(limit);
 }
 
 /** The result store on SQLite or PostgreSQL (docs/architecture/data-model.md). */
@@ -72,7 +97,7 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
             survey_id: surveyId,
             id: response.id.toLowerCase(),
             submitted_at: isoOf(response.submittedAt),
-            data: JSON.stringify(response.data),
+            data: jsonText(database.dialect, response.data),
             client_id: response.clientId ?? null,
             respondent_ip: response.respondentIp ?? null,
             partial: false,
@@ -133,22 +158,7 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
       return flagOf(row.partial) ? "partial" : "completed";
     },
     listResponsePage: async (survey, { after, limit }) => {
-      let query = ofSurvey(survey.id);
-      if (after) {
-        const at = isoOf(after.submittedAt);
-        const afterId = after.id.toLowerCase();
-        query = query.where((eb) =>
-          eb.or([
-            eb("submitted_at", ">", at),
-            eb.and([eb("submitted_at", "=", at), eb("id", ">", afterId)]),
-          ]),
-        );
-      }
-      const rows = await query
-        .orderBy("submitted_at")
-        .orderBy("id")
-        .limit(limit + 1)
-        .execute();
+      const rows = await responsePageQuery(db, survey.id, after, limit + 1).execute();
       const items = rows.slice(0, limit).map(responseOf);
       const last = items.at(-1);
       return {

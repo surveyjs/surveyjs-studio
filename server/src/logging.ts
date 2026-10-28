@@ -49,6 +49,24 @@ export function serializeRequest(request: FastifyRequest) {
 }
 
 /**
+ * What the log gets for an unhandled error. A PostgreSQL error (pg's DatabaseError: a `severity`
+ * and a five-character SQLSTATE `code`) is reduced to its code and routine: its message, `detail`
+ * and `where` can quote the values being stored, a respondent's answers among them. Any other
+ * error is logged as it is.
+ */
+export function loggableError(error: unknown): unknown {
+  const fields = error as { severity?: unknown; code?: unknown; routine?: unknown } | null;
+  const isDatabaseError =
+    typeof fields?.severity === "string" &&
+    typeof fields.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(fields.code);
+  if (!isDatabaseError) return error;
+  const routine =
+    typeof fields.routine === "string" && /^\w+$/.test(fields.routine) ? fields.routine : undefined;
+  return { type: "DatabaseError", code: fields.code, ...(routine && { routine }) };
+}
+
+/**
  * The start-up warning of a provider whose stores are not all persistent yet: the SQL providers
  * keep users and files in memory until self-hosted Steps 3 (files) and 4 (local users). null for
  * the other providers.

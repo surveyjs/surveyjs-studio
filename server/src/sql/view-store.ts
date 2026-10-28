@@ -2,7 +2,7 @@ import { GUID } from "../domain/guid.js";
 import type { ViewName, ViewState } from "../domain/types.js";
 import type { ViewStore } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
-import { jsonOf } from "./values.js";
+import { jsonOf, jsonText } from "./values.js";
 
 /** A stored state that is a JSON object; null for anything else (read as "no state"). */
 const stateOf = (stored: unknown): ViewState | null => {
@@ -27,7 +27,7 @@ export function createSqlViewStore(database: SqlDatabase): ViewStore {
     state: ViewState | null,
   ): Promise<void> => {
     if (!GUID.test(surveyId) || !GUID.test(userId)) throw new Error("View ids must be GUIDs");
-    const text = state === null ? null : JSON.stringify(state);
+    const text = state === null ? null : jsonText(database.dialect, state);
     const updatedAt = new Date().toISOString();
     await db
       .insertInto("saved_views")
@@ -81,7 +81,7 @@ export function createSqlViewStore(database: SqlDatabase): ViewStore {
     },
     savePrivateQuestions: async (surveyId, names) => {
       if (!GUID.test(surveyId)) throw new Error("View ids must be GUIDs");
-      const text = JSON.stringify([...new Set(names)]);
+      const text = jsonText(database.dialect, [...new Set(names)]);
       await db
         .insertInto("private_questions")
         .values({ survey_id: surveyId.toLowerCase(), names: text })

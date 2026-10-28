@@ -234,6 +234,38 @@ describe("canary run", () => {
     expect(completed.some((entry) => entry.operationId === "listSurveys")).toBe(true);
   });
 
+  it("logs a database error's code but not its details, which hold stored text", async () => {
+    // As pg's DatabaseError carries them: `where` quotes the JSON being stored, `detail` a value.
+    const driverError = Object.assign(new Error("unsupported Unicode escape sequence"), {
+      name: "error",
+      severity: "ERROR",
+      code: "22P05",
+      detail: "\\u0000 cannot be converted to text canary-detail",
+      where: 'JSON data, line 1: {"q":"canary-answer',
+      routine: "json_lex",
+    });
+    const { lines } = await run(
+      (providers) => ({
+        ...providers,
+        surveys: { ...providers.surveys, getSurvey: () => Promise.reject(driverError) },
+      }),
+      async (app) => {
+        const response = await app.inject(
+          "/api/v1/public/surveys/22222222-0000-4000-8000-a00000000001",
+        );
+        expect(response.statusCode).toBe(500);
+        return [response.body];
+      },
+    );
+    const logged = lines.join("");
+    expect(logged).not.toContain("canary");
+    const errors = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.msg === "unhandled error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.err).toMatchObject({ type: "DatabaseError", code: "22P05" });
+  });
+
   it("logs the operationId on a successful contract request", async () => {
     const { lines } = await run(
       (providers) => providers,
