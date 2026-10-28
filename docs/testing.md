@@ -39,12 +39,13 @@ These need the Docker replica (see [Development](development.md#azurite-mode)); 
 These need PostgreSQL in Docker (`pnpm postgres:up`, see [Development](development.md#sqlite-and-postgresql-modes)), except
 the SQLite ones, which need nothing:
 
-| Command                          | Runs                                                                                                                                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the provider suite's survey and lifecycle sections and the migrator suite on PostgreSQL, each on scratch databases it creates and drops |
-| `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                         |
-| `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                               |
-| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor and history specs in SQLite mode, on Chromium                                                                                                        |
+| Command                          | Runs                                                                                                                                                                                                                                |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the full provider suite, the migrator suite, the SQL-only concurrency suites and the pool's reconnect on PostgreSQL, each on scratch databases it creates and drops |
+| `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                                                     |
+| `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                                                           |
+| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor and history specs in SQLite mode, on Chromium                                                                                                                                    |
+| `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` per run), on Chromium                                                                                             |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -1066,15 +1067,15 @@ answers as on SQL because the stub builds its licences from the same fixture row
 
 Where it runs:
 
-| Test file                                           | Provider                                                                                  | Run with                       |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------ |
-| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                                                            | `pnpm test:unit`               |
-| `sql.provider.test.ts`                              | `sqlite` on a scratch file, migrated and seeded; sections `surveys` and `lifecycle`       | `pnpm test:unit`               |
-| `sql.provider.postgres.test.ts`                     | `postgres` on a scratch database, migrated and seeded; sections `surveys` and `lifecycle` | `pnpm test:providers:postgres` |
-| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                                                             | `pnpm test:providers:azurite`  |
-| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns                                                    | `pnpm test:providers:azurite`  |
-| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write                                          | `pnpm test:providers:azurite`  |
-| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub                                        | `pnpm test:unit`               |
+| Test file                                           | Provider                                              | Run with                       |
+| --------------------------------------------------- | ----------------------------------------------------- | ------------------------------ |
+| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                        | `pnpm test:unit`               |
+| `sql.provider.test.ts`                              | `sqlite` on a scratch file, migrated and seeded       | `pnpm test:unit`               |
+| `sql.provider.postgres.test.ts`                     | `postgres` on a scratch database, migrated and seeded | `pnpm test:providers:postgres` |
+| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                         | `pnpm test:providers:azurite`  |
+| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns                | `pnpm test:providers:azurite`  |
+| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write      | `pnpm test:providers:azurite`  |
+| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub    | `pnpm test:unit`               |
 
 `pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
 `docker/azurite.env`, loads the fixtures into the running replica first, and needs
@@ -1129,8 +1130,10 @@ earlier runs and leave nothing that another test could see.
 
 **Sections.** `describeProviderSuite(name, create, { sections })` runs only the named sections (`surveys`,
 `results`, `views`, `files`, `users`, `projects`, `notices`, `lifecycle`); the others are reported as skipped.
-The SQL providers run `surveys` and `lifecycle` (`SQL_SUITE_SECTIONS` in `sql-suite-setup.ts`) until self-hosted
-Step 2 puts the other stores on SQL; their scratch database is made by `server/src/sql/scratch-databases.ts`.
+No runner uses it today (the SQL providers ran part of the suite while they grew, self-hosted Steps 1 and 2); the SQL
+runs get their scratch database from `server/src/sql/scratch-databases.ts`. Two SQL-only suites add what the shared
+suite cannot check with one connection: writes at the same time (`survey-store-suite.ts`: concurrent survey updates
+keep every change; `project-store-suite.ts`: two admins demoted together leave one admin), each on both dialects.
 The migrator has its own suite (`server/src/sql/migrator-suite.ts`: order, a second run, a newer database, a renamed
 migration, a failed run rolled back, the shipped migrations) on both dialects; its lock is checked with two processes
 on one SQLite file (`migrator.test.ts`) and two connections on PostgreSQL (`migrator.postgres.test.ts`).
@@ -1165,11 +1168,11 @@ With `sqlite` or `postgres` the setup makes a new database for the run (a SQLite
 database on the server of `DATABASE_URL`, from `docker/postgres.env`), runs the server's `pnpm seed` on it, and starts
 the server with the dev sign-in and `MEMORY_SEED=legacy-fixtures` for the stores still in memory; the teardown deletes
 the database. `pnpm test:conformance:sqlite` and `:postgres` (`conformance-tests/sqlite.env`, `postgres.env`) run
-every file but `project-writes.test.ts`: deleting a project moves its surveys in the memory store, not in SQL, until
-self-hosted Step 2. `CONFORMANCE_IMAGE` works with `postgres` (the SQL providers run with `NODE_ENV=development` until
-then), not with `sqlite`, whose file the container cannot see.
+every file. `CONFORMANCE_IMAGE` works with `postgres` (the SQL providers run with `NODE_ENV=development` until
+self-hosted Steps 3 and 4), not with `sqlite`, whose file the container cannot see.
 
 The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
 actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The survey list, paging, editor and
-history specs also run on the `sqlite` provider (`pnpm e2e:sqlite`: a new database in `e2e/.data/`, emptied by the next
-run, seeded by the server's `pnpm seed` before it starts).
+history specs also run on the `sqlite` provider, and every functional spec but the licence notices on `postgres`
+(`pnpm e2e:postgres`, a new database `surveyjs_studio_e2e` per run). SQLite mode (`pnpm e2e:sqlite`) uses a new
+database in `e2e/.data/`, emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts.
