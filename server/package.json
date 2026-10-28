@@ -12,6 +12,10 @@
     "dev": "node --watch --import tsx src/main.ts",
     "dev:demo": "node --env-file=demo.env --watch --import tsx src/main.ts",
     "dev:demo:azurite": "node --env-file=../docker/azurite.env --env-file=demo-azurite.env --watch --import tsx src/main.ts",
+    "dev:demo:sqlite": "node --env-file=demo.env --env-file=demo-sqlite.env --watch --import tsx src/main.ts",
+    "dev:demo:postgres": "node --env-file=demo.env --env-file=../docker/postgres.env --watch --import tsx src/main.ts",
+    "seed:sqlite": "node --env-file=demo-sqlite.env --import tsx src/cli/db.ts seed",
+    "seed:postgres": "node --env-file=../docker/postgres.env --import tsx src/cli/db.ts seed",
     "dev:prod-data": "node --env-file=.env --watch-path=src --import tsx src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

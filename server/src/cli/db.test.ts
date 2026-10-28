@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../sql/database.js";
 import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js";
+import { createSqlSurveyStore } from "../sql/survey-store.js";
+import { surveyFeedback } from "../providers/suite/expected.js";
 import { describeTarget, run } from "./db.js";
 
 function capture() {
@@ -71,6 +73,69 @@ describe("db CLI", () => {
     expect(await run(["migrate"], migrate.io, { env })).toBe(1);
     expect(migrate.err).toBe(
       "Error: The database has migration 9999-future, which this version of SurveyJS Studio does not know: a newer version migrated it. Run that version or a newer one.\n",
+    );
+  });
+
+  it("seeds a new database with the shared seed, migrating it first", async () => {
+    const env = sqliteEnv();
+    const result = capture();
+    expect(await run(["seed"], result.io, { env })).toBe(0);
+    expect(result.out).toMatch(
+      /^Database: sqlite, .+\nApplied 1 migration: 0001-surveys\nSeeded 9 surveys\.\n$/,
+    );
+    const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+    const store = createSqlSurveyStore(database);
+    expect(await store.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
+    await database.close();
+  });
+
+  it("reseeds the seed surveys and keeps every other survey", async () => {
+    const env = sqliteEnv();
+    await run(["seed"], capture().io, { env });
+    const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+    const store = createSqlSurveyStore(database);
+    await store.updateSurvey(surveyFeedback.id, {
+      name: "Renamed",
+      updatedAt: "2026-10-01T10:00:00.000Z",
+    });
+    const own = await store.createSurvey({
+      id: "dddddddd-0000-4000-8000-000000000011",
+      name: "Mine",
+      owner: { kind: "personal", userId: surveyFeedback.creatorId! },
+      creatorId: surveyFeedback.creatorId!,
+      postId: "dddddddd-0000-4000-8000-000000000012",
+      resultId: "dddddddd-0000-4000-8000-000000000013",
+      createdAt: "2026-10-01T10:00:00.000Z",
+      updatedAt: "2026-10-01T10:00:00.000Z",
+    });
+    await database.close();
+
+    const again = capture();
+    expect(await run(["seed"], again.io, { env })).toBe(0);
+    expect(again.out).toContain("Nothing to apply");
+    const reopened = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+    const after = createSqlSurveyStore(reopened);
+    expect(await after.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
+    expect(await after.getSurvey(own.id)).toEqual(own);
+    await reopened.close();
+  });
+
+  it("refuses to seed with READ_ONLY=true", async () => {
+    const result = capture();
+    expect(await run(["seed"], result.io, { env: sqliteEnv({ READ_ONLY: "true" }) })).toBe(2);
+    expect(result.err).toBe("Refused: READ_ONLY=true. Nothing was seeded.\n");
+  });
+
+  it("points memory and azure-legacy to their own seeding", async () => {
+    const memory = capture();
+    expect(await run(["seed"], memory.io, { env: { STORAGE_PROVIDER: "memory" } })).toBe(2);
+    expect(memory.err).toContain(
+      "memory loads the seed at start-up with MEMORY_SEED=legacy-fixtures",
+    );
+    const legacy = capture();
+    expect(await run(["seed"], legacy.io, { env: { STORAGE_PROVIDER: "azure-legacy" } })).toBe(2);
+    expect(legacy.err).toContain(
+      "azure-legacy loads it into the local replica with pnpm legacy:load",
     );
   });
 

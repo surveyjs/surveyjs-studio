@@ -1,7 +1,11 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 import type { TestProject } from "vitest/node";
 
 declare module "vitest" {
@@ -103,13 +107,15 @@ const optionalOidcVariables = ["OIDC_DISCOVERY", "OIDC_SCOPES"] as const;
  * Default: memory, with every app variable stripped.
  */
 function providerEnv(): Record<string, string> {
-  const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";
+  const provider = conformanceProvider();
   if (provider === "memory") {
     // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
     return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
   }
-  if (provider !== "azure-legacy") {
-    throw new Error(`CONFORMANCE_PROVIDER must be memory or azure-legacy, got "${provider}"`);
+  if (provider === "sqlite" || provider === "postgres") {
+    if (sqlDatabase === null) throw new Error("the SQL database is prepared in setup()");
+    // Users and projects come from the memory fallback's seed until self-hosted Step 4.
+    return { IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures", ...sqlDatabase.env };
   }
   const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
   const missing: string[] = [];
@@ -126,6 +132,72 @@ function providerEnv(): Record<string, string> {
     if (value?.trim()) env[name] = value;
   }
   return env;
+}
+
+const PROVIDERS = ["memory", "azure-legacy", "sqlite", "postgres"] as const;
+type ConformanceProvider = (typeof PROVIDERS)[number];
+
+/** `CONFORMANCE_PROVIDER`, default memory. */
+function conformanceProvider(): ConformanceProvider {
+  const provider = process.env.CONFORMANCE_PROVIDER?.trim() || "memory";
+  const known = PROVIDERS.find((name) => name === provider);
+  if (known === undefined) {
+    throw new Error(`CONFORMANCE_PROVIDER must be ${PROVIDERS.join(", ")}, got "${provider}"`);
+  }
+  return known;
+}
+
+/** The run's own database for `CONFORMANCE_PROVIDER=sqlite|postgres`; set in setup(). */
+let sqlDatabase: { env: Record<string, string>; drop: () => Promise<void> } | null = null;
+
+/**
+ * A new database for the run: a SQLite file in a temporary folder, or a new database on the
+ * PostgreSQL server of `DATABASE_URL` (`pnpm test:conformance:postgres` reads docker/postgres.env).
+ * The server's `pnpm seed` migrates it and loads the golden fixtures before the server starts.
+ */
+async function prepareSqlDatabase(
+  provider: "sqlite" | "postgres",
+): Promise<{ env: Record<string, string>; drop: () => Promise<void> }> {
+  let env: Record<string, string>;
+  let drop: () => Promise<void>;
+  if (provider === "sqlite") {
+    const dir = mkdtempSync(join(tmpdir(), "surveyjs-studio-conformance-"));
+    env = { STORAGE_PROVIDER: "sqlite", SQLITE_PATH: join(dir, "conformance.db") };
+    drop = () =>
+      Promise.resolve(
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }),
+      );
+  } else {
+    const adminUrl = process.env.DATABASE_URL?.trim();
+    if (!adminUrl) throw new Error("CONFORMANCE_PROVIDER=postgres needs DATABASE_URL");
+    const name = `conformance_${randomBytes(6).toString("hex")}`;
+    const admin = async (statement: string) => {
+      const client = new pg.Client({ connectionString: adminUrl });
+      await client.connect();
+      try {
+        await client.query(statement);
+      } finally {
+        await client.end();
+      }
+    };
+    await admin(`create database ${name}`);
+    const url = new URL(adminUrl);
+    url.pathname = `/${name}`;
+    env = { STORAGE_PROVIDER: "postgres", DATABASE_URL: url.toString() };
+    drop = () => admin(`drop database if exists ${name} with (force)`);
+  }
+  const clean = { ...process.env };
+  for (const name of appVariables) delete clean[name];
+  const seeded = spawnSync(process.execPath, ["--import", "tsx", "server/src/cli/db.ts", "seed"], {
+    cwd: repoRoot,
+    env: { ...clean, ...env },
+    encoding: "utf8",
+  });
+  if (seeded.status !== 0) {
+    await drop();
+    throw new Error(`pnpm seed failed (exit ${String(seeded.status)}):\n${seeded.stderr}`);
+  }
+  return { env, drop };
 }
 
 /**
@@ -209,7 +281,10 @@ function imageTag(): string | null {
  * `NODE_ENV=test`, both keep the server's log, which `docker logs` saves.
  */
 function imageEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (env.STORAGE_PROVIDER === "memory") return { ...env, NODE_ENV: "development" };
+  // The SQL providers are refused in production until self-hosted Step 2.
+  if (["memory", "sqlite", "postgres"].includes(env.STORAGE_PROVIDER ?? "")) {
+    return { ...env, NODE_ENV: "development" };
+  }
   return { ...env, NODE_ENV: "production", SESSION_SECRET: IMAGE_SESSION_SECRET };
 }
 
@@ -391,7 +466,7 @@ ${output}`,
  * Uses `CONFORMANCE_BASE_URL` if set; otherwise runs the reference server for the suite (as the
  * `CONFORMANCE_IMAGE` image when that is set).
  */
-export async function setup(project: TestProject): Promise<(() => void) | void> {
+export async function setup(project: TestProject): Promise<(() => Promise<void>) | void> {
   const external = process.env.CONFORMANCE_BASE_URL?.trim();
   const mode = userDirectoryMode();
   if (external) {
@@ -408,20 +483,32 @@ export async function setup(project: TestProject): Promise<(() => void) | void> 
     return;
   }
   const image = imageTag();
+  const provider = conformanceProvider();
+  if (provider === "sqlite" && image !== null) {
+    throw new Error(
+      "CONFORMANCE_IMAGE cannot be used with CONFORMANCE_PROVIDER=sqlite: the container cannot see the run's database file",
+    );
+  }
+  if (provider === "sqlite" || provider === "postgres") {
+    sqlDatabase = await prepareSqlDatabase(provider);
+  }
+  const database = sqlDatabase;
   const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
   let server: { baseUrl: string; stop: () => void };
   try {
     server = await startReferenceServer(stub?.url ?? null, image);
   } catch (error) {
     stub?.stop();
+    await database?.drop();
     throw error;
   }
   project.provide("baseUrl", server.baseUrl);
   project.provide("ownsServer", true);
   project.provide("userDirectory", mode);
   project.provide("webhookSecret", WEBHOOK_SECRET);
-  return () => {
+  return async () => {
     server.stop();
     stub?.stop();
+    await database?.drop();
   };
 }

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/test";
 
@@ -24,7 +25,10 @@ stripAppVariables(process.env);
 // - azurite (E2E_MODE=azurite, `pnpm e2e:azurite`): the azure-legacy provider on the local replica
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,
 //   editor, history, uploads, run, results, results-details, projects and xss specs, on Chromium.
+// - sqlite (E2E_MODE=sqlite, `pnpm e2e:sqlite`): the sqlite provider on a new database file seeded
+//   with the golden fixtures, and the dev sign-in; the survey list and editor specs, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
+const sqlite = process.env["E2E_MODE"] === "sqlite";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below).
@@ -117,6 +121,32 @@ const azuriteWebServers: WebServers = [
   },
 ];
 
+// The server seeds its new database (`seed` migrates it first), then starts on it. The users and
+// projects come from the memory fallback's seed until self-hosted Step 4.
+const sqliteWebServers = (): WebServers => [
+  {
+    command:
+      "pnpm --filter @surveyjs-studio/server exec node --import tsx src/cli/db.ts seed && " +
+      serverCommand,
+    url: `http://127.0.0.1:${ports.server}/readyz`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+    env: {
+      ...memoryServerEnv,
+      STORAGE_PROVIDER: "sqlite",
+      SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
+      PORT: String(ports.server),
+    },
+  },
+  {
+    command: preview(ports.web),
+    url: `http://localhost:${ports.web}/`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+    env: { E2E_API_PROXY_TARGET: `http://127.0.0.1:${ports.server}` },
+  },
+];
+
 // The image target: one container per server and preview pair, listening on the preview's port and
 // serving the web app from the image's WEB_ROOT. `--network host` (Linux only) lets the container
 // reach the replica and the mock OIDC server on the host's loopback ports, as the tsx server does.
@@ -199,31 +229,50 @@ export default defineConfig({
     locale: "en-US",
     timezoneId: "UTC",
   },
-  projects: azurite
+  projects: sqlite
     ? [
         {
-          name: "azurite-chromium",
+          name: "sqlite-chromium",
           testMatch: [
-            "sign-in.spec.ts",
             "survey-list.spec.ts",
-            "survey-actions.spec.ts",
+            "survey-list-paging.spec.ts",
             "editor.spec.ts",
             "history.spec.ts",
-            "uploads.spec.ts",
-            "run.spec.ts",
-            "results.spec.ts",
-            "results-details.spec.ts",
-            "projects.spec.ts",
-            "xss.spec.ts",
           ],
           use: { ...devices["Desktop Chrome"], viewport },
         },
       ]
-    : [
-        { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
-        { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
-        { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
-      ],
-  webServer: imageTarget ? imageWebServers() : azurite ? azuriteWebServers : memoryWebServers,
+    : azurite
+      ? [
+          {
+            name: "azurite-chromium",
+            testMatch: [
+              "sign-in.spec.ts",
+              "survey-list.spec.ts",
+              "survey-actions.spec.ts",
+              "editor.spec.ts",
+              "history.spec.ts",
+              "uploads.spec.ts",
+              "run.spec.ts",
+              "results.spec.ts",
+              "results-details.spec.ts",
+              "projects.spec.ts",
+              "xss.spec.ts",
+            ],
+            use: { ...devices["Desktop Chrome"], viewport },
+          },
+        ]
+      : [
+          { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
+          { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
+          { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
+        ],
+  webServer: imageTarget
+    ? imageWebServers()
+    : sqlite
+      ? sqliteWebServers()
+      : azurite
+        ? azuriteWebServers
+        : memoryWebServers,
   ...(imageTarget && { globalTeardown: "./image-teardown.mjs" }),
 });
