@@ -83,34 +83,39 @@ around `ufw`.
 
 ## 5. Run `setup.sh`
 
-Copy the scripts and the filled settings file to the server, then run the script as root. `<tag>` is the full
-40-character id of a `master` commit whose CI passed (`git rev-parse origin/master`; the `publish` job's summary prints
-it too):
+Copy the scripts to `/opt/surveyjs-studio`, where they stay for later runs, and the filled settings file to root's
+home, then run the script as root. `<tag>` is the full 40-character id of a `master` commit whose CI passed
+(`git rev-parse origin/master`; the `publish` job's summary prints it too):
 
 ```sh
-scp -r deploy/hetzner root@<server-ip>:/root/hetzner
+ssh root@<server-ip> mkdir -p /opt/surveyjs-studio
+scp deploy/hetzner/* root@<server-ip>:/opt/surveyjs-studio/
 scp <path>/app.env root@<server-ip>:/root/app.env
 ssh root@<server-ip>
-cd /root/hetzner
+cd /opt/surveyjs-studio
 ./setup.sh --tag <tag> --env-file /root/app.env --ghcr-user <github-user>   # asks for the registry token
 rm /root/app.env
 ```
+
+Keep the filled `app.env` out of `/opt/surveyjs-studio`: every user on the server can read that folder. The script
+installs it as `/etc/surveyjs-studio/app.env`, readable by root only.
 
 It prints each step. At the end the app runs, healthy, and the script shows the `starting` log line: check that it
 says `"readOnly":true`, `"storageProvider":"azure-legacy"` and the right `publicBaseUrl`. **Root sign-in is now off**:
 from here on, `ssh deploy@<server-ip>` and `sudo`.
 
-| Option                 | Default                            | Meaning                                                                        |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------ |
-| `--tag`                | (required on the first run)        | The image tag                                                                  |
-| `--env-file`           | (required on the first run)        | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root    |
-| `--domain`             | `studio.surveyjs.io`               | Must match `PUBLIC_BASE_URL`                                                   |
-| `--image`              | `ghcr.io/surveyjs/surveyjs-studio` | The image without its tag                                                      |
-| `--ghcr-user`          | none                               | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt |
-| `--readyz-allow "IPS"` | none                               | A monitor's addresses that may call `/readyz` through Caddy                    |
-| `--restrict-to "IPS"`  | none                               | Serve only these addresses; others get `403` (rollout step 1, if wanted)       |
-| `--deploy-user`        | `deploy`                           | The everyday user; `--no-deploy-user` skips it                                 |
-| `--no-ssh-hardening`   |                                    | Keep password and root sign-in over SSH                                        |
+| Option                 | Default                            | Meaning                                                                          |
+| ---------------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
+| `--tag`                | (required on the first run)        | The image tag                                                                    |
+| `--env-file`           | (required on the first run)        | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root      |
+| `--domain`             | `studio.surveyjs.io`               | Must match `PUBLIC_BASE_URL`                                                     |
+| `--image`              | `ghcr.io/surveyjs/surveyjs-studio` | The image without its tag                                                        |
+| `--ghcr-user`          | none                               | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt   |
+| `--readyz-allow "IPS"` | none                               | A monitor's addresses that may call `/readyz` through Caddy                      |
+| `--restrict-to "IPS"`  | none                               | Serve only these addresses; others get `403` (rollout step 1, if wanted)         |
+| `--auto-update`        |                                    | Deploy what Actions › Deploy tags `production` ([below](#deploying-from-github)) |
+| `--deploy-user`        | `deploy`                           | The everyday user; `--no-deploy-user` skips it                                   |
+| `--no-ssh-hardening`   |                                    | Keep password and root sign-in over SSH                                          |
 
 **Running it again** is safe, also on a server set up by hand before: each step checks what is there. It rewrites
 `compose.yaml`, the `Caddyfile` and `.env` in `/opt/surveyjs-studio`, keeps `/etc/surveyjs-studio/app.env` unless
@@ -118,6 +123,16 @@ from here on, `ssh deploy@<server-ip>` and `sudo`.
 `/readyz` addresses or the restriction: run it again with other options. A changed `Caddyfile` is applied by
 restarting Caddy, so a new version of the script (such as the one that stopped compressing the survey documents) takes
 effect when it is run again with the same options.
+
+To run a newer version of the scripts, copy them in through `deploy`'s home, since root sign-in is off and only root
+can write to `/opt/surveyjs-studio`:
+
+```sh
+scp deploy/hetzner/*.sh deploy@<server-ip>:
+ssh deploy@<server-ip>
+sudo install -m 755 setup.sh update.sh /opt/surveyjs-studio/ && rm setup.sh update.sh
+sudo /opt/surveyjs-studio/setup.sh <your options>
+```
 
 Then continue with [rollout step 1](../operations.md#step-1-internal-use-on-production-data-read-only-first) from its
 item 4: the schema check, the checks after start-up, the read-only browse, `pnpm smoke:legacy` (from a checkout whose
@@ -137,6 +152,7 @@ address the Azure firewall allows) and the switch to read-write.
    `ETag` it would rewrite, `/readyz` only for the monitor) and `.env` (`IMAGE` and `TAG`);
    installs `update.sh` as `/opt/surveyjs-studio/update.sh` and the command `surveyjs-studio-update`.
 7. Signs in to ghcr.io, checks the DNS record, and starts the app with `update.sh <tag>`.
+8. With `--auto-update`, turns on the timer that deploys the `production` tag; without it, turns it off.
 
 ## 6. Update, roll back, status
 
@@ -176,3 +192,31 @@ data, and the previous tag's image is still on the server.
 **After a change to the settings** (`sudo nano /etc/surveyjs-studio/app.env`, for example `READ_ONLY=false`), apply
 them with `sudo surveyjs-studio-update <the running tag>`: Compose re-creates the container with the new settings.
 `docker restart` would keep the old ones ([Operations › Running the image](../operations.md#running-the-image)).
+
+### Deploying from GitHub
+
+**Actions › Deploy › Run workflow**, with the tag, deploys it without signing in to the server. The workflow
+([`deploy.yml`](../../.github/workflows/deploy.yml)) only points the image tag `production` in ghcr.io at that commit's
+image. The server checks that tag every minute and runs `update.sh` when it points to a commit it has not seen yet. GitHub
+needs no access to the server, so SSH stays open to your own address only.
+
+It needs, once:
+
+1. **The timer on the server:** run `setup.sh` again with your usual options and `--auto-update` (a run without it
+   turns the timer off again). It installs `surveyjs-studio-auto-update.timer`, which runs `update.sh --auto` a minute
+   after the last check ended.
+2. **Optional, in GitHub:** to have someone approve each run, open **Settings › Environments › production** (the first
+   run creates it) and add them as **Required reviewers**.
+
+The **Run workflow** button appears once `deploy.yml` is on `master`; anyone with write access to the repository can
+run it. The run ends when the tag has moved. The deploy itself follows within a minute or two, in the server's log:
+
+```sh
+sudo journalctl -u surveyjs-studio-auto-update --since -1h    # what the checks did
+sudo surveyjs-studio-update --status                          # the running tag
+```
+
+The server tries each commit once: it reads the commit id from the image's `org.opencontainers.image.revision` label
+and remembers it in `/opt/surveyjs-studio/.auto-seen`. So a commit that does not become healthy is rolled back and not
+tried again, and a tag deployed by hand with `sudo surveyjs-studio-update <tag>` stays until the next run of the
+workflow with another commit. To try the same commit again, deploy it by hand.

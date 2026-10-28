@@ -1,0 +1,39 @@
+name: Deploy
+
+# A manual run (Actions › Deploy › Run workflow) tags an image "production". A server set up with
+# setup.sh --auto-update checks that tag every minute and deploys it with update.sh, which rolls back
+# when the new container does not become healthy. GitHub needs no access to the server.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The image tag, the full commit id of a master commit whose CI passed
+        required: true
+
+permissions:
+  packages: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://studio.surveyjs.io
+    env:
+      IMAGE: ghcr.io/surveyjs/surveyjs-studio
+    steps:
+      - name: Tag ${{ inputs.tag }} as production
+        env:
+          TAG: ${{ inputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::not a full commit id: $TAG"; exit 1; }
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --tag "$IMAGE:production" "$IMAGE:$TAG"
+          docker logout ghcr.io
+          echo "$IMAGE:production is now $TAG; the server deploys it within a minute or two" >> "$GITHUB_STEP_SUMMARY"

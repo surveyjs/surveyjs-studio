@@ -18,10 +18,13 @@
 #                          GHCR_TOKEN, the file named by GHCR_TOKEN_FILE, or a prompt
 #   --readyz-allow "IPS"   addresses (space separated) that may call /readyz, e.g. a monitor
 #   --restrict-to "IPS"    serve only these addresses, everyone else gets 403 (rollout step 1)
+#   --auto-update          every minute, deploy the image Actions › Deploy tagged "production"
+#                          (update.sh --auto); a run without it turns this off
 #   --deploy-user NAME     the everyday user (default deploy); --no-deploy-user skips it
 #   --no-ssh-hardening     keep password and root sign-in over SSH
 #
-# Next to this script it needs update.sh, which it installs as /opt/surveyjs-studio/update.sh.
+# Next to this script it needs update.sh, which it installs as /opt/surveyjs-studio/update.sh. Both
+# can also be kept in /opt/surveyjs-studio and run from there.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +43,7 @@ IMAGE=ghcr.io/surveyjs/surveyjs-studio
 GHCR_USER=""
 READYZ_ALLOW=""
 RESTRICT_TO=""
+AUTO_UPDATE=no
 DEPLOY_USER=deploy
 SSH_HARDENING=yes
 
@@ -64,6 +68,7 @@ parse_args() {
       --ghcr-user) GHCR_USER="${2:?--ghcr-user needs a value}" && shift ;;
       --readyz-allow) READYZ_ALLOW="${2:?--readyz-allow needs a value}" && shift ;;
       --restrict-to) RESTRICT_TO="${2:?--restrict-to needs a value}" && shift ;;
+      --auto-update) AUTO_UPDATE=yes ;;
       --deploy-user) DEPLOY_USER="${2:?--deploy-user needs a value}" && shift ;;
       --no-deploy-user) DEPLOY_USER="" ;;
       --no-ssh-hardening) SSH_HARDENING=no ;;
@@ -202,7 +207,8 @@ write_files() {
     install -m 600 -o root -g root "$ENV_FILE" "$ETC_DIR/app.env"
     echo "installed $ETC_DIR/app.env; delete $ENV_FILE"
   fi
-  install -m 755 "$SCRIPT_DIR/update.sh" "$APP_DIR/update.sh"
+  # Run from $APP_DIR itself, update.sh is already in place.
+  [[ "$SCRIPT_DIR/update.sh" -ef "$APP_DIR/update.sh" ]] || install -m 755 "$SCRIPT_DIR/update.sh" "$APP_DIR/update.sh"
 
   cat >"$APP_DIR/compose.yaml" <<EOF
 # Written by setup.sh; run it again to change this file. IMAGE and TAG come from .env (update.sh).
@@ -314,6 +320,46 @@ start() {
   fi
 }
 
+# A systemd timer that runs update.sh --auto a minute after each run ends.
+auto_update() {
+  local unit=surveyjs-studio-auto-update
+  if [[ "$AUTO_UPDATE" != yes ]]; then
+    if systemctl is-enabled --quiet "$unit.timer" 2>/dev/null; then
+      systemctl disable --now "$unit.timer"
+      log "Automatic updates turned off"
+    fi
+    return 0
+  fi
+  log "Automatic updates"
+  cat >"/etc/systemd/system/$unit.service" <<EOF
+# Written by setup.sh --auto-update.
+[Unit]
+Description=Deploy the SurveyJS Studio image tagged production
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=$APP_DIR/update.sh --auto
+EOF
+  cat >"/etc/systemd/system/$unit.timer" <<EOF
+# Written by setup.sh --auto-update.
+[Unit]
+Description=Check every minute for a new SurveyJS Studio image tagged production
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now "$unit.timer"
+  echo "on: the server deploys what Actions › Deploy tags production (log: journalctl -u $unit)"
+}
+
 main() {
   parse_args "$@"
   check_inputs
@@ -325,6 +371,7 @@ main() {
   registry_login
   check_dns
   start
+  auto_update
   log "Ready: https://$DOMAIN"
   cat <<EOF
 Check:  curl -sI https://$DOMAIN/ | grep -i -E '^HTTP|content-security-policy|strict-transport'

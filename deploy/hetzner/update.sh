@@ -4,6 +4,8 @@
 #
 #   sudo ./update.sh <tag>      deploy a tag: the full commit id of a master commit whose CI passed
 #   sudo ./update.sh --status   show the running tag, the container's health and /readyz
+#   sudo ./update.sh --auto     deploy the commit the image tagged "production" was built from, once
+#                               per commit (setup.sh --auto-update runs it every minute)
 #
 # Rolling back is deploying the earlier tag. The app has no database migrations, so an earlier
 # image runs on the same data. A failing /readyz (SQL or storage unreachable) is reported but
@@ -15,6 +17,8 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/surveyjs-studio}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-150}"
 TAG_PATTERN='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+# The tag that Actions › Deploy moves; --auto deploys what it points to.
+CHANNEL=production
 
 log() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -70,7 +74,7 @@ starting_line() { compose logs --no-log-prefix app 2>/dev/null | grep '"msg":"st
 prune_images() {
   local keep_current="$1" keep_previous="$2" tag
   while read -r tag; do
-    [[ "$tag" == "$keep_current" || "$tag" == "$keep_previous" || "$tag" == "<none>" ]] && continue
+    [[ "$tag" == "$keep_current" || "$tag" == "$keep_previous" || "$tag" == "$CHANNEL" || "$tag" == "<none>" ]] && continue
     if docker rmi "$IMAGE:$tag" >/dev/null 2>&1; then
       log "removed the old image $IMAGE:$tag"
     fi
@@ -131,6 +135,25 @@ deploy() {
   log "done: $IMAGE:$tag"
 }
 
+# Deploys the commit $IMAGE:$CHANNEL was built from when it differs from the last one seen. Each
+# commit is tried once: a failed one is not retried every minute, and a tag deployed by hand stays
+# until the channel moves again.
+auto() {
+  local seen_file="$APP_DIR/.auto-seen" wanted
+  docker pull -q "$IMAGE:$CHANNEL" >/dev/null || die "cannot pull $IMAGE:$CHANNEL"
+  wanted="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE:$CHANNEL")"
+  [[ "$wanted" =~ ^[0-9a-f]{40}$ ]] || die "$IMAGE:$CHANNEL has no commit id in its revision label"
+  [[ "$wanted" != "$(cat "$seen_file" 2>/dev/null)" ]] || return 0
+  printf '%s
+' "$wanted" >"$seen_file"
+  if [[ "$wanted" == "$(setting TAG)" ]]; then
+    log "$CHANNEL points to the running tag $wanted"
+    return 0
+  fi
+  log "$CHANNEL points to $wanted"
+  deploy "$wanted"
+}
+
 main() {
   [[ $EUID -eq 0 ]] || die "run it as root: sudo $0 $*"
   [[ -f "$APP_DIR/compose.yaml" ]] || die "$APP_DIR/compose.yaml not found; run setup.sh first"
@@ -139,6 +162,12 @@ main() {
 
   case "${1:-}" in
     --status) status ;;
+    --auto)
+      exec 9>/run/surveyjs-studio-update.lock
+      # Another update is running: the next run tries again.
+      flock -n 9 || exit 0
+      auto
+      ;;
     "" | -h | --help)
       awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
       [[ -n "${1:-}" ]] || exit 2
