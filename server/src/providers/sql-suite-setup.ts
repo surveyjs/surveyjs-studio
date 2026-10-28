@@ -8,7 +8,7 @@ import { createSqlProviders } from "./sql.js";
 import type { ProviderSet } from "./types.js";
 
 /** The stores on SQL so far (self-hosted Step 1); the rest are the memory fallback. */
-export const SQL_SUITE_SECTIONS: readonly ProviderSuiteSection[] = ["surveys", "lifecycle"];
+export const SQL_SUITE_SECTIONS: readonly ProviderSuiteSection[] = ["surveys", "results", "lifecycle"];
 
 /**
  * A SQL provider set on a new scratch database, migrated and holding the golden fixtures (the

@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import type { AccountNoticesSetting, AppConfig } from "../config.js";
 import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
+import { createSqlResultStore } from "../sql/result-store.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import type { LegacyWarningLogger } from "./azure-legacy/index.js";
@@ -105,7 +106,7 @@ export function createSqlProviders(
     users: fallback.users,
     projects: fallback.projects,
     files: fallback.files,
-    results: fallback.results,
+    results: createSqlResultStore(database),
     views: fallback.views,
     notices: fallback.notices,
     readinessNames: ["database"],

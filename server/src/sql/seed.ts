@@ -1,5 +1,6 @@
 import type { MemorySeed } from "../providers/memory.js";
 import type { SqlDatabase } from "./database.js";
+import { insertResponses } from "./result-store.js";
 import { insertSurvey } from "./survey-store.js";
 
 export interface SeedReport {
@@ -25,6 +26,21 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
         ...(theme !== undefined && { theme }),
         history: byId(seed.history, id) ?? [],
       });
+      // The survey's responses and markers went with it (cascade).
+      await insertResponses(trx, id, byId(seed.responses, id) ?? []);
+      const markers = Object.entries(byId(seed.completions, id) ?? {});
+      if (markers.length > 0) {
+        await trx
+          .insertInto("completion_markers")
+          .values(
+            markers.map(([clientId, { partial }]) => ({
+              survey_id: id,
+              client_id: clientId,
+              partial,
+            })),
+          )
+          .execute();
+      }
     }
   });
   return { surveys: seed.surveys.length };

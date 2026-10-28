@@ -74,7 +74,7 @@ function decode(value: string): Record<string, unknown> {
 const isId = (value: unknown): value is string =>
   typeof value === "string" && value !== "" && value.length <= MAX_ID_LENGTH;
 
-/** Survey and history entry ids are GUIDs in every provider (the SQL stores keep them as `uuid`). */
+/** Survey, history entry and response ids are GUIDs in every provider (the SQL stores keep them as `uuid`). */
 const isGuid = (value: unknown): value is string => typeof value === "string" && GUID.test(value);
 
 /** An ISO 8601 UTC timestamp exactly as `Date#toISOString` writes it. */
@@ -206,7 +206,7 @@ export function encodeResultsCursor(position: ResponsePosition, surveyId: string
 export function decodeResultsCursor(value: string, surveyId: string): ResponsePosition {
   const { v, k, s, u, i } = decode(value);
   if (v !== VERSION || k !== "results" || s !== surveyId.toLowerCase()) throw invalidCursor();
-  if (!isTimestamp(u) || !isId(i)) throw invalidCursor();
+  if (!isTimestamp(u) || !isGuid(i)) throw invalidCursor();
   const position = { submittedAt: u, id: i.toLowerCase() };
   return canonical(value, position, encodeResultsCursor(position, surveyId));
 }
