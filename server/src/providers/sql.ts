@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import type { AccountNoticesSetting, AppConfig } from "../config.js";
 import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
+import { createSqlProjectStore } from "../sql/project-store.js";
 import { createSqlResultStore } from "../sql/result-store.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { createSqlViewStore } from "../sql/view-store.js";
@@ -105,7 +106,7 @@ export function createSqlProviders(
     name: database.dialect,
     surveys: createSqlSurveyStore(database),
     users: fallback.users,
-    projects: fallback.projects,
+    projects: createSqlProjectStore(database, fallback.users),
     files: fallback.files,
     results: createSqlResultStore(database),
     views: createSqlViewStore(database),

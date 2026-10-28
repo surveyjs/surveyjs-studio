@@ -2,15 +2,18 @@ import type { MemorySeed } from "../providers/memory.js";
 import type { SqlDatabase } from "./database.js";
 import { insertResponses } from "./result-store.js";
 import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
+import { isoOf } from "./values.js";
 
 export interface SeedReport {
   readonly surveys: number;
+  readonly projects: number;
 }
 
 /**
- * Loads the shared seed into the SQL stores built so far (surveys with their definitions, themes
- * and history), in one transaction. A seed survey that exists is replaced with its history; every
- * other row stays, so running it again resets the seed data and keeps what people made.
+ * Loads the shared seed into the SQL stores (surveys with their definitions, themes, history,
+ * responses, markers and layouts; projects with their members), in one transaction. A seed
+ * survey or project that exists is replaced with what belongs to it; every other row stays, so
+ * running it again resets the seed data and keeps what people made.
  */
 export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Promise<SeedReport> {
   const byId = <T>(map: Record<string, T> | undefined, id: string): T | undefined =>
@@ -62,6 +65,36 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
           .execute();
       }
     }
+    // A seed project is replaced with its memberships (cascade); its surveys stay where they are.
+    for (const project of seed.projects) {
+      const id = project.id.toLowerCase();
+      const createdAt = isoOf(project.createdAt);
+      await trx.deleteFrom("projects").where("id", "=", id).execute();
+      await trx
+        .insertInto("projects")
+        .values({
+          id,
+          name: project.name,
+          creator_id: project.creatorId?.toLowerCase() ?? null,
+          created_at: createdAt,
+        })
+        .execute();
+      const members = seed.memberships.filter((m) => m.projectId.toLowerCase() === id);
+      if (members.length > 0) {
+        await trx
+          .insertInto("project_members")
+          .values(
+            members.map((m) => ({
+              project_id: id,
+              user_id: m.userId.toLowerCase(),
+              role: m.role,
+              created_at: createdAt,
+              updated_at: createdAt,
+            })),
+          )
+          .execute();
+      }
+    }
   });
-  return { surveys: seed.surveys.length };
+  return { surveys: seed.surveys.length, projects: seed.projects.length };
 }
