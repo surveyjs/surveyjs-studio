@@ -119,7 +119,17 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       const { database } = await fresh();
       const shipped = loadMigrations(dialect);
       expect((await migrate(database)).applied).toEqual(shipped);
-      expect(await tablesOf(database)).toEqual(["survey_history", "surveys"]);
+      expect(await tablesOf(database)).toEqual([
+        "completion_markers",
+        "legacy_views",
+        "private_questions",
+        "project_members",
+        "projects",
+        "saved_views",
+        "survey_history",
+        "survey_responses",
+        "surveys",
+      ]);
       expect((await migrationStatus(database)).pending).toEqual([]);
     });
 
