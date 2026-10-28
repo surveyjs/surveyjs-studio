@@ -129,6 +129,17 @@ pnpm demo:azurite:down   # stops them and deletes their data
 
 See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/demo/).
 
+### SQLite and PostgreSQL modes
+
+The SQL providers of the self-hosted track (surveys only so far; the other stores stay in memory until its Step 2):
+
+```sh
+pnpm seed:sqlite && pnpm dev:sqlite       # surveys in server/.data/surveyjs-studio.db
+pnpm seed:postgres && pnpm dev:postgres   # surveys in PostgreSQL in Docker (pnpm postgres:down deletes it)
+```
+
+See [Development](docs/development.md#sqlite-and-postgresql-modes).
+
 ### Every run mode
 
 [Running the app](docs/running.md) lists every configuration that runs today (the memory and Azurite demos,
@@ -173,45 +184,53 @@ One image serves every deployment mode; its settings choose the mode. Build it w
 
 Run from the repository root.
 
-| Script                            | What it does                                                                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm demo`                       | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
-| `pnpm demo:preview`               | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none            |
-| `pnpm build`                      | Builds the API reference and the production web bundle                                                                    |
-| `pnpm test`                       | `test:unit`, then `test:conformance`                                                                                      |
-| `pnpm test:unit`                  | Vitest across contract, server, web and repository scripts                                                                |
-| `pnpm test:conformance`           | Conformance suite against a server it starts itself                                                                       |
-| `pnpm demo:azurite:up`            | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
-| `pnpm demo:azurite`               | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
-| `pnpm demo:azurite:down`          | Stops the replica and deletes its data                                                                                    |
-| `pnpm dev:prod-data`              | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
-| `pnpm image:build`                | Builds the production image `surveyjs-studio:local` (needs Docker)                                                        |
-| `pnpm prod-like:up`               | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
-| `pnpm prod-like:down`             | Stops the prod-like containers and deletes their data                                                                     |
-| `pnpm image:prod-data`            | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
-| `pnpm legacy:load`                | Loads the golden fixtures into a running replica                                                                          |
-| `pnpm inspect:legacy`             | Read-only inspector: lists one user's surveys from the configured store                                                   |
-| `pnpm inspect:legacy-schema`      | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
-| `pnpm user-api:stub`              | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
-| `pnpm account:erase`              | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
-| `pnpm smoke:legacy`               | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                  |
-| `pnpm account:reconcile`          | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
-| `pnpm webhook:account-deleted`    | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
-| `pnpm test:conformance:read-only` | Conformance suite with the server in `READ_ONLY=true`                                                                     |
-| `pnpm test:conformance:user-api`  | Conformance suite with the server on the user-API stub                                                                    |
-| `pnpm test:providers:azurite`     | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
-| `pnpm test:conformance:azurite`   | Conformance suite on the `azure-legacy` provider and the replica                                                          |
-| `pnpm e2e`                        | Playwright tests in three browsers (starts server and web app)                                                            |
-| `pnpm e2e:azurite`                | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
-| `pnpm e2e:visual`                 | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))       |
-| `pnpm e2e:visual:report`          | Opens the visual parity report                                                                                            |
-| `pnpm visual:capture`             | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                             |
-| `pnpm lint`                       | ESLint                                                                                                                    |
-| `pnpm typecheck`                  | `tsc` in every package                                                                                                    |
-| `pnpm format`                     | Prettier, write                                                                                                           |
-| `pnpm format:check`               | Prettier, check only                                                                                                      |
-| `pnpm lint:contract`              | Redocly lint of the contract, and a check that generated types are current                                                |
-| `pnpm check:deps`                 | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
+| Script                                                           | What it does                                                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm demo`                                                      | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in |
+| `pnpm demo:preview`                                              | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none            |
+| `pnpm build`                                                     | Builds the API reference and the production web bundle                                                                    |
+| `pnpm test`                                                      | `test:unit`, then `test:conformance`                                                                                      |
+| `pnpm test:unit`                                                 | Vitest across contract, server, web and repository scripts                                                                |
+| `pnpm test:conformance`                                          | Conformance suite against a server it starts itself                                                                       |
+| `pnpm demo:azurite:up`                                           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures |
+| `pnpm demo:azurite`                                              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                     |
+| `pnpm demo:azurite:down`                                         | Stops the replica and deletes its data                                                                                    |
+| `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the surveys in a SQLite file (`server/.data/`)                                                     |
+| `pnpm dev:postgres`                                              | Like `pnpm demo`, with the surveys in PostgreSQL in Docker (starts it)                                                    |
+| `pnpm postgres:up`, `pnpm postgres:down`                         | Starts PostgreSQL in Docker; stops it and deletes its data                                                                |
+| `pnpm seed`, `pnpm seed:sqlite`, `pnpm seed:postgres`            | Migrates the database, then loads the golden fixtures (seed surveys are replaced, others kept)                            |
+| `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                        |
+| `pnpm dev:prod-data`                                             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`           |
+| `pnpm image:build`                                               | Builds the production image `surveyjs-studio:local` (needs Docker)                                                        |
+| `pnpm prod-like:up`                                              | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                 |
+| `pnpm prod-like:down`                                            | Stops the prod-like containers and deletes their data                                                                     |
+| `pnpm image:prod-data`                                           | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                             |
+| `pnpm legacy:load`                                               | Loads the golden fixtures into a running replica                                                                          |
+| `pnpm inspect:legacy`                                            | Read-only inspector: lists one user's surveys from the configured store                                                   |
+| `pnpm inspect:legacy-schema`                                     | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                     |
+| `pnpm user-api:stub`                                             | A local stand-in for the surveyjs.io user API (port 4010)                                                                 |
+| `pnpm account:erase`                                             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                             |
+| `pnpm smoke:legacy`                                              | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                  |
+| `pnpm account:reconcile`                                         | Lists, and with `--apply` erases, owners the user directory no longer knows                                               |
+| `pnpm webhook:account-deleted`                                   | Sends a signed account-deleted webhook to a running server (a demo tool)                                                  |
+| `pnpm test:conformance:read-only`                                | Conformance suite with the server in `READ_ONLY=true`                                                                     |
+| `pnpm test:conformance:user-api`                                 | Conformance suite with the server on the user-API stub                                                                    |
+| `pnpm test:providers:azurite`                                    | Provider suite on the replica (needs `demo:azurite:up`)                                                                   |
+| `pnpm test:conformance:azurite`                                  | Conformance suite on the `azure-legacy` provider and the replica                                                          |
+| `pnpm test:providers:postgres`                                   | Provider and migrator suites on PostgreSQL (needs `postgres:up`)                                                          |
+| `pnpm test:conformance:sqlite`, `pnpm test:conformance:postgres` | Conformance suite on the SQL providers, a new seeded database per run (`postgres` needs `postgres:up`)                    |
+| `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                            |
+| `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                        |
+| `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                      |
+| `pnpm e2e:visual`                                                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))       |
+| `pnpm e2e:visual:report`                                         | Opens the visual parity report                                                                                            |
+| `pnpm visual:capture`                                            | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                             |
+| `pnpm lint`                                                      | ESLint                                                                                                                    |
+| `pnpm typecheck`                                                 | `tsc` in every package                                                                                                    |
+| `pnpm format`                                                    | Prettier, write                                                                                                           |
+| `pnpm format:check`                                              | Prettier, check only                                                                                                      |
+| `pnpm lint:contract`                                             | Redocly lint of the contract, and a check that generated types are current                                                |
+| `pnpm check:deps`                                                | Dependency rules (exact versions, SurveyJS versions equal)                                                                |
 
 ## Documentation
 

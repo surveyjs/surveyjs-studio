@@ -7,7 +7,8 @@ PowerShell, from the repository root. Setup (Node.js 24, pnpm, Docker) is in [De
 
 Every configuration on this page is **mode 4, development** ([idea §3.0](../idea.md)):
 
-- in-memory data, or a local copy of the old surveyjs.io stores in Docker;
+- in-memory data, a local copy of the old surveyjs.io stores in Docker, or (self-hosted track, surveys only so far) a
+  SQLite file or PostgreSQL in Docker;
 - for the product owner only, two runs on the real production SQL database and storage accounts: mode 1.1's data,
   signing in through a local the site's sign-in service.
 
@@ -20,6 +21,8 @@ behind an https proxy, its settings by mode, the rollout) is described in [Opera
 | ------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | 4, memory demo                  | Data in memory, a "Sign in as…" page, the fixture users                                            | `pnpm demo`, then <http://localhost:5173>                                           | Ctrl+C                                                                     | [`server/demo.env`](../server/demo.env)                                                                   |
 | 4, Azurite demo                 | A local copy of the old stores in Docker, the mock sign-in server                                  | `pnpm demo:azurite:up` once, then `pnpm demo:azurite`, then <http://localhost:5173> | Ctrl+C (see [Stopping the Docker services](#stopping-the-docker-services)) | [`docker/azurite.env`](../docker/azurite.env) and [`server/demo-azurite.env`](../server/demo-azurite.env) |
+| 4, SQLite                       | Surveys in a SQLite file, the rest in memory (self-hosted Step 1), the "Sign in as…" page          | `pnpm seed:sqlite` once, then `pnpm dev:sqlite`, then <http://localhost:5173>       | Ctrl+C; delete `server/.data/` to start over                               | [`server/demo.env`](../server/demo.env) and [`server/demo-sqlite.env`](../server/demo-sqlite.env)         |
+| 4, PostgreSQL                   | Surveys in PostgreSQL in Docker, the rest in memory (self-hosted Step 1), the "Sign in as…" page   | `pnpm seed:postgres` once, then `pnpm dev:postgres`, then <http://localhost:5173>   | Ctrl+C; `pnpm postgres:down` deletes the database                          | [`server/demo.env`](../server/demo.env) and [`docker/postgres.env`](../docker/postgres.env)               |
 | 4, prod-like                    | The production image in the mode 1 configuration, on the local copy                                | `pnpm prod-like:up`, then <http://localhost:8080>                                   | `pnpm prod-like:down`                                                      | [`docker/prod-like.env`](../docker/prod-like.env)                                                         |
 | 4, development run on real data | The development server and Vite on the production stores, signing in through a local the site's sign-in service | `pnpm dev:prod-data`, then <http://localhost:5173>                                  | Ctrl+C                                                                     | `server/.env` (template [`server/.env.example`](../server/.env.example))                                  |
 | 4, the image on real data       | The production image on the production stores, signing in through a local the site's sign-in service            | `pnpm image:prod-data`, then <http://localhost:3000>                                | Ctrl+C                                                                     | `server/.env`                                                                                             |
@@ -37,7 +40,7 @@ Edit the settings file of the mode, then start it again. What each variable mean
 [Development › Environment variables](development.md#environment-variables-server); the account settings
 (`USER_DIRECTORY`, `ACCOUNT_NOTICES`, the webhook secret) are in [Operations](operations.md#configuring-accounts).
 
-- **`pnpm demo`, `pnpm demo:azurite`, `pnpm dev:prod-data`:** a variable set in the shell wins over the file. For
+- **`pnpm demo`, `pnpm demo:azurite`, `pnpm dev:sqlite`, `pnpm dev:postgres`, `pnpm dev:prod-data`:** a variable set in the shell wins over the file. For
   example, in Git Bash `LOG_LEVEL=debug pnpm dev:prod-data`; in PowerShell
   `$env:LOG_LEVEL = "debug"; pnpm dev:prod-data` (the variable stays set for the session; remove it with
   `Remove-Item Env:LOG_LEVEL`).
@@ -56,7 +59,8 @@ Edit the settings file of the mode, then start it again. What each variable mean
 The Azurite demo and prod-like use the same host ports (Azurite 10000 and 10002, SQL Server 14333, the mock sign-in
 server 18080), so only one of them can run at a time.
 
-- `pnpm demo:azurite:down` and `pnpm prod-like:down` **delete** their data (`docker compose down -v`).
+- `pnpm demo:azurite:down` and `pnpm prod-like:down` **delete** their data (`docker compose down -v`), and so does
+  `pnpm postgres:down` (PostgreSQL on 127.0.0.1:15432, which runs beside either of them).
 - To pause the Azurite demo and keep its data, stop its containers instead:
   `docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml stop`, and later the same command with
   `start`.
