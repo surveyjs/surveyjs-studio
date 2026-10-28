@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,6 +82,36 @@ describe("openNodeSqlite (Kysely over node:sqlite)", () => {
     ).rejects.toThrow("abort");
     expect(await db.selectFrom("parent").selectAll().execute()).toEqual([]);
     await db.destroy();
+  });
+
+  // PRAGMA journal_mode = WAL does not wait for the busy timeout: on a file that is not WAL yet it
+  // fails at once while another connection holds a write lock (two processes starting together).
+  it("waits for another process's write lock before it switches a new file to WAL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sqlite-"));
+    dirs.push(dir);
+    const path = join(dir, "new.db");
+    const holder = spawn(
+      process.execPath,
+      [
+        "-e",
+        "const { DatabaseSync } = require('node:sqlite');" +
+          "const db = new DatabaseSync(process.argv[1]);" +
+          "db.exec('begin immediate; create table held (x)');" +
+          "console.log('locked');" +
+          "setTimeout(() => { db.exec('commit'); db.close(); }, 400);",
+        path,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    const exited = new Promise((resolve) => holder.on("close", resolve));
+    await new Promise((locked) => holder.stdout.once("data", locked));
+    const db = new Kysely<TestSchema>({
+      dialect: new SqliteDialect({ database: openNodeSqlite(path) }),
+    });
+    const { rows } = await sql<{ journal_mode: string }>`pragma journal_mode`.execute(db);
+    expect(rows).toEqual([{ journal_mode: "wal" }]);
+    await db.destroy();
+    await exited;
   });
 
   it("keeps a file database across connections, in WAL mode", async () => {
