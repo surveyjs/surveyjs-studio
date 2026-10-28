@@ -27,6 +27,9 @@ builder, not an ORM: the stores keep their SQL visible and their own row mapping
 dialect (timestamps, booleans, JSON) are read through three helpers in `server/src/sql/values.ts`
 ([data model › Conventions](../architecture/data-model.md#conventions)).
 
+The PostgreSQL pool has an `error` listener: a connection the server ends (a restart, a failover) is logged with its
+code only, never the error object, which holds the client and its password; the next query connects again.
+
 ### Schema changes: plain SQL files
 
 - **One set of files per dialect:** `server/sql/sqlite/NNNN-name.sql` and `server/sql/postgres/NNNN-name.sql`, with the

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { Kysely, Selectable } from "kysely";
+import type { Kysely, Selectable, Updateable } from "kysely";
 import { contentVersion } from "../domain/content-version.js";
 import { GUID } from "../domain/guid.js";
-import { applySurveyChanges, newSurveyRecord } from "../domain/survey-changes.js";
+import { newSurveyRecord } from "../domain/survey-changes.js";
 import type {
   SaveOutcome,
+  SurveyChanges,
   SurveyDefinition,
   SurveyOwner,
   SurveyRecord,
@@ -80,6 +81,29 @@ const columnsOf = (record: SurveyRecord) => ({
   created_at: isoOf(record.createdAt),
   updated_at: isoOf(record.updatedAt),
 });
+
+/**
+ * The columns `changes` sets, as `applySurveyChanges` changes the record: a move sets the scope and
+ * the creator, `settings.useCookies` is never changed, `updated_at` always is.
+ */
+const changedColumns = (changes: SurveyChanges): Updateable<SurveysTable> => {
+  const { name, move, published, archived, settings, updatedAt } = changes;
+  return {
+    ...(name !== undefined && { name }),
+    ...(move !== undefined && {
+      owner_user_id: move.owner.kind === "personal" ? move.owner.userId.toLowerCase() : null,
+      owner_project_id: move.owner.kind === "project" ? move.owner.projectId.toLowerCase() : null,
+      creator_id: move.creatorId.toLowerCase(),
+    }),
+    ...(published !== undefined && { published }),
+    ...(archived !== undefined && { archived }),
+    ...(settings?.publicResults !== undefined && { public_results: settings.publicResults }),
+    ...(settings?.storeRespondentIp !== undefined && {
+      store_respondent_ip: settings.storeRespondentIp,
+    }),
+    updated_at: isoOf(updatedAt),
+  };
+};
 
 /** What a survey is stored with besides its record. */
 export interface StoredSurveyContent {
@@ -325,25 +349,17 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
         .executeTakeFirst();
       return row ? jsonOf<SurveyDefinition>(row.snapshot) : null;
     },
+    // One statement that sets only the named columns: no change depends on the stored values, so
+    // updates running at the same time never undo each other (a read-then-write would).
     updateSurvey: async (id, changes) => {
       const survey = key(id);
       if (survey === null) return null;
-      return db.transaction().execute(async (trx) => {
-        const row = await trx
-          .selectFrom("surveys")
-          .select(RECORD_COLUMNS)
-          .where("id", "=", survey)
-          .executeTakeFirst();
-        if (!row) return null;
-        const updated = applySurveyChanges(recordOf(row), changes);
-        await trx.updateTable("surveys").set(columnsOf(updated)).where("id", "=", survey).execute();
-        const stored = await trx
-          .selectFrom("surveys")
-          .select(RECORD_COLUMNS)
-          .where("id", "=", survey)
-          .executeTakeFirstOrThrow();
-        return recordOf(stored);
-      });
+      const result = await db
+        .updateTable("surveys")
+        .set(changedColumns(changes))
+        .where("id", "=", survey)
+        .executeTakeFirst();
+      return result.numUpdatedRows === 0n ? null : getRecord(survey);
     },
     cloneSurvey: async (sourceId, copy, options) => {
       const source = key(sourceId);

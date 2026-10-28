@@ -4,6 +4,7 @@ import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
+import type { LegacyWarningLogger } from "./azure-legacy/index.js";
 import { createMemoryProviders, type MemorySeed } from "./memory.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
@@ -37,10 +38,14 @@ export class PendingMigrationsError extends Error {
 export async function openSqlProviders(
   config: AppConfig,
   accountNotices: AccountNoticesSetting,
+  logger?: LegacyWarningLogger,
 ): Promise<ProviderSet> {
   if (!config.database)
     throw new Error(`STORAGE_PROVIDER=${config.storageProvider} needs a database`);
-  const database = openDatabase(config.database);
+  const database = openDatabase(config.database, {
+    onConnectionError: (code) =>
+      logger?.warn({ code }, "A database connection was closed; the next query opens a new one."),
+  });
   try {
     if (config.readOnly) {
       const status = await migrationStatus(database);

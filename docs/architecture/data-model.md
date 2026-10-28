@@ -11,13 +11,13 @@ The self-hosted image uses it, and the hosted service moves to it in mode 1.3 ([
 
 ## Conventions
 
-| Kind          | PostgreSQL       | SQLite                                                                   | In the code (`server/src/sql/values.ts`)                                                          |
-| ------------- | ---------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| GUID          | `uuid`           | `text`, lower-case                                                       | A lower-case string. A value that is not a GUID matches no row and is never sent to the database. |
-| Timestamp     | `timestamptz(3)` | `text`, ISO 8601 UTC as `Date#toISOString` writes it (`…T10:00:00.000Z`) | Written as that text; read back in the same form (`isoOf`). In SQLite text order is time order.   |
-| Boolean       | `boolean`        | `integer`, 0 or 1                                                        | `flagOf`                                                                                          |
-| JSON document | `jsonb`          | `text`                                                                   | Written as `JSON.stringify` text; read with `jsonOf`.                                             |
-| Other text    | `text`           | `text`                                                                   |                                                                                                   |
+| Kind          | PostgreSQL       | SQLite                                                                   | In the code (`server/src/sql/values.ts`)                                                                                                                       |
+| ------------- | ---------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GUID          | `uuid`           | `text`, lower-case                                                       | A lower-case string. A value that is not a GUID matches no row and is never sent to the database (paging cursors of surveys and history accept GUID ids only). |
+| Timestamp     | `timestamptz(3)` | `text`, ISO 8601 UTC as `Date#toISOString` writes it (`…T10:00:00.000Z`) | Written as that text; read back in the same form (`isoOf`). In SQLite text order is time order.                                                                |
+| Boolean       | `boolean`        | `integer`, 0 or 1                                                        | `flagOf`                                                                                                                                                       |
+| JSON document | `jsonb`          | `text`                                                                   | Written as `JSON.stringify` text; read with `jsonOf`.                                                                                                          |
+| Other text    | `text`           | `text`                                                                   |                                                                                                                                                                |
 
 Two consequences of `jsonb`:
 

@@ -21,8 +21,23 @@ export interface SqlDatabase {
 /** Connections the server keeps open to PostgreSQL. */
 const POSTGRES_POOL_SIZE = 10;
 
+export interface DatabaseOptions {
+  /**
+   * PostgreSQL: an idle pooled connection failed (the server restarted or ended it); the pool
+   * drops it and the next query connects again. Gets the error's code only: the error object
+   * holds the client, and the client the password.
+   */
+  readonly onConnectionError?: (code: string) => void;
+}
+
+/** The SQLSTATE or system code of a driver error; `unknown` when it has none. */
+const codeOf = (error: unknown): string => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && /^[A-Z0-9_]+$/.test(code) ? code : "unknown";
+};
+
 /** Opens the database lazily: nothing connects until the first query. */
-export function openDatabase(target: DatabaseTarget): SqlDatabase {
+export function openDatabase(target: DatabaseTarget, options: DatabaseOptions = {}): SqlDatabase {
   if (target.dialect === "sqlite") {
     const { path } = target;
     const dialect = new SqliteDialect({
@@ -35,6 +50,8 @@ export function openDatabase(target: DatabaseTarget): SqlDatabase {
     return { dialect: "sqlite", db, close: () => db.destroy() };
   }
   const pool = new pg.Pool({ connectionString: target.url, max: POSTGRES_POOL_SIZE });
+  // Without a listener the pool's `error` event ends the process (and prints the client).
+  pool.on("error", (error) => options.onConnectionError?.(codeOf(error)));
   const db = new Kysely<DatabaseSchema>({ dialect: new PostgresDialect({ pool }) });
   return { dialect: "postgres", db, close: () => db.destroy() };
 }

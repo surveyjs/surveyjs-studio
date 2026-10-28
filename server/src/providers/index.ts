@@ -50,8 +50,10 @@ const registry: Record<
 > = {
   memory: createMemory,
   "azure-legacy": createAzureLegacy,
-  sqlite: (config, _options, accountNotices) => openSqlProviders(config, accountNotices),
-  postgres: (config, _options, accountNotices) => openSqlProviders(config, accountNotices),
+  sqlite: (config, options, accountNotices) =>
+    openSqlProviders(config, accountNotices, options.logger),
+  postgres: (config, options, accountNotices) =>
+    openSqlProviders(config, accountNotices, options.logger),
 };
 
 export async function createProviders(
