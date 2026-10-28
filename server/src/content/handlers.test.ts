@@ -52,6 +52,17 @@ async function start(env: Record<string, string> = {}) {
 
 const url = (part: string) => `/api/v1/surveys/${SURVEY_ID}/${part}`;
 
+describe("reading a document", () => {
+  // A compressing proxy rewrites the ETag of what it compresses (Caddy: `"v"` becomes `"v-zstd"`),
+  // and the rewritten tag never matches on save.
+  it.each(["definition", "theme"])("asks proxies not to transform the %s", async (part) => {
+    const { server, headers } = await start();
+    const res = await server.inject({ url: url(part), headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-transform");
+  });
+});
+
 describe("saving a definition", () => {
   it("sets updatedAt to the clock's time", async () => {
     const { server, headers } = await start();

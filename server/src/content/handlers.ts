@@ -10,6 +10,13 @@ import {
 
 const surveyIdOf = (params: unknown): string => (params as { surveyId: string }).surveyId;
 
+/**
+ * A compressing proxy rewrites the ETag of a response it compresses (Caddy's `encode`: `"v"` becomes
+ * `"v-zstd"`), and the rewritten tag never matches on save. `no-transform` (RFC 9111) keeps the
+ * read as the server sent it.
+ */
+const NO_TRANSFORM = "no-transform";
+
 const ifMatchOf = (headers: Record<string, unknown>): string | undefined => {
   const value = headers["if-match"];
   return typeof value === "string" ? value : undefined;
@@ -25,7 +32,10 @@ export function createContentHandlers(options: ContentServiceOptions): Handlers 
         requireUser(request),
         surveyIdOf(request.params),
       );
-      return reply.header("etag", formatEtag(version)).send(content);
+      return reply
+        .header("etag", formatEtag(version))
+        .header("cache-control", NO_TRANSFORM)
+        .send(content);
     },
 
     saveSurveyDefinition: async (request, reply) => {
@@ -43,7 +53,10 @@ export function createContentHandlers(options: ContentServiceOptions): Handlers 
         requireUser(request),
         surveyIdOf(request.params),
       );
-      return reply.header("etag", formatEtag(version)).send(content);
+      return reply
+        .header("etag", formatEtag(version))
+        .header("cache-control", NO_TRANSFORM)
+        .send(content);
     },
 
     saveSurveyTheme: async (request, reply) => {
