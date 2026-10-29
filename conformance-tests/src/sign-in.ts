@@ -33,6 +33,12 @@ export const fixtureUsers = {
     displayName: "Erin Erasable",
     email: "erasable@example.com",
   },
+  /** The seed's instance admin: a local account only (USER_DIRECTORY=local, self-hosted Step 5). */
+  instanceAdmin: {
+    id: "11111111-0000-4000-8000-a00000000007",
+    displayName: "Ivy Instance",
+    email: "instance-admin@example.com",
+  },
 } as const;
 
 /** A minimal cookie jar: names and values only (paths and domains are not tracked). */
