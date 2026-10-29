@@ -3,7 +3,7 @@ import type { Handlers } from "../api.js";
 import type { AppConfig } from "../config.js";
 import { AppError } from "../errors.js";
 import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
-import type { UserDirectory } from "../providers/types.js";
+import type { LocalAccountStore, UserDirectory } from "../providers/types.js";
 import { shellLinks } from "../shell-links.js";
 import { requireUser } from "./authenticate.js";
 import {
@@ -34,6 +34,8 @@ export interface SessionHandlerOptions {
   readonly config: AppConfig;
   readonly identity: IdentityProvider;
   readonly users: UserDirectory;
+  /** USER_DIRECTORY=local: `getCurrentUser` adds the account's role and forced change. */
+  readonly accounts?: LocalAccountStore | null;
   readonly notices: AccountNotices;
   readonly now?: Clock;
 }
@@ -144,7 +146,15 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       } catch (error) {
         request.log.error({ err: error }, "account notices are unavailable");
       }
-      return { ...user, notices: current };
+      const account = options.accounts ? await options.accounts.account(user.id) : null;
+      return {
+        ...user,
+        ...(account && {
+          instanceRole: account.instanceRole,
+          mustChangePassword: account.mustChangePassword,
+        }),
+        notices: current,
+      };
     },
   };
 }

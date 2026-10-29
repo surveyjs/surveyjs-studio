@@ -3,6 +3,7 @@ import type { Security } from "../contract.js";
 import { AppError } from "../errors.js";
 import { CSRF_COOKIE, parseCookies, SESSION_COOKIE } from "./cookies.js";
 import { csrfTokensMatch } from "./csrf.js";
+import type { SessionCheck } from "./session-check.js";
 import { decodeSession, type Clock } from "./session.js";
 
 /** The signed-in user, as handlers see it. */
@@ -24,6 +25,11 @@ export interface AuthenticationOptions {
   /** Secret: never log or echo. */
   readonly sessionSecret: string;
   readonly now?: Clock;
+  /**
+   * USER_DIRECTORY=local: each session is checked against its account (status, epoch, forced
+   * password change; ADR 0026). Absent for the other directories.
+   */
+  readonly sessionCheck?: SessionCheck;
 }
 
 /**
@@ -63,6 +69,7 @@ function unauthenticated(): AppError {
 export function authenticationHook(
   security: Security,
   options: AuthenticationOptions,
+  operationId = "",
 ): onRequestAsyncHookHandler | undefined {
   const rule = accessRule(security);
   if (rule.kind === "public") return undefined;
@@ -75,6 +82,15 @@ export function authenticationHook(
     if (!session) {
       if (rule.kind === "optional") return;
       throw unauthenticated();
+    }
+    if (options.sessionCheck) {
+      try {
+        await options.sessionCheck.check(session, operationId);
+      } catch (error) {
+        // An ended session is no session where none is needed (logout).
+        if (rule.kind === "optional") return;
+        throw error;
+      }
     }
     if (rule.csrf) {
       const header = request.headers["x-csrf-token"];

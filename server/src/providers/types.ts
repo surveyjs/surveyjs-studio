@@ -369,6 +369,8 @@ export type PasswordLinkPurpose = "setup" | "invitation" | "reset";
  */
 export interface LocalAccountStore {
   countAccounts(): Promise<number>;
+  /** Accounts with the instance role `admin` and the status `active`. */
+  countActiveAdmins(): Promise<number>;
   /** Rejects (nothing stored) when the id or the email is in use. */
   createAccount(account: NewLocalAccount): Promise<LocalAccount>;
   /** null for an unknown or non-GUID id. */

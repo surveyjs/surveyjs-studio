@@ -110,10 +110,12 @@ export interface paths {
         put?: never;
         /**
          * Set a password with a one-time link
-         * @description Sets the password of a local account from a set-password link: the first
-         *     admin's setup link (written to the server log), and later invitations and
-         *     resets. A link works once and for 7 days; an unknown, used or expired link
-         *     gets `400 link-invalid`. The password must have at least 12 characters and
+         * @description Sets the password of a local account from a set-password link: invitations
+         *     and resets (a link works once and for 7 days), and the first admin's setup
+         *     link, which the server writes to its log while the instance has no admin
+         *     (it works once, until the server restarts). The setup link creates that
+         *     admin: `email` and `displayName` are required with it and ignored
+         *     otherwise. An unknown, used or expired link gets `400 link-invalid`. The password must have at least 12 characters and
          *     not be a common one (`422 password-too-weak`). The account is not signed
          *     in: sign in with the new password next. `501` when password sign-in is not
          *     enabled.
@@ -1622,6 +1624,13 @@ export interface operations {
                     token: string;
                     /** Format: password */
                     password: string;
+                    /**
+                     * Format: email
+                     * @description The first admin's email; required with the setup link.
+                     */
+                    email?: string;
+                    /** @description The first admin's name; required with the setup link. */
+                    displayName?: string;
                 };
             };
         };

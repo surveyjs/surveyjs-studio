@@ -15,6 +15,23 @@ describe("session", () => {
     expect(decodeSession(SECRET, encodeSession(SECRET, session), () => NOW_MS)).toEqual(session);
   });
 
+  it("carries a local account's session epoch, and none for other sign-ins", () => {
+    const local = createSession(user, "c", 60, () => NOW_MS, 3);
+    expect(local.epoch).toBe(3);
+    expect(decodeSession(SECRET, encodeSession(SECRET, local), () => NOW_MS)).toEqual(local);
+    expect(createSession(user, "c", 60, () => NOW_MS)).not.toHaveProperty("epoch");
+  });
+
+  it("decodes a session whose epoch is not a whole number to no session", () => {
+    for (const epoch of [-1, 1.5, "1"]) {
+      const value = encodeSession(SECRET, {
+        ...createSession(user, "c", 60, () => NOW_MS),
+        epoch: epoch as number,
+      });
+      expect(decodeSession(SECRET, value, () => NOW_MS)).toBeNull();
+    }
+  });
+
   it("keeps an avatar URL", () => {
     const withAvatar = { ...user, avatarUrl: "https://a.example/p.png" };
     const session = createSession(withAvatar, "c", 60, () => NOW_MS);

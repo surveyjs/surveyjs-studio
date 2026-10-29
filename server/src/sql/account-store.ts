@@ -75,6 +75,15 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .executeTakeFirstOrThrow();
       return Number(row.n);
     },
+    countActiveAdmins: async () => {
+      const row = await db
+        .selectFrom("users")
+        .select((eb) => eb.fn.countAll<number | string | bigint>().as("n"))
+        .where("instance_role", "=", "admin")
+        .where("status", "=", "active")
+        .executeTakeFirstOrThrow();
+      return Number(row.n);
+    },
     createAccount: async (account) => {
       const id = key(account.id);
       if (id === null) throw new Error("Account ids must be GUIDs");

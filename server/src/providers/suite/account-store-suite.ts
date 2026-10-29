@@ -124,6 +124,15 @@ export function describeLocalAccountSuite(
       expect(await store.accounts.account(disabled.user.id)).toMatchObject({ status: "disabled" });
     });
 
+    it("counts the active admins, not the invited or disabled ones", async () => {
+      const before = await store.accounts.countActiveAdmins();
+      await store.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+      await store.accounts.createAccount(newAccount({ instanceRole: "admin", status: "invited" }));
+      await store.accounts.createAccount(newAccount({ instanceRole: "admin", status: "disabled" }));
+      await store.accounts.createAccount(newAccount({ instanceRole: "user" }));
+      expect(await store.accounts.countActiveAdmins()).toBe(before + 1);
+    });
+
     it("notes the last sign-in", async () => {
       const account = await store.accounts.createAccount(newAccount());
       await store.accounts.recordSignIn(account.user.id, AT);

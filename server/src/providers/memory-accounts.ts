@@ -77,6 +77,11 @@ export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): Memo
 
   const accounts: LocalAccountStore = {
     countAccounts: () => Promise.resolve(byId.size),
+    countActiveAdmins: () =>
+      Promise.resolve(
+        [...byId.values()].filter((a) => a.instanceRole === "admin" && a.status === "active")
+          .length,
+      ),
     createAccount: (account: NewLocalAccount) => {
       const id = account.id.toLowerCase();
       if (!GUID.test(id)) return Promise.reject(new Error("Account ids must be GUIDs"));

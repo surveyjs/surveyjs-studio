@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { SignInParameters } from "./transaction.js";
+import type { SignInParameters, SignInTransaction } from "./transaction.js";
 
 /** The signed-in identity, as the identity provider states it. */
 export interface IdentityClaims {
@@ -14,8 +14,8 @@ export interface IdentityClaims {
  * provider only builds the browser redirect and checks what comes back.
  */
 export interface IdentityProvider {
-  /** Where to send the browser to sign in. */
-  authorizationUrl(params: SignInParameters): Promise<URL>;
+  /** Where to send the browser to sign in (`returnTo`: only the local provider's page uses it). */
+  authorizationUrl(params: SignInTransaction): Promise<URL>;
   /** Exchanges the callback parameters for the signed-in identity. Throws a 400 AppError on a bad code. */
   finishSignIn(callback: URL, params: SignInParameters): Promise<IdentityClaims>;
   /** The URL the browser opens after local sign-out. */

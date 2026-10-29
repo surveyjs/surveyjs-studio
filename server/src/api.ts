@@ -142,7 +142,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
     const onRequest =
       readOnly && refusedWhenReadOnly(op)
         ? refuseReadOnly
-        : authenticationHook(op.security, authentication);
+        : authenticationHook(op.security, authentication, operationId);
     // The operation is known only here: its log lines, "request completed" included, carry it.
     const tagOperation = (request: FastifyRequest, reply: FastifyReply, done: () => void) => {
       request.log = request.log.child({ operationId });
