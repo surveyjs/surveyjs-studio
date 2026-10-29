@@ -107,6 +107,7 @@ export function Header(props: HeaderProps) {
                   licenceWarning={props.licenceWarning}
                   projectsLink={closing(props.projectsLink)}
                   changePasswordLink={closing(props.changePasswordLink)}
+                  usersLink={closing(props.usersLink)}
                 />
               </ul>
             </div>
@@ -209,6 +210,7 @@ function TopBarMenu(props: HeaderProps) {
             licenceWarning={props.licenceWarning}
             projectsLink={props.projectsLink}
             changePasswordLink={props.changePasswordLink}
+            usersLink={props.usersLink}
             twinkling={twinkling}
           />
 

@@ -12,29 +12,42 @@ const PAGE_SIZE = 200;
 export const projectKeys = {
   all: ["projects"] as const,
   list: () => ["projects", "list"] as const,
+  /** An instance admin's list of every project (`scope=all`). */
+  allList: () => ["projects", "all"] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   /** Under `all`: every project or member write refreshes the open member lists too (R24). */
   members: (projectId: string) => ["projects", "members", projectId.toLowerCase()] as const,
 };
 
-/** Every project of the user, as one array: follows `nextCursor` until the last page. */
-export const projectsQueryOptions = queryOptions({
-  queryKey: projectKeys.list(),
-  queryFn: async ({ signal }) => {
-    const projects: Project[] = [];
-    let cursor: string | undefined;
-    do {
-      const { data, error, response } = await client.GET("/projects", {
-        params: { query: { limit: PAGE_SIZE, cursor } },
-        signal,
-      });
-      if (!response.ok || data === undefined) throw toApiError(error, response);
-      projects.push(...data.items);
-      cursor = data.nextCursor ?? undefined;
-    } while (cursor !== undefined);
-    return projects;
-  },
-});
+/** Every project of the scope, as one array: follows `nextCursor` until the last page. */
+async function allProjects(scope: "member" | "all", signal: AbortSignal): Promise<Project[]> {
+  const projects: Project[] = [];
+  let cursor: string | undefined;
+  do {
+    const { data, error, response } = await client.GET("/projects", {
+      params: { query: { limit: PAGE_SIZE, cursor, ...(scope === "all" && { scope }) } },
+      signal,
+    });
+    if (!response.ok || data === undefined) throw toApiError(error, response);
+    projects.push(...data.items);
+    cursor = data.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return projects;
+}
+
+/** The user's projects (`member`), or every project of the instance (`all`, instance admins). */
+const projectListQueryOptions = (scope: "member" | "all") =>
+  queryOptions({
+    queryKey: scope === "all" ? projectKeys.allList() : projectKeys.list(),
+    queryFn: ({ signal }) => allProjects(scope, signal),
+  });
+
+/** Every project of the user (My Surveys' selector, Move, the Projects page). */
+export const projectsQueryOptions = projectListQueryOptions("member");
+
+/** The Projects page's list: every project for an instance admin (S17), else the user's. */
+export const projectsPageQueryOptions = (instanceRole: string | undefined) =>
+  projectListQueryOptions(instanceRole === "admin" ? "all" : "member");
 
 export const projectQueryOptions = (projectId: string) =>
   queryOptions({

@@ -63,6 +63,12 @@ function PrivateLayout() {
         navigate: () => void navigate({ to: "/change-password" }),
       },
     }),
+    ...(user.instanceRole === "admin" && {
+      usersLink: {
+        href: "/admin/users",
+        navigate: () => void navigate({ to: "/admin/users" }),
+      },
+    }),
     children: <Outlet />,
   });
 }

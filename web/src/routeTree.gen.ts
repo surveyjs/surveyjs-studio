@@ -17,6 +17,7 @@ import { Route as PrivateChangePasswordRouteImport } from './routes/_private/cha
 import { Route as PrivateProjectsRouteImport } from './routes/_private/projects'
 import { Route as ResultsSurveyIdRouteImport } from './routes/results/$surveyId'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
+import { Route as PrivateAdminUsersRouteImport } from './routes/_private/admin/users'
 import { Route as PrivateSurveysSurveyIdEditRouteImport } from './routes/_private/surveys/$surveyId/edit'
 import { Route as PrivateSurveysSurveyIdHistoryRouteImport } from './routes/_private/surveys/$surveyId/history'
 import { Route as PrivateSurveysSurveyIdResultsRouteImport } from './routes/_private/surveys/$surveyId/results'
@@ -68,6 +69,13 @@ const SSurveyIdRoute = SSurveyIdRouteImport.update({
   path: '/s/$surveyId',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/s/$surveyId.lazy').then((d) => d.Route))
+const PrivateAdminUsersRoute = PrivateAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => PrivateRoute,
+} as any).lazy(() =>
+  import('./routes/_private/admin/users.lazy').then((d) => d.Route),
+)
 const PrivateSurveysSurveyIdEditRoute =
   PrivateSurveysSurveyIdEditRouteImport.update({
     id: '/surveys/$surveyId/edit',
@@ -107,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/admin/users': typeof PrivateAdminUsersRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
   '/surveys/$surveyId/history': typeof PrivateSurveysSurveyIdHistoryRoute
   '/surveys/$surveyId/results': typeof PrivateSurveysSurveyIdResultsRoute
@@ -119,6 +128,7 @@ export interface FileRoutesByTo {
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/': typeof PrivateIndexRoute
+  '/admin/users': typeof PrivateAdminUsersRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
   '/surveys/$surveyId/history': typeof PrivateSurveysSurveyIdHistoryRoute
   '/surveys/$surveyId/results': typeof PrivateSurveysSurveyIdResultsRoute
@@ -133,6 +143,7 @@ export interface FileRoutesById {
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/_private/': typeof PrivateIndexRoute
+  '/_private/admin/users': typeof PrivateAdminUsersRoute
   '/_private/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
   '/_private/surveys/$surveyId/history': typeof PrivateSurveysSurveyIdHistoryRoute
   '/_private/surveys/$surveyId/results': typeof PrivateSurveysSurveyIdResultsRoute
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
+    | '/admin/users'
     | '/surveys/$surveyId/edit'
     | '/surveys/$surveyId/history'
     | '/surveys/$surveyId/results'
@@ -159,6 +171,7 @@ export interface FileRouteTypes {
     | '/results/$surveyId'
     | '/s/$surveyId'
     | '/'
+    | '/admin/users'
     | '/surveys/$surveyId/edit'
     | '/surveys/$surveyId/history'
     | '/surveys/$surveyId/results'
@@ -172,6 +185,7 @@ export interface FileRouteTypes {
     | '/results/$surveyId'
     | '/s/$surveyId'
     | '/_private/'
+    | '/_private/admin/users'
     | '/_private/surveys/$surveyId/edit'
     | '/_private/surveys/$surveyId/history'
     | '/_private/surveys/$surveyId/results'
@@ -243,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SSurveyIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_private/admin/users': {
+      id: '/_private/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof PrivateAdminUsersRouteImport
+      parentRoute: typeof PrivateRoute
+    }
     '/_private/surveys/$surveyId/edit': {
       id: '/_private/surveys/$surveyId/edit'
       path: '/surveys/$surveyId/edit'
@@ -271,6 +292,7 @@ interface PrivateRouteChildren {
   PrivateChangePasswordRoute: typeof PrivateChangePasswordRoute
   PrivateProjectsRoute: typeof PrivateProjectsRoute
   PrivateIndexRoute: typeof PrivateIndexRoute
+  PrivateAdminUsersRoute: typeof PrivateAdminUsersRoute
   PrivateSurveysSurveyIdEditRoute: typeof PrivateSurveysSurveyIdEditRoute
   PrivateSurveysSurveyIdHistoryRoute: typeof PrivateSurveysSurveyIdHistoryRoute
   PrivateSurveysSurveyIdResultsRoute: typeof PrivateSurveysSurveyIdResultsRoute
@@ -280,6 +302,7 @@ const PrivateRouteChildren: PrivateRouteChildren = {
   PrivateChangePasswordRoute: PrivateChangePasswordRoute,
   PrivateProjectsRoute: PrivateProjectsRoute,
   PrivateIndexRoute: PrivateIndexRoute,
+  PrivateAdminUsersRoute: PrivateAdminUsersRoute,
   PrivateSurveysSurveyIdEditRoute: PrivateSurveysSurveyIdEditRoute,
   PrivateSurveysSurveyIdHistoryRoute: PrivateSurveysSurveyIdHistoryRoute,
   PrivateSurveysSurveyIdResultsRoute: PrivateSurveysSurveyIdResultsRoute,

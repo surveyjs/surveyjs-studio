@@ -11,6 +11,7 @@ export function PlainShell({
   signOutError,
   projectsLink,
   changePasswordLink,
+  usersLink,
   children,
 }: ShellProps) {
   return (
@@ -20,6 +21,11 @@ export function PlainShell({
         {projectsLink && (
           <a href={projectsLink.href} onClick={followAppLink(projectsLink)}>
             Projects
+          </a>
+        )}
+        {usersLink && (
+          <a href={usersLink.href} onClick={followAppLink(usersLink)}>
+            Users
           </a>
         )}
         {Object.keys(links).length > 0 && (

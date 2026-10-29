@@ -2,7 +2,7 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  projectsQueryOptions,
+  projectsPageQueryOptions,
   refreshProjects,
   useCreateProject,
   useRenameProject,
@@ -24,7 +24,8 @@ const privateRoute = getRouteApi("/_private");
  */
 export function ProjectsPage() {
   const { user } = privateRoute.useRouteContext();
-  const { data: projects } = useSuspenseQuery(projectsQueryOptions);
+  // An instance admin sees every project of the instance (S17).
+  const { data: projects } = useSuspenseQuery(projectsPageQueryOptions(user.instanceRole));
   const queryClient = useQueryClient();
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
