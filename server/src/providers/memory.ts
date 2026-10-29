@@ -33,6 +33,7 @@ import {
   isAfterHistory,
   memberListOrder,
   projectListOrder,
+  projectRecordOrder,
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryLocalAccounts } from "./memory-accounts.js";
@@ -399,6 +400,18 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
             .map(membershipOf)
             .sort(projectListOrder),
         ),
+      listProjects: () =>
+        Promise.resolve(
+          [...projects.keys()]
+            .filter((projectId) => membershipsOf(projectId).length > 0)
+            .map(projectRecord)
+            .sort(projectRecordOrder),
+        ),
+      getProject: (projectId) => {
+        const key = lower(projectId);
+        const found = GUID.test(key) && projects.has(key) && membershipsOf(key).length > 0;
+        return Promise.resolve(found ? projectRecord(key) : null);
+      },
       getUserProject: (userId, projectId) => {
         const found = memberships.find(
           (m) => m.userId === lower(userId) && m.projectId === lower(projectId),

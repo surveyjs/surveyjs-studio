@@ -8,6 +8,7 @@ import type {
   NewSurvey,
   ProjectMember,
   ProjectMembership,
+  ProjectRecord,
   ProjectRole,
   SurveyChanges,
   SurveyDefinition,
@@ -347,7 +348,19 @@ export interface LocalAccount {
   readonly sessionEpoch: number;
   /** ISO 8601 UTC; null before the first sign-in. */
   readonly lastSignInAt: string | null;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
 }
+
+/** What an instance admin may change of an account (updateUser). */
+export interface AccountChange {
+  readonly instanceRole?: InstanceRole;
+  readonly status?: "active" | "disabled";
+}
+
+export type AccountUpdate =
+  | { readonly outcome: "updated"; readonly account: LocalAccount }
+  | { readonly outcome: "not-found" | "last-instance-admin" };
 
 export interface NewLocalAccount {
   readonly id: string;
@@ -377,6 +390,25 @@ export interface LocalAccountStore {
   account(id: string): Promise<LocalAccount | null>;
   /** null for an unknown email. */
   accountByEmail(email: string): Promise<LocalAccount | null>;
+  /** Every account, ordered by email (lower-case, code-point order). */
+  listAccounts(): Promise<LocalAccount[]>;
+  /**
+   * Changes the role and the status (`nextStatus`), atomically with the last-instance-admin rule
+   * (`decideAccountChange`; two changes at once cannot both take the last admin away). Disabling
+   * an account that was not disabled raises its session epoch.
+   */
+  updateAccount(id: string, change: AccountChange): Promise<AccountUpdate>;
+  /** Deletes the account and its links, under the same rule. */
+  deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
+  /**
+   * An admin's reset, atomically: clears the password, raises the epoch, marks the account's
+   * unused links used, and stores the new link (`invitation` for an invited account, else
+   * `reset`). Returns the new epoch; null when there is no such account (nothing stored).
+   */
+  resetPassword(
+    id: string,
+    link: { readonly tokenHash: string; readonly createdAt: string; readonly expiresAt: string },
+  ): Promise<number | null>;
   /**
    * Stores a new password hash and the must-change flag, makes an invited account active, and
    * raises the session epoch. Returns the new epoch; null when there is no such account.
@@ -397,10 +429,16 @@ export interface LocalAccountStore {
     readonly expiresAt: string;
   }): Promise<void>;
   /**
-   * Uses a link once: when it is unused and not expired at `at`, marks it used and returns its user
-   * id; otherwise null. Two uses at the same time cannot both succeed.
+   * Uses a link once, atomically with setting the password: when it is unused and not expired at
+   * `at`, marks it used and stores `passwordHash` as `setPassword` does (no must-change flag);
+   * returns the user id and the new epoch. Otherwise null, and nothing changes. Two uses at the
+   * same time cannot both succeed.
    */
-  usePasswordLink(tokenHash: string, at: string): Promise<string | null>;
+  usePasswordLink(
+    tokenHash: string,
+    at: string,
+    passwordHash: string,
+  ): Promise<{ readonly userId: string; readonly epoch: number } | null>;
 }
 
 /** What `eraseMember` decided and did (R11). */
@@ -422,6 +460,13 @@ export interface ProjectStore {
   listUserProjects(userId: string): Promise<ProjectMembership[]>;
   /** The user's membership of that project; null when not a member or no such project. */
   getUserProject(userId: string, projectId: string): Promise<ProjectMembership | null>;
+  /**
+   * Every project with a member, in project list order (an instance admin's view, S17). Member
+   * counts and owners as `listUserProjects` gives them.
+   */
+  listProjects(): Promise<ProjectRecord[]>;
+  /** The project, whoever asks (an instance admin); null when none, or for a non-GUID id. */
+  getProject(projectId: string): Promise<ProjectRecord | null>;
   /**
    * The project's visible members (R11: rows whose user is missing are skipped), one entry per user,
    * ordered by display name ignoring case (lower-cased, code-point order), then user id (R16). [] for

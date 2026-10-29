@@ -1,4 +1,5 @@
 import type { Kysely, Selectable } from "kysely";
+import { decideAccountChange, nextStatus } from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type { LocalAccount, LocalAccountStore, UserDirectory } from "../providers/types.js";
@@ -23,6 +24,7 @@ const accountOf = (row: UserRow): LocalAccount => ({
   mustChangePassword: flagOf(row.must_change_password),
   sessionEpoch: Number(row.session_epoch),
   lastSignInAt: row.last_sign_in_at === null ? null : isoOf(row.last_sign_in_at),
+  createdAt: isoOf(row.created_at),
 });
 
 /** A GUID as stored (lower-case); null for a value that is not a GUID, which no row can have. */
@@ -65,6 +67,52 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
     const wanted = email.toLowerCase();
     if (wanted.trim() === "") return undefined;
     return db.selectFrom("users").selectAll().where("email", "=", wanted).executeTakeFirst();
+  };
+
+  /**
+   * Inside a transaction: locks the active admins (PostgreSQL; SQLite runs one transaction at a
+   * time) and the target, and returns the target's row and the active admins' count.
+   */
+  const lockForAdminRule = async (trx: Kysely<DatabaseSchema>, userId: string) => {
+    let admins = trx
+      .selectFrom("users")
+      .select("id")
+      .where("instance_role", "=", "admin")
+      .where("status", "=", "active");
+    let target = trx.selectFrom("users").selectAll().where("id", "=", userId);
+    if (database.dialect === "postgres") {
+      admins = admins.forUpdate();
+      target = target.forUpdate();
+    }
+    const activeAdmins = (await admins.execute()).length;
+    return { row: await target.executeTakeFirst(), activeAdmins };
+  };
+
+  /** Stores the hash, activates an invited account and raises the epoch, in one statement. */
+  const storePassword = async (
+    handle: Kysely<DatabaseSchema>,
+    userId: string,
+    passwordHash: string,
+    mustChange: boolean,
+  ): Promise<number | null> => {
+    // One statement: the epoch is raised where it is, so two changes at once both count.
+    const row = await handle
+      .updateTable("users")
+      .set((eb) => ({
+        password_hash: passwordHash,
+        must_change_password: mustChange,
+        session_epoch: eb("session_epoch", "+", 1),
+        status: eb
+          .case()
+          .when("status", "=", "invited")
+          .then("active" as const)
+          .else(eb.ref("status"))
+          .end(),
+      }))
+      .where("id", "=", userId)
+      .returning("session_epoch")
+      .executeTakeFirst();
+    return row ? Number(row.session_epoch) : null;
   };
 
   const accounts: LocalAccountStore = {
@@ -112,27 +160,95 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
       const row = await byEmail(email);
       return row ? accountOf(row) : null;
     },
+    listAccounts: async () => {
+      const rows = await db.selectFrom("users").selectAll().execute();
+      // Sorted here: SQL collations differ between the dialects; emails are stored lower-case.
+      return rows
+        .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
+        .map(accountOf);
+    },
+    updateAccount: async (id, change) => {
+      const userId = key(id);
+      if (userId === null) return { outcome: "not-found" };
+      return db.transaction().execute(async (trx) => {
+        const { row, activeAdmins } = await lockForAdminRule(trx, userId);
+        if (!row) return { outcome: "not-found" as const };
+        const after = {
+          instanceRole: change.instanceRole ?? row.instance_role,
+          status: nextStatus(row.status, change.status, row.password_hash !== null),
+        };
+        const facts = { instanceRole: row.instance_role, status: row.status };
+        if (decideAccountChange(facts, after, activeAdmins) === "last-instance-admin") {
+          return { outcome: "last-instance-admin" as const };
+        }
+        const disabling = after.status === "disabled" && row.status !== "disabled";
+        const updated = await trx
+          .updateTable("users")
+          .set((eb) => ({
+            instance_role: after.instanceRole,
+            status: after.status,
+            session_epoch: disabling ? eb("session_epoch", "+", 1) : eb.ref("session_epoch"),
+          }))
+          .where("id", "=", userId)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        return { outcome: "updated" as const, account: accountOf(updated) };
+      });
+    },
+    deleteAccount: async (id) => {
+      const userId = key(id);
+      if (userId === null) return "not-found";
+      return db.transaction().execute(async (trx) => {
+        const { row, activeAdmins } = await lockForAdminRule(trx, userId);
+        if (!row) return "not-found" as const;
+        const facts = { instanceRole: row.instance_role, status: row.status };
+        if (decideAccountChange(facts, null, activeAdmins) === "last-instance-admin") {
+          return "last-instance-admin" as const;
+        }
+        await trx.deleteFrom("password_links").where("user_id", "=", userId).execute();
+        await trx.deleteFrom("users").where("id", "=", userId).execute();
+        return "deleted" as const;
+      });
+    },
+    resetPassword: async (id, { tokenHash, createdAt, expiresAt }) => {
+      const userId = key(id);
+      if (userId === null) return null;
+      return db.transaction().execute(async (trx) => {
+        const row = await trx
+          .updateTable("users")
+          .set((eb) => ({
+            password_hash: null,
+            must_change_password: false,
+            session_epoch: eb("session_epoch", "+", 1),
+          }))
+          .where("id", "=", userId)
+          .returning(["session_epoch", "status"])
+          .executeTakeFirst();
+        if (!row) return null;
+        await trx
+          .updateTable("password_links")
+          .set({ used_at: isoOf(createdAt) })
+          .where("user_id", "=", userId)
+          .where("used_at", "is", null)
+          .execute();
+        await trx
+          .insertInto("password_links")
+          .values({
+            token_hash: tokenHash,
+            user_id: userId,
+            purpose: row.status === "invited" ? "invitation" : "reset",
+            created_at: isoOf(createdAt),
+            expires_at: isoOf(expiresAt),
+            used_at: null,
+          })
+          .execute();
+        return Number(row.session_epoch);
+      });
+    },
     setPassword: async (id, passwordHash, { mustChange }) => {
       const userId = key(id);
       if (userId === null) return null;
-      // One statement: the epoch is raised where it is, so two changes at once both count.
-      const row = await db
-        .updateTable("users")
-        .set((eb) => ({
-          password_hash: passwordHash,
-          must_change_password: mustChange,
-          session_epoch: eb("session_epoch", "+", 1),
-          status: eb
-            .case()
-            .when("status", "=", "invited")
-            .then("active" as const)
-            .else(eb.ref("status"))
-            .end(),
-        }))
-        .where("id", "=", userId)
-        .returning("session_epoch")
-        .executeTakeFirst();
-      return row ? Number(row.session_epoch) : null;
+      return storePassword(db, userId, passwordHash, mustChange);
     },
     recordSignIn: async (id, at) => {
       const userId = key(id);
@@ -156,18 +272,23 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         })
         .execute();
     },
-    // One statement, so two uses at the same time cannot both find the link unused.
-    usePasswordLink: async (tokenHash, at) => {
+    // The link is used up by one statement, so two uses at the same time cannot both find it
+    // unused; the password is stored in the same transaction, so a failure keeps the link.
+    usePasswordLink: async (tokenHash, at, passwordHash) => {
       const when = isoOf(at);
-      const row = await db
-        .updateTable("password_links")
-        .set({ used_at: when })
-        .where("token_hash", "=", tokenHash)
-        .where("used_at", "is", null)
-        .where("expires_at", ">", when)
-        .returning("user_id")
-        .executeTakeFirst();
-      return row?.user_id ?? null;
+      return db.transaction().execute(async (trx) => {
+        const link = await trx
+          .updateTable("password_links")
+          .set({ used_at: when })
+          .where("token_hash", "=", tokenHash)
+          .where("used_at", "is", null)
+          .where("expires_at", ">", when)
+          .returning("user_id")
+          .executeTakeFirst();
+        if (!link) return null;
+        const epoch = await storePassword(trx, link.user_id, passwordHash, false);
+        return epoch === null ? null : { userId: link.user_id, epoch };
+      });
     },
   };
 

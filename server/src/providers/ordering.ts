@@ -2,6 +2,7 @@ import type {
   HistoryEntryRecord,
   ProjectMember,
   ProjectMembership,
+  ProjectRecord,
   SurveyRecord,
 } from "../domain/types.js";
 import type { HistoryPosition, ResponsePosition, SurveyPosition } from "./types.js";
@@ -33,6 +34,10 @@ export function isAfter(survey: SurveyRecord, position: SurveyPosition): boolean
 export const projectListOrder = (a: ProjectMembership, b: ProjectMembership): number =>
   compare(a.project.name.toLowerCase(), b.project.name.toLowerCase()) ||
   compare(a.project.id, b.project.id);
+
+/** Project list order for bare records (an instance admin's list of every project). */
+export const projectRecordOrder = (a: ProjectRecord, b: ProjectRecord): number =>
+  compare(a.name.toLowerCase(), b.name.toLowerCase()) || compare(a.id, b.id);
 
 /** Member order (R16): display name ignoring case (lower-cased, as projects), then user id. */
 export const memberListOrder = (a: ProjectMember, b: ProjectMember): number =>

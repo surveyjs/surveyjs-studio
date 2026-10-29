@@ -212,10 +212,14 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
       // The rules first: a weak password does not use the link up.
       const problem = passwordProblem(password);
       if (problem !== null) throw weakPassword(problem);
-      const userId = await accounts.usePasswordLink(linkTokenHash(token), nowIso());
-      if (userId === null) throw linkInvalid();
-      await accounts.setPassword(userId, await hashPassword(password), { mustChange: false });
-      sessionCheck.forget(userId);
+      // The link is used and the password stored together: a failed write keeps the link.
+      const used = await accounts.usePasswordLink(
+        linkTokenHash(token),
+        nowIso(),
+        await hashPassword(password),
+      );
+      if (used === null) throw linkInvalid();
+      sessionCheck.forget(used.userId);
       return reply.code(204).send();
     },
   };

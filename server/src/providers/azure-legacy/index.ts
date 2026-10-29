@@ -8,6 +8,7 @@ import type {
   NewSurvey,
   ProjectMember,
   ProjectMembership,
+  ProjectRecord,
   SaveOutcome,
   SurveyChanges,
   SurveyDefinition,
@@ -24,6 +25,7 @@ import {
   isAfterHistory,
   memberListOrder,
   projectListOrder,
+  projectRecordOrder,
   surveyListOrder,
 } from "../ordering.js";
 import type {
@@ -171,6 +173,12 @@ const PROJECT_MEMBERS_SELECT =
   "o.happendat AS orghappendat " +
   "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid " +
   "WHERE m.organizationid IN (SELECT organizationid FROM OrganizationUsers WHERE userid = @user)";
+
+/** Every membership row with its project's columns: an instance admin's view (S17). */
+const ALL_PROJECT_MEMBERS_SELECT =
+  "SELECT m.id, m.organizationid, m.userid, m.role, m.happendat, o.name, " +
+  "o.happendat AS orghappendat " +
+  "FROM OrganizationUsers m JOIN Organizations o ON o.id = m.organizationid";
 
 /** The membership rows of one project whose user exists, with the user's columns (R11). */
 const PROJECT_MEMBER_USERS_SELECT =
@@ -366,6 +374,21 @@ export function createAzureLegacyProviders(
       memberships.push(...mapRows(own, (row) => membershipFromLegacy(project, row)));
     }
     return memberships.sort(projectListOrder);
+  }
+
+  /** The projects of the rows (every row of each project), in project list order. */
+  function projectsFromRows(rows: readonly ProjectMemberQueryRow[]): ProjectRecord[] {
+    const projectOf = (row: ProjectMemberQueryRow) => row.organizationid.toLowerCase();
+    return [...new Set(rows.map(projectOf))]
+      .map((projectId) => {
+        const members = rows.filter((row) => projectOf(row) === projectId);
+        const [first] = members as [ProjectMemberQueryRow]; // never empty: projectId comes from rows
+        return projectFromLegacy(
+          { id: first.organizationid, name: first.name, happendat: first.orghappendat },
+          members,
+        );
+      })
+      .sort(projectRecordOrder);
   }
 
   /**
@@ -853,6 +876,22 @@ export function createAzureLegacyProviders(
       },
 
       getUserProject,
+
+      async listProjects() {
+        return projectsFromRows(
+          await select<ProjectMemberQueryRow>("all projects", ALL_PROJECT_MEMBERS_SELECT),
+        );
+      },
+
+      async getProject(projectId) {
+        if (!isGuid(projectId)) return null;
+        const rows = await select<ProjectMemberQueryRow>(
+          "project",
+          `${ALL_PROJECT_MEMBERS_SELECT} WHERE m.organizationid = @project`,
+          (request) => request.input("project", sql.UniqueIdentifier, projectId),
+        );
+        return projectsFromRows(rows)[0] ?? null;
+      },
 
       async listMembers(projectId) {
         if (!isGuid(projectId)) return [];
