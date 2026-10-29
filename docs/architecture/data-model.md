@@ -126,8 +126,9 @@ added again is not the owner again.
 `updated_at`; primary key (`project_id`, `user_id`). One row per user: the hosted migration merges the legacy store's
 repeated rows (an admin row wins). Index `project_members_user` serves a user's projects.
 
-Member users are not in the database yet: the project store asks the provider set's **user directory** (the memory one
-until SH Step 4) whether each member's user exists and what it is called. A row whose user the directory does not know
+The project store asks the provider set's **user directory** whether each member's user exists and what it is called:
+with `USER_DIRECTORY=local` one batched read of `users` on the store's own transaction, otherwise the memory
+directory. A row whose user the directory does not know
 is an orphan (R11): counted in `memberCount`, neither listed nor an admin. Projects and members are sorted in the code
 with the shared orderings, because SQL's `lower()` and collations differ from JavaScript's.
 
@@ -156,18 +157,41 @@ Index `files_survey` (`survey_id`, `kind`) serves `usage` (the quota), per-surve
 file's row is written before its bytes and read again after them (a delete in between removes the bytes too); a delete
 removes the bytes, then the rows, so a failed delete can be retried.
 
+### `users` and `password_links` (0004)
+
+The accounts of the local user directory (`USER_DIRECTORY=local`,
+[ADR 0026](../adr/0026-revoking-stateless-sessions-with-an-epoch.md)). `pnpm seed` loads the fixture users here as
+active accounts without a password (a blocked one disabled), also when the directory is `memory`.
+
+| Column                 | Type              | Notes                                                                                     |
+| ---------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| `id`                   | GUID, primary key | The user id of projects, members and sessions                                             |
+| `email`                | text, unique      | Lower-case                                                                                |
+| `display_name`         | text              |                                                                                           |
+| `instance_role`        | text              | `admin` or `user`                                                                         |
+| `status`               | text              | `invited`, `active` or `disabled`. Only `active` signs in; `disabled` is a blocked user   |
+| `password_hash`        | text, null        | An argon2id PHC string; null before a password is set                                     |
+| `must_change_password` | boolean           | The first admin from `ADMIN_PASSWORD`: every operation but three answers `401` until then |
+| `session_epoch`        | integer           | Starts at 0; raised by each password change and set-password link. Sessions must match it |
+| `created_at`           | timestamp         |                                                                                           |
+| `last_sign_in_at`      | timestamp, null   | The last password sign-in (not written under `READ_ONLY=true`)                            |
+
+**`password_links`**: `token_hash` (text, primary key: the SHA-256 of the token, base64url; the token itself is never
+stored), `user_id` (FK to `users`, cascade), `purpose` (`setup`, `invitation` or `reset`), `created_at`,
+`expires_at`, `used_at` (null until used). Index `password_links_user` (`user_id`). A link is used by one
+`UPDATE … WHERE used_at IS NULL AND expires_at > now RETURNING user_id`, so two uses at once cannot both succeed.
+The first admin's setup link is not a row: there is no account to point at yet, and the token lives in the server's
+memory.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
 "HM" the hosted-migration plan.
 
-### Users, identities and invitations (SH Steps 4 and 8, HM Step 2: `UserDirectory`)
+### Identities and invitations (SH Step 8, HM Step 2: `UserDirectory`)
 
-**`users`**: `id` (GUID, primary key), `email` (lower-case, unique), `display_name`, `instance_role` (`admin` or
-`user`), `status` (`invited`, `active` or `disabled`), `password_hash` (null without a password), `must_change_password`
-(boolean), `session_epoch` (integer), `blocked` (boolean; the hosted profile from UserInfo, ADR 0022), `created_at`,
-`last_sign_in_at` (null). The local directory (modes 2b and 3) and the hosted `profiles` directory (mode 1.3) both
-keep their users here; columns one of them does not use stay at their defaults.
+The hosted `profiles` directory (mode 1.3) keeps its users in `users` too (built above); its blocked flag from
+UserInfo (ADR 0022) is `status` `disabled`, and the columns it does not use stay at their defaults.
 
 **`user_identities`** (SH Step 8): `provider` (`surveyjs`, `google`, `github`, `facebook`), `subject`, `user_id` (FK,
 cascade), `email`, `email_verified`; primary key (`provider`, `subject`).
@@ -199,14 +223,16 @@ Empty and unused in the self-hosted image.
 
 ## Mapping to the provider interfaces
 
-| Interface (`server/src/providers/types.ts`) | Tables                                                   | State                    |
-| ------------------------------------------- | -------------------------------------------------------- | ------------------------ |
-| `SurveyStore`                               | `surveys`, `survey_history`                              | Built                    |
-| `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built                    |
-| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built                    |
-| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built                    |
-| `FileStore`                                 | `files` and the byte store                               | Built                    |
-| `UserDirectory`                             | `users`, `user_identities`, `invitations`                | SH Steps 4, 8; HM Step 2 |
+| Interface (`server/src/providers/types.ts`) | Tables                                                   | State                |
+| ------------------------------------------- | -------------------------------------------------------- | -------------------- |
+| `SurveyStore`                               | `surveys`, `survey_history`                              | Built                |
+| `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built                |
+| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built                |
+| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built                |
+| `FileStore`                                 | `files` and the byte store                               | Built                |
+| `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`                                | Built (`local`)      |
+| `UserDirectory` (identities, invitations)   | `user_identities`, `invitations`                         | SH Step 8; HM Step 2 |
 
-Until SH Step 4 the SQL providers keep the **users** in memory (the memory provider's, seeded by `MEMORY_SEED`). The
-server says so at start-up and refuses `NODE_ENV=production` with them.
+With `USER_DIRECTORY=memory` (the default for `sqlite` and `postgres`) the SQL providers keep the **users** in memory
+(the memory provider's, seeded by `MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production`
+with them; `USER_DIRECTORY=local` keeps them in `users`.

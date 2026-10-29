@@ -107,9 +107,10 @@ const probe = (database: SqlDatabase): Promise<Check> =>
 
 /**
  * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views,
- * projects and file metadata in the database, file bytes in `bytes`. The users are still the
- * memory provider's (`fallbackSeed`) until Step 4, so they are lost on restart. Member users are
- * looked up in that directory. `close` closes the database.
+ * projects and file metadata in the database, file bytes in `bytes`. With `localAccounts` the users
+ * are the database's local accounts too; otherwise they are the memory provider's (`fallbackSeed`)
+ * and lost on restart. Member users are looked up in whichever directory it is. `close` closes
+ * the database.
  */
 export function createSqlProviders(
   database: SqlDatabase,

@@ -10,6 +10,9 @@ import {
 } from "../projects/rules.js";
 import { memberListOrder, projectListOrder } from "../providers/ordering.js";
 import type { ProjectStore, UserDirectory } from "../providers/types.js";
+import type { SqlDatabase } from "./database.js";
+import type { DatabaseSchema } from "./schema.js";
+import { isoOf } from "./values.js";
 
 /**
  * The users of `ids` that exist, by lower-case id. `db` is the caller's: inside a transaction it
@@ -27,9 +30,6 @@ export const directoryLookup =
     const found = await Promise.all([...new Set(ids)].map((id) => users.getUser(id)));
     return new Map(found.flatMap((user) => (user ? [[user.id, user] as const] : [])));
   };
-import type { SqlDatabase } from "./database.js";
-import type { DatabaseSchema } from "./schema.js";
-import { isoOf } from "./values.js";
 
 /** A GUID as stored (lower-case); null for a value that is not a GUID, which no row can have. */
 const key = (id: string): string | null => (GUID.test(id) ? id.toLowerCase() : null);
