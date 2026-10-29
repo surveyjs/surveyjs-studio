@@ -16,6 +16,9 @@ export const CLIENT_ROUTES: readonly RegExp[] = Object.freeze([
   route(`/surveys/${SEGMENT}/results`),
   route(`/s/${SEGMENT}`),
   route(`/results/${SEGMENT}`),
+  route("/sign-in"),
+  route("/set-password"),
+  route("/change-password"),
 ]);
 
 export function isClientRoute(pathname: string): boolean {

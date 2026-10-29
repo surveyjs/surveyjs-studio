@@ -35,6 +35,9 @@ describe("isClientRoute", () => {
     "/surveys/abc/results",
     "/s/abc",
     "/results/abc",
+    "/sign-in",
+    "/set-password",
+    "/change-password",
   ])("%s is a client route", (pathname) => {
     expect(isClientRoute(pathname)).toBe(true);
   });

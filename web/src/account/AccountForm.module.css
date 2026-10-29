@@ -1,0 +1,28 @@
+/* The sign-in, set-password and change-password forms: one column of fields. Colours and type are
+   the site's (color-styles.scss, text-styles.scss); the plain shell gets the same layout. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 400px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.error {
+  color: #e60a3e; /* $Special--Red */
+  font-weight: 600;
+}
+
+.form > button {
+  align-self: flex-start;
+}
