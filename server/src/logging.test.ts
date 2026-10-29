@@ -35,6 +35,11 @@ describe("redactUrl", () => {
     );
   });
 
+  it("redacts the tokens of set-password links", () => {
+    expect(redactUrl("/set-password?setup=t-1")).toBe("/set-password?setup=[redacted]");
+    expect(redactUrl("/set-password?token=t-2&x=1")).toBe("/set-password?token=[redacted]&x=1");
+  });
+
   it("also finds percent-encoded names, and keeps other URLs as they are", () => {
     expect(redactUrl("/cb?co%64e=c-1&%73tate")).toBe("/cb?co%64e=[redacted]&%73tate=[redacted]");
     expect(redactUrl("/surveys?view=1&codes=2")).toBe("/surveys?view=1&codes=2");

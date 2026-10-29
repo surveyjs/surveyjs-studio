@@ -57,11 +57,13 @@ A password needs **at least 12 characters**, and it must not be a common one (su
 
 ### Changing your password
 
-Choose **Change password** in the header (the plain shell), or open `/change-password`. Enter
-your current password, then the new one twice, and choose **Change password**.
+Choose **Change password** in the account menu (in the plain shell: in the header), or open
+`/change-password`. Enter your current password, then the new one twice, and choose **Change
+password**. The new password must differ from the current one.
 
-Changing the password signs you out **everywhere else**: other browsers and devices are asked to
-sign in again within a minute. The browser you changed it in stays signed in.
+Changing the password ends your sessions **everywhere else**, within a minute. A page left open
+in another browser or device stops loading its data; reload it, and the **Sign in** page opens.
+The browser you changed it in stays signed in.
 
 ### The first sign-in of the first admin
 

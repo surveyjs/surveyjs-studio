@@ -278,7 +278,8 @@ hosted deployment by mistake.
 The free Docker image (2b) and custom development (3) are built by the self-hosted track
 ([spec](../spec-self-hosted.md), [plan](../plan-self-hosted.md)). Step 12 defined their account settings; the
 track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and the server refuses `google`, `github`
-and `facebook` until its Step 8, with a message that names the step:
+and `facebook` until its Step 8, with a message that names the step (so is `surveyjs` with `local`: a surveyjs.io
+identity has no local account to sign in to until Step 8 links them):
 
 | Variable         | Mode 2b       | Mode 3                                                           |
 | ---------------- | ------------- | ---------------------------------------------------------------- |
@@ -315,7 +316,8 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
 - `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`. `password` needs
   `USER_DIRECTORY=local`; `google`, `github` and `facebook` are refused until self-hosted Step 8. The `OIDC_*` settings
   are required only when the list has `surveyjs`. `oidc` is no longer a value.
-- `USER_DIRECTORY=local` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`.
+- `USER_DIRECTORY=local` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, and `AUTH_METHODS=password`: `surveyjs`
+  on `local` is refused until self-hosted Step 8 (except with the development sign-in, `IDENTITY_PROVIDER=dev`).
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` come together, only with `local`; the password must pass the password rules (the
   message names the rule, never the value).
 - With `NODE_ENV=production`, `sqlite` and `postgres` need `USER_DIRECTORY=local`.

@@ -6,9 +6,12 @@ import { truncatedIp } from "./ip.js";
  * Query parameters never written to logs: the OAuth `code` and `state` of the sign-in callback and
  * the respondent's `clientId`.
  */
-const REDACTED_PARAMETERS = new Set(["code", "state", "clientId"]);
+const REDACTED_PARAMETERS = new Set(["code", "state", "clientId", "setup", "token"]);
 
-/** The request URL with the values of `code`, `state` and `clientId` replaced by `[redacted]`. */
+/**
+ * The request URL with the values of `code`, `state`, `clientId` and the set-password links'
+ * `setup` and `token` replaced by `[redacted]`.
+ */
 export function redactUrl(url: string): string {
   const at = url.indexOf("?");
   if (at < 0) return url;

@@ -48,7 +48,9 @@ points) and not on a bundled list of common passwords.
 
 **The back-off** is kept per normalised email in process memory, for known and unknown emails alike: the fifth failure
 in a row locks the email for 60 seconds, and each failure after a lock doubles the wait, up to an hour; a
-successful sign-in clears it. A locked email answers
+successful sign-in clears it. An attempt counts as a failure from the moment it starts, before its password is
+checked, so attempts sent at the same time cannot all pass the lock. When the map is full (10,000 emails) an email that
+is not locked is dropped first, so failures for other emails cannot push a locked one out. A locked email answers
 `429 account-locked` with `Retry-After`. A wrong password, an unknown email and a disabled, invited or password-less
 account all answer the same `401 invalid-credentials`, and an unknown email is checked against a dummy hash, so
 neither the answer nor its time shows whether an email exists. The per-address `SIGN_IN_RATE_LIMIT` applies on top.
@@ -61,7 +63,8 @@ neither the answer nor its time shows whether an email exists. The per-address `
 - without them, a one-time setup link `/set-password?setup=<token>` is written to the log at `warn`, the one secret
   the server logs on purpose. The token lives in the process only: it works once, and a restart writes a new one
   while there is still no admin. The setup page asks for the admin's email, name and password
-  (`setPasswordWithLink` with `email` and `displayName`).
+  (`setPasswordWithLink` with `email` and `displayName`). The token is taken before the first await, so two submits
+  at once make one admin; an email that already has an account, or a failed write, keeps the link usable.
 
 `READ_ONLY=true` makes no admin.
 
@@ -71,8 +74,11 @@ neither the answer nor its time shows whether an email exists. The per-address `
   sign-in time is one update per sign-in).
 - A single session cannot be ended on its own: the epoch ends all of a user's sessions at once. "Sign out
   everywhere" is the same operation, should it be wanted.
-- Sessions of the other sign-in methods (the dev sign-in, surveyjs.io) carry no epoch and count as 0, so on a local
-  directory a password change ends them too. The hosted edition has no local accounts and checks nothing.
+- Sessions of the dev sign-in carry no epoch and count as 0, so on a local directory a password change ends them too.
+  A surveyjs.io identity has no local account to sign in to until identities are linked (self-hosted Step 8), so the
+  server refuses `AUTH_METHODS` with `surveyjs` on `USER_DIRECTORY=local` until then. The hosted edition has no local
+  accounts and checks nothing.
+- The forced change refuses the current password as the new one, so the password from the settings cannot stay.
 - The back-off resets on a restart and is per instance; with one instance (operations › "One instance") that is
   enough. Persisting it would need the `users` table, which knows only existing emails and would leak which exist.
 - A lost setup link is recovered by restarting the server.

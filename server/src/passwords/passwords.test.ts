@@ -110,4 +110,22 @@ describe("createLockout", () => {
     expect(lockout.retryAfterSeconds("e1@example.com")).toBe(0);
     expect(lockout.retryAfterSeconds("e3@example.com")).toBe(60);
   });
+
+  it("drops an email that is not locked before one that is", () => {
+    const lockout = createLockout({ now: () => 0, maxEntries: 2 });
+    for (let i = 0; i < 5; i++) lockout.failed("target@example.com");
+    for (let i = 0; i < 100; i++) lockout.failed(`junk-${String(i)}@example.com`);
+    expect(lockout.retryAfterSeconds("target@example.com")).toBe(60);
+  });
+
+  it("begin counts the attempt at once, so attempts running together cannot pass the lock", () => {
+    const lockout = createLockout({ now: () => 0 });
+    // Five attempts start before any of them has an answer: the sixth is refused.
+    for (let i = 0; i < 5; i++) expect(lockout.begin("f@example.com")).toBe(0);
+    expect(lockout.begin("F@example.com")).toBe(60);
+    // Refused attempts are not counted again.
+    expect(lockout.begin("f@example.com")).toBe(60);
+    lockout.succeeded("f@example.com");
+    expect(lockout.begin("f@example.com")).toBe(0);
+  });
 });

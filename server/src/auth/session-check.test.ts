@@ -53,6 +53,20 @@ describe("createSessionCheck", () => {
     );
   });
 
+  it("reads the account again for a session newer than the cached epoch", async () => {
+    // A read that started before a password change can land in the cache after it: a session
+    // with a higher epoch than the cached one is newer than the cache, never stale.
+    const { accounts } = createMemoryLocalAccounts();
+    const created = await accounts.createAccount(account());
+    const check = createSessionCheck({ accounts, now: () => 0 });
+    expect(await codeOf(check.check({ sub: created.user.id, epoch: 0 }, "listSurveys"))).toBeNull();
+    await accounts.setPassword(created.user.id, "$argon2id$y", { mustChange: false });
+    expect(await codeOf(check.check({ sub: created.user.id, epoch: 1 }, "listSurveys"))).toBeNull();
+    expect(await codeOf(check.check({ sub: created.user.id, epoch: 0 }, "listSurveys"))).toBe(
+      "unauthenticated",
+    );
+  });
+
   it("reads a session without an epoch (another sign-in method) as epoch 0", async () => {
     const { accounts } = createMemoryLocalAccounts();
     const created = await accounts.createAccount(account());

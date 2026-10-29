@@ -92,16 +92,16 @@ curl -c cookies.txt -X POST -H "Content-Type: application/json"   -d '{"email":"
 | `changeOwnPassword`   | `POST /me/password` with `currentPassword`, `newPassword`; CSRF | `204`, Set-Cookie (session) |
 | `setPasswordWithLink` | `POST /auth/password-link` with `token`, `password`             | `204`                       |
 
-| Status | Code                       | When                                                                                                                                |
-| ------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 401    | `invalid-credentials`      | `passwordLogin`: the email or the password is wrong. The answer is the same for an unknown email and for a disabled account         |
-| 403    | `invalid-credentials`      | `changeOwnPassword`: the current password is wrong                                                                                  |
-| 422    | `password-too-weak`        | The new password is shorter than 12 characters or on the list of common passwords; `detail` says which. A link is not used up by it |
-| 429    | `account-locked`           | Five failures in a row for this email. `Retry-After` gives the seconds; the wait doubles with each further failure, up to an hour   |
-| 400    | `link-invalid`             | `setPasswordWithLink`: the link was used, has expired, or was never issued                                                          |
-| 401    | `password-change-required` | Any session operation but `getCurrentUser`, `changeOwnPassword` and `logout`, while the account must change its password            |
-| 501    | `not-implemented`          | `password` is not in `AUTH_METHODS`                                                                                                 |
-| 503    | `read-only`                | `changeOwnPassword` and `setPasswordWithLink` under `READ_ONLY=true`. `passwordLogin` still works there                             |
+| Status | Code                       | When                                                                                                                                                                        |
+| ------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | `invalid-credentials`      | `passwordLogin`: the email or the password is wrong. The answer is the same for an unknown email and for a disabled account                                                 |
+| 403    | `invalid-credentials`      | `changeOwnPassword`: the current password is wrong                                                                                                                          |
+| 422    | `password-too-weak`        | The new password is shorter than 12 characters, on the list of common passwords, or (`changeOwnPassword`) the current one; `detail` says which. A link is not used up by it |
+| 429    | `account-locked`           | Five failures in a row for this email. `Retry-After` gives the seconds; the wait doubles with each further failure, up to an hour                                           |
+| 400    | `link-invalid`             | `setPasswordWithLink`: the link was used, has expired, or was never issued                                                                                                  |
+| 401    | `password-change-required` | Any session operation but `getCurrentUser`, `changeOwnPassword` and `logout`, while the account must change its password                                                    |
+| 501    | `not-implemented`          | `password` is not in `AUTH_METHODS`                                                                                                                                         |
+| 503    | `read-only`                | `changeOwnPassword` and `setPasswordWithLink` under `READ_ONLY=true`. `passwordLogin` still works there                                                                     |
 
 - **The forced change.** `getCurrentUser` answers `instanceRole` (`admin` or `user`) and
   `mustChangePassword` for a local account. The first admin made from `ADMIN_PASSWORD` must change
@@ -113,7 +113,8 @@ curl -c cookies.txt -X POST -H "Content-Type: application/json"   -d '{"email":"
   [ADR 0026](../adr/0026-revoking-stateless-sessions-with-an-epoch.md).
 - **The first admin's setup link.** A server with no admin and no `ADMIN_EMAIL` writes a one-time
   link `PUBLIC_BASE_URL/set-password?setup=<token>` to its log. Its `setPasswordWithLink` call also
-  sends `email` and `displayName` (without them: `400 bad-request`), and creates that admin.
+  sends `email` and `displayName` (without them, or with an email that already has an account: `400 bad-request`, and
+  the link still works), and creates that admin.
 - **`login`** sends the browser to the app's own page `PUBLIC_BASE_URL/sign-in?returnTo=<path>` when
   `AUTH_METHODS` has no `surveyjs` (and `IDENTITY_PROVIDER` is not `dev`). `logout` answers `redirectUrl` `PUBLIC_BASE_URL/`.
 

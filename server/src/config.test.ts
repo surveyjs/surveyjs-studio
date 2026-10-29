@@ -9,6 +9,8 @@ const oidc = {
   OIDC_CLIENT_ID: "client-1",
   OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
 };
+const SURVEYJS_WITH_LOCAL =
+  "AUTH_METHODS: surveyjs with USER_DIRECTORY=local is not available yet (self-hosted track Step 8): use AUTH_METHODS=password";
 const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
 const WEBHOOK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
 const api = {
@@ -413,6 +415,11 @@ describe("loadConfig", () => {
     it.each([
       [{ ...local, ADMIN_EMAIL: "admin@example.com" }, "ADMIN_PASSWORD: required with ADMIN_EMAIL"],
       [{ ...local, ADMIN_PASSWORD: ADMIN_SECRET }, "ADMIN_EMAIL: required with ADMIN_PASSWORD"],
+      // The contract's format: email, which sign-in checks, refuses non-ASCII addresses.
+      [
+        { ...local, ADMIN_EMAIL: "admin@exämple.com", ADMIN_PASSWORD: ADMIN_SECRET },
+        "ADMIN_EMAIL: must be an email address",
+      ],
       [
         { ...local, ADMIN_EMAIL: "not an email", ADMIN_PASSWORD: ADMIN_SECRET },
         "ADMIN_EMAIL: must be an email address",
@@ -806,6 +813,14 @@ describe("loadConfig", () => {
       expect(load({ ...oidc, ...legacy }).userApi).toBeNull();
     });
 
+    it("accepts the surveyjs method on the local directory with the dev sign-in only", () => {
+      // The dev sign-in's users are the seed's, which are local accounts; a surveyjs.io identity
+      // has no account to link to before self-hosted Step 8.
+      expect(loadConfig({ USER_DIRECTORY: "local", IDENTITY_PROVIDER: "dev" }).authMethods).toEqual(
+        ["surveyjs"],
+      );
+    });
+
     it("accepts the explicit directories that fit", () => {
       expect(loadConfig({ USER_DIRECTORY: "memory" }).userDirectory).toBe("memory");
       expect(load({ ...oidc, ...legacy, USER_DIRECTORY: "surveyjs-sql" }).userDirectory).toBe(
@@ -843,6 +858,8 @@ describe("loadConfig", () => {
         "USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
       [{ AUTH_METHODS: "password" }, "AUTH_METHODS: password requires USER_DIRECTORY=local"],
+      [{ USER_DIRECTORY: "local" }, SURVEYJS_WITH_LOCAL],
+      [{ USER_DIRECTORY: "local", AUTH_METHODS: "password,surveyjs" }, SURVEYJS_WITH_LOCAL],
       [
         { USER_DIRECTORY: "local", AUTH_METHODS: "github" },
         "AUTH_METHODS: github is not available yet (self-hosted track Step 8)",

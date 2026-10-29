@@ -39,6 +39,7 @@ sign-in`.
 4. Type `/projects` into the address bar. **Check:** you are sent back to **Change your password**.
 5. Enter `a long local password` as the current password, then `password1234` twice, and click **Change password**.
    - **Check:** "This password is too common. Choose another one." Try `short` twice: "Use at least 12 characters."
+     Try `a long local password` (the current one) twice: "Choose a password different from the current one."
 6. Enter `the admin's own new password` twice and click **Change password**.
    - **Check:** My Surveys opens at `/?project=personal`, with **first-admin** in the header.
 
@@ -46,8 +47,7 @@ sign-in`.
 
 1. In a second browser (or a private window) open <http://localhost:5173> and sign in as `first-admin@example.test`
    with `the admin's own new password`. **Check:** My Surveys opens, with no forced change this time.
-2. In the first browser open <http://localhost:5173/change-password> (the surveyjs.io look has no menu item for it;
-   with `APP_SHELL=plain` the header has a **Change password** link). Change the password to
+2. In the first browser hover over **first-admin** and choose **Change password**. Change the password to
    `a third long password`.
 3. In the second browser reload the page.
    - **Check:** the **Sign in** page opens. On one server this is at once; the spec allows up to a minute.

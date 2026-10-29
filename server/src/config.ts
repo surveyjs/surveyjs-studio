@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { isAbsolute, resolve } from "node:path";
+import { fullFormats } from "ajv-formats/dist/formats.js";
 import { z } from "zod";
 import { isWebhookSecret } from "./accounts/webhook-secret.js";
 import { passwordProblem } from "./passwords/policy.js";
@@ -397,6 +398,17 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
       problems.push(`AUTH_METHODS: ${method} is not available yet (self-hosted track Step 8)`);
     }
   }
+  // A surveyjs.io identity has no local account to sign in to until identities are linked (Step 8):
+  // every request of its session would be refused. The dev sign-in's users are local accounts.
+  if (
+    directory === "local" &&
+    csvItems(env.AUTH_METHODS ?? "surveyjs").includes("surveyjs") &&
+    env.IDENTITY_PROVIDER !== "dev"
+  ) {
+    problems.push(
+      "AUTH_METHODS: surveyjs with USER_DIRECTORY=local is not available yet (self-hosted track Step 8): use AUTH_METHODS=password",
+    );
+  }
   problems.push(...bootstrapProblems(env));
   const effective = directory ?? (storage === "azure-legacy" ? "surveyjs-sql" : "memory");
   if (
@@ -428,7 +440,8 @@ function bootstrapProblems(env: Record<string, string | undefined>): string[] {
   }
   if (email === undefined) problems.push("ADMIN_EMAIL: required with ADMIN_PASSWORD");
   if (password === undefined) problems.push("ADMIN_PASSWORD: required with ADMIN_EMAIL");
-  if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  // The contract's `format: email` (ajv-formats, full mode), which sign-in checks too.
+  if (email !== undefined && !(fullFormats.email as RegExp).test(email)) {
     problems.push("ADMIN_EMAIL: must be an email address");
   }
   const weak = password === undefined ? null : passwordProblem(password);

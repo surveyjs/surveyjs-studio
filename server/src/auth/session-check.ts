@@ -44,10 +44,16 @@ export function createSessionCheck(options: SessionCheckOptions): SessionCheck {
   const now = options.now ?? Date.now;
   const cache = new Map<string, { readonly account: LocalAccount | null; readonly at: number }>();
 
-  const accountOf = async (id: string): Promise<LocalAccount | null> => {
+  /**
+   * The account, from the cache while it is fresh. Epochs only go up, so a session with a higher
+   * epoch than the cached account's is newer than the cache (a read that started before a change
+   * can land after it): the account is read again.
+   */
+  const accountOf = async (id: string, epoch: number): Promise<LocalAccount | null> => {
     const key = id.toLowerCase();
     const cached = cache.get(key);
-    if (cached && now() - cached.at < CACHE_MS) return cached.account;
+    const newer = cached?.account != null && epoch > cached.account.sessionEpoch;
+    if (cached && !newer && now() - cached.at < CACHE_MS) return cached.account;
     const account = await options.accounts.account(key);
     cache.set(key, { account, at: now() });
     return account;
@@ -55,9 +61,10 @@ export function createSessionCheck(options: SessionCheckOptions): SessionCheck {
 
   return {
     check: async (session, operationId) => {
-      const account = await accountOf(session.sub);
+      const epoch = session.epoch ?? 0;
+      const account = await accountOf(session.sub, epoch);
       if (!account || account.status !== "active") throw signedOut();
-      if ((session.epoch ?? 0) !== account.sessionEpoch) throw signedOut();
+      if (epoch !== account.sessionEpoch) throw signedOut();
       if (account.mustChangePassword && !WHILE_PASSWORD_CHANGE_REQUIRED.has(operationId)) {
         throw new AppError({
           code: "password-change-required",

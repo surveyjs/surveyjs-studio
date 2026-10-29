@@ -931,15 +931,15 @@ users become active accounts without a password (a blocked one disabled), so the
 works for them. `AUTH_METHODS=password` needs this directory. The decisions are in
 [ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md).
 
-| Piece                       | Does                                                                                                                                                                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `passwords/hash.ts`         | argon2id through `node:crypto`, PHC strings (m=19456, t=2, p=1); `dummyHash()` for unknown emails                                                                                                                                |
-| `passwords/policy.ts`       | At least 12 code points, not in `common-passwords.ts`. The message names the rule, never the value                                                                                                                               |
-| `passwords/lockout.ts`      | The back-off per lower-cased email, in memory (at most 10,000 emails): the fifth failure in a row locks for 60 s, doubling to 1 h                                                                                                |
-| `auth/bootstrap.ts`         | At start-up, while no account is an active admin and not `READ_ONLY`: the admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (must change), else a one-time setup token logged as a link                                                  |
-| `auth/password-handlers.ts` | `passwordLogin`, `changeOwnPassword`, `setPasswordWithLink`. Link tokens are stored as their SHA-256 (base64url); a link is used up by one `UPDATE … WHERE used_at IS NULL AND expires_at > now`                                 |
-| `auth/session-check.ts`     | After the session is decoded, compares its `epoch` (0 when absent) with the account's and checks the account is active, caching the account for 60 s; the forced change (`401 password-change-required`) is checked here as well |
-| `auth/providers/local.ts`   | `login` redirects to the web sign-in page                                                                                                                                                                                        |
+| Piece                       | Does                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passwords/hash.ts`         | argon2id through `node:crypto`, PHC strings (m=19456, t=2, p=1); `dummyHash()` for unknown emails                                                                                                                                                                                                                       |
+| `passwords/policy.ts`       | At least 12 code points, not in `common-passwords.ts`. The message names the rule, never the value                                                                                                                                                                                                                      |
+| `passwords/lockout.ts`      | The back-off per lower-cased email, in memory (at most 10,000 emails): `begin` counts an attempt as a failure before its password is checked (concurrent attempts cannot pass the lock) and `succeeded` clears it; the fifth failure in a row locks for 60 s, doubling to 1 h; a full map drops an unlocked email first |
+| `auth/bootstrap.ts`         | At start-up, while no account is an active admin and not `READ_ONLY`: the admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (must change), else a one-time setup token logged as a link                                                                                                                                         |
+| `auth/password-handlers.ts` | `passwordLogin`, `changeOwnPassword`, `setPasswordWithLink`. `changeOwnPassword` refuses the current password as the new one. Link tokens are stored as their SHA-256 (base64url); a link is used up by one `UPDATE … WHERE used_at IS NULL AND expires_at > now`                                                       |
+| `auth/session-check.ts`     | After the session is decoded, compares its `epoch` (0 when absent) with the account's and checks the account is active, caching the account for 60 s; the forced change (`401 password-change-required`) is checked here as well                                                                                        |
+| `auth/providers/local.ts`   | `login` redirects to the web sign-in page                                                                                                                                                                                                                                                                               |
 
 `setPassword` raises `session_epoch` in the same statement that stores the hash (and activates an
 invited account), and returns the new epoch: `changeOwnPassword` seals it into the new cookie and
@@ -987,7 +987,9 @@ The route never settles while the browser leaves, so no private page flashes. A 
 `/sign-in` and `/set-password` sit outside `_private`, in `AnonymousShell` with the configured
 shell's styles; `/change-password` is a private page (`web/src/account/`). After a sign-in or a
 password change the app reloads at `returnTo` when it is a path of the app (the server's rule), else
-at `/`. With `password`, `PlainShell` links to `/change-password`. `/` is private.
+at `/`. With `password`, the shells link to `/change-password` (`PlainShell` in its header, `surveyjs-site` in the account
+menu after Projects). On a site without `password`, `/sign-in` leaves for `/api/v1/auth/login` and the other two pages
+say passwords are not used. `/` is private.
 `api/csrf.ts` adds `X-CSRF-Token` (from `msid_csrf`) to every unsafe request. Sign-out posts to
 `logout`, clears the query cache, and navigates to `redirectUrl`. `logout` answers also without a
 session, so an expired session still leaves the provider's session.

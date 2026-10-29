@@ -84,9 +84,13 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
     return sessionCookies(config, { session: encodeSession(config.sessionSecret, session), csrf });
   };
 
-  /** The email's back-off: refuse while it lasts, saying when to try again (the error keeps the header). */
-  const checkLockout = (email: string, reply: FastifyReply) => {
-    const wait = lockout.retryAfterSeconds(email);
+  /**
+   * Starts an attempt for the email: refused while its back-off lasts, saying when to try again
+   * (the error keeps the header); otherwise counted as a failure until it succeeds, before any
+   * await, so attempts running together cannot all pass the lock.
+   */
+  const beginAttempt = (email: string, reply: FastifyReply) => {
+    const wait = lockout.begin(email);
     if (wait > 0) {
       void reply.header("retry-after", String(wait));
       throw locked(wait);
@@ -96,13 +100,12 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
   return {
     passwordLogin: async (request, reply) => {
       const { email, password } = request.body as { email: string; password: string };
-      checkLockout(email, reply);
+      beginAttempt(email, reply);
       const account = await accounts.accountByEmail(email);
       // An unknown email is checked against a dummy hash, so both answers take as long.
       const hash = account?.passwordHash ?? (await dummyHash());
       const matches = await verifyPassword(password, hash);
       if (!account || account.passwordHash === null || !matches || account.status !== "active") {
-        lockout.failed(email);
         throw invalidCredentials(401);
       }
       lockout.succeeded(email);
@@ -130,10 +133,14 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
           detail: "This account has no password here.",
         });
       }
-      checkLockout(account.user.email, reply);
+      beginAttempt(account.user.email, reply);
       if (!(await verifyPassword(currentPassword, account.passwordHash))) {
-        lockout.failed(account.user.email);
         throw invalidCredentials(403);
+      }
+      lockout.succeeded(account.user.email);
+      // The forced change must replace the password from the settings (spec S4).
+      if (newPassword === currentPassword) {
+        throw weakPassword("Choose a password different from the current one.");
       }
       const problem = passwordProblem(newPassword);
       if (problem !== null) throw weakPassword(problem);
@@ -170,18 +177,36 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
         }
         const problem = passwordProblem(password);
         if (problem !== null) throw weakPassword(problem);
-        if ((await accounts.countActiveAdmins()) > 0) throw linkInvalid();
+        // Taken before any await, so two submits at once cannot both create an admin; given back
+        // when this one does not create it.
+        const claimed = setupToken;
         setupToken = null;
-        await accounts.createAccount({
-          id: randomUUID(),
-          email,
-          displayName,
-          instanceRole: "admin",
-          status: "active",
-          passwordHash: await hashPassword(password),
-          mustChangePassword: false,
-          createdAt: nowIso(),
-        });
+        try {
+          if ((await accounts.countActiveAdmins()) > 0) throw linkInvalid();
+          if (await accounts.accountByEmail(email)) {
+            setupToken = claimed;
+            throw new AppError({
+              code: "bad-request",
+              status: 400,
+              title: "Bad request",
+              detail: "An account with this email exists. Choose another email.",
+            });
+          }
+          await accounts.createAccount({
+            id: randomUUID(),
+            email,
+            displayName,
+            instanceRole: "admin",
+            status: "active",
+            passwordHash: await hashPassword(password),
+            mustChangePassword: false,
+            createdAt: nowIso(),
+          });
+        } catch (error) {
+          // A store failure keeps the link usable; an admin made meanwhile ends it for good.
+          if (!(error instanceof AppError)) setupToken = claimed;
+          throw error;
+        }
         return reply.code(204).send();
       }
       // The rules first: a weak password does not use the link up.

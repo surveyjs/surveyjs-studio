@@ -1,4 +1,5 @@
 import { createLazyFileRoute, getRouteApi } from "@tanstack/react-router";
+import { PasswordsNotUsed } from "../account/PasswordsNotUsed";
 import { SetPasswordPage } from "../account/SetPasswordPage";
 import { AnonymousShell } from "../shell/PlainShell";
 import { renderShellStyles } from "../shell/registry";
@@ -15,7 +16,11 @@ function SetPassword() {
   return renderShellStyles(
     config.shell,
     <AnonymousShell>
-      <SetPasswordPage setup={setup} token={token} />
+      {config.authMethods.includes("password") ? (
+        <SetPasswordPage setup={setup} token={token} />
+      ) : (
+        <PasswordsNotUsed title="Set your password" />
+      )}
     </AnonymousShell>,
   );
 }

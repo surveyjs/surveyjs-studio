@@ -88,7 +88,7 @@ describe.skipIf(admin === null)("password sign-in", () => {
     expect(await codeOf(response)).toBe("link-invalid");
   });
 
-  it("refuses a wrong current password and a weak new one", async () => {
+  it("refuses a wrong current password, a weak new one and the current one", async () => {
     const session = await signedIn(email, password);
     const wrong = await call("POST", "/me/password", {
       headers: session.headers,
@@ -102,6 +102,13 @@ describe.skipIf(admin === null)("password sign-in", () => {
     });
     expect(weak.status).toBe(422);
     expect(await codeOf(weak)).toBe("password-too-weak");
+    // The current password cannot be kept, so the one from ADMIN_PASSWORD never survives.
+    const same = await call("POST", "/me/password", {
+      headers: session.headers,
+      body: { currentPassword: password, newPassword: password },
+    });
+    expect(same.status).toBe(422);
+    expect(await codeOf(same)).toBe("password-too-weak");
   });
 
   it("changes the password: a new session, the other sessions end, the old password stops", async () => {

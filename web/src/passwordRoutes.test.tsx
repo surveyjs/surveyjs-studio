@@ -340,3 +340,36 @@ describe("set-password page", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
+
+describe("on a site without passwords", () => {
+  it("/sign-in leaves for the server's sign-in with returnTo", async () => {
+    server.use(configHandler());
+
+    renderApp(`/sign-in?returnTo=${encodeURIComponent("/projects")}`);
+
+    await waitFor(() =>
+      expect(navigateTo).toHaveBeenCalledExactlyOnceWith(
+        `/api/v1/auth/login?returnTo=${encodeURIComponent("/projects")}`,
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+  });
+
+  it("/set-password says passwords are not used here", async () => {
+    server.use(configHandler());
+
+    renderApp("/set-password?token=link-token");
+
+    expect(await screen.findByText("This site does not use passwords.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("/change-password says passwords are not used here", async () => {
+    server.use(configHandler(), meHandler());
+
+    renderApp("/change-password");
+
+    expect(await screen.findByText("This site does not use passwords.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Change password" })).toBeNull();
+  });
+});
