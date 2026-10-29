@@ -375,6 +375,17 @@ on another one. The failed sign-ins of an email are counted in the server's memo
 the email waits 60 s, doubling to an hour (`429 account-locked`); a restart forgets the counts. The per-address limit
 `SIGN_IN_RATE_LIMIT` applies too, so set `TRUST_PROXY` behind a reverse proxy.
 
+**Users.** Instance admins manage the accounts on the **Users** page (`/admin/users`, the account menu): create a
+user and send them the one-time link yourself (there is no email; a link works once, for 7 days), reset a password
+(a new link; the old password and sessions end), disable and enable, make other instance admins, and delete a user
+with their data. The last active instance admin cannot be demoted, disabled or deleted. Instance admins also manage
+every project. See [Managing users](user-guide/managing-users.md) and the
+[API guide](api/admin-users.md).
+
+**Keep a second instance admin.** Only an instance admin can reset a password, so an only admin who forgets theirs
+has no way back in the app. The first-admin settings do not help then: they apply only while no active admin has a
+password.
+
 ## Erasing an account's data
 
 Two commands erase the data of an account, and the webhook does the same when surveyjs.io calls it

@@ -931,15 +931,15 @@ users become active accounts without a password (a blocked one disabled), so the
 works for them. `AUTH_METHODS=password` needs this directory. The decisions are in
 [ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md).
 
-| Piece                       | Does                                                                                                                                                                                                                                                                                                                    |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `passwords/hash.ts`         | argon2id through `node:crypto`, PHC strings (m=19456, t=2, p=1); `dummyHash()` for unknown emails                                                                                                                                                                                                                       |
-| `passwords/policy.ts`       | At least 12 code points, not in `common-passwords.ts`. The message names the rule, never the value                                                                                                                                                                                                                      |
-| `passwords/lockout.ts`      | The back-off per lower-cased email, in memory (at most 10,000 emails): `begin` counts an attempt as a failure before its password is checked (concurrent attempts cannot pass the lock) and `succeeded` clears it; the fifth failure in a row locks for 60 s, doubling to 1 h; a full map drops an unlocked email first |
-| `auth/bootstrap.ts`         | At start-up, while no account is an active admin and not `READ_ONLY`: the admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (must change), else a one-time setup token logged as a link                                                                                                                                         |
-| `auth/password-handlers.ts` | `passwordLogin`, `changeOwnPassword`, `setPasswordWithLink`. `changeOwnPassword` refuses the current password as the new one. Link tokens are stored as their SHA-256 (base64url); a link is used up by one `UPDATE … WHERE used_at IS NULL AND expires_at > now`                                                       |
-| `auth/session-check.ts`     | After the session is decoded, compares its `epoch` (0 when absent) with the account's and checks the account is active, caching the account for 60 s; the forced change (`401 password-change-required`) is checked here as well                                                                                        |
-| `auth/providers/local.ts`   | `login` redirects to the web sign-in page                                                                                                                                                                                                                                                                               |
+| Piece                       | Does                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passwords/hash.ts`         | argon2id through `node:crypto`, PHC strings (m=19456, t=2, p=1); `dummyHash()` for unknown emails                                                                                                                                                                                                                                                                                         |
+| `passwords/policy.ts`       | At least 12 code points, not in `common-passwords.ts`. The message names the rule, never the value                                                                                                                                                                                                                                                                                        |
+| `passwords/lockout.ts`      | The back-off per lower-cased email, in memory (at most 10,000 emails): `begin` counts an attempt as a failure before its password is checked (concurrent attempts cannot pass the lock) and `succeeded` clears it; the fifth failure in a row locks for 60 s, doubling to 1 h; a full map drops an unlocked email first                                                                   |
+| `auth/bootstrap.ts`         | At start-up, while no account is an active admin and not `READ_ONLY`: the admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (must change), else a one-time setup token logged as a link                                                                                                                                                                                                           |
+| `auth/password-handlers.ts` | `passwordLogin`, `changeOwnPassword`, `setPasswordWithLink`. `changeOwnPassword` refuses the current password as the new one. Link tokens are stored as their SHA-256 (base64url); a link is used up by one `UPDATE … WHERE used_at IS NULL AND expires_at > now`, in the transaction that stores the password (`usePasswordLink`); a used, expired or unknown link is `410 link-invalid` |
+| `auth/session-check.ts`     | After the session is decoded, compares its `epoch` (0 when absent) with the account's and checks the account is active, caching the account for 60 s; the forced change (`401 password-change-required`) is checked here as well. It returns the account, whose `instanceRole` the hook puts on the request user                                                                          |
+| `auth/providers/local.ts`   | `login` redirects to the web sign-in page                                                                                                                                                                                                                                                                                                                                                 |
 
 `setPassword` raises `session_epoch` in the same statement that stores the hash (and activates an
 invited account), and returns the new epoch: `changeOwnPassword` seals it into the new cookie and
@@ -950,6 +950,27 @@ operations, `changeOwnPassword` included, share the per-address `SIGN_IN_RATE_LI
 The SQL `ProjectStore` reads member users through a `UserLookup(db, ids)`: on the local directory one
 batched `SELECT` of `users` on the caller's transaction (SQLite has one connection), otherwise the
 directory's `getUser`.
+
+### The instance admin
+
+Self-hosted Step 5 (S12–S18). An account with `instance_role = admin` manages the users and every
+project. `request.user.instanceRole` comes from the session check above, so the operations need no
+extra read; a change made on this server calls `forget`, so it reaches the user's sessions at once.
+The client guide is [Managing users](api/admin-users.md).
+
+| Piece                 | Does                                                                                                                                                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `admin/service.ts`    | `/admin/users`: list (by email, paged with a `users` cursor), create (an `invited` account and an `invitation` link), update, delete (`eraseAccount`, then the account), reset. Links hold 128 random bits (base64url), expire after 7 days, and only their SHA-256 is stored              |
+| `admin/rules.ts`      | `decideAccountChange`: the last active instance admin is never demoted, disabled or deleted (S16, as R8 for projects); `nextStatus`: enabling an account without a password makes it `invited`                                                                                             |
+| `LocalAccountStore`   | `listAccounts`, `updateAccount` and `deleteAccount` apply the rule in one transaction (the active admins are locked `FOR UPDATE` on PostgreSQL); disabling raises the epoch; `resetPassword` clears the hash, raises the epoch, marks the user's unused links used and stores the new link |
+| `projects/service.ts` | An instance admin's role is `admin` on every project; `access` falls back to `ProjectStore.getProject`, and `listProjects` with `scope=all` reads `ProjectStore.listProjects` (every project with a member)                                                                                |
+
+Deleting checks the rule before the erasure, so the last admin's data is never erased, and the store
+checks it again when it deletes the account. The bootstrap of the first admin runs while no active
+admin has a password (`hasPasswordAdmin`): the seed's instance admin, Ivy Instance
+(`instance-admin@example.com`, `providers/seed-instance-admin.ts`), has none and signs in through
+the dev sign-in. The web app's Users page is `/admin/users` (`web/src/admin/`), linked from both
+shells for instance admins (`usersLink`); its Projects page asks for `scope=all` for them.
 
 ### Account notices
 

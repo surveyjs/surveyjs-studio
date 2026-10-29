@@ -32,7 +32,8 @@ moment of sign-in (`epoch`, optional; a cookie without it counts as 0).
   account's, or whose account is gone or not active, is `401 unauthenticated`. On `logout` it counts as no
   session.
 - **Raised by one statement** (`session_epoch = session_epoch + 1`), so two changes at once both count. A password
-  change, a set-password link and (Step 5) a reset or disabling the user raise it.
+  change, a set-password link, an instance admin's reset and disabling the user (Step 5) raise it. A reset also
+  clears the password and ends the user's unused links.
 - **The session that changed the password** gets a new cookie with the new epoch, and the server drops the user's
   cache entry: on one instance every other session ends at once. Behind several instances another one may take up to
   the 60 seconds of its own cache.

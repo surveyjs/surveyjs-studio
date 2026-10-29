@@ -161,7 +161,9 @@ removes the bytes, then the rows, so a failed delete can be retried.
 
 The accounts of the local user directory (`USER_DIRECTORY=local`,
 [ADR 0026](../adr/0026-revoking-stateless-sessions-with-an-epoch.md)). `pnpm seed` loads the fixture users here as
-active accounts without a password (a blocked one disabled), also when the directory is `memory`.
+active accounts without a password (a blocked one disabled), and the seed's instance admin, Ivy Instance
+(`instance-admin@example.com`), also when the directory is `memory`. A seed row replaces an account with its id or
+email.
 
 | Column                 | Type              | Notes                                                                                     |
 | ---------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
@@ -180,7 +182,8 @@ active accounts without a password (a blocked one disabled), also when the direc
 stored), `user_id` (FK to `users`, cascade), `purpose` (`setup`, `invitation` or `reset`), `created_at`,
 `expires_at`, `used_at` (null until used). Index `password_links_user` (`user_id`). A link is used by one
 `UPDATE … WHERE used_at IS NULL AND expires_at > now RETURNING user_id`, so two uses at once cannot both succeed.
-The first admin's setup link is not a row: there is no account to point at yet, and the token lives in the server's
+An instance admin's new user gets an `invitation` link, a reset a `reset` link (and the user's earlier unused links
+are marked used); links expire after 7 days. The first admin's setup link is not a row: there is no account to point at yet, and the token lives in the server's
 memory.
 
 ## Planned
