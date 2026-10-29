@@ -20,6 +20,16 @@ export interface S3Settings {
   readonly credentials: { readonly accessKeyId: string; readonly secretAccessKey: string } | null;
 }
 
+/** How long a call waits for the server (tests use less). */
+export interface S3Timeouts {
+  /** To open a connection; default 3 s. */
+  readonly connectionTimeoutMs: number;
+  /** With no data on an open connection; default 30 s. A long download that keeps flowing is fine. */
+  readonly idleTimeoutMs: number;
+}
+
+const DEFAULT_TIMEOUTS: S3Timeouts = { connectionTimeoutMs: 3000, idleTimeoutMs: 30_000 };
+
 /** DeleteObjects takes at most this many keys. */
 const DELETE_BATCH = 1000;
 
@@ -39,9 +49,13 @@ const isMissing = (error: unknown): boolean =>
 /**
  * File bytes in an S3-compatible bucket (AWS S3, RustFS, Cloudflare R2, Backblaze B2), under the
  * key `{survey id}/{file id}`. The SDK's newer request and response checksums are only used where
- * an operation requires them: several S3-compatible services refuse the new headers.
+ * an operation requires them: several S3-compatible services refuse the new headers. Calls give up
+ * after `timeouts` instead of waiting on a server that does not answer.
  */
-export function createS3ByteStore(settings: S3Settings): ByteStore {
+export function createS3ByteStore(
+  settings: S3Settings,
+  timeouts: S3Timeouts = DEFAULT_TIMEOUTS,
+): ByteStore {
   const client = new S3Client({
     region: settings.region,
     forcePathStyle: settings.forcePathStyle,
@@ -49,6 +63,13 @@ export function createS3ByteStore(settings: S3Settings): ByteStore {
     ...(settings.credentials !== null && { credentials: { ...settings.credentials } }),
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
+    // Without these a server that drops packets keeps every call (and readiness) waiting for
+    // minutes: the SDK sets no connection timeout and retries.
+    // (`requestTimeout` would cap a whole download, and only warns unless told to throw.)
+    requestHandler: {
+      connectionTimeout: timeouts.connectionTimeoutMs,
+      socketTimeout: timeouts.idleTimeoutMs,
+    },
   });
   const Bucket = settings.bucket;
 

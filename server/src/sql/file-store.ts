@@ -22,9 +22,14 @@ const recordOf = (row: Selectable<FilesTable>): StoredFileRecord => ({
 
 /**
  * The file store of the SQL providers (docs/architecture/data-model.md): the metadata in the
- * `files` table, the bytes in `bytes` (FILE_STORE) under `{survey id}/{file id}`. A new file's
- * row is written first (a second file with its id is refused before any byte is written) and
- * removed again when its bytes cannot be stored; a deleted file's row goes first, then its bytes.
+ * `files` table, the bytes in `bytes` (FILE_STORE) under `{survey id}/{file id}`.
+ *
+ * - A new file's row is written first, so a second file with its id is refused before any byte is
+ *   written; the row is removed again when its bytes cannot be stored. Once the bytes are stored
+ *   the row is read again: when a delete took it meanwhile (the survey, its results or the
+ *   account went), the bytes are deleted too and the upload is refused.
+ * - A delete removes the bytes first, then the rows: when the bytes cannot be deleted the rows
+ *   stay, so the caller's retry finds them. A row whose bytes are gone reads as no file.
  */
 export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): FileStore {
   const { db } = database;
@@ -59,6 +64,15 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
         await db.deleteFrom("files").where("id", "=", file.id).execute();
         throw error;
       }
+      const kept = await db
+        .selectFrom("files")
+        .select("id")
+        .where("id", "=", file.id)
+        .executeTakeFirst();
+      if (!kept) {
+        await bytes.delete([keyOf(file)]);
+        throw new Error("The file was deleted while it was stored");
+      }
     },
     getFile: async (id) => {
       const fileId = id.toLowerCase();
@@ -87,21 +101,23 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
       const fileId = id.toLowerCase();
       if (!FILE_ID_PATTERN.test(fileId)) return false;
       const row = await db
-        .deleteFrom("files")
+        .selectFrom("files")
+        .select(["id", "survey_id"])
         .where("id", "=", fileId)
-        .returning(["id", "survey_id"])
         .executeTakeFirst();
       if (!row) return false;
       await bytes.delete([keyOf({ id: row.id, surveyId: row.survey_id })]);
-      return true;
+      const deleted = await db.deleteFrom("files").where("id", "=", fileId).executeTakeFirst();
+      return deleted.numDeletedRows > 0n;
     },
     deleteSurveyFiles: async (surveyId, kind) => {
       if (!GUID.test(surveyId)) return 0;
-      let query = db.deleteFrom("files").where("survey_id", "=", surveyId.toLowerCase());
-      if (kind !== undefined) query = query.where("kind", "=", kind);
-      const rows = await query.returning(["id", "survey_id"]).execute();
+      const rows = await rowsOf(surveyId, kind);
+      if (rows.length === 0) return 0;
       await bytes.delete(rows.map((row) => keyOf({ id: row.id, surveyId: row.survey_id })));
-      return rows.length;
+      const ids = rows.map((row) => row.id);
+      const deleted = await db.deleteFrom("files").where("id", "in", ids).executeTakeFirst();
+      return Number(deleted.numDeletedRows);
     },
     copySurveyAssets: async (fromSurveyId, toSurveyId, copiedAt) => {
       const sources = GUID.test(fromSurveyId) ? await rowsOf(fromSurveyId, "asset") : [];

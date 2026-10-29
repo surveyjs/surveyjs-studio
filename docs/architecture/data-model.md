@@ -153,7 +153,8 @@ byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}
 | `created_at`   | timestamp         |                                                                                         |
 
 Index `files_survey` (`survey_id`, `kind`) serves `usage` (the quota), per-survey deletes and asset copies. A new
-file's row is written before its bytes; a delete removes the rows, then the bytes.
+file's row is written before its bytes and read again after them (a delete in between removes the bytes too); a delete
+removes the bytes, then the rows, so a failed delete can be retried.
 
 ## Planned
 

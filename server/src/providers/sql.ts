@@ -72,27 +72,34 @@ export async function openSqlProviders(
   });
 }
 
-/** How long the readiness check waits for the database. */
+/** How long each readiness check waits: the database and the file store. */
 const READY_TIMEOUT_MS = 3000;
 
-async function probe(database: SqlDatabase): Promise<Omit<ReadinessCheck, "name">> {
+type Check = Omit<ReadinessCheck, "name">;
+
+/** The check's answer, or `timeout` when it takes longer than READY_TIMEOUT_MS. */
+async function withinTime(check: Promise<Check>): Promise<Check> {
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<Omit<ReadinessCheck, "name">>((resolve) => {
+  const timeout = new Promise<Check>((resolve) => {
     timer = setTimeout(() => resolve({ ok: false, reason: "timeout" }), READY_TIMEOUT_MS);
   });
-  const query = sql`select 1`.execute(database.db).then(
-    () => ({ ok: true }),
-    (error: unknown) => {
-      const code = (error as { code?: unknown } | null)?.code;
-      return { ok: false, ...(typeof code === "string" && { reason: code }) };
-    },
-  );
   try {
-    return await Promise.race([query, timeout]);
+    return await Promise.race([check, timeout]);
   } finally {
     clearTimeout(timer);
   }
 }
+
+const probe = (database: SqlDatabase): Promise<Check> =>
+  withinTime(
+    sql`select 1`.execute(database.db).then(
+      () => ({ ok: true }),
+      (error: unknown) => {
+        const code = (error as { code?: unknown } | null)?.code;
+        return { ok: false, ...(typeof code === "string" && { reason: code }) };
+      },
+    ),
+  );
 
 /**
  * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views,
@@ -118,7 +125,7 @@ export function createSqlProviders(
     notices: fallback.notices,
     readinessNames: ["database", "files"],
     ready: async () => {
-      const [db, files] = await Promise.all([probe(database), options.bytes.probe()]);
+      const [db, files] = await Promise.all([probe(database), withinTime(options.bytes.probe())]);
       return [
         { name: "database", ...db },
         { name: "files", ...files },

@@ -39,15 +39,20 @@ bytes are in a `ByteStore` (`server/src/bytes/`) under the key `{survey id}/{fil
 `FILE_STORE` applies to the SQL providers only; `memory` and `azure-legacy` keep their own file stores.
 
 - **Order of writes.** A new file's row is written first, so a second file with its id is refused before any byte is
-  written; when the bytes cannot be stored the row is removed again. A delete removes the rows, then the bytes. A
-  crash in between leaves bytes no row names, never a row whose bytes are missing.
+  written; when the bytes cannot be stored the row is removed again. Once the bytes are stored the row is read again:
+  when a delete took it meanwhile (the survey, its results or the account went), the bytes are deleted too and the
+  upload is refused, so an erased respondent's file cannot outlive its row.
+- **Order of deletes.** The bytes go first, then the rows. When the bytes cannot be deleted (the bucket is
+  unreachable) the rows stay and the caller's retry finds them; a row whose bytes are gone reads as no file. Only a
+  crash between a stored upload and its second read can leave bytes that no row names.
 - **Local writes are atomic:** a temporary file in the same folder, then a rename.
 - **Keys are checked** in every byte store (a lower-case GUID, `/`, 64 hex digits), so no key can name a path
   outside the folder.
 - **S3 compatibility.** The client computes and checks the newer CRC checksums only where an operation requires
   them (`requestChecksumCalculation` and `responseChecksumValidation` `WHEN_REQUIRED`): several S3-compatible services
   refuse the headers newer SDK versions add by default. `S3_FORCE_PATH_STYLE=true` serves services without
-  virtual-host buckets. `S3_ENDPOINT` is https unless it is on this machine. Without keys the SDK's default
+  virtual-host buckets. Calls give up after 3 s without a connection or 30 s without data, and readiness waits at most
+  3 s, like the database check. `S3_ENDPOINT` is https unless it is on this machine. Without keys the SDK's default
   credential chain is used (IAM roles, environment, profile).
 - **The app never creates or deletes a bucket.** Readiness (`files`) reports a missing or unreachable one
   (`HeadBucket`, with the error's name or HTTP status, never its message).
