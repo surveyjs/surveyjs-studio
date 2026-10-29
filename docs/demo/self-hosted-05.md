@@ -36,9 +36,9 @@ to `the admin's own new password` when asked (as in [the Step 4 demo](self-hoste
      date 7 days ahead. **Una User** is in the table as **Invited**.
 3. Click **Copy link**. **Check:** "Copied." Then click **Done**: the link is gone from the page.
 4. Paste the link into the private window. **Check:** the **Set your password** page.
-5. Enter `Una's first long password` twice and click **Set password**, then **Sign in**, and sign in as
-   `una@example.test` with that password.
-   - **Check:** My Surveys opens with **Una User** in the header, and Una's account menu has no **Users** item.
+5. Enter `Una's first long password` twice and click **Set password**.
+   - **Check:** Una lands signed in: My Surveys opens with **Una User** in the header, and her account menu has no
+     **Users** item.
 6. In the private window open <http://localhost:5173/admin/users>. **Check:** "Only instance admins can manage users."
 7. Reload the Users page in the first browser. **Check:** Una is **Active**, with a last sign-in.
 
@@ -47,7 +47,7 @@ to `the admin's own new password` when asked (as in [the Step 4 demo](self-hoste
 1. In Una's row click **Reset password** and confirm. **Check:** a new link box.
 2. In the private window reload the page. **Check:** the **Sign in** page opens. Sign in with Una's old password:
    "The email or the password is wrong."
-3. Open the new link there, set `Una's second long password`, and sign in with it. **Check:** My Surveys opens.
+3. Open the new link there and set `Una's second long password`. **Check:** My Surveys opens, signed in.
 4. Open the first link from part 1 again. **Check:** "This link was used already, has expired, or is not a link of
    this site."
 

@@ -37,7 +37,7 @@ There is no email: you send each user their link yourself.
    email. The link is shown **only now**: once you choose **Done**, it is gone. If you lose it,
    reset the user's password to get a new one.
 4. The user opens the link, enters a password twice, and chooses **Set password**. They are now
-   **Active** and sign in on the **Sign in** page.
+   **Active** and land signed in; later they sign in on the **Sign in** page.
 
 A link works **once** and expires after **7 days**. An email that already has an account is
 refused: "An account with this email exists."

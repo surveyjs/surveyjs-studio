@@ -116,8 +116,9 @@ export interface paths {
          *     (it works once, until the server restarts). The setup link creates that
          *     admin: `email` and `displayName` are required with it and ignored
          *     otherwise. An unknown, used or expired link gets `410 link-invalid`. The password must have at least 12 characters and
-         *     not be a common one (`422 password-too-weak`). The account is not signed
-         *     in: sign in with the new password next. `501` when password sign-in is not
+         *     not be a common one (`422 password-too-weak`). An account that may sign in
+         *     lands signed in: the answer sets the session cookies. A disabled account's
+         *     password is set, but no session starts. `501` when password sign-in is not
          *     enabled.
          */
         post: operations["setPasswordWithLink"];
@@ -1809,9 +1810,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The password is set. */
+            /** @description The password is set; the session cookies too, unless the account is disabled. */
             204: {
                 headers: {
+                    "Set-Cookie": components["headers"]["SetCookie"];
                     [name: string]: unknown;
                 };
                 content?: never;

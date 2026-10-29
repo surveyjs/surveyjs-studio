@@ -90,7 +90,7 @@ curl -c cookies.txt -X POST -H "Content-Type: application/json"   -d '{"email":"
 | --------------------- | --------------------------------------------------------------- | --------------------------- |
 | `passwordLogin`       | `POST /auth/password/login` with `email`, `password`            | `204`, Set-Cookie (session) |
 | `changeOwnPassword`   | `POST /me/password` with `currentPassword`, `newPassword`; CSRF | `204`, Set-Cookie (session) |
-| `setPasswordWithLink` | `POST /auth/password-link` with `token`, `password`             | `204`                       |
+| `setPasswordWithLink` | `POST /auth/password-link` with `token`, `password`             | `204`, Set-Cookie (session) |
 
 | Status | Code                       | When                                                                                                                                                                        |
 | ------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,7 +114,8 @@ curl -c cookies.txt -X POST -H "Content-Type: application/json"   -d '{"email":"
 - **The first admin's setup link.** A server with no admin and no `ADMIN_EMAIL` writes a one-time
   link `PUBLIC_BASE_URL/set-password?setup=<token>` to its log. Its `setPasswordWithLink` call also
   sends `email` and `displayName` (without them, or with an email that already has an account: `400 bad-request`, and
-  the link still works), and creates that admin.
+  the link still works), and creates that admin, who lands signed in. An invitation or reset link signs its user
+  in the same way (unless the account is disabled).
 - **`login`** sends the browser to the app's own page `PUBLIC_BASE_URL/sign-in?returnTo=<path>` when
   `AUTH_METHODS` has no `surveyjs` (and `IDENTITY_PROVIDER` is not `dev`). `logout` answers `redirectUrl` `PUBLIC_BASE_URL/`.
 

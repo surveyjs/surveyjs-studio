@@ -247,3 +247,35 @@ describe("the Projects page of an instance admin", () => {
     expect(scopes).toContain("all");
   });
 });
+
+describe("an instance admin deleting a project on the Projects page", () => {
+  it("removes its card once the server deleted it", async () => {
+    let projects = [
+      {
+        id: "55555555-0000-4000-8000-000000000009",
+        name: "Not my project",
+        ownerId: null,
+        role: "admin" as const,
+        memberCount: 1,
+        createdAt: "2026-10-01T09:00:00.000Z",
+      },
+    ];
+    server.use(
+      configHandler(passwordConfig),
+      meHandler(instanceAdmin),
+      mswHttp.get("*/api/v1/projects", () =>
+        HttpResponse.json({ items: projects, nextCursor: null }),
+      ),
+      mswHttp.delete("*/api/v1/projects/:projectId", () => {
+        projects = [];
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp("/projects");
+
+    expect(await screen.findByText("Not my project")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("link", { name: "Remove" })[0]!);
+    await waitFor(() => expect(screen.queryByText("Not my project")).toBeNull());
+  });
+});

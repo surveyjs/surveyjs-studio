@@ -163,6 +163,30 @@ describe("the instance admin's user management", () => {
     expect(again.json()).toMatchObject({ code: "email-taken" });
   });
 
+  it("signs the user in with the password set from a link (S19), unless disabled", async () => {
+    const { admin, as, setPassword } = await start();
+    const created = await as(admin, "POST", "/admin/users", {
+      email: "joiner@example.com",
+      displayName: "Joiner",
+    });
+    const body = created.json<{ user: { id: string }; link: { url: string } }>();
+    const joined = await setPassword(tokenOf(body.link.url), NEW_PASSWORD);
+    expect(joined.statusCode).toBe(204);
+    const me = await as(sessionOf(joined), "GET", "/me");
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ email: "joiner@example.com", mustChangePassword: false });
+
+    // A disabled user's link still sets the password, but signs nobody in.
+    await as(admin, "PATCH", `/admin/users/${body.user.id}`, { status: "disabled" });
+    const reset = await as(admin, "POST", `/admin/users/${body.user.id}/reset-link`);
+    const disabled = await setPassword(
+      tokenOf(reset.json<{ url: string }>().url),
+      "a disabled user's password",
+    );
+    expect(disabled.statusCode).toBe(204);
+    expect(disabled.headers["set-cookie"]).toBeUndefined();
+  });
+
   it("answers 410 for a link after its 7 days", async () => {
     const { admin, as, setPassword, advance } = await start();
     const created = await as(admin, "POST", "/admin/users", {
@@ -213,6 +237,17 @@ describe("the instance admin's user management", () => {
       displayName: "X",
     });
     expect(create.statusCode).toBe(403);
+    // The destructive ones too, on a real user, so a 404 cannot hide a missing check.
+    const { id: target } = await newUser("Tia");
+    for (const [method, url, payload] of [
+      ["PATCH", `/admin/users/${target}`, { status: "disabled" }],
+      ["DELETE", `/admin/users/${target}`, undefined],
+      ["POST", `/admin/users/${target}/reset-link`, undefined],
+    ] as const) {
+      const refusedWrite = await as(session, method, url, payload);
+      expect(refusedWrite.statusCode).toBe(403);
+      expect(refusedWrite.json()).toMatchObject({ code: "forbidden" });
+    }
   });
 
   it("disables a user (their session ends), and enables them again", async () => {

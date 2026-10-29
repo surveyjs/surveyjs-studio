@@ -97,6 +97,25 @@ describe.skipIf(inject("passwordAdmin") === null)("the instance admin", () => {
       body: { email: "nobody@example.com", displayName: "Nobody" },
     });
     expect(create.status).toBe(403);
+    // The destructive ones too, on a real user (the instance admin), so a 404 cannot hide a
+    // missing check.
+    const target = instanceAdmin.id;
+    const writes = [
+      call("PATCH", "/admin/users/{userId}", {
+        path: `/admin/users/${target}`,
+        headers: { ...user, "content-type": MERGE_PATCH },
+        body: { status: "disabled" },
+      }),
+      call("DELETE", "/admin/users/{userId}", { path: `/admin/users/${target}`, headers: user }),
+      call("POST", "/admin/users/{userId}/reset-link", {
+        path: `/admin/users/${target}/reset-link`,
+        headers: user,
+      }),
+    ];
+    for (const refusedWrite of await Promise.all(writes)) {
+      expect(refusedWrite.status).toBe(403);
+      expect(await codeOf(refusedWrite)).toBe("forbidden");
+    }
   });
 
   it("createUser returns a one-time link that sets the password; a used link gets 410", async (ctx) => {

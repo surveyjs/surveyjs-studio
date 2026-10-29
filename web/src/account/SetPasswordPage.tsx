@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { passwordErrorMessage, useSetPasswordWithLink } from "../api/passwords";
+import { navigateTo } from "../navigation";
 import { PageHeader } from "../surveyList/PageHeader";
 import { AccountForm, Field } from "./AccountForm";
 
 /**
  * The page of a one-time link. `?setup=` is the first admin's setup link, which the server writes
  * to its log while the instance has no admin: it asks for the admin's email, name and password.
- * `?token=` sets the password of an existing account. A link works once; the page then sends the
- * user to sign in.
+ * `?token=` sets the password of an existing account. A link works once. The server signs the
+ * user in with the new password (S19), so the app reloads at My Surveys; an account that may not
+ * sign in (disabled) lands on the sign-in page from there.
  */
 export function SetPasswordPage({
   setup,
@@ -41,12 +43,7 @@ export function SetPasswordPage({
       <>
         <PageHeader title={firstAdmin ? "Create the first admin" : "Set your password"} />
         <p className="v2-class---paragraph">
-          {firstAdmin ? "The admin was created." : "Your password was set."} You can sign in now.
-        </p>
-        <p className="v2-class---paragraph">
-          <a className="v2-class---paragraph-link" href="/sign-in">
-            Sign in
-          </a>
+          {firstAdmin ? "The admin was created." : "Your password was set."} Opening My Surveys…
         </p>
       </>
     );
@@ -64,6 +61,7 @@ export function SetPasswordPage({
           ? { token: linkToken, password, email: email.trim(), displayName: displayName.trim() }
           : { token: linkToken, password },
       );
+      navigateTo("/");
     } catch {
       // Shown from the mutation's error.
     }

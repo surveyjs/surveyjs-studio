@@ -79,8 +79,8 @@ When the operator created the first admin with a password in the server's settin
 ### A link from your administrator
 
 An instance admin creates your account and sends you a **set-password link** (there is no email
-from My Surveys). Open it, enter a password twice, and choose **Set password**. Then choose
-**Sign in** and sign in with your email and that password.
+from My Surveys). Open it, enter a password twice, and choose **Set password**. You land signed
+in, on My Surveys. Next time, sign in with your email and that password.
 
 The link works once and for 7 days. If it expired or was used, ask your administrator for a new
 one. If you forgot your password, ask them to reset it: you get a new link the same way.
@@ -89,7 +89,7 @@ one. If you forgot your password, ask them to reset it: you get a new link the s
 
 When the operator set no first admin, the server writes a one-time link to its log: "This instance
 has no admin yet. Open this one-time link to create the first one". Open it, enter the admin's
-email, name and password (twice), and choose **Create the admin**. Then choose **Sign in**.
+email, name and password (twice), and choose **Create the admin**. You land signed in as that admin.
 
 The link works once. If it is lost, restarting the server writes a new one, as long as there is no
 admin yet.

@@ -279,8 +279,8 @@ describe("set-password page", () => {
     type("Repeat the password", "a long password");
     fireEvent.click(screen.getByRole("button", { name: "Create the admin" }));
 
-    expect(await screen.findByText(/The admin was created/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/sign-in");
+    // The server signed the new admin in: the app reloads at My Surveys.
+    await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/"));
     expect(link.bodies).toEqual([
       {
         token: "setup-token",
@@ -305,7 +305,8 @@ describe("set-password page", () => {
     type("Repeat the password", "a long password");
     fireEvent.click(screen.getByRole("button", { name: "Set password" }));
 
-    expect(await screen.findByText(/Your password was set/)).toBeTruthy();
+    // The server signed the user in (S19): the app reloads at My Surveys.
+    await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/"));
     expect(link.bodies).toEqual([{ token: "link-token", password: "a long password" }]);
   });
 

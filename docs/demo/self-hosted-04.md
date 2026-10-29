@@ -75,8 +75,7 @@ Stop the app with Ctrl+C.
 http://localhost:5173/set-password?setup=…`.
 3. Open that link. **Check:** **Create the first admin**, with Email, Name, Password and Repeat the password.
 4. Enter `owner-admin@example.test`, `Owner Admin` and a long password twice, and click **Create the admin**.
-   - **Check:** "The admin was created. You can sign in now." Click **Sign in** and sign in with those details: My
-     Surveys opens, with **Owner Admin** in the header and no forced change.
+   - **Check:** you land signed in: My Surveys opens, with **Owner Admin** in the header and no forced change.
 5. Open the setup link again and try once more. **Check:** "This link was used already, has expired, or is not a link
    of this site."
 

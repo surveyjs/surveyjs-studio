@@ -65,7 +65,8 @@ curl -b cookies.txt -X POST -H "X-CSRF-Token: $CSRF" -H "Content-Type: applicati
 - The link holds 128 random bits. The server keeps only its hash, so this answer is the only time
   it is shown. It works once and for 7 days.
 - The user sets a password with it: `POST /auth/password-link` with `token` and `password`
-  ([Password sign-in](authentication.md#password-sign-in)). The account becomes `active`. A used,
+  ([Password sign-in](authentication.md#password-sign-in)). The account becomes `active`, and the
+  answer sets its session cookies: the user lands signed in. A used,
   expired or unknown link gets `410 link-invalid`.
 - An email that already has an account (any case) gets `409 email-taken`.
 

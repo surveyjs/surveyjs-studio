@@ -102,7 +102,11 @@ export async function forgetProject(
   projectId: string,
   { deleted }: { readonly deleted: boolean },
 ): Promise<void> {
-  await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+  // Both lists: the user's, and an instance admin's list of every project (the Projects page).
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: projectKeys.list() }),
+    queryClient.invalidateQueries({ queryKey: projectKeys.allList() }),
+  ]);
   for (const queryKey of [
     projectKeys.detail(projectId),
     projectKeys.members(projectId),

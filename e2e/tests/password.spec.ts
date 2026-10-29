@@ -44,15 +44,13 @@ async function openBrowser(browser: Browser): Promise<Page> {
   return context.newPage();
 }
 
-/** Opens a set-password link and sets the password; ends on the sign-in page. */
+/** Opens a set-password link and sets the password; the user lands signed in (S19). */
 async function setPasswordWith(page: Page, url: string, password: string): Promise<void> {
   await page.goto(url);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Repeat the password").fill(password);
   await page.getByRole("button", { name: "Set password" }).click();
-  await expect(page.getByText(/Your password was set/)).toBeVisible();
-  await page.getByRole("link", { name: "Sign in" }).click();
-  await expectSignInPage(page);
+  await expect(unaTrigger(page)).toBeVisible({ timeout: 30_000 });
 }
 
 const unaTrigger = (page: Page) =>
@@ -126,10 +124,9 @@ test.describe.serial("the first admin", () => {
     const unaRow = page.getByRole("row", { name: new RegExp(unaUser.name) });
     await expect(unaRow).toContainText("Invited");
 
-    // Una sets her password in her own browser and signs in.
+    // Una sets her password in her own browser and lands signed in (S19).
     const una = await openBrowser(browser);
     await setPasswordWith(una, invitation, UNA_PASSWORD);
-    await signIn(una, unaEmail, UNA_PASSWORD);
     await expect(unaTrigger(una)).toBeVisible({ timeout: 30_000 });
     await page.reload();
     await expect(unaRow).toContainText("Active");
@@ -140,7 +137,6 @@ test.describe.serial("the first admin", () => {
     await una.reload();
     await expectSignInPage(una);
     await setPasswordWith(una, reset, UNA_NEW_PASSWORD);
-    await signIn(una, unaEmail, UNA_NEW_PASSWORD);
     await expect(unaTrigger(una)).toBeVisible({ timeout: 30_000 });
 
     // Disabled, she is signed out and cannot sign in; enabled, she can again.
