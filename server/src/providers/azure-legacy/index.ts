@@ -919,6 +919,7 @@ export function createAzureLegacyProviders(
       },
     },
 
+    accounts: null,
     notices,
 
     readinessNames: ["sql", "surveys-storage", "results-storage"],

@@ -123,6 +123,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "completion_markers",
         "files",
         "legacy_views",
+        "password_links",
         "private_questions",
         "project_members",
         "projects",
@@ -130,6 +131,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "survey_history",
         "survey_responses",
         "surveys",
+        "users",
       ]);
       expect((await migrationStatus(database)).pending).toEqual([]);
     });

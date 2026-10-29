@@ -37,6 +37,7 @@ export function localSuiteBytes(): Promise<SuiteBytes> {
 export async function createSeededSqlProviders(
   dialect: SqlDialectName,
   bytes: () => Promise<SuiteBytes> = localSuiteBytes,
+  options: { readonly localAccounts?: boolean } = {},
 ): Promise<ProviderSet> {
   const scratch = await scratchDatabase(dialect);
   const database = openDatabase(scratch.target);
@@ -44,7 +45,11 @@ export async function createSeededSqlProviders(
   const seed = await legacyFixtureSeed();
   await seedSqlStores(database, seed);
   const files = await bytes();
-  const providers = createSqlProviders(database, { fallbackSeed: seed, bytes: files.store });
+  const providers = createSqlProviders(database, {
+    fallbackSeed: seed,
+    bytes: files.store,
+    ...(options.localAccounts && { localAccounts: true }),
+  });
   return {
     ...providers,
     async close() {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { UserDirectory } from "../types.js";
+import type { UserDirectory, UserDirectoryKind } from "../types.js";
 import {
   BLOCKED_ID,
   ERASABLE_ID,
@@ -17,11 +17,17 @@ export interface UserDirectoryHandle {
   close(): Promise<void>;
 }
 
-/** The `users.*` sections, for a directory that holds the golden fixture users. */
-export function describeUserDirectorySections(users: () => UserDirectory): void {
+/**
+ * The `users.*` sections, for a directory that holds the golden fixture users. `kind` is the
+ * directory's: `external` (memory, surveyjs-sql, surveyjs-api) or `local` (USER_DIRECTORY=local).
+ */
+export function describeUserDirectorySections(
+  users: () => UserDirectory,
+  kind: UserDirectoryKind = "external",
+): void {
   describe("users.kind", () => {
-    it("is external", () => {
-      expect(users().kind).toBe("external");
+    it(`is ${kind}`, () => {
+      expect(users().kind).toBe(kind);
     });
   });
 

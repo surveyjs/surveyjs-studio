@@ -329,6 +329,78 @@ export interface UserDirectory {
   missingUsers(ids: readonly string[]): Promise<string[]>;
 }
 
+export type InstanceRole = "admin" | "user";
+
+/** `invited`: no password yet; `disabled`: may not sign in, and its sessions end. */
+export type AccountStatus = "invited" | "active" | "disabled";
+
+/** A local account (USER_DIRECTORY=local) as sign-in and the session check see it. */
+export interface LocalAccount {
+  /** The user as the directory shows it; `blocked` is true for a disabled account. */
+  readonly user: User;
+  readonly instanceRole: InstanceRole;
+  readonly status: AccountStatus;
+  /** null: no password set (an invited account, or one made for another sign-in method). */
+  readonly passwordHash: string | null;
+  readonly mustChangePassword: boolean;
+  /** Raised by every password change and reset and by disabling: older sessions end (ADR 0026). */
+  readonly sessionEpoch: number;
+  /** ISO 8601 UTC; null before the first sign-in. */
+  readonly lastSignInAt: string | null;
+}
+
+export interface NewLocalAccount {
+  readonly id: string;
+  /** Stored lower-case; unique. */
+  readonly email: string;
+  readonly displayName: string;
+  readonly instanceRole: InstanceRole;
+  readonly status: AccountStatus;
+  readonly passwordHash: string | null;
+  readonly mustChangePassword: boolean;
+  readonly createdAt: string;
+}
+
+export type PasswordLinkPurpose = "setup" | "invitation" | "reset";
+
+/**
+ * The accounts of the local user directory: what password sign-in, the session check and the
+ * set-password links need. Ids and emails match case-insensitively.
+ */
+export interface LocalAccountStore {
+  countAccounts(): Promise<number>;
+  /** Rejects (nothing stored) when the id or the email is in use. */
+  createAccount(account: NewLocalAccount): Promise<LocalAccount>;
+  /** null for an unknown or non-GUID id. */
+  account(id: string): Promise<LocalAccount | null>;
+  /** null for an unknown email. */
+  accountByEmail(email: string): Promise<LocalAccount | null>;
+  /**
+   * Stores a new password hash and the must-change flag, makes an invited account active, and
+   * raises the session epoch. Returns the new epoch; null when there is no such account.
+   */
+  setPassword(
+    id: string,
+    passwordHash: string,
+    options: { readonly mustChange: boolean },
+  ): Promise<number | null>;
+  /** Notes a successful sign-in. */
+  recordSignIn(id: string, at: string): Promise<void>;
+  /** Stores a set-password link by the hash of its token. */
+  createPasswordLink(link: {
+    readonly tokenHash: string;
+    readonly userId: string;
+    readonly purpose: PasswordLinkPurpose;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+  }): Promise<void>;
+  /**
+   * Uses a link once: when it is unused and not expired at `at`, marks it used and returns its user
+   * id; otherwise null. Two uses at the same time cannot both succeed.
+   */
+  usePasswordLink(tokenHash: string, at: string): Promise<string | null>;
+}
+
 /** What `eraseMember` decided and did (R11). */
 export type MemberErasure =
   | { readonly kind: "not-member" } // no row of the user (or no such project): nothing written
@@ -424,6 +496,8 @@ export interface ProviderSet {
   readonly surveys: SurveyStore;
   /** R5: the user directory. */
   readonly users: UserDirectory;
+  /** The local accounts behind `users` when USER_DIRECTORY=local; null for every other directory. */
+  readonly accounts: LocalAccountStore | null;
   /** R5: projects, members and roles. */
   readonly projects: ProjectStore;
   readonly files: FileStore;

@@ -4,6 +4,9 @@ import { insertResponses } from "./result-store.js";
 import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
 import { isoOf, jsonText } from "./values.js";
 
+/** When the seed's accounts were made. */
+const SEEDED_AT = "2025-01-01T00:00:00.000Z";
+
 export interface SeedReport {
   readonly surveys: number;
   readonly projects: number;
@@ -19,6 +22,27 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
   const byId = <T>(map: Record<string, T> | undefined, id: string): T | undefined =>
     Object.entries(map ?? {}).find(([key]) => key.toLowerCase() === id)?.[1];
   await database.db.transaction().execute(async (trx) => {
+    // The seed users as local accounts without a password (USER_DIRECTORY=local reads them; the
+    // memory directory has its own copy). A blocked user is a disabled account.
+    for (const user of seed.users) {
+      const id = user.id.toLowerCase();
+      await trx.deleteFrom("users").where("id", "=", id).execute();
+      await trx
+        .insertInto("users")
+        .values({
+          id,
+          email: user.email.toLowerCase(),
+          display_name: user.displayName,
+          instance_role: "user",
+          status: user.blocked ? "disabled" : "active",
+          password_hash: null,
+          must_change_password: false,
+          session_epoch: 0,
+          created_at: SEEDED_AT,
+          last_sign_in_at: null,
+        })
+        .execute();
+    }
     for (const survey of seed.surveys) {
       const id = survey.id.toLowerCase();
       await deleteSurveyRows(trx, id);
