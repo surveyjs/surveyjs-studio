@@ -1,12 +1,19 @@
 import type { CSSProperties, ReactNode } from "react";
-import { followAppLink, type ShellBranding, type ShellProps } from "../types";
+import { followAppLink, type ShellAppLink, type ShellBranding, type ShellProps } from "../types";
+import { accentTextColor } from "./accentText";
 import styles from "./PoweredByShell.module.css";
 
 const SURVEYJS_URL = "https://surveyjs.io";
 
-/** The accent colour as the custom property the shell's styles read. */
+/**
+ * The accent colour as the custom properties the shell's styles read: `--brand-accent` for lines,
+ * `--brand-accent-text` (a shade that reads on white) for text.
+ */
 const accentStyle = (branding: ShellBranding) =>
-  ({ "--brand-accent": branding.accentColor }) as CSSProperties;
+  ({
+    "--brand-accent": branding.accentColor,
+    "--brand-accent-text": accentTextColor(branding.accentColor),
+  }) as CSSProperties;
 
 /**
  * The footer of the powered-by shell: Terms and Privacy when configured, and "Powered by SurveyJS"
@@ -34,29 +41,41 @@ export function PoweredByFooter({ branding }: { branding: ShellBranding }) {
 /**
  * The powered-by frame: a header with the instance's logo and name (and `header`, the account
  * controls of a signed-in page), the page, and the footer. Without `header` it frames the pages
- * of a visitor who is not signed in (sign-in, set-password, public results).
+ * of a visitor who is not signed in (sign-in, set-password, public results). The logo and name link
+ * to My Surveys (`homeLink` in the app, else a page load of `/`). `ownMain`: the page brings its own
+ * `<main>` (the public results page), so the frame adds none.
  */
 export function PoweredByFrame({
   branding,
   header,
+  homeLink,
+  ownMain = false,
   children,
 }: {
   branding: ShellBranding;
   header?: ReactNode;
+  homeLink?: ShellAppLink;
+  ownMain?: boolean;
   children: ReactNode;
 }) {
+  const Main = ownMain ? "div" : "main";
   return (
     <div className={styles.frame} style={accentStyle(branding)}>
       <header className={styles.header}>
-        <span className={styles.brand}>
+        <a
+          className={styles.brand}
+          href={homeLink?.href ?? "/"}
+          onClick={homeLink ? followAppLink(homeLink) : undefined}
+        >
+          {/* The name next to it says what the logo shows. */}
           {branding.logoUrl !== null && (
-            <img className={styles.logo} src={branding.logoUrl} alt={branding.name} />
+            <img className={styles.logo} src={branding.logoUrl} alt="" />
           )}
           <span>{branding.name}</span>
-        </span>
+        </a>
         {header}
       </header>
-      <main className={styles.main}>{children}</main>
+      <Main className={styles.main}>{children}</Main>
       <PoweredByFooter branding={branding} />
     </div>
   );
@@ -72,10 +91,12 @@ export function PoweredByShell({
   projectsLink,
   changePasswordLink,
   usersLink,
+  homeLink,
   branding,
   children,
 }: ShellProps & { branding: ShellBranding }) {
   const appLinks = [
+    { text: "My Surveys", link: homeLink },
     { text: "Projects", link: projectsLink },
     { text: "Users", link: usersLink },
     { text: "Change password", link: changePasswordLink },
@@ -97,7 +118,7 @@ export function PoweredByShell({
     </nav>
   );
   return (
-    <PoweredByFrame branding={branding} header={header}>
+    <PoweredByFrame branding={branding} header={header} {...(homeLink && { homeLink })}>
       {signOutError && (
         <div className={styles.message} role="alert">
           {signOutError}

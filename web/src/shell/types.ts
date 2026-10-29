@@ -55,6 +55,8 @@ export interface ShellProps {
   changePasswordLink?: ShellAppLink;
   /** In-app link to the Users page, for an instance admin. */
   usersLink?: ShellAppLink;
+  /** In-app link to My Surveys (the powered-by shell's header). */
+  homeLink?: ShellAppLink;
   /** `/config.branding`; the powered-by shell shows it. */
   branding?: ShellBranding;
   children: ReactNode;

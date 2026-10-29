@@ -58,6 +58,7 @@ function PrivateLayout() {
     signOutError: error,
     // The shells render without the router: they get the link and a function that follows it.
     projectsLink: { href: "/projects", navigate: () => void navigate({ to: "/projects" }) },
+    homeLink: { href: "/", navigate: () => void navigate({ to: "/" }) },
     ...(config.authMethods.includes("password") && {
       changePasswordLink: {
         href: "/change-password",

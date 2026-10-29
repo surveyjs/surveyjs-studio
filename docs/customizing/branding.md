@@ -47,8 +47,13 @@ Users), the sign-in and set-password pages, the public results page, and the foo
 shows no header: respondents see the survey and the footer.
 
 The logo must be reachable over https, or served by the same site: the pages' Content-Security-Policy loads images from
-this site and https only. The shell loads no fonts or images of its own, so with a logo on your own site the instance
-makes no calls to other sites (S11).
+this site and https only. **My Surveys does not serve your logo file itself**: the server serves only the built web app.
+A path such as `/brand/logo.svg` works when your reverse proxy serves that path from your own files (in front of the
+app, on the same origin); otherwise use an https URL. The shell loads no fonts or images of its own (the page styles and
+their fonts come with the app), so with the logo served by your proxy the instance makes no calls to other sites (S11).
+
+Text in the accent colour (links, Sign Out) uses a darker shade of it when the colour itself is too light to read on
+white (WCAG AA, 4.5:1); the header line keeps the colour as set.
 
 ## "Powered by SurveyJS" and the licence key
 

@@ -13,7 +13,7 @@ type RenderShell = (props: ShellProps) => ReactElement;
 type RenderStyles = (children: ReactNode) => ReactElement;
 
 // Loaded on demand, so the surveyjs.io styles (which also style <body>) and fonts reach the
-// browser only when this shell is configured.
+// browser only when a shell that uses them (surveyjs-site, powered-by) is configured.
 const SurveyjsSiteShell = lazy(async () => ({
   default: (await import("./surveyjs-site/SurveyjsSiteShell")).SurveyjsSiteShell,
 }));
@@ -21,11 +21,18 @@ const SurveyjsSiteStyles = lazy(async () => ({
   default: (await import("./surveyjs-site/SiteStyles")).SiteStyles,
 }));
 
+/** The site's component styles (not its header or footer): the powered-by pages use them too. */
+const siteStyles: RenderStyles = (children) => (
+  <Suspense fallback={null}>
+    <SurveyjsSiteStyles>{children}</SurveyjsSiteStyles>
+  </Suspense>
+);
+
 const shells: Record<string, RenderShell> = {
   plain: (props) => <PlainShell {...props} />,
-  [POWERED_BY_SHELL]: (props) => (
-    <PoweredByShell {...props} branding={props.branding ?? DEFAULT_BRANDING} />
-  ),
+  // The pages' content is built from the site's components, so it takes the site's styles.
+  [POWERED_BY_SHELL]: (props) =>
+    siteStyles(<PoweredByShell {...props} branding={props.branding ?? DEFAULT_BRANDING} />),
   "surveyjs-site": (props) => (
     <Suspense fallback={null}>
       <SurveyjsSiteShell {...props} />
@@ -35,12 +42,8 @@ const shells: Record<string, RenderShell> = {
 
 const shellStyles: Record<string, RenderStyles> = {
   plain: (children) => <>{children}</>,
-  [POWERED_BY_SHELL]: (children) => <>{children}</>,
-  "surveyjs-site": (children) => (
-    <Suspense fallback={null}>
-      <SurveyjsSiteStyles>{children}</SurveyjsSiteStyles>
-    </Suspense>
-  ),
+  [POWERED_BY_SHELL]: siteStyles,
+  "surveyjs-site": siteStyles,
 };
 
 /** Renders the shell named in /config; any unknown name falls back to plain. */
@@ -56,8 +59,8 @@ export function renderShell(name: string, props: ShellProps): ReactElement {
  */
 export function renderAnonymousPage(config: AppConfig, children: ReactNode): ReactElement {
   if (config.shell === POWERED_BY_SHELL) {
-    return (
-      <PoweredByFrame branding={config.branding ?? DEFAULT_BRANDING}>{children}</PoweredByFrame>
+    return siteStyles(
+      <PoweredByFrame branding={config.branding ?? DEFAULT_BRANDING}>{children}</PoweredByFrame>,
     );
   }
   return renderShellStyles(config.shell, <AnonymousShell>{children}</AnonymousShell>);
@@ -69,8 +72,11 @@ export function renderAnonymousPage(config: AppConfig, children: ReactNode): Rea
  */
 export function renderPublicPage(config: AppConfig, children: ReactNode): ReactElement {
   if (config.shell === POWERED_BY_SHELL) {
-    return (
-      <PoweredByFrame branding={config.branding ?? DEFAULT_BRANDING}>{children}</PoweredByFrame>
+    // The page brings its own <main>.
+    return siteStyles(
+      <PoweredByFrame branding={config.branding ?? DEFAULT_BRANDING} ownMain>
+        {children}
+      </PoweredByFrame>,
     );
   }
   return renderShellStyles(config.shell, children);

@@ -35,9 +35,7 @@ describe("PoweredByShell", () => {
     renderShell();
 
     const header = screen.getByRole("banner");
-    expect(within(header).getByRole("img", { name: "Acme Surveys" }).getAttribute("src")).toBe(
-      "/brand/logo.svg",
-    );
+    expect(header.querySelector("img")!.getAttribute("src")).toBe("/brand/logo.svg");
     expect(within(header).getByText("Acme Surveys")).toBeTruthy();
     expect(screen.getByText("page content")).toBeTruthy();
     const footer = screen.getByRole("contentinfo");
@@ -50,6 +48,24 @@ describe("PoweredByShell", () => {
     );
   });
 
+  it("links the instance's name to My Surveys, and lists My Surveys first", () => {
+    const navigate = vi.fn();
+    renderShell({ homeLink: { href: "/", navigate } });
+
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("link", { name: "Acme Surveys" }).getAttribute("href")).toBe(
+      "/",
+    );
+    expect(within(header).getByRole("link", { name: "My Surveys" }).getAttribute("href")).toBe("/");
+    fireEvent.click(within(header).getByRole("link", { name: "My Surveys" }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the logo no text of its own: the name next to it says it", () => {
+    renderShell();
+    expect(screen.getByRole("banner").querySelector("img")!.getAttribute("alt")).toBe("");
+  });
+
   it("sets the accent colour as a CSS custom property", () => {
     const { container } = render(
       <PoweredByFrame branding={branding}>
@@ -58,6 +74,17 @@ describe("PoweredByShell", () => {
     );
     const frame = container.firstElementChild as HTMLElement;
     expect(frame.style.getPropertyValue("--brand-accent")).toBe("#0a7");
+    // Text in the accent colour uses a shade that reads on white.
+    expect(frame.style.getPropertyValue("--brand-accent-text")).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("can leave the main landmark to a page that has its own", () => {
+    render(
+      <PoweredByFrame branding={branding} ownMain>
+        <main>page</main>
+      </PoweredByFrame>,
+    );
+    expect(document.querySelectorAll("main")).toHaveLength(1);
   });
 
   it("has the user's links and Sign Out in the header", () => {

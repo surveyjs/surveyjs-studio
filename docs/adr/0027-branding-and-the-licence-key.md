@@ -41,6 +41,9 @@ surveyjs.io, and developers use their own key and may switch the mark off.
   shown, and the libraries say so. If the app ever has to know the kind of key, one function feeding
   `branding.poweredBy` reads it.
 - A shipped key with `BRANDING=off` starts (the app cannot tell it from a paid key); the libraries decide what the
-  components show then.
+  components show then. **For self-hosted Step 7** (the image): ship the image's key apart from
+  `SURVEYJS_LICENSE_KEY` (a separate variable or a build constant), and make `BRANDING=off` require a
+  `SURVEYJS_LICENSE_KEY` that is set and differs from it. That keeps the rule meaningful without reading keys: once the
+  image fills `SURVEYJS_LICENSE_KEY` with its own key, "a key is set" no longer means "the admin's own key".
 - studio.surveyjs.io keeps the `surveyjs-site` shell and is unchanged.
 - The API tokens page is the hosted track's; its flag is reported now so the web app can hide it when it exists.

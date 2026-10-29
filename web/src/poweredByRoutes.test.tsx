@@ -59,7 +59,8 @@ describe("the powered-by shell", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "My Surveys" })).toBeTruthy();
     const header = screen.getAllByRole("banner")[0]!;
     expect(within(header).getByText("Acme Surveys")).toBeTruthy();
-    expect(within(header).getByRole("img", { name: "Acme Surveys" })).toBeTruthy();
+    expect(header.querySelector("img")).toBeTruthy();
+    expect(within(header).getByRole("link", { name: "My Surveys" })).toBeTruthy();
     expectBranding();
   });
 
@@ -113,6 +114,8 @@ describe("the powered-by shell", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Shared survey" })).toBeTruthy();
     expectBranding();
+    // The page has its own main landmark; the frame adds none.
+    expect(document.querySelectorAll("main")).toHaveLength(1);
   });
 
   it("has no footer under a running survey in the surveyjs-site shell", async () => {
