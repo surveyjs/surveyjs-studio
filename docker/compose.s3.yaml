@@ -1,0 +1,28 @@
+# A local S3-compatible server (RustFS) for FILE_STORE=s3 in development and tests (self-hosted
+# track; MinIO's images are no longer published). Start with `pnpm s3:up`; stop and wipe with
+# `pnpm s3:down`. The console is at http://127.0.0.1:19001.
+name: surveyjs-studio-s3
+services:
+  s3:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID (see docker/s3.env)}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY (see docker/s3.env)}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fs http://127.0.0.1:9000/health || wget -q -O /dev/null http://127.0.0.1:9000/health",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  s3-data:
