@@ -80,8 +80,70 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sign in with email and password */
+        /**
+         * Sign in with email and password
+         * @description Signs in a local account (`USER_DIRECTORY=local`, `AUTH_METHODS` lists
+         *     `password`). A wrong password and an unknown email get the same answer,
+         *     `401 invalid-credentials`. After 5 failures for one email, further attempts
+         *     are refused for a time that doubles with each failure
+         *     (`429 account-locked`, with `Retry-After`), whether or not the email
+         *     exists. The per-address sign-in rate limit applies too (`429 rate-limited`).
+         *     When the account must change its password first, the session is limited
+         *     to `getCurrentUser` (`mustChangePassword: true`), `changeOwnPassword` and
+         *     `logout`. `501` when password sign-in is not enabled.
+         */
         post: operations["passwordLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a password with a one-time link
+         * @description Sets the password of a local account from a set-password link: the first
+         *     admin's setup link (written to the server log), and later invitations and
+         *     resets. A link works once and for 7 days; an unknown, used or expired link
+         *     gets `400 link-invalid`. The password must have at least 12 characters and
+         *     not be a common one (`422 password-too-weak`). The account is not signed
+         *     in: sign in with the new password next. `501` when password sign-in is not
+         *     enabled.
+         */
+        post: operations["setPasswordWithLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change your password
+         * @description Changes the signed-in local account's password. The current password must
+         *     be given (`403 invalid-credentials` otherwise); the new one must have at
+         *     least 12 characters and not be a common one (`422 password-too-weak`).
+         *     Every other session of the account ends (it gets `401` within a minute);
+         *     this one is renewed with new session cookies. `501` for an account that is
+         *     not a local one.
+         */
+        post: operations["changeOwnPassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -799,7 +861,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -823,6 +885,13 @@ export interface components {
             email: string;
             /** Format: uri */
             avatarUrl?: string | null;
+            /**
+             * @description A local account's role on this instance (`USER_DIRECTORY=local`); absent otherwise.
+             * @enum {string}
+             */
+            instanceRole?: "admin" | "user";
+            /** @description A local account that must change its password before anything else; the session then answers `401 password-change-required` to other operations. */
+            mustChangePassword?: boolean;
             /** @description Account notices shown by the shell, such as licence expiry on the hosted edition. */
             notices?: components["schemas"]["Notice"][];
         };
@@ -1172,7 +1241,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description Not signed in, or the credentials are invalid (`unauthenticated`). */
+        /** @description Not signed in, or the credentials are invalid (`unauthenticated`, `invalid-credentials`), or the session must change its password first (`password-change-required`). */
         Unauthorized: {
             headers: {
                 [name: string]: unknown;
@@ -1535,8 +1604,74 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             501: components["responses"]["NotImplemented"];
+        };
+    };
+    setPasswordWithLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    /** Format: password */
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The password is set. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    changeOwnPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: password */
+                    currentPassword: string;
+                    /** Format: password */
+                    newPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The password is changed; new session cookies are set. */
+            204: {
+                headers: {
+                    "Set-Cookie": components["headers"]["SetCookie"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     getCurrentUser: {
