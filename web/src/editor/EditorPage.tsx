@@ -86,6 +86,8 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
       theme={theme.data}
       maxAssetBytesPerSurvey={config.limits.maxAssetBytesPerSurvey}
       serverReadOnly={config.readOnly}
+      // Only the surveyjs-site shell offers the Embed tabs (D21); a server without features does.
+      embed={config.features?.embed ?? true}
     />
   );
 }
@@ -97,6 +99,7 @@ function EditorSession({
   theme,
   maxAssetBytesPerSurvey,
   serverReadOnly,
+  embed,
 }: {
   survey: Survey;
   /** The documents as first read; later reads come from "Reload latest". */
@@ -106,6 +109,8 @@ function EditorSession({
   maxAssetBytesPerSurvey: number;
   /** The server refuses every write (`READ_ONLY`): open like a survey without modify rights. */
   serverReadOnly: boolean;
+  /** The Embed Survey and Embed Creator tabs (`/config.features.embed`). */
+  embed: boolean;
 }) {
   const queryClient = useQueryClient();
   // Fixed for the session: the savers exist or not from the start.
@@ -209,6 +214,7 @@ function EditorSession({
           uploads={uploads}
           onPendingChange={setPendingChange}
           onDocumentsLoaded={documentsLoaded}
+          embed={embed}
         />
       </Suspense>
     </EditorFrame>

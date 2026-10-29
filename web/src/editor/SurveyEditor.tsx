@@ -27,6 +27,8 @@ export interface SurveyEditorProps {
   readonly onPendingChange?: (pending: boolean) => void;
   /** Called with `documents` once the Creator holds them (on open and after each new object). */
   readonly onDocumentsLoaded?: (documents: EditorDocuments) => void;
+  /** Adds the Embed Survey and Embed Creator tabs (the surveyjs-site shell only, D21). */
+  readonly embed: boolean;
 }
 
 /**
@@ -42,6 +44,7 @@ export function SurveyEditor({
   uploads,
   onPendingChange,
   onDocumentsLoaded,
+  embed,
 }: SurveyEditorProps) {
   const [session, setSession] = useState<CreatorSession | null>(null);
   // The latest callbacks, without building a new Creator when they change.
@@ -59,11 +62,12 @@ export function SurveyEditor({
       surveyId,
       saves,
       uploads,
+      embed,
       onPendingChange: (pending) => pendingCallback.current?.(pending),
     });
     setSession(created);
     return () => created.close();
-  }, [surveyId, saves, uploads]);
+  }, [surveyId, saves, uploads, embed]);
 
   useEffect(() => {
     if (session === null) return;
