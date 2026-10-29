@@ -68,6 +68,15 @@ describe("getConfig", () => {
         helpDesk: "https://surveyjs.answerdesk.io/ticket/list?preset=mytickets",
         billing: "https://surveyjs.io/manage#billing",
       },
+      branding: {
+        name: "My Surveys",
+        logoUrl: null,
+        accentColor: "#19b394",
+        termsUrl: null,
+        privacyUrl: null,
+        poweredBy: true,
+      },
+      features: { embed: true, apiDocs: true, apiTokens: true },
     });
   });
 
@@ -79,7 +88,13 @@ describe("getConfig", () => {
         OIDC_ISSUER_URL: "https://auth.example.com",
         OIDC_CLIENT_ID: "client",
         OIDC_CLIENT_SECRET: "secret",
-        APP_SHELL: "powered-by-surveyjs",
+        APP_SHELL: "powered-by",
+        BRAND_NAME: "Acme Surveys",
+        BRAND_LOGO_URL: "/brand/logo.svg",
+        BRAND_ACCENT_COLOR: "#0a7",
+        TERMS_URL: "https://acme.example/terms",
+        PRIVACY_URL: "https://acme.example/privacy",
+        BRANDING: "off",
         AUTH_METHODS: "surveyjs",
         SURVEYJS_LICENSE_KEY: "key-123",
         LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "300",
@@ -95,7 +110,7 @@ describe("getConfig", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toStrictEqual({
       edition: "hosted",
-      shell: "powered-by-surveyjs",
+      shell: "powered-by",
       authMethods: ["surveyjs"],
       surveyjsLicenseKey: "key-123",
       limits: {
@@ -105,6 +120,16 @@ describe("getConfig", () => {
         maxDocumentBytes: 400,
       },
       readOnly: false,
+      branding: {
+        name: "Acme Surveys",
+        logoUrl: "/brand/logo.svg",
+        accentColor: "#0a7",
+        termsUrl: "https://acme.example/terms",
+        privacyUrl: "https://acme.example/privacy",
+        poweredBy: false,
+      },
+      // Outside the surveyjs-site shell (D21).
+      features: { embed: false, apiDocs: false, apiTokens: false },
       // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
       links: {
         settings: "https://surveyjs.io/manage",
@@ -413,6 +438,14 @@ describe("/api/docs", () => {
     expect(res.statusCode).toBe(404);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json()).toMatchObject({ code: "not-found", detail: "Run pnpm build:docs" });
+  });
+
+  it("is a plain 404 outside the surveyjs-site shell, though the docs exist (D21)", async () => {
+    const res = await (
+      await start({ APP_SHELL: "powered-by" }, { apiDocsPath: docsFile })
+    ).inject("/api/docs");
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "not-found" });
   });
 
   it("is a plain 404 when API_DOCS=false", async () => {

@@ -45,6 +45,15 @@ describe("loadConfig", () => {
       shell: "surveyjs-site",
       authMethods: ["surveyjs"],
       surveyjsLicenseKey: null,
+      branding: {
+        name: "My Surveys",
+        logoUrl: null,
+        accentColor: "#19b394",
+        termsUrl: null,
+        privacyUrl: null,
+        poweredBy: true,
+      },
+      features: { embed: true, apiDocs: true, apiTokens: true },
       storageProvider: "memory",
       memorySeed: "empty",
       legacy: null,
@@ -106,7 +115,7 @@ describe("loadConfig", () => {
       LIMIT_MAX_FILE_BYTES: "20",
       LIMIT_MAX_RESPONSE_BYTES: "30",
       LIMIT_MAX_DOCUMENT_BYTES: "40",
-      API_DOCS: "true",
+      // Not API_DOCS: the docs are shown only in the surveyjs-site shell (config-branding.test.ts).
     });
     expect(config).toMatchObject({
       nodeEnv: "production",
@@ -128,7 +137,7 @@ describe("loadConfig", () => {
         maxResponseBytes: 30,
         maxDocumentBytes: 40,
       },
-      apiDocs: true,
+      apiDocs: false,
     });
   });
 
