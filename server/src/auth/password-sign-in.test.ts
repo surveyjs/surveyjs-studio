@@ -215,6 +215,17 @@ describe("password sign-in", () => {
     expect(again.json()).toMatchObject({ code: "link-invalid" });
   });
 
+  it("makes the first admin from ADMIN_* although the seed's admin has no password", async () => {
+    // The seed has admin@example.com as a user: the first admin needs an email of its own.
+    const email = "first-admin@example.com";
+    const { login } = await start({
+      ADMIN_EMAIL: email,
+      ADMIN_PASSWORD,
+      MEMORY_SEED: "legacy-fixtures",
+    });
+    expect((await login(email, ADMIN_PASSWORD)).statusCode).toBe(204);
+  });
+
   it("keeps the setup link when its email already has an account", async () => {
     // The seed's users are accounts, none of them an admin, so the setup link is logged.
     const { app, lines, login } = await start({

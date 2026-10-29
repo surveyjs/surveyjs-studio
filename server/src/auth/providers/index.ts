@@ -1,5 +1,6 @@
 import type { AppConfig } from "../../config.js";
 import { legacyFixtureSeed } from "../../providers/azure-legacy/fixtures.js";
+import { seedInstanceAdmin } from "../../providers/seed-instance-admin.js";
 import type { IdentityProvider } from "../identity.js";
 import { createDevIdentityProvider } from "./dev.js";
 import { createLocalIdentityProvider } from "./local.js";
@@ -8,7 +9,13 @@ import { createOidcIdentityProvider } from "./oidc.js";
 /** The configured identity provider. The dev provider lists the users of the memory seed. */
 export async function createIdentityProvider(config: AppConfig): Promise<IdentityProvider> {
   if (config.identityProvider === "dev") {
-    const users = config.memorySeed === "legacy-fixtures" ? (await legacyFixtureSeed()).users : [];
+    const seedUsers =
+      config.memorySeed === "legacy-fixtures" ? (await legacyFixtureSeed()).users : [];
+    // A local directory's seed has an instance admin too (Step 5).
+    const users =
+      config.userDirectory === "local" && seedUsers.length > 0
+        ? [...seedUsers, seedInstanceAdmin]
+        : seedUsers;
     return createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users });
   }
   // Without the surveyjs method there is no provider to redirect to: the web app's sign-in page.

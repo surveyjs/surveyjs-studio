@@ -8,6 +8,7 @@ import type { Lockout } from "../passwords/lockout.js";
 import { passwordProblem } from "../passwords/policy.js";
 import type { LocalAccountStore } from "../providers/types.js";
 import { requireUser } from "./authenticate.js";
+import { hasPasswordAdmin } from "./bootstrap.js";
 import { sessionCookies } from "./cookies.js";
 import { generateCsrfToken, sameInConstantTime } from "./csrf.js";
 import type { SessionCheck } from "./session-check.js";
@@ -182,7 +183,7 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
         const claimed = setupToken;
         setupToken = null;
         try {
-          if ((await accounts.countActiveAdmins()) > 0) throw linkInvalid();
+          if (await hasPasswordAdmin(accounts)) throw linkInvalid();
           if (await accounts.accountByEmail(email)) {
             setupToken = claimed;
             throw new AppError({

@@ -37,6 +37,7 @@ import {
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryLocalAccounts } from "./memory-accounts.js";
+import { seedInstanceAdmin } from "./seed-instance-admin.js";
 import { createMemoryFileStore } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
@@ -226,7 +227,9 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
   });
 
   const local =
-    options.userDirectory === "local" ? createMemoryLocalAccounts(seed?.users ?? []) : null;
+    options.userDirectory === "local"
+      ? createMemoryLocalAccounts(seed?.users ?? [], seed ? [seedInstanceAdmin] : [])
+      : null;
   const findUser = (id: string): User | undefined =>
     local ? local.findUser(id) : users.find((u) => u.id === lower(id));
 

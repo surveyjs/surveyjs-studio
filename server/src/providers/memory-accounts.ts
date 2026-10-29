@@ -53,18 +53,26 @@ const SEED_CREATED_AT = "2025-01-01T00:00:00.000Z";
 
 /**
  * Local accounts in process memory (USER_DIRECTORY=local with STORAGE_PROVIDER=memory). The seed
- * users become active accounts without a password (a blocked one disabled), as in the SQL seed.
+ * users become active accounts without a password (a blocked one disabled), and `seedAdmins` active
+ * instance admins without one, as in the SQL seed.
  */
-export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): MemoryLocalAccounts {
+export function createMemoryLocalAccounts(
+  seedUsers: readonly User[] = [],
+  seedAdmins: readonly User[] = [],
+): MemoryLocalAccounts {
   const byId = new Map<string, StoredAccount>();
   const links = new Map<string, StoredLink>();
-  for (const user of seedUsers) {
+  const seeded = [
+    ...seedUsers.map((user) => ({ user, instanceRole: "user" as const })),
+    ...seedAdmins.map((user) => ({ user, instanceRole: "admin" as const })),
+  ];
+  for (const { user, instanceRole } of seeded) {
     const id = user.id.toLowerCase();
     byId.set(id, {
       id,
       email: user.email.toLowerCase(),
       displayName: user.displayName,
-      instanceRole: "user",
+      instanceRole,
       status: user.blocked ? "disabled" : "active",
       passwordHash: null,
       mustChangePassword: false,

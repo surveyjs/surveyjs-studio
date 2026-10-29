@@ -1,4 +1,5 @@
 import type { MemorySeed } from "../providers/memory.js";
+import { seedInstanceAdmin } from "../providers/seed-instance-admin.js";
 import type { SqlDatabase } from "./database.js";
 import { insertResponses } from "./result-store.js";
 import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
@@ -23,17 +24,26 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
     Object.entries(map ?? {}).find(([key]) => key.toLowerCase() === id)?.[1];
   await database.db.transaction().execute(async (trx) => {
     // The seed users as local accounts without a password (USER_DIRECTORY=local reads them; the
-    // memory directory has its own copy). A blocked user is a disabled account.
-    for (const user of seed.users) {
+    // memory directory has its own copy), and the seed's instance admin. A blocked user is a
+    // disabled account. An account with a seed user's id or email is replaced.
+    const seeded = [
+      ...seed.users.map((user) => ({ user, instanceRole: "user" as const })),
+      { user: seedInstanceAdmin, instanceRole: "admin" as const },
+    ];
+    for (const { user, instanceRole } of seeded) {
       const id = user.id.toLowerCase();
-      await trx.deleteFrom("users").where("id", "=", id).execute();
+      const email = user.email.toLowerCase();
+      await trx
+        .deleteFrom("users")
+        .where((eb) => eb.or([eb("id", "=", id), eb("email", "=", email)]))
+        .execute();
       await trx
         .insertInto("users")
         .values({
           id,
-          email: user.email.toLowerCase(),
+          email,
           display_name: user.displayName,
-          instance_role: "user",
+          instance_role: instanceRole,
           status: user.blocked ? "disabled" : "active",
           password_hash: null,
           must_change_password: false,
