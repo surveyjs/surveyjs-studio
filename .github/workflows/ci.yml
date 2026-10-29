@@ -76,6 +76,16 @@ jobs:
       - name: Provider and migrator suites (PostgreSQL)
         run: pnpm test:providers:postgres
 
+      # RustFS, an S3-compatible server, for FILE_STORE=s3 (the e2e PostgreSQL mode uses it too).
+      - name: Start the local S3 server (RustFS)
+        run: pnpm s3:up
+
+      - name: Byte store and provider suites (files in S3)
+        run: pnpm test:providers:s3
+
+      - name: Conformance tests (SQLite, files in S3)
+        run: pnpm test:conformance:s3
+
       - name: Conformance tests (PostgreSQL, on the image)
         run: pnpm test:conformance:postgres
         env:
@@ -107,7 +117,7 @@ jobs:
       - name: End-to-end tests (SQLite mode)
         run: pnpm e2e:sqlite
 
-      # The tsx server on a new database of the PostgreSQL started above.
+      # The tsx server on a new database of the PostgreSQL started above, files in a new S3 bucket.
       - name: End-to-end tests (PostgreSQL mode)
         run: pnpm e2e:postgres
 
@@ -160,6 +170,10 @@ jobs:
       - name: Stop PostgreSQL
         if: always()
         run: pnpm postgres:down
+
+      - name: Stop the local S3 server
+        if: always()
+        run: pnpm s3:down
 
   # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio:<commit sha>. It runs no
   # third-party code, so only this job gets write access to packages.

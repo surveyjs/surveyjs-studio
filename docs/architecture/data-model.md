@@ -1,6 +1,6 @@
 # Data model (SQL providers)
 
-Status: self-hosted track Step 1 (2026-10-28). The tables of [Built](#built) exist; the tables of
+Status: self-hosted track Step 3 (2026-10-29). The tables of [Built](#built) exist; the tables of
 [Planned](#planned) are the model the later steps build, and each step may refine its own tables in the same PR
 that adds their migration.
 
@@ -137,16 +137,28 @@ other; on SQLite every transaction already runs alone. `deleteProject` moves the
 personal scope (`updated_at` = now; id, creator, published, archived and settings unchanged) and deletes the project
 with its members.
 
+### `files` (0003)
+
+The metadata of stored files ([ADR 0025](../adr/0025-file-storage-for-the-sql-providers.md)); the bytes are in the
+byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}`.
+
+| Column         | Type              | Notes                                                                                   |
+| -------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `id`           | text, primary key | 64 lower-case hex digits ([ADR 0013](../adr/0013-editor-uploads-and-files.md)), checked |
+| `survey_id`    | GUID              | No foreign key: the service deletes a survey's files first (R10)                        |
+| `kind`         | text              | `asset` (editor) or `response` (respondent)                                             |
+| `name`         | text              | The uploaded name                                                                       |
+| `content_type` | text              | One of the allowed types                                                                |
+| `size`         | bigint / integer  | Bytes                                                                                   |
+| `created_at`   | timestamp         |                                                                                         |
+
+Index `files_survey` (`survey_id`, `kind`) serves `usage` (the quota), per-survey deletes and asset copies. A new
+file's row is written before its bytes; a delete removes the rows, then the bytes.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
 "HM" the hosted-migration plan.
-
-### Files (SH Step 3: `FileStore`)
-
-**`files`**: `id` (64 hex digits, primary key), `survey_id` (FK, cascade), `kind` (`asset` or `response`), `name`,
-`content_type`, `size` (bigint), `created_at`. Index (`survey_id`, `kind`) for `usage` and cascades. The bytes are in
-the file store (`FILE_STORE=local|s3`) under the file id; the row is the metadata and the quota's source.
 
 ### Users, identities and invitations (SH Steps 4 and 8, HM Step 2: `UserDirectory`)
 
@@ -192,8 +204,8 @@ Empty and unused in the self-hosted image.
 | `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built                    |
 | `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built                    |
 | `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built                    |
-| `FileStore`                                 | `files` and the file store                               | SH Step 3                |
+| `FileStore`                                 | `files` and the byte store                               | Built                    |
 | `UserDirectory`                             | `users`, `user_identities`, `invitations`                | SH Steps 4, 8; HM Step 2 |
 
-Until SH Steps 3 and 4 the SQL providers keep the **files and the users** in memory (the memory provider's, seeded by
-`MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production` with them.
+Until SH Step 4 the SQL providers keep the **users** in memory (the memory provider's, seeded by `MEMORY_SEED`). The
+server says so at start-up and refuses `NODE_ENV=production` with them.

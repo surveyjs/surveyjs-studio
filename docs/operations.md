@@ -112,14 +112,15 @@ what the app needs, in parallel, each with a 5 s limit, and names the checks tha
 share one run of the checks, and its answer, ready or not, is reused for 5 s: the stores see at most one check every
 5 s, however often `/readyz` is called.
 
-| Check             | When                                    | What it does                                                           |
-| ----------------- | --------------------------------------- | ---------------------------------------------------------------------- |
-| `sql`             | `STORAGE_PROVIDER=azure-legacy`         | `SELECT 1` on the site database (also the `surveyjs-sql` users)        |
-| `surveys-storage` | `STORAGE_PROVIDER=azure-legacy`         | Reads the surveys account's properties and lists one table             |
-| `results-storage` | `STORAGE_PROVIDER=azure-legacy`         | The same on the results account                                        |
-| `user-api`        | `USER_DIRECTORY=surveyjs-api`           | Looks up an id that never exists: `404` is ready, anything else is not |
-| `memory`          | `STORAGE_PROVIDER=memory`               | Always ready                                                           |
-| `database`        | `STORAGE_PROVIDER=sqlite` or `postgres` | `select 1` on the database, waiting at most 3 s                        |
+| Check             | When                                    | What it does                                                                                                 |
+| ----------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `sql`             | `STORAGE_PROVIDER=azure-legacy`         | `SELECT 1` on the site database (also the `surveyjs-sql` users)                                              |
+| `surveys-storage` | `STORAGE_PROVIDER=azure-legacy`         | Reads the surveys account's properties and lists one table                                                   |
+| `results-storage` | `STORAGE_PROVIDER=azure-legacy`         | The same on the results account                                                                              |
+| `user-api`        | `USER_DIRECTORY=surveyjs-api`           | Looks up an id that never exists: `404` is ready, anything else is not                                       |
+| `memory`          | `STORAGE_PROVIDER=memory`               | Always ready                                                                                                 |
+| `database`        | `STORAGE_PROVIDER=sqlite` or `postgres` | `select 1` on the database, waiting at most 3 s                                                              |
+| `files`           | `STORAGE_PROVIDER=sqlite` or `postgres` | `FILE_STORE=local`: the folder can be written; `s3`: `HeadBucket` on the bucket (a missing one is not ready) |
 
 ```text
 200 {"status":"ok"}
@@ -261,13 +262,13 @@ Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API w
 The local configurations, for development, tests and demos. None of them touches real data except the two runs on
 production data, which are for the product owner only. [Running the app](running.md) has the commands.
 
-| Configuration      | Storage and users                                                                                                                                     | Sign-in                                         | Settings file                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
-| Memory demo        | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                               | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page | `server/demo.env`                                                        |
-| Azurite demo       | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                    | `surveyjs-oidc` against the mock OIDC server    | `docker/azurite.env`, `server/demo-azurite.env`                          |
-| SQLite, PostgreSQL | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything but users and files, which stay `memory` until self-hosted Steps 3–4 | `IDENTITY_PROVIDER=dev`                         | `server/demo.env` with `server/demo-sqlite.env` or `docker/postgres.env` |
-| Prod-like          | The image in the mode 1 configuration, on Azurite                                                                                                     | `surveyjs-oidc` against the mock OIDC server    | `docker/prod-like.env`                                                   |
-| On production data | `azure-legacy` on the real stores                                                                                                                     | `surveyjs-oidc` against a local the site's sign-in service   | `server/.env` (never committed)                                          |
+| Configuration          | Storage and users                                                                                                                                                                                           | Sign-in                                         | Settings file                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Memory demo            | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                                                                                     | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page | `server/demo.env`                                                                         |
+| Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                          | `surveyjs-oidc` against the mock OIDC server    | `docker/azurite.env`, `server/demo-azurite.env`                                           |
+| SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything but users, which stay `memory` until self-hosted Step 4; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                         | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
+| Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                           | `surveyjs-oidc` against the mock OIDC server    | `docker/prod-like.env`                                                                    |
+| On production data     | `azure-legacy` on the real stores                                                                                                                                                                           | `surveyjs-oidc` against a local the site's sign-in service   | `server/.env` (never committed)                                                           |
 
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
@@ -286,7 +287,7 @@ and today the server refuses them at start-up with a message that names the trac
 
 The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Its Step 1 added
 `STORAGE_PROVIDER=sqlite|postgres` with `SQLITE_PATH` and `DATABASE_URL` ([Development](development.md#sqlite-and-postgresql-modes)),
-for development only: until every store is on SQL (its Steps 3 and 4: files and users) they are refused with
+for development only: until every store is on SQL (its Step 4: the users) they are refused with
 `NODE_ENV=production`. Mode 1.3 (the
 hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come from sign-in
 ([ADR 0022](adr/0022-users-from-sign-in.md)).
