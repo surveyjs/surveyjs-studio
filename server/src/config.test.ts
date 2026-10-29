@@ -48,6 +48,7 @@ describe("loadConfig", () => {
       legacy: null,
       database: null,
       files: null,
+      bootstrapAdmin: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -335,24 +336,104 @@ describe("loadConfig", () => {
       },
     );
 
+    const production = {
+      ...oidc,
+      SESSION_SECRET,
+      NODE_ENV: "production",
+      PUBLIC_BASE_URL: "https://surveys.example.com",
+    };
+
     it.each(["sqlite", "postgres"])(
-      "refuses %s in production until every store is on SQL",
+      "refuses %s with the memory user directory in production",
       (provider) => {
         const message = messageOf(() =>
-          load({
-            ...oidc,
-            SESSION_SECRET,
-            NODE_ENV: "production",
-            PUBLIC_BASE_URL: "https://surveys.example.com",
-            STORAGE_PROVIDER: provider,
-            DATABASE_URL,
-          }),
+          load({ ...production, STORAGE_PROVIDER: provider, DATABASE_URL }),
         );
         expect(message).toContain(
-          `  - STORAGE_PROVIDER: ${provider} is not allowed when NODE_ENV=production until every store is on SQL (self-hosted track)`,
+          `  - USER_DIRECTORY: memory is not allowed when NODE_ENV=production (STORAGE_PROVIDER=${provider} keeps users in memory); use local`,
         );
       },
     );
+
+    it.each(["sqlite", "postgres"])(
+      "allows %s with the local user directory in production",
+      (provider) => {
+        const config = load({
+          ...production,
+          STORAGE_PROVIDER: provider,
+          DATABASE_URL,
+          USER_DIRECTORY: "local",
+          AUTH_METHODS: "password",
+        });
+        expect(config).toMatchObject({ storageProvider: provider, userDirectory: "local" });
+      },
+    );
+  });
+
+  describe("local accounts", () => {
+    const ADMIN_SECRET = "Admin-Secret-Value-66";
+    const local = { STORAGE_PROVIDER: "sqlite", USER_DIRECTORY: "local", AUTH_METHODS: "password" };
+
+    it("signs in with passwords alone: no OIDC settings needed", () => {
+      const config = load(local);
+      expect(config).toMatchObject({
+        userDirectory: "local",
+        authMethods: ["password"],
+        oidc: null,
+        bootstrapAdmin: null,
+      });
+    });
+
+    it("still needs the OIDC settings when surveyjs is a sign-in method too", () => {
+      expect(messageOf(() => load({ ...local, AUTH_METHODS: "password,surveyjs" }))).toContain(
+        "  - OIDC_ISSUER_URL: required when IDENTITY_PROVIDER=surveyjs-oidc",
+      );
+    });
+
+    it("works with the memory storage provider too", () => {
+      expect(load({ ...local, STORAGE_PROVIDER: "memory" }).userDirectory).toBe("local");
+    });
+
+    it("accepts any ordinary email address as the first admin's", () => {
+      for (const email of ["sam.sanders@sub.example.co.uk", "s+tag@example.com"]) {
+        expect(
+          load({ ...local, ADMIN_EMAIL: email, ADMIN_PASSWORD: ADMIN_SECRET }).bootstrapAdmin
+            ?.email,
+        ).toBe(email);
+      }
+    });
+
+    it("reads the first admin, with the email lower-cased", () => {
+      expect(
+        load({ ...local, ADMIN_EMAIL: "Admin@Example.com", ADMIN_PASSWORD: ADMIN_SECRET })
+          .bootstrapAdmin,
+      ).toEqual({ email: "admin@example.com", password: ADMIN_SECRET });
+    });
+
+    it.each([
+      [{ ...local, ADMIN_EMAIL: "admin@example.com" }, "ADMIN_PASSWORD: required with ADMIN_EMAIL"],
+      [{ ...local, ADMIN_PASSWORD: ADMIN_SECRET }, "ADMIN_EMAIL: required with ADMIN_PASSWORD"],
+      [
+        { ...local, ADMIN_EMAIL: "not an email", ADMIN_PASSWORD: ADMIN_SECRET },
+        "ADMIN_EMAIL: must be an email address",
+      ],
+      [
+        { ...local, ADMIN_EMAIL: "admin@example.com", ADMIN_PASSWORD: "short" },
+        "ADMIN_PASSWORD: Use at least 12 characters.",
+      ],
+      [
+        {
+          STORAGE_PROVIDER: "sqlite",
+          ADMIN_EMAIL: "admin@example.com",
+          ADMIN_PASSWORD: ADMIN_SECRET,
+        },
+        "ADMIN_EMAIL: requires USER_DIRECTORY=local",
+      ],
+    ])("refuses %j, never echoing the password", (env, line) => {
+      const message = messageOf(() => load(env));
+      expect(message).toContain(`  - ${line}`);
+      expect(message).not.toContain(ADMIN_SECRET);
+    });
   });
 
   describe("file storage", () => {
@@ -746,8 +827,8 @@ describe("loadConfig", () => {
         "USER_DIRECTORY: surveyjs-sql requires STORAGE_PROVIDER=azure-legacy",
       ],
       [
-        { USER_DIRECTORY: "local" },
-        "USER_DIRECTORY: local is not available yet (self-hosted track)",
+        { USER_DIRECTORY: "local", ...legacy },
+        "USER_DIRECTORY: local requires STORAGE_PROVIDER=memory, sqlite or postgres",
       ],
       [
         { USER_DIRECTORY: "surveyjs-api", USER_API_TOKEN: "t" },
@@ -761,9 +842,10 @@ describe("loadConfig", () => {
         { ...api, USER_API_URL: "http://users.example.com" },
         "USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
+      [{ AUTH_METHODS: "password" }, "AUTH_METHODS: password requires USER_DIRECTORY=local"],
       [
-        { AUTH_METHODS: "password" },
-        "AUTH_METHODS: password requires USER_DIRECTORY=local, which is not available yet (self-hosted track)",
+        { USER_DIRECTORY: "local", AUTH_METHODS: "github" },
+        "AUTH_METHODS: github is not available yet (self-hosted track Step 8)",
       ],
       [
         { ACCOUNT_WEBHOOK_SECRET: "whsec_short-Secret-Value-99" },
@@ -780,12 +862,15 @@ describe("loadConfig", () => {
       },
     );
 
-    it("names every local-directory method on its own line", () => {
+    it("names every method that cannot start on its own line", () => {
       const message = messageOf(() =>
         loadConfig({ AUTH_METHODS: "password,github,facebook,google" }),
       );
-      for (const method of ["password", "github", "facebook", "google"]) {
-        expect(message).toContain(`  - AUTH_METHODS: ${method} requires USER_DIRECTORY=local`);
+      expect(message).toContain("  - AUTH_METHODS: password requires USER_DIRECTORY=local");
+      for (const method of ["github", "facebook", "google"]) {
+        expect(message).toContain(
+          `  - AUTH_METHODS: ${method} is not available yet (self-hosted track Step 8)`,
+        );
       }
     });
 
@@ -813,9 +898,9 @@ describe("loadConfig", () => {
     });
 
     it("runs the account rules even when the identity rules are skipped", () => {
-      expect(() => load({ USER_DIRECTORY: "local" }, { skipIdentityRules: true })).toThrow(
-        "USER_DIRECTORY: local is not available yet",
-      );
+      expect(() =>
+        load({ USER_DIRECTORY: "local", ...legacy }, { skipIdentityRules: true }),
+      ).toThrow("USER_DIRECTORY: local requires STORAGE_PROVIDER=memory, sqlite or postgres");
     });
 
     it("never echoes the secrets next to other problems", () => {

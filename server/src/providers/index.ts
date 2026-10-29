@@ -23,7 +23,10 @@ async function createMemory(
 ): Promise<ProviderSet> {
   return createMemoryProviders(
     config.memorySeed === "legacy-fixtures" ? await legacyFixtureSeed() : undefined,
-    { accountNotices },
+    {
+      accountNotices,
+      ...(config.userDirectory === "local" && { userDirectory: "local" as const }),
+    },
   );
 }
 

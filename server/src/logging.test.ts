@@ -165,7 +165,7 @@ describe("storageWarning", () => {
       });
       const warning = storageWarning(config);
       expect(warning).toBe(
-        `STORAGE_PROVIDER=${STORAGE_PROVIDER} keeps users in memory: they are lost on restart (self-hosted track Step 4)`,
+        `STORAGE_PROVIDER=${STORAGE_PROVIDER} keeps users in memory (USER_DIRECTORY=memory): they are lost on restart; use USER_DIRECTORY=local`,
       );
     }
   });

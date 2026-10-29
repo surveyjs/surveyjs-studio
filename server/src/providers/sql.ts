@@ -71,6 +71,7 @@ export async function openSqlProviders(
   return createSqlProviders(database, {
     accountNotices,
     bytes: openByteStore(config.files!),
+    localAccounts: config.userDirectory === "local",
     ...(config.memorySeed === "legacy-fixtures" && { fallbackSeed: await legacyFixtureSeed() }),
   });
 }
