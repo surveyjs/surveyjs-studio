@@ -22,7 +22,7 @@ describe("loadContract", () => {
     );
     try {
       const contract = await loadContract(openapiPath);
-      expect(contract.operations).toHaveLength(42);
+      expect(contract.operations).toHaveLength(47);
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     } finally {
       for (const spy of spies) spy.mockRestore();

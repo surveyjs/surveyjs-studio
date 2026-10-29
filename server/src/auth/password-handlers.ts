@@ -57,7 +57,7 @@ function weakPassword(problem: string): AppError {
 const linkInvalid = (): AppError =>
   new AppError({
     code: "link-invalid",
-    status: 400,
+    status: 410,
     title: "Link not valid",
     detail: "This link was used already, has expired, or is not a link of this site.",
   });

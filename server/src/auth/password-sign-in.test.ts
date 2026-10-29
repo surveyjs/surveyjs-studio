@@ -211,7 +211,7 @@ describe("password sign-in", () => {
       email: "other@example.com",
       displayName: "Other",
     });
-    expect(again.statusCode).toBe(400);
+    expect(again.statusCode).toBe(410);
     expect(again.json()).toMatchObject({ code: "link-invalid" });
   });
 
@@ -250,7 +250,7 @@ describe("password sign-in", () => {
         payload: { token: token!, password: NEW_PASSWORD, email, displayName: "Admin" },
       });
     const answers = await Promise.all([use("one@example.com"), use("two@example.com")]);
-    expect(answers.map((answer) => answer.statusCode).sort()).toEqual([204, 400]);
+    expect(answers.map((answer) => answer.statusCode).sort()).toEqual([204, 410]);
     const signIns = await Promise.all([
       login("one@example.com", NEW_PASSWORD),
       login("two@example.com", NEW_PASSWORD),

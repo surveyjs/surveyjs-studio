@@ -314,7 +314,7 @@ describe("set-password page", () => {
       configHandler(passwordConfig),
       postHandler("/auth/password-link", () =>
         problem(
-          400,
+          410,
           "link-invalid",
           "This link was used already, has expired, or is not a link of this site.",
         ),

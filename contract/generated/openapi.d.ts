@@ -115,7 +115,7 @@ export interface paths {
          *     link, which the server writes to its log while the instance has no admin
          *     (it works once, until the server restarts). The setup link creates that
          *     admin: `email` and `displayName` are required with it and ignored
-         *     otherwise. An unknown, used or expired link gets `400 link-invalid`. The password must have at least 12 characters and
+         *     otherwise. An unknown, used or expired link gets `410 link-invalid`. The password must have at least 12 characters and
          *     not be a common one (`422 password-too-weak`). The account is not signed
          *     in: sign in with the new password next. `501` when password sign-in is not
          *     enabled.
@@ -189,6 +189,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the instance's users
+         * @description Instance admins only (`403 forbidden` otherwise). Every local account, with its
+         *     status, instance role and last sign-in, ordered by email. `501` when the instance
+         *     has no local accounts (`USER_DIRECTORY=local`).
+         */
+        get: operations["listUsers"];
+        put?: never;
+        /**
+         * Create a user and their set-password link
+         * @description Instance admins only. Creates an `invited` account and returns its one-time
+         *     set-password link, valid for 7 days: the only time the link is shown. Send it to
+         *     the user yourself; there is no email. The user sets a password with it
+         *     (`setPasswordWithLink`) and becomes `active`. An email that already has an
+         *     account gets `409 email-taken`.
+         */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a user and erase their data
+         * @description Instance admins only. Erases the user's data as the account-deleted webhook does:
+         *     their personal surveys with their results and files go, they leave every project
+         *     (an admin is promoted where none would remain, a project with no other member is
+         *     deleted), then the account is deleted and its sessions end. The last active
+         *     instance admin cannot be deleted (`409 last-instance-admin`).
+         */
+        delete: operations["deleteUser"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a user's instance role or status
+         * @description Instance admins only. `status` may be set to `disabled` or `active`: disabling
+         *     ends the user's sessions within a minute; enabling an account that never set a
+         *     password makes it `invited` again. Demoting, disabling or deleting the last
+         *     active instance admin fails with `409 last-instance-admin`, also for yourself.
+         */
+        patch: operations["updateUser"];
+        trace?: never;
+    };
+    "/admin/users/{userId}/reset-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a user's password
+         * @description Instance admins only. Clears the user's password, ends their sessions within a
+         *     minute, makes their earlier links unusable, and returns a new one-time
+         *     set-password link, valid for 7 days: the only time it is shown. For an `invited`
+         *     user it is a new invitation link.
+         */
+        post: operations["createUserResetLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects": {
         parameters: {
             query?: never;
@@ -198,7 +286,9 @@ export interface paths {
         };
         /**
          * List the projects the user belongs to
-         * @description Personal surveys are not a project; see `GET /surveys?project=personal`.
+         * @description Personal surveys are not a project; see `GET /surveys?project=personal`. With
+         *     `scope=all` an instance admin gets every project of the instance (the ones they
+         *     are not a member of with `role: admin`); others get `403 forbidden`.
          */
         get: operations["listProjects"];
         put?: never;
@@ -863,13 +953,79 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
                 pointer: string;
                 detail: string;
             }[];
+        };
+        /**
+         * @example {
+         *       "id": "3c4a7fdf-94a1-41ec-96d0-41749c260100",
+         *       "email": "alex@example.com",
+         *       "displayName": "Alex",
+         *       "instanceRole": "user",
+         *       "status": "active",
+         *       "createdAt": "2026-10-29T10:00:00.000Z",
+         *       "lastSignInAt": "2026-10-30T08:15:00.000Z"
+         *     }
+         */
+        AdminUser: {
+            id: components["schemas"]["Id"];
+            /** Format: email */
+            email: string;
+            displayName: string;
+            instanceRole: components["schemas"]["InstanceRole"];
+            /**
+             * @description `invited` until the user sets a password with their link.
+             * @enum {string}
+             */
+            status: "invited" | "active" | "disabled";
+            createdAt: components["schemas"]["Timestamp"];
+            /** @description The last password sign-in; `null` before the first. */
+            lastSignInAt: components["schemas"]["Timestamp"] | null;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUser"][];
+            nextCursor: components["schemas"]["Cursor"];
+        };
+        AdminUserCreate: {
+            /** Format: email */
+            email: string;
+            displayName: string;
+            /** @default user */
+            instanceRole: components["schemas"]["InstanceRole"];
+        };
+        AdminUserPatch: {
+            instanceRole?: components["schemas"]["InstanceRole"];
+            /** @enum {string} */
+            status?: "active" | "disabled";
+        };
+        /**
+         * @description `admin` manages the instance's users and every project.
+         * @enum {string}
+         */
+        InstanceRole: "admin" | "user";
+        /**
+         * @description A one-time set-password link. Only this answer shows it; the server keeps a hash.
+         * @example {
+         *       "url": "https://studio.example.com/set-password?token=7cJ2rQ0wUu8xXnYk3fVb1A",
+         *       "expiresAt": "2026-11-05T10:00:00.000Z"
+         *     }
+         */
+        PasswordLink: {
+            /**
+             * Format: uri
+             * @description `PUBLIC_BASE_URL/set-password?token=…`, to send to the user.
+             */
+            url: string;
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        CreatedUser: {
+            user: components["schemas"]["AdminUser"];
+            link: components["schemas"]["PasswordLink"];
         };
         /**
          * @example {
@@ -887,11 +1043,8 @@ export interface components {
             email: string;
             /** Format: uri */
             avatarUrl?: string | null;
-            /**
-             * @description A local account's role on this instance (`USER_DIRECTORY=local`); absent otherwise.
-             * @enum {string}
-             */
-            instanceRole?: "admin" | "user";
+            /** @description A local account's role on this instance (`USER_DIRECTORY=local`); absent otherwise. */
+            instanceRole?: components["schemas"]["InstanceRole"];
             /** @description A local account that must change its password before anything else; the session then answers `401 password-change-required` to other operations. */
             mustChangePassword?: boolean;
             /** @description Account notices shown by the shell, such as licence expiry on the hosted edition. */
@@ -971,7 +1124,10 @@ export interface components {
              *     project is deleted; when `null`, the admin who deletes the project receives them.
              */
             ownerId: components["schemas"]["Id"] | null;
-            /** @description The current user's role in this project. */
+            /**
+             * @description The current user's role in this project. An instance admin who is not a member
+             *     gets `admin`: they may use every admin action on it.
+             */
             role: components["schemas"]["ProjectRole"];
             memberCount?: number;
             createdAt: components["schemas"]["Timestamp"];
@@ -1316,7 +1472,8 @@ export interface components {
         };
         /**
          * @description The request conflicts with the current state. Codes:
-         *     `survey-not-archived`, `already-member`, `last-admin`, `already-completed`.
+         *     `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+         *     `last-instance-admin`.
          */
         Conflict: {
             headers: {
@@ -1329,6 +1486,23 @@ export interface components {
                  *       "title": "Archive the survey before deleting it",
                  *       "status": 409,
                  *       "code": "survey-not-archived"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The link was used, has expired, or was never issued (`link-invalid`). */
+        Gone: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://studio.surveyjs.io/problems/link-invalid",
+                 *       "title": "Link not valid",
+                 *       "status": 410,
+                 *       "code": "link-invalid"
                  *     }
                  */
                 "application/problem+json": components["schemas"]["Problem"];
@@ -1643,6 +1817,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            410: components["responses"]["Gone"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             501: components["responses"]["NotImplemented"];
@@ -1724,6 +1899,157 @@ export interface operations {
             };
         };
     };
+    listUsers: {
+        parameters: {
+            query?: {
+                /** @description Page size. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` value from the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            501: components["responses"]["NotImplemented"];
+        };
+    };
+    createUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Created, with the set-password link. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["AdminUserPatch"];
+                "application/json": components["schemas"]["AdminUserPatch"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    createUserResetLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new set-password link. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordLink"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
     listProjects: {
         parameters: {
             query?: {
@@ -1731,6 +2057,8 @@ export interface operations {
                 limit?: components["parameters"]["Limit"];
                 /** @description The `nextCursor` value from the previous page. */
                 cursor?: components["parameters"]["Cursor"];
+                /** @description `member` (default): the user's projects; `all`: every project (instance admins). */
+                scope?: "member" | "all";
             };
             header?: never;
             path?: never;
@@ -1749,6 +2077,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     createProject: {
