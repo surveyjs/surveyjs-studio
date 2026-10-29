@@ -132,13 +132,14 @@ const azuriteWebServers: WebServers = [
   },
 ];
 
-// The server seeds its new database (`seed` migrates it first), then starts on it. The users and
-// files come from the memory provider's seed until self-hosted Steps 3 and 4. The database is made
-// by playwright.sqlite.config.ts or playwright.password.config.ts (E2E_SQLITE_DIR), or
+// The server seeds its new database (`seed` migrates it first), then starts on it. The users stay
+// the memory provider's, except in password mode. The database is made by
+// playwright.sqlite.config.ts or playwright.password.config.ts (E2E_SQLITE_DIR), or
 // playwright.postgres.config.ts (E2E_DATABASE_URL). Password mode signs in on the app's own page:
 // no dev sign-in, and no OIDC settings (they are needed only with AUTH_METHODS=surveyjs).
-const { IDENTITY_PROVIDER: _devSignIn, ...passwordServerEnv } = {
-  ...memoryServerEnv,
+const passwordServerEnv = {
+  ...serverEnv,
+  MEMORY_SEED: "legacy-fixtures",
   USER_DIRECTORY: "local",
   AUTH_METHODS: "password",
   ADMIN_EMAIL: firstAdmin.email,
