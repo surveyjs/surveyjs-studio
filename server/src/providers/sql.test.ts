@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { openDatabase } from "../sql/database.js";
@@ -20,6 +21,7 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
       IDENTITY_PROVIDER: "dev",
       STORAGE_PROVIDER: "sqlite",
       SQLITE_PATH: scratch.target.path,
+      FILES_PATH: join(dirname(scratch.target.path), "files"),
       ...extra,
     });
     return { config, path: scratch.target.path };
@@ -48,7 +50,10 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
 
     const second = await createProviders(config);
     expect((await second.surveys.getDefinition(newSurvey.id))?.content).toEqual({ title: "Kept" });
-    expect(await second.ready()).toEqual([{ name: "database", ok: true }]);
+    expect(await second.ready()).toEqual([
+      { name: "database", ok: true },
+      { name: "files", ok: true },
+    ]);
     await second.close();
   });
 
@@ -99,7 +104,7 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
     const error = await createProviders(config).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PendingMigrationsError);
     expect((error as Error).message).toBe(
-      "READ_ONLY=true, but the database lacks migrations 0001-surveys, 0002-results-views-projects: run pnpm db:migrate (or start once without READ_ONLY) first.",
+      "READ_ONLY=true, but the database lacks migrations 0001-surveys, 0002-results-views-projects, 0003-files: run pnpm db:migrate (or start once without READ_ONLY) first.",
     );
     const database = openDatabase({ dialect: "sqlite", path });
     expect((await migrationStatus(database)).applied).toEqual([]);
@@ -113,6 +118,7 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
       IDENTITY_PROVIDER: "dev",
       STORAGE_PROVIDER: "sqlite",
       SQLITE_PATH: path,
+      FILES_PATH: join(dirname(path), "files"),
       READ_ONLY: "true",
     });
     const providers = await createProviders(readOnly);

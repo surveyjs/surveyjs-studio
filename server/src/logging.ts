@@ -68,12 +68,11 @@ export function loggableError(error: unknown): unknown {
 
 /**
  * The start-up warning of a provider whose stores are not all persistent yet: the SQL providers
- * keep users and files in memory until self-hosted Steps 3 (files) and 4 (local users). null for
- * the other providers.
+ * keep the users in memory until self-hosted Step 4 (local users). null for the other providers.
  */
 export function storageWarning(config: AppConfig): string | null {
   if (config.storageProvider !== "sqlite" && config.storageProvider !== "postgres") return null;
-  return `STORAGE_PROVIDER=${config.storageProvider} keeps users and uploaded files in memory: they are lost on restart (self-hosted track Steps 3 and 4)`;
+  return `STORAGE_PROVIDER=${config.storageProvider} keeps users in memory: they are lost on restart (self-hosted track Step 4)`;
 }
 
 /**

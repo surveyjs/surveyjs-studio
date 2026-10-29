@@ -105,6 +105,18 @@ export interface ProjectMembersTable {
   updated_at: Timestamp;
 }
 
+export interface FilesTable {
+  /** 64 lower-case hex digits. */
+  id: string;
+  survey_id: string;
+  kind: "asset" | "response";
+  name: string;
+  content_type: string;
+  /** PostgreSQL's bigint arrives as a string. */
+  size: ColumnType<number | string, number, number>;
+  created_at: Timestamp;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -116,4 +128,5 @@ export interface DatabaseSchema {
   private_questions: PrivateQuestionsTable;
   projects: ProjectsTable;
   project_members: ProjectMembersTable;
+  files: FilesTable;
 }

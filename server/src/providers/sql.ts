@@ -2,6 +2,8 @@ import { sql } from "kysely";
 import type { AccountNoticesSetting, AppConfig } from "../config.js";
 import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
+import { openByteStore, type ByteStore } from "../bytes/index.js";
+import { createSqlFileStore } from "../sql/file-store.js";
 import { createSqlProjectStore } from "../sql/project-store.js";
 import { createSqlResultStore } from "../sql/result-store.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
@@ -12,9 +14,11 @@ import { createMemoryProviders, type MemorySeed } from "./memory.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
 export interface SqlProviderOptions {
+  /** Where the file bytes are (FILE_STORE); their metadata is in the database. */
+  readonly bytes: ByteStore;
   /**
-   * Seeds the memory provider behind the users and files (`MEMORY_SEED`), which stay in memory
-   * until self-hosted Steps 3 (files) and 4 (local users).
+   * Seeds the memory provider behind the users (`MEMORY_SEED`), which stay in memory until
+   * self-hosted Step 4 (local users).
    */
   readonly fallbackSeed?: MemorySeed;
   /** `ACCOUNT_NOTICES`; default `none`. */
@@ -63,6 +67,7 @@ export async function openSqlProviders(
   }
   return createSqlProviders(database, {
     accountNotices,
+    bytes: openByteStore(config.files!),
     ...(config.memorySeed === "legacy-fixtures" && { fallbackSeed: await legacyFixtureSeed() }),
   });
 }
@@ -90,14 +95,14 @@ async function probe(database: SqlDatabase): Promise<Omit<ReadinessCheck, "name"
 }
 
 /**
- * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views
- * and projects in the database. The users and files are still the memory provider's
- * (`fallbackSeed`) until Steps 3 and 4, so they are lost on restart. Member users are looked up in
- * that directory. `close` closes the database.
+ * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views,
+ * projects and file metadata in the database, file bytes in `bytes`. The users are still the
+ * memory provider's (`fallbackSeed`) until Step 4, so they are lost on restart. Member users are
+ * looked up in that directory. `close` closes the database.
  */
 export function createSqlProviders(
   database: SqlDatabase,
-  options: SqlProviderOptions = {},
+  options: SqlProviderOptions,
 ): ProviderSet {
   const fallback = createMemoryProviders(options.fallbackSeed, {
     ...(options.accountNotices && { accountNotices: options.accountNotices }),
@@ -107,12 +112,18 @@ export function createSqlProviders(
     surveys: createSqlSurveyStore(database),
     users: fallback.users,
     projects: createSqlProjectStore(database, fallback.users),
-    files: fallback.files,
+    files: createSqlFileStore(database, options.bytes),
     results: createSqlResultStore(database),
     views: createSqlViewStore(database),
     notices: fallback.notices,
-    readinessNames: ["database"],
-    ready: async () => [{ name: "database", ...(await probe(database)) }],
+    readinessNames: ["database", "files"],
+    ready: async () => {
+      const [db, files] = await Promise.all([probe(database), options.bytes.probe()]);
+      return [
+        { name: "database", ...db },
+        { name: "files", ...files },
+      ];
+    },
     close: () => database.close(),
   };
 }
