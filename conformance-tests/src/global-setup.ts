@@ -322,6 +322,9 @@ function authEnv(): Record<string, string> {
     AUTH_METHODS: "password",
     ADMIN_EMAIL: PASSWORD_ADMIN.email,
     ADMIN_PASSWORD: PASSWORD_ADMIN.password,
+    // The self-hosted look: features.test.ts checks /config and /api/docs in this shell.
+    APP_SHELL: "powered-by",
+    BRAND_NAME: "Conformance Surveys",
   };
 }
 

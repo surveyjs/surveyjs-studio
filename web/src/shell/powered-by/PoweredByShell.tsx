@@ -18,7 +18,8 @@ export function PoweredByFooter({ branding }: { branding: ShellBranding }) {
     return null;
   }
   return (
-    <footer className={styles.footer} style={accentStyle(branding)}>
+    // data-branding-footer: the editor page hides the other shells' footers, never this one.
+    <footer className={styles.footer} style={accentStyle(branding)} data-branding-footer="">
       {branding.termsUrl !== null && <a href={branding.termsUrl}>Terms</a>}
       {branding.privacyUrl !== null && <a href={branding.privacyUrl}>Privacy</a>}
       {branding.poweredBy && (

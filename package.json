@@ -30,6 +30,7 @@
     "e2e:sqlite": "pnpm --filter @surveyjs-studio/e2e test:sqlite",
     "e2e:postgres": "pnpm --filter @surveyjs-studio/e2e test:postgres",
     "e2e:password": "pnpm --filter @surveyjs-studio/e2e test:password",
+    "e2e:powered-by": "pnpm --filter @surveyjs-studio/e2e test:powered-by",
     "e2e:visual": "pnpm --filter @surveyjs-studio/e2e test:visual",
     "e2e:visual:report": "pnpm --filter @surveyjs-studio/e2e exec playwright show-report visual-report",
     "visual:capture": "pnpm --filter @surveyjs-studio/e2e capture",
