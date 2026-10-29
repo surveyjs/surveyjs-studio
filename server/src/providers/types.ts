@@ -360,7 +360,8 @@ export interface AccountChange {
 
 export type AccountUpdate =
   | { readonly outcome: "updated"; readonly account: LocalAccount }
-  | { readonly outcome: "not-found" | "last-instance-admin" };
+  | { readonly outcome: "not-found" }
+  | { readonly outcome: "last-instance-admin" };
 
 export interface NewLocalAccount {
   readonly id: string;

@@ -3,6 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@surveyjs-studio/contract";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createEraseAccount } from "./accounts/erasure.js";
+import { createAdminHandlers } from "./admin/handlers.js";
 import { createAccountHandlers } from "./accounts/handlers.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
@@ -189,6 +190,12 @@ export async function buildApp(
       }
     : null;
 
+  // Account erasure: the account-deleted webhook and the instance admin's delete (S15).
+  const eraseAccount = createEraseAccount(
+    { surveys: providers.surveys, projects: providers.projects, files: providers.files },
+    app.log,
+  );
+
   const window = 60_000;
   const signInLimit: RateLimit = {
     max: config.signInRateLimitPerMinute,
@@ -214,6 +221,14 @@ export async function buildApp(
           sessionCheck: local.sessionCheck,
           lockout: local.lockout,
           setupToken: local.bootstrap.setupToken,
+          ...(options.now && { now: options.now }),
+        })),
+      ...(local &&
+        createAdminHandlers({
+          publicBaseUrl: config.publicBaseUrl,
+          accounts: local.accounts,
+          sessionCheck: local.sessionCheck,
+          eraseAccount,
           ...(options.now && { now: options.now }),
         })),
       ...createSessionHandlers({
@@ -266,10 +281,7 @@ export async function buildApp(
       }),
       ...createAccountHandlers({
         webhookSecret: config.accountWebhookSecret,
-        eraseAccount: createEraseAccount(
-          { surveys: providers.surveys, projects: providers.projects, files: providers.files },
-          app.log,
-        ),
+        eraseAccount,
         ...(options.now && { now: options.now }),
       }),
     },

@@ -94,7 +94,7 @@ describe("the seed's instance admin (USER_DIRECTORY=local)", () => {
     );
     const claims = await identity.finishSignIn(
       new URL(`http://localhost/api/v1/auth/callback?code=${ivy.user.id}`),
-      { state: "s", nonce: "n", codeVerifier: "v", returnTo: "/", exp: 2_000_000_000 },
+      { state: "s", nonce: "n", codeVerifier: "v" },
     );
     expect(claims).toMatchObject({ sub: ivy.user.id, email: ivy.user.email });
   });

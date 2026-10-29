@@ -18,7 +18,7 @@ export interface SessionCheckOptions {
 
 export interface SessionCheck {
   /**
-   * Resolves when the session's account may call `operationId`: the account is active and the
+   * Resolves with the account when the session's account may call `operationId`: the account is active and the
    * session's epoch (0 when it has none) is the account's. Throws `401 unauthenticated` otherwise,
    * and `401 password-change-required` when the account must change its password and the
    * operation is not one it may call meanwhile (ADR 0026).
@@ -26,7 +26,7 @@ export interface SessionCheck {
   check(
     session: { readonly sub: string; readonly epoch?: number },
     operationId: string,
-  ): Promise<void>;
+  ): Promise<LocalAccount>;
   /** Reads the account again on its next request (after a change made by this server). */
   forget(userId: string): void;
 }
@@ -73,6 +73,7 @@ export function createSessionCheck(options: SessionCheckOptions): SessionCheck {
           detail: "Change your password before you go on.",
         });
       }
+      return account;
     },
     forget: (userId) => {
       cache.delete(userId.toLowerCase());

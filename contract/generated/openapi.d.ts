@@ -1125,8 +1125,8 @@ export interface components {
              */
             ownerId: components["schemas"]["Id"] | null;
             /**
-             * @description The current user's role in this project. An instance admin who is not a member
-             *     gets `admin`: they may use every admin action on it.
+             * @description The current user's role in this project. An instance admin gets `admin` on every
+             *     project, a member or not: they may use every admin action on it.
              */
             role: components["schemas"]["ProjectRole"];
             memberCount?: number;

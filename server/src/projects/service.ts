@@ -44,6 +44,8 @@ export interface ProjectsServiceOptions {
 export interface ProjectListQuery {
   readonly limit: number;
   readonly cursor?: string;
+  /** `listProjects` only: `all` lists every project (instance admins). */
+  readonly scope?: "member" | "all";
 }
 
 export interface ProjectsService {
@@ -150,11 +152,19 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
   const { users, projects, now = Date.now } = options;
   const isoNow = (): string => new Date(now()).toISOString();
 
-  /** The user's membership of the project; a project of others answers like an unknown one. */
+  /** An instance admin acts as an admin of every project (S17). */
+  const instanceAdmin = (user: RequestUser) => user.instanceRole === "admin";
+
+  /**
+   * The user's membership of the project; a project of others answers like an unknown one. An
+   * instance admin gets every project, with the role `admin`.
+   */
   async function access(user: RequestUser, projectId: string): Promise<ProjectMembership> {
     const membership = await projects.getUserProject(user.id, projectId);
-    if (!membership) throw notFound();
-    return membership;
+    if (membership) return instanceAdmin(user) ? { ...membership, role: "admin" } : membership;
+    const project = instanceAdmin(user) ? await projects.getProject(projectId) : null;
+    if (!project) throw notFound();
+    return { project, role: "admin" };
   }
 
   /** `access`, and the user is an admin of the project (403 otherwise). */
@@ -165,10 +175,23 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
   }
 
   return {
-    async list(user, { limit, cursor }) {
+    async list(user, { limit, cursor, scope = "member" }) {
+      if (scope === "all" && !instanceAdmin(user)) {
+        throw new AppError({
+          code: "forbidden",
+          status: 403,
+          title: "Forbidden",
+          detail: "Only instance admins can list every project.",
+        });
+      }
       const after = cursor === undefined ? undefined : decodeProjectCursor(cursor);
       // The project store returns the whole list in project list order; the service cuts the page.
-      const all = await projects.listUserProjects(user.id);
+      const all: ProjectMembership[] =
+        scope === "all"
+          ? (await projects.listProjects()).map((project) => ({ project, role: "admin" }))
+          : (await projects.listUserProjects(user.id)).map((membership) =>
+              instanceAdmin(user) ? { ...membership, role: "admin" } : membership,
+            );
       const page = pageOf(all, projectPosition, after, limit, encodeProjectCursor);
       return { items: page.items.map(projectJson), nextCursor: page.nextCursor };
     },

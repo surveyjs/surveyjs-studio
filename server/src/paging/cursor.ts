@@ -143,6 +143,33 @@ export function decodeProjectCursor(value: string): ProjectPosition {
   return canonical(value, position, encodeProjectCursor(position));
 }
 
+/** A place in the instance admin's user list (email, lower-case, then id). */
+export interface UserPosition {
+  readonly email: string;
+  readonly id: string;
+}
+
+const usersPayload = (position: UserPosition) => ({
+  v: VERSION,
+  k: "users",
+  e: position.email.toLowerCase(),
+  i: position.id,
+});
+
+export function encodeUsersCursor(position: UserPosition): string {
+  return encode(usersPayload(position));
+}
+
+/** The position of a user list cursor; throws `400 bad-request` ("Invalid cursor.") otherwise. */
+export function decodeUsersCursor(value: string): UserPosition {
+  const { v, k, e, i } = decode(value);
+  if (v !== VERSION || k !== "users" || typeof e !== "string" || !isId(i)) {
+    throw invalidCursor();
+  }
+  const position = { email: e.toLowerCase(), id: i.toLowerCase() };
+  return canonical(value, position, encodeUsersCursor(position));
+}
+
 const membersPayload = (position: MemberPosition, projectId: string) => ({
   v: VERSION,
   k: "members",
