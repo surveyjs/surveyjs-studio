@@ -92,7 +92,8 @@ afterwards.
 (`USER_DIRECTORY=local`), `AUTH_METHODS=password` and a first admin from `ADMIN_EMAIL` and
 `ADMIN_PASSWORD` (synthetic values in `src/global-setup.ts`). The fixture users become accounts without
 a password and still sign in through the dev sign-in, so every file runs on local accounts.
-`src/password.test.ts` runs only in this mode: the admin's sign-in and forced change, the same answer
+The server runs the self-hosted `powered-by` shell, so `src/features.test.ts` checks `/config` and
+`/api/docs` there (the other runs check the `surveyjs-site` shell). `src/password.test.ts` runs only in this mode: the admin's sign-in and forced change, the same answer
 for a wrong password and an unknown email, the back-off, and a password change ending the other
 sessions. It needs `CONFORMANCE_PROVIDER=memory`, `sqlite` or `postgres` and the default user
 directory, and cannot be combined with `CONFORMANCE_BASE_URL`.

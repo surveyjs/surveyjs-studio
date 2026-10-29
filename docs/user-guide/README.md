@@ -2,6 +2,10 @@
 
 How to use My Surveys. The guide grows with the application.
 
+The pages are described in the surveyjs.io look of studio.surveyjs.io. A self-hosted My Surveys may show its own name,
+logo and colours instead, with "Powered by SurveyJS" in the footer; the pages work the same way, but its editor has no
+Embed tabs ([Branding](../customizing/branding.md)).
+
 - [Your surveys](your-surveys.md): the survey list, projects, Active and Archived, creating a survey and loading more.
 - [Projects and team members](projects-and-team-members.md): the Projects page, creating, renaming and deleting a project, adding members, admins, leaving, and what members can do with project surveys.
 - [Managing a survey](managing-a-survey.md): rename, the "…" menu, clone, publish, copy IDs, move, archive, restore and delete.
