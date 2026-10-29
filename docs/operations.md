@@ -210,7 +210,7 @@ surveyjs.io sign-in, while the old My Surveys section still runs.
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
 `OIDC_DISCOVERY` and `OIDC_SCOPES` (which fit `auth.surveyjs.io`), `API_DOCS` (off in production: the reference is
 in the repository), and `APP_SHELL` (`surveyjs-site`, the surveyjs.io look); the branding settings (`BRAND_*`,
-`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the self-hosted `powered-by` shell and change nothing there. The accounts settings are [below](#configuring-accounts). Register
+`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the self-hosted `self-hosted` shell and change nothing there. The accounts settings are [below](#configuring-accounts). Register
 `<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI and `<PUBLIC_BASE_URL>/` as its address after
 sign-out.
 
@@ -345,7 +345,7 @@ read as "unknown". `/readyz` then checks the API too (`user-api`): a lookup of a
 
 ### Branding (self-hosted)
 
-A self-hosted instance runs the `powered-by` shell (`APP_SHELL=powered-by`) with its own name, logo, accent colour and
+A self-hosted instance runs the `self-hosted` shell (`APP_SHELL=self-hosted`) with its own name, logo, accent colour and
 Terms and Privacy links, and "Powered by SurveyJS" in the footer. `BRANDING=off` removes that mark and needs your own
 `SURVEYJS_LICENSE_KEY`. The Embed tab and the API docs are shown only in the `surveyjs-site` shell. Every setting, and
 what the licence key does, is in [Branding and the licence key](customizing/branding.md).

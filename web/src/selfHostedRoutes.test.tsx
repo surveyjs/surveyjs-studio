@@ -31,9 +31,9 @@ const branding = {
   privacyUrl: null,
   poweredBy: true,
 };
-const poweredBy = {
+const selfHosted = {
   ...appConfig,
-  shell: "powered-by",
+  shell: "self-hosted",
   authMethods: ["password" as const],
   branding,
   features: { embed: false, apiDocs: false, apiTokens: false },
@@ -43,16 +43,16 @@ beforeEach(() => {
   server.use(...surveyListPageHandlers());
 });
 
-/** The page shows the instance's name and "Powered by SurveyJS" in its footer. */
-function expectBranding() {
-  const footer = screen.getByRole("contentinfo");
+/** The page shows "Powered by SurveyJS" and Terms in the shell's footer (a lazy chunk: awaited). */
+async function expectBranding() {
+  const footer = await screen.findByRole("contentinfo");
   expect(within(footer).getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
   expect(within(footer).getByRole("link", { name: "Terms" })).toBeTruthy();
 }
 
-describe("the powered-by shell", () => {
+describe("the self-hosted shell", () => {
   it("frames the private pages with the instance's name, logo and footer", async () => {
-    server.use(configHandler(poweredBy), meHandler());
+    server.use(configHandler(selfHosted), meHandler());
 
     renderApp("/");
 
@@ -61,44 +61,44 @@ describe("the powered-by shell", () => {
     expect(within(header).getByText("Acme Surveys")).toBeTruthy();
     expect(header.querySelector("img")).toBeTruthy();
     expect(within(header).getByRole("link", { name: "My Surveys" })).toBeTruthy();
-    expectBranding();
+    await expectBranding();
   });
 
   it("frames the sign-in page the same way, without account controls", async () => {
-    server.use(configHandler(poweredBy));
+    server.use(configHandler(selfHosted));
 
     renderApp("/sign-in");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeTruthy();
     expect(within(screen.getAllByRole("banner")[0]!).getByText("Acme Surveys")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
-    expectBranding();
+    await expectBranding();
   });
 
   it("frames the set-password page", async () => {
-    server.use(configHandler(poweredBy));
+    server.use(configHandler(selfHosted));
 
     renderApp("/set-password?token=link-token");
 
     expect(
       await screen.findByRole("heading", { level: 1, name: "Set your password" }),
     ).toBeTruthy();
-    expectBranding();
+    await expectBranding();
   });
 
   it("puts the footer under a running survey", async () => {
-    server.use(configHandler(poweredBy), publishedSurveyHandler());
+    server.use(configHandler(selfHosted), publishedSurveyHandler());
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
     expect(await screen.findByTestId("fake-survey")).toBeTruthy();
-    expectBranding();
+    await expectBranding();
     expect(screen.queryByRole("banner")).toBeNull();
   });
 
   it("frames the public results page", async () => {
     server.use(
-      configHandler(poweredBy),
+      configHandler(selfHosted),
       publicResultPagesHandler(
         {
           id: samplePublishedSurvey.id,
@@ -113,7 +113,7 @@ describe("the powered-by shell", () => {
     renderApp(`/results/${samplePublishedSurvey.id}`);
 
     expect(await screen.findByRole("heading", { level: 1, name: "Shared survey" })).toBeTruthy();
-    expectBranding();
+    await expectBranding();
     // The page has its own main landmark; the frame adds none.
     expect(document.querySelectorAll("main")).toHaveLength(1);
   });

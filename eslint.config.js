@@ -12,6 +12,7 @@ export default tseslint.config(
       "**/test-results/**",
       "**/playwright-report/**",
       "**/visual-report/**",
+      "**/visual-self-hosted-report/**",
       "**/blob-report/**",
       "**/generated/**",
       "web/src/routeTree.gen.ts",

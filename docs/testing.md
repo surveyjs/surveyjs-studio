@@ -39,18 +39,19 @@ These need the Docker replica (see [Development](development.md#azurite-mode)); 
 These need PostgreSQL in Docker (`pnpm postgres:up`, see [Development](development.md#sqlite-and-postgresql-modes)), except
 the SQLite ones, which need nothing:
 
-| Command                          | Runs                                                                                                                                                                                                                                                 |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the full provider suite, the migrator suite, the SQL-only concurrency suites and the pool's reconnect on PostgreSQL, each on scratch databases it creates and drops                  |
-| `pnpm test:providers:s3`         | The Vitest project `providers-s3` (`*.s3.test.ts`, needs `pnpm s3:up`): the byte-store suite and the full provider suite with files in S3, and the `s3:bucket` command, each in buckets it creates and removes                                       |
-| `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                                                                      |
-| `pnpm test:conformance:s3`       | The same with the files in a new bucket of the local S3 server (`CONFORMANCE_FILE_STORE=s3`), removed afterwards                                                                                                                                     |
-| `pnpm test:conformance:password` | The conformance suite against a server on `sqlite` with the local user directory and password sign-in (`CONFORMANCE_AUTH=password`): `password.test.ts` and `admin.test.ts` run, and every other file runs on local accounts                         |
-| `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                                                                            |
-| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor, history, upload and run specs in SQLite mode (files on local disk), on Chromium                                                                                                                  |
-| `pnpm e2e:password`              | Playwright password spec in password mode (SQLite, `AUTH_METHODS=password`, a first admin from `ADMIN_EMAIL`): the forced change, sign out and in, the back-off message, and the instance admin's users; on Chromium                                 |
-| `pnpm e2e:powered-by`            | Playwright powered-by spec in powered-by mode (SQLite, `APP_SHELL=powered-by` with a brand, local accounts, the dev sign-in): the branding on sign-in, My Surveys, the editor, results and the run page, no Embed tabs, `/api/docs` 404; on Chromium |
-| `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` and bucket `surveyjs-studio-e2e` per run; needs `postgres:up` and `s3:up`), on Chromium                                            |
+| Command                          | Runs                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the full provider suite, the migrator suite, the SQL-only concurrency suites and the pool's reconnect on PostgreSQL, each on scratch databases it creates and drops                                                                                         |
+| `pnpm test:providers:s3`         | The Vitest project `providers-s3` (`*.s3.test.ts`, needs `pnpm s3:up`): the byte-store suite and the full provider suite with files in S3, and the `s3:bucket` command, each in buckets it creates and removes                                                                                                              |
+| `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                                                                                                                                             |
+| `pnpm test:conformance:s3`       | The same with the files in a new bucket of the local S3 server (`CONFORMANCE_FILE_STORE=s3`), removed afterwards                                                                                                                                                                                                            |
+| `pnpm test:conformance:password` | The conformance suite against a server on `sqlite` with the local user directory and password sign-in (`CONFORMANCE_AUTH=password`): `password.test.ts` and `admin.test.ts` run, and every other file runs on local accounts                                                                                                |
+| `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                                                                                                                                                   |
+| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor, history, upload and run specs in SQLite mode (files on local disk), on Chromium                                                                                                                                                                                         |
+| `pnpm e2e:password`              | Playwright password spec in password mode (SQLite, `AUTH_METHODS=password`, a first admin from `ADMIN_EMAIL`): the forced change, sign out and in, the back-off message, and the instance admin's users; on Chromium                                                                                                        |
+| `pnpm e2e:self-hosted`           | Playwright self-hosted spec in self-hosted mode (SQLite, `APP_SHELL=self-hosted` with a brand, local accounts, the dev sign-in): the header's navigation, the branding on sign-in, My Surveys, the editor, results, the public results and the run page, no surveyjs.io styles, no Embed tabs, `/api/docs` 404; on Chromium |
+| `pnpm e2e:visual:self-hosted`    | The self-hosted shell's look against this repository's baselines ([below](#visual-tests-of-the-self-hosted-shell)); local only                                                                                                                                                                                              |
+| `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` and bucket `surveyjs-studio-e2e` per run; needs `postgres:up` and `s3:up`), on Chromium                                                                                                                   |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -961,6 +962,28 @@ Form Library and Creator run 3.2.2, as the app does since Step 14; the live Dash
 | `public-results`                                                                                                                        | The live site header (both top bars) and footer are hidden on the live side                                                                        | departure | ADR 0016 R19: the public results page has no site shell                                                    |
 | `public-results`                                                                                                                        | The live Details tab is hidden on the live side                                                                                                    | departure | ADR 0016 R19: the public results page has no Details tab                                                   |
 
+## Visual tests of the self-hosted shell
+
+`pnpm e2e:visual:self-hosted` pins the look of the `self-hosted` shell ([branding](customizing/branding.md#the-self-hosted-shell))
+with screenshots of its pages compared with **this repository's own baselines**, in
+`e2e/visual-self-hosted/baselines/<platform>/`. Unlike the surveyjs.io parity run above, nothing is compared with
+another site: the baselines are the shell's intended look, and a deliberate change of it updates them.
+
+- **Screens:** sign-in, set-password, My Surveys and its "…" menu, Projects (a card open), results Details, history,
+  change-password, and Users (as the seed's instance admin) — the editor and the Dashboard are left out (their content is
+  the SurveyJS libraries').
+- **Server:** its own server and preview on ports 3003 and 5176 (`playwright.self-hosted-visual.config.ts`): the memory
+  provider with the seed, fresh on every run, `APP_SHELL=self-hosted` with the brand of `e2e/tests/support/self-hosted.ts`,
+  local accounts and the dev sign-in; Chromium at 1280 × 800, `en-US`, UTC.
+- **Tolerance:** `maxDiffPixelRatio` 0.002 (text antialiasing); a layout change does not hide in it.
+- **Updating:** after a deliberate change, `pnpm e2e:visual:self-hosted --update-snapshots`, then look at every changed
+  image before committing it. The report is in `e2e/visual-self-hosted-report/`.
+- **Local only**, like the parity run: the baselines are rendered on Windows (`win32`), and Linux renders text
+  differently. A Linux run writes its own `linux` baselines with `--update-snapshots`.
+
+The behaviour of the shell (navigation, the branding on every page, no Embed tabs, `/api/docs` 404, one main landmark)
+is the functional run's: `pnpm e2e:self-hosted`.
+
 ## Provider suite
 
 One shared suite, `describeProviderSuite(name, create)` in `server/src/providers/suite/provider-suite.ts`,
@@ -1202,9 +1225,9 @@ the licence notices on `postgres` with files in S3 (`pnpm e2e:postgres`, a new d
 `surveyjs-studio-e2e` per run). SQLite mode (`pnpm e2e:sqlite`) uses a new database and files folder in `e2e/.data/`,
 emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts. Password mode (`pnpm e2e:password`,
 `playwright.password.config.ts`) runs `password.spec.ts` alone on a SQLite server with password sign-in only (no dev
-sign-in), in the same folder; the other modes ignore that spec. Powered-by mode (`pnpm e2e:powered-by`,
-`playwright.powered-by.config.ts`) runs `powered-by.spec.ts` alone the same way, in the powered-by shell with a brand
-(`tests/support/powered-by.ts`), local accounts and the dev sign-in. Its first two tests run in order (`test.describe.serial`):
+sign-in), in the same folder; the other modes ignore that spec. Self-hosted mode (`pnpm e2e:self-hosted`,
+`playwright.self-hosted.config.ts`) runs `self-hosted.spec.ts` alone the same way, in the self-hosted shell with a brand
+(`tests/support/self-hosted.ts`), local accounts and the dev sign-in. Its first two tests run in order (`test.describe.serial`):
 the first changes the first admin's password, and the second signs in with it to create a user, who sets a password in
 a second browser context; the admin then resets, disables, enables and deletes that user. A second run needs a new
 database (each run makes one).

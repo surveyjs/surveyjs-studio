@@ -90,14 +90,14 @@ describe("features by shell", () => {
     });
   });
 
-  it.each(["powered-by", "plain", "acme"])("hides them in the %s shell", (shell) => {
+  it.each(["self-hosted", "plain", "acme"])("hides them in the %s shell", (shell) => {
     const config = load({ NODE_ENV: "test", APP_SHELL: shell });
     expect(config.features).toEqual({ embed: false, apiDocs: false, apiTokens: false });
     expect(config.apiDocs).toBe(false);
   });
 
   it("refuses API_DOCS=true outside the surveyjs-site shell", () => {
-    expect(messageOf(() => load({ APP_SHELL: "powered-by", API_DOCS: "true" }))).toContain(
+    expect(messageOf(() => load({ APP_SHELL: "self-hosted", API_DOCS: "true" }))).toContain(
       "  - API_DOCS: true requires APP_SHELL=surveyjs-site (the API docs are shown only there)",
     );
   });

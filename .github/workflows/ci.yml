@@ -128,9 +128,9 @@ jobs:
       - name: End-to-end tests (password mode)
         run: pnpm e2e:password
 
-      # The tsx server on a new SQLite file, in the powered-by shell with an instance's branding.
-      - name: End-to-end tests (powered-by mode)
-        run: pnpm e2e:powered-by
+      # The tsx server on a new SQLite file, in the self-hosted shell with an instance's branding.
+      - name: End-to-end tests (self-hosted mode)
+        run: pnpm e2e:self-hosted
 
       # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job

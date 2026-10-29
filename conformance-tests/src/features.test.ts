@@ -1,7 +1,7 @@
 /**
  * The shell's features and branding (D21, ADR 0027): `/config.features` follows the shell the
  * server reports, and `/api/docs` is served only where `features.apiDocs` is true. Runs against
- * any server; the password run uses the powered-by shell (`CONFORMANCE_AUTH=password`).
+ * any server; the password run uses the self-hosted shell (`CONFORMANCE_AUTH=password`).
  */
 import { describe, expect, it } from "vitest";
 import { baseUrl, call } from "./harness.js";

@@ -1066,10 +1066,10 @@ export interface components {
             /** @enum {string} */
             edition: "hosted" | "self-hosted";
             /**
-             * @description The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `powered-by` is the
+             * @description The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `self-hosted` is the
              *     self-hosted look, with the instance's branding and "Powered by SurveyJS".
              * @example surveyjs-site
-             * @example powered-by
+             * @example self-hosted
              */
             shell: string;
             /**
@@ -1106,7 +1106,7 @@ export interface components {
             branding?: components["schemas"]["Branding"];
             features?: components["schemas"]["Features"];
         };
-        /** @description The instance's branding, shown by the `powered-by` shell. */
+        /** @description The instance's branding, shown by the `self-hosted` shell. */
         Branding: {
             /** @description The instance's name (`BRAND_NAME`). */
             name: string;

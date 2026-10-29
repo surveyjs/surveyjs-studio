@@ -28,7 +28,7 @@ await requireFreePorts(
     azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
     sql:
       usesSqlConfig(process.argv.slice(2)) ||
-      ["sqlite", "postgres", "password", "powered-by"].includes(env["E2E_MODE"] ?? ""),
+      ["sqlite", "postgres", "password", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
   }),
 );
 if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");

@@ -100,10 +100,10 @@ describe("the editor page", () => {
     expect(editor.props!.embed).toBe(true);
   });
 
-  it("leaves the Embed tabs out in the powered-by shell", async () => {
+  it("leaves the Embed tabs out in the self-hosted shell", async () => {
     await openEditor(sampleSurvey, {
       ...appConfig,
-      shell: "powered-by",
+      shell: "self-hosted",
       features: { embed: false, apiDocs: false, apiTokens: false },
     });
     expect(editor.props!.embed).toBe(false);

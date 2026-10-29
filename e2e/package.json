@@ -5,13 +5,14 @@
   "scripts": {
     "test": "node scripts/run.mjs",
     "test:visual": "node scripts/visual.mjs",
+    "test:visual:self-hosted": "node scripts/visual-self-hosted.mjs",
     "capture": "node scripts/capture.mjs",
     "test:azurite": "node scripts/run.mjs --config playwright.azurite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:sqlite": "node scripts/run.mjs --config playwright.sqlite.config.ts",
     "test:postgres": "node scripts/run.mjs --config playwright.postgres.config.ts",
     "test:password": "node scripts/run.mjs --config playwright.password.config.ts",
-    "test:powered-by": "node scripts/run.mjs --config playwright.powered-by.config.ts"
+    "test:self-hosted": "node scripts/run.mjs --config playwright.self-hosted.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { currentUser } from "../../test/server";
 import type { ShellBranding } from "../types";
-import { PoweredByFooter, PoweredByFrame, PoweredByShell } from "./PoweredByShell";
+import { SelfHostedFooter, SelfHostedFrame, SelfHostedShell } from "./SelfHostedShell";
 
 const branding: ShellBranding = {
   name: "Acme Surveys",
@@ -13,10 +13,10 @@ const branding: ShellBranding = {
   poweredBy: true,
 };
 
-function renderShell(overrides: Partial<Parameters<typeof PoweredByShell>[0]> = {}) {
+function renderShell(overrides: Partial<Parameters<typeof SelfHostedShell>[0]> = {}) {
   const onSignOut = vi.fn();
   render(
-    <PoweredByShell
+    <SelfHostedShell
       user={currentUser}
       notices={[]}
       links={{}}
@@ -25,12 +25,12 @@ function renderShell(overrides: Partial<Parameters<typeof PoweredByShell>[0]> = 
       {...overrides}
     >
       <p>page content</p>
-    </PoweredByShell>,
+    </SelfHostedShell>,
   );
   return { onSignOut };
 }
 
-describe("PoweredByShell", () => {
+describe("SelfHostedShell", () => {
   it("shows the instance's logo and name in the header, the page, and the footer", () => {
     renderShell();
 
@@ -68,21 +68,21 @@ describe("PoweredByShell", () => {
 
   it("sets the accent colour as a CSS custom property", () => {
     const { container } = render(
-      <PoweredByFrame branding={branding}>
+      <SelfHostedFrame branding={branding}>
         <p>page</p>
-      </PoweredByFrame>,
+      </SelfHostedFrame>,
     );
     const frame = container.firstElementChild as HTMLElement;
-    expect(frame.style.getPropertyValue("--brand-accent")).toBe("#0a7");
+    expect(frame.style.getPropertyValue("--sh-accent")).toBe("#0a7");
     // Text in the accent colour uses a shade that reads on white.
-    expect(frame.style.getPropertyValue("--brand-accent-text")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(frame.style.getPropertyValue("--sh-accent-text")).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("can leave the main landmark to a page that has its own", () => {
     render(
-      <PoweredByFrame branding={branding} ownMain>
+      <SelfHostedFrame branding={branding} ownMain>
         <main>page</main>
-      </PoweredByFrame>,
+      </SelfHostedFrame>,
     );
     expect(document.querySelectorAll("main")).toHaveLength(1);
   });
@@ -137,9 +137,9 @@ describe("PoweredByShell", () => {
   });
 });
 
-describe("PoweredByFooter", () => {
+describe("SelfHostedFooter", () => {
   it("is the footer alone, for a page without the shell (the run page)", () => {
-    render(<PoweredByFooter branding={branding} />);
+    render(<SelfHostedFooter branding={branding} />);
 
     expect(screen.getByRole("contentinfo")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
@@ -148,7 +148,7 @@ describe("PoweredByFooter", () => {
 
   it("renders nothing with the branding off and no links", () => {
     const { container } = render(
-      <PoweredByFooter
+      <SelfHostedFooter
         branding={{ ...branding, poweredBy: false, termsUrl: null, privacyUrl: null }}
       />,
     );

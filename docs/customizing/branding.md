@@ -8,18 +8,61 @@ SurveyJS licence key fits in. The decisions behind it are in
 
 `APP_SHELL` picks the look of the app:
 
-| `APP_SHELL`               | Look                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `surveyjs-site` (default) | The surveyjs.io header and footer, as on studio.surveyjs.io. The Embed tab and the API docs (`/api/docs`) are here |
-| `powered-by`              | The self-hosted look: your instance's name, logo and accent colour, and a footer with "Powered by SurveyJS"        |
-| `plain`                   | A minimal frame without styles, for development and tests                                                          |
+| `APP_SHELL`               | Look                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `surveyjs-site` (default) | The surveyjs.io header and footer, as on studio.surveyjs.io. The Embed tab and the API docs (`/api/docs`) are here                      |
+| `self-hosted`             | A minimal site frame of its own: your instance's name, logo and accent colour; its only SurveyJS part is the "Powered by SurveyJS" mark |
+| `plain`                   | A minimal frame without styles, for development and tests                                                                               |
 
 A custom shell is a code change in a fork (mode 3): register it in `web/src/shell/registry.tsx` and set its name in
 `APP_SHELL`.
 
+## The self-hosted shell
+
+`APP_SHELL=self-hosted` is a plain site frame for an instance of its own, and a starting point for customising one:
+
+- a header with the instance's logo and name (linking to My Surveys), the main navigation (**My Surveys**,
+  **Projects**, and **Users** for instance admins) and the account (the user's name, **Change password**,
+  **Sign Out**);
+- the page;
+- a footer with **Terms**, **Privacy** and **Powered by SurveyJS**.
+
+Nothing in it comes from surveyjs.io but that mark: it loads none of the site's styles or fonts (system fonts only).
+Its code is in `web/src/shell/self-hosted/`:
+
+| File                    | What it holds                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SelfHostedShell.tsx`   | The frame (`SelfHostedFrame`), the shell of a signed-in page (`SelfHostedShell`) and the footer (`SelfHostedFooter`)                       |
+| `self-hosted.css`       | The frame's styles: readable global class names, `sh-*`                                                                                    |
+| `self-hosted-pages.css` | A neutral look for the app's pages inside the frame (My Surveys, Projects, the editor's bar, results, history, Users), scoped to `.sh-app` |
+| `accentText.ts`         | The text shade of the accent colour (WCAG AA on white)                                                                                     |
+
+The classes, for restyling it in a fork or from another stylesheet:
+
+| Class                                                   | Element                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `sh-app`                                                | The frame's root; carries the custom properties below                    |
+| `sh-header`                                             | The header                                                               |
+| `sh-brand`, `sh-brand__logo`, `sh-brand__name`          | The logo and name, a link to My Surveys                                  |
+| `sh-nav`, `sh-nav__link`                                | The main navigation                                                      |
+| `sh-account`, `sh-account__name`, `sh-account__link`    | The user's name and Change password                                      |
+| `sh-button`                                             | The shell's buttons (Sign Out)                                           |
+| `sh-message`, `sh-message--error`                       | Account notices and a failed sign-out, above the page                    |
+| `sh-content`                                            | The page                                                                 |
+| `sh-footer`, `sh-footer__link`, `sh-footer__powered-by` | The footer and its links; `sh-footer--standalone` under a running survey |
+
+| Custom property                                                                                                    | Value                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `--sh-accent`                                                                                                      | `BRAND_ACCENT_COLOR`: lines and filled buttons             |
+| `--sh-accent-text`                                                                                                 | The accent darkened until it reads on white (4.5:1): links |
+| `--sh-text`, `--sh-muted`, `--sh-border`, `--sh-surface`, `--sh-subtle`, `--sh-danger`, `--sh-radius`, `--sh-font` | The neutral palette, radius and font, set on `.sh-app`     |
+
+The shell loads only with `APP_SHELL=self-hosted` (a lazy chunk), so its styles never reach the `surveyjs-site` look.
+Its look is pinned by its own visual tests (`pnpm e2e:visual:self-hosted`, [Testing](../testing.md)).
+
 ## Branding settings
 
-These apply to the `powered-by` shell:
+These apply to the `self-hosted` shell:
 
 | Variable                   | Value                                                           | Default              |
 | -------------------------- | --------------------------------------------------------------- | -------------------- |
@@ -32,7 +75,7 @@ These apply to the `powered-by` shell:
 Example:
 
 ```sh
-APP_SHELL=powered-by
+APP_SHELL=self-hosted
 BRAND_NAME="Acme Surveys"
 BRAND_LOGO_URL=https://cdn.acme.example/logo.svg
 BRAND_ACCENT_COLOR=#0a7d4f
@@ -82,7 +125,7 @@ public by nature, like any licence key in a web page: `/config` hands it to the 
 
 ```json
 {
-  "shell": "powered-by",
+  "shell": "self-hosted",
   "branding": {
     "name": "Acme Surveys",
     "logoUrl": "https://cdn.acme.example/logo.svg",

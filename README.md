@@ -230,7 +230,8 @@ Run from the repository root.
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                         |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                       |
 | `pnpm e2e:password`                                              | Playwright password sign-in tests: the first admin, the forced change, the back-off (Chromium)                             |
-| `pnpm e2e:powered-by`                                            | Playwright branding tests in the powered-by shell: sign-in, My Surveys, editor, results, run page (Chromium)               |
+| `pnpm e2e:self-hosted`                                           | Playwright branding tests in the self-hosted shell: sign-in, My Surveys, editor, results, run page (Chromium)              |
+| `pnpm e2e:visual:self-hosted`                                    | Visual tests of the self-hosted shell against its own baselines (local only)                                               |
 | `pnpm e2e:postgres`                                              | Playwright tests on the `postgres` provider, every functional spec but the licence notices (Chromium; needs `postgres:up`) |
 | `pnpm e2e:visual`                                                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))        |
 | `pnpm e2e:visual:report`                                         | Opens the visual parity report                                                                                             |

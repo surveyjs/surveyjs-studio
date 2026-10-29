@@ -1945,9 +1945,9 @@ components:
         shell:
           type: string
           description: |
-            The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `powered-by` is the
+            The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `self-hosted` is the
             self-hosted look, with the instance's branding and "Powered by SurveyJS".
-          examples: [surveyjs-site, powered-by]
+          examples: [surveyjs-site, self-hosted]
         authMethods:
           type: array
           description: |
@@ -1990,7 +1990,7 @@ components:
         features: { $ref: '#/components/schemas/Features' }
     Branding:
       type: object
-      description: The instance's branding, shown by the `powered-by` shell.
+      description: The instance's branding, shown by the `self-hosted` shell.
       required: [name, logoUrl, accentColor, termsUrl, privacyUrl, poweredBy]
       properties:
         name: { type: string, description: The instance's name (`BRAND_NAME`). }

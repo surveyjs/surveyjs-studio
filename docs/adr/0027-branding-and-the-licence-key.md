@@ -11,7 +11,7 @@ Accepted.
 The self-hosted image (mode 2b) is free, and builds on commercial SurveyJS components: Survey Creator, the Dashboard and
 the PDF export. The spec (spec-self-hosted.md › Shell, branding and licence; D20, D21) asks for:
 
-- a `powered-by` shell with the instance's name, logo and colours, and "Powered by SurveyJS" on every page;
+- a `self-hosted` shell with the instance's name, logo and colours, and "Powered by SurveyJS" on every page;
 - a licence key that unlocks the components while the branding shows (S24), and a paid key that lets the admin remove
   it (S25);
 - the surveyjs.io-only features (the Embed tab, the API docs, API tokens) hidden outside the surveyjs.io shell (S26).
@@ -28,7 +28,7 @@ surveyjs.io, and developers use their own key and may switch the mark off.
   the brand and whether the mark shows (`poweredBy`), not the spec's `required`/`removable`.
 - **`BRANDING=on|off`**, default `on`. `off` hides "Powered by SurveyJS" and is refused at start-up without a
   `SURVEYJS_LICENSE_KEY`: switching the mark off is for an admin with their own key.
-- **The `powered-by` shell** (`APP_SHELL=powered-by`): `BRAND_NAME`, `BRAND_LOGO_URL` (https or a path on this site,
+- **The `self-hosted` shell** (`APP_SHELL=self-hosted`): `BRAND_NAME`, `BRAND_LOGO_URL` (https or a path on this site,
   what the pages' CSP loads), `BRAND_ACCENT_COLOR` (a CSS custom property), `TERMS_URL` and `PRIVACY_URL`. It frames
   every signed-in page, the sign-in, set-password and public results pages, and puts its footer under a running survey.
   It loads nothing from other sites.

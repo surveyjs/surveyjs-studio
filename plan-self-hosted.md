@@ -26,7 +26,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 3. **The shared seed** (plan.md › Local demo modes › Seed data) is the single seed for every mode. The sandbox uses a small, tagged subset of it that fits in localStorage. A step that adds a feature with data adds that data to the seed, and tags it for the sandbox when it is small.
 4. **Contract edits** are coordinated with the hosted track: small PRs, rebased often. A contract change never mixes both tracks' operations.
 5. **Shell features.**
-   - Any new UI is checked in both the `powered-by` and `surveyjs-site` shells.
+   - Any new UI is checked in both the `self-hosted` and `surveyjs-site` shells.
    - Features that D21 limits to the surveyjs-site shell are checked hidden elsewhere: the Embed tab, the API docs, the API tokens page.
 
 ## Cross-track dependencies
@@ -215,7 +215,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
   - a sign-in page with email and password, plus provider buttons when configured;
   - "change password", including the forced change after the first sign-in.
 
-  Both are built in the `powered-by` and plain shells.
+  Both are built in the `self-hosted` and plain shells.
 
 - **Configuration:** `AUTH_METHODS=password` with `USER_DIRECTORY=local`, under the Step 12 start-up rules.
 
@@ -327,7 +327,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 
 **Build**
 
-- **The `powered-by` shell:**
+- **The `self-hosted` shell:**
   - a neutral header with `BRAND_NAME` and `BRAND_LOGO_URL`, the account menu, and a link to Users for instance admins;
   - `BRAND_ACCENT_COLOR` as a CSS custom property;
   - a footer with "Powered by SurveyJS" plus the Terms and Privacy links.
@@ -347,14 +347,14 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 - **Front-end unit:** the shell's header and footer from configuration; feature gating.
 - **Front-end e2e:**
   - the branding on run, editor, results and sign-in;
-  - the Embed tab and API tokens page hidden in `powered-by` and shown in `surveyjs-site`;
+  - the Embed tab and API tokens page hidden in `self-hosted` and shown in `surveyjs-site`;
   - visual snapshots of the shell.
 
 **Documentation:** `docs/customizing/branding.md` (configuration and licence), user guide note, an ADR for "Branding and the licence key", `docs/demo/self-hosted-06.md`.
 
 **Demo checklist**
 
-1. Start with `APP_SHELL=powered-by`, a name, a logo and a colour. Every page shows them, plus "Powered by SurveyJS".
+1. Start with `APP_SHELL=self-hosted`, a name, a logo and a colour. Every page shows them, plus "Powered by SurveyJS".
 2. The editor has no Embed tab, and `/api/docs` is `404`. Switch to `surveyjs-site`, and both are back.
 3. `BRANDING=off` with the test branding-bound key: start-up refuses with a clear message.
 
@@ -373,7 +373,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 
 **Build**
 
-- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080` (the Step 14 image sets `PORT=3000` today), volume `/data`, non-root.
+- **Self-hosted defaults** on the Step 14 image: `APP_SHELL=self-hosted`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`, port `8080` (the Step 14 image sets `PORT=3000` today), volume `/data`, non-root.
 - **Images for `linux/amd64` and `linux/arm64`.**
 - **Start-up:** migrations under a lock, the first-admin bootstrap, `/healthz` and `/readyz`, `TRUSTED_PROXIES`, secure cookies on HTTPS.
 - **`surveyjs-studio backup` and `surveyjs-studio restore`** inside the image, for SQLite and local files. The documentation covers `pg_dump` and S3 versioning.
@@ -483,7 +483,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 - **The sandbox UI:**
   - the demo banner: data stays in this browser, links to the image and to GitHub;
   - **Reset demo data**, with a confirmation;
-  - the `powered-by` shell, with the Embed tab, API docs and API tokens hidden.
+  - the `self-hosted` shell, with the Embed tab, API docs and API tokens hidden.
 - **Unsupported operations** answer `501`, and the UI hides what depends on them.
 - **`pnpm build:sandbox` and `pnpm dev:sandbox`.**
 - **Keeping it honest:**

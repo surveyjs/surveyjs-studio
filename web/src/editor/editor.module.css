@@ -4,7 +4,7 @@
 
 /* the site's page markup hides the site footer with an inline style (`footer { display: none; }`): the
    Creator and the fixed bar take its place. Here the same, limited to the page that holds the
-   Creator. The powered-by footer stays: its branding shows on every page (ADR 0027). */
+   Creator. The self-hosted footer stays: its branding shows on every page (ADR 0027). */
 :global(main:has(#creator) ~ footer:not([data-branding-footer])) {
   display: none;
 }

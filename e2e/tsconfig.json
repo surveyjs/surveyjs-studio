@@ -8,7 +8,9 @@
     "playwright.azurite.config.ts",
     "playwright.visual.config.ts",
     "playwright.capture.config.ts",
+    "playwright.self-hosted-visual.config.ts",
     "tests",
-    "visual"
+    "visual",
+    "visual-self-hosted"
   ]
 }

@@ -222,7 +222,7 @@ Numbered S1–S45, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### Shell, branding and licence (S7, S23–S26, S38)
 
-- **The `powered-by` shell:**
+- **The `self-hosted` shell:**
   - a neutral header with the instance's name and logo, and the user menu;
   - a footer with "Powered by SurveyJS".
 
@@ -250,7 +250,7 @@ The packaging is our choice (2026-10-19):
   - with the volume `/data`, which holds the SQLite database and local files.
   - **The container keeps no state.** All data (users, personal surveys, projects, results, files) lives in the mounted volume, or in the external PostgreSQL and S3 storage when configured. Replacing the container loses nothing.
 
-  It is the Step 14 production image with the self-hosted defaults: `APP_SHELL=powered-by`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`.
+  It is the Step 14 production image with the self-hosted defaults: `APP_SHELL=self-hosted`, `STORAGE_PROVIDER=sqlite`, `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`.
 
 - **Tags:** semantic-version tags plus `latest`. Each release is built from a git tag in CI, with an SBOM and an image vulnerability scan.
 - **Upgrades:**
@@ -297,7 +297,7 @@ The packaging is our choice (2026-10-19):
 
   The demo banner states the browser-only nature.
 
-- **Shell:** `powered-by`, with a demo banner and links to the image and the source code. The Embed tab, the API docs and the API tokens page are hidden.
+- **Shell:** `self-hosted`, with a demo banner and links to the image and the source code. The Embed tab, the API docs and the API tokens page are hidden.
 - **Hosting:** static files on a CDN at `studio.demo.surveyjs.io`, with the licence key issued for that domain.
 - **Keeping it honest (S44):**
   - the handlers also run in Node through `msw/node`, and a **sandbox subset** of the conformance suite runs against them;
@@ -353,7 +353,7 @@ The rules of `spec.md` › Testing Decisions apply. This track adds:
 - **More databases:** MySQL/MariaDB, SQL Server, MongoDB. They come later through the same provider suite (D15).
 - **P1 product features:** versioning, distribution controls, analytics, extended roles, audit log UI, notifications, webhooks and templates. API tokens, CORS and partial responses come from the hosted track and work here without extra work.
 - **A Helm chart** or other orchestrator packages beyond the Compose examples.
-- **A visual redesign** of the app screens. The `powered-by` shell changes the frame and branding, not the screens.
+- **A visual redesign** of the app screens. The `self-hosted` shell changes the frame and branding, and gives the screens a neutral look of its own (same markup), not a new design.
 
 ## Open questions
 

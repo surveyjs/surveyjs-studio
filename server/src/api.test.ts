@@ -88,7 +88,7 @@ describe("getConfig", () => {
         OIDC_ISSUER_URL: "https://auth.example.com",
         OIDC_CLIENT_ID: "client",
         OIDC_CLIENT_SECRET: "secret",
-        APP_SHELL: "powered-by",
+        APP_SHELL: "self-hosted",
         BRAND_NAME: "Acme Surveys",
         BRAND_LOGO_URL: "/brand/logo.svg",
         BRAND_ACCENT_COLOR: "#0a7",
@@ -110,7 +110,7 @@ describe("getConfig", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toStrictEqual({
       edition: "hosted",
-      shell: "powered-by",
+      shell: "self-hosted",
       authMethods: ["surveyjs"],
       surveyjsLicenseKey: "key-123",
       limits: {
@@ -442,7 +442,7 @@ describe("/api/docs", () => {
 
   it("is a plain 404 outside the surveyjs-site shell, though the docs exist (D21)", async () => {
     const res = await (
-      await start({ APP_SHELL: "powered-by" }, { apiDocsPath: docsFile })
+      await start({ APP_SHELL: "self-hosted" }, { apiDocsPath: docsFile })
     ).inject("/api/docs");
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ code: "not-found" });

@@ -60,7 +60,7 @@ export interface UserApiConfig {
   readonly token: string;
 }
 
-/** The instance's branding (`/config.branding`, the powered-by shell). */
+/** The instance's branding (`/config.branding`, the self-hosted shell). */
 export interface BrandingConfig {
   /** `BRAND_NAME`, trimmed; default "My Surveys". */
   readonly name: string;
