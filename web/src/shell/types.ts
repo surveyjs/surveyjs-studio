@@ -3,6 +3,18 @@ import type { components } from "@surveyjs-studio/contract/types";
 
 export type ShellUser = components["schemas"]["CurrentUser"];
 export type ShellNotice = components["schemas"]["Notice"];
+/** The instance's branding (`/config.branding`), shown by the powered-by shell. */
+export type ShellBranding = components["schemas"]["Branding"];
+
+/** The branding of a server whose `/config` has none (an older server): the defaults. */
+export const DEFAULT_BRANDING: ShellBranding = {
+  name: "My Surveys",
+  logoUrl: null,
+  accentColor: "#19b394",
+  termsUrl: null,
+  privacyUrl: null,
+  poweredBy: true,
+};
 
 /** A page of the app, for a shell that renders without the router. */
 export interface ShellAppLink {
@@ -43,5 +55,7 @@ export interface ShellProps {
   changePasswordLink?: ShellAppLink;
   /** In-app link to the Users page, for an instance admin. */
   usersLink?: ShellAppLink;
+  /** `/config.branding`; the powered-by shell shows it. */
+  branding?: ShellBranding;
   children: ReactNode;
 }

@@ -52,6 +52,7 @@ function PrivateLayout() {
     user,
     notices: user.notices ?? [],
     links: config.links ?? {},
+    ...(config.branding && { branding: config.branding }),
     onSignOut: signOut,
     signingOut: pending,
     signOutError: error,
