@@ -6,6 +6,7 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 import { appVariables, stripAppVariables } from "./app-variables.mjs";
 import { imageTag, isImageTarget } from "./image-target.mjs";
 import { ports } from "./ports.mjs";
+import { firstAdmin } from "./tests/support/password.js";
 
 type WebServers = Extract<PlaywrightTestConfig["webServer"], unknown[]>;
 
@@ -32,9 +33,13 @@ stripAppVariables(process.env);
 //   (`pnpm postgres:up` first) with files in a new bucket of the local S3 server (`pnpm s3:up`),
 //   seeded the same way; every functional spec but the licence notices
 //   (which need the second server), on Chromium.
+// - password (E2E_MODE=password, `pnpm e2e:password`): the sqlite provider as in sqlite mode, with
+//   the local user directory and password sign-in only (a first admin from ADMIN_EMAIL and
+//   ADMIN_PASSWORD); the password spec, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
 const postgres = process.env["E2E_MODE"] === "postgres";
+const password = process.env["E2E_MODE"] === "password";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below).
@@ -129,7 +134,16 @@ const azuriteWebServers: WebServers = [
 
 // The server seeds its new database (`seed` migrates it first), then starts on it. The users and
 // files come from the memory provider's seed until self-hosted Steps 3 and 4. The database is made
-// by playwright.sqlite.config.ts (E2E_SQLITE_DIR) or playwright.postgres.config.ts (E2E_DATABASE_URL).
+// by playwright.sqlite.config.ts or playwright.password.config.ts (E2E_SQLITE_DIR), or
+// playwright.postgres.config.ts (E2E_DATABASE_URL). Password mode signs in on the app's own page:
+// no dev sign-in, and no OIDC settings (they are needed only with AUTH_METHODS=surveyjs).
+const { IDENTITY_PROVIDER: _devSignIn, ...passwordServerEnv } = {
+  ...memoryServerEnv,
+  USER_DIRECTORY: "local",
+  AUTH_METHODS: "password",
+  ADMIN_EMAIL: firstAdmin.email,
+  ADMIN_PASSWORD: firstAdmin.password,
+};
 const sqlWebServers = (): WebServers => [
   {
     command:
@@ -139,8 +153,8 @@ const sqlWebServers = (): WebServers => [
     reuseExistingServer: false,
     timeout: 60_000,
     env: {
-      ...memoryServerEnv,
-      ...(sqlite
+      ...(password ? passwordServerEnv : memoryServerEnv),
+      ...(sqlite || password
         ? {
             STORAGE_PROVIDER: "sqlite",
             SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
@@ -246,57 +260,78 @@ export default defineConfig({
     locale: "en-US",
     timezoneId: "UTC",
   },
-  projects: sqlite
+  projects: password
     ? [
         {
-          name: "sqlite-chromium",
-          testMatch: [
-            "survey-list.spec.ts",
-            "survey-list-paging.spec.ts",
-            "editor.spec.ts",
-            "history.spec.ts",
-            "uploads.spec.ts",
-            "run.spec.ts",
-          ],
+          name: "password-chromium",
+          testMatch: ["password.spec.ts"],
           use: { ...devices["Desktop Chrome"], viewport },
         },
       ]
-    : postgres
+    : sqlite
       ? [
           {
-            name: "postgres-chromium",
-            testIgnore: ["notices.spec.ts"],
+            name: "sqlite-chromium",
+            testMatch: [
+              "survey-list.spec.ts",
+              "survey-list-paging.spec.ts",
+              "editor.spec.ts",
+              "history.spec.ts",
+              "uploads.spec.ts",
+              "run.spec.ts",
+            ],
             use: { ...devices["Desktop Chrome"], viewport },
           },
         ]
-      : azurite
+      : postgres
         ? [
             {
-              name: "azurite-chromium",
-              testMatch: [
-                "sign-in.spec.ts",
-                "survey-list.spec.ts",
-                "survey-actions.spec.ts",
-                "editor.spec.ts",
-                "history.spec.ts",
-                "uploads.spec.ts",
-                "run.spec.ts",
-                "results.spec.ts",
-                "results-details.spec.ts",
-                "projects.spec.ts",
-                "xss.spec.ts",
-              ],
+              name: "postgres-chromium",
+              testIgnore: ["notices.spec.ts", "password.spec.ts"],
               use: { ...devices["Desktop Chrome"], viewport },
             },
           ]
-        : [
-            { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
-            { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
-            { name: "webkit", use: { ...devices["Desktop Safari"], viewport } },
-          ],
+        : azurite
+          ? [
+              {
+                name: "azurite-chromium",
+                testMatch: [
+                  "sign-in.spec.ts",
+                  "survey-list.spec.ts",
+                  "survey-actions.spec.ts",
+                  "editor.spec.ts",
+                  "history.spec.ts",
+                  "uploads.spec.ts",
+                  "run.spec.ts",
+                  "results.spec.ts",
+                  "results-details.spec.ts",
+                  "projects.spec.ts",
+                  "xss.spec.ts",
+                ],
+                use: { ...devices["Desktop Chrome"], viewport },
+              },
+            ]
+          : [
+              // The password spec needs password mode's server.
+              {
+                name: "chromium",
+                testIgnore: ["password.spec.ts"],
+                use: { ...devices["Desktop Chrome"], viewport },
+              },
+              {
+                name: "firefox",
+                testIgnore: ["password.spec.ts"],
+                use: { ...devices["Desktop Firefox"], viewport },
+              },
+              {
+                name: "webkit",
+                testIgnore: ["password.spec.ts"],
+                use: { ...devices["Desktop Safari"], viewport },
+              },
+            ],
   webServer: imageTarget
     ? imageWebServers()
-    : sqlite || postgres
+    : sqlite || postgres || password
       ? sqlWebServers()
       : azurite
         ? azuriteWebServers

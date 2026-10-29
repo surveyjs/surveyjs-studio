@@ -21,6 +21,11 @@ declare module "vitest" {
      * external server without `CONFORMANCE_WEBHOOK_SECRET`): the webhook tests skip.
      */
     webhookSecret: string | null;
+    /**
+     * The first admin's email and password with `CONFORMANCE_AUTH=password` (the server creates
+     * that admin from ADMIN_EMAIL and ADMIN_PASSWORD); null otherwise: the password tests skip.
+     */
+    passwordAdmin: { email: string; password: string } | null;
   }
 }
 
@@ -39,6 +44,12 @@ const USER_API_TOKEN = "conformance-user-api-token";
 // The reference server's account-deleted webhook secret: a synthetic test value (the base64 of
 // the 34-byte text `my-surveys-conformance-webhook-key`).
 const WEBHOOK_SECRET = "whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==";
+
+// The password run's first admin (CONFORMANCE_AUTH=password): synthetic local-only test values.
+const PASSWORD_ADMIN = {
+  email: "first-admin@example.com",
+  password: "conformance first admin password",
+};
 
 // Every variable of the server's environment table (server/src/config.ts). The reference
 // server must see only the explicit values set below, never the developer's shell.
@@ -167,8 +178,6 @@ const s3Variables = [
   "S3_FORCE_PATH_STYLE",
   "S3_ACCESS_KEY_ID",
   "S3_SECRET_ACCESS_KEY",
-  "ADMIN_EMAIL",
-  "ADMIN_PASSWORD",
 ] as const;
 
 /**
@@ -285,6 +294,31 @@ function userDirectoryEnv(stubUrl: string | null): Record<string, string> {
   };
 }
 
+/** `CONFORMANCE_AUTH`: `default` or `password`. */
+function authMode(): "default" | "password" {
+  const mode = process.env.CONFORMANCE_AUTH?.trim() || "default";
+  if (mode !== "default" && mode !== "password") {
+    throw new Error(`CONFORMANCE_AUTH must be default or password, got "${mode}"`);
+  }
+  return mode;
+}
+
+/**
+ * `CONFORMANCE_AUTH=password` keeps the users in the local directory (USER_DIRECTORY=local: the
+ * seed's users become accounts without a password) and turns password sign-in on, with a first
+ * admin from ADMIN_EMAIL and ADMIN_PASSWORD. The dev sign-in still signs the fixture users in, so
+ * the whole suite runs on local accounts.
+ */
+function authEnv(): Record<string, string> {
+  if (authMode() === "default") return {};
+  return {
+    USER_DIRECTORY: "local",
+    AUTH_METHODS: "password",
+    ADMIN_EMAIL: PASSWORD_ADMIN.email,
+    ADMIN_PASSWORD: PASSWORD_ADMIN.password,
+  };
+}
+
 /** `CONFORMANCE_READ_ONLY=true` runs the reference server with `READ_ONLY=true`. */
 function readOnlyEnv(): Record<string, string> {
   const value = process.env.CONFORMANCE_READ_ONLY?.trim() || "false";
@@ -322,6 +356,7 @@ function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
     ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ...providerEnv(),
     ...userDirectoryEnv(stubUrl),
+    ...authEnv(),
     ...readOnlyEnv(),
   };
 }
@@ -352,7 +387,7 @@ function imageTag(): string | null {
  * `NODE_ENV=test`, both keep the server's log, which `docker logs` saves.
  */
 function imageEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  // The SQL providers are refused in production until self-hosted Step 2.
+  // The SQL providers need the local directory in production, and the dev sign-in is refused there.
   if (["memory", "sqlite", "postgres"].includes(env.STORAGE_PROVIDER ?? "")) {
     return { ...env, NODE_ENV: "development" };
   }
@@ -547,10 +582,14 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     if (process.env.CONFORMANCE_IMAGE?.trim()) {
       throw new Error("CONFORMANCE_IMAGE cannot be used with CONFORMANCE_BASE_URL");
     }
+    if (authMode() !== "default") {
+      throw new Error("CONFORMANCE_AUTH cannot be used with CONFORMANCE_BASE_URL");
+    }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
     project.provide("ownsServer", false);
     project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
+    project.provide("passwordAdmin", null);
     return;
   }
   const image = imageTag();
@@ -558,6 +597,11 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   if (provider === "sqlite" && image !== null) {
     throw new Error(
       "CONFORMANCE_IMAGE cannot be used with CONFORMANCE_PROVIDER=sqlite: the container cannot see the run's database file",
+    );
+  }
+  if (authMode() === "password" && (provider === "azure-legacy" || mode !== "default")) {
+    throw new Error(
+      "CONFORMANCE_AUTH=password needs CONFORMANCE_PROVIDER=memory, sqlite or postgres and the default user directory",
     );
   }
   if (provider === "sqlite" || provider === "postgres") {
@@ -577,6 +621,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   project.provide("ownsServer", true);
   project.provide("userDirectory", mode);
   project.provide("webhookSecret", WEBHOOK_SECRET);
+  project.provide("passwordAdmin", authMode() === "password" ? PASSWORD_ADMIN : null);
   return async () => {
     server.stop();
     stub?.stop();

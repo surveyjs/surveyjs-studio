@@ -8,6 +8,7 @@
     "test:sqlite": "node --env-file=sqlite.env node_modules/vitest/vitest.mjs run",
     "test:postgres": "node --env-file=../docker/postgres.env --env-file=postgres.env node_modules/vitest/vitest.mjs run",
     "test:s3": "node --env-file=../docker/s3.env --env-file=sqlite.env --env-file=s3.env node_modules/vitest/vitest.mjs run",
+    "test:password": "node --env-file=password.env node_modules/vitest/vitest.mjs run",
     "test:user-api": "node --env-file=user-api.env node_modules/vitest/vitest.mjs run",
     "test:read-only": "node --env-file=read-only.env node_modules/vitest/vitest.mjs run src/read-only.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
