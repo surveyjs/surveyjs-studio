@@ -462,7 +462,6 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
-/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
 /** `API_DOCS` (default on outside production), and only in the surveyjs-site shell (D21). */
 function apiDocsOf(e: {
   NODE_ENV: string;
@@ -488,8 +487,10 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
     problems.push("BRAND_NAME: must be at most 80 characters");
   }
   const logo = env.BRAND_LOGO_URL;
-  // A path of this site, or https: what the pages' CSP lets an image load from.
-  const sitePath = logo !== undefined && logo.startsWith("/") && !logo.startsWith("//");
+  // A path of this site, or https: what the pages' CSP lets an image load from. A backslash is
+  // refused: browsers read "/\host" as "//host", another site.
+  const sitePath =
+    logo !== undefined && logo.startsWith("/") && !logo.startsWith("//") && !logo.includes("\\");
   if (logo !== undefined && !sitePath && !isUrl(logo, ["https:"])) {
     problems.push("BRAND_LOGO_URL: must be an https URL or a path on this site (/...)");
   }
@@ -515,6 +516,7 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
 function bootstrapProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const { ADMIN_EMAIL: email, ADMIN_PASSWORD: password } = env;

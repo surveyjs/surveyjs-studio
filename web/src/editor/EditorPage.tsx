@@ -86,8 +86,8 @@ export function EditorPage({ surveyId }: { surveyId: string }) {
       theme={theme.data}
       maxAssetBytesPerSurvey={config.limits.maxAssetBytesPerSurvey}
       serverReadOnly={config.readOnly}
-      // Only the surveyjs-site shell offers the Embed tabs (D21); a server without features does.
-      embed={config.features?.embed ?? true}
+      // Only the surveyjs-site shell offers the Embed tabs (D21).
+      embed={config.features.embed}
     />
   );
 }

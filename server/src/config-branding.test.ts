@@ -52,6 +52,15 @@ describe("branding settings", () => {
     expect(load({ BRAND_LOGO_URL: "/brand/logo.png" }).branding.logoUrl).toBe("/brand/logo.png");
   });
 
+  it.each(["/\\evil.example/logo.png", "/\\\\evil.example"])(
+    "refuses a backslash in a site path (%s): browsers read it as a slash",
+    (logo) => {
+      expect(messageOf(() => load({ BRAND_LOGO_URL: logo }))).toContain(
+        "  - BRAND_LOGO_URL: must be an https URL or a path on this site (/...)",
+      );
+    },
+  );
+
   it("switches the Powered by mark off only with a licence key", () => {
     expect(load({ BRANDING: "off", SURVEYJS_LICENSE_KEY: "own-key" }).branding.poweredBy).toBe(
       false,
@@ -100,6 +109,21 @@ describe("features by shell", () => {
     expect(messageOf(() => load({ APP_SHELL: "self-hosted", API_DOCS: "true" }))).toContain(
       "  - API_DOCS: true requires APP_SHELL=surveyjs-site (the API docs are shown only there)",
     );
+  });
+
+  it("honours API_DOCS=true in production in the surveyjs-site shell", () => {
+    const config = loadConfig({
+      NODE_ENV: "production",
+      APP_SHELL: "surveyjs-site",
+      API_DOCS: "true",
+      PUBLIC_BASE_URL: "https://a.example",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
+      OIDC_ISSUER_URL: "https://auth.example.com",
+      OIDC_CLIENT_ID: "client-id",
+      OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
+    });
+    expect(config.apiDocs).toBe(true);
+    expect(config.features.apiDocs).toBe(true);
   });
 
   it("keeps the API docs off where API_DOCS keeps them off", () => {

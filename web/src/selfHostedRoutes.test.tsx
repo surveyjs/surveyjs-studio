@@ -46,7 +46,9 @@ beforeEach(() => {
 /** The page shows "Powered by SurveyJS" and Terms in the shell's footer (a lazy chunk: awaited). */
 async function expectBranding() {
   const footer = await screen.findByRole("contentinfo");
-  expect(within(footer).getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
+  expect(
+    within(footer).getByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
+  ).toBeTruthy();
   expect(within(footer).getByRole("link", { name: "Terms" })).toBeTruthy();
 }
 
@@ -124,6 +126,8 @@ describe("the self-hosted shell", () => {
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
     expect(await screen.findByTestId("fake-survey")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Powered by SurveyJS" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
+    ).toBeNull();
   });
 });

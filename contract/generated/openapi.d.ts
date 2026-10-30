@@ -1103,8 +1103,8 @@ export interface components {
             links?: {
                 [key: string]: string;
             };
-            branding?: components["schemas"]["Branding"];
-            features?: components["schemas"]["Features"];
+            branding: components["schemas"]["Branding"];
+            features: components["schemas"]["Features"];
         };
         /** @description The instance's branding, shown by the `self-hosted` shell. */
         Branding: {

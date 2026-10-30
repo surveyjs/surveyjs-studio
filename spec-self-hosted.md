@@ -357,7 +357,7 @@ The rules of `spec.md` › Testing Decisions apply. This track adds:
 
 ## Open questions
 
-1. **The branding-bound licence key:** its mechanism and timeline with the SurveyJS library team. It will be discussed before Step 6 of the plan. Until it exists, the image is not published.
+1. **The branding-bound licence key:** decided on 2026-10-29 in [ADR 0027](docs/adr/0027-branding-and-the-licence-key.md); the image is published to a private test package until the shipped key exists.
 
 **Decided on 2026-10-19:**
 

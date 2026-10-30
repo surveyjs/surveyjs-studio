@@ -1,6 +1,15 @@
+import { useEffect } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { currentUser } from "../../test/server";
+import { renderApp } from "../../test/renderApp";
+import {
+  appConfig,
+  configHandler,
+  currentUser,
+  meHandler,
+  server,
+  unauthenticatedHandler,
+} from "../../test/server";
 import type { ShellBranding } from "../types";
 import { SelfHostedFooter, SelfHostedFrame, SelfHostedShell } from "./SelfHostedShell";
 
@@ -12,6 +21,8 @@ const branding: ShellBranding = {
   privacyUrl: "https://acme.example/privacy",
   poweredBy: true,
 };
+
+const POWERED_BY = "Powered by SurveyJS (opens in a new tab)";
 
 function renderShell(overrides: Partial<Parameters<typeof SelfHostedShell>[0]> = {}) {
   const onSignOut = vi.fn();
@@ -39,13 +50,44 @@ describe("SelfHostedShell", () => {
     expect(within(header).getByText("Acme Surveys")).toBeTruthy();
     expect(screen.getByText("page content")).toBeTruthy();
     const footer = screen.getByRole("contentinfo");
-    expect(within(footer).getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
+    expect(within(footer).getByRole("link", { name: POWERED_BY })).toBeTruthy();
     expect(within(footer).getByRole("link", { name: "Terms" }).getAttribute("href")).toBe(
       "https://acme.example/terms",
     );
     expect(within(footer).getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe(
       "https://acme.example/privacy",
     );
+  });
+
+  it("keeps the visible text of the Powered by SurveyJS link, and says it opens a new tab", () => {
+    renderShell();
+
+    const link = screen.getByRole("link", { name: POWERED_BY });
+    expect(link.firstChild!.textContent!.trim()).toBe("Powered by SurveyJS");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
+
+  it("sets the tab title to the instance's name; a page's own title still wins", () => {
+    document.title = "";
+    render(
+      <SelfHostedFrame branding={branding}>
+        <p>page</p>
+      </SelfHostedFrame>,
+    );
+    expect(document.title).toBe("Acme Surveys");
+
+    function Titled() {
+      useEffect(() => {
+        document.title = "Customer feedback";
+      }, []);
+      return <p>run</p>;
+    }
+    render(
+      <SelfHostedFrame branding={branding}>
+        <Titled />
+      </SelfHostedFrame>,
+    );
+    expect(document.title).toBe("Customer feedback");
   });
 
   it("links the instance's name to My Surveys, and lists My Surveys first", () => {
@@ -122,7 +164,7 @@ describe("SelfHostedShell", () => {
   it("hides Powered by SurveyJS when the branding is off", () => {
     renderShell({ branding: { ...branding, poweredBy: false } });
 
-    expect(screen.queryByRole("link", { name: "Powered by SurveyJS" })).toBeNull();
+    expect(screen.queryByRole("link", { name: POWERED_BY })).toBeNull();
     expect(screen.getByRole("link", { name: "Terms" })).toBeTruthy();
   });
 
@@ -142,7 +184,7 @@ describe("SelfHostedFooter", () => {
     render(<SelfHostedFooter branding={branding} />);
 
     expect(screen.getByRole("contentinfo")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: POWERED_BY })).toBeTruthy();
     expect(screen.queryByRole("banner")).toBeNull();
   });
 
@@ -153,5 +195,30 @@ describe("SelfHostedFooter", () => {
       />,
     );
     expect(container.innerHTML).toBe("");
+  });
+});
+
+describe("the not-found page in the self-hosted shell", () => {
+  const config = { ...appConfig, shell: "self-hosted", branding };
+
+  it("sits in the frame of a visitor who is not signed in: the brand header and the footer", async () => {
+    server.use(configHandler(config), unauthenticatedHandler());
+    renderApp("/no/such/page");
+
+    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeTruthy();
+    expect(within(screen.getAllByRole("banner")[0]!).getByText("Acme Surveys")).toBeTruthy();
+    expect(screen.getByRole("contentinfo")).toBeTruthy();
+    expect(document.querySelectorAll("main")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
+  });
+
+  it("sits in the signed-in shell for a signed-in user", async () => {
+    server.use(configHandler(config), meHandler());
+    renderApp("/no/such/page");
+
+    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeTruthy();
+    expect(within(screen.getAllByRole("banner")[0]!).getByText("Acme Surveys")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign Out" })).toBeTruthy();
+    expect(document.querySelectorAll("main")).toHaveLength(1);
   });
 });

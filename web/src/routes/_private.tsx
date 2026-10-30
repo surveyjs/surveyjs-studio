@@ -1,15 +1,9 @@
-import {
-  Outlet,
-  createFileRoute,
-  getRouteApi,
-  redirect,
-  useNavigate,
-} from "@tanstack/react-router";
+import { Outlet, createFileRoute, getRouteApi, redirect } from "@tanstack/react-router";
 import { ApiError } from "../api/client";
 import { configQueryOptions } from "../api/config";
-import { currentUserQueryOptions, useSignOut } from "../api/session";
+import { currentUserQueryOptions } from "../api/session";
 import { navigateTo } from "../navigation";
-import { renderShell } from "../shell/registry";
+import { PrivateShell } from "../shell/PrivateShell";
 
 /** Pathless layout for pages that need a signed-in user: guards them and renders the shell. */
 export const Route = createFileRoute("/_private")({
@@ -46,31 +40,9 @@ const rootRoute = getRouteApi("__root__");
 function PrivateLayout() {
   const { user } = Route.useRouteContext();
   const config = rootRoute.useLoaderData();
-  const { signOut, pending, error } = useSignOut();
-  const navigate = useNavigate();
-  return renderShell(config.shell, {
-    user,
-    notices: user.notices ?? [],
-    links: config.links ?? {},
-    ...(config.branding && { branding: config.branding }),
-    onSignOut: signOut,
-    signingOut: pending,
-    signOutError: error,
-    // The shells render without the router: they get the link and a function that follows it.
-    projectsLink: { href: "/projects", navigate: () => void navigate({ to: "/projects" }) },
-    homeLink: { href: "/", navigate: () => void navigate({ to: "/" }) },
-    ...(config.authMethods.includes("password") && {
-      changePasswordLink: {
-        href: "/change-password",
-        navigate: () => void navigate({ to: "/change-password" }),
-      },
-    }),
-    ...(user.instanceRole === "admin" && {
-      usersLink: {
-        href: "/admin/users",
-        navigate: () => void navigate({ to: "/admin/users" }),
-      },
-    }),
-    children: <Outlet />,
-  });
+  return (
+    <PrivateShell config={config} user={user}>
+      <Outlet />
+    </PrivateShell>
+  );
 }

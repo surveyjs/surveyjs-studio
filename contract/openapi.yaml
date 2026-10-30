@@ -1937,7 +1937,7 @@ components:
 
     AppConfig:
       type: object
-      required: [edition, shell, authMethods, limits, readOnly]
+      required: [edition, shell, authMethods, limits, readOnly, branding, features]
       properties:
         edition:
           type: string

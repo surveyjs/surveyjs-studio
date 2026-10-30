@@ -20,6 +20,15 @@ export const appConfig: components["schemas"]["AppConfig"] = {
     maxDocumentBytes: 30000000,
   },
   readOnly: false,
+  branding: {
+    name: "My Surveys",
+    logoUrl: null,
+    accentColor: "#19b394",
+    termsUrl: null,
+    privacyUrl: null,
+    poweredBy: true,
+  },
+  features: { embed: false, apiDocs: false, apiTokens: false },
 };
 
 export function configHandler(config = appConfig) {
