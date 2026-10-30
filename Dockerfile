@@ -15,7 +15,12 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
-RUN pnpm --filter @surveyjs-studio/server deploy --prod /out/server
+# This stage runs on the build host; the deploy installs the optional binaries (esbuild, for tsx) of the
+# platform the image is built for.
+ARG TARGETARCH
+RUN case "$TARGETARCH" in amd64) cpu=x64 ;; arm64) cpu=arm64 ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac \
+    && echo "$cpu" > /tmp/target-cpu \
+    && pnpm --filter @surveyjs-studio/server deploy --prod --os=linux --cpu="$cpu" --libc=glibc /out/server
 # The docs route reads reference.html next to the contract package's openapi.yaml; the build fails
 # when that folder is not found (API_DOCS=true would answer 404 otherwise).
 RUN openapi="$(find /out/server/node_modules/@surveyjs-studio/contract/ -maxdepth 1 -name openapi.yaml)" \
@@ -25,7 +30,12 @@ RUN openapi="$(find /out/server/node_modules/@surveyjs-studio/contract/ -maxdept
     && cp contract/dist/reference.html "$contract/dist/reference.html" \
     && rm -rf web/dist/.vite
 # The runtime stages may run on another architecture than this one: no native add-on may be in the output.
-RUN test -z "$(find /out/server -name '*.node')"
+# The deploy must hold the esbuild binary of the target CPU and of no other platform.
+RUN test -z "$(find /out/server -name '*.node')" \
+    && cpu="$(cat /tmp/target-cpu)" \
+    && found="$(find /out/server/node_modules -type d -path '*/@esbuild/*' -prune -print | sed 's|.*/@esbuild/||' | sort -u)" \
+    && echo "esbuild platform packages: $found" \
+    && test "$found" = "linux-$cpu"
 
 FROM node:24.21.0-bookworm-slim AS app
 # Links the package in ghcr.io to the repository, so it takes the repository's access rules.
