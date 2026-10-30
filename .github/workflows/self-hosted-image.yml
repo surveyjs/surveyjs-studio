@@ -1,0 +1,118 @@
+name: Self-hosted image
+
+# Builds the self-hosted image (--target self-hosted) for linux/amd64 and checks it as a
+# self-hosting admin uses it: the image checks (scripts/image-checks), then the SQLite, password
+# and self-hosted end-to-end suites on the image, with Chromium's outbound network blocked.
+# Called by ci.yml on every push and by release.yml before a release is pushed.
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: The version the image is built as (VERSION), the commit id or the release tag
+        type: string
+        required: true
+      previous-image:
+        description: The previous release (a pullable image), for the upgrade check; skipped when empty
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  self-hosted-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: surveyjs-studio:self-hosted-ci
+      PREVIOUS_IMAGE: ${{ inputs.previous-image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the self-hosted image
+        env:
+          VERSION: ${{ inputs.image-tag }}
+        run: |
+          docker build --target self-hosted --build-arg "VERSION=$VERSION" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$IMAGE" .
+
+      - name: Pull the previous release
+        if: inputs.previous-image != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$PREVIOUS_IMAGE"
+          docker logout ghcr.io
+
+      - name: Image checks
+        run: |
+          if [ -n "$PREVIOUS_IMAGE" ]; then
+            pnpm image:checks --image "$IMAGE" --previous "$PREVIOUS_IMAGE"
+          else
+            pnpm image:checks --image "$IMAGE"
+          fi
+
+      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      - name: Install Playwright Chromium
+        timeout-minutes: 10
+        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+
+      - name: End-to-end tests (SQLite mode, on the self-hosted image)
+        run: pnpm e2e:sqlite
+        env:
+          E2E_TARGET: image
+          E2E_IMAGE: surveyjs-studio:self-hosted-ci
+
+      - name: End-to-end tests (password mode, on the self-hosted image)
+        run: pnpm e2e:password
+        env:
+          E2E_TARGET: image
+          E2E_IMAGE: surveyjs-studio:self-hosted-ci
+
+      - name: End-to-end tests (self-hosted mode, on the self-hosted image)
+        run: pnpm e2e:self-hosted
+        env:
+          E2E_TARGET: image
+          E2E_IMAGE: surveyjs-studio:self-hosted-ci
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: self-hosted-playwright-report
+          path: e2e/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # The image checks save a failed check's container logs to docker-logs/, and the e2e suites
+      # each app container's log when they remove it; this adds the containers still there.
+      - name: Collect the app container logs
+        if: failure()
+        run: |
+          mkdir -p docker-logs
+          for name in $(docker ps -a --filter name=surveyjs-studio-e2e --filter name=surveyjs-studio-check --format '{{.Names}}'); do
+            docker logs "$name" > "docker-logs/$name.log" 2>&1 || true
+          done
+
+      - name: Upload the app container logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: self-hosted-docker-logs
+          path: docker-logs/
+          if-no-files-found: ignore
+          retention-days: 7

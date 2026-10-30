@@ -1,0 +1,88 @@
+# 28. The self-hosted image
+
+Date: 2026-10-30
+
+## Status
+
+Accepted.
+
+## Context
+
+Self-hosted Step 7 builds the free Docker image of mode 2b (spec-self-hosted.md › Docker image; S1, S5, S8–S11, S45):
+one command to run, a volume for the data, safe upgrades, backups, no outbound calls, images for amd64 and arm64, and a
+release pipeline with an SBOM and a scan. The Step 14 image ([ADR 0021](0021-production-image-and-web-serving.md))
+already runs studio.surveyjs.io and must not change. Two inputs are missing: push access to Docker Hub and the licence
+key the image will ship with (spec open question 1).
+
+## Decision
+
+**D1. A separate build target.** `docker build --target self-hosted` is the 2b image. It shares the build stages with
+the hosted image; only its last stage differs: the 2b defaults (`APP_SHELL=self-hosted`, `STORAGE_PROVIDER=sqlite`,
+`FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`), port 8080, `VOLUME /data`, the user `node`
+(uid 1000), and the `surveyjs-studio` command (`backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`). The
+hosted `runtime` stage stays last, so `docker build .` gives the same image as before: settings, port 3000 and the
+`ghcr.io/surveyjs/surveyjs-studio:<sha>` tags.
+
+**D2. A private test package.** Until Docker Hub access and the shipped key exist, a `v*` tag pushes to
+`ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` only, with `GITHUB_TOKEN`. One workflow variable, `RELEASE_IMAGE`
+in `release.yml`, names the target. A bad test release is deleted by hand.
+
+**D3. The session secret on the volume.** `SESSION_SECRET_FILE` (the image sets `/data/session-secret`): when
+`SESSION_SECRET` is unset, the server reads the file, or creates it once with a random secret (mode `0600`, written
+atomically). `SESSION_SECRET` wins when both are set. A `/data` the container cannot write stops the start with one
+line that names the path and uid 1000.
+
+**D4. `PUBLIC_BASE_URL`** defaults to `http://localhost:8080` in the image only; the server still requires it in
+production. While it names `localhost` under `NODE_ENV=production`, the start-up log warns that sign-in and
+set-password links point there.
+
+**D5. The image's licence key** is `SURVEYJS_IMAGE_LICENSE_KEY`, set from a build argument (the CI secret of the same
+name; empty when absent). The key the app uses is `SURVEYJS_LICENSE_KEY`, else `SURVEYJS_IMAGE_LICENSE_KEY`.
+`BRANDING=off` requires a `SURVEYJS_LICENSE_KEY` that is set and differs from the image's key
+([ADR 0027](0027-branding-and-the-licence-key.md)). This is not a security boundary (anyone can override an environment
+variable); the libraries' check is.
+
+**D6. The proxy setting stays `TRUST_PROXY`** (built in Phase 1; the spec names it). The plan's `TRUSTED_PROXIES` is a
+typo; nothing is renamed.
+
+**D7. The S3 server of `compose.postgres.yml` is RustFS**, as in `docker/compose.s3.yaml`: MinIO's images are no longer
+published. The plan's "MinIO" means "an S3-compatible server". A one-off `bucket` service of the same image creates the
+bucket (`surveyjs-studio s3-bucket create`). The example talks to RustFS over plain http on the Compose network, so it
+sets the new opt-in `S3_ALLOW_HTTP=true` ([ADR 0025](0025-file-storage-for-the-sql-providers.md)); the server warns at
+start-up while it is on with an endpoint that is not on this machine.
+
+**D8. One build per architecture, without emulating the build.** The build stage runs on `$BUILDPLATFORM`; only the
+`runtime` and `self-hosted` stages are per platform. As first written, D8 shipped the build machine's optional binaries:
+an arm64 image built on x86 held esbuild's `linux-x64` package and could not start. **Amended:** the server's
+`pnpm deploy` installs the target's binaries (`--os=linux --cpu=<x64|arm64> --libc=glibc`, from `TARGETARCH`), and the
+build fails unless the deploy output holds `@esbuild/linux-<cpu>` and no other `@esbuild/*` package, and no `.node`
+file. The release workflow starts the pushed arm64 image under QEMU and requires `/healthz` within 90 s.
+
+**Backups.** `surveyjs-studio backup` copies the SQLite database (online, `node:sqlite`'s backup) and the local files
+into `surveyjs-studio-<UTC time>/` with a `backup.json`; the folder is written under a `.partial-` name and renamed when
+complete. `restore` refuses a folder without `backup.json`, and refuses while the database is open ("stop the container
+first"). The default target is `/data/backups`. The image also has an empty `/backups` folder owned by `node` (not a
+`VOLUME`): a named volume mounted there takes that owner, so `backup --to /backups` works without a `chown`.
+
+**No outbound calls.** The self-hosted shell's run page does not show the Form Library's brand block, which loads its
+logo from surveyjs.io; the shell's own footer carries "Powered by SurveyJS" (hidden only by `BRANDING=off`). The
+`surveyjs-site` shell keeps the block. The e2e suites run on the image with Chromium's outbound network blocked.
+
+## Consequences
+
+- Every push runs the image checks and the SQLite, password and self-hosted e2e suites on the self-hosted image
+  (`self-hosted-image.yml`, next to `ci`). A release runs the same, plus the upgrade from the previous release.
+- The hosted image and its publish job are unchanged.
+- **When Docker Hub access and the shipped licence key arrive:**
+  - `RELEASE_IMAGE` changes to `surveyjs/surveyjs-studio` (Docker Hub, with a login step and its token as a secret),
+    and a second push or `docker buildx imagetools create` mirrors the tags to `ghcr.io/surveyjs/surveyjs-studio`.
+  - That GHCR name is the hosted image's package today. Its tags are full commit ids and `production`, so `vX.Y.Z`,
+    `vX.Y` and `latest` do not collide by name, but one package would then hold two different images. Decide before
+    the mirror: rename the hosted package (e.g. `surveyjs-studio-hosted`, which changes `ci.yml`, `deploy.yml` and the
+    server's update script) or mirror the self-hosted image elsewhere.
+  - The default image of the Compose examples (`${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}`)
+    and the docs' image name change to the public one.
+  - The `SURVEYJS_IMAGE_LICENSE_KEY` secret is set; nothing in the code changes.
+  - The test package is deleted.
+- A downgrade is refused: an older image does not start on a database a newer version migrated. Going back means
+  restoring the backup made before the upgrade.

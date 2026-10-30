@@ -186,6 +186,16 @@ jobs:
         if: always()
         run: pnpm s3:down
 
+  # The self-hosted image (--target self-hosted): the image checks and the SQLite, password and
+  # self-hosted e2e suites on it. It runs next to ci; nothing publishes it here (release.yml does).
+  self-hosted-image:
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/self-hosted-image.yml
+    with:
+      image-tag: ${{ github.sha }}
+
   # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio:<commit sha>. It runs no
   # third-party code, so only this job gets write access to packages.
   publish:
@@ -205,6 +215,8 @@ jobs:
       - name: Load the image
         run: gunzip -c surveyjs-studio-image.tar.gz | docker load
 
+      # Inline rather than `pnpm image:checks --only secrets`: that needs a checkout and an install,
+      # i.e. third-party code in the one job that can write packages.
       - name: Check that no settings file is in the image
         run: |
           found="$(docker run --rm --entrypoint sh surveyjs-studio:ci -c 'find /app -name "*.env*"')"

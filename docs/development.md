@@ -843,6 +843,18 @@ the only job with `packages: write`, and it runs no installed packages, only `do
 `org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
 repository's access rules.
 
+The **`self-hosted-image` job** (`.github/workflows/self-hosted-image.yml`, a reusable workflow) runs next to `ci` on
+its own runner, with `packages: read`. It builds the self-hosted image (`docker build --target self-hosted`, `VERSION`
+the commit) as `surveyjs-studio:self-hosted-ci`, runs `pnpm image:checks` on it (the upgrade check is skipped: there is
+no previous release here), installs Chromium, and runs `e2e:sqlite`, `e2e:password` and `e2e:self-hosted` on the image
+(`E2E_TARGET=image`, `E2E_IMAGE=surveyjs-studio:self-hosted-ci`), with Chromium's outbound network blocked. On failure
+it uploads the Playwright report and `docker-logs/` (`self-hosted-playwright-report`, `self-hosted-docker-logs`).
+`publish` does not wait for it: nothing publishes the self-hosted image on a push.
+
+**`.github/workflows/release.yml`** runs on a `v*` tag only: the same reusable workflow with the upgrade from the
+previous release, then the multi-platform push, the arm64 smoke run and the scan
+([Operations › Releasing the self-hosted image](operations.md#releasing-the-self-hosted-image)).
+
 The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see
 [Testing › Visual parity](testing.md#visual-parity)). CI typechecks, lints and unit-tests their helpers. Run
 `pnpm e2e:visual` locally before you merge a change to the look of a page.
