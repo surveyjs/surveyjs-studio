@@ -237,6 +237,7 @@ them.
 | `saveSurveyDefinition`              | Visible (`404`), can modify (`403`), `If-Match` present (`428`), read the current version and compare (`412`), `SurveyStore.saveDefinition` with `ifVersion`, the caller and the clock (`conflict` is `412`, `not-found` is `404`), `204` and `ETag` |
 | `getSurveyTheme`, `saveSurveyTheme` | The same, with the theme and `saveTheme` (no user, no history entry)                                                                                                                                                                                 |
 | `listSurveyHistory`                 | Visible (`404`); the cursor (`400` when invalid); `SurveyStore.listHistory`; the user of each entry from `UserDirectory.getUser` (one lookup for each distinct user on the page); `200`                                                              |
+| `getSurveyHistoryEntry`             | Visible (`404`); `SurveyStore.getHistorySnapshot` (`null` is `404`); `200`, the definition. Added by [ADR 0023](adr/0023-history-json-view.md)                                                                                                       |
 
 `etag.ts` is pure. `formatEtag(version)` gives the strong tag `"<version>"`, and
 `ifMatchAllows(header, version)` implements the `If-Match` rules (a list of tags, `*`, no weak tags, a

@@ -127,8 +127,8 @@ with the row's menu (Step 5); the menu's entries are the pure function `surveyMe
 The site builds one stylesheet, `/Content/css.V2`, from `the site's source`
 (`compilerconfig.json`, `Code/the site's code`). `app.scss` is not one indivisible file: it
 imports about 200 partials, most of them for the site's own pages (pricing, docs, account pages…).
-The shell's entry, `surveyjs-site.scss`, imports only the 31 partials that the top bar, the menus,
-the footer, the cookie banner, the licence dialogs and the My Surveys page use, in the order of
+The shell's entry, `surveyjs-site.scss`, imports only the 37 partials that the top bar, the menus,
+the footer, the cookie banner, the licence dialogs, the My Surveys page and the History page use, in the order of
 `app.scss`: the design tokens (`sizes`, `media-breakpoints`, `text-styles`, `color-styles`,
 `effect-styles`), the base (`layout-styles`, `common-styles`, `mobile-menu`, `cookies-popup`), the
 components, the top-bar and footer styles, and `pages/my-surveys.scss`. Compiled, they are about
@@ -192,12 +192,31 @@ Step 14 (visual parity) copies the frame of `the site's page markup` into `src/h
 h1.title.my-surveys-page__title`, and the entries in `div.mod-mt-50.mod-mb-50`. Changes to the markup:
 
 - The entries are a `ul` of `li.my-surveys-history-item`, not `div`s, and the time is a `time`. The site
-  wraps the clock and the time in `span.action-link`, a link that opens the saved JSON. The app has no
-  JSON view (ADR 0012 R23): the entry takes the link's font and colour (`history.module.css`), not its
-  underline or pointer.
+  wraps the clock and the time in `span.action-link`, a link that opens the saved JSON; the app has no
+  JSON view (ADR 0012 R23), so the entry takes the link's font and colour, not its underline or
+  pointer. (ADR 0023 replaces this; see below.)
 - " by {name}" follows the time in `span.my-surveys-history-item__user` when the user is known.
 - The loading, error, "No edits yet." and Show more texts sit in the entries' `div`; "Back to My
   Surveys" follows it. All of them are the app's own.
+
+The JSON view of a history entry ([ADR 0023](../../../../../docs/adr/0023-history-json-view.md)) copies these, from
+commit `(a site commit)` (none of them has changed since):
+
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                       | Used by                          | Original                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `site/Content/Styles/components/footer-toolbar-item.scss`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button             | the same path under `wwwroot/`, imported where `app.scss` has it (after `forms/checkbox`). None changed |
+| `site/Views/Shared/V2/_icons/{24x24,20x20}/Copy-Code.svg`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button's two icons | `Views/Shared/V2/_icons/{24x24,20x20}the site's page markup` (`the site's page markup` → `.svg`, byte-order mark removed)   |
+| The entry's `span.action-link` around the clock and the time; the block under it: the Copy JSON button (`V2/components/Footer-Toolbar-Item`: Type Button, not icon-only, its two icons in `circle-icon/Icon` boxes, Smedium and SSmedium, Primary), `div.svc-custom-embedded-tab__code-container` (with `user-select: text`) and `pre.source-code.source-code-embed > code.content-js.language-javascript` | `src/history/HistoryPage.tsx`    | `the site's page markup`                                                                    |
+
+Changes to them:
+
+- The `span.action-link` is a `button.action-link` with `aria-expanded`; `history.module.css` drops the button's own
+  look. It also holds " by {name}".
+- The site sets the JSON with `innerHTML` and colours it with Prism (`prettyElements`). The app sets it as text, without
+  Prism; the `pre` has `language-json`, so the `.source-code[class*="language-"]` rule of `common-styles.scss` gives it
+  its frame, and glue in `history.module.css` gives it padding, a 480 px height limit and its own scroll.
+- The site loads the entry with its clock icon shown a second time; the app says "Loading…". The load error, the
+  "Copied" label and the clipboard error are the app's own.
 
 Step 8 (the run page, `src/run/`) copies one piece of markup, from commit `adeaa47cbd`
 (2026-10-16; `the site's page markup` has not changed since `a1fd364fb4`, 2026-10-02, so it is
