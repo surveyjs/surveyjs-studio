@@ -61,12 +61,18 @@ describe("branding settings", () => {
     },
   );
 
-  it("switches the Powered by mark off only with a licence key", () => {
+  it.each(["/\t/evil.example", "/\n/evil.example", "/ /logo.png", "/\x7f/logo.png"])(
+    "refuses whitespace and control characters in a site path (%j): URL parsers strip them",
+    (logo) => {
+      expect(messageOf(() => load({ BRAND_LOGO_URL: logo }))).toContain(
+        "  - BRAND_LOGO_URL: must be an https URL or a path on this site (/...)",
+      );
+    },
+  );
+
+  it("switches the Powered by mark off with a licence key of your own", () => {
     expect(load({ BRANDING: "off", SURVEYJS_LICENSE_KEY: "own-key" }).branding.poweredBy).toBe(
       false,
-    );
-    expect(messageOf(() => load({ BRANDING: "off" }))).toContain(
-      "  - BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)",
     );
   });
 
@@ -87,6 +93,63 @@ describe("branding settings", () => {
     [{ BRANDING: "maybe" }, "BRANDING"],
   ])("refuses %j", (env, line) => {
     expect(messageOf(() => load(env))).toContain(`  - ${line}`);
+  });
+});
+
+describe("the image's licence key", () => {
+  const RULE =
+    "BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key";
+
+  it("uses the image's key when SURVEYJS_LICENSE_KEY is unset, with the mark on", () => {
+    const config = load({ SURVEYJS_IMAGE_LICENSE_KEY: " image-key " });
+    expect(config.surveyjsLicenseKey).toBe("image-key");
+    expect(config.branding.poweredBy).toBe(true);
+  });
+
+  it("prefers SURVEYJS_LICENSE_KEY when both are set", () => {
+    const config = load({
+      SURVEYJS_LICENSE_KEY: " own-key ",
+      SURVEYJS_IMAGE_LICENSE_KEY: "image-key",
+    });
+    expect(config.surveyjsLicenseKey).toBe("own-key");
+  });
+
+  it("has no key when neither is set", () => {
+    expect(load({}).surveyjsLicenseKey).toBeNull();
+  });
+
+  it.each([
+    [{ SURVEYJS_LICENSE_KEY: "image-key", SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{ SURVEYJS_LICENSE_KEY: " image-key ", SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{ SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{}],
+  ])("refuses BRANDING=off with %j", (keys) => {
+    const message = messageOf(() => load({ BRANDING: "off", ...keys }));
+    expect(message).toContain(`  - ${RULE}`);
+    expect(message).not.toContain("image-key");
+    expect(message).not.toContain("own-key");
+  });
+
+  it("starts with BRANDING=off and a key of your own beside the image's", () => {
+    const config = load({
+      BRANDING: "off",
+      SURVEYJS_LICENSE_KEY: "own-key",
+      SURVEYJS_IMAGE_LICENSE_KEY: "image-key",
+    });
+    expect(config.branding.poweredBy).toBe(false);
+    expect(config.surveyjsLicenseKey).toBe("own-key");
+  });
+
+  it("never puts a key in a ConfigError", () => {
+    const message = messageOf(() =>
+      load({
+        BRANDING: "off",
+        SURVEYJS_LICENSE_KEY: "own-key",
+        SURVEYJS_IMAGE_LICENSE_KEY: "own-key",
+        BRAND_LOGO_URL: "http://x.example",
+      }),
+    );
+    expect(message).not.toContain("own-key");
   });
 });
 

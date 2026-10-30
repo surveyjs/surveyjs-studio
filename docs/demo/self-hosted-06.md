@@ -50,6 +50,7 @@ APP_SHELL=self-hosted BRAND_NAME="Acme Surveys" \
 
 1. Start with `APP_SHELL=self-hosted BRANDING=off pnpm dev:sqlite`.
    - **Check:** the server stops: `BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)`.
+     Step 7 changed the message to `BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key`.
 2. Start with `APP_SHELL=self-hosted BRANDING=off SURVEYJS_LICENSE_KEY=<your key> pnpm dev:sqlite`.
    - **Check:** the pages show no **Powered by SurveyJS**; with a valid key, the editor shows no licence banner.
 

@@ -277,6 +277,8 @@ const envSchema = z.object({
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
+  // The key built into the official image (ADR 0027); the used key is SURVEYJS_LICENSE_KEY, else this.
+  SURVEYJS_IMAGE_LICENSE_KEY: z.string().optional(),
   // Checked in brandingProblems.
   BRAND_NAME: z.string().optional(),
   BRAND_LOGO_URL: z.string().optional(),
@@ -488,9 +490,14 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
   }
   const logo = env.BRAND_LOGO_URL;
   // A path of this site, or https: what the pages' CSP lets an image load from. A backslash is
-  // refused: browsers read "/\host" as "//host", another site.
+  // refused: browsers read "/\host" as "//host", another site. So is any whitespace or control
+  // character: URL parsers strip a tab or a newline, so "/<tab>/host" would read as "//host".
   const sitePath =
-    logo !== undefined && logo.startsWith("/") && !logo.startsWith("//") && !logo.includes("\\");
+    logo !== undefined &&
+    logo.startsWith("/") &&
+    !logo.startsWith("//") &&
+    // eslint-disable-next-line no-control-regex -- the control characters are the point
+    !/[\\\x00-\x20\x7f]/.test(logo);
   if (logo !== undefined && !sitePath && !isUrl(logo, ["https:"])) {
     problems.push("BRAND_LOGO_URL: must be an https URL or a path on this site (/...)");
   }
@@ -504,9 +511,13 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
       problems.push(`${variable}: must be an http(s) URL`);
     }
   }
-  // The libraries decide what a key allows; the app asks for one before it hides the mark.
-  if (env.BRANDING === "off" && !env.SURVEYJS_LICENSE_KEY?.trim()) {
-    problems.push("BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)");
+  // The libraries decide what a key allows; the app asks for the admin's own key before it hides
+  // the mark: set, and not the image's (ADR 0027). Not a security boundary. Keys are never named.
+  const ownKey = env.SURVEYJS_LICENSE_KEY?.trim();
+  if (env.BRANDING === "off" && (!ownKey || ownKey === env.SURVEYJS_IMAGE_LICENSE_KEY?.trim())) {
+    problems.push(
+      "BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key",
+    );
   }
   if (env.API_DOCS === "true" && (env.APP_SHELL ?? SITE_SHELL) !== SITE_SHELL) {
     problems.push(
@@ -710,7 +721,8 @@ export function loadConfig(
     edition: e.APP_EDITION,
     shell: e.APP_SHELL,
     authMethods: Object.freeze([...e.AUTH_METHODS]),
-    surveyjsLicenseKey: e.SURVEYJS_LICENSE_KEY ?? null,
+    surveyjsLicenseKey:
+      e.SURVEYJS_LICENSE_KEY?.trim() || e.SURVEYJS_IMAGE_LICENSE_KEY?.trim() || null,
     branding: Object.freeze({
       name: e.BRAND_NAME?.trim() || "My Surveys",
       logoUrl: e.BRAND_LOGO_URL ?? null,
