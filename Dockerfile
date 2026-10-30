@@ -59,8 +59,8 @@ LABEL org.opencontainers.image.title="SurveyJS Studio" \
       org.opencontainers.image.licenses="MIT"
 RUN printf '%s\n' '#!/bin/sh' 'cd /app/server && exec node --import tsx src/cli/surveyjs-studio.ts "$@"' > /usr/local/bin/surveyjs-studio \
     && chmod 755 /usr/local/bin/surveyjs-studio
-# A new named volume inherits this owner.
-RUN mkdir -p /data && chown node:node /data
+# A new named volume inherits this owner. /backups is no VOLUME: it is where an admin mounts one.
+RUN mkdir -p /data /backups && chown node:node /data /backups
 VOLUME /data
 USER node
 WORKDIR /app/server

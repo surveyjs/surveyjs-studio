@@ -299,6 +299,7 @@ const envSchema = z.object({
   S3_FORCE_PATH_STYLE: z
     .enum(["true", "false"], { error: "must be true or false" })
     .default("false"),
+  S3_ALLOW_HTTP: z.enum(["true", "false"], { error: "must be true or false" }).default("false"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
@@ -595,9 +596,11 @@ function fileProblems(env: Record<string, string | undefined>): string[] {
   if (env.S3_SECRET_ACCESS_KEY !== undefined && env.S3_ACCESS_KEY_ID === undefined) {
     problems.push(`S3_ACCESS_KEY_ID: required with S3_SECRET_ACCESS_KEY ${both}`);
   }
-  // Plain http only to a server on this machine (the local S3 server); never in transit.
+  // Plain http only to a server on this machine (the local S3 server), or with S3_ALLOW_HTTP=true
+  // (an S3 server on a private network, such as the Compose example).
   const endpoint = env.S3_ENDPOINT;
   if (
+    env.S3_ALLOW_HTTP !== "true" &&
     endpoint !== undefined &&
     URL.canParse(endpoint) &&
     new URL(endpoint).protocol === "http:" &&

@@ -750,6 +750,7 @@ pnpm image:checks --image surveyjs-studio:self-hosted [--previous <tag>] [--only
 | `backup`   | `surveyjs-studio backup` to a second volume, the data volume removed, `surveyjs-studio restore` into a new one: the flow's data is all there  |
 | `upgrade`  | The `--previous` image creates the data, the image under test opens it: the data is there and no migration is pending. Skipped without it     |
 | `secrets`  | `find /app -name '*.env*'` finds no settings file in the image                                                                                |
+| `compose`  | Each file of `deploy/compose/` started with a generated `.env` in a temp folder: the flow passes on the published port                        |
 
 - Each check prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`. The exit code is 0 when
   none fails, 1 when one does, 2 for a usage error.

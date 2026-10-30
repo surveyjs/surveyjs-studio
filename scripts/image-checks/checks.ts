@@ -1,7 +1,8 @@
 // The image checks (`pnpm image:checks`): the self-hosted image as a self-hosting admin uses it.
 // The argument parsing, the names and the output parsing are pure (checks.test.ts); the checks
 // themselves drive Docker (docker.ts) and the user flow (flow.mjs).
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docker, dockerSync, exec, freePort, lastLine, type Outcome } from "./docker.js";
@@ -13,6 +14,7 @@ export const CHECK_NAMES = [
   "backup",
   "upgrade",
   "secrets",
+  "compose",
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
@@ -202,28 +204,6 @@ export class Run {
   async volume(name: string): Promise<string> {
     const outcome = await docker(["volume", "create", name]);
     if (outcome.code !== 0) failed("docker volume create", outcome);
-    return name;
-  }
-
-  /** A volume the image's user (uid 1000) can write, for a path the image does not have. */
-  async writableVolume(image: string, name: string): Promise<string> {
-    await this.volume(name);
-    const outcome = await docker([
-      "run",
-      "--rm",
-      "--name",
-      `${name}-chown`,
-      "--user",
-      "root",
-      "-v",
-      `${name}:/mnt`,
-      "--entrypoint",
-      "chown",
-      image,
-      "node:node",
-      "/mnt",
-    ]);
-    if (outcome.code !== 0) failed("chown of the backup volume", outcome);
     return name;
   }
 
@@ -421,12 +401,21 @@ type Check = (run: Run, options: CheckOptions) => Promise<CheckResult>;
 const PASS: CheckResult = { status: "pass" };
 
 /** The image runs as `node`, uid 1000. */
-const nonRoot: Check = async (_run, { image }) => {
+const nonRoot: Check = async (run, { image }) => {
   const inspect = await docker(["image", "inspect", "-f", "{{.Config.User}}", image]);
   if (inspect.code !== 0) failed("docker image inspect", inspect);
   const user = inspect.stdout.trim();
   if (user !== "node") fail(`Config.User is "${user}", not "node"`);
-  const id = await docker(["run", "--rm", "--entrypoint", "id", image, "-u"]);
+  const id = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("non-root", "id"),
+    "--entrypoint",
+    "id",
+    image,
+    "-u",
+  ]);
   if (id.code !== 0) failed("id -u", id);
   if (id.stdout.trim() !== "1000") fail(`id -u printed "${id.stdout.trim()}", not 1000`);
   return PASS;
@@ -481,7 +470,7 @@ const offline: Check = async (run, { image }) => {
 
 /** Backup to a second volume, lose the data volume, restore into a new one: the data is back. */
 const backup: Check = async (run, { image }) => {
-  const backups = await run.writableVolume(image, run.name("backup", "backups"));
+  const backups = await run.volume(run.name("backup", "backups"));
   const data = await run.volume(run.name("backup", "data"));
   const first = await run.startServer({
     name: run.name("backup", "server"),
@@ -571,10 +560,12 @@ const upgrade: Check = async (run, { image, previous }) => {
 };
 
 /** No settings file in the image (the publish job's check of the hosted image too). */
-const secrets: Check = async (_run, { image }) => {
+const secrets: Check = async (run, { image }) => {
   const found = await docker([
     "run",
     "--rm",
+    "--name",
+    run.name("secrets", "find"),
     "--entrypoint",
     "sh",
     image,
@@ -587,6 +578,70 @@ const secrets: Check = async (_run, { image }) => {
   return PASS;
 };
 
+const COMPOSE_DIR = resolve(root, "deploy/compose");
+const COMPOSE_FILES = ["compose.sqlite.yml", "compose.postgres.yml"] as const;
+
+/**
+ * Each Compose example, started as an admin would start it (an `.env` next to the file, here in a
+ * temp folder with local test values), then the user flow against the published port.
+ */
+const compose: Check = async (run, { image }) => {
+  const folder = mkdtempSync(resolve(tmpdir(), "surveyjs-studio-compose-"));
+  try {
+    for (const file of COMPOSE_FILES) {
+      const kind = file.split(".")[1] ?? "x";
+      const project = run.name("compose", kind);
+      const port = await freePort();
+      const settings: Record<string, string> = {
+        SURVEYJS_STUDIO_IMAGE: image,
+        SURVEYJS_STUDIO_PORT: String(port),
+        PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+        ADMIN_EMAIL: FLOW_ENV["ADMIN_EMAIL"] ?? "",
+        ADMIN_PASSWORD: FLOW_ENV["ADMIN_PASSWORD"] ?? "",
+        POSTGRES_PASSWORD: "compose-check-postgres",
+        S3_ACCESS_KEY_ID: "composecheckaccess",
+        S3_SECRET_ACCESS_KEY: "composechecksecretkey",
+      };
+      const envFile = resolve(folder, `${kind}.env`);
+      writeFileSync(
+        envFile,
+        Object.entries(settings)
+          .map(([name, value]) => `${name}=${value}`)
+          .join("\n") + "\n",
+      );
+      const base = [
+        "compose",
+        "-p",
+        project,
+        "-f",
+        resolve(COMPOSE_DIR, file),
+        "--env-file",
+        envFile,
+      ];
+      const up = await docker([...base, "up", "-d", "--wait", "--wait-timeout", "180"], {
+        timeoutMs: 600_000,
+      });
+      if (up.code !== 0) failed(`${file}: docker compose up`, up);
+      const server: Server = { name: `${project}-app-1`, port, startedAt: Date.now() };
+      await run.waitReady(server);
+      try {
+        await run.flowOnHost(server, ["bootstrap-and-create"]);
+      } catch (error) {
+        throw new CheckFailure(
+          `${file}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const down = await docker([...base, "down", "-v", "--remove-orphans"], {
+        timeoutMs: 180_000,
+      });
+      if (down.code !== 0) failed(`${file}: docker compose down`, down);
+    }
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+  return PASS;
+};
+
 export const CHECKS: Readonly<Record<CheckName, Check>> = {
   "non-root": nonRoot,
   setup,
@@ -594,4 +649,5 @@ export const CHECKS: Readonly<Record<CheckName, Check>> = {
   backup,
   upgrade,
   secrets,
+  compose,
 };

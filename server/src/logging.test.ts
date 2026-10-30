@@ -16,7 +16,13 @@ vi.mock("mssql", async (importOriginal) => {
 import { buildApp } from "./app.js";
 import { transactionOf } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
-import { publicUrlWarning, redactUrl, startupSummary, storageWarning } from "./logging.js";
+import {
+  publicUrlWarning,
+  redactUrl,
+  s3EndpointWarning,
+  startupSummary,
+  storageWarning,
+} from "./logging.js";
 import { createAzureLegacyProviders } from "./providers/azure-legacy/index.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createProviders } from "./providers/index.js";
@@ -177,6 +183,31 @@ describe("storageWarning", () => {
 
   it("has nothing to say about the other providers", () => {
     expect(storageWarning(loadConfig({ IDENTITY_PROVIDER: "dev" }))).toBeNull();
+  });
+});
+
+describe("s3EndpointWarning", () => {
+  const base = {
+    IDENTITY_PROVIDER: "dev",
+    STORAGE_PROVIDER: "sqlite",
+    FILE_STORE: "s3",
+    S3_BUCKET: "b",
+    S3_ALLOW_HTTP: "true",
+  };
+
+  it("warns about plain http to another host", () => {
+    const config = loadConfig({ ...base, S3_ENDPOINT: "http://s3:9000" });
+    expect(s3EndpointWarning(config)).toBe(
+      "S3_ENDPOINT is plain http (S3_ALLOW_HTTP=true): keep the S3 server on a private network",
+    );
+  });
+
+  it("is quiet for https, loopback, AWS and the local file store", () => {
+    for (const S3_ENDPOINT of ["https://s3.example.net", "http://127.0.0.1:9000", undefined]) {
+      const env = S3_ENDPOINT === undefined ? base : { ...base, S3_ENDPOINT };
+      expect(s3EndpointWarning(loadConfig(env))).toBeNull();
+    }
+    expect(s3EndpointWarning(loadConfig({ IDENTITY_PROVIDER: "dev" }))).toBeNull();
   });
 });
 

@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
-import { publicUrlWarning, startupSummary, storageWarning } from "./logging.js";
+import { publicUrlWarning, s3EndpointWarning, startupSummary, storageWarning } from "./logging.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { PendingMigrationsError } from "./providers/sql.js";
 import { withSessionSecret } from "./session-secret.js";
@@ -46,6 +46,8 @@ const storage = storageWarning(config);
 if (storage !== null) app.log.warn(storage);
 const publicUrl = publicUrlWarning(config);
 if (publicUrl !== null) app.log.warn(publicUrl);
+const s3Endpoint = s3EndpointWarning(config);
+if (s3Endpoint !== null) app.log.warn(s3Endpoint);
 
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

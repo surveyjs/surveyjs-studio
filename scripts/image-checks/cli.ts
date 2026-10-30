@@ -52,9 +52,14 @@ for (const name of options.only) {
         ? error.message
         : `unexpected error: ${error instanceof Error ? error.message : String(error)}`;
     console.log(`FAIL ${name}: ${reason}`);
-    for (const file of run.saveLogs(name)) console.log(`  log: ${file}`);
+    try {
+      for (const file of run.saveLogs(name)) console.log(`  log: ${file}`);
+    } catch (logError) {
+      console.log(`  (the logs could not be saved: ${String(logError)})`);
+    }
+  } finally {
+    run.cleanup(`${run.prefix}${name}-`);
   }
-  run.cleanup(`${run.prefix}${name}-`);
   timings.push(`${name} ${seconds(checkStarted)}`);
 }
 
