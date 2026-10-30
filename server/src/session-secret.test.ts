@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -79,9 +79,10 @@ describe("withSessionSecret", () => {
     expect((error as Error).message).toContain("uid 1000");
   });
 
-  it("returns the same secret for two concurrent calls", async () => {
+  it("returns the same secret for many concurrent calls and leaves no temporary file", async () => {
     const env = { SESSION_SECRET_FILE: join(dir, "session-secret") };
-    const [a, b] = await Promise.all([withSessionSecret(env), withSessionSecret(env)]);
-    expect(a.SESSION_SECRET).toBe(b.SESSION_SECRET);
+    const results = await Promise.all(Array.from({ length: 20 }, () => withSessionSecret(env)));
+    expect(new Set(results.map((r) => r.SESSION_SECRET)).size).toBe(1);
+    expect(await readdir(dir)).toEqual(["session-secret"]);
   });
 });

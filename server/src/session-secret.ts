@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ConfigError } from "./config.js";
 
@@ -51,14 +51,24 @@ export async function withSessionSecret(
   } catch (error) {
     if (error instanceof ConfigError || code(error) !== "ENOENT") throw error;
   }
+  // Write a complete file under a temporary name, then link it in: the target never shows partial content.
+  const temporary = `${path}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${randomBytes(48).toString("base64url")}\n`, {
-      flag: "wx",
-      mode: 0o600,
-    });
+    await writeFile(
+      temporary,
+      `${randomBytes(48).toString("base64url")}
+`,
+      {
+        flag: "wx",
+        mode: 0o600,
+      },
+    );
+    await link(temporary, path);
   } catch (error) {
     if (code(error) !== "EEXIST") throw unusable(path, error);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
   }
   try {
     copy.SESSION_SECRET = await readSecret(path);
