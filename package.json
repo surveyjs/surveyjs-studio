@@ -53,6 +53,8 @@
     "db:migrate": "node --import tsx server/src/cli/db.ts migrate --",
     "db:status": "node --import tsx server/src/cli/db.ts status --",
     "seed": "node --import tsx server/src/cli/db.ts seed --",
+    "backup": "node --import tsx server/src/cli/surveyjs-studio.ts backup --",
+    "restore": "node --import tsx server/src/cli/surveyjs-studio.ts restore --",
     "seed:sqlite": "pnpm --filter @surveyjs-studio/server seed:sqlite",
     "seed:postgres": "pnpm postgres:up && pnpm --filter @surveyjs-studio/server seed:postgres",
     "webhook:account-deleted": "node --import tsx server/src/cli/send-account-deleted.ts --",
