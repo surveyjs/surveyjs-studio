@@ -16,7 +16,16 @@ const rootRoute = getRouteApi("__root__");
  * surveyjs.io's run page (whose `/published?id=` links the site redirects here). The survey is
  * read once per open: answering it must not be interrupted by a refetch.
  */
-export function RunPage({ surveyId, search }: { surveyId: string; search: RunSearch }) {
+export function RunPage({
+  surveyId,
+  search,
+  brandInfo,
+}: {
+  surveyId: string;
+  search: RunSearch;
+  /** Whether the Form Library shows its brand block (`showBrandInfo`) under the survey. */
+  brandInfo: boolean;
+}) {
   // The route mounts one page per survey (`key`), so one per mount is one per survey.
   const [clientIds] = useState(() => createClientIds(surveyId));
   const { limits } = rootRoute.useLoaderData();
@@ -71,6 +80,7 @@ export function RunPage({ surveyId, search }: { surveyId: string; search: RunSea
             search={search}
             clientIds={clientIds}
             maxFileBytes={limits.maxFileBytes}
+            brandInfo={brandInfo}
           />
         </main>
       );

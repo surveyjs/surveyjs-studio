@@ -21,9 +21,19 @@ export interface RunSurveyProps {
   readonly clientIds: ClientIds;
   /** The configured limit per respondent file (`limits.maxFileBytes`). */
   readonly maxFileBytes: number;
+  /** The library's brand block under the survey (`showBrandInfo`); off when the shell has its own footer. */
+  readonly brandInfo: boolean;
 }
 
-function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: RunSurveyProps) {
+function createModel({
+  surveyId,
+  data,
+  kind,
+  search,
+  clientIds,
+  maxFileBytes,
+  brandInfo,
+}: RunSurveyProps) {
   const { survey, limitCookie } = data;
   // The library writes and reads its cookie under this name, a token without attributes.
   const cookieName = limitCookie === null ? null : runCookieName(limitCookie, surveyId);
@@ -36,7 +46,7 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
   if (Object.keys(survey.theme).length > 0) model.applyTheme(survey.theme as ITheme);
   // As surveyjs.io's run page: no jump to the first question, and the library's brand footer.
   model.focusFirstQuestionAutomatic = false;
-  model.showBrandInfo = true;
+  model.showBrandInfo = brandInfo;
   const locale = localeOf(search);
   if (locale !== undefined) model.locale = locale;
   for (const [name, value] of prefillValues(search)) model.setValue(name, value);
@@ -62,7 +72,7 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
  * library's translations when the URL asks for a language other than English.
  */
 export function RunSurvey(props: RunSurveyProps) {
-  const { surveyId, data, kind, search, clientIds, maxFileBytes } = props;
+  const { surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo } = props;
   const [model, setModel] = useState<Model | null>(null);
 
   useEffect(() => {
@@ -70,7 +80,7 @@ export function RunSurvey(props: RunSurveyProps) {
     let closed = false;
     const build = () => {
       if (closed) return;
-      created = createModel({ surveyId, data, kind, search, clientIds, maxFileBytes });
+      created = createModel({ surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo });
       setModel(created);
     };
     if (needsLocales(localeOf(search))) {
@@ -86,7 +96,7 @@ export function RunSurvey(props: RunSurveyProps) {
       closed = true;
       created?.dispose();
     };
-  }, [surveyId, data, kind, search, clientIds, maxFileBytes]);
+  }, [surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo]);
 
   if (model === null) return <p role="status">Loading the survey…</p>;
   return <Survey model={model} />;

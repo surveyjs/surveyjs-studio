@@ -10,9 +10,14 @@ import {
 import { appConfig, configHandler, meHandler, server, surveyListPageHandlers } from "./test/server";
 
 vi.mock("./navigation", () => ({ navigateTo: vi.fn() }));
-// jsdom does not run the Form Library or the Dashboard here.
+// jsdom does not run the Form Library or the Dashboard here. The fake shows whether the library's
+// brand block is on.
 vi.mock("./run/RunSurvey", () => ({
-  RunSurvey: ({ data }: RunSurveyProps) => <p data-testid="fake-survey">{data.survey.name}</p>,
+  RunSurvey: ({ data, brandInfo }: RunSurveyProps) => (
+    <p data-testid="fake-survey" data-brand-info={String(brandInfo)}>
+      {data.survey.name}
+    </p>
+  ),
 }));
 vi.mock("./results/SummaryView", async () => {
   const { fakeResultsWidget } = await import("./test/fakeResultsWidget");
@@ -93,7 +98,8 @@ describe("the self-hosted shell", () => {
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    expect(await screen.findByTestId("fake-survey")).toBeTruthy();
+    // The footer replaces the library's brand block, whose logo is on surveyjs.io (S11).
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("false");
     await expectBranding();
     expect(screen.queryByRole("banner")).toBeNull();
   });
@@ -120,12 +126,12 @@ describe("the self-hosted shell", () => {
     expect(document.querySelectorAll("main")).toHaveLength(1);
   });
 
-  it("has no footer under a running survey in the surveyjs-site shell", async () => {
+  it("has no footer under a running survey in the surveyjs-site shell, but the library's", async () => {
     server.use(configHandler(), publishedSurveyHandler());
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    expect(await screen.findByTestId("fake-survey")).toBeTruthy();
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("true");
     expect(
       screen.queryByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
     ).toBeNull();
