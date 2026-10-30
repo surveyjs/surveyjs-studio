@@ -50,7 +50,7 @@ const selfHosted = process.env["E2E_MODE"] === "self-hosted";
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
 // covers every mode but postgres: memory and azurite on the hosted image, sqlite, password and
 // self-hosted on the self-hosted image (E2E_IMAGE names the image). Chromium has no outbound network
-// there (`chromium` below).
+// there (`chromium` below), except in azurite mode (`chromiumOnline`).
 const imageTarget = isImageTarget(process.env);
 
 const serverEnv = {
@@ -322,6 +322,10 @@ const chromium = {
   }),
 };
 
+// Azurite mode keeps the network: its sign-in page is the mock OIDC server's (a test double, not the
+// app), and that page loads a font from fonts.googleapis.com.
+const chromiumOnline = { ...devices["Desktop Chrome"], viewport };
+
 // Every functional spec but the licence notices (which need the second server) and the specs of
 // the password and self-hosted modes.
 const allButNotices = ["notices.spec.ts", "password.spec.ts", "self-hosted.spec.ts"];
@@ -401,7 +405,7 @@ export default defineConfig({
                     "projects.spec.ts",
                     "xss.spec.ts",
                   ],
-                  use: chromium,
+                  use: chromiumOnline,
                 },
               ]
             : [

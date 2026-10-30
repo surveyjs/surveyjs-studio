@@ -744,7 +744,8 @@ On the self-hosted image each mode has one container, `surveyjs-studio-e2e-<mode
 - **No outbound network (S11).** On the image target Chromium starts with a proxy on a closed port
   (`127.0.0.1:9`) for every host but `localhost` and `127.0.0.1`, so a request to another host fails, and with it
   the test (the console guard sees the failed load). Specs that open a run page in the `surveyjs-site` shell answer
-  its brand footer image locally (`routeBrandImage`). Firefox and WebKit keep the network.
+  its brand footer image locally (`routeBrandImage`). Firefox and WebKit keep the network, and so does Chromium in
+  Azurite mode: its sign-in page is the mock OIDC server's, which loads a font from Google Fonts.
 - A container left by an earlier run is removed before its server starts. The global teardown
   (`e2e/image-teardown.mjs`) saves each container's log to `docker-logs/<name>.log` and removes it. CI uploads
   `docker-logs/` on failure.
