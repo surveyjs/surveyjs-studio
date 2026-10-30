@@ -537,7 +537,7 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
   `Port 3000 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
   `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
-  target 5173 and 5174. They are defined once in `e2e/ports.mjs`.
+  target 5173 and 5174 (Azurite and the SQLite modes: 5173). They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
   page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
   message of Firefox, and the error responses a test allows (below).
@@ -712,14 +712,27 @@ memory-mode servers first; the runner names a port that is taken). It sets `E2E_
 
 ### The end-to-end suites on the production image
 
-With `E2E_TARGET=image`, both suites run against the production image instead of the tsx server and `vite preview`.
-CI sets it, with `E2E_IMAGE=surveyjs-studio:ci` (the default). The image serves the web app itself (`WEB_ROOT`), so
+With `E2E_TARGET=image`, the suites run against an image instead of the tsx server and `vite preview`: memory and
+Azurite mode on the hosted image, SQLite, password and self-hosted mode on the self-hosted image. PostgreSQL mode
+has no image target. `E2E_IMAGE` names the image (default `surveyjs-studio:ci`, the hosted image; set
+`surveyjs-studio:self-hosted` for the self-hosted modes). The image serves the web app itself (`WEB_ROOT`), so
 `pnpm e2e` does not build it.
 
 | Mode    | Containers (`docker run --network host`)                                           | Settings                                                                                        |
 | ------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | memory  | `surveyjs-studio-e2e-memory-5173`, and `surveyjs-studio-e2e-memory-5174` (licence) | The memory settings with `NODE_ENV=development` (the dev sign-in needs it)                      |
 | Azurite | `surveyjs-studio-e2e-azurite-5173`                                                 | The app variables of `docker/azurite.env`; `NODE_ENV=production`, a local-only `SESSION_SECRET` |
+
+On the self-hosted image each mode has one container, `surveyjs-studio-e2e-<mode>-5173`, on a new named volume
+`surveyjs-studio-e2e-<mode>-data` mounted at `/data` (the image's `SQLITE_PATH`, `FILES_PATH` and
+`SESSION_SECRET_FILE`). The volume of the previous run is removed first; the last one stays until the next run.
+"Seeded": `docker run --rm -v <volume>:/data <image> surveyjs-studio seed` runs before the server starts.
+
+| Mode        | Specs                                          | Settings                                                                                                                                                                              |
+| ----------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite      | All but the licence notices (as in PostgreSQL) | Seeded; the memory settings with `STORAGE_PROVIDER=sqlite`, `NODE_ENV=development`, and `AUTH_METHODS=surveyjs`, `USER_DIRECTORY=memory` (the tsx server's defaults, not the image's) |
+| password    | `password.spec.ts`                             | Not seeded; the password settings, `NODE_ENV=production`, no `SESSION_SECRET` (the image's file)                                                                                      |
+| self-hosted | `self-hosted.spec.ts`                          | Seeded; the self-hosted settings, `NODE_ENV=development`                                                                                                                              |
 
 - Each container listens on the preview's port, on `localhost`, with `PUBLIC_BASE_URL` on that port. Playwright
   waits for `http://127.0.0.1:<port>/readyz`.
@@ -728,6 +741,10 @@ CI sets it, with `E2E_IMAGE=surveyjs-studio:ci` (the default). The image serves 
   by the config, because `docker run --env-file` would keep the quotes in its values.
 - `--network host` works on **Linux only**, so the image target is for CI (or Linux). On Windows and macOS, `pnpm e2e`
   stops at once with a message.
+- **No outbound network (S11).** On the image target Chromium starts with a proxy on a closed port
+  (`127.0.0.1:9`) for every host but `localhost` and `127.0.0.1`, so a request to another host fails, and with it
+  the test (the console guard sees the failed load). Specs that open a run page in the `surveyjs-site` shell answer
+  its brand footer image locally (`routeBrandImage`). Firefox and WebKit keep the network.
 - A container left by an earlier run is removed before its server starts. The global teardown
   (`e2e/image-teardown.mjs`) saves each container's log to `docker-logs/<name>.log` and removes it. CI uploads
   `docker-logs/` on failure.
@@ -1260,4 +1277,6 @@ sign-in), in the same folder; the other modes ignore that spec. Self-hosted mode
 (`tests/support/self-hosted.ts`), local accounts and the dev sign-in. Its first two tests run in order (`test.describe.serial`):
 the first changes the first admin's password, and the second signs in with it to create a user, who sets a password in
 a second browser context; the admin then resets, disables, enables and deletes that user. A second run needs a new
-database (each run makes one).
+database (each run makes one). In self-hosted mode one test records every request across sign-in, My Surveys, the
+editor and a run page, and fails on one to a host other than `localhost` or `127.0.0.1` (S11); on the image target such
+a request also fails, because the browser has no outbound network.

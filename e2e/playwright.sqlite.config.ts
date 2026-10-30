@@ -3,6 +3,8 @@
 // (git-ignored) and names it in E2E_SQLITE_DIR; the workers load this file too, inherit the name and
 // leave the folder alone. The server's `seed` fills the new database before it starts. The folder is
 // kept after the run (the server may still hold the file then), and emptied by the next one.
+// On the image target (E2E_TARGET=image) the data is on a named Docker volume instead
+// (playwright.config.ts), and the folder stays empty.
 import { mkdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

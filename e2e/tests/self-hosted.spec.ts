@@ -3,6 +3,7 @@ import { expectEditorReady } from "./support/editor.js";
 import { FEEDBACK_SURVEY } from "./support/results.js";
 import { brand, selfHostedMode } from "./support/self-hosted.js";
 import { completeSignIn } from "./support/sign-in.js";
+import { surveyRows } from "./support/survey-list.js";
 import { expect, test } from "./support/test.js";
 
 // Self-hosted mode only (`pnpm e2e:self-hosted`): the other modes run the surveyjs-site shell. The
@@ -35,6 +36,48 @@ async function signInAs(page: Page, user: "owner" | "instanceAdmin" = "owner"): 
     timeout: 30_000,
   });
 }
+
+/** The hosts the browser may reach: the instance's own. */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * Records every request of the page to another host (a `data:` or `blob:` URL stays in the
+ * browser), with the reason when it failed; the returned function lists them. On the image target
+ * the browser has no way out (playwright.config.ts), so such a request also fails.
+ */
+function watchOutbound(page: Page): () => string[] {
+  const outbound: string[] = [];
+  const leaves = (url: string) => {
+    const { protocol, hostname } = new URL(url);
+    return protocol !== "data:" && protocol !== "blob:" && !LOCAL_HOSTS.has(hostname);
+  };
+  page.on("request", (request) => {
+    if (leaves(request.url())) outbound.push(request.url());
+  });
+  page.on("requestfailed", (request) => {
+    if (leaves(request.url())) {
+      outbound.push(`${request.url()} (failed: ${request.failure()?.errorText ?? "unknown"})`);
+    }
+  });
+  return () => outbound;
+}
+
+// S11: no telemetry and no CDN fonts. The image target also runs it with outbound network blocked.
+test("nothing is requested from another host: sign-in, My Surveys, the editor, a run page", async ({
+  page,
+}) => {
+  const outbound = watchOutbound(page);
+  await page.goto("/sign-in");
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
+  await signInAs(page);
+  await expect(page.getByRole("heading", { level: 1, name: "My Surveys" })).toBeVisible();
+  await expect(surveyRows(page).first()).toBeVisible();
+  await page.goto(`/surveys/${FEEDBACK_SURVEY}/edit`);
+  await expectEditorReady(page);
+  await page.goto(`/s/${FEEDBACK_SURVEY}`);
+  await expect(page.locator(".running-survey")).toBeVisible({ timeout: 30_000 });
+  expect(outbound()).toEqual([]);
+});
 
 test("the sign-in page shows the instance's branding, and nothing of surveyjs.io", async ({
   page,
@@ -112,6 +155,8 @@ test("a running survey ends with the Powered by footer", async ({ page }) => {
   await page.goto(`/s/${FEEDBACK_SURVEY}`);
   await expect(page.locator(".running-survey")).toBeVisible({ timeout: 30_000 });
   await expectBranding(page, { withHeader: false });
+  // The footer replaces the Form Library's brand block (its logo is on surveyjs.io).
+  await expect(page.locator(".sv-brand-info")).toHaveCount(0);
 });
 
 test("the API docs are not served", async ({ request }) => {

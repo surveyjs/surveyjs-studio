@@ -47,7 +47,10 @@ const password = process.env["E2E_MODE"] === "password";
 const selfHosted = process.env["E2E_MODE"] === "self-hosted";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
-// (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below).
+// (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
+// covers every mode but postgres: memory and azurite on the hosted image, sqlite, password and
+// self-hosted on the self-hosted image (E2E_IMAGE names the image). Chromium has no outbound network
+// there (`chromium` below).
 const imageTarget = isImageTarget(process.env);
 
 const serverEnv = {
@@ -201,12 +204,28 @@ const sqlWebServers = (): WebServers => [
 // reach the replica and the mock OIDC server on the host's loopback ports, as the tsx server does.
 // Values go in the docker client's environment and are passed by name (`-e NAME`), so none is on
 // the command line. A container of an earlier run with the same name is removed first; the global
-// teardown saves the logs and removes the containers.
-function imageWebServer(name: string, port: number, env: Record<string, string>) {
+// teardown saves the logs and removes the containers. With `data`, a named volume of an earlier run
+// is removed too, and the new one is mounted at /data (`seed`: after `surveyjs-studio seed` filled
+// it); the volume stays after the run.
+function imageWebServer(
+  name: string,
+  port: number,
+  env: Record<string, string>,
+  data?: { volume: string; seed: boolean },
+) {
+  const image = imageTag(process.env);
+  const mount = data ? [`-v ${data.volume}:/data`] : [];
   const passed = Object.keys(env).map((variable) => `-e ${variable}`);
-  const run = ["docker run", `--name ${name}`, "--network host", ...passed, imageTag(process.env)];
+  const run = ["docker run", `--name ${name}`, "--network host", ...mount, ...passed, image];
+  const steps = [
+    `docker rm -f ${name} >/dev/null 2>&1`,
+    ...(data ? [`docker volume rm -f ${data.volume} >/dev/null 2>&1`] : []),
+  ];
+  const seed = data?.seed
+    ? `docker run --rm ${mount.join(" ")} ${image} surveyjs-studio seed && `
+    : "";
   return {
-    command: `docker rm -f ${name} >/dev/null 2>&1; exec ${run.join(" ")}`,
+    command: `${steps.join("; ")}; ${seed}exec ${run.join(" ")}`,
     url: `http://127.0.0.1:${port}/readyz`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -216,16 +235,44 @@ function imageWebServer(name: string, port: number, env: Record<string, string>)
   };
 }
 
-// The image runs on `localhost` (both loopback addresses), where the browsers open the app.
+// The image runs on `localhost` (both loopback addresses), on the port where the browsers open the
+// app. Spread after the mode's settings.
 const imageServerEnv = (port: number) => ({
-  ...serverEnv,
   HOST: "localhost",
   PORT: String(port),
   PUBLIC_BASE_URL: `http://localhost:${port}`,
 });
 
+// The SQLite modes on the self-hosted image: one container on a new named volume at the image's
+// /data, where its SQLITE_PATH, FILES_PATH and SESSION_SECRET_FILE point. sqlite and self-hosted
+// seed the volume first and sign in with the dev sign-in, which needs NODE_ENV=development. Password
+// mode starts on the empty volume as an admin would: NODE_ENV=production, the first admin from
+// ADMIN_EMAIL and ADMIN_PASSWORD, and no SESSION_SECRET (the image keeps its secret on the volume).
+function sqliteImageWebServer() {
+  const mode = password ? "password" : selfHosted ? "self-hosted" : "sqlite";
+  const modeEnv = password
+    ? { ...passwordServerEnv, NODE_ENV: "production" }
+    : selfHosted
+      ? { ...selfHostedServerEnv, NODE_ENV: "development" }
+      : // The source server's defaults, in place of the image's password sign-in and local users.
+        {
+          ...memoryServerEnv,
+          AUTH_METHODS: "surveyjs",
+          USER_DIRECTORY: "memory",
+          NODE_ENV: "development",
+        };
+  return imageWebServer(
+    `surveyjs-studio-e2e-${mode}-5173`,
+    ports.web,
+    { ...modeEnv, STORAGE_PROVIDER: "sqlite", FILE_STORE: "local", ...imageServerEnv(ports.web) },
+    { volume: `surveyjs-studio-e2e-${mode}-data`, seed: !password },
+  );
+}
+
 // Built only for the image target (it reads docker/azurite.env and checks E2E_IMAGE).
 function imageWebServers(): WebServers {
+  if (sqlite || password || selfHosted) return [sqliteImageWebServer()];
+  if (postgres) throw new Error("E2E_TARGET=image does not cover the postgres mode");
   if (!azurite) {
     // The dev sign-in is refused under NODE_ENV=production (the image's default), so development.
     return [
@@ -254,6 +301,7 @@ function imageWebServers(): WebServers {
     // NODE_ENV stays production, as in a deployment, so the server needs a session secret.
     imageWebServer("surveyjs-studio-e2e-azurite-5173", ports.web, {
       ...azuriteEnv,
+      ...serverEnv,
       ...imageServerEnv(ports.web),
       NODE_ENV: "production",
       SESSION_SECRET: "e2e-local-only-session-secret-not-a-real-value",
@@ -263,6 +311,20 @@ function imageWebServers(): WebServers {
 
 // The surveyjs-site header shows the account name only from this width up.
 const viewport = { width: 1440, height: 900 };
+
+// On the image target Chromium has no way out (S11: no telemetry, no CDN fonts): every host but the
+// machine's own goes to a closed port, so a request to it fails and the test sees it.
+const chromium = {
+  ...devices["Desktop Chrome"],
+  viewport,
+  ...(imageTarget && {
+    launchOptions: { proxy: { server: "http://127.0.0.1:9", bypass: "localhost,127.0.0.1" } },
+  }),
+};
+
+// Every functional spec but the licence notices (which need the second server) and the specs of
+// the password and self-hosted modes.
+const allButNotices = ["notices.spec.ts", "password.spec.ts", "self-hosted.spec.ts"];
 
 export default defineConfig({
   testDir: "tests",
@@ -283,7 +345,7 @@ export default defineConfig({
         {
           name: "self-hosted-chromium",
           testMatch: ["self-hosted.spec.ts"],
-          use: { ...devices["Desktop Chrome"], viewport },
+          use: chromium,
         },
       ]
     : password
@@ -291,30 +353,35 @@ export default defineConfig({
           {
             name: "password-chromium",
             testMatch: ["password.spec.ts"],
-            use: { ...devices["Desktop Chrome"], viewport },
+            use: chromium,
           },
         ]
       : sqlite
         ? [
             {
               name: "sqlite-chromium",
-              testMatch: [
-                "survey-list.spec.ts",
-                "survey-list-paging.spec.ts",
-                "editor.spec.ts",
-                "history.spec.ts",
-                "uploads.spec.ts",
-                "run.spec.ts",
-              ],
-              use: { ...devices["Desktop Chrome"], viewport },
+              // On the image: the postgres mode's specs, the full Phase 1 suites.
+              ...(imageTarget
+                ? { testIgnore: allButNotices }
+                : {
+                    testMatch: [
+                      "survey-list.spec.ts",
+                      "survey-list-paging.spec.ts",
+                      "editor.spec.ts",
+                      "history.spec.ts",
+                      "uploads.spec.ts",
+                      "run.spec.ts",
+                    ],
+                  }),
+              use: chromium,
             },
           ]
         : postgres
           ? [
               {
                 name: "postgres-chromium",
-                testIgnore: ["notices.spec.ts", "password.spec.ts", "self-hosted.spec.ts"],
-                use: { ...devices["Desktop Chrome"], viewport },
+                testIgnore: allButNotices,
+                use: chromium,
               },
             ]
           : azurite
@@ -334,7 +401,7 @@ export default defineConfig({
                     "projects.spec.ts",
                     "xss.spec.ts",
                   ],
-                  use: { ...devices["Desktop Chrome"], viewport },
+                  use: chromium,
                 },
               ]
             : [
@@ -342,7 +409,7 @@ export default defineConfig({
                 {
                   name: "chromium",
                   testIgnore: ["password.spec.ts", "self-hosted.spec.ts"],
-                  use: { ...devices["Desktop Chrome"], viewport },
+                  use: chromium,
                 },
                 {
                   name: "firefox",

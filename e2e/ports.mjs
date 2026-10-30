@@ -21,11 +21,11 @@ export const ports = {
 
 /**
  * The ports `playwright.config.ts` uses for this run: the tsx target (default) 3000, 3001, 5173 and
- * 5174; Azurite and the SQL modes on it 3000 and 5173; the image target 5173 and 5174 (Azurite mode:
- * 5173 only).
+ * 5174; Azurite and the SQL modes on it 3000 and 5173; the image target 5173 and 5174 (Azurite and
+ * the SQL modes: 5173 only).
  */
 export function functionalPorts({ image, azurite, sql = false }) {
-  if (image) return azurite ? [ports.web] : [ports.web, ports.licenceWeb];
+  if (image) return azurite || sql ? [ports.web] : [ports.web, ports.licenceWeb];
   if (azurite || sql) return [ports.server, ports.web];
   return [ports.server, ports.licenceServer, ports.web, ports.licenceWeb];
 }

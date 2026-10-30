@@ -2,6 +2,8 @@
 // playwright.sqlite.config.ts) in the self-hosted shell with an instance's branding, local accounts
 // and the dev sign-in. The main process empties e2e/.data/ (git-ignored) and names it in
 // E2E_SQLITE_DIR; the workers inherit the name and leave the folder alone.
+// On the image target (E2E_TARGET=image) the data is on a named Docker volume instead
+// (playwright.config.ts), and the folder stays empty.
 import { mkdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

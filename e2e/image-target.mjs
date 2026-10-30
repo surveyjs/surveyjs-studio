@@ -1,16 +1,23 @@
 // The image target (E2E_TARGET=image): each server and preview pair becomes one container of the
-// production image, which serves the web app itself. It runs with `docker run --network host`,
+// production image (the self-hosted image in the sqlite, password and self-hosted modes), which
+// serves the web app itself. It runs with `docker run --network host`,
 // which works on Linux only, so it is meant for CI. Shared by the config, the runner script and
 // the global teardown.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-/** Every container the image target may start (memory mode: 5173 and 5174; Azurite mode: 5173). */
+/**
+ * Every container the image target may start (memory mode: 5173 and 5174; the other modes: 5173).
+ * Their named volumes (`surveyjs-studio-e2e-<mode>-data`) stay until the next run of the mode.
+ */
 export const imageContainers = [
   "surveyjs-studio-e2e-memory-5173",
   "surveyjs-studio-e2e-memory-5174",
   "surveyjs-studio-e2e-azurite-5173",
+  "surveyjs-studio-e2e-sqlite-5173",
+  "surveyjs-studio-e2e-password-5173",
+  "surveyjs-studio-e2e-self-hosted-5173",
 ];
 
 // `docker logs` of each container goes here before it is removed; CI uploads the folder on failure.
