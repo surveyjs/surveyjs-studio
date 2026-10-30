@@ -67,6 +67,7 @@
     "dev:s3": "pnpm s3:up && pnpm --filter @surveyjs-studio/contract build:docs && concurrently -n server,web -c blue,green \"pnpm --filter @surveyjs-studio/server dev:demo:s3\" \"pnpm --filter @surveyjs-studio/web dev\"",
     "dev:prod-data": "tsx scripts/dev-prod-data/cli.ts",
     "image:build": "docker build -t surveyjs-studio:local .",
+    "image:build:self-hosted": "docker build --target self-hosted -t surveyjs-studio:self-hosted .",
     "image:prod-data": "node --import tsx scripts/image-prod-data/cli.ts --",
     "prod-like:up": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --build --wait && pnpm legacy:load",
     "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v"
