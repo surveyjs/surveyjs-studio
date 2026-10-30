@@ -104,8 +104,8 @@ with the row's menu (Step 5); the menu's entries are the pure function `surveyMe
   site; each row gets its own ids here.
 - The project drop-down's button is focusable (`role="button"`) and its menu carries `hidden` while
   closed; the switch's checkbox can take focus (glue in `SurveyListPage.module.css`).
-- Glue classes for what the site does not have: the "Load more" button and one error message for a
-  failed create or row action.
+- Glue classes for what the site does not have: the "Load more" button (a retry when a page of the
+  list fails) and one error message for a failed create, row action or page.
 - The "…" menu is rendered while it is open (the site clones `#survey-popup` into the button on the
   first open and keeps it). Its separators are `li` elements (the site puts a `div` directly in the
   `ul`), and the site's `div.survey-canmodify` wrappers are not rendered: React leaves out the items
