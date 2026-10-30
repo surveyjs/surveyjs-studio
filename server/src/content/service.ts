@@ -48,6 +48,8 @@ export interface ContentService {
     ifMatch: string | undefined,
   ): Promise<string>;
   listHistory(user: RequestUser, surveyId: string, query: HistoryListQuery): Promise<HistoryPage>;
+  /** The definition saved in one history entry. */
+  getHistoryEntry(user: RequestUser, surveyId: string, entryId: string): Promise<SurveyDefinition>;
 }
 
 const editConflict = (): AppError =>
@@ -142,12 +144,19 @@ export function createContentService(options: ContentServiceOptions): ContentSer
         }
       }
       return {
-        items: page.items.map(({ at, userId }) => {
+        items: page.items.map(({ id, at, userId }) => {
           const author = userId === null ? null : (found.get(userId) ?? null);
-          return { at, user: author && { id: author.id, displayName: author.displayName } };
+          return { id, at, user: author && { id: author.id, displayName: author.displayName } };
         }),
         nextCursor: page.next ? encodeHistoryCursor(page.next) : null,
       };
+    },
+
+    async getHistoryEntry(user, surveyId, entryId) {
+      const { survey } = await access.visible(user, surveyId);
+      const snapshot = await surveys.getHistorySnapshot(survey.id, entryId);
+      if (!snapshot) throw notFound();
+      return snapshot;
     },
   };
 }
