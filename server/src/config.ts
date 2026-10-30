@@ -314,6 +314,13 @@ const envSchema = z.object({
   IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
   SESSION_SECRET: z.string().optional(),
+  SESSION_SECRET_FILE: z
+    .string()
+    .optional()
+    .refine(
+      (v) => v === undefined || v.trim() === "" || isAbsolute(v.trim()),
+      "must be an absolute path",
+    ),
   SESSION_MAX_AGE_SECONDS: positiveInt.default(43200),
   OIDC_ISSUER_URL: httpUrl.optional(),
   OIDC_CLIENT_ID: z.string().optional(),

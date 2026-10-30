@@ -80,6 +80,17 @@ export function storageWarning(config: AppConfig): string | null {
 }
 
 /**
+ * The start-up warning of a production server whose PUBLIC_BASE_URL names this machine: the
+ * sign-in and set-password links point there. null otherwise.
+ */
+export function publicUrlWarning(config: AppConfig): string | null {
+  if (config.nodeEnv !== "production") return null;
+  const host = new URL(config.publicBaseUrl).hostname;
+  if (host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]") return null;
+  return `PUBLIC_BASE_URL is ${config.publicBaseUrl}: sign-in and set-password links point there; set it to the address people open`;
+}
+
+/**
  * The one `starting` line: which providers and settings this process runs with. Fixed keys, each a
  * setting's name or mode, never a connection string, URL with credentials, secret or token.
  */

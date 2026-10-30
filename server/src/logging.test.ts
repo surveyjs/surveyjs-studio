@@ -16,7 +16,7 @@ vi.mock("mssql", async (importOriginal) => {
 import { buildApp } from "./app.js";
 import { transactionOf } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
-import { redactUrl, startupSummary, storageWarning } from "./logging.js";
+import { publicUrlWarning, redactUrl, startupSummary, storageWarning } from "./logging.js";
 import { createAzureLegacyProviders } from "./providers/azure-legacy/index.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createProviders } from "./providers/index.js";
@@ -177,6 +177,30 @@ describe("storageWarning", () => {
 
   it("has nothing to say about the other providers", () => {
     expect(storageWarning(loadConfig({ IDENTITY_PROVIDER: "dev" }))).toBeNull();
+  });
+});
+
+describe("publicUrlWarning", () => {
+  const configFor = (nodeEnv: "development" | "production", publicBaseUrl: string) => ({
+    ...loadConfig({ IDENTITY_PROVIDER: "dev" }),
+    nodeEnv,
+    publicBaseUrl,
+  });
+
+  it("warns in production when the URL names localhost", () => {
+    for (const url of ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]) {
+      expect(publicUrlWarning(configFor("production", url))).toBe(
+        `PUBLIC_BASE_URL is ${url}: sign-in and set-password links point there; set it to the address people open`,
+      );
+    }
+  });
+
+  it("is quiet in development", () => {
+    expect(publicUrlWarning(configFor("development", "http://localhost:8080"))).toBeNull();
+  });
+
+  it("is quiet for a real address", () => {
+    expect(publicUrlWarning(configFor("production", "https://surveys.example.com"))).toBeNull();
   });
 });
 

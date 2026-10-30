@@ -1,14 +1,15 @@
 import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
-import { startupSummary, storageWarning } from "./logging.js";
+import { publicUrlWarning, startupSummary, storageWarning } from "./logging.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { PendingMigrationsError } from "./providers/sql.js";
+import { withSessionSecret } from "./session-secret.js";
 import { DatabaseTooNewError, MigrationMismatchError } from "./sql/migrator.js";
 
 let config: AppConfig;
 try {
-  config = loadConfig(process.env);
+  config = loadConfig(await withSessionSecret(process.env));
 } catch (error) {
   if (error instanceof ConfigError) {
     process.stderr.write(`${error.message}\n`);
@@ -43,6 +44,8 @@ if (config.sessionSecretIsDevDefault) {
 }
 const storage = storageWarning(config);
 if (storage !== null) app.log.warn(storage);
+const publicUrl = publicUrlWarning(config);
+if (publicUrl !== null) app.log.warn(publicUrl);
 
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
