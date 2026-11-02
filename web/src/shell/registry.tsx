@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactElement, type ReactNode } from "react";
 import type { components } from "@surveyjs-studio/contract/types";
+import type { RunBrandInfo } from "../run/RunSurvey";
 import { AnonymousShell, PlainShell } from "./PlainShell";
 import { DEFAULT_BRANDING, type ShellProps } from "./types";
 
@@ -87,6 +88,15 @@ export function renderPublicPage(config: AppConfig, children: ReactNode): ReactE
     );
   }
   return renderShellStyles(config.shell, children);
+}
+
+/**
+ * The brand block under a running survey: in the self-hosted shell the block with the logo from the
+ * app (S11: no calls to other sites), unless BRANDING=off; else the library's own, as surveyjs.io.
+ */
+export function runBrandInfo(config: AppConfig): RunBrandInfo {
+  if (config.shell !== SELF_HOSTED_SHELL) return "library";
+  return (config.branding ?? DEFAULT_BRANDING).poweredBy ? "bundled" : "none";
 }
 
 /** The run page's footer: the self-hosted footer in that shell, else nothing. */

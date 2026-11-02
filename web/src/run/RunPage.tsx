@@ -5,7 +5,7 @@ import { createClientIds } from "./clientId";
 import { loadRunSurvey } from "./load";
 import { NotAvailable } from "./NotAvailable";
 import "./run-page.css";
-import { RunSurvey } from "./RunSurvey";
+import { RunSurvey, type RunBrandInfo } from "./RunSurvey";
 import { runPageState } from "./runState";
 import type { RunSearch } from "./search";
 
@@ -23,8 +23,8 @@ export function RunPage({
 }: {
   surveyId: string;
   search: RunSearch;
-  /** Whether the Form Library shows its brand block (`showBrandInfo`) under the survey. */
-  brandInfo: boolean;
+  /** The brand block under the survey. */
+  brandInfo: RunBrandInfo;
 }) {
   // The route mounts one page per survey (`key`), so one per mount is one per survey.
   const [clientIds] = useState(() => createClientIds(surveyId));

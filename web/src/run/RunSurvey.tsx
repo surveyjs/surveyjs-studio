@@ -3,6 +3,7 @@ import { Model, type ITheme } from "survey-core";
 import "survey-core/survey-core.css";
 import { Survey } from "survey-react-ui";
 import { submitResponse, uploadResponseFile } from "../api/public";
+import { BUNDLED_BRAND_INFO } from "./BrandInfo";
 import type { ClientIds } from "./clientId";
 import { completedBeforeCookie, runCookieName } from "./cookie";
 import { forRunPage } from "./definition";
@@ -21,9 +22,16 @@ export interface RunSurveyProps {
   readonly clientIds: ClientIds;
   /** The configured limit per respondent file (`limits.maxFileBytes`). */
   readonly maxFileBytes: number;
-  /** The library's brand block under the survey (`showBrandInfo`); off when the shell has its own footer. */
-  readonly brandInfo: boolean;
+  /** The brand block under the survey. */
+  readonly brandInfo: RunBrandInfo;
 }
+
+/**
+ * The brand block under the survey: `library` the Form Library's own (`showBrandInfo`, its logo from
+ * surveyjs.io, as surveyjs.io's run page), `bundled` the same block with the logo from the app
+ * (BrandInfo.tsx: the self-hosted shell), `none` without one (BRANDING=off).
+ */
+export type RunBrandInfo = "library" | "bundled" | "none";
 
 function createModel({
   surveyId,
@@ -46,7 +54,16 @@ function createModel({
   if (Object.keys(survey.theme).length > 0) model.applyTheme(survey.theme as ITheme);
   // As surveyjs.io's run page: no jump to the first question, and the library's brand footer.
   model.focusFirstQuestionAutomatic = false;
-  model.showBrandInfo = brandInfo;
+  model.showBrandInfo = brandInfo === "library";
+  if (brandInfo === "bundled") {
+    // Last in the container, after the navigation buttons, as the library's block is.
+    model.addLayoutElement({
+      id: BUNDLED_BRAND_INFO,
+      container: "contentBottom",
+      component: BUNDLED_BRAND_INFO,
+      index: Number.MAX_SAFE_INTEGER,
+    });
+  }
   const locale = localeOf(search);
   if (locale !== undefined) model.locale = locale;
   for (const [name, value] of prefillValues(search)) model.setValue(name, value);

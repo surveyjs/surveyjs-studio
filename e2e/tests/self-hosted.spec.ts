@@ -151,12 +151,19 @@ test("the public results page has the frame and one main landmark", async ({ pag
   await expect(page.getByRole("main")).toHaveCount(1);
 });
 
-test("a running survey ends with the Powered by footer", async ({ page }) => {
+test("a running survey ends with the brand block and the Powered by footer", async ({ page }) => {
   await page.goto(`/s/${FEEDBACK_SURVEY}`);
   await expect(page.locator(".running-survey")).toBeVisible({ timeout: 30_000 });
   await expectBranding(page, { withHeader: false });
-  // The footer replaces the Form Library's brand block (its logo is on surveyjs.io).
-  await expect(page.locator(".sv-brand-info")).toHaveCount(0);
+  // The Form Library's brand block, with its logo from the app, not surveyjs.io (S11).
+  const logo = page.locator(".sv-brand-info__logo img");
+  await expect(logo).toBeVisible();
+  expect(new URL((await logo.getAttribute("src"))!, page.url()).origin).toBe(
+    new URL(page.url()).origin,
+  );
+  await expect
+    .poll(() => logo.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0);
 });
 
 test("the API docs are not served", async ({ request }) => {

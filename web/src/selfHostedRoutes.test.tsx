@@ -10,8 +10,8 @@ import {
 import { appConfig, configHandler, meHandler, server, surveyListPageHandlers } from "./test/server";
 
 vi.mock("./navigation", () => ({ navigateTo: vi.fn() }));
-// jsdom does not run the Form Library or the Dashboard here. The fake shows whether the library's
-// brand block is on.
+// jsdom does not run the Form Library or the Dashboard here. The fake shows which brand block the
+// survey gets.
 vi.mock("./run/RunSurvey", () => ({
   RunSurvey: ({ data, brandInfo }: RunSurveyProps) => (
     <p data-testid="fake-survey" data-brand-info={String(brandInfo)}>
@@ -93,15 +93,26 @@ describe("the self-hosted shell", () => {
     await expectBranding();
   });
 
-  it("puts the footer under a running survey", async () => {
+  it("puts the brand block and the footer under a running survey", async () => {
     server.use(configHandler(selfHosted), publishedSurveyHandler());
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    // The footer replaces the library's brand block, whose logo is on surveyjs.io (S11).
-    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("false");
+    // The library's brand block with the logo from the app: the library's own is on surveyjs.io (S11).
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("bundled");
     await expectBranding();
     expect(screen.queryByRole("banner")).toBeNull();
+  });
+
+  it("has no brand block under a running survey with BRANDING=off", async () => {
+    server.use(
+      configHandler({ ...selfHosted, branding: { ...branding, poweredBy: false } }),
+      publishedSurveyHandler(),
+    );
+
+    renderApp(`/s/${samplePublishedSurvey.id}`);
+
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("none");
   });
 
   it("frames the public results page", async () => {
@@ -131,7 +142,7 @@ describe("the self-hosted shell", () => {
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("true");
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("library");
     expect(
       screen.queryByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
     ).toBeNull();

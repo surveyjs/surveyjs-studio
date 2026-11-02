@@ -64,9 +64,10 @@ complete. `restore` refuses a folder without `backup.json`, and refuses while th
 first"). The default target is `/data/backups`. The image also has an empty `/backups` folder owned by `node` (not a
 `VOLUME`): a named volume mounted there takes that owner, so `backup --to /backups` works without a `chown`.
 
-**No outbound calls.** The self-hosted shell's run page does not show the Form Library's brand block, which loads its
-logo from surveyjs.io; the shell's own footer carries "Powered by SurveyJS" (hidden only by `BRANDING=off`). The
-`surveyjs-site` shell keeps the block. The e2e suites run on the image with Chromium's outbound network blocked.
+**No outbound calls.** The Form Library's brand block loads its logo from surveyjs.io. The self-hosted shell's run page
+shows the same block with the logo served by the app, under the shell's own "Powered by SurveyJS" footer; `BRANDING=off`
+hides both. The `surveyjs-site` shell keeps the library's block. The e2e suites run on the image with Chromium's
+outbound network blocked.
 
 ## Consequences
 
