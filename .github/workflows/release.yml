@@ -141,13 +141,21 @@ jobs:
           docker rm -f release-smoke-arm64 > /dev/null || true
           exit 1
 
+      # By the amd64 image's own digest, not the index's: the smoke run has stored the index digest
+      # for the arm64 image, and Docker will not repoint it ("cannot overwrite digest").
       - name: Pull the pushed linux/amd64 image for the scan
         if: ${{ !cancelled() && steps.push.outcome == 'success' }}
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          docker pull --platform linux/amd64 "$RELEASE_IMAGE@$DIGEST"
-          docker tag "$RELEASE_IMAGE@$DIGEST" surveyjs-studio:release-amd64
+          amd64="$(docker buildx imagetools inspect "$RELEASE_IMAGE@$DIGEST" --format '{{json .Manifest}}' \
+            | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest')"
+          if [ "$(printf '%s' "$amd64" | grep -c '^sha256:')" != 1 ]; then
+            echo "::error::expected one linux/amd64 image in $RELEASE_IMAGE@$DIGEST, found: ${amd64:-none}"
+            exit 1
+          fi
+          docker pull "$RELEASE_IMAGE@$amd64"
+          docker tag "$RELEASE_IMAGE@$amd64" surveyjs-studio:release-amd64
 
       - name: Save the SBOM
         if: ${{ !cancelled() && steps.push.outcome == 'success' }}
