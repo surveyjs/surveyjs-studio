@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isAbsolute } from "node:path";
 import { ConfigError } from "./config.js";
 
 const MIN_LENGTH = 32;
@@ -45,6 +46,11 @@ export async function withSessionSecret(
   const copy = { ...env };
   const path = env.SESSION_SECRET_FILE?.trim();
   if (env.SESSION_SECRET?.trim() || !path) return copy;
+  if (!isAbsolute(path)) {
+    throw new ConfigError(
+      "Invalid configuration:\n  - SESSION_SECRET_FILE: must be an absolute path",
+    );
+  }
   try {
     copy.SESSION_SECRET = await readSecret(path);
     return copy;

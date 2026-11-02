@@ -18,6 +18,12 @@ afterEach(async () => {
 });
 
 describe("withSessionSecret", () => {
+  it("rejects a relative file path, as loadConfig does", async () => {
+    await expect(withSessionSecret({ SESSION_SECRET_FILE: "data/session-secret" })).rejects.toThrow(
+      "SESSION_SECRET_FILE: must be an absolute path",
+    );
+  });
+
   it("creates the file when missing and keeps the same secret", async () => {
     const file = join(dir, "session-secret");
     const first = await withSessionSecret({ SESSION_SECRET_FILE: file });
