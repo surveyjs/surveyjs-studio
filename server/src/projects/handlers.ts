@@ -60,7 +60,7 @@ export function createProjectHandlers(options: ProjectsServiceOptions): Handlers
       const base = `/api/v1/projects/${projectId.toLowerCase()}`;
       const location =
         member.userId === null
-          ? `${base}/invitations/${member.email}`
+          ? `${base}/invitations/${encodeURIComponent(member.email).replaceAll("%40", "@")}`
           : `${base}/members/${member.userId}`;
       return reply.code(201).header("location", location).send(member);
     },

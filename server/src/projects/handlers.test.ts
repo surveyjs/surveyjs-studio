@@ -409,6 +409,22 @@ describe("pending members", () => {
     ).toBe(404);
   });
 
+  it("round-trips the Location of an email with reserved characters", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    const email = "a#b+c%41?d@example.test";
+    const res = await send("POST", `/projects/${TEAM}/members`, ann, { email });
+    expect(res.statusCode).toBe(201);
+    const location = String(res.headers.location);
+    expect(location).toBe(`/api/v1/projects/${TEAM}/invitations/a%23b%2Bc%2541%3Fd@example.test`);
+    const removed = await send("DELETE", location.slice("/api/v1".length), ann);
+    expect(removed.statusCode).toBe(204);
+    const list = await send("GET", `/projects/${TEAM}/members`, ann);
+    expect(list.json<{ items: { email: string }[] }>().items.map((m) => m.email)).not.toContain(
+      email,
+    );
+  });
+
   it("answers 404 without local accounts", async () => {
     const { as } = await start("external");
     const res = await send(
