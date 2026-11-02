@@ -7,6 +7,7 @@ import type { SqlDialectName } from "../sql/database.js";
 import { migrate } from "../sql/migrator.js";
 import { openDatabase, scratchDatabase } from "../sql/scratch-databases.js";
 import { seedSqlStores } from "../sql/seed.js";
+import { withSeedInvitation } from "./seed-invitations.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createSqlProviders } from "./sql.js";
 import type { ProviderSet } from "./types.js";
@@ -43,7 +44,7 @@ export async function createSeededSqlProviders(
   const database = openDatabase(scratch.target);
   await migrate(database);
   const seed = await legacyFixtureSeed();
-  await seedSqlStores(database, seed);
+  await seedSqlStores(database, withSeedInvitation(seed));
   const files = await bytes();
   const providers = createSqlProviders(database, {
     fallbackSeed: seed,

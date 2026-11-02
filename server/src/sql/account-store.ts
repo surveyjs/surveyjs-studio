@@ -195,6 +195,34 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         return { outcome: "updated" as const, account: accountOf(updated) };
       });
     },
+    accountByIdentity: async (provider, subject) => {
+      const row = await db
+        .selectFrom("user_identities")
+        .innerJoin("users", "users.id", "user_identities.user_id")
+        .selectAll("users")
+        .where("user_identities.provider", "=", provider)
+        .where("user_identities.subject", "=", subject)
+        .executeTakeFirst();
+      return row ? accountOf(row) : null;
+    },
+    linkIdentity: async (link) => {
+      const userId = key(link.userId);
+      if (userId === null) throw new Error("Account ids must be GUIDs");
+      const inserted = await db
+        .insertInto("user_identities")
+        .values({
+          provider: link.provider,
+          subject: link.subject,
+          user_id: userId,
+          email: link.email === null ? null : link.email.toLowerCase(),
+          email_verified: link.emailVerified,
+          created_at: isoOf(link.createdAt),
+        })
+        .onConflict((conflict) => conflict.columns(["provider", "subject"]).doNothing())
+        .returning("subject")
+        .executeTakeFirst();
+      return inserted ? "linked" : "taken";
+    },
     deleteAccount: async (id) => {
       const userId = key(id);
       if (userId === null) return "not-found";
@@ -205,7 +233,7 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         if (decideAccountChange(facts, null, activeAdmins) === "last-instance-admin") {
           return "last-instance-admin" as const;
         }
-        await trx.deleteFrom("password_links").where("user_id", "=", userId).execute();
+        // The links and the identities go with it (cascade).
         await trx.deleteFrom("users").where("id", "=", userId).execute();
         return "deleted" as const;
       });

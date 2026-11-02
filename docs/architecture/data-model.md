@@ -186,22 +186,28 @@ An instance admin's new user gets an `invitation` link, a reset a `reset` link (
 are marked used); links expire after 7 days. The first admin's setup link is not a row: there is no account to point at yet, and the token lives in the server's
 memory.
 
+### `user_identities` and `project_invitations` (0005)
+
+An account's sign-in identities at Google, GitHub, Facebook and surveyjs.io, and members added by email before they
+have an account (`USER_DIRECTORY=local`). The hosted `profiles` directory (mode 1.3) keeps its users in `users` too
+(built above); its blocked flag from UserInfo (ADR 0022) is `status` `disabled`, and the columns it does not use stay at
+their defaults. `pnpm seed` adds one invitation: `invited@example.com` for Marketing, as a user.
+
+**`user_identities`**: `provider` (`surveyjs`, `google`, `github` or `facebook`), `subject` (the provider's id of the
+person), `user_id` (FK to `users`, cascade), `email` (null; lower-case, as the provider gave it when the identity was
+linked), `email_verified` (boolean), `created_at`; primary key (`provider`, `subject`), so one identity belongs to one
+account. Index `user_identities_user` (`user_id`).
+
+**`project_invitations`**: `project_id` (FK to `projects`, cascade), `email` (lower-case), `role` (`admin` or `user`),
+`invited_by` (GUID, no foreign key), `created_at`; primary key (`project_id`, `email`). Index
+`project_invitations_email` (`email`). The table is not called `invitations`: that word already names a password-link
+purpose and an account status. At a user's sign-in with that email, one transaction turns each invitation into a
+`project_members` row with its role (none when the user is already a member) and deletes it.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
 "HM" the hosted-migration plan.
-
-### Identities and invitations (SH Step 8, HM Step 2: `UserDirectory`)
-
-The hosted `profiles` directory (mode 1.3) keeps its users in `users` too (built above); its blocked flag from
-UserInfo (ADR 0022) is `status` `disabled`, and the columns it does not use stay at their defaults.
-
-**`user_identities`** (SH Step 8): `provider` (`surveyjs`, `google`, `github`, `facebook`), `subject`, `user_id` (FK,
-cascade), `email`, `email_verified`; primary key (`provider`, `subject`).
-
-**`invitations`** (SH Step 8, HM Step 2): `project_id` (FK, cascade), `email` (lower-case), `role`, `invited_by` (GUID),
-`created_at`; primary key (`project_id`, `email`). An invitation becomes a `project_members` row at the first sign-in
-with that email.
 
 ### API tokens (HM Step 3)
 
@@ -226,15 +232,15 @@ Empty and unused in the self-hosted image.
 
 ## Mapping to the provider interfaces
 
-| Interface (`server/src/providers/types.ts`) | Tables                                                   | State                |
-| ------------------------------------------- | -------------------------------------------------------- | -------------------- |
-| `SurveyStore`                               | `surveys`, `survey_history`                              | Built                |
-| `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built                |
-| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built                |
-| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built                |
-| `FileStore`                                 | `files` and the byte store                               | Built                |
-| `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`                                | Built (`local`)      |
-| `UserDirectory` (identities, invitations)   | `user_identities`, `invitations`                         | SH Step 8; HM Step 2 |
+| Interface (`server/src/providers/types.ts`) | Tables                                                   | State           |
+| ------------------------------------------- | -------------------------------------------------------- | --------------- |
+| `SurveyStore`                               | `surveys`, `survey_history`                              | Built           |
+| `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built           |
+| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built           |
+| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built           |
+| `FileStore`                                 | `files` and the byte store                               | Built           |
+| `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |
+| `InvitationStore`                           | `project_invitations`                                    | Built (`local`) |
 
 With `USER_DIRECTORY=memory` (the default for `sqlite` and `postgres`) the SQL providers keep the **users** in memory
 (the memory provider's, seeded by `MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production`

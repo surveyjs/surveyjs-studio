@@ -129,6 +129,26 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
           .execute();
       }
     }
+    // The seed's invitations; those of a seed project were dropped with it (cascade).
+    for (const invitation of seed.invitations ?? []) {
+      const projectId = invitation.projectId.toLowerCase();
+      const email = invitation.email.toLowerCase();
+      await trx
+        .deleteFrom("project_invitations")
+        .where("project_id", "=", projectId)
+        .where("email", "=", email)
+        .execute();
+      await trx
+        .insertInto("project_invitations")
+        .values({
+          project_id: projectId,
+          email,
+          role: invitation.role,
+          invited_by: invitation.invitedBy.toLowerCase(),
+          created_at: isoOf(invitation.createdAt),
+        })
+        .execute();
+    }
   });
   return { surveys: seed.surveys.length, projects: seed.projects.length };
 }

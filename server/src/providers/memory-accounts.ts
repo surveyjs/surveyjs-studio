@@ -3,6 +3,7 @@ import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
   LocalAccount,
+  IdentityLink,
   LocalAccountStore,
   NewLocalAccount,
   PasswordLinkPurpose,
@@ -62,6 +63,9 @@ export function createMemoryLocalAccounts(
 ): MemoryLocalAccounts {
   const byId = new Map<string, StoredAccount>();
   const links = new Map<string, StoredLink>();
+  const identities = new Map<string, IdentityLink>();
+  const identityKey = (provider: string, subject: string): string =>
+    JSON.stringify([provider, subject]);
   const seeded = [
     ...seedUsers.map((user) => ({ user, instanceRole: "user" as const })),
     ...seedAdmins.map((user) => ({ user, instanceRole: "admin" as const })),
@@ -164,6 +168,23 @@ export function createMemoryLocalAccounts(
       byId.set(found.id, updated);
       return Promise.resolve({ outcome: "updated" as const, account: accountOf(updated) });
     },
+    accountByIdentity: (provider, subject) => {
+      const link = identities.get(identityKey(provider, subject));
+      const found = link ? find(link.userId) : undefined;
+      return Promise.resolve(found ? accountOf(found) : null);
+    },
+    linkIdentity: (link) => {
+      const userId = link.userId.toLowerCase();
+      if (!GUID.test(userId)) return Promise.reject(new Error("Account ids must be GUIDs"));
+      const identity = identityKey(link.provider, link.subject);
+      if (identities.has(identity)) return Promise.resolve("taken" as const);
+      identities.set(identity, {
+        ...link,
+        userId,
+        email: link.email === null ? null : link.email.toLowerCase(),
+      });
+      return Promise.resolve("linked" as const);
+    },
     deleteAccount: (id) => {
       const found = find(id);
       if (!found) return Promise.resolve("not-found" as const);
@@ -172,6 +193,9 @@ export function createMemoryLocalAccounts(
       }
       byId.delete(found.id);
       for (const [tokenHash, link] of links) if (link.userId === found.id) links.delete(tokenHash);
+      for (const [identity, link] of identities) {
+        if (link.userId === found.id) identities.delete(identity);
+      }
       return Promise.resolve("deleted" as const);
     },
     resetPassword: (id, { tokenHash, expiresAt }) => {

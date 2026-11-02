@@ -103,14 +103,14 @@ describe("surveyjs-studio backup and restore", () => {
     const folder = folderOf(result.out);
     expect(dirname(folder)).toBe(join(data, "backups"));
     expect(folder).toMatch(/[/\\]surveyjs-studio-\d{8}-\d{6}Z$/);
-    expect(result.out).toContain("Database: migration 4\n");
+    expect(result.out).toContain("Database: migration 5\n");
     expect(result.out).toContain(`Files: 1 file, ${file.size} bytes\n`);
     expect((await readdir(folder)).sort()).toEqual(["backup.json", "files", "surveyjs-studio.db"]);
     const manifest = JSON.parse(await readFile(join(folder, "backup.json"), "utf8"));
     expect(manifest).toEqual({
       format: 1,
       createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/),
-      migration: 4,
+      migration: 5,
       files: 1,
       bytes: file.size,
     });

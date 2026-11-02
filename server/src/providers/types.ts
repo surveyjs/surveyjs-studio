@@ -24,6 +24,7 @@ import type {
   ViewName,
   ViewState,
 } from "../domain/types.js";
+import type { ExternalMethod } from "../config.js";
 import type { IdentityClaims } from "../auth/identity.js";
 import type { AccountNotices } from "../notices/account-notices.js";
 
@@ -399,7 +400,11 @@ export interface LocalAccountStore {
    * an account that was not disabled raises its session epoch.
    */
   updateAccount(id: string, change: AccountChange): Promise<AccountUpdate>;
-  /** Deletes the account and its links, under the same rule. */
+  /** The account an external identity is linked to; null when none. */
+  accountByIdentity(provider: ExternalMethod, subject: string): Promise<LocalAccount | null>;
+  /** Links the identity to an account; `taken` when that (provider, subject) is linked already, to anyone. */
+  linkIdentity(link: IdentityLink): Promise<"linked" | "taken">;
+  /** Deletes the account with its links and identities, under the same rule. */
   deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
   /**
    * An admin's reset, atomically: clears the password, raises the epoch, marks the account's
@@ -440,6 +445,53 @@ export interface LocalAccountStore {
     at: string,
     passwordHash: string,
   ): Promise<{ readonly userId: string; readonly epoch: number } | null>;
+}
+
+/** An account's identity at an external sign-in provider (self-hosted Step 8). */
+export interface IdentityLink {
+  readonly provider: ExternalMethod;
+  /** The provider's stable id of the person. */
+  readonly subject: string;
+  readonly userId: string;
+  /** Lower-case, as the provider gave it when the identity was linked. */
+  readonly email: string | null;
+  readonly emailVerified: boolean;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+}
+
+/** A member added by email before that person has an account (USER_DIRECTORY=local). */
+export interface ProjectInvitation {
+  readonly projectId: string;
+  /** Stored lower-case. */
+  readonly email: string;
+  readonly role: ProjectRole;
+  /** The user id of the member who invited. */
+  readonly invitedBy: string;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+}
+
+/** Pending project invitations; every method lower-cases the email it is given. */
+export interface InvitationStore {
+  /** The project's invitations, ordered by email. */
+  listInvitations(projectId: string): Promise<ProjectInvitation[]>;
+  addInvitation(
+    invitation: ProjectInvitation,
+  ): Promise<"added" | "already-invited" | "project-not-found">;
+  removeInvitation(projectId: string, email: string): Promise<"removed" | "not-found">;
+  /** Whether any project has an invitation for the email. */
+  hasInvitation(email: string): Promise<boolean>;
+  /**
+   * In one transaction: every invitation for the email becomes a membership of `userId` with its
+   * role (skipped when the user is already a member), then is deleted. Returns how many
+   * memberships it added.
+   */
+  claimInvitations(
+    userId: string,
+    email: string,
+    options: { readonly now: string },
+  ): Promise<number>;
 }
 
 /** What `eraseMember` decided and did (R11). */
@@ -546,6 +598,8 @@ export interface ProviderSet {
   readonly users: UserDirectory;
   /** The local accounts behind `users` when USER_DIRECTORY=local; null for every other directory. */
   readonly accounts: LocalAccountStore | null;
+  /** Pending project invitations: non-null exactly when `accounts` is. */
+  readonly invitations: InvitationStore | null;
   /** R5: projects, members and roles. */
   readonly projects: ProjectStore;
   readonly files: FileStore;

@@ -4,6 +4,7 @@ import { createSurveyjsApiDirectory } from "../users/surveyjs-api/client.js";
 import { createAzureLegacyProviders, type LegacyWarningLogger } from "./azure-legacy/index.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createMemoryProviders } from "./memory.js";
+import { withSeedInvitation } from "./seed-invitations.js";
 import { openSqlProviders } from "./sql.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
@@ -22,7 +23,9 @@ async function createMemory(
   accountNotices: AccountNoticesSetting,
 ): Promise<ProviderSet> {
   return createMemoryProviders(
-    config.memorySeed === "legacy-fixtures" ? await legacyFixtureSeed() : undefined,
+    config.memorySeed === "legacy-fixtures"
+      ? withSeedInvitation(await legacyFixtureSeed())
+      : undefined,
     {
       accountNotices,
       ...(config.userDirectory === "local" && { userDirectory: "local" as const }),

@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "../config.js";
 import { openDatabase, type DatabaseTarget, type SqlDatabase } from "../sql/database.js";
+import { withSeedInvitation } from "../providers/seed-invitations.js";
 import { legacyFixtureSeed } from "../providers/azure-legacy/fixtures.js";
 import { DatabaseTooNewError, migrate, migrationStatus } from "../sql/migrator.js";
 import { seedSqlStores } from "../sql/seed.js";
@@ -72,7 +73,7 @@ async function apply(database: SqlDatabase, io: CliIo): Promise<number> {
 
 async function seed(database: SqlDatabase, io: CliIo): Promise<number> {
   await apply(database, io);
-  const report = await seedSqlStores(database, await legacyFixtureSeed());
+  const report = await seedSqlStores(database, withSeedInvitation(await legacyFixtureSeed()));
   io.out(`Seeded ${report.surveys} surveys and ${report.projects} projects.\n`);
   return 0;
 }
