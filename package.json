@@ -44,6 +44,7 @@
     "s3:up": "docker compose --env-file docker/s3.env -f docker/compose.s3.yaml up -d --wait && pnpm s3:bucket create surveyjs-studio-files",
     "s3:bucket": "node --env-file=docker/s3.env --import tsx server/src/cli/s3-bucket.ts --",
     "s3:down": "docker compose --env-file docker/s3.env -f docker/compose.s3.yaml down -v",
+    "oauth-stub": "node --import tsx server/src/cli/oauth-stub.ts --",
     "user-api:stub": "node --import tsx server/src/users/surveyjs-api/stub-cli.ts --",
     "inspect:legacy": "node --import tsx server/src/cli/inspect-legacy.ts --",
     "inspect:legacy-schema": "node --import tsx server/src/cli/inspect-legacy-schema.ts --",

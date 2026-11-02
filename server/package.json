@@ -19,6 +19,7 @@
     "seed:postgres": "node --env-file=../docker/postgres.env --import tsx src/cli/db.ts seed",
     "dev:prod-data": "node --env-file=.env --watch-path=src --import tsx src/main.ts",
     "start": "tsx src/main.ts",
+    "oauth-stub": "tsx src/cli/oauth-stub.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
