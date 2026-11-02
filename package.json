@@ -31,6 +31,7 @@
     "e2e:sqlite": "pnpm --filter @surveyjs-studio/e2e test:sqlite",
     "e2e:postgres": "pnpm --filter @surveyjs-studio/e2e test:postgres",
     "e2e:password": "pnpm --filter @surveyjs-studio/e2e test:password",
+    "e2e:oauth": "pnpm --filter @surveyjs-studio/e2e test:oauth",
     "e2e:self-hosted": "pnpm --filter @surveyjs-studio/e2e test:self-hosted",
     "e2e:visual": "pnpm --filter @surveyjs-studio/e2e test:visual",
     "e2e:visual:self-hosted": "pnpm --filter @surveyjs-studio/e2e test:visual:self-hosted",

@@ -131,6 +131,10 @@ jobs:
       - name: End-to-end tests (password mode)
         run: pnpm e2e:password
 
+      # The same, plus GitHub and Google sign-in against the OAuth stub (port 5180).
+      - name: End-to-end tests (OAuth mode)
+        run: pnpm e2e:oauth
+
       # The tsx server on a new SQLite file, in the self-hosted shell with an instance's branding.
       - name: End-to-end tests (self-hosted mode)
         run: pnpm e2e:self-hosted

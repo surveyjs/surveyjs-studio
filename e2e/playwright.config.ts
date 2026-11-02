@@ -37,6 +37,8 @@ stripAppVariables(process.env);
 // - password (E2E_MODE=password, `pnpm e2e:password`): the sqlite provider as in sqlite mode, with
 //   the local user directory and password sign-in only (a first admin from ADMIN_EMAIL and
 //   ADMIN_PASSWORD); the password spec, on Chromium.
+// - oauth (E2E_MODE=oauth, `pnpm e2e:oauth`): password mode plus GitHub and Google sign-in against the
+//   OAuth stub (`pnpm oauth-stub`, started by Playwright); the oauth spec, on Chromium.
 // - self-hosted (E2E_MODE=self-hosted, `pnpm e2e:self-hosted`): the sqlite provider as in sqlite mode, in
 //   the self-hosted shell with an instance's branding (BRAND_*, TERMS_URL), local accounts with
 //   passwords and the dev sign-in; the self-hosted spec, on Chromium.
@@ -45,6 +47,7 @@ const sqlite = process.env["E2E_MODE"] === "sqlite";
 const postgres = process.env["E2E_MODE"] === "postgres";
 const password = process.env["E2E_MODE"] === "password";
 const selfHosted = process.env["E2E_MODE"] === "self-hosted";
+const oauth = process.env["E2E_MODE"] === "oauth";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
@@ -153,6 +156,19 @@ const passwordServerEnv = {
   ADMIN_EMAIL: firstAdmin.email,
   ADMIN_PASSWORD: firstAdmin.password,
 };
+// OAuth mode: password mode's settings plus GitHub and Google, both pointed at the OAuth stub (the
+// first web server). The stub accepts any client id and the secret `stub-secret-<provider>`; the one
+// allowed sign-up domain lets the spec see a stranger refused.
+const oauthServerEnv = {
+  ...passwordServerEnv,
+  AUTH_METHODS: "password,github,google",
+  OAUTH_STUB_URL: `http://127.0.0.1:${ports.oauthStub}`,
+  GITHUB_CLIENT_ID: "e2e-github",
+  GITHUB_CLIENT_SECRET: "stub-secret-github",
+  GOOGLE_CLIENT_ID: "e2e-google",
+  GOOGLE_CLIENT_SECRET: "stub-secret-google",
+  SIGN_UP_DOMAINS: "allowed.example",
+};
 // Self-hosted mode: the dev sign-in signs the seed's users in; AUTH_METHODS=password gives the app's
 // own sign-in page, whose branding the spec checks.
 const selfHostedServerEnv = {
@@ -166,6 +182,16 @@ const selfHostedServerEnv = {
   PRIVACY_URL: brand.privacyUrl,
 };
 const sqlWebServers = (): WebServers => [
+  ...(oauth
+    ? [
+        {
+          command: `pnpm --dir .. oauth-stub --port ${ports.oauthStub}`,
+          url: `http://127.0.0.1:${ports.oauthStub}/google/.well-known/openid-configuration`,
+          reuseExistingServer: false,
+          timeout: 60_000,
+        },
+      ]
+    : []),
   {
     command:
       "pnpm --filter @surveyjs-studio/server exec node --import tsx src/cli/db.ts seed && " +
@@ -174,8 +200,14 @@ const sqlWebServers = (): WebServers => [
     reuseExistingServer: false,
     timeout: 60_000,
     env: {
-      ...(password ? passwordServerEnv : selfHosted ? selfHostedServerEnv : memoryServerEnv),
-      ...(sqlite || password || selfHosted
+      ...(oauth
+        ? oauthServerEnv
+        : password
+          ? passwordServerEnv
+          : selfHosted
+            ? selfHostedServerEnv
+            : memoryServerEnv),
+      ...(sqlite || password || selfHosted || oauth
         ? {
             STORAGE_PROVIDER: "sqlite",
             SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
@@ -328,7 +360,12 @@ const chromiumOnline = { ...devices["Desktop Chrome"], viewport };
 
 // Every functional spec but the licence notices (which need the second server) and the specs of
 // the password and self-hosted modes.
-const allButNotices = ["notices.spec.ts", "password.spec.ts", "self-hosted.spec.ts"];
+const allButNotices = [
+  "notices.spec.ts",
+  "password.spec.ts",
+  "self-hosted.spec.ts",
+  "oauth.spec.ts",
+];
 
 export default defineConfig({
   testDir: "tests",
@@ -344,91 +381,93 @@ export default defineConfig({
     locale: "en-US",
     timezoneId: "UTC",
   },
-  projects: selfHosted
-    ? [
-        {
-          name: "self-hosted-chromium",
-          testMatch: ["self-hosted.spec.ts"],
-          use: chromium,
-        },
-      ]
-    : password
+  projects: oauth
+    ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
+    : selfHosted
       ? [
           {
-            name: "password-chromium",
-            testMatch: ["password.spec.ts"],
+            name: "self-hosted-chromium",
+            testMatch: ["self-hosted.spec.ts"],
             use: chromium,
           },
         ]
-      : sqlite
+      : password
         ? [
             {
-              name: "sqlite-chromium",
-              // On the image: the postgres mode's specs, the full Phase 1 suites.
-              ...(imageTarget
-                ? { testIgnore: allButNotices }
-                : {
+              name: "password-chromium",
+              testMatch: ["password.spec.ts"],
+              use: chromium,
+            },
+          ]
+        : sqlite
+          ? [
+              {
+                name: "sqlite-chromium",
+                // On the image: the postgres mode's specs, the full Phase 1 suites.
+                ...(imageTarget
+                  ? { testIgnore: allButNotices }
+                  : {
+                      testMatch: [
+                        "survey-list.spec.ts",
+                        "survey-list-paging.spec.ts",
+                        "editor.spec.ts",
+                        "history.spec.ts",
+                        "uploads.spec.ts",
+                        "run.spec.ts",
+                      ],
+                    }),
+                use: chromium,
+              },
+            ]
+          : postgres
+            ? [
+                {
+                  name: "postgres-chromium",
+                  testIgnore: allButNotices,
+                  use: chromium,
+                },
+              ]
+            : azurite
+              ? [
+                  {
+                    name: "azurite-chromium",
                     testMatch: [
+                      "sign-in.spec.ts",
                       "survey-list.spec.ts",
-                      "survey-list-paging.spec.ts",
+                      "survey-actions.spec.ts",
                       "editor.spec.ts",
                       "history.spec.ts",
                       "uploads.spec.ts",
                       "run.spec.ts",
+                      "results.spec.ts",
+                      "results-details.spec.ts",
+                      "projects.spec.ts",
+                      "xss.spec.ts",
                     ],
-                  }),
-              use: chromium,
-            },
-          ]
-        : postgres
-          ? [
-              {
-                name: "postgres-chromium",
-                testIgnore: allButNotices,
-                use: chromium,
-              },
-            ]
-          : azurite
-            ? [
-                {
-                  name: "azurite-chromium",
-                  testMatch: [
-                    "sign-in.spec.ts",
-                    "survey-list.spec.ts",
-                    "survey-actions.spec.ts",
-                    "editor.spec.ts",
-                    "history.spec.ts",
-                    "uploads.spec.ts",
-                    "run.spec.ts",
-                    "results.spec.ts",
-                    "results-details.spec.ts",
-                    "projects.spec.ts",
-                    "xss.spec.ts",
-                  ],
-                  use: chromiumOnline,
-                },
-              ]
-            : [
-                // The password spec needs password mode's server.
-                {
-                  name: "chromium",
-                  testIgnore: ["password.spec.ts", "self-hosted.spec.ts"],
-                  use: chromium,
-                },
-                {
-                  name: "firefox",
-                  testIgnore: ["password.spec.ts", "self-hosted.spec.ts"],
-                  use: { ...devices["Desktop Firefox"], viewport },
-                },
-                {
-                  name: "webkit",
-                  testIgnore: ["password.spec.ts", "self-hosted.spec.ts"],
-                  use: { ...devices["Desktop Safari"], viewport },
-                },
-              ],
+                    use: chromiumOnline,
+                  },
+                ]
+              : [
+                  // The password spec needs password mode's server.
+                  {
+                    name: "chromium",
+                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
+                    use: chromium,
+                  },
+                  {
+                    name: "firefox",
+                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
+                    use: { ...devices["Desktop Firefox"], viewport },
+                  },
+                  {
+                    name: "webkit",
+                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
+                    use: { ...devices["Desktop Safari"], viewport },
+                  },
+                ],
   webServer: imageTarget
     ? imageWebServers()
-    : sqlite || postgres || password || selfHosted
+    : sqlite || postgres || password || selfHosted || oauth
       ? sqlWebServers()
       : azurite
         ? azuriteWebServers

@@ -1,5 +1,11 @@
 import type { Browser, Page } from "@playwright/test";
-import { firstAdmin, passwordMode } from "./support/password.js";
+import {
+  accountTrigger as accountItem,
+  expectSignInPage,
+  firstAdmin,
+  passwordMode,
+  signIn,
+} from "./support/password.js";
 import { expect, test } from "./support/test.js";
 
 // Password mode only (`pnpm e2e:password`): the other modes sign in through an identity provider.
@@ -10,18 +16,6 @@ const NEW_PASSWORD = "the first admin's own password";
 // Each refused sign-in, which the browser logs as a failed resource load.
 const WRONG_PASSWORD = { path: "/api/v1/auth/password/login", status: 401 };
 const LOCKED_OUT = { path: "/api/v1/auth/password/login", status: 429 };
-
-/** The app's sign-in page, with its heading shown. */
-async function expectSignInPage(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/\/sign-in(\?|$)/);
-  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
-}
-
-async function signIn(page: Page, email: string, password: string): Promise<void> {
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-}
 
 /** The user the instance admin creates. */
 const unaUser = { email: "una@example.com", name: "Una User" };
@@ -56,9 +50,7 @@ async function setPasswordWith(page: Page, url: string, password: string): Promi
 const unaTrigger = (page: Page) =>
   page.locator("header.v2-class---top-bar").first().getByRole("button", { name: unaUser.name });
 
-/** The surveyjs-site header's account item, which shows the user's display name. */
-const accountTrigger = (page: Page) =>
-  page.locator("header.v2-class---top-bar").first().getByRole("button", { name: firstAdmin.name });
+const accountTrigger = (page: Page) => accountItem(page, firstAdmin.name);
 
 // The [value, options] form: Playwright would read a bare pair of objects as one.
 test.use({ expectedErrorResponses: [[WRONG_PASSWORD, LOCKED_OUT], { scope: "test" }] });
