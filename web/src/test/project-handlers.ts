@@ -10,6 +10,7 @@ export const selfMember: Member = {
   displayName: currentUser.displayName,
   email: currentUser.email,
   role: "admin",
+  status: "active",
 };
 
 export const otherMember: Member = {
@@ -17,6 +18,7 @@ export const otherMember: Member = {
   displayName: "Mia Member",
   email: "member@example.test",
   role: "user",
+  status: "active",
 };
 
 /** Answers `GET /projects/{id}/members` with one page; `onRequest` sees each request URL. */

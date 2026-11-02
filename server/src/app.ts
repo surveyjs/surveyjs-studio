@@ -253,6 +253,7 @@ export async function buildApp(
       ...createProjectHandlers({
         users: providers.users,
         projects: providers.projects,
+        invitations: providers.invitations,
         ...(options.now && { now: options.now }),
       }),
       ...createContentHandlers({

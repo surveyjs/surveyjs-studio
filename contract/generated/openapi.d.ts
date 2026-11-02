@@ -355,8 +355,12 @@ export interface paths {
         put?: never;
         /**
          * Add a member
-         * @description Admins only. The email must belong to a registered user; otherwise the
-         *     server returns `404` with code `user-not-found`.
+         * @description Admins only. With an email that belongs to a registered user, the user
+         *     becomes a member. When the instance has local accounts and no account has
+         *     the email, the email is invited instead: the answer is a pending member
+         *     (`status: pending`, `userId: null`) who joins at their first sign-in. On
+         *     instances without local accounts an unknown email returns `404` with code
+         *     `user-not-found`. Inviting an email twice returns `409 already-invited`.
          */
         post: operations["addMember"];
         delete?: never;
@@ -395,6 +399,31 @@ export interface paths {
          *     nothing and answers `200`.
          */
         patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/projects/{projectId}/invitations/{email}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The invited email address, in any letter case. */
+                email: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a pending member
+         * @description Admins only. Withdraws the invitation of an email that has not joined the
+         *     project yet. Answers `404` when the project has no invitation for the email.
+         */
+        delete: operations["removeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/surveys": {
@@ -954,7 +983,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -1178,11 +1207,18 @@ export interface components {
             nextCursor: components["schemas"]["Cursor"];
         };
         Member: {
-            userId: components["schemas"]["Id"];
+            /** @description The user's ID; `null` while the member is pending. */
+            userId: components["schemas"]["Id"] | null;
+            /** @description A pending member's display name is their email. */
             displayName: string;
             /** Format: email */
             email: string;
             role: components["schemas"]["ProjectRole"];
+            /**
+             * @description `pending` for an invited email that has not signed in yet.
+             * @enum {string}
+             */
+            status: "active" | "pending";
         };
         MemberCreate: {
             /** Format: email */
@@ -1506,7 +1542,7 @@ export interface components {
         };
         /**
          * @description The request conflicts with the current state. Codes:
-         *     `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+         *     `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
          *     `last-instance-admin`.
          */
         Conflict: {
@@ -2275,7 +2311,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Added. */
+            /**
+             * @description Added. A pending member when the instance has local accounts and no
+             *     account has the email; the `Location` of a pending member is
+             *     `/api/v1/projects/{projectId}/invitations/{email}`.
+             */
             201: {
                 headers: {
                     Location: components["headers"]["Location"];
@@ -2353,6 +2393,33 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    removeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The invited email address, in any letter case. */
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["ReadOnly"];
         };
     };

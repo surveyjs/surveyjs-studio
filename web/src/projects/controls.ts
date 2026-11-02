@@ -31,11 +31,12 @@ export function memberControls(
   member: Pick<Member, "userId" | "role">,
   viewerId: string,
 ): MemberControls {
-  const admin = project.role === "admin";
+  // A pending member has no user yet: no actions until the pending row exists in the UI.
+  const admin = project.role === "admin" && member.userId !== null;
   return {
     remove: admin,
     makeAdmin: admin && member.role === "user",
     removeAdminRights: admin && member.role === "admin",
-    self: member.userId.toLowerCase() === viewerId.toLowerCase(),
+    self: member.userId?.toLowerCase() === viewerId.toLowerCase(),
   };
 }

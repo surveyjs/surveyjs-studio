@@ -381,7 +381,7 @@ describe("contract coverage", () => {
   const operations = contractOperations();
 
   it("finds every operation of the contract", () => {
-    expect(operations).toHaveLength(47);
+    expect(operations).toHaveLength(48);
   });
 
   it.each(operations.map((op) => [op.operationId, op] as const))(

@@ -13,9 +13,15 @@ import {
   type ProjectPosition,
 } from "../paging/cursor.js";
 import { compare } from "../providers/ordering.js";
-import type { ProjectStore, UserDirectory } from "../providers/types.js";
+import type { InvitationStore, ProjectStore, UserDirectory } from "../providers/types.js";
 import { notFound } from "../surveys/access.js";
-import { memberJson, projectJson, type MemberJson, type ProjectJson } from "./json.js";
+import {
+  memberJson,
+  pendingMemberJson,
+  projectJson,
+  type MemberJson,
+  type ProjectJson,
+} from "./json.js";
 import { same, surveyReceiver } from "./rules.js";
 
 type ProjectPage = components["schemas"]["ProjectPage"];
@@ -36,6 +42,8 @@ export interface MemberCreate {
 export interface ProjectsServiceOptions {
   readonly users: UserDirectory;
   readonly projects: ProjectStore;
+  /** Pending members; non-null exactly with a local user directory. */
+  readonly invitations?: InvitationStore | null;
   /** The clock for creation and change times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -63,6 +71,7 @@ export interface ProjectsService {
     patch: MemberPatch,
   ): Promise<MemberJson>;
   removeMember(user: RequestUser, projectId: string, userId: string): Promise<void>;
+  removeInvitation(user: RequestUser, projectId: string, email: string): Promise<void>;
 }
 
 /** A place in a (lower-cased name, id) list order: a project or a member position. */
@@ -102,6 +111,23 @@ const memberPosition = ({ user }: ProjectMember): MemberPosition => ({
   name: user.displayName.toLowerCase(),
   id: user.id,
 });
+
+/**
+ * Pending members come after every active one in the member list, by email. Their cursor position
+ * sorts after any display name (the highest code point) and carries the zero id.
+ */
+const PENDING_NAME = String.fromCodePoint(0x10ffff);
+const PENDING_ID = "00000000-0000-0000-0000-000000000000";
+
+type Listed = { json: MemberJson; position: MemberPosition };
+
+const alreadyInvited = (): AppError =>
+  new AppError({
+    code: "already-invited",
+    status: 409,
+    title: "Already invited",
+    detail: "This email address already has an invitation to this project.",
+  });
 
 const forbidden = (): AppError =>
   new AppError({
@@ -149,7 +175,7 @@ function checkName(name: string | undefined): void {
 
 /** The projects of a user, and their members (ADR 0009: access through membership). */
 export function createProjectsService(options: ProjectsServiceOptions): ProjectsService {
-  const { users, projects, now = Date.now } = options;
+  const { users, projects, invitations = null, now = Date.now } = options;
   const isoNow = (): string => new Date(now()).toISOString();
 
   /** An instance admin acts as an admin of every project (S17). */
@@ -238,18 +264,43 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const { project } = await access(user, projectId);
       const after = cursor === undefined ? undefined : decodeMembersCursor(cursor, project.id);
       // The project store returns every visible member in member list order; the service cuts the page.
-      const all = await projects.listMembers(project.id);
-      const page = pageOf(all, memberPosition, after, limit, (position) =>
-        encodeMembersCursor(position, project.id),
+      const members = await projects.listMembers(project.id);
+      const pending = invitations ? await invitations.listInvitations(project.id) : [];
+      const all: Listed[] = [
+        ...members.map((m) => ({ json: memberJson(m), position: memberPosition(m) })),
+        ...pending.map((i) => ({
+          json: pendingMemberJson(i),
+          position: { name: `${PENDING_NAME}${i.email}`, id: PENDING_ID },
+        })),
+      ];
+      const page = pageOf(
+        all,
+        (item) => item.position,
+        after,
+        limit,
+        (position) => encodeMembersCursor(position, project.id),
       );
-      return { items: page.items.map(memberJson), nextCursor: page.nextCursor };
+      return { items: page.items.map((item) => item.json), nextCursor: page.nextCursor };
     },
 
     async addMember(user, projectId, { email, role = "user" }) {
       const { project } = await adminAccess(user, projectId);
       // Only admins get this far, so only they learn whether an address is registered.
       const found = await users.findUserByEmail(email);
-      if (!found) throw userNotFound();
+      if (!found) {
+        if (!invitations) throw userNotFound();
+        const invitation = {
+          projectId: project.id,
+          email: email.toLowerCase(),
+          role,
+          invitedBy: user.id,
+          createdAt: isoNow(),
+        };
+        const invited = await invitations.addInvitation(invitation);
+        if (invited === "already-invited") throw alreadyInvited();
+        if (invited === "project-not-found") throw notFound();
+        return pendingMemberJson(invitation);
+      }
       const outcome = await projects.addMember(project.id, found.id, role, { now: isoNow() });
       if (outcome === "already-member") throw alreadyMember();
       if (outcome === "not-found") throw notFound();
@@ -277,6 +328,14 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const outcome = await projects.removeMember(project.id, userId);
       if (outcome === "not-found") throw notFound();
       if (outcome === "last-admin") throw lastAdmin();
+    },
+
+    async removeInvitation(user, projectId, email) {
+      const { project } = await adminAccess(user, projectId);
+      const outcome = invitations
+        ? await invitations.removeInvitation(project.id, email)
+        : "not-found";
+      if (outcome === "not-found") throw notFound();
     },
   };
 }

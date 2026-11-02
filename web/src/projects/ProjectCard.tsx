@@ -94,24 +94,27 @@ export function ProjectCard({
   };
 
   const removeMemberRow = (member: Member, self: boolean) => {
+    if (member.userId === null) return;
+    const userId = member.userId;
     if (self) {
       // The admin's own "x" means leaving the project.
       if (!window.confirm(LEAVE_PROJECT_CONFIRMATION)) return;
       void run("leave", () =>
-        removeMember.mutateAsync({ projectId: project.id, userId: member.userId, self: true }),
+        removeMember.mutateAsync({ projectId: project.id, userId, self: true }),
       );
       return;
     }
     if (!window.confirm(removeMemberConfirmation(member.displayName))) return;
     void run("remove", () =>
-      removeMember.mutateAsync({ projectId: project.id, userId: member.userId, self: false }),
+      removeMember.mutateAsync({ projectId: project.id, userId, self: false }),
     );
   };
 
-  const changeMemberRole = (member: Member, role: Member["role"]) =>
-    void run("change-role", () =>
-      changeRole.mutateAsync({ projectId: project.id, userId: member.userId, role }),
-    );
+  const changeMemberRole = (member: Member, role: Member["role"]) => {
+    const { userId } = member;
+    if (userId === null) return;
+    void run("change-role", () => changeRole.mutateAsync({ projectId: project.id, userId, role }));
+  };
 
   const add = (email: string) =>
     run("add", () => addMember.mutateAsync({ projectId: project.id, email }), email);
@@ -186,7 +189,7 @@ export function ProjectCard({
               const memberControl = memberControls(project, member, viewerId);
               return (
                 <MemberRow
-                  key={member.userId}
+                  key={member.userId ?? member.email}
                   member={member}
                   controls={memberControl}
                   admin={admin}

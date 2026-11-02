@@ -604,8 +604,12 @@ paths:
       operationId: addMember
       summary: Add a member
       description: |
-        Admins only. The email must belong to a registered user; otherwise the
-        server returns `404` with code `user-not-found`.
+        Admins only. With an email that belongs to a registered user, the user
+        becomes a member. When the instance has local accounts and no account has
+        the email, the email is invited instead: the answer is a pending member
+        (`status: pending`, `userId: null`) who joins at their first sign-in. On
+        instances without local accounts an unknown email returns `404` with code
+        `user-not-found`. Inviting an email twice returns `409 already-invited`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -617,7 +621,10 @@ paths:
             schema: { $ref: '#/components/schemas/MemberCreate' }
       responses:
         '201':
-          description: Added.
+          description: |
+            Added. A pending member when the instance has local accounts and no
+            account has the email; the `Location` of a pending member is
+            `/api/v1/projects/{projectId}/invitations/{email}`.
           headers:
             Location: { $ref: '#/components/headers/Location' }
           content:
@@ -686,6 +693,32 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /projects/{projectId}/invitations/{email}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - name: email
+        in: path
+        required: true
+        description: The invited email address, in any letter case.
+        schema: { type: string, format: email }
+    delete:
+      tags: [Members]
+      operationId: removeInvitation
+      summary: Remove a pending member
+      description: |
+        Admins only. Withdraws the invitation of an email that has not joined the
+        project yet. Answers `404` when the project has no invitation for the email.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Removed. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Surveys
@@ -1653,7 +1686,7 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state. Codes:
-        `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+        `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
         `last-instance-admin`.
       content:
         application/problem+json:
@@ -1804,6 +1837,7 @@ components:
             - view-not-found
             - survey-not-archived
             - already-member
+            - already-invited
             - last-admin
             - already-completed
             - edit-conflict
@@ -2082,12 +2116,22 @@ components:
 
     Member:
       type: object
-      required: [userId, displayName, email, role]
+      required: [userId, displayName, email, role, status]
       properties:
-        userId: { $ref: '#/components/schemas/Id' }
-        displayName: { type: string }
+        userId:
+          description: The user's ID; `null` while the member is pending.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
+        displayName:
+          type: string
+          description: A pending member's display name is their email.
         email: { type: string, format: email }
         role: { $ref: '#/components/schemas/ProjectRole' }
+        status:
+          type: string
+          enum: [active, pending]
+          description: '`pending` for an invited email that has not signed in yet.'
     MemberCreate:
       type: object
       required: [email]
