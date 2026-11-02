@@ -108,7 +108,7 @@ of the private test package `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` u
 You need Node.js 24 (the version in [`.nvmrc`](.nvmrc)) and pnpm 12.11.2.
 
 ```sh
-nvm use            # or any other way to get Node 24.21.0; nvm-windows: nvm use 24.21.0
+nvm use            # or any other way to get Node 24.22.1; nvm-windows: nvm use 24.22.1
 corepack enable    # makes the pnpm version in package.json available
 pnpm install
 pnpm demo

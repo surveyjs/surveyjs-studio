@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim AS build
+FROM --platform=$BUILDPLATFORM node:24.22.1-bookworm-slim AS build
 ENV CI=true
 RUN corepack enable
 WORKDIR /src
@@ -37,7 +37,7 @@ RUN test -z "$(find /out/server -name '*.node')" \
     && echo "esbuild platform packages: $found" \
     && test "$found" = "linux-$cpu"
 
-FROM node:24.21.0-bookworm-slim AS app
+FROM node:24.22.1-bookworm-slim AS app
 # Links the package in ghcr.io to the repository, so it takes the repository's access rules.
 LABEL org.opencontainers.image.source="https://github.com/surveyjs/surveyjs-studio"
 COPY --from=build /out/server /app/server

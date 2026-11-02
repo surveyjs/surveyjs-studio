@@ -14,7 +14,7 @@ We needed to pick the major when the repository was created.
 
 ## Decision
 
-Use Node.js **24** (the LTS line). `.nvmrc` is `24.21.0` and `engines.node` is `>=24.21.0 <25`.
+Use Node.js **24** (the LTS line). `.nvmrc` is `24.22.1` and `engines.node` is `>=24.21.0 <25`.
 `.npmrc` sets `engine-strict=true`. CI reads `.nvmrc`. Renovate may not propose Node.js 25 or higher.
 pnpm is pinned by the `packageManager` field (12.11.2).
 

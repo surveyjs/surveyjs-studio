@@ -2,8 +2,8 @@
 
 ## Setup
 
-1. **Node.js 24.** `.nvmrc` holds `24.21.0` and `engines.node` is `>=24.21.0 <25`. With nvm:
-   `nvm use` (nvm-windows: `nvm use 24.21.0`). `.npmrc` sets `engine-strict=true`, so install
+1. **Node.js 24.** `.nvmrc` holds `24.22.1` and `engines.node` is `>=24.21.0 <25`. With nvm:
+   `nvm use` (nvm-windows: `nvm use 24.22.1`). `.npmrc` sets `engine-strict=true`, so install
    fails on another major.
 2. **pnpm 12.11.2.** Pinned in `packageManager`. Pick one:
    - `corepack enable`, then use `pnpm`. On Windows this may need an administrator shell;
