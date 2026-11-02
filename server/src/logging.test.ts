@@ -221,7 +221,7 @@ describe("publicUrlWarning", () => {
   it("warns in production when the URL names localhost", () => {
     for (const url of ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]) {
       expect(publicUrlWarning(configFor("production", url))).toBe(
-        `PUBLIC_BASE_URL is ${url}: sign-in and set-password links point there; set it to the address people open`,
+        `PUBLIC_BASE_URL is ${url}: links, sign-out and the addresses of uploaded files use it; set it to the address people open before anyone uploads`,
       );
     }
   });

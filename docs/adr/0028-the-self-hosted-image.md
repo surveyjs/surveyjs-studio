@@ -29,18 +29,25 @@ in `release.yml`, names the target. A bad test release is deleted by hand.
 
 **D3. The session secret on the volume.** `SESSION_SECRET_FILE` (the image sets `/data/session-secret`): when
 `SESSION_SECRET` is unset, the server reads the file, or creates it once with a random secret (mode `0600`, written
-atomically). `SESSION_SECRET` wins when both are set. A `/data` the container cannot write stops the start with one
-line that names the path and uid 1000.
+atomically). `SESSION_SECRET` wins when both are set. While `SESSION_SECRET` is unset (the image default), a `/data` the
+container cannot write stops the start with one line that names the path and uid 1000; with it set, nothing reads the
+file, and the first write to `/data` fails with its own error.
 
 **D4. `PUBLIC_BASE_URL`** defaults to `http://localhost:8080` in the image only; the server still requires it in
-production. While it names `localhost` under `NODE_ENV=production`, the start-up log warns that sign-in and
-set-password links point there.
+production. While it names `localhost` under `NODE_ENV=production`, the start-up log warns, before the setup link, that sign-in
+and set-password links, the sign-out redirect and the stored addresses of uploaded files use it. Files uploaded under a
+wrong address stay broken after it is fixed, so the warning says to set it before anyone uploads.
 
 **D5. The image's licence key** is `SURVEYJS_IMAGE_LICENSE_KEY`, set from a build argument (the CI secret of the same
 name; empty when absent). The key the app uses is `SURVEYJS_LICENSE_KEY`, else `SURVEYJS_IMAGE_LICENSE_KEY`.
 `BRANDING=off` requires a `SURVEYJS_LICENSE_KEY` that is set and differs from the image's key
 ([ADR 0027](0027-branding-and-the-licence-key.md)). This is not a security boundary (anyone can override an environment
-variable); the libraries' check is.
+variable); the libraries' check is. The shipped key is readable by anyone who pulls the image (it is in `ENV`, and
+the provenance records the build argument).
+
+**Release attestations.** The release's `--sbom=true` and `--provenance=mode=max` attestations are pushed with the image
+as buildx builds it. The plan expected `id-token: write` and `attestations: write` on the `publish` job for signed
+attestations; the job has neither, so the attestations are not signed.
 
 **D6. The proxy setting stays `TRUST_PROXY`** (built in Phase 1; the spec names it). The plan's `TRUSTED_PROXIES` is a
 typo; nothing is renamed.

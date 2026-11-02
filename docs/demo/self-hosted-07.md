@@ -20,6 +20,13 @@ pnpm image:build:self-hosted
 It is tagged `surveyjs-studio:self-hosted`. The demo uses the volumes `sjs-demo` and `sjs-demo-backups` and the
 container `sjs-demo`; if they exist from an earlier try, run the [Clean up](#clean-up) commands first.
 
+In Git Bash on Windows, stop it from turning `/backups` and `/data` arguments into Windows paths (`--to /backups`
+would arrive as `C:/Program Files/Git/backups`):
+
+```sh
+export MSYS_NO_PATHCONV=1
+```
+
 The first admin's password is a local demo constant. It goes to Docker by name, never on the command line:
 
 ```sh
@@ -37,7 +44,7 @@ export ADMIN_PASSWORD='a long local password'
    ```
 
    - **Check:** the log says `created the first admin from ADMIN_EMAIL; the password must be changed at first sign-in`,
-     and warns `PUBLIC_BASE_URL is http://localhost:8080: sign-in and set-password links point there; …`.
+     and warns `PUBLIC_BASE_URL is http://localhost:8080: links, sign-out and the addresses of uploaded files use it; …`.
    - **Check:** `docker exec sjs-demo id -u` prints `1000`.
 
 2. Open <http://localhost:8080>. **Check:** the **Sign in** page, with Email and Password.
@@ -150,8 +157,9 @@ export ADMIN_PASSWORD='a long local password'
 ```sh
 docker rm -f sjs-demo
 docker volume rm sjs-demo sjs-demo-backups
-(cd deploy/compose && docker compose -f compose.postgres.yml down -v && rm .env)
+(cd deploy/compose && docker compose -f compose.postgres.yml down -v && rm .env)   # the project surveyjs-studio-postgres
 unset ADMIN_PASSWORD
+unset MSYS_NO_PATHCONV   # Git Bash on Windows only
 ```
 
 ## What the automated tests cover

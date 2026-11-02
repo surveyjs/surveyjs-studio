@@ -43,12 +43,14 @@ Then create the first administrator, in one of two ways:
   ```
 
 Open <http://localhost:8080> and sign in. On a real server, set `PUBLIC_BASE_URL` too ([below](#behind-a-reverse-proxy)):
-until you do, the setup and set-password links say `localhost`, and the log warns
-`PUBLIC_BASE_URL is http://localhost:8080: …` at every start.
+until you do, the setup and set-password links, the sign-out redirect and the addresses stored for uploaded files say
+`localhost`, and the log warns `PUBLIC_BASE_URL is http://localhost:8080: …` at every start. Set it before anyone uploads a
+file: files uploaded under a wrong address stay broken after you fix it.
 
 **A host folder instead of a volume.** A named volume (as above) needs nothing. A host folder (`-v /srv/surveyjs:/data`)
-must be writable by uid 1000: `sudo chown 1000:1000 /srv/surveyjs`. Otherwise the server stops at start-up with one line
-that names the folder and uid 1000.
+must be writable by uid 1000: `sudo chown 1000:1000 /srv/surveyjs`. Otherwise, while `SESSION_SECRET` is unset (the image
+default), the server stops at start-up with one line that names the folder and uid 1000. With `SESSION_SECRET` set, the
+session secret needs no file, and the first write to `/data` (the database) fails with its own error.
 
 **Changing a setting.** A container keeps the environment it was created with. Stop and remove it, then run it again
 with the new settings and the same volume. Put many settings in an env file (`--env-file /etc/surveyjs-studio.env`,
@@ -143,6 +145,9 @@ docker cp surveyjs-studio:/data/backups/surveyjs-studio-20261030-120000Z ./
 Or mount a backups volume or folder at `/backups` (a host folder must be writable by uid 1000) and run
 `surveyjs-studio backup --to /backups`.
 
+In Git Bash on Windows, run `export MSYS_NO_PATHCONV=1` first: otherwise `/backups` and `/data` in these commands become
+Windows paths (`C:/Program Files/Git/backups`).
+
 **`surveyjs-studio restore <folder>`** puts a backup back. Stop the server first: while the database is open, restore
 refuses (`the database is in use: stop the container first`) and changes nothing. On a volume that already holds data,
 add `--replace`: the current database and files are moved to a `replaced-<timestamp>` folder in `/data`, never deleted.
@@ -195,6 +200,15 @@ docker compose -f compose.sqlite.yml up -d
 
 Neither PostgreSQL nor RustFS is published on the host. `SURVEYJS_STUDIO_IMAGE` in `.env` picks another image (such as
 `surveyjs-studio:self-hosted`), and `SURVEYJS_STUDIO_PORT` another host port.
+
+The default image, `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest`, does not exist until the first release that
+is not a pre-release. Until then set `SURVEYJS_STUDIO_IMAGE`, for example to a `v0.7.0-rc.N` tag of that package.
+
+Change the `.env.example` administrator password before the first start: whoever signs in first with it gets the
+administrator's session.
+
+The two examples have their own Compose project names (`surveyjs-studio` and `surveyjs-studio-postgres`), so `down -v`
+on one never deletes the other's volumes, and starting one does not replace the other's app.
 
 ## Outbound calls
 
