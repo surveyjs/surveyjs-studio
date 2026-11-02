@@ -82,6 +82,18 @@ describe("the self-hosted shell", () => {
     await expectBranding();
   });
 
+  it("frames the refused sign-in page", async () => {
+    server.use(configHandler(selfHosted));
+
+    renderApp("/sign-in/refused?reason=disabled");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "You can't sign in yet" }),
+    ).toBeTruthy();
+    expect(within(screen.getAllByRole("banner")[0]!).getByText("Acme Surveys")).toBeTruthy();
+    await expectBranding();
+  });
+
   it("frames the set-password page", async () => {
     server.use(configHandler(selfHosted));
 

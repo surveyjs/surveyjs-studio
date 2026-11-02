@@ -13,6 +13,15 @@ export const selfMember: Member = {
   status: "active",
 };
 
+/** Someone invited by email who has not signed in yet. */
+export const pendingMember: Member = {
+  userId: null,
+  displayName: "invited@example.test",
+  email: "invited@example.test",
+  role: "user",
+  status: "pending",
+};
+
 export const otherMember: Member = {
   userId: "00000000-0000-4000-8000-000000000003",
   displayName: "Mia Member",
@@ -83,5 +92,6 @@ export function projectWriteHandlers(
     mswHttp.post("*/api/v1/projects/:projectId/members", handle),
     mswHttp.patch("*/api/v1/projects/:projectId/members/:userId", handle),
     mswHttp.delete("*/api/v1/projects/:projectId/members/:userId", handle),
+    mswHttp.delete("*/api/v1/projects/:projectId/invitations/:email", handle),
   ];
 }

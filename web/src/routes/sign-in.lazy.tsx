@@ -13,6 +13,6 @@ function SignIn() {
   const config = rootRoute.useLoaderData();
   return renderAnonymousPage(
     config,
-    <SignInPage returnTo={returnTo} offerSurveyjs={config.authMethods.includes("surveyjs")} />,
+    <SignInPage returnTo={returnTo} methods={config.authMethods} />,
   );
 }

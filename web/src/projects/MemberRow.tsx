@@ -5,7 +5,7 @@ import type { MemberControls } from "./controls";
 
 /**
  * One member of a project card (`the site's page markup`, the users list): for admins the remove "x", the
- * display name, the Admin badge of an admin member, and for admins the Make Admin or Remove Admin
+ * display name, the Admin badge of an admin member, the Pending badge of an invited email, and for admins the Make Admin or Remove Admin
  * Rights pill.
  */
 export function MemberRow({
@@ -55,6 +55,10 @@ export function MemberRow({
         <div className="v2-class---account-page__project-user-display-name">
           {member.displayName}
         </div>
+
+        {member.status === "pending" && (
+          <div className="v2-class---account-page__project-user-admin-label">Pending</div>
+        )}
 
         {member.role === "admin" && (
           <div className="v2-class---account-page__project-user-admin-label">Admin</div>

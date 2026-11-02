@@ -6,6 +6,7 @@ import {
   useAddMember,
   useChangeMemberRole,
   useDeleteProject,
+  useRemoveInvitation,
   useRemoveMember,
   type Member,
   type Project,
@@ -21,6 +22,7 @@ import {
   isProjectGone,
   projectErrorText,
   removeMemberConfirmation,
+  willJoinText,
   type ProjectAction,
 } from "./messages";
 import styles from "./ProjectsPage.module.css";
@@ -48,6 +50,8 @@ export function ProjectCard({
 }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  // Shown after adding an email that has no account yet.
+  const [notice, setNotice] = useState<string | null>(null);
   // One action at a time: a second click while a request is in flight is ignored.
   const busy = useRef(false);
   const members = useQuery({ ...membersQueryOptions(project.id), enabled: open });
@@ -55,6 +59,7 @@ export function ProjectCard({
   const addMember = useAddMember();
   const changeRole = useChangeMemberRole();
   const removeMember = useRemoveMember();
+  const removeInvitation = useRemoveInvitation();
   const controls = projectControls(project);
   const admin = controls.manage;
 
@@ -67,6 +72,7 @@ export function ProjectCard({
     if (busy.current) return false;
     busy.current = true;
     setError(null);
+    setNotice(null);
     try {
       await request();
       return true;
@@ -94,8 +100,15 @@ export function ProjectCard({
   };
 
   const removeMemberRow = (member: Member, self: boolean) => {
-    if (member.userId === null) return;
-    const userId = member.userId;
+    const { userId } = member;
+    if (userId === null) {
+      // A pending member: the invitation is withdrawn.
+      if (!window.confirm(removeMemberConfirmation(member.displayName))) return;
+      void run("remove", () =>
+        removeInvitation.mutateAsync({ projectId: project.id, email: member.email }),
+      );
+      return;
+    }
     if (self) {
       // The admin's own "x" means leaving the project.
       if (!window.confirm(LEAVE_PROJECT_CONFIRMATION)) return;
@@ -117,7 +130,14 @@ export function ProjectCard({
   };
 
   const add = (email: string) =>
-    run("add", () => addMember.mutateAsync({ projectId: project.id, email }), email);
+    run(
+      "add",
+      async () => {
+        const added = await addMember.mutateAsync({ projectId: project.id, email });
+        if (added.status === "pending") setNotice(willJoinText(email));
+      },
+      email,
+    );
 
   const projectLinks = (
     <>
@@ -177,6 +197,12 @@ export function ProjectCard({
           </p>
         )}
 
+        {notice && (
+          <p className="v2-class---paragraph" role="status">
+            {notice}
+          </p>
+        )}
+
         {members.isPending && open && (
           <p className="v2-class---paragraph" role="status">
             Loading the members…
@@ -189,7 +215,7 @@ export function ProjectCard({
               const memberControl = memberControls(project, member, viewerId);
               return (
                 <MemberRow
-                  key={member.userId ?? member.email}
+                  key={member.userId ?? `invite:${member.email}`}
                   member={member}
                   controls={memberControl}
                   admin={admin}

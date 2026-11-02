@@ -32,6 +32,12 @@ describe("projectErrorText", () => {
     );
   });
 
+  it("names an address that is already invited", () => {
+    expect(projectErrorText(problem(409, "already-invited"), "add", "a@example.test")).toBe(
+      "a@example.test is already invited.",
+    );
+  });
+
   it("asks for a name only for create and rename", () => {
     const error = problem(400, "validation-failed");
     expect(projectErrorText(error, "create")).toBe("Enter a project name.");

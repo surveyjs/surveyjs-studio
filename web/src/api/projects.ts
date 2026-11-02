@@ -223,6 +223,26 @@ export function useChangeMemberRole() {
   });
 }
 
+/** Withdraws the invitation of a pending member (an email that has not signed in yet). */
+export function useRemoveInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      email,
+    }: {
+      projectId: string;
+      email: string;
+    }): Promise<void> => {
+      const { error, response } = await client.DELETE("/projects/{projectId}/invitations/{email}", {
+        params: { path: { projectId, email } },
+      });
+      if (!response.ok) throw toApiError(error, response);
+    },
+    onSuccess: () => refreshProjects(queryClient),
+  });
+}
+
 /** Removes a member; `self` is the user leaving the project. */
 export function useRemoveMember() {
   const queryClient = useQueryClient();
