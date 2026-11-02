@@ -667,6 +667,12 @@ describe("loadConfig", () => {
       expect(loadConfig({}).oidc).toBeNull();
     });
 
+    it("reads the OIDC settings under the dev provider too, when they are set", () => {
+      expect(loadConfig({ IDENTITY_PROVIDER: "dev", ...oidc }).oidc?.clientId).toBe(
+        oidc.OIDC_CLIENT_ID,
+      );
+    });
+
     it("rejects an OIDC issuer that is not an absolute http(s) URL", () => {
       expect(() => load({ ...oidc, OIDC_ISSUER_URL: "auth.example.com" })).toThrow(
         /OIDC_ISSUER_URL/,

@@ -154,7 +154,7 @@ export interface AppConfig {
   /** True when `sessionSecret` is the built-in development constant; the server logs a warning. */
   readonly sessionSecretIsDevDefault: boolean;
   readonly sessionMaxAgeSeconds: number;
-  /** Set only when `identityProvider` is `surveyjs-oidc` (and identity is not skipped). */
+  /** Set when the OIDC_* settings are (also under the dev provider, for `login?provider=surveyjs`). */
   readonly oidc: OidcConfig | null;
   readonly signInRateLimitPerMinute: number;
   /** Peers (IP addresses or CIDR ranges) whose X-Forwarded-For is believed; empty trusts nobody. */
@@ -866,7 +866,6 @@ export function loadConfig(
     sessionSecretIsDevDefault: e.SESSION_SECRET === undefined,
     sessionMaxAgeSeconds: e.SESSION_MAX_AGE_SECONDS,
     oidc:
-      e.IDENTITY_PROVIDER === "surveyjs-oidc" &&
       e.OIDC_ISSUER_URL !== undefined &&
       e.OIDC_CLIENT_ID !== undefined &&
       e.OIDC_CLIENT_SECRET !== undefined

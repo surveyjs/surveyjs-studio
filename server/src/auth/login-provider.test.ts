@@ -33,7 +33,9 @@ async function start(env: Record<string, string>): Promise<{
     OAUTH_STUB_URL: stub.url,
     GITHUB_CLIENT_ID: "gh-client",
     GITHUB_CLIENT_SECRET: "stub-secret-github",
-    ...env,
+    ...Object.fromEntries(
+      Object.entries(env).map(([key, value]) => [key, value.replace("STUB", stub?.url ?? "")]),
+    ),
   });
   app = await buildApp(config, await createProviders(config));
   return { server: app, config, stubUrl: stub.url };
@@ -112,6 +114,24 @@ describe("login without provider", () => {
     const res = await app.inject("/api/v1/auth/login");
     expect(res.statusCode).toBe(302);
     expect(String(res.headers.location)).toMatch(new RegExp(`^${stub.url}/surveyjs/authorize\\?`));
+  });
+
+  it("starts surveyjs.io with provider=surveyjs under the dev provider, which stays primary", async () => {
+    const { server, stubUrl } = await start({
+      IDENTITY_PROVIDER: "dev",
+      MEMORY_SEED: "legacy-fixtures",
+      AUTH_METHODS: "password,surveyjs",
+      OIDC_ISSUER_URL: "STUB/surveyjs",
+      OIDC_CLIENT_ID: "s-client",
+      OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    });
+    const plain = await server.inject("/api/v1/auth/login");
+    expect(String(plain.headers.location)).toContain("/__dev/sign-in");
+    const res = await server.inject("/api/v1/auth/login?provider=surveyjs");
+    expect(res.statusCode).toBe(302);
+    expect(String(res.headers.location).startsWith(`${stubUrl}/surveyjs/authorize?`)).toBe(true);
+    const session = await signIn(server, ownerUser.id);
+    expect(session.csrf).toBeTruthy();
   });
 
   it("finishes with the dev provider, even with another method enabled", async () => {
