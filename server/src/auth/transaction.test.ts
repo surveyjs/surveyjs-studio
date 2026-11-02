@@ -9,8 +9,8 @@ const clock = (ms: number) => () => ms;
 
 describe("sign-in transaction", () => {
   it("creates fresh random state, nonce and PKCE verifier, valid for ten minutes", () => {
-    const a = createTransaction("/a", clock(NOW));
-    const b = createTransaction("/a", clock(NOW));
+    const a = createTransaction("/a", undefined, clock(NOW));
+    const b = createTransaction("/a", undefined, clock(NOW));
     expect(a.returnTo).toBe("/a");
     expect(a.exp).toBe(NOW / 1000 + 600);
     for (const value of [a.state, a.nonce, a.codeVerifier]) {
@@ -22,13 +22,13 @@ describe("sign-in transaction", () => {
   });
 
   it("round-trips through the sealed cookie value", () => {
-    const tx = createTransaction("/surveys?x=1", clock(NOW));
+    const tx = createTransaction("/surveys?x=1", undefined, clock(NOW));
     const sealed = encodeTransaction(SECRET, tx);
     expect(decodeTransaction(SECRET, sealed, clock(NOW))).toEqual(tx);
   });
 
   it("reads as none when missing, expired, tampered with or sealed for another purpose", () => {
-    const tx = createTransaction("/", clock(NOW));
+    const tx = createTransaction("/", undefined, clock(NOW));
     const sealed = encodeTransaction(SECRET, tx);
     expect(decodeTransaction(SECRET, undefined, clock(NOW))).toBeNull();
     expect(decodeTransaction(SECRET, sealed, clock(NOW + 600_000))).toBeNull();
@@ -55,5 +55,26 @@ describe("sign-in transaction", () => {
     expect(
       decodeTransaction(SECRET, seal("msid-auth-v1", SECRET, "not json"), clock(NOW)),
     ).toBeNull();
+  });
+});
+
+describe("sign-in transaction provider", () => {
+  it("round-trips the provider, and reads a cookie without one as no provider", () => {
+    const github = createTransaction("/", "github", clock(NOW));
+    expect(github.provider).toBe("github");
+    expect(decodeTransaction(SECRET, encodeTransaction(SECRET, github), clock(NOW))).toEqual(
+      github,
+    );
+    const plain = createTransaction("/", undefined, clock(NOW));
+    expect("provider" in plain).toBe(false);
+    const decoded = decodeTransaction(SECRET, encodeTransaction(SECRET, plain), clock(NOW));
+    expect(decoded).not.toBeNull();
+    expect(decoded && "provider" in decoded).toBe(false);
+  });
+
+  it("reads an unknown provider as none", () => {
+    const tx = { ...createTransaction("/", undefined, clock(NOW)), provider: "x" };
+    const sealed = seal("msid-auth-v1", SECRET, JSON.stringify(tx));
+    expect(decodeTransaction(SECRET, sealed, clock(NOW))).toBeNull();
   });
 });

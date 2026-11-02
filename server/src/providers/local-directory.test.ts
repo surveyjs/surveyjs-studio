@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { storageWarning } from "../logging.js";
-import { createIdentityProvider } from "../auth/providers/index.js";
+import { createSignInProviders } from "../auth/providers/index.js";
 import { createProviders } from "./index.js";
 import { createSeededSqlProviders, localSuiteBytes } from "./sql-suite-setup.js";
 
@@ -85,7 +85,7 @@ describe("the seed's instance admin (USER_DIRECTORY=local)", () => {
   });
 
   it("is on the dev sign-in page of a local directory", async () => {
-    const identity = await createIdentityProvider(
+    const { primary: identity } = await createSignInProviders(
       loadConfig({
         USER_DIRECTORY: "local",
         IDENTITY_PROVIDER: "dev",

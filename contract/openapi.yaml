@@ -100,6 +100,13 @@ paths:
           in: query
           description: A same-origin path to open after sign-in.
           schema: { type: string, default: /, pattern: '^/' }
+        - name: provider
+          in: query
+          description: >-
+            The sign-in method to start. Without it, the default of this instance
+            (the sign-in page, or surveyjs.io when that is the only method). A
+            method that is not enabled answers `400`.
+          schema: { type: string, enum: [surveyjs, google, github, facebook] }
       responses:
         '302':
           description: Redirect to the identity provider.

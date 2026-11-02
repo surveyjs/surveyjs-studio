@@ -1710,6 +1710,8 @@ export interface operations {
             query?: {
                 /** @description A same-origin path to open after sign-in. */
                 returnTo?: string;
+                /** @description The sign-in method to start. Without it, the default of this instance (the sign-in page, or surveyjs.io when that is the only method). A method that is not enabled answers `400`. */
+                provider?: "surveyjs" | "google" | "github" | "facebook";
             };
             header?: never;
             path?: never;

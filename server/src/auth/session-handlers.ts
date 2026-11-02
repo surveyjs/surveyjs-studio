@@ -1,6 +1,6 @@
 import type { components } from "@surveyjs-studio/contract";
 import type { Handlers } from "../api.js";
-import type { AppConfig } from "../config.js";
+import type { AppConfig, ExternalMethod } from "../config.js";
 import { AppError } from "../errors.js";
 import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
 import type { LocalAccountStore, UserDirectory } from "../providers/types.js";
@@ -17,7 +17,8 @@ import {
   transactionCookieNames,
 } from "./cookies.js";
 import { generateCsrfToken, sameInConstantTime } from "./csrf.js";
-import { publicUrl, type IdentityClaims, type IdentityProvider } from "./identity.js";
+import { publicUrl, type IdentityClaims } from "./identity.js";
+import type { SignInProviders } from "./providers/index.js";
 import { validateReturnTo } from "./return-to.js";
 import {
   createSession,
@@ -32,7 +33,7 @@ type CurrentUser = components["schemas"]["CurrentUser"];
 
 export interface SessionHandlerOptions {
   readonly config: AppConfig;
-  readonly identity: IdentityProvider;
+  readonly signIn: SignInProviders;
   readonly users: UserDirectory;
   /** USER_DIRECTORY=local: `getCurrentUser` adds the account's role and forced change. */
   readonly accounts?: LocalAccountStore | null;
@@ -78,19 +79,26 @@ async function sessionUser(users: UserDirectory, claims: IdentityClaims): Promis
 
 /** `login`, `loginCallback`, `logout` and `getCurrentUser`. */
 export function createSessionHandlers(options: SessionHandlerOptions): Handlers {
-  const { config, identity, users, notices, now } = options;
+  const { config, signIn, users, notices, now } = options;
   const secret = config.sessionSecret;
   const links = shellLinks(config.shellLinks);
 
   return {
     login: async (request, reply) => {
-      const { returnTo } = request.query as { returnTo?: string };
+      const { returnTo, provider } = request.query as {
+        returnTo?: string;
+        provider?: ExternalMethod;
+      };
       const path = validateReturnTo(returnTo, config.publicBaseUrl);
       if (path === null) throw badRequest("returnTo must be a path on this site.");
-      const tx = createTransaction(path, now);
+      // A method that is not enabled has no provider, whether or not the name is a known one.
+      const chosen = provider === undefined ? undefined : signIn.byMethod.get(provider);
+      if (provider !== undefined && !chosen)
+        throw badRequest("This sign-in method is not enabled.");
+      const tx = createTransaction(path, provider, now);
       const name = transactionCookieName(tx.state);
       if (name === null) throw new Error("the sign-in state cannot name its cookie");
-      const location = await identity.authorizationUrl(tx);
+      const location = await (chosen ?? signIn.primary).authorizationUrl(tx);
       return reply
         .header("set-cookie", transactionCookie(config, name, encodeTransaction(secret, tx)))
         .redirect(location.href, 302);
@@ -113,6 +121,9 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       }
       // The URL the browser opened: the public origin (PUBLIC_BASE_URL has no path) with this
       // request's path and query.
+      const identity =
+        tx.provider === undefined ? signIn.primary : signIn.byMethod.get(tx.provider);
+      if (!identity) throw badRequest("This sign-in method is not enabled.");
       const claims = await identity.finishSignIn(
         new URL(new URL(config.publicBaseUrl).origin + request.url),
         tx,
@@ -133,7 +144,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
     logout: async (request, reply) => {
       const transactions = transactionCookieNames(parseCookies(request.headers.cookie));
       void reply.header("set-cookie", clearAllCookies(config, transactions));
-      return { redirectUrl: await identity.endSessionUrl() };
+      return { redirectUrl: await signIn.primary.endSessionUrl() };
     },
 
     getCurrentUser: async (request): Promise<CurrentUser> => {

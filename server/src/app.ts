@@ -7,7 +7,7 @@ import { createAdminHandlers } from "./admin/handlers.js";
 import { createAccountHandlers } from "./accounts/handlers.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
-import { createIdentityProvider } from "./auth/providers/index.js";
+import { createSignInProviders, type SignInProviders } from "./auth/providers/index.js";
 import type { Clock } from "./auth/session.js";
 import { bootstrapFirstAdmin } from "./auth/bootstrap.js";
 import { createPasswordHandlers } from "./auth/password-handlers.js";
@@ -41,7 +41,7 @@ import { isServerPath, registerWebApp, requestPathname } from "./web/static.js";
 export interface BuildOptions {
   /** Where the built API reference is read from (default: the contract package's dist). */
   readonly apiDocsPath?: string;
-  /** Replaces the configured identity provider (tests). */
+  /** Replaces the primary identity provider; no other sign-in method is enabled (tests). */
   readonly identity?: IdentityProvider;
   /** Clock for session and sign-in expiry and for creation times (tests). */
   readonly now?: Clock;
@@ -181,8 +181,10 @@ export async function buildApp(
       }),
   });
 
-  const identity = options.identity ?? (await createIdentityProvider(config));
-  if (identity.routes) await app.register(identity.routes);
+  const signIn: SignInProviders = options.identity
+    ? { primary: options.identity, byMethod: new Map() }
+    : await createSignInProviders(config);
+  if (signIn.primary.routes) await app.register(signIn.primary.routes);
 
   // Before the setup link (logged by the bootstrap below), so the admin reads it first.
   const publicUrl = publicUrlWarning(config);
@@ -242,7 +244,7 @@ export async function buildApp(
         })),
       ...createSessionHandlers({
         config,
-        identity,
+        signIn,
         users: providers.users,
         accounts,
         notices: providers.notices,

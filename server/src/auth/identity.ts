@@ -5,6 +5,8 @@ import type { SignInParameters, SignInTransaction } from "./transaction.js";
 export interface IdentityClaims {
   readonly sub: string;
   readonly email?: string;
+  /** Whether the provider vouches for `email` (the rule is the provider's, see ADR 0029). */
+  readonly emailVerified?: boolean;
   readonly name?: string;
   readonly picture?: string;
 }

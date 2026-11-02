@@ -3,6 +3,7 @@ import type { OidcConfig } from "../../config.js";
 import { AppError } from "../../errors.js";
 import { publicUrl, type IdentityClaims, type IdentityProvider } from "../identity.js";
 import type { SignInParameters } from "../transaction.js";
+import { unavailable } from "./sign-in-error.js";
 
 /** Where the identity provider sends the browser back (the `loginCallback` operation). */
 export const CALLBACK_PATH = "/api/v1/auth/callback";
@@ -11,18 +12,15 @@ export interface OidcIdentityOptions {
   readonly oidc: OidcConfig;
   /** The browser-visible origin: the `redirect_uri` and `post_logout_redirect_uri` are built on it. */
   readonly publicBaseUrl: string;
+  /**
+   * Whether UserInfo vouches for the email address. Default (surveyjs.io): verified unless
+   * `email_verified` is `false`. Google: `email_verified === true`.
+   */
+  readonly emailVerified?: (userInfo: Record<string, unknown>) => boolean;
 }
 
-function unavailable(cause: unknown): AppError {
-  return new AppError({
-    code: "internal-error",
-    status: 500,
-    title: "Sign-in is unavailable",
-    detail:
-      "The identity provider could not be reached or gave an unexpected answer. Try again later.",
-    cause,
-  });
-}
+const verifiedUnlessFalse = (userInfo: Record<string, unknown>) =>
+  userInfo.email_verified !== false;
 
 /** Failures of the token or UserInfo response that mean "this sign-in is not valid", not "the server is broken". */
 const INVALID_SIGN_IN_CODES = new Set([
@@ -71,6 +69,7 @@ const optionalString = (value: unknown) =>
  */
 export function createOidcIdentityProvider(options: OidcIdentityOptions): IdentityProvider {
   const { oidc, publicBaseUrl } = options;
+  const emailVerified = options.emailVerified ?? verifiedUnlessFalse;
   const redirectUri = publicUrl(publicBaseUrl, CALLBACK_PATH);
   const postLogoutRedirectUri = publicUrl(publicBaseUrl, "/");
   const issuerUrl = new URL(oidc.issuerUrl);
@@ -160,6 +159,7 @@ export function createOidcIdentityProvider(options: OidcIdentityOptions): Identi
       return {
         sub: userInfo.sub,
         ...(email && { email }),
+        emailVerified: email !== undefined && emailVerified(userInfo),
         ...(name && { name }),
         ...(picture && { picture }),
       };
