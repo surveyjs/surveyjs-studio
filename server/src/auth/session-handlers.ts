@@ -3,7 +3,7 @@ import type { Handlers } from "../api.js";
 import type { AppConfig, ExternalMethod } from "../config.js";
 import { AppError } from "../errors.js";
 import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
-import type { LocalAccountStore, UserDirectory } from "../providers/types.js";
+import type { InvitationStore, LocalAccountStore, UserDirectory } from "../providers/types.js";
 import { shellLinks } from "../shell-links.js";
 import { requireUser } from "./authenticate.js";
 import {
@@ -17,9 +17,11 @@ import {
   transactionCookieNames,
 } from "./cookies.js";
 import { generateCsrfToken, sameInConstantTime } from "./csrf.js";
+import { resolveExternalSignIn } from "./external-sign-in.js";
 import { publicUrl, type IdentityClaims } from "./identity.js";
 import type { SignInProviders } from "./providers/index.js";
 import { validateReturnTo } from "./return-to.js";
+import type { SessionCheck } from "./session-check.js";
 import {
   createSession,
   decodeSession,
@@ -35,8 +37,15 @@ export interface SessionHandlerOptions {
   readonly config: AppConfig;
   readonly signIn: SignInProviders;
   readonly users: UserDirectory;
-  /** USER_DIRECTORY=local: `getCurrentUser` adds the account's role and forced change. */
+  /**
+   * USER_DIRECTORY=local: `getCurrentUser` adds the account's role, forced change and whether it
+   * has a password; an external provider's sign-in goes to a local account (D3).
+   */
   readonly accounts?: LocalAccountStore | null;
+  /** USER_DIRECTORY=local: claimed at every external sign-in (D4). */
+  readonly invitations?: InvitationStore | null;
+  /** USER_DIRECTORY=local: forgets the account an external sign-in may have just made active. */
+  readonly sessionCheck?: SessionCheck | null;
   readonly notices: AccountNotices;
   readonly now?: Clock;
 }
@@ -80,6 +89,7 @@ async function sessionUser(users: UserDirectory, claims: IdentityClaims): Promis
 /** `login`, `loginCallback`, `logout` and `getCurrentUser`. */
 export function createSessionHandlers(options: SessionHandlerOptions): Handlers {
   const { config, signIn, users, notices, now } = options;
+  const nowIso = () => new Date((now ?? Date.now)()).toISOString();
   const secret = config.sessionSecret;
   const links = shellLinks(config.shellLinks);
 
@@ -128,9 +138,48 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         new URL(new URL(config.publicBaseUrl).origin + request.url),
         tx,
       );
-      const user = await sessionUser(users, claims);
+      // The local directory with an external provider behind the sign-in: a local account (D3).
+      // The dev provider's sign-ins keep the path below: their subject is the local id already.
+      const method = tx.provider ?? signIn.primaryMethod;
+      const { accounts, invitations, sessionCheck } = options;
+      let user: SessionUser;
+      let epoch: number | undefined;
+      if (accounts && invitations && method !== null) {
+        const result = await resolveExternalSignIn(method, claims, {
+          accounts,
+          invitations,
+          policy: config.joinPolicy,
+          now: nowIso,
+        });
+        if (!result.ok) {
+          // Never the email or the subject (D8).
+          request.log.info({ provider: method, reason: result.reason }, "sign-in refused");
+          const query = new URLSearchParams({ reason: result.reason, provider: method });
+          return reply.redirect(
+            publicUrl(config.publicBaseUrl, `/sign-in/refused?${query.toString()}`),
+            302,
+          );
+        }
+        const { account } = result;
+        if (!config.readOnly) {
+          await invitations.claimInvitations(account.user.id, account.user.email, {
+            now: nowIso(),
+          });
+          await accounts.recordSignIn(account.user.id, nowIso());
+        }
+        sessionCheck?.forget(account.user.id);
+        user = {
+          sub: account.user.id,
+          name: account.user.displayName,
+          email: account.user.email,
+          avatarUrl: avatarUrl(claims.picture),
+        };
+        epoch = account.sessionEpoch;
+      } else {
+        user = await sessionUser(users, claims);
+      }
       const csrf = generateCsrfToken();
-      const session = createSession(user, csrf, config.sessionMaxAgeSeconds, now);
+      const session = createSession(user, csrf, config.sessionMaxAgeSeconds, now, epoch);
       return reply
         .header(
           "set-cookie",
@@ -163,6 +212,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         ...(account && {
           instanceRole: account.instanceRole,
           mustChangePassword: account.mustChangePassword,
+          hasPassword: account.passwordHash !== null,
         }),
         notices: current,
       };

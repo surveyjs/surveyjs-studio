@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
@@ -45,7 +46,8 @@ describe("password sign-in", () => {
   async function start(env: Record<string, string> = {}) {
     const lines: string[] = [];
     const config = loadConfig(localEnv(env));
-    const app = await buildApp(config, await createProviders(config), {
+    const providers = await createProviders(config);
+    const app = await buildApp(config, providers, {
       logStream: { write: (line) => lines.push(line) },
     });
     apps.push(app);
@@ -67,8 +69,45 @@ describe("password sign-in", () => {
         headers: { cookie: session.cookie, "x-csrf-token": session.csrf },
         ...(payload !== undefined && { payload }),
       });
-    return { app, lines, login, as };
+    return { app, lines, login, as, providers };
   }
+
+  it("turns the email's pending invitations into memberships at sign-in, in any letter case", async () => {
+    const { login, providers } = await start({ ADMIN_EMAIL, ADMIN_PASSWORD });
+    const { accounts, invitations, projects } = providers;
+    if (!accounts || !invitations) throw new Error("no local accounts");
+    const at = "2026-11-01T00:00:00.000Z";
+    const owner = await accounts.createAccount({
+      id: randomUUID(),
+      email: "owner@example.com",
+      displayName: "Owner",
+      instanceRole: "user",
+      status: "active",
+      passwordHash: null,
+      mustChangePassword: false,
+      createdAt: at,
+    });
+    const projectId = randomUUID();
+    await projects.createProject({
+      id: projectId,
+      name: "P",
+      creatorId: owner.user.id,
+      createdAt: at,
+    });
+    await invitations.addInvitation({
+      projectId,
+      email: "ADMIN@example.COM",
+      role: "admin",
+      invitedBy: owner.user.id,
+      createdAt: at,
+    });
+    expect((await login(ADMIN_EMAIL, ADMIN_PASSWORD)).statusCode).toBe(204);
+    const admin = await accounts.accountByEmail(ADMIN_EMAIL);
+    expect(await projects.getUserProject(admin?.user.id ?? "", projectId)).toMatchObject({
+      role: "admin",
+    });
+    expect(await invitations.hasInvitation(ADMIN_EMAIL)).toBe(false);
+  });
 
   it("signs the first admin in, forces a password change, then ends the old session", async () => {
     const { login, as } = await start({ ADMIN_EMAIL, ADMIN_PASSWORD });

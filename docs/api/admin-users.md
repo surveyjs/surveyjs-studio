@@ -82,8 +82,9 @@ curl -b cookies.txt -X PATCH -H "X-CSRF-Token: $CSRF" \
 ```
 
 - `status: "disabled"` ends the user's sessions within a minute (at once on the same server) and
-  stops their sign-ins. `status: "active"` enables them again; an account that never set a password
-  becomes `invited`. `invited` cannot be set (`422`).
+  stops their sign-ins. `status: "active"` enables them again; an account with neither a password nor
+  a linked Google, GitHub, Facebook or surveyjs.io sign-in becomes `invited`. `invited` cannot be set
+  (`422`).
 - `instanceRole: "admin"` makes an instance admin; `"user"` takes the role away.
 - Demoting or disabling the **last active instance admin** answers `409 last-instance-admin`, also
   for yourself.

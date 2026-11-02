@@ -13,6 +13,11 @@ import { createOidcIdentityProvider } from "./oidc.js";
 export interface SignInProviders {
   /** Finishes a sign-in `login` started without `provider`; also ends the session on logout. */
   readonly primary: IdentityProvider;
+  /**
+   * The external method `primary` is (`surveyjs` when `login` goes straight to surveyjs.io); null
+   * for the dev provider and the web app's sign-in page.
+   */
+  readonly primaryMethod: ExternalMethod | null;
   /** Each external method in AUTH_METHODS, for `login?provider=`. */
   readonly byMethod: ReadonlyMap<ExternalMethod, IdentityProvider>;
 }
@@ -65,13 +70,13 @@ export async function createSignInProviders(config: AppConfig): Promise<SignInPr
     );
   }
 
-  return { primary: await primaryProvider(config, byMethod), byMethod };
+  return { ...(await primaryProvider(config, byMethod)), byMethod };
 }
 
 async function primaryProvider(
   config: AppConfig,
   byMethod: ReadonlyMap<ExternalMethod, IdentityProvider>,
-): Promise<IdentityProvider> {
+): Promise<Omit<SignInProviders, "byMethod">> {
   if (config.identityProvider === "dev") {
     const seedUsers =
       config.memorySeed === "legacy-fixtures" ? (await legacyFixtureSeed()).users : [];
@@ -80,14 +85,17 @@ async function primaryProvider(
       config.userDirectory === "local" && seedUsers.length > 0
         ? [...seedUsers, seedInstanceAdmin]
         : seedUsers;
-    return createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users });
+    return {
+      primary: createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users }),
+      primaryMethod: null,
+    };
   }
   // Only surveyjs.io: `login` goes straight to it. Any other set of methods: the web app's
   // sign-in page, which offers them.
   if (config.authMethods.length === 1 && config.authMethods[0] === "surveyjs") {
     const surveyjs = byMethod.get("surveyjs");
     if (!surveyjs) throw new Error("IDENTITY_PROVIDER=surveyjs-oidc needs the OIDC_* settings");
-    return surveyjs;
+    return { primary: surveyjs, primaryMethod: "surveyjs" };
   }
-  return createLocalIdentityProvider(config.publicBaseUrl);
+  return { primary: createLocalIdentityProvider(config.publicBaseUrl), primaryMethod: null };
 }

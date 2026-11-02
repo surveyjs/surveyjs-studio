@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { TestProject } from "vitest/node";
+import { startOAuthStub, type OAuthStub } from "../../server/src/testing/oauth-stub.js";
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -26,6 +27,12 @@ declare module "vitest" {
      * that admin from ADMIN_EMAIL and ADMIN_PASSWORD); null otherwise: the password tests skip.
      */
     passwordAdmin: { email: string; password: string } | null;
+    /**
+     * With `CONFORMANCE_AUTH=oauth`: the OAuth stub the server signs in with, the domain of
+     * SIGN_UP_DOMAINS, and a second server on its own database with `OPEN_SIGN_UP=on`; null
+     * otherwise: oauth.test.ts skips.
+     */
+    oauth: { stubUrl: string; signUpDomain: string; openSignUpBaseUrl: string } | null;
   }
 }
 
@@ -138,6 +145,13 @@ const legacyVariables = [
 const oidcVariables = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
 // Forwarded when set (the mock needs the openid scope).
 const optionalOidcVariables = ["OIDC_DISCOVERY", "OIDC_SCOPES"] as const;
+
+// The OAuth run (CONFORMANCE_AUTH=oauth): SIGN_UP_DOMAINS, and the stub's client ids (any value;
+// the stub's client secrets are its documented test values `stub-secret-<provider>`).
+const SIGN_UP_DOMAIN = "allowed.example";
+
+/** The OAuth stub of `CONFORMANCE_AUTH=oauth`, started in setup(). */
+let oauthStub: OAuthStub | null = null;
 
 /**
  * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
@@ -312,11 +326,11 @@ function userDirectoryEnv(stubUrl: string | null): Record<string, string> {
   };
 }
 
-/** `CONFORMANCE_AUTH`: `default` or `password`. */
-function authMode(): "default" | "password" {
+/** `CONFORMANCE_AUTH`: `default`, `password` or `oauth`. */
+function authMode(): "default" | "password" | "oauth" {
   const mode = process.env.CONFORMANCE_AUTH?.trim() || "default";
-  if (mode !== "default" && mode !== "password") {
-    throw new Error(`CONFORMANCE_AUTH must be default or password, got "${mode}"`);
+  if (mode !== "default" && mode !== "password" && mode !== "oauth") {
+    throw new Error(`CONFORMANCE_AUTH must be default, password or oauth, got "${mode}"`);
   }
   return mode;
 }
@@ -328,8 +342,9 @@ function authMode(): "default" | "password" {
  * the whole suite runs on local accounts.
  */
 function authEnv(): Record<string, string> {
-  if (authMode() === "default") return {};
-  return {
+  const mode = authMode();
+  if (mode === "default") return {};
+  const password = {
     USER_DIRECTORY: "local",
     AUTH_METHODS: "password",
     ADMIN_EMAIL: PASSWORD_ADMIN.email,
@@ -337,6 +352,31 @@ function authEnv(): Record<string, string> {
     // The self-hosted look: features.test.ts checks /config and /api/docs in this shell.
     APP_SHELL: "self-hosted",
     BRAND_NAME: "Conformance Surveys",
+  };
+  return mode === "password" ? password : { ...password, ...oauthEnv() };
+}
+
+/**
+ * `CONFORMANCE_AUTH=oauth` adds the four OAuth2 methods, all pointed at the OAuth stub (Google,
+ * GitHub and Facebook by OAUTH_STUB_URL, surveyjs.io by its issuer URL), and SIGN_UP_DOMAINS.
+ * The dev sign-in still signs the fixture users in (the instance admin and the project owners).
+ */
+function oauthEnv(): Record<string, string> {
+  if (oauthStub === null) throw new Error("the OAuth stub is started in setup()");
+  const { url } = oauthStub;
+  return {
+    AUTH_METHODS: "password,surveyjs,google,github,facebook",
+    OAUTH_STUB_URL: url,
+    GOOGLE_CLIENT_ID: "conformance-google",
+    GOOGLE_CLIENT_SECRET: "stub-secret-google",
+    GITHUB_CLIENT_ID: "conformance-github",
+    GITHUB_CLIENT_SECRET: "stub-secret-github",
+    FACEBOOK_CLIENT_ID: "conformance-facebook",
+    FACEBOOK_CLIENT_SECRET: "stub-secret-facebook",
+    OIDC_ISSUER_URL: `${url}/surveyjs`,
+    OIDC_CLIENT_ID: "conformance-surveyjs",
+    OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    SIGN_UP_DOMAINS: SIGN_UP_DOMAIN,
   };
 }
 
@@ -349,7 +389,11 @@ function readOnlyEnv(): Record<string, string> {
   return value === "true" ? { READ_ONLY: "true" } : {};
 }
 
-function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
+function serverEnv(
+  port: number,
+  stubUrl: string | null,
+  overrides: Record<string, string> = {},
+): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of appVariables) delete env[name];
   return {
@@ -379,6 +423,7 @@ function serverEnv(port: number, stubUrl: string | null): NodeJS.ProcessEnv {
     ...userDirectoryEnv(stubUrl),
     ...authEnv(),
     ...readOnlyEnv(),
+    ...overrides,
   };
 }
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -541,6 +586,7 @@ async function startUserApiStub(): Promise<{ url: string; stop: () => void }> {
 async function startReferenceServer(
   stubUrl: string | null,
   image: string | null,
+  overrides: Record<string, string> = {},
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -553,9 +599,9 @@ async function startReferenceServer(
           shell: true,
           detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
-          env: serverEnv(port, stubUrl),
+          env: serverEnv(port, stubUrl, overrides),
         })
-      : spawnImage(image, imageEnv(serverEnv(port, stubUrl)));
+      : spawnImage(image, imageEnv(serverEnv(port, stubUrl, overrides)));
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
@@ -611,6 +657,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     project.provide("passwordAdmin", null);
+    project.provide("oauth", null);
     return;
   }
   const image = imageTag();
@@ -620,32 +667,63 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
       "CONFORMANCE_IMAGE cannot be used with CONFORMANCE_PROVIDER=sqlite: the container cannot see the run's database file",
     );
   }
-  if (authMode() === "password" && (provider === "azure-legacy" || mode !== "default")) {
+  const auth = authMode();
+  if (auth !== "default" && (provider === "azure-legacy" || mode !== "default")) {
     throw new Error(
-      "CONFORMANCE_AUTH=password needs CONFORMANCE_PROVIDER=memory, sqlite or postgres and the default user directory",
+      `CONFORMANCE_AUTH=${auth} needs CONFORMANCE_PROVIDER=memory, sqlite or postgres and the default user directory`,
+    );
+  }
+  if (auth === "oauth" && image !== null) {
+    throw new Error(
+      "CONFORMANCE_IMAGE cannot be used with CONFORMANCE_AUTH=oauth: the run starts two servers",
     );
   }
   if (provider === "sqlite" || provider === "postgres") {
     sqlDatabase = await prepareSqlDatabase(provider);
   }
   const database = sqlDatabase;
+  // The OAuth run's second server, OPEN_SIGN_UP=on, gets a database of its own.
+  let openDatabase: { env: Record<string, string>; drop: () => Promise<void> } | null = null;
   const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
-  let server: { baseUrl: string; stop: () => void };
-  try {
-    server = await startReferenceServer(stub?.url ?? null, image);
-  } catch (error) {
+  const servers: { baseUrl: string; stop: () => void }[] = [];
+  const stopAll = async () => {
+    for (const started of servers) started.stop();
     stub?.stop();
+    await oauthStub?.close();
     await database?.drop();
+    await openDatabase?.drop();
+  };
+  try {
+    if (auth === "oauth") oauthStub = await startOAuthStub();
+    servers.push(await startReferenceServer(stub?.url ?? null, image));
+    if (auth === "oauth") {
+      if (provider === "sqlite" || provider === "postgres") {
+        openDatabase = await prepareSqlDatabase(provider);
+      }
+      servers.push(
+        await startReferenceServer(null, image, { ...openDatabase?.env, OPEN_SIGN_UP: "on" }),
+      );
+    }
+  } catch (error) {
+    await stopAll();
     throw error;
   }
+  const [server, openSignUp] = servers;
+  if (!server) throw new Error("the reference server did not start");
   project.provide("baseUrl", server.baseUrl);
   project.provide("ownsServer", true);
   project.provide("userDirectory", mode);
   project.provide("webhookSecret", WEBHOOK_SECRET);
-  project.provide("passwordAdmin", authMode() === "password" ? PASSWORD_ADMIN : null);
-  return async () => {
-    server.stop();
-    stub?.stop();
-    await database?.drop();
-  };
+  project.provide("passwordAdmin", auth === "default" ? null : PASSWORD_ADMIN);
+  project.provide(
+    "oauth",
+    oauthStub && openSignUp
+      ? {
+          stubUrl: oauthStub.url,
+          signUpDomain: SIGN_UP_DOMAIN,
+          openSignUpBaseUrl: openSignUp.baseUrl,
+        }
+      : null,
+  );
+  return stopAll;
 }

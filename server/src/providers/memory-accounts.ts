@@ -154,7 +154,12 @@ export function createMemoryLocalAccounts(
       if (!found) return Promise.resolve({ outcome: "not-found" as const });
       const after = {
         instanceRole: change.instanceRole ?? found.instanceRole,
-        status: nextStatus(found.status, change.status, found.passwordHash !== null),
+        status: nextStatus(
+          found.status,
+          change.status,
+          found.passwordHash !== null ||
+            [...identities.values()].some((link) => link.userId === found.id),
+        ),
       };
       if (decideAccountChange(found, after, activeAdmins()) === "last-instance-admin") {
         return Promise.resolve({ outcome: "last-instance-admin" as const });

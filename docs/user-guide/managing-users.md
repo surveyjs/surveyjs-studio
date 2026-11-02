@@ -57,8 +57,8 @@ For an **Invited** user, this gives a new invitation link (for example when the 
 
 - **Disable** signs the user out within a minute and stops them from signing in. Their surveys,
   results and memberships stay.
-- **Enable** lets them sign in again with their password. A user who never set a password goes
-  back to **Invited**: reset their password to send a new link.
+- **Enable** lets them sign in again with their password or their linked sign-in method. A user who
+  has neither goes back to **Invited**: reset their password to send a new link.
 
 ## Make another instance admin
 

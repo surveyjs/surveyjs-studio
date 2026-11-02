@@ -182,7 +182,7 @@ export async function buildApp(
   });
 
   const signIn: SignInProviders = options.identity
-    ? { primary: options.identity, byMethod: new Map() }
+    ? { primary: options.identity, primaryMethod: null, byMethod: new Map() }
     : await createSignInProviders(config);
   if (signIn.primary.routes) await app.register(signIn.primary.routes);
 
@@ -229,6 +229,7 @@ export async function buildApp(
         createPasswordHandlers({
           config,
           accounts: local.accounts,
+          invitations: providers.invitations,
           sessionCheck: local.sessionCheck,
           lockout: local.lockout,
           setupToken: local.bootstrap.setupToken,
@@ -247,6 +248,8 @@ export async function buildApp(
         signIn,
         users: providers.users,
         accounts,
+        invitations: providers.invitations,
+        sessionCheck: local?.sessionCheck ?? null,
         notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),

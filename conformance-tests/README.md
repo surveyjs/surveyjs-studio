@@ -102,6 +102,18 @@ directory, and cannot be combined with `CONFORMANCE_BASE_URL`.
 pnpm test:conformance:password   # reads password.env (sqlite)
 ```
 
+## Run with OAuth2 sign-in
+
+`CONFORMANCE_AUTH=oauth` is the password mode with `AUTH_METHODS=password,surveyjs,google,github,facebook`
+and `SIGN_UP_DOMAINS=allowed.example`. The setup starts the OAuth stub (`server/src/testing/oauth-stub.ts`)
+and points all four methods at it, so no real provider is contacted. It also starts a second server, on a
+database of its own, with `OPEN_SIGN_UP=on`. Only `src/oauth.test.ts` runs: each provider's full flow, the
+join policy, linking by verified email, invitations claimed at sign-in, and the refusals.
+
+```sh
+pnpm test:conformance:oauth      # reads oauth.env (sqlite)
+```
+
 ## Run read-only
 
 `CONFORMANCE_READ_ONLY=true` runs the reference server with `READ_ONLY=true`. The script runs only
@@ -138,7 +150,7 @@ The server must be a fresh, in-memory/empty instance. No child process is starte
 | `CONFORMANCE_BASE_URL`       | The origin of the server to test                                                      |
 | `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped                |
 | `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite` or `postgres`; the reference server only |
-| `CONFORMANCE_AUTH`           | `default` or `password`; the reference server only                                    |
+| `CONFORMANCE_AUTH`           | `default`, `password` or `oauth`; the reference server only                           |
 | `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                                |
 | `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                |
 

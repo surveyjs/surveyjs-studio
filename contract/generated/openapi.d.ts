@@ -37,6 +37,14 @@ export interface paths {
          * Finish sign-in
          * @description The identity provider redirects here. The server exchanges the code, sets
          *     the `msid` and `msid_csrf` cookies, and redirects to `returnTo`.
+         *
+         *     With `USER_DIRECTORY=local`, an OAuth2 sign-in reaches a local account: the one
+         *     its identity is linked to, else the one its verified email names (the identity
+         *     is linked to it), else a new one when the email is invited, its domain is in
+         *     `SIGN_UP_DOMAINS` or `OPEN_SIGN_UP=on`. The email's pending project invitations
+         *     become memberships. Otherwise the redirect goes to
+         *     `/sign-in/refused?reason=<reason>&provider=<method>` with no session; the
+         *     reasons are `not-invited`, `email-unverified` and `disabled`.
          */
         get: operations["loginCallback"];
         put?: never;
@@ -246,8 +254,8 @@ export interface paths {
         /**
          * Change a user's instance role or status
          * @description Instance admins only. `status` may be set to `disabled` or `active`: disabling
-         *     ends the user's sessions within a minute; enabling an account that never set a
-         *     password makes it `invited` again. Demoting, disabling or deleting the last
+         *     ends the user's sessions within a minute; enabling an account that has neither a
+         *     password nor a linked sign-in method makes it `invited` again. Demoting, disabling or deleting the last
          *     active instance admin fails with `409 last-instance-admin`, also for yourself.
          */
         patch: operations["updateUser"];
@@ -1077,6 +1085,8 @@ export interface components {
             instanceRole?: components["schemas"]["InstanceRole"];
             /** @description A local account that must change its password before anything else; the session then answers `401 password-change-required` to other operations. */
             mustChangePassword?: boolean;
+            /** @description Whether a local account has a password (`USER_DIRECTORY=local`); false for an account made by an OAuth2 sign-in. Absent for the other directories. */
+            hasPassword?: boolean;
             /** @description Account notices shown by the shell, such as licence expiry on the hosted edition. */
             notices?: components["schemas"]["Notice"][];
         };

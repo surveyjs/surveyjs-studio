@@ -6,7 +6,7 @@ import { AppError } from "../errors.js";
 import { dummyHash, hashPassword, verifyPassword } from "../passwords/hash.js";
 import type { Lockout } from "../passwords/lockout.js";
 import { passwordProblem } from "../passwords/policy.js";
-import type { LocalAccountStore } from "../providers/types.js";
+import type { InvitationStore, LocalAccountStore } from "../providers/types.js";
 import { requireUser } from "./authenticate.js";
 import { hasPasswordAdmin } from "./bootstrap.js";
 import { sessionCookies } from "./cookies.js";
@@ -17,6 +17,8 @@ import { createSession, encodeSession, type Clock } from "./session.js";
 export interface PasswordHandlerOptions {
   readonly config: AppConfig;
   readonly accounts: LocalAccountStore;
+  /** Claimed at every successful sign-in (D4); null only in tests without project invitations. */
+  readonly invitations: InvitationStore | null;
   readonly sessionCheck: SessionCheck;
   readonly lockout: Lockout;
   /** The first admin's setup link while there is no admin (bootstrapFirstAdmin). */
@@ -65,7 +67,7 @@ const linkInvalid = (): AppError =>
 
 /** `passwordLogin`, `changeOwnPassword` and `setPasswordWithLink` (USER_DIRECTORY=local). */
 export function createPasswordHandlers(options: PasswordHandlerOptions): Handlers {
-  const { config, accounts, sessionCheck, lockout } = options;
+  const { config, accounts, invitations, sessionCheck, lockout } = options;
   const now = options.now ?? Date.now;
   const nowIso = () => new Date(now()).toISOString();
   let setupToken = options.setupToken;
@@ -98,6 +100,11 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
     }
   };
 
+  /** The email's pending invitations become memberships of the user who signed in (D4). */
+  const claim = async (userId: string, email: string): Promise<void> => {
+    await invitations?.claimInvitations(userId, email, { now: nowIso() });
+  };
+
   /**
    * The answer of a link that set a password: 204 with a session of the new epoch, so the user lands
    * signed in (S19), when the account may sign in; a disabled account gets no session.
@@ -106,6 +113,7 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
     const account = await accounts.account(userId);
     if (!account || account.status !== "active") return reply.code(204).send();
     await accounts.recordSignIn(account.user.id, nowIso());
+    await claim(account.user.id, account.user.email);
     const user = {
       sub: account.user.id,
       name: account.user.displayName,
@@ -126,7 +134,10 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
         throw invalidCredentials(401);
       }
       lockout.succeeded(email);
-      if (!config.readOnly) await accounts.recordSignIn(account.user.id, nowIso());
+      if (!config.readOnly) {
+        await accounts.recordSignIn(account.user.id, nowIso());
+        await claim(account.user.id, account.user.email);
+      }
       const user = {
         sub: account.user.id,
         name: account.user.displayName,

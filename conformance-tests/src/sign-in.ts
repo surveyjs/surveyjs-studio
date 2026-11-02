@@ -153,6 +153,100 @@ async function completeMockOidcLogin(location: URL, userId: string): Promise<URL
   return new URL(callback, target);
 }
 
+/** The person an OAuth stub sign-in enters on the stub's form. */
+export interface StubPerson {
+  readonly sub: string;
+  readonly email: string;
+  readonly name?: string;
+  /** The form's `email_verified` box; checked unless false. */
+  readonly verified?: boolean;
+}
+
+export interface OAuthSignIn {
+  /** The browser's cookies after the callback. */
+  readonly jar: CookieJar;
+  /** The `loginCallback` response. */
+  readonly callback: Response;
+  /** Where the callback redirects: `returnTo` when signed in, else the refused page. */
+  readonly location: URL;
+}
+
+export type StubMethod = "google" | "github" | "facebook" | "surveyjs";
+
+/** A sign-in authorized at the stub: the callback URL the browser is about to open. */
+export interface AuthorizedAtStub {
+  readonly baseUrl: string;
+  readonly jar: CookieJar;
+  readonly callbackUrl: URL;
+}
+
+/**
+ * Signs in with an OAuth2 method against the OAuth stub (`CONFORMANCE_AUTH=oauth`), over HTTP as
+ * a browser would: `login?provider=`, the stub's form posted with `person` (its hidden fields as
+ * the stub filled them), then the callback the stub redirects to.
+ */
+export async function oauthSignIn(
+  baseUrl: string,
+  provider: StubMethod,
+  person: StubPerson,
+): Promise<OAuthSignIn> {
+  return openCallback(await authorizeAtStub(baseUrl, provider, person));
+}
+
+/** `login?provider=` and the stub's form, up to the callback URL (not opened yet). */
+export async function authorizeAtStub(
+  baseUrl: string,
+  provider: StubMethod,
+  person: StubPerson,
+): Promise<AuthorizedAtStub> {
+  const jar = new CookieJar();
+  const query = new URLSearchParams({ provider, returnTo: "/" }).toString();
+  const login = await fetch(`${baseUrl}/api/v1/auth/login?${query}`, { redirect: "manual" });
+  jar.store(login);
+  const authorize = login.headers.get("location");
+  if (login.status !== 302 || authorize === null) {
+    throw new Error(`login answered ${login.status}, not a redirect`);
+  }
+  const page = await fetch(authorize, { redirect: "manual" });
+  const html = page.status === 200 ? await page.text() : "";
+  const action = /<form\b[^>]*\bmethod="post"[^>]*\baction="([^"]*)"/i.exec(html)?.[1];
+  if (action === undefined) throw new Error(`the stub's authorize page answered ${page.status}`);
+  const form = new URLSearchParams();
+  for (const [, name = "", value = ""] of html.matchAll(
+    /<input type="hidden" name="([^"]*)" value="([^"]*)">/g,
+  )) {
+    form.set(decodeEntities(name), decodeEntities(value));
+  }
+  form.set("sub", person.sub);
+  form.set("email", person.email);
+  form.set("name", person.name ?? person.email);
+  if (person.verified ?? true) form.set("email_verified", "on");
+  form.set("allow", "1");
+  const target = new URL(decodeEntities(action), authorize);
+  const posted = await fetch(target, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+  const back = posted.headers.get("location");
+  if (posted.status !== 302 || back === null) {
+    throw new Error(`the stub's form answered ${posted.status}, not a redirect`);
+  }
+  return { baseUrl, jar, callbackUrl: new URL(back, target) };
+}
+
+/** Opens the callback of a sign-in authorized at the stub. */
+export async function openCallback(authorized: AuthorizedAtStub): Promise<OAuthSignIn> {
+  const { baseUrl, jar, callbackUrl } = authorized;
+  const callback = await fetch(callbackUrl, {
+    redirect: "manual",
+    headers: { cookie: jar.header() },
+  });
+  jar.store(callback);
+  return { jar, callback, location: new URL(callback.headers.get("location") ?? "", baseUrl) };
+}
+
 /**
  * Signs in as `userId` and returns the browser state. Throws SignInUnsupportedError when the
  * server's identity provider is not one the driver can complete.

@@ -173,9 +173,23 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
       return db.transaction().execute(async (trx) => {
         const { row, activeAdmins } = await lockForAdminRule(trx, userId);
         if (!row) return { outcome: "not-found" as const };
+        // A password or a linked identity lets the account sign in.
+        const identity =
+          row.password_hash === null && change.status === "active"
+            ? await trx
+                .selectFrom("user_identities")
+                .select("subject")
+                .where("user_id", "=", userId)
+                .limit(1)
+                .executeTakeFirst()
+            : undefined;
         const after = {
           instanceRole: change.instanceRole ?? row.instance_role,
-          status: nextStatus(row.status, change.status, row.password_hash !== null),
+          status: nextStatus(
+            row.status,
+            change.status,
+            row.password_hash !== null || identity !== undefined,
+          ),
         };
         const facts = { instanceRole: row.instance_role, status: row.status };
         if (decideAccountChange(facts, after, activeAdmins) === "last-instance-admin") {

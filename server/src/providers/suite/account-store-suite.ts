@@ -255,6 +255,27 @@ export function describeLocalAccountSuite(
       expect(enabled).toMatchObject({ outcome: "updated", account: { status: "invited" } });
     });
 
+    it("enables an account with a linked identity and no password as active", async () => {
+      const invited = await store.accounts.createAccount(
+        newAccount({ status: "invited", passwordHash: null }),
+      );
+      await store.accounts.linkIdentity({
+        provider: "github",
+        subject: randomUUID(),
+        userId: invited.user.id,
+        email: invited.user.email,
+        emailVerified: true,
+        createdAt: AT,
+      });
+      expect(
+        await store.accounts.updateAccount(invited.user.id, { status: "active" }),
+      ).toMatchObject({ outcome: "updated", account: { status: "active" } });
+      await store.accounts.updateAccount(invited.user.id, { status: "disabled" });
+      expect(
+        await store.accounts.updateAccount(invited.user.id, { status: "active" }),
+      ).toMatchObject({ outcome: "updated", account: { status: "active" } });
+    });
+
     it("never demotes, disables or deletes the last active admin", async () => {
       // A store of its own: the other tests leave active admins behind.
       const own = await create();
