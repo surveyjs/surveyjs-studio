@@ -4,7 +4,9 @@ Date: 2026-10-18
 
 ## Status
 
-Accepted. The product owner has not confirmed R2 (the owner is the creator only, and `ownerId` can be `null`), R3 (the role change is written in place), R8
+Accepted. On a self-hosted instance with local accounts, adding an email nobody has used creates a pending member
+instead of answering `user-not-found` ([ADR 0029](0029-linking-identities-by-verified-email.md)); the hosted service
+still answers as written here. The product owner has not confirmed R2 (the owner is the creator only, and `ownerId` can be `null`), R3 (the role change is written in place), R8
 (the sole member cannot leave), R9 (moved surveys keep their creator, and archived surveys move too), R12 (blocked
 users can be added), R14 (duplicate names), R22 (the new confirmation and error texts and the Leave Project link),
 R23 (the navigation entries) and the hint that an address has no account (US 62); see "To confirm".

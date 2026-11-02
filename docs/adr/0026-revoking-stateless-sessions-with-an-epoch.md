@@ -4,7 +4,8 @@ Date: 2026-10-29
 
 ## Status
 
-Accepted.
+Accepted. The refusal of `AUTH_METHODS` with `surveyjs` on `USER_DIRECTORY=local` (in Consequences) is lifted by
+[ADR 0029](0029-linking-identities-by-verified-email.md): identities are linked to local accounts by verified email.
 
 ## Context
 

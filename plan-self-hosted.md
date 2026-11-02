@@ -54,6 +54,8 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 | 10   | Publishing the sandbox                                        | ☐      |
 | 11   | Developer documentation and open-source readiness             | ☐      |
 
+**Step 8 note (D6, [ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md)):** the tests use one stub on `node:http` for all four providers (`pnpm oauth-stub`) instead of mock-oauth2-server and Compose stubs. It needs no Docker. The Azurite mode keeps its mock-oauth2-server.
+
 **Ordering:**
 
 - Steps 1–3 come first, because the hosted track waits for them.

@@ -81,6 +81,14 @@ port 8080 and a session secret it creates once in `/data/session-secret`. Every 
 
 Branding in detail: [Branding and the licence key](customizing/branding.md).
 
+## Sign in with Google and others
+
+The image signs people in with an email and a password. To add Google, GitHub or Facebook, create an OAuth app at the
+provider, give it the redirect address `<PUBLIC_BASE_URL>/api/v1/auth/callback`, and set `AUTH_METHODS=password,google`
+(and so on) with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Pass the secret by name, never on the command line.
+Who may join (invitations, `SIGN_UP_DOMAINS`, `OPEN_SIGN_UP`) and every provider's steps are in
+[Signing in with Google and others](customizing/sign-in.md).
+
 ## Behind a reverse proxy
 
 Put an https reverse proxy (Caddy, nginx, Traefik, a load balancer) in front of the container, and publish the port to

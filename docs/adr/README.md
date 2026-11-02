@@ -35,3 +35,4 @@ and add each one to this index.
 | [0026](0026-revoking-stateless-sessions-with-an-epoch.md)  | Revoking stateless sessions with an epoch                                       | Accepted |
 | [0027](0027-branding-and-the-licence-key.md)               | Branding and the licence key                                                    | Accepted |
 | [0028](0028-the-self-hosted-image.md)                      | The self-hosted image                                                           | Accepted |
+| [0029](0029-linking-identities-by-verified-email.md)       | Linking identities by verified email                                            | Accepted |

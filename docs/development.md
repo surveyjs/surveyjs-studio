@@ -500,6 +500,26 @@ Open <http://localhost:5173>: the **Sign in** page opens. Sign in as the first a
   ([Managing users](user-guide/managing-users.md)).
 - The same works with `dev:postgres` and `dev:s3`, and with `pnpm demo` (memory: the accounts are lost on restart).
 
+### The OAuth stub
+
+Self-hosted Step 8 ([ADR 0029](adr/0029-linking-identities-by-verified-email.md)). `pnpm oauth-stub [--port 5180]` runs
+one local server that plays Google, GitHub, Facebook and surveyjs.io, so sign-in can be tried and tested without an
+account at any of them. It is TypeScript on `node:http` and `node:crypto` (RS256 ID tokens and a JWKS), needs no Docker,
+and is started in the process by the unit tests, the conformance setup and Playwright.
+
+- **Point the server at it:** `OAUTH_STUB_URL=http://127.0.0.1:5180` for Google, GitHub and Facebook (refused with
+  `NODE_ENV=production`), and `OIDC_ISSUER_URL=http://127.0.0.1:5180/surveyjs` for surveyjs.io.
+- **Secrets:** any client ID; the client secret of each provider is `stub-secret-<provider>`.
+- **The sign-in page** of each provider is a form with `sub`, `email` and `name` and an `email_verified` box
+  (checked), so one person can be several different identities. **Deny** answers as a user who refused.
+- **Settings for a trial** (with `pnpm dev:sqlite` and a `USER_DIRECTORY=local` as in [Password sign-in](#password-sign-in)):
+  `AUTH_METHODS=password,github,google GITHUB_CLIENT_ID=demo-github GITHUB_CLIENT_SECRET=stub-secret-github GOOGLE_CLIENT_ID=demo-google GOOGLE_CLIENT_SECRET=stub-secret-google`.
+  A walkthrough is the [Step 8 demo](demo/self-hosted-08.md).
+- **The oauth modes of the tests:** `pnpm test:conformance:oauth` (`CONFORMANCE_AUTH=oauth`, SQLite, local accounts, all
+  four providers, and a second server with `OPEN_SIGN_UP=on`) and `pnpm e2e:oauth` (Chromium, the stub and the server
+  started by Playwright, ports from `e2e/ports.mjs`). See [Testing](testing.md).
+- The Azurite mode keeps its own mock, [mock-oauth2-server](#signing-in-through-the-mock-oidc-server).
+
 ### Files in S3
 
 `FILE_STORE=s3` keeps the files in an S3-compatible bucket ([ADR 0025](adr/0025-file-storage-for-the-sql-providers.md)).
@@ -829,7 +849,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    `format:check`;
 2. `test:unit`, `test:conformance` (in-memory), `test:conformance:read-only` (in-memory, `READ_ONLY=true`) and
    `test:conformance:sqlite` (a new SQLite file) and `test:conformance:password` (SQLite, local accounts and password
-   sign-in);
+   sign-in) and `test:conformance:oauth` (the same with the OAuth stub);
 3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
    `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
@@ -841,7 +861,8 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`), and `e2e:sqlite`
    (the tsx server, whose SQLite file is on the host; files on local disk; Chromium) and `e2e:postgres` (Chromium,
    every functional spec but the licence notices; files in S3) and `e2e:password` (SQLite, password sign-in on the
-   app's page; Chromium) and `e2e:self-hosted` (SQLite, the self-hosted shell with a brand; Chromium);
+   app's page; Chromium) and `e2e:self-hosted` (SQLite, the self-hosted shell with a brand; Chromium) and `e2e:oauth` (SQLite, GitHub and
+   Google sign-in against the stub; Chromium);
 7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
 8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
 9. `pnpm demo:azurite:down`, `pnpm postgres:down` and `pnpm s3:down`, which always run (`if: always()`).

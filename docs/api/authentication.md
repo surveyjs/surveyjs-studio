@@ -35,8 +35,8 @@ sequenceDiagram
   S-->>B: 302 to returnTo, Set-Cookie msid, msid_csrf
 ```
 
-1. **`GET /auth/login?returnTo=<path>`** checks `returnTo`, creates a sign-in transaction (random
-   `state`, a PKCE verifier and `returnTo`), and seals it into a cookie named after the state,
+1. **`GET /auth/login?returnTo=<path>&provider=<method>`** checks `returnTo`, creates a sign-in transaction (random
+   `state`, a PKCE verifier, `returnTo` and the provider), and seals it into a cookie named after the state,
    `msid_auth_<state key>` (the state key is the first 16 characters of `state`). It answers `302`
    with the identity provider's authorization URL.
 2. The user signs in at the identity provider. On the hosted edition this is `auth.surveyjs.io`.
@@ -51,6 +51,18 @@ sequenceDiagram
    URL is dropped.
 5. The server sets `msid` and `msid_csrf`, clears that transaction cookie, and answers `302` to
    `PUBLIC_BASE_URL + returnTo`.
+
+**`provider`** is optional and is one of the `authMethods` that go to another site: `surveyjs`, `google`, `github`
+or `facebook`. The web app's **Sign in with …** links use it. Without it, `login` redirects as before: to the dev page
+with `IDENTITY_PROVIDER=dev`, to surveyjs.io when `AUTH_METHODS` is exactly `surveyjs`, and otherwise to the app's
+`/sign-in` page. The callback is the same for every provider, `<PUBLIC_BASE_URL>/api/v1/auth/callback`; the
+transaction says which one answered.
+
+With a local user directory the callback does not look the user up by provider id. It follows the order of
+[ADR 0029](../adr/0029-linking-identities-by-verified-email.md): a linked identity, else a verified email that names an
+account, else a new account for an invited email, an allowed domain or `OPEN_SIGN_UP=on`. A refused sign-in is a `302`
+to `PUBLIC_BASE_URL/sign-in/refused?reason=<not-invited|email-unverified|disabled>&provider=<method>`, with no session.
+With `READ_ONLY=true` a sign-in that would write answers `503 read-only`.
 
 A transaction cookie is single use: the callback clears it whatever the outcome. Open `login` again to
 retry. A transaction is valid for 10 minutes. Each sign-in has its own cookie, so sign-ins started in
@@ -283,4 +295,4 @@ The public respondent operations use the same address and their own, higher limi
 | `IDENTITY_PROVIDER=surveyjs-oidc` (default) | Sign in at `OIDC_ISSUER_URL`: `auth.surveyjs.io`, or the local mock OIDC server                                                               |
 | `IDENTITY_PROVIDER=dev`                     | A "Sign in as…" page at `/__dev/sign-in`. Memory storage, self-hosted, development only. See [ADR 0007](../adr/0007-dev-identity-provider.md) |
 
-`GET /config` lists `authMethods`. The values are `surveyjs` (surveyjs.io accounts), `password`, `google`, `github` and `facebook`. `password` needs `USER_DIRECTORY=local` ([Password sign-in](#password-sign-in)). `google`, `github` and `facebook` come with self-hosted Step 8; until then a server configured with one of them refuses to start ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md)). With `password` and no `surveyjs`, the server needs no `OIDC_*` settings.
+`GET /config` lists `authMethods`. The values are `surveyjs` (surveyjs.io accounts), `password`, `google`, `github` and `facebook`. `password` needs `USER_DIRECTORY=local` ([Password sign-in](#password-sign-in)). `google`, `github`, `facebook` and `surveyjs` can also be used with `USER_DIRECTORY=local` ([Signing in with Google and others](../customizing/sign-in.md)); with another directory a server configured with `google`, `github` or `facebook` refuses to start ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md), [ADR 0029](../adr/0029-linking-identities-by-verified-email.md)). With `password` and no `surveyjs`, the server needs no `OIDC_*` settings.

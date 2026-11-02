@@ -327,12 +327,12 @@ production data, which are for the product owner only. [Running the app](running
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
 
-### Modes 2b and 3: coming with the self-hosted track
+### Modes 2b and 3: the self-hosted track
 
 The free Docker image (2b) and custom development (3) are built by the self-hosted track
 ([spec](../spec-self-hosted.md), [plan](../plan-self-hosted.md)). Step 12 defined their account settings; the
-track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and its Step 8 adds `google`, `github`,
-`facebook` and `surveyjs` as sign-in methods for it:
+track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and its Step 8 added `google`, `github`,
+`facebook` and `surveyjs` as sign-in methods for it ([Signing in with Google and others](customizing/sign-in.md)):
 
 | Variable         | Mode 2b       | Mode 3                                                           |
 | ---------------- | ------------- | ---------------------------------------------------------------- |
@@ -416,6 +416,9 @@ what the licence key does, is in [Branding and the licence key](customizing/bran
 `USER_DIRECTORY=local` (self-hosted) keeps the instance's own accounts: on `sqlite` and `postgres` in the `users` table,
 backed up with the database. With `AUTH_METHODS=password` users sign in with an email and a password on the app's own
 `/sign-in` page, and no `OIDC_*` setting is needed ([ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md)).
+Add `google`, `github`, `facebook` or `surveyjs` to `AUTH_METHODS` for a button each. All of them use one redirect
+address, `<PUBLIC_BASE_URL>/api/v1/auth/callback`; who may join is set by invitations, `SIGN_UP_DOMAINS` and
+`OPEN_SIGN_UP` ([ADR 0029](adr/0029-linking-identities-by-verified-email.md)).
 
 ```text
 STORAGE_PROVIDER=postgres              # or sqlite
