@@ -1,5 +1,6 @@
 # SurveyJS Studio, self-hosted, with SQLite: one container, one volume.
 # Copy .env.example to .env, fill it in, then run: docker compose -f compose.sqlite.yml up -d
+# Its own project name (compose.postgres.yml has another): the two examples never share a volume.
 name: surveyjs-studio
 services:
   app:
