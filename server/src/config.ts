@@ -43,8 +43,27 @@ export type AuthMethod = (typeof AUTH_METHODS)[number];
 export const USER_DIRECTORIES = ["memory", "surveyjs-sql", "surveyjs-api", "local"] as const;
 export type UserDirectorySetting = (typeof USER_DIRECTORIES)[number];
 
-/** OAuth2 sign-in methods, which the self-hosted track builds in its Step 8. */
-const LATER_METHODS: readonly string[] = ["google", "github", "facebook"];
+/** The sign-in methods that go through an external provider (everything but a local password). */
+export type ExternalMethod = Exclude<AuthMethod, "password">;
+export const EXTERNAL_METHODS: readonly ExternalMethod[] = [
+  "surveyjs",
+  "google",
+  "github",
+  "facebook",
+];
+
+/** The OAuth2 client of Google, GitHub or Facebook (`<METHOD>_CLIENT_ID`, `<METHOD>_CLIENT_SECRET`). */
+export interface OAuthClient {
+  readonly clientId: string;
+  /** Secret: never log or echo. */
+  readonly clientSecret: string;
+}
+
+/** The methods that have their own `<METHOD>_CLIENT_*` settings. */
+const CLIENT_METHODS = ["google", "github", "facebook"] as const;
+
+/** A host name with at least one dot and a letter-only top-level label; no `@`, no wildcard. */
+const SIGN_UP_DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 /** The first admin of an empty local directory (`ADMIN_EMAIL`, `ADMIN_PASSWORD`). Secret: the password. */
 export interface BootstrapAdmin {
@@ -92,6 +111,21 @@ export interface AppConfig {
   readonly edition: "hosted" | "self-hosted";
   readonly shell: string;
   readonly authMethods: readonly AuthMethod[];
+  /** The client of each OAuth2 method; null unless the method is in `AUTH_METHODS`. */
+  readonly oauthClients: {
+    readonly google: OAuthClient | null;
+    readonly github: OAuthClient | null;
+    readonly facebook: OAuthClient | null;
+  };
+  /** Who may create an account by signing in (local directory only). */
+  readonly joinPolicy: {
+    /** `SIGN_UP_DOMAINS`: lower-cased, each once, in order. */
+    readonly signUpDomains: readonly string[];
+    /** `OPEN_SIGN_UP=on`. */
+    readonly openSignUp: boolean;
+  };
+  /** `OAUTH_STUB_URL` without a trailing slash (development and tests); null for the real providers. */
+  readonly oauthStubUrl: string | null;
   readonly surveyjsLicenseKey: string | null;
   readonly branding: BrandingConfig;
   readonly features: FeaturesConfig;
@@ -329,6 +363,15 @@ const envSchema = z.object({
   OIDC_DISCOVERY: z.enum(OIDC_DISCOVERY).default("oauth-authorization-server"),
   // Default by OIDC_DISCOVERY: auth.surveyjs.io advertises only profile and email.
   OIDC_SCOPES: z.string().min(1).optional(),
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  GITHUB_CLIENT_ID: z.string().min(1).optional(),
+  GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
+  FACEBOOK_CLIENT_ID: z.string().min(1).optional(),
+  FACEBOOK_CLIENT_SECRET: z.string().min(1).optional(),
+  SIGN_UP_DOMAINS: z.string().optional(),
+  OPEN_SIGN_UP: z.enum(["on", "off"], { error: "must be on or off" }).default("off"),
+  OAUTH_STUB_URL: httpUrl.optional(),
   SIGN_IN_RATE_LIMIT: positiveInt.default(30),
   TRUST_PROXY: trustProxy.default([]),
   PUBLIC_RATE_LIMIT: positiveInt.default(60),
@@ -399,6 +442,37 @@ function csvItems(value: string | undefined): string[] {
   ];
 }
 
+/** `SIGN_UP_DOMAINS`, `OPEN_SIGN_UP` and `OAUTH_STUB_URL`. Messages never carry a secret. */
+function joinPolicyProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const local = env.USER_DIRECTORY === "local";
+  const domains = csvItems(env.SIGN_UP_DOMAINS);
+  if (domains.length > 0 && !local) problems.push("SIGN_UP_DOMAINS: requires USER_DIRECTORY=local");
+  for (const item of domains) {
+    if (!SIGN_UP_DOMAIN.test(item.toLowerCase())) {
+      problems.push(`SIGN_UP_DOMAINS: "${item}" is not a domain`);
+    }
+  }
+  if (env.OPEN_SIGN_UP === "on") {
+    if (!local) problems.push("OPEN_SIGN_UP: requires USER_DIRECTORY=local");
+    const methods = csvItems(env.AUTH_METHODS ?? "surveyjs");
+    if (!methods.some((m) => (EXTERNAL_METHODS as readonly string[]).includes(m))) {
+      problems.push("OPEN_SIGN_UP: on requires an OAuth2 method in AUTH_METHODS");
+    }
+  }
+  const stub = env.OAUTH_STUB_URL;
+  if (stub !== undefined) {
+    if (env.NODE_ENV === "production") {
+      problems.push("OAUTH_STUB_URL: not allowed in production");
+    } else if (URL.canParse(stub) && new URL(stub).protocol === "http:" && !isLoopback(stub)) {
+      problems.push(
+        "OAUTH_STUB_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+      );
+    }
+  }
+  return problems;
+}
+
 /**
  * R8: the user directory, the sign-in methods and the account settings. Runs for every caller (the
  * CLIs need a working directory too). A default USER_DIRECTORY always fits its storage provider, so
@@ -437,21 +511,19 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
     if (method === "password" && directory !== "local") {
       problems.push("AUTH_METHODS: password requires USER_DIRECTORY=local");
     }
-    if (LATER_METHODS.includes(method)) {
-      problems.push(`AUTH_METHODS: ${method} is not available yet (self-hosted track Step 8)`);
+    if ((CLIENT_METHODS as readonly string[]).includes(method)) {
+      if (directory !== "local") {
+        problems.push(`AUTH_METHODS: ${method} requires USER_DIRECTORY=local`);
+      }
+      const prefix = method.toUpperCase();
+      for (const name of [`${prefix}_CLIENT_ID`, `${prefix}_CLIENT_SECRET`]) {
+        if (env[name] === undefined) {
+          problems.push(`${name}: required when AUTH_METHODS includes ${method}`);
+        }
+      }
     }
   }
-  // A surveyjs.io identity has no local account to sign in to until identities are linked (Step 8):
-  // every request of its session would be refused. The dev sign-in's users are local accounts.
-  if (
-    directory === "local" &&
-    csvItems(env.AUTH_METHODS ?? "surveyjs").includes("surveyjs") &&
-    env.IDENTITY_PROVIDER !== "dev"
-  ) {
-    problems.push(
-      "AUTH_METHODS: surveyjs with USER_DIRECTORY=local is not available yet (self-hosted track Step 8): use AUTH_METHODS=password",
-    );
-  }
+  problems.push(...joinPolicyProblems(env));
   problems.push(...bootstrapProblems(env));
   const effective = directory ?? (storage === "azure-legacy" ? "surveyjs-sql" : "memory");
   if (
@@ -656,6 +728,23 @@ function identityProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** The client of each OAuth2 method that `AUTH_METHODS` lists (its settings are checked already). */
+function oauthClientsOf(e: z.infer<typeof envSchema>): AppConfig["oauthClients"] {
+  const client = (method: (typeof CLIENT_METHODS)[number]): OAuthClient | null => {
+    const prefix = method.toUpperCase() as Uppercase<typeof method>;
+    const clientId = e[`${prefix}_CLIENT_ID`];
+    const clientSecret = e[`${prefix}_CLIENT_SECRET`];
+    return e.AUTH_METHODS.includes(method) && clientId !== undefined && clientSecret !== undefined
+      ? Object.freeze({ clientId, clientSecret })
+      : null;
+  };
+  return Object.freeze({
+    google: client("google"),
+    github: client("github"),
+    facebook: client("facebook"),
+  });
+}
+
 /** Where the SQL providers keep their data; null for the other providers. */
 function databaseOf(e: z.infer<typeof envSchema>): DatabaseTarget | null {
   if (e.STORAGE_PROVIDER === "sqlite") {
@@ -731,6 +820,12 @@ export function loadConfig(
     edition: e.APP_EDITION,
     shell: e.APP_SHELL,
     authMethods: Object.freeze([...e.AUTH_METHODS]),
+    oauthClients: oauthClientsOf(e),
+    joinPolicy: Object.freeze({
+      signUpDomains: Object.freeze(csvItems(e.SIGN_UP_DOMAINS?.toLowerCase())),
+      openSignUp: e.OPEN_SIGN_UP === "on",
+    }),
+    oauthStubUrl: e.OAUTH_STUB_URL?.replace(/\/+$/, "") ?? null,
     surveyjsLicenseKey:
       e.SURVEYJS_LICENSE_KEY?.trim() || e.SURVEYJS_IMAGE_LICENSE_KEY?.trim() || null,
     branding: Object.freeze({

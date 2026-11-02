@@ -9,8 +9,6 @@ const oidc = {
   OIDC_CLIENT_ID: "client-1",
   OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
 };
-const SURVEYJS_WITH_LOCAL =
-  "AUTH_METHODS: surveyjs with USER_DIRECTORY=local is not available yet (self-hosted track Step 8): use AUTH_METHODS=password";
 const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
 const WEBHOOK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
 const api = {
@@ -83,6 +81,9 @@ describe("loadConfig", () => {
       accountWebhookSecret: null,
       shellLinks: {},
       webRoot: null,
+      oauthClients: { google: null, github: null, facebook: null },
+      joinPolicy: { signUpDomains: [], openSignUp: false },
+      oauthStubUrl: null,
       readOnly: false,
       requestTimeoutMs: 300_000,
     });
@@ -885,11 +886,63 @@ describe("loadConfig", () => {
         "USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
       [{ AUTH_METHODS: "password" }, "AUTH_METHODS: password requires USER_DIRECTORY=local"],
-      [{ USER_DIRECTORY: "local" }, SURVEYJS_WITH_LOCAL],
-      [{ USER_DIRECTORY: "local", AUTH_METHODS: "password,surveyjs" }, SURVEYJS_WITH_LOCAL],
+      [{ AUTH_METHODS: "google" }, "AUTH_METHODS: google requires USER_DIRECTORY=local"],
+      [{ AUTH_METHODS: "github" }, "AUTH_METHODS: github requires USER_DIRECTORY=local"],
+      [{ AUTH_METHODS: "facebook" }, "AUTH_METHODS: facebook requires USER_DIRECTORY=local"],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "google" },
+        "GOOGLE_CLIENT_ID: required when AUTH_METHODS includes google",
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "google" },
+        "GOOGLE_CLIENT_SECRET: required when AUTH_METHODS includes google",
+      ],
       [
         { USER_DIRECTORY: "local", AUTH_METHODS: "github" },
-        "AUTH_METHODS: github is not available yet (self-hosted track Step 8)",
+        "GITHUB_CLIENT_ID: required when AUTH_METHODS includes github",
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "github" },
+        "GITHUB_CLIENT_SECRET: required when AUTH_METHODS includes github",
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "facebook" },
+        "FACEBOOK_CLIENT_ID: required when AUTH_METHODS includes facebook",
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "facebook" },
+        "FACEBOOK_CLIENT_SECRET: required when AUTH_METHODS includes facebook",
+      ],
+      [{ SIGN_UP_DOMAINS: "example.com" }, "SIGN_UP_DOMAINS: requires USER_DIRECTORY=local"],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "password", SIGN_UP_DOMAINS: "a@example.com" },
+        'SIGN_UP_DOMAINS: "a@example.com" is not a domain',
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "password", SIGN_UP_DOMAINS: "*.example.com" },
+        'SIGN_UP_DOMAINS: "*.example.com" is not a domain',
+      ],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "password", SIGN_UP_DOMAINS: "localhost" },
+        'SIGN_UP_DOMAINS: "localhost" is not a domain',
+      ],
+      [{ OPEN_SIGN_UP: "on" }, "OPEN_SIGN_UP: requires USER_DIRECTORY=local"],
+      [
+        { USER_DIRECTORY: "local", AUTH_METHODS: "password", OPEN_SIGN_UP: "on" },
+        "OPEN_SIGN_UP: on requires an OAuth2 method in AUTH_METHODS",
+      ],
+      [
+        {
+          NODE_ENV: "production",
+          PUBLIC_BASE_URL: "https://s.example.com",
+          SESSION_SECRET,
+          OAUTH_STUB_URL: "https://stub.example.com",
+        },
+        "OAUTH_STUB_URL: not allowed in production",
+      ],
+      [
+        { OAUTH_STUB_URL: "http://stub.example.com" },
+        "OAUTH_STUB_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
       [
         { ACCOUNT_WEBHOOK_SECRET: "whsec_short-Secret-Value-99" },
@@ -912,10 +965,98 @@ describe("loadConfig", () => {
       );
       expect(message).toContain("  - AUTH_METHODS: password requires USER_DIRECTORY=local");
       for (const method of ["github", "facebook", "google"]) {
-        expect(message).toContain(
-          `  - AUTH_METHODS: ${method} is not available yet (self-hosted track Step 8)`,
-        );
+        expect(message).toContain(`  - AUTH_METHODS: ${method} requires USER_DIRECTORY=local`);
       }
+    });
+
+    describe("sign-in settings", () => {
+      const local = { USER_DIRECTORY: "local" };
+      const github = { GITHUB_CLIENT_ID: "gh-id-1", GITHUB_CLIENT_SECRET: "gh-Secret-Value-42" };
+
+      it("accepts surveyjs with a local directory and the OIDC settings", () => {
+        const config = load({ ...oidc, IDENTITY_PROVIDER: "surveyjs-oidc", ...local });
+        expect(config.userDirectory).toBe("local");
+        expect(config.oidc).not.toBeNull();
+      });
+
+      it("still requires the OIDC settings for surveyjs with a local directory", () => {
+        const message = messageOf(() => load({ IDENTITY_PROVIDER: "surveyjs-oidc", ...local }));
+        expect(message).toContain("OIDC_CLIENT_ID: required");
+      });
+
+      it("sets only the clients of the listed methods", () => {
+        const config = loadConfig({ ...local, AUTH_METHODS: "password,github", ...github });
+        expect(config.oauthClients).toEqual({
+          google: null,
+          github: { clientId: "gh-id-1", clientSecret: "gh-Secret-Value-42" },
+          facebook: null,
+        });
+      });
+
+      it("ignores credentials of a method that is not listed", () => {
+        const config = loadConfig({ ...local, AUTH_METHODS: "password", ...github });
+        expect(config.oauthClients.github).toBeNull();
+      });
+
+      it("lower-cases and deduplicates SIGN_UP_DOMAINS, in order", () => {
+        const config = loadConfig({
+          ...local,
+          AUTH_METHODS: "password",
+          SIGN_UP_DOMAINS: " Example.COM ,example.com,acme.org",
+        });
+        expect(config.joinPolicy).toEqual({
+          signUpDomains: ["example.com", "acme.org"],
+          openSignUp: false,
+        });
+      });
+
+      it("turns open sign-up on with an OAuth2 method", () => {
+        const config = loadConfig({
+          ...local,
+          AUTH_METHODS: "password,github",
+          ...github,
+          OPEN_SIGN_UP: "on",
+        });
+        expect(config.joinPolicy.openSignUp).toBe(true);
+      });
+
+      it("accepts an OAuth stub URL on loopback and drops the trailing slash", () => {
+        expect(loadConfig({ OAUTH_STUB_URL: "http://127.0.0.1:4020/" }).oauthStubUrl).toBe(
+          "http://127.0.0.1:4020",
+        );
+        expect(loadConfig({ OAUTH_STUB_URL: "https://stub.example.com" }).oauthStubUrl).toBe(
+          "https://stub.example.com",
+        );
+      });
+
+      it("accepts the hosted example settings with none of the new ones", () => {
+        const config = load({
+          PUBLIC_BASE_URL: "https://studio.surveyjs.io",
+          SESSION_SECRET,
+          APP_EDITION: "hosted",
+          STORAGE_PROVIDER: "azure-legacy",
+          LEGACY_SQL_CONNECTION_STRING: "Server=sql.example.test;Password=dummy-Sql-Value-1",
+          LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+          LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+          OIDC_ISSUER_URL: "https://auth.surveyjs.io",
+          OIDC_CLIENT_ID: "client-1",
+          OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
+          ACCOUNT_NOTICES: "surveyjs-licenses",
+          SURVEYJS_LICENSE_KEY: "key-1",
+          TRUST_PROXY: "172.30.0.0/24",
+          READ_ONLY: "true",
+        });
+        expect(config.oauthClients).toEqual({ google: null, github: null, facebook: null });
+        expect(config.joinPolicy).toEqual({ signUpDomains: [], openSignUp: false });
+        expect(config.oauthStubUrl).toBeNull();
+      });
+
+      it("never puts a client secret in a configuration error", () => {
+        const message = messageOf(() =>
+          loadConfig({ AUTH_METHODS: "github", ...github, OPEN_SIGN_UP: "on" }),
+        );
+        expect(message).not.toContain("gh-Secret-Value-42");
+      });
     });
 
     it("refuses the demo combination on azure-legacy settings with one line", () => {
