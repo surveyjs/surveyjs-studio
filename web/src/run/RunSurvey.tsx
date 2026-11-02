@@ -52,7 +52,8 @@ function createModel({
   }
   const model = new Model(forRunPage(survey.definition, cookieName));
   if (Object.keys(survey.theme).length > 0) model.applyTheme(survey.theme as ITheme);
-  // As surveyjs.io's run page: no jump to the first question, and the library's brand footer.
+  // As surveyjs.io's run page: no jump to the first question. The library's brand block shows only
+  // for brandInfo "library"; "bundled" adds the app's own block below.
   model.focusFirstQuestionAutomatic = false;
   model.showBrandInfo = brandInfo === "library";
   if (brandInfo === "bundled") {

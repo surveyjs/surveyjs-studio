@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previousRelease, releaseTags } from "./release-tags.js";
+import { previousRelease, previousReleases, releaseTags } from "./release-tags.js";
 
 describe("releaseTags", () => {
   it("moves the minor line and latest for a release", () => {
@@ -41,5 +41,31 @@ describe("previousRelease", () => {
 
   it("ignores tags that are not releases", () => {
     expect(previousRelease(["1.5.0", "v1.4", "latest", "v1.0.0"], "v2.0.0")).toBe("v1.0.0");
+  });
+});
+
+describe("previousReleases", () => {
+  it("lists every release below the current one, highest first, without pre-releases", () => {
+    expect(
+      previousReleases(
+        ["v1.0.0", "v1.10.0", "v1.2.0", "v1.1.1-rc.1", "v2.0.0", "v3.0.0"],
+        "v2.0.0",
+      ),
+    ).toEqual(["v1.10.0", "v1.2.0", "v1.0.0"]);
+  });
+
+  it("is empty for the first release", () => {
+    expect(previousReleases(["v1.0.0"], "v1.0.0")).toEqual([]);
+  });
+
+  it("lists the releases below a pre-release of the next one", () => {
+    expect(previousReleases(["v1.0.0", "v1.1.0", "v2.0.0-rc.1"], "v2.0.0-rc.1")).toEqual([
+      "v1.1.0",
+      "v1.0.0",
+    ]);
+  });
+
+  it("ignores tags that are not releases", () => {
+    expect(previousReleases(["1.5.0", "v1.4", "latest", "v1.0.0"], "v2.0.0")).toEqual(["v1.0.0"]);
   });
 });

@@ -123,7 +123,7 @@ git tag v1.2.3 <commit> && git push origin v1.2.3
 The push starts `.github/workflows/release.yml`:
 
 1. **`tags`**: the image tags (`scripts/release-tags`): `v1.2.3`, `v1.2` and `latest`; a pre-release gets only its own
-   tag. Any other `v*` tag fails the run here. It also finds the previous release among the git tags.
+   tag. Any other `v*` tag fails the run here. It also finds the previous release: the highest earlier release that has an image in `RELEASE_IMAGE`.
 2. **`checks`**: `.github/workflows/self-hosted-image.yml`, as in CI: the amd64 image, the image checks (with the upgrade
    from the previous release, pulled from `RELEASE_IMAGE`) and the e2e suites on the image.
 3. **`publish`**: builds linux/amd64 and linux/arm64 with an SBOM and provenance, and pushes every tag to
@@ -145,6 +145,11 @@ release by hand: on GitHub, open the package, find the version that carries the 
 `docker buildx imagetools create --tag <RELEASE_IMAGE>:latest <RELEASE_IMAGE>:<previous tag>` (the same for `vX.Y`).
 Fix the problem and release a new patch version; never push a tag `vX.Y.Z` twice. This is safe while the package is a
 private test package with no users (ADR 0028).
+
+A release whose `checks` job fails pushes nothing, and a deleted release has no image either. Both leave a git tag
+without an image. The next release skips it: its `tags` job takes the highest earlier release that
+`docker buildx imagetools inspect` finds in `RELEASE_IMAGE`, and the upgrade check is skipped when none is found.
+When `checks` fails before the push, fix the problem and push a new version tag; never push the same tag again.
 
 ## Monitoring
 

@@ -1,11 +1,12 @@
 // The release workflow's tags.
 //   tsx scripts/release-tags/cli.ts <git ref>        the image tags, one per line; exit 1 for a ref
 //                                                     that is not a release tag (vX.Y.Z or vX.Y.Z-pre)
-//   tsx scripts/release-tags/cli.ts --previous <tag> the highest release below <tag> among the
-//                                                     repository's git tags; prints nothing for none
+//   tsx scripts/release-tags/cli.ts --previous <tag> the releases below <tag> among the repository's
+//                                                     git tags, highest first, one per line; prints
+//                                                     nothing for none
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
-import { previousRelease, releaseTags } from "./release-tags.js";
+import { previousReleases, releaseTags } from "./release-tags.js";
 
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== "--"),
@@ -17,8 +18,7 @@ if (values.previous !== undefined) {
   const tags = execFileSync("git", ["tag", "--list", "v*"], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean);
-  const previous = previousRelease(tags, values.previous);
-  if (previous !== null) console.log(previous);
+  for (const tag of previousReleases(tags, values.previous)) console.log(tag);
   process.exit(0);
 }
 

@@ -24,6 +24,10 @@ jobs:
   tags:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # packages: read finds which earlier release is in the registry (below).
+    permissions:
+      contents: read
+      packages: read
     outputs:
       version: ${{ steps.tags.outputs.version }}
       tags: ${{ steps.tags.outputs.tags }}
@@ -45,11 +49,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # The highest earlier release that has an image: a git tag whose release failed before the
+      # push, or whose image was deleted by hand, has none and is skipped.
       - name: The image tags and the previous release
         id: tags
         run: |
           tags="$(pnpm --silent release:tags "$GITHUB_REF")"
-          previous="$(pnpm --silent release:tags --previous "$GITHUB_REF_NAME")"
+          previous=""
+          while IFS= read -r candidate; do
+            [ -n "$candidate" ] || continue
+            if docker buildx imagetools inspect "$RELEASE_IMAGE:$candidate" > /dev/null 2>&1; then
+              previous="$candidate"
+              break
+            fi
+            echo "No image for $candidate: skipped"
+          done < <(pnpm --silent release:tags --previous "$GITHUB_REF_NAME")
           {
             echo "version=$GITHUB_REF_NAME"
             echo "tags<<EOF"
@@ -62,6 +81,10 @@ jobs:
             echo
             echo "Previous release: ${previous:-none (the upgrade check is skipped)}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
 
   checks:
     needs: tags
@@ -87,7 +110,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # The emulator image by digest (tonistiigi/binfmt qemu-v10.2.3), not the action's moving default.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -129,7 +155,7 @@ jobs:
         run: |
           docker run -d --name release-smoke-arm64 --platform linux/arm64 -p 127.0.0.1:8080:8080 "$RELEASE_IMAGE@$DIGEST"
           for _ in $(seq 1 90); do
-            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/healthz)" = "200" ]; then
+            if [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/healthz)" = "200" ]; then
               echo "The arm64 image answers /healthz" >> "$GITHUB_STEP_SUMMARY"
               docker rm -f release-smoke-arm64 > /dev/null
               exit 0

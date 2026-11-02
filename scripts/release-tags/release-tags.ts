@@ -34,18 +34,23 @@ export function releaseTags(ref: string): string[] | null {
 }
 
 /**
- * The highest release (`vX.Y.Z`, no pre-release) below `current`, or null when there is none.
- * A pre-release of a version counts as below that version.
+ * The releases (`vX.Y.Z`, no pre-release) below `current`, highest first. A pre-release of a
+ * version counts as below that version.
  */
-export function previousRelease(tags: string[], current: string): string | null {
+export function previousReleases(tags: string[], current: string): string[] {
   const now = parse(current);
-  if (!now) return null;
-  let best: { tag: string; version: Version } | null = null;
+  if (!now) return [];
+  const found: { tag: string; version: Version }[] = [];
   for (const tag of tags) {
     const version = parse(tag);
     if (!version || version.preRelease !== undefined) continue;
     if (compare(version, now) >= 0) continue;
-    if (best === null || compare(version, best.version) > 0) best = { tag, version };
+    found.push({ tag, version });
   }
-  return best?.tag ?? null;
+  return found.sort((a, b) => compare(b.version, a.version)).map((entry) => entry.tag);
+}
+
+/** The highest release below `current`, or null when there is none. */
+export function previousRelease(tags: string[], current: string): string | null {
+  return previousReleases(tags, current)[0] ?? null;
 }
