@@ -44,7 +44,10 @@ export interface paths {
          *     `SIGN_UP_DOMAINS` or `OPEN_SIGN_UP=on`. The email's pending project invitations
          *     become memberships. Otherwise the redirect goes to
          *     `/sign-in/refused?reason=<reason>&provider=<method>` with no session; the
-         *     reasons are `not-invited`, `email-unverified` and `disabled`.
+         *     reasons are `not-invited`, `email-unverified` and `disabled`. While
+         *     `READ_ONLY=true` only an identity already linked to an active account signs in;
+         *     a sign-in that would link an identity, create an account or activate an invited
+         *     one answers `503 read-only`.
          */
         get: operations["loginCallback"];
         put?: never;
@@ -1809,6 +1812,15 @@ export interface operations {
                 };
             };
             429: components["responses"]["TooManyRequests"];
+            /** @description `READ_ONLY=true` and the sign-in would write (`read-only`): link an identity, create an account or activate an invited one. No session is created. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     logout: {

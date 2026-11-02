@@ -150,6 +150,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
           invitations,
           policy: config.joinPolicy,
           now: nowIso,
+          readOnly: config.readOnly,
         });
         if (!result.ok) {
           // Never the email or the subject (D8).

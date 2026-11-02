@@ -18,7 +18,11 @@ export function refusedWhenReadOnly(op: { method: string; operationId: string })
 
 export const READ_ONLY_TITLE = "My Surveys is read-only at the moment. Changes cannot be saved.";
 
+/** The `503 read-only` refusal of a write while `READ_ONLY=true`. */
+export const readOnlyError = (): AppError =>
+  new AppError({ code: "read-only", status: 503, title: READ_ONLY_TITLE });
+
 /** The `onRequest` hook of a refused operation: answers `503 read-only` before anything else runs. */
 export const refuseReadOnly: onRequestAsyncHookHandler = async () => {
-  throw new AppError({ code: "read-only", status: 503, title: READ_ONLY_TITLE });
+  throw readOnlyError();
 };

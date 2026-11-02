@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig, ExternalMethod } from "../config.js";
 import type { InvitationStore, LocalAccount, LocalAccountStore } from "../providers/types.js";
+import { readOnlyError } from "../read-only.js";
 import type { IdentityClaims } from "./identity.js";
 import { decideJoin, type JoinRefusal } from "./join-policy.js";
 
@@ -18,6 +19,11 @@ export interface ExternalSignInDeps {
   /** ISO 8601 UTC. */
   readonly now: () => string;
   readonly newId?: () => string;
+  /**
+   * `READ_ONLY=true`: nothing is written. A linked identity of an active account still signs in;
+   * linking, creating an account or activating an invited one throws `503 read-only`.
+   */
+  readonly readOnly?: boolean;
 }
 
 /** Another sign-in of the same identity or email won a write: look again from step (1). */
@@ -32,6 +38,8 @@ const refused = (reason: SignInRefusal): ExternalSignIn => ({ ok: false, reason 
  * A disabled account is refused at (1) and (2); an invited one becomes active when linked. A
  * first sign-in, linking or creating, needs a verified email.
  *
+ * With `readOnly`, the steps that would write throw `503 read-only` before touching the stores.
+ *
  * Two first sign-ins of the same identity at once: the store refuses the second link or the second
  * account with the email, and that sign-in starts over once, so it finds the other's account.
  */
@@ -42,11 +50,13 @@ export async function resolveExternalSignIn(
 ): Promise<ExternalSignIn> {
   const { accounts, invitations, policy, now } = deps;
   const newId = deps.newId ?? randomUUID;
+  const readOnly = deps.readOnly === true;
 
   /** Signs in to `account`, unless it is disabled; an invited one becomes active. */
   const signInTo = async (account: LocalAccount, created: boolean): Promise<ExternalSignIn> => {
     if (account.status === "disabled") return refused("disabled");
     if (account.status === "invited") {
+      if (readOnly) throw readOnlyError();
       // Its identity can sign it in now, so enabling it makes it active (nextStatus).
       const update = await accounts.updateAccount(account.user.id, { status: "active" });
       if (update.outcome === "updated") account = update.account;
@@ -80,6 +90,7 @@ export async function resolveExternalSignIn(
     const existing = await accounts.accountByEmail(email);
     if (existing) {
       if (existing.status === "disabled") return refused("disabled");
+      if (readOnly) throw readOnlyError();
       if ((await link(existing.user.id, email)) === "taken") return (await known()) ?? LOST_RACE;
       return signInTo(existing, false);
     }
@@ -89,6 +100,7 @@ export async function resolveExternalSignIn(
       policy,
     );
     if (!decision.join) return refused(decision.reason);
+    if (readOnly) throw readOnlyError();
     let created: LocalAccount;
     try {
       created = await accounts.createAccount({

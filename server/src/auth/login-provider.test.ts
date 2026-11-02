@@ -272,4 +272,34 @@ describe("the callback with the local directory", () => {
     expect(await projects.getUserProject(alice?.user.id ?? "", projectId)).not.toBeNull();
     expect(await invitations.hasInvitation("alice@example.com")).toBe(false);
   });
+
+  it("READ_ONLY=true: a linked identity signs in; linking answers 503 read-only, no session", async () => {
+    const { server, providers } = await start({
+      AUTH_METHODS: "password,github",
+      READ_ONLY: "true",
+    });
+    const accounts = providers.accounts;
+    if (!accounts) throw new Error("no local accounts");
+    const linked = await accounts.createAccount(newAccount("fay@example.com"));
+    await accounts.linkIdentity({
+      provider: "github",
+      subject: "12",
+      userId: linked.user.id,
+      email: "fay@example.com",
+      emailVerified: true,
+      createdAt: CREATED_AT,
+    });
+    const signedIn = await signInWithGithub(server, { sub: "12", email: "fay@example.com" });
+    expect(signedIn.statusCode).toBe(302);
+    expect(cookieValue(signedIn, "msid")).toBeTruthy();
+    expect((await accounts.account(linked.user.id))?.lastSignInAt).toBeNull();
+
+    const other = await accounts.createAccount(newAccount("gus@example.com"));
+    const refused = await signInWithGithub(server, { sub: "13", email: "gus@example.com" });
+    expect(refused.statusCode).toBe(503);
+    expect(refused.json()).toMatchObject({ code: "read-only" });
+    expect(cookieValue(refused, "msid")).toBeUndefined();
+    expect(await accounts.accountByIdentity("github", "13")).toBeNull();
+    expect((await accounts.account(other.user.id))?.status).toBe("active");
+  });
 });

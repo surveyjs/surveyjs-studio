@@ -214,6 +214,9 @@ that restarts.
 sign-out keep working. The web app shows that sentence in a banner on every page, and the editor opens read-only.
 Change the setting and [re-create the container](#running-the-image) to switch.
 
+- **Sign-in with Google, GitHub, Facebook or surveyjs.io** works only for an identity already linked to an active
+  account. A sign-in that would link an identity, create an account or activate an invited one answers `503`
+  `read-only`.
 - **Refused:** every operation that is not a `GET`, except `logout` and `passwordLogin`. Today that is the survey,
   project and member writes, the definition and theme saves, the uploads, Delete Results, the saved layouts, the
   respondent's submit and file upload, and the account-deleted webhook. A write operation added later is refused too
