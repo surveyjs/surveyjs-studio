@@ -57,11 +57,11 @@ directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployme
     - Delete Results;
     - Grant Access, with the public page at `/results/{id}`.
   - **History page**, and the **Projects page**: create, rename and delete projects; add, remove and change members; leave a project.
-- **Every contract operation.** Only `passwordLogin` answers `501 Not Implemented`; password sign-in arrives with the self-hosted track.
+- **Every contract operation.** `passwordLogin` answers `501 Not Implemented` only where password sign-in is off: the hosted service. Self-hosted instances with passwords sign in with it.
 - **Two storage providers:**
   - in memory, for development and tests;
   - `azure-legacy`, which reads and writes the current surveyjs.io stores in their own formats, so the old pages and `api.surveyjs.io` keep working on the same data.
-- **Sign-in** through surveyjs.io (OAuth 2.0), or through a development sign-in page with seed users.
+- **Sign-in** through surveyjs.io (OAuth 2.0); on self-hosted instances also with an email and a password, Google, GitHub and Facebook ([Signing in with Google and others](docs/customizing/sign-in.md)); and through a development sign-in page with seed users.
 - **Accounts and data protection:**
   - users come from a user directory chosen by configuration: the surveyjs.io SQL `Users` table, or the surveyjs.io user API that [docs/integrations/surveyjs-user-api.md](docs/integrations/surveyjs-user-api.md) specifies;
   - a deleted surveyjs.io account erases its data: through a signed webhook, the `pnpm account:erase` command, or a reconciliation check;

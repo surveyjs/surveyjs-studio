@@ -1912,10 +1912,12 @@ components:
         status:
           type: string
           enum: [invited, active, disabled]
-          description: '`invited` until the user sets a password with their link.'
+          description: >-
+            `invited` until the user sets a password with their link, or an OAuth2 sign-in
+            links an identity to the account.
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         lastSignInAt:
-          description: The last password sign-in; `null` before the first.
+          description: The last sign-in, with a password or an OAuth2 method; `null` before the first.
           oneOf:
             - { $ref: '#/components/schemas/Timestamp' }
             - { type: 'null' }

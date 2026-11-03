@@ -78,12 +78,12 @@ An identity signs in for the first time only with a **verified email**. The serv
 provider has not confirmed: someone could otherwise make an account at a provider with another person's address and
 take over that person's account here.
 
-| Provider    | Counts as verified                                                                            |
-| ----------- | --------------------------------------------------------------------------------------------- |
-| Google      | The `email_verified` claim is `true`                                                          |
-| GitHub      | The primary email of the account, marked verified (read from `GET /user/emails`)              |
-| Facebook    | An email is present: Meta returns only a confirmed address (a rule the product owner reviews) |
-| surveyjs.io | UserInfo does not say `email_verified: false` (a rule the product owner reviews)              |
+| Provider    | Counts as verified                                                               |
+| ----------- | -------------------------------------------------------------------------------- |
+| Google      | The `email_verified` claim is `true`                                             |
+| GitHub      | The primary email of the account, marked verified (read from `GET /user/emails`) |
+| Facebook    | An email is present: Meta returns only a confirmed address                       |
+| surveyjs.io | UserInfo does not say `email_verified: false`                                    |
 
 Without a verified email the person sees [the refused page](#when-sign-in-is-refused), reason `email-unverified`.
 

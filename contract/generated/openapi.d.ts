@@ -1026,12 +1026,12 @@ export interface components {
             displayName: string;
             instanceRole: components["schemas"]["InstanceRole"];
             /**
-             * @description `invited` until the user sets a password with their link.
+             * @description `invited` until the user sets a password with their link, or an OAuth2 sign-in links an identity to the account.
              * @enum {string}
              */
             status: "invited" | "active" | "disabled";
             createdAt: components["schemas"]["Timestamp"];
-            /** @description The last password sign-in; `null` before the first. */
+            /** @description The last sign-in, with a password or an OAuth2 method; `null` before the first. */
             lastSignInAt: components["schemas"]["Timestamp"] | null;
         };
         AdminUserPage: {

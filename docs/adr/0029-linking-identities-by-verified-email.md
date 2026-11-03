@@ -1,6 +1,7 @@
 # ADR 0029: Linking identities by verified email
 
-Status: Accepted (self-hosted Step 8). Two rules in D2 are open for the product owner (see [Open points](#open-points)).
+Status: Accepted (self-hosted Step 8). The product owner confirmed D2's Facebook and surveyjs.io rules and D6 on
+2026-11-03 (see [Confirmed](#confirmed)).
 
 ## Context
 
@@ -22,7 +23,7 @@ account by signing in? Getting the first wrong lets someone take over an account
 | D3  | The order at the callback | With a local directory: (1) a known identity signs in to its account; (2) else a verified email that names an account links the identity to it; (3) else an account is created when the email has a pending invitation, its domain is in `SIGN_UP_DOMAINS`, or `OPEN_SIGN_UP=on`; (4) else the sign-in is refused. A domain matches exactly, case-insensitively, the part after the last `@`; subdomains do not match                                                                                         |
 | D4  | Pending members           | Only with `USER_DIRECTORY=local`. `addMember` with an email no account has stores an invitation and answers `201` with a `Member` whose `status` is `pending` and `userId` is `null`. The invitation moves into the project's members at the next successful sign-in of that email, by any method. `removeInvitation` removes it. The table is `project_invitations`. Hosted instances still answer `404 user-not-found`                                                                                      |
 | D5  | Settings                  | `GOOGLE_*`, `GITHUB_*` and `FACEBOOK_*` (`CLIENT_ID` and `CLIENT_SECRET`), `SIGN_UP_DOMAINS`, `OPEN_SIGN_UP` (`on` or `off`, default `off`), and for development and tests `OAUTH_STUB_URL`, refused in production. surveyjs.io keeps `OIDC_*`                                                                                                                                                                                                                                                                |
-| D6  | One test stub             | A single stub on `node:http` and `node:crypto` serves all four providers. Unit tests, the conformance setup and Playwright start it in the process. There is no Docker, so it runs on Windows and in CI. The plan said mock-oauth2-server plus stubs in Compose; the Azurite mode keeps its mock-oauth2-server                                                                                                                                                                                                |
+| D6  | One test stub             | A single stub on `node:http` and `node:crypto` serves all four providers. Unit tests, the conformance setup and Playwright start it in the process. There is no Docker, so it runs on Windows and in CI. The plan said mock-oauth2-server plus stubs in Compose (the product owner confirmed the change); the Azurite mode keeps its mock-oauth2-server                                                                                                                                                       |
 | D7  | Accounts from OAuth       | `instanceRole: "user"`, `status: "active"`, no password, no forced change. The display name is the provider's name, else the email. `getCurrentUser` has `hasPassword`, so the shell hides **Change password** for them                                                                                                                                                                                                                                                                                       |
 | D8  | Refusals                  | The callback redirects to `/sign-in/refused?reason=<reason>&provider=<method>`. Reasons: `not-invited`, `email-unverified`, `disabled`; for a sign-in started by a provider's button also `cancelled` (`error=access_denied`), `unavailable` (the provider cannot be reached) and `read-only`. The server logs the provider and the reason, never the email                                                                                                                                                   |
 
@@ -59,16 +60,15 @@ Details that follow from the table:
   gives no verified email cannot sign in with it at all.
 - An account, an instance admin's included, can be reached by anyone who controls its email at an enabled provider.
   Enable only providers you trust to verify emails.
-- Invitations show to project admins as pending members and cost one table, `project_invitations` (migration 0005,
-  [data model](../architecture/data-model.md)).
+- Invitations show to every project member as pending members and cost one table, `project_invitations` (migration
+  0005, [data model](../architecture/data-model.md)).
 - Linking is one way: unlinking an identity is not built.
 
-## Open points
+## Confirmed
 
-These two rules are marked for the product owner to confirm. Until then they stay as written in D2.
+The product owner confirmed these rules on 2026-11-03. They stand as written in D2 and D6.
 
 - **Facebook:** an `email` in the Graph API answer counts as verified, because Meta returns only a confirmed address.
-  If the owner does not trust that, Facebook could sign in only accounts that are already linked.
 - **surveyjs.io:** an email counts as verified unless UserInfo says `email_verified: false`, because surveyjs.io
-  confirms emails at registration. If the owner does not trust that, surveyjs.io would have to send
-  `email_verified: true`.
+  confirms emails at registration.
+- **One test stub** (D6) replaces mock-oauth2-server and the Compose stubs the plan named.
