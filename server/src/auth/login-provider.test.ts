@@ -327,6 +327,53 @@ describe("the callback with the local directory", () => {
     expect(await invitations.hasInvitation("alice@example.com")).toBe(false);
   });
 
+  it("surveyjs.io alone: login goes to its issuer, and the callback reaches a local account", async () => {
+    const { server, stubUrl, providers, config } = await start({
+      AUTH_METHODS: "surveyjs",
+      OIDC_ISSUER_URL: "STUB/surveyjs",
+      OIDC_CLIENT_ID: "s-client",
+      OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+      ADMIN_EMAIL: "root@example.com",
+    });
+    const { accounts, invitations, projects } = providers;
+    if (!accounts || !invitations) throw new Error("no local accounts");
+    const root = await accounts.accountByEmail("root@example.com");
+    const projectId = randomUUID();
+    await projects.createProject({
+      id: projectId,
+      name: "Invited to",
+      creatorId: root?.user.id ?? "",
+      createdAt: CREATED_AT,
+    });
+    await invitations.addInvitation({
+      projectId,
+      email: "kim@example.com",
+      role: "user",
+      invitedBy: root?.user.id ?? "",
+      createdAt: CREATED_AT,
+    });
+
+    const login = await server.inject("/api/v1/auth/login");
+    expect(String(login.headers.location).startsWith(`${stubUrl}/surveyjs/authorize?`)).toBe(true);
+    const callback = await callbackOf(
+      server,
+      await authorizeAtStub(
+        server,
+        { sub: "s-30", email: "kim@example.com", name: "Kim" },
+        { query: "", authorizePath: "/surveyjs/authorize" },
+      ),
+    );
+    expect(String(callback.headers.location)).toBe(`${PUBLIC_BASE_URL}/`);
+    const kim = await accounts.accountByEmail("kim@example.com");
+    expect(kim).toMatchObject({ instanceRole: "user", status: "active", passwordHash: null });
+    expect(decodeSession(config.sessionSecret, cookieValue(callback, "msid"))).toMatchObject({
+      sub: kim?.user.id,
+      email: "kim@example.com",
+    });
+    expect((await accounts.accountByIdentity("surveyjs", "s-30"))?.user.id).toBe(kim?.user.id);
+    expect(await projects.getUserProject(kim?.user.id ?? "", projectId)).not.toBeNull();
+  });
+
   it("READ_ONLY=true: a linked identity signs in; linking goes to the refused page, no session", async () => {
     const { server, providers } = await start({
       AUTH_METHODS: "password,github",
