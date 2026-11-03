@@ -14,6 +14,13 @@ export interface GithubIdentityOptions {
 const TIMEOUT_MS = 10_000;
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
 
+/** GitHub's user id, a positive integer (as a number, or its digits as a string); else undefined. */
+const userId = (value: unknown): string | undefined => {
+  if (typeof value === "number")
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
+  return typeof value === "string" && /^[1-9]\d*$/.test(value) ? value : undefined;
+};
+
 /**
  * GitHub sign-in (OAuth 2.0 authorization code flow, state and PKCE). The identity comes from
  * `GET /user` (id, name, avatar) and `GET /user/emails`: the primary address and whether GitHub
@@ -86,9 +93,8 @@ export function createGithubIdentityProvider(options: GithubIdentityOptions): Id
           throw new Error("GitHub answered with an unexpected shape");
         }
         const { id, name: fullName, login, avatar_url: avatar } = user as Record<string, unknown>;
-        if (typeof id !== "number" && typeof id !== "string") {
-          throw new Error("GitHub sent no user id");
-        }
+        const sub = userId(id);
+        if (sub === undefined) throw new Error("GitHub sent no user id");
         const primary = (emails as Record<string, unknown>[]).find(
           (entry) => entry.primary === true,
         );
@@ -96,7 +102,7 @@ export function createGithubIdentityProvider(options: GithubIdentityOptions): Id
         const name = text(fullName) ?? text(login);
         const picture = text(avatar);
         return {
-          sub: String(id),
+          sub,
           ...(email && { email }),
           emailVerified: email !== undefined && primary?.verified === true,
           ...(name && { name }),

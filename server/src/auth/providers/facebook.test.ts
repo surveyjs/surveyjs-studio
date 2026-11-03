@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startOAuthStub, type OAuthStub } from "../../testing/oauth-stub.js";
 import { FACEBOOK_GRAPH_VERSION, facebookEndpoints, googleIssuer } from "./endpoints.js";
 import { createFacebookIdentityProvider } from "./facebook.js";
-import { authorizeAtStub, CALLBACK_URL, PUBLIC_BASE_URL, transaction } from "./stub-flow.js";
+import {
+  authorizeAtStub,
+  CALLBACK_URL,
+  loggedError,
+  PUBLIC_BASE_URL,
+  transaction,
+} from "./stub-flow.js";
 
 let stub: OAuthStub | undefined;
 afterEach(async () => {
@@ -87,7 +93,10 @@ describe("Facebook identity provider", () => {
     await stub?.close();
     const error = await facebook.finishSignIn(callback, transaction).catch((e: unknown) => e);
     expect(error).toMatchObject({ status: 500, title: "Sign-in is unavailable" });
-    expect(JSON.stringify(error)).not.toContain("stub-secret");
+    const logged = await loggedError(error);
+    expect(logged).toContain("fetch failed");
+    expect(logged).not.toContain("stub-secret");
+    expect(logged).not.toContain(callback.searchParams.get("code"));
   });
 
   it("answers 500 when the client secret is rejected", async () => {

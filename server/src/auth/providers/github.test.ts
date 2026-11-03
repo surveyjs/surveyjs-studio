@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../../errors.js";
 import { startOAuthStub, type OAuthStub } from "../../testing/oauth-stub.js";
 import { githubEndpoints } from "./endpoints.js";
 import { createGithubIdentityProvider } from "./github.js";
-import { authorizeAtStub, CALLBACK_URL, PUBLIC_BASE_URL, transaction } from "./stub-flow.js";
+import {
+  authorizeAtStub,
+  CALLBACK_URL,
+  loggedError,
+  PUBLIC_BASE_URL,
+  transaction,
+} from "./stub-flow.js";
 
 let stub: OAuthStub | undefined;
 afterEach(async () => {
+  vi.restoreAllMocks();
   await stub?.close();
   stub = undefined;
 });
@@ -111,7 +118,40 @@ describe("GitHub identity provider", () => {
     const error = await github.finishSignIn(callback, transaction).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ status: 500, title: "Sign-in is unavailable" });
-    expect(JSON.stringify(error)).not.toContain("stub-secret");
+    const logged = await loggedError(error);
+    expect(logged).toContain("fetch failed");
+    expect(logged).not.toContain("stub-secret");
+    expect(logged).not.toContain(callback.searchParams.get("code"));
+  });
+
+  it.each([[""], ["abc"], ["12a"], [null], [-1], [1.5]])(
+    "answers 500 unavailable when GitHub sends the user id %j",
+    async (id) => {
+      const github = await provider();
+      const callback = await authorizeAtStub(github);
+      const real = globalThis.fetch;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const response = await real(input, init);
+        if (!String(input).endsWith("/github-api/user")) return response;
+        return Response.json({ ...((await response.json()) as object), id });
+      });
+      await expect(github.finishSignIn(callback, transaction)).rejects.toMatchObject({
+        status: 500,
+        title: "Sign-in is unavailable",
+      });
+    },
+  );
+
+  it("takes a numeric id sent as a string", async () => {
+    const github = await provider();
+    const callback = await authorizeAtStub(github);
+    const real = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await real(input, init);
+      if (!String(input).endsWith("/github-api/user")) return response;
+      return Response.json({ ...((await response.json()) as object), id: "583231" });
+    });
+    expect((await github.finishSignIn(callback, transaction)).sub).toBe("583231");
   });
 
   it("answers 500 when the client secret is rejected", async () => {

@@ -1,3 +1,4 @@
+import Fastify from "fastify";
 import type { IdentityProvider } from "../identity.js";
 import type { SignInTransaction } from "../transaction.js";
 
@@ -9,6 +10,19 @@ export const transaction: SignInTransaction = {
   returnTo: "/",
   exp: 2_000_000_000,
 };
+
+/**
+ * Test helper: what the server's log would hold for `error`, the line Fastify's logger writes for
+ * `{ err: error }` (the error serializer follows `cause`), with the error's message and cause.
+ */
+export async function loggedError(error: unknown): Promise<string> {
+  const lines: string[] = [];
+  const app = Fastify({ logger: { stream: { write: (line: string) => lines.push(line) } } });
+  app.log.error({ err: error }, "sign-in is unavailable");
+  await app.close();
+  const { message, cause } = error as Error;
+  return [...lines, message, String(cause)].join("\n");
+}
 
 export const PUBLIC_BASE_URL = "http://localhost:5173";
 export const CALLBACK_URL = `${PUBLIC_BASE_URL}/api/v1/auth/callback`;
