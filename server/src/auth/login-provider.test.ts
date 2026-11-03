@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { loadConfig, type AppConfig } from "../config.js";
@@ -23,7 +23,10 @@ afterEach(async () => {
   stub = undefined;
 });
 
-async function start(env: Record<string, string>): Promise<{
+async function start(
+  env: Record<string, string>,
+  lines?: string[],
+): Promise<{
   server: FastifyInstance;
   config: AppConfig;
   stubUrl: string;
@@ -42,7 +45,11 @@ async function start(env: Record<string, string>): Promise<{
     ),
   });
   const providers = await createProviders(config);
-  app = await buildApp(config, providers);
+  app = await buildApp(
+    config,
+    providers,
+    lines ? { logStream: { write: (line) => lines.push(line) } } : {},
+  );
   return { server: app, config, stubUrl: stub.url, providers };
 }
 
@@ -53,25 +60,46 @@ interface Person {
   readonly verified?: boolean;
 }
 
-/** Signs in with GitHub at the stub as `person`; the callback's response. */
-async function signInWithGithub(server: FastifyInstance, person: Person) {
-  const login = await server.inject("/api/v1/auth/login?provider=github");
+/**
+ * Starts a sign-in with `login` (`query`) and answers the stub's authorize form at `authorizePath`
+ * as `person` (`deny` presses Deny): the callback URL the stub sends the browser to, and the
+ * transaction cookie.
+ */
+async function authorizeAtStub(
+  server: FastifyInstance,
+  person: Person,
+  {
+    query = "?provider=github",
+    authorizePath = "/github/login/oauth/authorize",
+    deny = false,
+  } = {},
+): Promise<{ back: URL; cookie: string }> {
+  const login = await server.inject(`/api/v1/auth/login${query}`);
   const form = new URLSearchParams(new URL(String(login.headers.location)).searchParams);
   form.set("sub", person.sub);
   form.set("email", person.email);
   form.set("name", person.name ?? "Ada");
   if (person.verified ?? true) form.set("email_verified", "on");
-  const authorize = await fetch(`${stub?.url}/github/login/oauth/authorize`, {
+  if (deny) form.set("deny", "1");
+  const authorize = await fetch(`${stub?.url}${authorizePath}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: form,
     redirect: "manual",
   });
-  const back = new URL(authorize.headers.get("location") ?? "");
-  return server.inject({
-    url: back.pathname + back.search,
-    headers: { cookie: transactionOf(login).cookie },
-  });
+  return {
+    back: new URL(authorize.headers.get("location") ?? ""),
+    cookie: transactionOf(login).cookie,
+  };
+}
+
+/** Opens the callback the stub sent the browser to. */
+const callbackOf = (server: FastifyInstance, { back, cookie }: { back: URL; cookie: string }) =>
+  server.inject({ url: back.pathname + back.search, headers: { cookie } });
+
+/** Signs in with GitHub at the stub as `person`; the callback's response. */
+async function signInWithGithub(server: FastifyInstance, person: Person) {
+  return callbackOf(server, await authorizeAtStub(server, person));
 }
 
 const CREATED_AT = "2026-11-01T00:00:00.000Z";
@@ -299,7 +327,7 @@ describe("the callback with the local directory", () => {
     expect(await invitations.hasInvitation("alice@example.com")).toBe(false);
   });
 
-  it("READ_ONLY=true: a linked identity signs in; linking answers 503 read-only, no session", async () => {
+  it("READ_ONLY=true: a linked identity signs in; linking goes to the refused page, no session", async () => {
     const { server, providers } = await start({
       AUTH_METHODS: "password,github",
       READ_ONLY: "true",
@@ -322,10 +350,88 @@ describe("the callback with the local directory", () => {
 
     const other = await accounts.createAccount(newAccount("gus@example.com"));
     const refused = await signInWithGithub(server, { sub: "13", email: "gus@example.com" });
-    expect(refused.statusCode).toBe(503);
-    expect(refused.json()).toMatchObject({ code: "read-only" });
+    expect(refused.statusCode).toBe(302);
+    expect(String(refused.headers.location)).toBe(
+      `${PUBLIC_BASE_URL}/sign-in/refused?reason=read-only&provider=github`,
+    );
     expect(cookieValue(refused, "msid")).toBeUndefined();
+    expect(refused.cookies.find((c) => c.name.startsWith("msid_auth_"))?.value).toBe("");
     expect(await accounts.accountByIdentity("github", "13")).toBeNull();
     expect((await accounts.account(other.user.id))?.status).toBe("active");
+  });
+});
+
+describe("a provider button's sign-in that fails at the callback", () => {
+  /** The response is the refused page for `reason`, with no session and the transaction cleared. */
+  function expectRefused(callback: LightMyRequestResponse, reason: string) {
+    expect(callback.statusCode).toBe(302);
+    expect(String(callback.headers.location)).toBe(
+      `${PUBLIC_BASE_URL}/sign-in/refused?reason=${reason}&provider=github`,
+    );
+    expect(cookieValue(callback, "msid")).toBeUndefined();
+    expect(cookieValue(callback, "msid_csrf")).toBeUndefined();
+    expect(callback.cookies.find((c) => c.name.startsWith("msid_auth_"))?.value).toBe("");
+  }
+
+  it("sends a sign-in cancelled at the provider to the refused page", async () => {
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
+    const answer = await authorizeAtStub(
+      server,
+      { sub: "20", email: "hal@example.com" },
+      { deny: true },
+    );
+    expect(answer.back.searchParams.get("error")).toBe("access_denied");
+    expect(answer.back.searchParams.has("code")).toBe(false);
+    expectRefused(await callbackOf(server, answer), "cancelled");
+  });
+
+  it("sends a provider that cannot be reached to the refused page and logs the cause", async () => {
+    const lines: string[] = [];
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" }, lines);
+    const answer = await authorizeAtStub(server, { sub: "21", email: "ida@example.com" });
+    await stub?.close();
+    stub = undefined;
+    expectRefused(await callbackOf(server, answer), "unavailable");
+    const logged = lines
+      .map((line) => JSON.parse(line) as { level: number; msg: string; provider?: string })
+      .find((line) => line.msg === "sign-in is unavailable");
+    expect(logged).toMatchObject({ level: 50, provider: "github" });
+    const all = lines.join("\n");
+    expect(all).not.toContain("stub-secret-github");
+    expect(all).not.toContain(answer.back.searchParams.get("code") ?? "no code");
+    expect(all).not.toContain("ida@example.com");
+  });
+
+  it("keeps the problem answers of a sign-in without a provider: surveyjs.io alone", async () => {
+    stub = await startOAuthStub();
+    const config = loadConfig({
+      NODE_ENV: "test",
+      PUBLIC_BASE_URL,
+      AUTH_METHODS: "surveyjs",
+      OIDC_ISSUER_URL: `${stub.url}/surveyjs`,
+      OIDC_CLIENT_ID: "s-client",
+      OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    });
+    app = await buildApp(config, await createProviders(config));
+    const hosted = { query: "", authorizePath: "/surveyjs/authorize" };
+    const person = { sub: "22", email: "jo@example.com" };
+
+    const denied = await callbackOf(
+      app,
+      await authorizeAtStub(app, person, { ...hosted, deny: true }),
+    );
+    expect(denied.statusCode).toBe(400);
+    expect(denied.headers["content-type"]).toContain("application/problem+json");
+    expect(denied.json()).toMatchObject({ code: "bad-request", title: "Sign-in failed" });
+    expect(cookieValue(denied, "msid")).toBeUndefined();
+
+    const answer = await authorizeAtStub(app, person, hosted);
+    await stub.close();
+    stub = undefined;
+    const unreachable = await callbackOf(app, answer);
+    expect(unreachable.statusCode).toBe(500);
+    expect(unreachable.headers["content-type"]).toContain("application/problem+json");
+    expect(unreachable.json()).toMatchObject({ title: "Sign-in is unavailable" });
+    expect(cookieValue(unreachable, "msid")).toBeUndefined();
   });
 });

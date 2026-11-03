@@ -47,7 +47,13 @@ export interface paths {
          *     reasons are `not-invited`, `email-unverified` and `disabled`. While
          *     `READ_ONLY=true` only an identity already linked to an active account signs in;
          *     a sign-in that would link an identity, create an account or activate an invited
-         *     one answers `503 read-only`.
+         *     one is refused with the reason `read-only`.
+         *
+         *     A sign-in started by `login?provider=<method>` also goes to that page when it
+         *     fails at the callback: `cancelled` when the provider sends `error=access_denied`
+         *     (the person said no), `unavailable` when the provider cannot be reached or
+         *     answers unexpectedly. A sign-in started without `provider` (surveyjs.io alone,
+         *     the dev sign-in) answers these as problems: `400`, `500` and `503 read-only`.
          */
         get: operations["loginCallback"];
         put?: never;
@@ -1783,8 +1789,11 @@ export interface operations {
     loginCallback: {
         parameters: {
             query: {
-                code: string;
+                /** @description The authorization code; absent when the provider sends `error`. */
+                code?: string;
                 state: string;
+                /** @description The provider's OAuth2 error, such as `access_denied`. */
+                error?: string;
             };
             header?: never;
             path?: never;
@@ -1812,7 +1821,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["TooManyRequests"];
-            /** @description `READ_ONLY=true` and the sign-in would write (`read-only`): link an identity, create an account or activate an invited one. No session is created. */
+            /** @description `READ_ONLY=true` and a sign-in started without `provider` would write (`read-only`): link an identity, create an account or activate an invited one. No session is created. */
             503: {
                 headers: {
                     [name: string]: unknown;

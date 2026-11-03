@@ -216,6 +216,26 @@ describe("the refused sign-in page", () => {
       "?reason=disabled&provider=google",
       "This account is disabled. Ask the person who runs this instance.",
     ],
+    [
+      "?reason=cancelled&provider=facebook",
+      "You cancelled the sign-in at Facebook. Sign in again, or choose another way.",
+    ],
+    [
+      "?reason=unavailable&provider=google",
+      "Google could not be reached. Try again in a few minutes, or sign in another way.",
+    ],
+    [
+      "?reason=read-only&provider=github",
+      "This instance is read-only for maintenance, so first sign-ins are paused. Try again later.",
+    ],
+    [
+      "?reason=cancelled&provider=nope",
+      "You cancelled the sign-in. Sign in again, or choose another way.",
+    ],
+    [
+      "?reason=unavailable",
+      "The sign-in provider could not be reached. Try again in a few minutes, or sign in another way.",
+    ],
     ["?reason=whatever", notInvited],
   ];
 

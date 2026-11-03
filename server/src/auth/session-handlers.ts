@@ -2,6 +2,7 @@ import type { components } from "@surveyjs-studio/contract";
 import type { Handlers } from "../api.js";
 import type { AppConfig, ExternalMethod } from "../config.js";
 import { AppError } from "../errors.js";
+import { loggableError } from "../logging.js";
 import { linkNotices, type AccountNotices } from "../notices/account-notices.js";
 import type { InvitationStore, LocalAccountStore, UserDirectory } from "../providers/types.js";
 import { shellLinks } from "../shell-links.js";
@@ -115,7 +116,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
     },
 
     loginCallback: async (request, reply) => {
-      const { state } = request.query as { state: string };
+      const { state, error } = request.query as { state: string; error?: string };
       const cookies = parseCookies(request.headers.cookie);
       // Each sign-in has its own transaction cookie, named after its state. It is single-use:
       // cleared whatever the outcome; other sign-ins' cookies are left alone.
@@ -129,15 +130,41 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         }
         throw badRequest("The sign-in expired or was not started in this browser. Sign in again.");
       }
-      // The URL the browser opened: the public origin (PUBLIC_BASE_URL has no path) with this
-      // request's path and query.
       const identity =
         tx.provider === undefined ? signIn.primary : signIn.byMethod.get(tx.provider);
       if (!identity) throw badRequest("This sign-in method is not enabled.");
-      const claims = await identity.finishSignIn(
-        new URL(new URL(config.publicBaseUrl).origin + request.url),
-        tx,
-      );
+      // A sign-in started by a provider's button ends on the refused page when it fails, rather
+      // than on a problem answer the browser shows as raw JSON (D8). A sign-in started without
+      // `provider` (surveyjs.io alone, the dev sign-in) keeps its problem answers.
+      const button = tx.provider;
+      const refuse = (reason: string) => {
+        const query = new URLSearchParams({ reason, provider: button ?? "" });
+        return reply.redirect(
+          publicUrl(config.publicBaseUrl, `/sign-in/refused?${query.toString()}`),
+          302,
+        );
+      };
+      if (button !== undefined && error === "access_denied") {
+        request.log.info({ provider: button, reason: "cancelled" }, "sign-in refused");
+        return refuse("cancelled");
+      }
+      let claims: IdentityClaims;
+      try {
+        // The URL the browser opened: the public origin (PUBLIC_BASE_URL has no path) with this
+        // request's path and query.
+        claims = await identity.finishSignIn(
+          new URL(new URL(config.publicBaseUrl).origin + request.url),
+          tx,
+        );
+      } catch (cause) {
+        // A bad or reused code (400) stays a problem answer: the sign-in is not valid.
+        if (button === undefined || (cause instanceof AppError && cause.status < 500)) throw cause;
+        request.log.error(
+          { err: loggableError(cause), provider: button },
+          "sign-in is unavailable",
+        );
+        return refuse("unavailable");
+      }
       // The local directory with an external provider behind the sign-in: a local account (D3).
       // The dev provider's sign-ins keep the path below: their subject is the local id already.
       const method = tx.provider ?? signIn.primaryMethod;
@@ -145,13 +172,22 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
       let user: SessionUser;
       let epoch: number | undefined;
       if (accounts && invitations && method !== null) {
-        const result = await resolveExternalSignIn(method, claims, {
-          accounts,
-          invitations,
-          policy: config.joinPolicy,
-          now: nowIso,
-          readOnly: config.readOnly,
-        });
+        let result: Awaited<ReturnType<typeof resolveExternalSignIn>>;
+        try {
+          result = await resolveExternalSignIn(method, claims, {
+            accounts,
+            invitations,
+            policy: config.joinPolicy,
+            now: nowIso,
+            readOnly: config.readOnly,
+          });
+        } catch (cause) {
+          if (button === undefined || !(cause instanceof AppError) || cause.code !== "read-only") {
+            throw cause;
+          }
+          request.log.info({ provider: button, reason: "read-only" }, "sign-in refused");
+          return refuse("read-only");
+        }
         if (!result.ok) {
           // Never the email or the subject (D8).
           request.log.info({ provider: method, reason: result.reason }, "sign-in refused");

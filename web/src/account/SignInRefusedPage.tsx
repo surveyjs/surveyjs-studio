@@ -6,12 +6,22 @@ const NOT_INVITED =
   "This instance is open to invited people only. Ask a project admin or the person who runs it to invite your email address, then sign in again.";
 
 function refusalText(reason: string | undefined, provider: string | undefined): string {
+  const name = isExternalMethod(provider) ? PROVIDER_NAMES[provider] : undefined;
   if (reason === "email-unverified") {
-    const name = isExternalMethod(provider) ? PROVIDER_NAMES[provider] : "sign-in";
-    return `Your ${name} account didn't share a verified email address. Verify it with ${name}, or sign in another way.`;
+    const account = name ?? "sign-in";
+    return `Your ${account} account didn't share a verified email address. Verify it with ${account}, or sign in another way.`;
   }
   if (reason === "disabled")
     return "This account is disabled. Ask the person who runs this instance.";
+  if (reason === "cancelled") {
+    const at = name === undefined ? "" : ` at ${name}`;
+    return `You cancelled the sign-in${at}. Sign in again, or choose another way.`;
+  }
+  if (reason === "unavailable") {
+    return `${name ?? "The sign-in provider"} could not be reached. Try again in a few minutes, or sign in another way.`;
+  }
+  if (reason === "read-only")
+    return "This instance is read-only for maintenance, so first sign-ins are paused. Try again later.";
   return NOT_INVITED;
 }
 
