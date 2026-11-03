@@ -65,11 +65,18 @@ const CLIENT_METHODS = ["google", "github", "facebook"] as const;
 /** A host name with at least one dot and a letter-only top-level label; no `@`, no wildcard. */
 const SIGN_UP_DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-/** The first admin of an empty local directory (`ADMIN_EMAIL`, `ADMIN_PASSWORD`). Secret: the password. */
+/**
+ * The first admin of a local directory without an active admin (`ADMIN_EMAIL`, `ADMIN_PASSWORD`).
+ * Secret: the password.
+ */
 export interface BootstrapAdmin {
   /** Lower-cased. */
   readonly email: string;
-  readonly password: string;
+  /**
+   * Set when `AUTH_METHODS` has `password`; null without passwords, where the admin signs in with
+   * an OAuth2 method using the email.
+   */
+  readonly password: string | null;
 }
 
 export interface UserApiConfig {
@@ -607,12 +614,32 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
-/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
+/**
+ * ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. Without `password` in AUTH_METHODS
+ * the first admin is the email alone, who signs in with an OAuth2 method: ADMIN_EMAIL is required
+ * then (except with the dev sign-in, which signs the seed's admin in) and ADMIN_PASSWORD refused.
+ */
 function bootstrapProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const { ADMIN_EMAIL: email, ADMIN_PASSWORD: password } = env;
+  const local = env.USER_DIRECTORY === "local";
+  const passwords = csvItems(env.AUTH_METHODS ?? "surveyjs").includes("password");
+  if (local && !passwords) {
+    if (email === undefined && (env.IDENTITY_PROVIDER ?? "surveyjs-oidc") !== "dev") {
+      problems.push(
+        "ADMIN_EMAIL: required when USER_DIRECTORY=local and AUTH_METHODS has no password (the first admin signs in with an OAuth2 method using this email)",
+      );
+    }
+    if (password !== undefined) {
+      problems.push("ADMIN_PASSWORD: not used when AUTH_METHODS has no password");
+    }
+    if (email !== undefined && !(fullFormats.email as RegExp).test(email)) {
+      problems.push("ADMIN_EMAIL: must be an email address");
+    }
+    return problems;
+  }
   if (email === undefined && password === undefined) return problems;
-  if (env.USER_DIRECTORY !== "local") {
+  if (!local) {
     problems.push("ADMIN_EMAIL: requires USER_DIRECTORY=local");
     return problems;
   }
@@ -889,9 +916,13 @@ export function loadConfig(
     userDirectory:
       e.USER_DIRECTORY ?? (e.STORAGE_PROVIDER === "azure-legacy" ? "surveyjs-sql" : "memory"),
     bootstrapAdmin:
-      e.USER_DIRECTORY === "local" && e.ADMIN_EMAIL !== undefined && e.ADMIN_PASSWORD !== undefined
-        ? Object.freeze({ email: e.ADMIN_EMAIL.toLowerCase(), password: e.ADMIN_PASSWORD })
-        : null,
+      e.USER_DIRECTORY !== "local" || e.ADMIN_EMAIL === undefined
+        ? null
+        : !e.AUTH_METHODS.includes("password")
+          ? Object.freeze({ email: e.ADMIN_EMAIL.toLowerCase(), password: null })
+          : e.ADMIN_PASSWORD !== undefined
+            ? Object.freeze({ email: e.ADMIN_EMAIL.toLowerCase(), password: e.ADMIN_PASSWORD })
+            : null,
     userApi:
       e.USER_DIRECTORY === "surveyjs-api" &&
       e.USER_API_URL !== undefined &&

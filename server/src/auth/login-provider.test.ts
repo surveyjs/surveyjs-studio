@@ -246,6 +246,32 @@ describe("the callback with the local directory", () => {
     expect((await accounts.account(account.user.id))?.lastSignInAt).not.toBeNull();
   });
 
+  it("signs the first admin of an instance without passwords in by the verified ADMIN_EMAIL", async () => {
+    const { server, providers } = await start({
+      AUTH_METHODS: "github",
+      ADMIN_EMAIL: "root@example.com",
+    });
+    const accounts = providers.accounts;
+    if (!accounts) throw new Error("no local accounts");
+    const admin = await accounts.accountByEmail("root@example.com");
+    expect(admin).toMatchObject({ instanceRole: "admin", status: "active", passwordHash: null });
+
+    const callback = await signInWithGithub(server, { sub: "42", email: "Root@Example.com" });
+    expect(String(callback.headers.location)).toBe(`${PUBLIC_BASE_URL}/`);
+    const cookie = `msid=${cookieValue(callback, "msid") ?? ""}; msid_csrf=${cookieValue(callback, "msid_csrf") ?? ""}`;
+    const me = await server.inject({ url: "/api/v1/me", headers: { cookie } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({
+      id: admin?.user.id,
+      instanceRole: "admin",
+      mustChangePassword: false,
+      hasPassword: false,
+    });
+    const users = await server.inject({ url: "/api/v1/admin/users", headers: { cookie } });
+    expect(users.statusCode).toBe(200);
+    expect((await accounts.accountByIdentity("github", "42"))?.user.id).toBe(admin?.user.id);
+  });
+
   it("creates an account for an invited email and claims its invitations (Review Focus 3)", async () => {
     const { server, providers } = await start({ AUTH_METHODS: "password,github" });
     const { accounts, invitations, projects } = providers;

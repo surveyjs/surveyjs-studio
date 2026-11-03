@@ -451,6 +451,50 @@ describe("loadConfig", () => {
       expect(message).toContain(`  - ${line}`);
       expect(message).not.toContain(ADMIN_SECRET);
     });
+
+    describe("without passwords", () => {
+      const oauthOnly = {
+        STORAGE_PROVIDER: "sqlite",
+        USER_DIRECTORY: "local",
+        AUTH_METHODS: "github",
+        GITHUB_CLIENT_ID: "gh-id-1",
+        GITHUB_CLIENT_SECRET: "gh-Secret-Value-42",
+      };
+
+      it("reads the first admin's email alone, lower-cased", () => {
+        expect(load({ ...oauthOnly, ADMIN_EMAIL: "Admin@Example.com" }).bootstrapAdmin).toEqual({
+          email: "admin@example.com",
+          password: null,
+        });
+      });
+
+      it("requires ADMIN_EMAIL, so the instance gets an admin", () => {
+        expect(messageOf(() => load(oauthOnly))).toContain(
+          "  - ADMIN_EMAIL: required when USER_DIRECTORY=local and AUTH_METHODS has no password (the first admin signs in with an OAuth2 method using this email)",
+        );
+      });
+
+      it("refuses ADMIN_PASSWORD, never echoing it", () => {
+        const message = messageOf(() =>
+          load({ ...oauthOnly, ADMIN_EMAIL: "admin@example.com", ADMIN_PASSWORD: ADMIN_SECRET }),
+        );
+        expect(message).toContain("  - ADMIN_PASSWORD: not used when AUTH_METHODS has no password");
+        expect(message).not.toContain("ADMIN_EMAIL");
+        expect(message).not.toContain(ADMIN_SECRET);
+      });
+
+      it("still checks the email's format", () => {
+        expect(messageOf(() => load({ ...oauthOnly, ADMIN_EMAIL: "not an email" }))).toContain(
+          "  - ADMIN_EMAIL: must be an email address",
+        );
+      });
+
+      it("does not require ADMIN_EMAIL with the dev sign-in, which signs the seed's admin in", () => {
+        expect(
+          load({ USER_DIRECTORY: "local", IDENTITY_PROVIDER: "dev" }).bootstrapAdmin,
+        ).toBeNull();
+      });
+    });
   });
 
   describe("file storage", () => {
@@ -980,7 +1024,12 @@ describe("loadConfig", () => {
       const github = { GITHUB_CLIENT_ID: "gh-id-1", GITHUB_CLIENT_SECRET: "gh-Secret-Value-42" };
 
       it("accepts surveyjs with a local directory and the OIDC settings", () => {
-        const config = load({ ...oidc, IDENTITY_PROVIDER: "surveyjs-oidc", ...local });
+        const config = load({
+          ...oidc,
+          IDENTITY_PROVIDER: "surveyjs-oidc",
+          ...local,
+          ADMIN_EMAIL: "admin@example.com",
+        });
         expect(config.userDirectory).toBe("local");
         expect(config.oidc).not.toBeNull();
       });
