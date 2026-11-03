@@ -24,7 +24,7 @@ account by signing in? Getting the first wrong lets someone take over an account
 | D5  | Settings                  | `GOOGLE_*`, `GITHUB_*` and `FACEBOOK_*` (`CLIENT_ID` and `CLIENT_SECRET`), `SIGN_UP_DOMAINS`, `OPEN_SIGN_UP` (`on` or `off`, default `off`), and for development and tests `OAUTH_STUB_URL`, refused in production. surveyjs.io keeps `OIDC_*`                                                                                                                                                                                                                                                                |
 | D6  | One test stub             | A single stub on `node:http` and `node:crypto` serves all four providers. Unit tests, the conformance setup and Playwright start it in the process. There is no Docker, so it runs on Windows and in CI. The plan said mock-oauth2-server plus stubs in Compose; the Azurite mode keeps its mock-oauth2-server                                                                                                                                                                                                |
 | D7  | Accounts from OAuth       | `instanceRole: "user"`, `status: "active"`, no password, no forced change. The display name is the provider's name, else the email. `getCurrentUser` has `hasPassword`, so the shell hides **Change password** for them                                                                                                                                                                                                                                                                                       |
-| D8  | Refusals                  | The callback redirects to `/sign-in/refused?reason=<reason>&provider=<method>`. Reasons: `not-invited`, `email-unverified`, `disabled`. The server logs the provider and the reason, never the email                                                                                                                                                                                                                                                                                                          |
+| D8  | Refusals                  | The callback redirects to `/sign-in/refused?reason=<reason>&provider=<method>`. Reasons: `not-invited`, `email-unverified`, `disabled`; for a sign-in started by a provider's button also `cancelled` (`error=access_denied`), `unavailable` (the provider cannot be reached) and `read-only`. The server logs the provider and the reason, never the email                                                                                                                                                   |
 
 Details that follow from the table:
 
@@ -33,7 +33,8 @@ Details that follow from the table:
 - Every provider uses `state` and PKCE (S256); Google also checks the `nonce`; Facebook calls send `appsecret_proof`.
   Tokens are dropped after the callback. Calls to providers time out after 10 seconds.
 - With `READ_ONLY=true` an OAuth2 sign-in writes nothing. A known identity of an active account signs in; anything
-  that would link, create or activate answers `503 read-only`.
+  that would link, create or activate is refused (`read-only`; `503 read-only` for a sign-in started without
+  `provider`).
 - An instance without `password` in `AUTH_METHODS` needs `ADMIN_EMAIL` (and refuses `ADMIN_PASSWORD`): while there is
   no active admin, start-up creates that admin, active and without a password, and the first OAuth2 sign-in with that
   verified email links to it (D3 step 2). No setup link is logged.
