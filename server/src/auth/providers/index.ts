@@ -7,7 +7,7 @@ import { facebookEndpoints, githubEndpoints, googleIssuer } from "./endpoints.js
 import { createFacebookIdentityProvider } from "./facebook.js";
 import { createGithubIdentityProvider } from "./github.js";
 import { createLocalIdentityProvider } from "./local.js";
-import { createOidcIdentityProvider } from "./oidc.js";
+import { createOidcIdentityProvider, verifiedUnlessFalse } from "./oidc.js";
 
 /** The providers of one server: the one `login` without `provider` uses, and one per enabled method. */
 export interface SignInProviders {
@@ -30,7 +30,14 @@ export async function createSignInProviders(config: AppConfig): Promise<SignInPr
   // loadConfig requires the OIDC settings for the surveyjs method unless identity rules are
   // skipped (tools that never serve HTTP) or the dev provider is on.
   if (authMethods.includes("surveyjs") && config.oidc) {
-    byMethod.set("surveyjs", createOidcIdentityProvider({ oidc: config.oidc, publicBaseUrl }));
+    byMethod.set(
+      "surveyjs",
+      createOidcIdentityProvider({
+        oidc: config.oidc,
+        publicBaseUrl,
+        emailVerified: verifiedUnlessFalse,
+      }),
+    );
   }
   const { google, github, facebook } = oauthClients;
   if (authMethods.includes("google") && google) {

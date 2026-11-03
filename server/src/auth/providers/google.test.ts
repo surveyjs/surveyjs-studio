@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startOAuthStub, type OAuthStub } from "../../testing/oauth-stub.js";
 import { googleIssuer } from "./endpoints.js";
-import { createOidcIdentityProvider } from "./oidc.js";
+import { createOidcIdentityProvider, verifiedUnlessFalse } from "./oidc.js";
 import { authorizeAtStub, PUBLIC_BASE_URL, transaction } from "./stub-flow.js";
 
 let stub: OAuthStub | undefined;
@@ -72,6 +72,7 @@ describe("the surveyjs.io email rule", () => {
         scopes: "profile email",
       },
       publicBaseUrl: PUBLIC_BASE_URL,
+      emailVerified: verifiedUnlessFalse,
     });
     const verified = await provider.finishSignIn(await authorizeAtStub(provider), transaction);
     expect(verified.emailVerified).toBe(true);
