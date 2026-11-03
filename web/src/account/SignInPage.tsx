@@ -2,7 +2,7 @@ import { useState } from "react";
 import { passwordErrorMessage, usePasswordLogin } from "../api/passwords";
 import { navigateTo } from "../navigation";
 import { PageHeader } from "../surveyList/PageHeader";
-import { AccountForm, Field } from "./AccountForm";
+import { AccountForm, AccountPage, Field } from "./AccountForm";
 import { EXTERNAL_SIGN_IN_LABELS, isExternalMethod, type AuthMethod } from "./authMethods";
 import { appPath } from "./returnTo";
 
@@ -36,7 +36,7 @@ export function SignInPage({
   const external = methods.filter(isExternalMethod);
 
   return (
-    <>
+    <AccountPage>
       <PageHeader title="Sign in" />
       {withPassword && (
         <AccountForm
@@ -76,6 +76,6 @@ export function SignInPage({
           </a>
         </p>
       ))}
-    </>
+    </AccountPage>
   );
 }

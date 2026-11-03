@@ -1,6 +1,19 @@
 import { useId, useRef, type FormEvent, type ReactNode } from "react";
 import styles from "./AccountForm.module.css";
 
+/**
+ * The page around an account page's content: the site's page container, as My Surveys has (its
+ * margins and width in the surveyjs-site shell). The plain shell gets a readable layout from this
+ * module; the self-hosted shell lays the page out itself.
+ */
+export function AccountPage({ children }: { children: ReactNode }) {
+  return (
+    <div className="v2-class---my-surveys-page">
+      <div className={`v2-class---my-surveys-page__container ${styles.container}`}>{children}</div>
+    </div>
+  );
+}
+
 /** A labelled text box of an account form, in the site's text-edit style. */
 export function Field({
   label,

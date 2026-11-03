@@ -14,8 +14,10 @@ shows as **Pending** and joins the project at their first sign-in. Details:
 
 ## Before you start
 
-You need what [the self-hosted Step 1 demo](self-hosted-01.md#before-you-start) lists. Ports 3000, 5173 and 5180 must be
-free, and two browsers (or one normal and one private window).
+You need what [the self-hosted Step 1 demo](self-hosted-01.md#before-you-start) lists, and two browsers (or one normal
+and one private window). Ports 3000, 5173 and 5180 must be free. To check, run
+`netstat -ano | grep -E ":(3000|5173|5180) .*LISTENING"`: it must print nothing. An old `pnpm dev` that still runs
+keeps 3000 busy; stop it first.
 
 Start from a fresh database:
 
@@ -37,7 +39,7 @@ and the secret `stub-secret-<provider>`. The first admin's password is a local d
 
 ```sh
 export ADMIN_PASSWORD='a long local password'
-USER_DIRECTORY=local AUTH_METHODS=password,github,google \
+APP_SHELL=self-hosted USER_DIRECTORY=local AUTH_METHODS=password,github,google \
   OAUTH_STUB_URL=http://127.0.0.1:5180 \
   GITHUB_CLIENT_ID=demo-github GITHUB_CLIENT_SECRET=stub-secret-github \
   GOOGLE_CLIENT_ID=demo-google GOOGLE_CLIENT_SECRET=stub-secret-google \
@@ -88,14 +90,15 @@ Open **Projects** in the account menu, click **Create a Project**, and create `D
      **Users**: it is the password account you signed in to at the start, now linked to this Google identity.
 3. In the first browser reload **Users**. **Check:** there is still one row for `first-admin@example.test`, and no new
    account.
-4. In the private window sign out and click **Sign in with Google** again with the same sub, and an email of
+4. In the private window sign out and click **Sign in with Google** again. Type the sub `admin-google` again (the
+   stand-in's form starts empty, and an empty sub falls back to the email), and an email of
    `somebody-else@example.test`. **Check:** it still signs in as **first-admin**: a known identity wins over the
    email. (The email does not matter any more once the identity is linked.)
 5. Sign out, then sign in with the password form and `the admin's own new password`. **Check:** it works too.
 
 ## Clean up
 
-Stop both terminals with Ctrl+C. Then:
+Stop both terminals first, with Ctrl+C in each. Then:
 
 ```sh
 rm -rf server/.data

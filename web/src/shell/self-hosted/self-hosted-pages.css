@@ -32,9 +32,12 @@
 }
 
 /* ---------------------------------------------------------------- Buttons
-   The pages' buttons are anchors (SiteButton): outlined, or filled for a primary action. */
+   The pages' buttons are anchors (SiteButton): outlined, or filled for a primary action. The
+   native buttons of an <article> (the Users page) carry the site's classes for the surveyjs-site
+   shell, but keep their own look here (see "Users and the account forms" below); `:where()` adds
+   no weight. */
 
-.sh-app .v2-class---button {
+.sh-app .v2-class---button:where(:not(.sh-content article button)) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -51,27 +54,27 @@
   cursor: pointer;
 }
 
-.sh-app .v2-class---button:hover {
+.sh-app .v2-class---button:where(:not(.sh-content article button)):hover {
   background: var(--sh-subtle);
 }
 
-.sh-app .v2-class---button[class*="-primary"] {
+.sh-app .v2-class---button[class*="-primary"]:where(:not(.sh-content article button)) {
   background: var(--sh-accent-text);
   color: #fff;
 }
 
-.sh-app .v2-class---button[class*="-primary"]:hover {
+.sh-app .v2-class---button[class*="-primary"]:where(:not(.sh-content article button)):hover {
   filter: brightness(1.1);
 }
 
-.sh-app .v2-class---button[disabled],
+.sh-app .v2-class---button[disabled]:where(:not(.sh-content article button)),
 .sh-app .v2-class---button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
 }
 
-.sh-app .v2-class---button:focus-visible,
+.sh-app .v2-class---button:where(:not(.sh-content article button)):focus-visible,
 .sh-app [role="button"]:focus-visible,
 .sh-app a:focus-visible {
   outline: 2px solid var(--sh-accent);
@@ -726,6 +729,24 @@
   background: var(--sh-accent-text);
   color: #fff;
   font-size: inherit;
+}
+
+/* The account and Users pages sit in the site's page container (my-surveys.scss) for the
+   surveyjs-site shell; here .sh-content lays them out, so the plain shell's padding is dropped. */
+.sh-app .v2-class---my-surveys-page__container {
+  padding: 0;
+}
+
+/* The account forms' margins are for the other shells; here the paragraph after a form has its
+   own (below). */
+.sh-app .v2-class---my-surveys-page__container form {
+  margin: 0;
+}
+
+/* The Users page's checkbox keeps the browser's colours (its module colours it for the other
+   shells). */
+.sh-app .sh-content input[type="checkbox"] {
+  accent-color: auto;
 }
 
 .sh-app .sh-content table {

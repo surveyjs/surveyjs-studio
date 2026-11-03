@@ -32,6 +32,29 @@ const dateTime = (iso: string | null) =>
         new Date(iso),
       );
 
+// The site's page container, as My Surveys has (its margins and width in the surveyjs-site shell);
+// the plain shell's layout is this module's.
+const PAGE = `v2-class---my-surveys-page__container ${styles.container} ${styles.page}`;
+
+// The site's button classes (button.scss), as the account forms use them.
+const PRIMARY = "v2-class---button v2-class---button--brand-primary v2-class---button--medium";
+const SECONDARY = "v2-class---button v2-class---button--brand-secondary v2-class---button--small";
+const ACTION = "v2-class---button v2-class---button--brand-secondary v2-class---button--x-small";
+const DANGER = "v2-class---button v2-class---button--alert-secondary v2-class---button--x-small";
+
+/** A button's text in the site's type for its size. */
+function ButtonText({
+  size = "small",
+  children,
+}: {
+  size?: "medium" | "small" | "x-small";
+  children: string;
+}) {
+  return (
+    <span className={`v2-class---button__text v2-class---button__text--${size}`}>{children}</span>
+  );
+}
+
 /** A one-time link, shown once: its text to select, a copy button, and when it expires. */
 function LinkBox({ name, link, onDone }: { name: string; link: PasswordLink; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -51,14 +74,15 @@ function LinkBox({ name, link, onDone }: { name: string; link: PasswordLink; onD
         />
         <button
           type="button"
+          className={SECONDARY}
           onClick={() => {
             void navigator.clipboard?.writeText(link.url).then(() => setCopied(true));
           }}
         >
-          Copy link
+          <ButtonText>Copy link</ButtonText>
         </button>
-        <button type="button" onClick={onDone}>
-          Done
+        <button type="button" className={SECONDARY} onClick={onDone}>
+          <ButtonText>Done</ButtonText>
         </button>
       </div>
       {copied && <p className="v2-class---paragraph">Copied.</p>}
@@ -113,137 +137,143 @@ export function UsersPage() {
   };
 
   return (
-    <article className={styles.page}>
-      <PageHeader title="Users" />
-      <p className="v2-class---paragraph">
-        Create a user to get a one-time link that sets their password, and send it to them yourself.
-        Instance admins manage the users and every project.
-      </p>
-
-      <form
-        className={styles.create}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void create();
-        }}
-      >
-        <Field label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} />
-        <Field
-          label="Name"
-          type="text"
-          autoComplete="off"
-          value={displayName}
-          onChange={setDisplayName}
-        />
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={makeAdmin}
-            onChange={(event) => setMakeAdmin(event.target.checked)}
-          />
-          Instance admin
-        </label>
-        <button type="submit" disabled={createUser.isPending}>
-          Create user
-        </button>
-      </form>
-
-      {shown && <LinkBox name={shown.name} link={shown.link} onDone={() => setShown(null)} />}
-      {error !== null && (
-        <p role="alert" className={styles.error}>
-          {error}
+    <article className="v2-class---my-surveys-page">
+      <div className={PAGE}>
+        <PageHeader title="Users" />
+        <p className="v2-class---paragraph">
+          Create a user to get a one-time link that sets their password, and send it to them
+          yourself. Instance admins manage the users and every project.
         </p>
-      )}
 
-      <div className={styles.tableBox}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Email</th>
-              <th scope="col">Role</th>
-              <th scope="col">Status</th>
-              <th scope="col">Last sign-in</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => {
-              const admin = user.instanceRole === "admin";
-              const disabled = user.status === "disabled";
-              return (
-                <tr key={user.id}>
-                  <th scope="row">{user.displayName}</th>
-                  <td>{user.email}</td>
-                  <td>{admin ? "Admin" : "User"}</td>
-                  <td>{STATUS[user.status]}</td>
-                  <td>{dateTime(user.lastSignInAt)}</td>
-                  <td className={styles.actions}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        confirmThen(
-                          admin
-                            ? `Make ${user.displayName} a user? They can no longer manage users and every project.`
-                            : `Make ${user.displayName} an instance admin? They can manage users and every project.`,
-                          () =>
-                            updateUser.mutateAsync({
-                              userId: user.id,
-                              patch: { instanceRole: admin ? "user" : "admin" },
-                            }),
-                        )
-                      }
-                    >
-                      {admin ? "Make user" : "Make admin"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        confirmThen(
-                          disabled
-                            ? `Enable ${user.displayName}? They can sign in again.`
-                            : `Disable ${user.displayName}? They are signed out within a minute and cannot sign in.`,
-                          () =>
-                            updateUser.mutateAsync({
-                              userId: user.id,
-                              patch: { status: disabled ? "active" : "disabled" },
-                            }),
-                        )
-                      }
-                    >
-                      {disabled ? "Enable" : "Disable"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        confirmThen(
-                          `Reset the password of ${user.displayName}? Their password stops working, they are signed out, and you get a new link for them.`,
-                          async () => {
-                            const link = await resetLink.mutateAsync(user.id);
-                            setShown({ name: user.displayName, link });
-                          },
-                        )
-                      }
-                    >
-                      Reset password
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        confirmThen(
-                          `Delete ${user.displayName}? Their personal surveys and results are erased, and they leave every project.`,
-                          () => deleteUser.mutateAsync(user.id),
-                        )
-                      }
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <form
+          className={styles.create}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void create();
+          }}
+        >
+          <Field label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} />
+          <Field
+            label="Name"
+            type="text"
+            autoComplete="off"
+            value={displayName}
+            onChange={setDisplayName}
+          />
+          <label className={styles.checkbox}>
+            <input
+              type="checkbox"
+              checked={makeAdmin}
+              onChange={(event) => setMakeAdmin(event.target.checked)}
+            />
+            <span className="v2-class---checkbox__label">Instance admin</span>
+          </label>
+          <button type="submit" className={PRIMARY} disabled={createUser.isPending}>
+            <ButtonText size="medium">Create user</ButtonText>
+          </button>
+        </form>
+
+        {shown && <LinkBox name={shown.name} link={shown.link} onDone={() => setShown(null)} />}
+        {error !== null && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+
+        <div className={styles.tableBox}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Role</th>
+                <th scope="col">Status</th>
+                <th scope="col">Last sign-in</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => {
+                const admin = user.instanceRole === "admin";
+                const disabled = user.status === "disabled";
+                return (
+                  <tr key={user.id}>
+                    <th scope="row">{user.displayName}</th>
+                    <td>{user.email}</td>
+                    <td>{admin ? "Admin" : "User"}</td>
+                    <td>{STATUS[user.status]}</td>
+                    <td>{dateTime(user.lastSignInAt)}</td>
+                    <td className={styles.actions}>
+                      <button
+                        type="button"
+                        className={ACTION}
+                        onClick={() =>
+                          confirmThen(
+                            admin
+                              ? `Make ${user.displayName} a user? They can no longer manage users and every project.`
+                              : `Make ${user.displayName} an instance admin? They can manage users and every project.`,
+                            () =>
+                              updateUser.mutateAsync({
+                                userId: user.id,
+                                patch: { instanceRole: admin ? "user" : "admin" },
+                              }),
+                          )
+                        }
+                      >
+                        <ButtonText size="x-small">{admin ? "Make user" : "Make admin"}</ButtonText>
+                      </button>
+                      <button
+                        type="button"
+                        className={ACTION}
+                        onClick={() =>
+                          confirmThen(
+                            disabled
+                              ? `Enable ${user.displayName}? They can sign in again.`
+                              : `Disable ${user.displayName}? They are signed out within a minute and cannot sign in.`,
+                            () =>
+                              updateUser.mutateAsync({
+                                userId: user.id,
+                                patch: { status: disabled ? "active" : "disabled" },
+                              }),
+                          )
+                        }
+                      >
+                        <ButtonText size="x-small">{disabled ? "Enable" : "Disable"}</ButtonText>
+                      </button>
+                      <button
+                        type="button"
+                        className={ACTION}
+                        onClick={() =>
+                          confirmThen(
+                            `Reset the password of ${user.displayName}? Their password stops working, they are signed out, and you get a new link for them.`,
+                            async () => {
+                              const link = await resetLink.mutateAsync(user.id);
+                              setShown({ name: user.displayName, link });
+                            },
+                          )
+                        }
+                      >
+                        <ButtonText size="x-small">Reset password</ButtonText>
+                      </button>
+                      <button
+                        type="button"
+                        className={DANGER}
+                        onClick={() =>
+                          confirmThen(
+                            `Delete ${user.displayName}? Their personal surveys and results are erased, and they leave every project.`,
+                            () => deleteUser.mutateAsync(user.id),
+                          )
+                        }
+                      >
+                        <ButtonText size="x-small">Delete</ButtonText>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </article>
   );
@@ -252,9 +282,11 @@ export function UsersPage() {
 /** The page for a signed-in user who is not an instance admin. */
 export function UsersNotAllowed() {
   return (
-    <article className={styles.page}>
-      <PageHeader title="Users" />
-      <p className="v2-class---paragraph">Only instance admins can manage users.</p>
+    <article className="v2-class---my-surveys-page">
+      <div className={PAGE}>
+        <PageHeader title="Users" />
+        <p className="v2-class---paragraph">Only instance admins can manage users.</p>
+      </div>
     </article>
   );
 }

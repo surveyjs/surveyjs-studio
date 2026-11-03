@@ -1,4 +1,5 @@
 import { PageHeader } from "../surveyList/PageHeader";
+import { AccountPage } from "./AccountForm";
 import { PROVIDER_NAMES, isExternalMethod } from "./authMethods";
 
 const NOT_INVITED =
@@ -23,7 +24,7 @@ export function SignInRefusedPage({
   provider: string | undefined;
 }) {
   return (
-    <>
+    <AccountPage>
       <PageHeader title="You can't sign in yet" />
       <p className="v2-class---paragraph">{refusalText(reason, provider)}</p>
       <p className="v2-class---paragraph">
@@ -31,6 +32,6 @@ export function SignInRefusedPage({
           Back to sign in
         </a>
       </p>
-    </>
+    </AccountPage>
   );
 }
