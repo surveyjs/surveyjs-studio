@@ -34,6 +34,9 @@ Details that follow from the table:
   Tokens are dropped after the callback. Calls to providers time out after 10 seconds.
 - With `READ_ONLY=true` an OAuth2 sign-in writes nothing. A known identity of an active account signs in; anything
   that would link, create or activate answers `503 read-only`.
+- An instance without `password` in `AUTH_METHODS` needs `ADMIN_EMAIL` (and refuses `ADMIN_PASSWORD`): while there is
+  no active admin, start-up creates that admin, active and without a password, and the first OAuth2 sign-in with that
+  verified email links to it (D3 step 2). No setup link is logged.
 - Logout ends at `/` unless `AUTH_METHODS` is exactly `surveyjs`. It does not sign anyone out of Google, GitHub or
   Facebook.
 - This ADR extends ADR 0018: `google`, `github`, `facebook` and `surveyjs` are valid with `USER_DIRECTORY=local`. It

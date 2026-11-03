@@ -102,6 +102,25 @@ The server follows this order for the person who signed in:
 A **disabled** account is refused at steps 1 and 2. An account an instance admin created and nobody has used yet
 (**Invited**) becomes **Active** when an identity links to it.
 
+## Instances without passwords
+
+`AUTH_METHODS` may leave out `password`, for example `AUTH_METHODS=google`. The first admin then comes from
+`ADMIN_EMAIL` alone:
+
+```text
+USER_DIRECTORY=local
+AUTH_METHODS=google
+ADMIN_EMAIL=you@example.com
+```
+
+- `ADMIN_EMAIL` is required, and `ADMIN_PASSWORD` is refused. The server does not start otherwise.
+- At start-up, while no account is an active admin, the server creates that admin: active, with no password. The log
+  says "created the first admin from ADMIN_EMAIL; they sign in with an OAuth2 method using that email". No setup link
+  is logged.
+- The admin signs in with an enabled method using that email, verified. The identity links to the account (step 2
+  above), so the admin lands as the instance admin and sees the **Users** page.
+- An `ADMIN_EMAIL` that already has an account creates nothing (a warning says so).
+
 ## Who may join
 
 | Way in            | Effect                                                                                                                                                                        |
