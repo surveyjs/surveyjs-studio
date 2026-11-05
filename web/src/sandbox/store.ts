@@ -25,6 +25,8 @@ export const STORAGE_KEY = "studio-sandbox:v1";
 export interface SandboxFile {
   id: string;
   surveyId: string | null;
+  /** An editor upload (an asset, copied with a clone) or a respondent's file; absent means an asset. */
+  kind?: "asset" | "respondent";
   name: string;
   contentType: string;
   /** The decoded size in bytes. */

@@ -74,7 +74,8 @@ export interface SandboxHistoryEntry {
   id: string;
   /** ISO 8601 UTC. */
   at: string;
-  userId: null;
+  /** Who saved: null in the seed (and for legacy entries). */
+  userId: string | null;
   snapshot: SandboxJson;
 }
 
