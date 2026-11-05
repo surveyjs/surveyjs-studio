@@ -36,3 +36,4 @@ and add each one to this index.
 | [0027](0027-branding-and-the-licence-key.md)               | Branding and the licence key                                                    | Accepted |
 | [0028](0028-the-self-hosted-image.md)                      | The self-hosted image                                                           | Accepted |
 | [0029](0029-linking-identities-by-verified-email.md)       | Linking identities by verified email                                            | Accepted |
+| [0030](0030-the-sandbox-mock-in-the-browser.md)            | The sandbox mock in the browser                                                 | Accepted |

@@ -1522,12 +1522,52 @@ It reads `publicResultsQueryOptions` once, then:
   closure holds a `survey-dashboard-*` and a `survey-dashboard-table-*` chunk (no export chunk: the public
   Table has no downloads).
 
+## The sandbox (Step 9)
+
+Mode 2a is the web app with an in-browser back-end ([ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md)). No
+server runs: Mock Service Worker (MSW) answers `/api/v1` from the page, and the data is one localStorage document.
+
+**The build mode.** `vite --mode sandbox` (`pnpm dev:sandbox`) and `pnpm build:sandbox` (output `web/dist-sandbox/`,
+then `check-run-chunks.mjs dist-sandbox`). The mode is `import.meta.env.MODE === "sandbox"`, written inline so Vite
+removes the branch from the normal build. `web/sandbox-public/` is the public directory: `mockServiceWorker.js` and
+`sandbox.config.json` (`maxUploadKb`, `storageLimitKb`, `seedBudgetKb`). The sandbox has no `/api` proxy. The normal
+build is checked free of sandbox code: no chunk mentions `mockServiceWorker`, `studio-sandbox:v1` or the seed owner's
+id, and `src/sandbox/` is not in its manifest.
+
+**The worker.** `main.tsx` boots the sandbox before it renders: it reads `sandbox.config.json` (a missing or invalid
+file means the defaults and a console warning), opens the store, and starts the worker with the handlers
+(`web/src/sandbox/start.ts`). If the worker cannot start, the page shows "This demo needs a browser with service
+workers…". Shared files reach sandbox UI only through `web/src/sandboxLazy.tsx`, behind the same inline test.
+
+**The store.** One document under `studio-sandbox:v1` (`web/src/sandbox/store.ts`): the seed's collections plus the
+files (base64). Each request reads it, and a change is written back in one `setItem`. A missing, old or unparsable
+document is replaced by the seed. A write the browser refuses, or a document at `storageLimitKb`, answers
+`413 quota-exceeded` ("Browser storage is full") and fires `sandbox:storage-full`, which the banner shows.
+
+**The handlers.** `web/src/sandbox/handlers/`, one file per area, built by `createSandboxHandlers`. They mirror the
+server's rules in their own modules and do not import `server/src`. The operations the demo does not offer
+(`handlers/unsupported.ts`) answer `501 not-implemented` after the session and visibility checks the server does first.
+`handlers/index.test.ts` fails when the contract gains an operation that is neither handled nor listed. The seed
+(`web/src/sandbox/seed.json`) is generated from the shared fixtures by `pnpm sandbox:seed`, restricted by
+`server/fixtures/sandbox.json`.
+
+**The session and the navigations.** Picking an account sets the `msid` cookie. The worker never sees page
+navigations, so the web app handles them: the private guard sends a 401 to `/sign-in`, which shows **Pick an
+account**; sign-out goes to `/sign-in`; and in the sandbox build a 401 from a query or mutation sends the tab to the
+picker (the `/me` query on pages that are not private is the exception). The shell shows the demo banner (a
+`<aside aria-label="Demo notice">` with **Reset demo data**), and the export links are hidden.
+
+**Limits.** Links work only in the same browser. Opening a file URL as a page does not work. A `keepalive` request
+sent while a page closes may be lost. There is no CSRF, no rate limit, no IP capture and no byte-sniffing of file
+types. Exports, the admin's users and password operations answer 501.
+
 ## Build and run
 
 - `server` runs TypeScript directly with `tsx`; there is no server build.
 - `web` is built by Vite (`pnpm build`). `survey-core` is one large lazy chunk, the Form Library with its CSS (`survey-form`) another one, and the
   Survey Creator (with its CSS) a third, loaded only by the editor route. The build ends with the run-page chunk check. `chunkSizeWarningLimit` in `web/vite.config.ts` is
   raised only as far as that chunk needs.
+- `pnpm build:sandbox` builds the sandbox ([above](#the-sandbox-step-9)) into `web/dist-sandbox/`.
 - `pnpm demo` builds the API reference once, then runs the server with `node --watch --import tsx` and `vite` (web) together. (`tsx watch` hangs on Windows under `concurrently`, so it is not used.)
 
 ## What later steps add

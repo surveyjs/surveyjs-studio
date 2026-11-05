@@ -23,6 +23,7 @@
 | SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Everything in `server/.data/`; users in memory, or in the database with [passwords](#password-sign-in) |
 | PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Everything but users in PostgreSQL in Docker, files in `server/.data/files`                            |
 | S3         | `pnpm seed:sqlite` once, then `pnpm dev:s3` (see [below](#files-in-s3))                         | Like SQLite, with the files in RustFS, an S3-compatible server in Docker                               |
+| Sandbox    | `pnpm dev:sandbox` (see [below](#the-sandbox-step-9))                                           | The visitor's browser (localStorage); no server, no Docker                                             |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
 the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
@@ -535,6 +536,59 @@ no longer published):
 
 The app never creates or removes a bucket: readiness (`/readyz`, check `files`) reports one it cannot reach.
 
+## The sandbox (Step 9)
+
+The sandbox is the web app with an in-browser back-end: Mock Service Worker answers `/api/v1` from the page, and the
+data lives in the browser's localStorage. No server runs. See [Architecture](architecture.md#the-sandbox-step-9) and
+[ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md).
+
+```sh
+pnpm dev:sandbox     # Vite in sandbox mode on http://localhost:5173, no /api proxy
+pnpm build:sandbox   # web/dist-sandbox/, then the check of what the build must and must not hold
+```
+
+Open <http://localhost:5173>: the sandbox starts on **Pick an account**. Port 5173 must be free, so stop an old
+`pnpm dev` first. `pnpm build:sandbox` fails when `mockServiceWorker.js` or `sandbox.config.json` is missing from
+`web/dist-sandbox/`.
+
+`web/sandbox-public/` holds the two files served next to `index.html`:
+
+| File                   | What it is                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mockServiceWorker.js` | MSW's worker, copied. A unit test checks it is byte-equal to the installed `msw`'s; after an `msw` upgrade copy `msw/lib/mockServiceWorker.js` again |
+| `sandbox.config.json`  | `maxUploadKb` (200), `storageLimitKb` (4096) and `seedBudgetKb` (1024). Edit and reload: no rebuild is needed                                        |
+
+Everything the sandbox stores is under one key, `studio-sandbox:v1`. To start again, use **Reset demo data** in the
+banner, or remove that key in the browser's developer tools. The app's other keys (the theme, the cookie consent)
+are not touched by Reset.
+
+### Adding a handler when the contract gains an operation
+
+The handlers are in `web/src/sandbox/handlers/`, one file per area, typed with `createOpenApiHttp<paths>` from
+`@surveyjs-studio/contract/types`. The coverage test `handlers/index.test.ts` reads `contract/openapi.yaml` and fails
+when an operation is neither answered by a handler nor listed in `handlers/unsupported.ts`. So after you add an
+operation to the contract:
+
+1. Run `pnpm test:unit`, or only the coverage test in `web/`. It names the operation.
+2. Decide: can the browser do it? If yes, add the handler to the file of its area (or a new file, registered in
+   `handlers/index.ts`). Read the data from the store, change it in one write, and answer as the server does (the
+   same status, problem codes and headers). Put a comment in the file that names the server file you mirror. Do not
+   import from `server/src`.
+3. If not, add an entry to `UNSUPPORTED` in `handlers/unsupported.ts`. It answers `501 not-implemented`; its `before`
+   says what the server checks first (nothing, the session, or the survey).
+4. Add a unit test next to the handler (the `handlers/*.test.ts` files show the helpers in `handlers/testing.ts`).
+5. Run `pnpm test:conformance:sandbox`. A conformance test that cannot apply to the sandbox starts with
+   `if (sandbox) ctx.skip("<the reason>")`.
+6. If the operation reads seeded data, check [the seed](#the-sandbox-seed) still has what it needs.
+
+### The sandbox seed
+
+`pnpm sandbox:seed` writes `web/src/sandbox/seed.json` from the shared fixtures. The tag file
+`server/fixtures/sandbox.json` lists which people, surveys and projects go in (see
+[Golden fixtures](#golden-fixtures)). Run it after you change a fixture or the tag file, and commit `seed.json`.
+`scripts/sandbox-seed/generate.test.ts` fails when the file is stale or larger than `seedBudgetKb`. A feature that
+adds small data to the shared seed adds its id to the tag file.
+
 ## Production data mode
 
 `pnpm dev:prod-data` runs the app on the **real** surveyjs.io stores (the mode 1.1 data) with sign-in
@@ -795,6 +849,7 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 | `server`            | `seed:sqlite`, `seed:postgres`                                                                       | The root `pnpm seed:sqlite` and `pnpm seed:postgres` ([SQLite and PostgreSQL modes](#sqlite-and-postgresql-modes)); `dev:demo:s3` is the server half of `pnpm dev:s3` |
 | `server`            | `dev:prod-data`                                                                                      | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                                           |
 | `web`               | `dev`, `build`, `preview`, `test`, `typecheck`                                                       | Vite dev server, build (type check first), preview, unit tests                                                                                                        |
+| `web`               | `dev:sandbox`, `build:sandbox`                                                                       | The sandbox build ([The sandbox](#the-sandbox-step-9))                                                                                                                |
 | `contract`          | `generate`                                                                                           | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                                      |
 | `contract`          | `lint`, `check:generated`                                                                            | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale               |
 | `contract`          | `build:docs`                                                                                         | Write the self-contained `contract/dist/reference.html`                                                                                                               |
@@ -856,7 +911,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    `format:check`;
 2. `test:unit`, `test:conformance` (in-memory), `test:conformance:read-only` (in-memory, `READ_ONLY=true`) and
    `test:conformance:sqlite` (a new SQLite file) and `test:conformance:password` (SQLite, local accounts and password
-   sign-in) and `test:conformance:oauth` (the same with the OAuth stub);
+   sign-in) and `test:conformance:oauth` (the same with the OAuth stub) and `test:conformance:sandbox` (the sandbox handlers under `msw/node`);
 3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
    `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
@@ -869,7 +924,7 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    (the tsx server, whose SQLite file is on the host; files on local disk; Chromium) and `e2e:postgres` (Chromium,
    every functional spec but the licence notices; files in S3) and `e2e:password` (SQLite, password sign-in on the
    app's page; Chromium) and `e2e:self-hosted` (SQLite, the self-hosted shell with a brand; Chromium) and `e2e:oauth` (SQLite, GitHub and
-   Google sign-in against the stub; Chromium);
+   Google sign-in against the stub; Chromium) and `e2e:sandbox` (the sandbox build on `vite preview`; Chromium);
 7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
 8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
 9. `pnpm demo:azurite:down`, `pnpm postgres:down` and `pnpm s3:down`, which always run (`if: always()`).
