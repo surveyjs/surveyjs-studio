@@ -142,6 +142,10 @@ jobs:
       - name: End-to-end tests (self-hosted mode)
         run: pnpm e2e:self-hosted
 
+      # The sandbox build (the web app with its in-browser mock back-end), served by `vite preview`.
+      - name: End-to-end tests (sandbox mode)
+        run: pnpm e2e:sandbox
+
       # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'

@@ -7,6 +7,7 @@ export declare const ports: {
   visualWeb: number;
   selfHostedVisualServer: number;
   selfHostedVisualWeb: number;
+  sandboxWeb: number;
   oauthStub: number;
 };
 export declare function functionalPorts(mode: {
@@ -14,6 +15,7 @@ export declare function functionalPorts(mode: {
   azurite: boolean;
   sql?: boolean;
   oauth?: boolean;
+  sandbox?: boolean;
 }): number[];
 export declare const visualPorts: number[];
 export declare const selfHostedVisualPorts: number[];

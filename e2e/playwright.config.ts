@@ -42,12 +42,16 @@ stripAppVariables(process.env);
 // - self-hosted (E2E_MODE=self-hosted, `pnpm e2e:self-hosted`): the sqlite provider as in sqlite mode, in
 //   the self-hosted shell with an instance's branding (BRAND_*, TERMS_URL), local accounts with
 //   passwords and the dev sign-in; the self-hosted spec, on Chromium.
+// - sandbox (E2E_MODE=sandbox, `pnpm e2e:sandbox`): the sandbox build of the web app (its in-browser
+//   mock back-end on localStorage) behind `vite preview --mode sandbox`; no API server; the sandbox
+//   spec, on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
 const postgres = process.env["E2E_MODE"] === "postgres";
 const password = process.env["E2E_MODE"] === "password";
 const selfHosted = process.env["E2E_MODE"] === "self-hosted";
 const oauth = process.env["E2E_MODE"] === "oauth";
+const sandbox = process.env["E2E_MODE"] === "sandbox";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
@@ -365,6 +369,7 @@ const allButNotices = [
   "password.spec.ts",
   "self-hosted.spec.ts",
   "oauth.spec.ts",
+  "sandbox.spec.ts",
 ];
 
 export default defineConfig({
@@ -376,101 +381,127 @@ export default defineConfig({
   reporter: process.env["CI"] ? [["line"], ["html", { open: "never" }]] : "list",
   // A fixed locale and time zone, so the list's dates read the same on every machine.
   use: {
-    baseURL: `http://localhost:${ports.web}`,
+    baseURL: `http://localhost:${sandbox ? ports.sandboxWeb : ports.web}`,
     trace: "retain-on-failure",
     locale: "en-US",
     timezoneId: "UTC",
   },
-  projects: oauth
-    ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
-    : selfHosted
-      ? [
-          {
-            name: "self-hosted-chromium",
-            testMatch: ["self-hosted.spec.ts"],
-            use: chromium,
-          },
-        ]
-      : password
+  projects: sandbox
+    ? [{ name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium }]
+    : oauth
+      ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
+      : selfHosted
         ? [
             {
-              name: "password-chromium",
-              testMatch: ["password.spec.ts"],
+              name: "self-hosted-chromium",
+              testMatch: ["self-hosted.spec.ts"],
               use: chromium,
             },
           ]
-        : sqlite
+        : password
           ? [
               {
-                name: "sqlite-chromium",
-                // On the image: the postgres mode's specs, the full Phase 1 suites.
-                ...(imageTarget
-                  ? { testIgnore: allButNotices }
-                  : {
+                name: "password-chromium",
+                testMatch: ["password.spec.ts"],
+                use: chromium,
+              },
+            ]
+          : sqlite
+            ? [
+                {
+                  name: "sqlite-chromium",
+                  // On the image: the postgres mode's specs, the full Phase 1 suites.
+                  ...(imageTarget
+                    ? { testIgnore: allButNotices }
+                    : {
+                        testMatch: [
+                          "survey-list.spec.ts",
+                          "survey-list-paging.spec.ts",
+                          "editor.spec.ts",
+                          "history.spec.ts",
+                          "uploads.spec.ts",
+                          "run.spec.ts",
+                        ],
+                      }),
+                  use: chromium,
+                },
+              ]
+            : postgres
+              ? [
+                  {
+                    name: "postgres-chromium",
+                    testIgnore: allButNotices,
+                    use: chromium,
+                  },
+                ]
+              : azurite
+                ? [
+                    {
+                      name: "azurite-chromium",
                       testMatch: [
+                        "sign-in.spec.ts",
                         "survey-list.spec.ts",
-                        "survey-list-paging.spec.ts",
+                        "survey-actions.spec.ts",
                         "editor.spec.ts",
                         "history.spec.ts",
                         "uploads.spec.ts",
                         "run.spec.ts",
+                        "results.spec.ts",
+                        "results-details.spec.ts",
+                        "projects.spec.ts",
+                        "xss.spec.ts",
                       ],
-                    }),
-                use: chromium,
-              },
-            ]
-          : postgres
-            ? [
-                {
-                  name: "postgres-chromium",
-                  testIgnore: allButNotices,
-                  use: chromium,
-                },
-              ]
-            : azurite
-              ? [
-                  {
-                    name: "azurite-chromium",
-                    testMatch: [
-                      "sign-in.spec.ts",
-                      "survey-list.spec.ts",
-                      "survey-actions.spec.ts",
-                      "editor.spec.ts",
-                      "history.spec.ts",
-                      "uploads.spec.ts",
-                      "run.spec.ts",
-                      "results.spec.ts",
-                      "results-details.spec.ts",
-                      "projects.spec.ts",
-                      "xss.spec.ts",
-                    ],
-                    use: chromiumOnline,
-                  },
-                ]
-              : [
-                  // The password spec needs password mode's server.
-                  {
-                    name: "chromium",
-                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
-                    use: chromium,
-                  },
-                  {
-                    name: "firefox",
-                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
-                    use: { ...devices["Desktop Firefox"], viewport },
-                  },
-                  {
-                    name: "webkit",
-                    testIgnore: ["password.spec.ts", "self-hosted.spec.ts", "oauth.spec.ts"],
-                    use: { ...devices["Desktop Safari"], viewport },
-                  },
-                ],
-  webServer: imageTarget
-    ? imageWebServers()
-    : sqlite || postgres || password || selfHosted || oauth
-      ? sqlWebServers()
-      : azurite
-        ? azuriteWebServers
-        : memoryWebServers,
+                      use: chromiumOnline,
+                    },
+                  ]
+                : [
+                    // The password spec needs password mode's server.
+                    {
+                      name: "chromium",
+                      testIgnore: [
+                        "password.spec.ts",
+                        "self-hosted.spec.ts",
+                        "oauth.spec.ts",
+                        "sandbox.spec.ts",
+                      ],
+                      use: chromium,
+                    },
+                    {
+                      name: "firefox",
+                      testIgnore: [
+                        "password.spec.ts",
+                        "self-hosted.spec.ts",
+                        "oauth.spec.ts",
+                        "sandbox.spec.ts",
+                      ],
+                      use: { ...devices["Desktop Firefox"], viewport },
+                    },
+                    {
+                      name: "webkit",
+                      testIgnore: [
+                        "password.spec.ts",
+                        "self-hosted.spec.ts",
+                        "oauth.spec.ts",
+                        "sandbox.spec.ts",
+                      ],
+                      use: { ...devices["Desktop Safari"], viewport },
+                    },
+                  ],
+  webServer: sandbox
+    ? [
+        {
+          command: `pnpm --filter @surveyjs-studio/web exec vite preview --mode sandbox --port ${ports.sandboxWeb} --strictPort`,
+          url: `http://localhost:${ports.sandboxWeb}/`,
+          reuseExistingServer: false,
+          timeout: 60_000,
+        },
+      ]
+    : imageTarget
+      ? imageWebServers()
+      : sqlite || postgres || password || selfHosted || oauth
+        ? sqlWebServers()
+        : azurite
+          ? azuriteWebServers
+          : memoryWebServers,
   ...(imageTarget && { globalTeardown: "./image-teardown.mjs" }),
 });

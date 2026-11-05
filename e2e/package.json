@@ -13,7 +13,8 @@
     "test:postgres": "node scripts/run.mjs --config playwright.postgres.config.ts",
     "test:password": "node scripts/run.mjs --config playwright.password.config.ts",
     "test:oauth": "node scripts/run.mjs --config playwright.oauth.config.ts",
-    "test:self-hosted": "node scripts/run.mjs --config playwright.self-hosted.config.ts"
+    "test:self-hosted": "node scripts/run.mjs --config playwright.self-hosted.config.ts",
+    "test:sandbox": "node scripts/run.mjs --config playwright.sandbox.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
