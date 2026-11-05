@@ -143,7 +143,20 @@ describe("SandboxBanner", () => {
     expect(screen.getByRole("button", { name: "Reset demo data" })).toBeTruthy();
   });
 
-  it("clears the full-storage text on window focus once there is room again", () => {
+  it("keeps the full-storage text on window focus while writes are still refused", () => {
+    render(<SandboxBanner />);
+    act(() => {
+      window.dispatchEvent(new Event(STORAGE_FULL_EVENT));
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(screen.getByText(FULL)).toBeTruthy();
+  });
+
+  it("clears the full-storage text after the next write is stored", () => {
     store = make(1);
     store.read();
     render(<SandboxBanner />);
@@ -151,7 +164,7 @@ describe("SandboxBanner", () => {
 
     store = make();
     act(() => {
-      window.dispatchEvent(new Event("focus"));
+      store.write((data) => data);
     });
 
     expect(screen.queryByText(FULL)).toBeNull();

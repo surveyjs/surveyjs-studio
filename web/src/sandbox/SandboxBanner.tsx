@@ -3,7 +3,7 @@ import { navigateTo } from "../navigation";
 import { STORAGE_FULL_EVENT } from "./handlers/problems";
 import styles from "./sandbox.module.css";
 import { sandboxStore } from "./start";
-import { setSessionCookie } from "./store";
+import { setSessionCookie, STORAGE_WRITTEN_EVENT } from "./store";
 
 export const DEMO_TEXT =
   "This is a demo. Your data stays in this browser, and other visitors don't see it.";
@@ -42,13 +42,13 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
 
   useEffect(() => {
     const onFull = () => setFull(true);
-    // Space freed by deleting surveys clears the notice when the visitor comes back to the page.
-    const onFocus = () => setFull(storageIsFull());
+    // A write that is stored proves there is room again (say, after deleting surveys).
+    const onWritten = () => setFull(false);
     window.addEventListener(STORAGE_FULL_EVENT, onFull);
-    window.addEventListener("focus", onFocus);
+    window.addEventListener(STORAGE_WRITTEN_EVENT, onWritten);
     return () => {
       window.removeEventListener(STORAGE_FULL_EVENT, onFull);
-      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(STORAGE_WRITTEN_EVENT, onWritten);
     };
   }, []);
 

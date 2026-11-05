@@ -80,7 +80,7 @@ Details that follow:
 - **Answers 501:** sign-in by password or provider, changing a password, the instance admin's users, and results
   exports (D7). The pages for them are hidden or absent (D4, D6).
 - **The storage can fill up.** The visitor sees the banner's message and **Reset demo data**. The banner clears its
-  message when the window gets the focus again and there is room.
+  message once a later write is stored (say, after deleting surveys).
 - **An upload refused because the browser storage is full shows the per-survey file quota message** (the answer is
   `413 quota-exceeded`), while the banner shows the full-storage text.
 - **There is no cross-tab lock.** Two tabs writing at nearly the same moment both start from the same document, and

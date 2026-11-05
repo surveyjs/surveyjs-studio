@@ -21,6 +21,9 @@ export function memoryStorage(): KeyValueStorage {
 /** The one key holding the whole sandbox document (D2). */
 export const STORAGE_KEY = "studio-sandbox:v1";
 
+/** Fired on `window` after a write is stored: the storage had room for it. */
+export const STORAGE_WRITTEN_EVENT = "sandbox:storage-written";
+
 /** An uploaded file; its bytes are kept as base64. */
 export interface SandboxFile {
   id: string;
@@ -152,6 +155,7 @@ export function createSandboxStore(options: {
         // Whatever the reason (QuotaExceededError, a blocked storage), the browser refused the write.
         throw new StorageFullError();
       }
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(STORAGE_WRITTEN_EVENT));
       return next;
     },
     reset() {
