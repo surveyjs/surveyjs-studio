@@ -8,7 +8,7 @@ export const READ_ONLY_TEXT = "My Surveys is read-only at the moment. Changes ca
  */
 export function ReadOnlyBanner() {
   return (
-    <div className={styles.banner} role="status" title={READ_ONLY_TEXT}>
+    <div className={styles.banner} data-page-banner role="status" title={READ_ONLY_TEXT}>
       {READ_ONLY_TEXT}
     </div>
   );

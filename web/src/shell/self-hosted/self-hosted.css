@@ -20,7 +20,8 @@
 
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* The page banner (the sandbox's demo banner) sits above the shell and sets its height. */
+  min-height: calc(100vh - var(--page-banner-height, 0px));
   background: var(--sh-surface);
   color: var(--sh-text);
   font-family: var(--sh-font);

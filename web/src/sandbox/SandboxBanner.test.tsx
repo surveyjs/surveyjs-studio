@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "../navigation";
 import { STORAGE_FULL_EVENT } from "./handlers/problems";
@@ -87,10 +87,38 @@ describe("SandboxBanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    expect(screen.getByRole("alert").textContent).toContain(
+    const message = screen.getByText(
       "Could not reset the demo data. Clear this site's data in the browser and reload.",
     );
+    expect(message.getAttribute("role")).toBe("alert");
+    expect(message.closest("aside")!.querySelector("[role=alert] [role=alert]")).toBeNull();
+    expect(document.activeElement).toBe(message);
     expect(navigateTo).not.toHaveBeenCalled();
+  });
+
+  it("is a labelled landmark and announces the full-storage text in a live region", () => {
+    render(<SandboxBanner />);
+
+    const banner = screen.getByRole("complementary", { name: "Demo notice" });
+    expect(banner.getAttribute("role")).toBeNull();
+    const alert = within(banner).getByRole("alert");
+    expect(alert.textContent).toBe("");
+
+    act(() => {
+      window.dispatchEvent(new Event(STORAGE_FULL_EVENT));
+    });
+
+    expect(within(banner).getByRole("alert").textContent).toBe(FULL);
+  });
+
+  it("keeps the focus in the banner: on Reset, then on Reset demo data after Cancel", () => {
+    render(<SandboxBanner />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Reset" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Reset demo data" }));
   });
 
   it("shows the full-storage text when the storage is full at the start", () => {

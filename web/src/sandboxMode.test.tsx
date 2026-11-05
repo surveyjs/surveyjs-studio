@@ -9,6 +9,9 @@ import seedJson from "./sandbox/seed.json";
 import type { SandboxSeed } from "./sandbox/seed-types";
 import { DEFAULT_SETTINGS } from "./sandbox/settings";
 import { createSandboxStore, memoryStorage, type SandboxStore } from "./sandbox/store";
+import { createAppRouter } from "./router";
+import { currentUserQueryOptions } from "./api/session";
+import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { renderApp } from "./test/renderApp";
 import { sampleSurvey, surveyListPageHandlers } from "./test/server";
 import {
@@ -106,6 +109,32 @@ describe("the sandbox build", () => {
 
     await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/sign-in"));
     expect(document.cookie).not.toContain("msid=");
+  });
+});
+
+describe("a session that ends in another tab", () => {
+  it("sends the next 401 to the account picker, back to this page after", async () => {
+    document.cookie = `msid=${currentUser.id}; path=/`;
+    server.use(sandboxConfig(), meHandler(), ...surveyListPageHandlers());
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: ["/?x=1"] }));
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Sign Out" });
+
+    // What another tab's Reset does: the data is the seed again and the cookie is gone.
+    store.reset();
+    document.cookie = "msid=; path=/; max-age=0";
+    server.use(unauthenticatedHandler());
+    await queryClient.fetchQuery(currentUserQueryOptions).catch(() => undefined);
+
+    expect(await screen.findByRole("heading", { name: "Pick an account" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/sign-in");
+    expect(router.state.location.search).toEqual({ returnTo: "/?project=personal" });
+    expect(screen.getAllByRole("button", { name: /@example\.com/ })).toHaveLength(4);
   });
 });
 
