@@ -18,7 +18,7 @@ kept in step with the real server?
 | #   | Topic                      | Decision                                                                                                                                                                                                                                                                                                                                    |
 | --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | A build mode               | `import.meta.env.MODE === "sandbox"` (`web/src/sandbox/mode.ts`, `IS_SANDBOX`). Vite drops the dead branch, so the normal build has no sandbox code. The sandbox build goes to `web/dist-sandbox/`, with `web/sandbox-public/` as its public directory and no `/api` proxy. `e2e/scripts/run.mjs` strips `VITE_*`, so no env switch is used |
-| D2  | One localStorage document  | All data is one JSON value under `studio-sandbox:v1`. Each handler reads it at the start of a request and writes it back in one `setItem`. There is no in-memory cache, so another tab's change is visible at once, and a failed write leaves the previous data intact. The app's own keys are never touched, not even by Reset             |
+| D2  | One localStorage document  | All data is one JSON value under `studio-sandbox:v1`. Each handler reads it at the start of a request and writes it back in one `setItem`. There is no in-memory cache, so another tab's change is visible on the next request, and a failed write leaves the previous data intact. The app's own keys are never touched, not even by Reset |
 | D3  | The session is a cookie    | Picking an account sets `msid=<userId>` (path `/`, `SameSite=Lax`) with `document.cookie`. Handlers read it through MSW's `cookies` argument. There is no CSRF token: the web app's `csrfMiddleware` sends nothing when `msid_csrf` is absent. The conformance driver sets the same cookie                                                  |
 | D4  | Navigations are the app's  | The service worker never sees a page navigation. So in the sandbox build the private guard sends a 401 to `/sign-in`, `/sign-in` shows **Pick an account**, `logout` answers `redirectUrl: "/sign-in"`, and the export links are hidden                                                                                                     |
 | D5  | Files are same-origin URLs | Uploaded bytes are base64 in the document. `StoredFile.url` is `<origin>/api/v1/public/files/<fileId>`, answered by the mock with the server's headers, so `<img>`, `<video>` and the Dashboard load them through the worker                                                                                                                |
@@ -49,7 +49,7 @@ Details that follow:
 - **A 401 sends the tab to the picker.** In the sandbox build a 401 from any query or mutation goes to `/sign-in`
   with the current path as `returnTo`, except the `/me` query on pages that are not private. This answers a Reset in
   another tab, which removes the session. Other builds keep the open global-401 item.
-- **A worker that cannot start** shows "This demo needs a browser with service workers…" instead of an empty app.
+- **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an empty app.
 - **A stale or damaged document** (missing, an old `version`, unparsable) is replaced by the seed.
 - **`mockServiceWorker.js` is MSW's own file**, copied into `web/sandbox-public/`. `web/src/sandbox/worker-file.test.ts`
   checks that it is byte-equal to the installed `msw`'s, so an upgrade that forgets the copy fails.
@@ -79,7 +79,14 @@ Details that follow:
   and the demo has one visitor. The mock types a file by its extension.
 - **Answers 501:** sign-in by password or provider, changing a password, the instance admin's users, and results
   exports (D7). The pages for them are hidden or absent (D4, D6).
-- **The storage can fill up.** The visitor sees the banner's message and **Reset demo data**.
+- **The storage can fill up.** The visitor sees the banner's message and **Reset demo data**. The banner clears its
+  message when the window gets the focus again and there is room.
+- **An upload refused because the browser storage is full shows the per-survey file quota message** (the answer is
+  `413 quota-exceeded`), while the banner shows the full-storage text.
+- **There is no cross-tab lock.** Two tabs writing at nearly the same moment both start from the same document, and
+  only the last write is kept.
+- **History keeps no snapshots.** An entry is `{ id, at, userId }`; no operation returns a definition from history, so
+  auto-saves do not grow the document by the size of the survey.
 - **A new contract operation needs a handler or an entry in the unsupported list.** The coverage test fails
   until it has one ([Development](../development.md#the-sandbox-step-9)).
 - **The seed is a snapshot.** A change to the shared fixtures or the tag file needs `pnpm sandbox:seed` and a commit.
