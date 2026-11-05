@@ -33,13 +33,15 @@ and **Source code**, and the button **Reset demo data**.
 ## 1. Pick the owner and see the seeded surveys and their results (checklist 1)
 
 1. Click **Olivia Owner**.
-   - **Check:** My Surveys opens. The list has **Customer feedback** and **Draft idea**, the surveys of the
-     projects **Marketing** and **Engineering** (for example **Campaign survey**), and **Old poll** under **Archived**.
-     The banner stays at the top.
+   - **Check:** My Surveys opens on **Personal Surveys** with the active personal surveys **Customer feedback** and
+     **Draft idea**. The banner stays at the top.
+   - Open the project drop-down and choose **Marketing**. **Check:** **Campaign survey** is listed (choose
+     **Engineering** for **Engineering retro**). Go back to **Personal Surveys**.
+   - Turn on **Archived** (shown when the list has archived surveys). **Check:** **Old poll** is listed. Turn it off.
 2. Open the menu of **Customer feedback** and click **View Results**, then the **Details** tab.
    - **Check:** it says `Total responses: 5`, and the rows hold seeded answers.
-3. Open the account menu. **Check:** there is no **Users** item and no **Change password**: a demo account has no
-   password and no instance role.
+3. Look at the header. **Check:** it has **My Surveys** and **Projects**, no **Users**; next to the name there is
+   **Sign Out** and no **Change password**: a demo account has no password and no instance role.
 
 ## 2. A change is kept, and a private window does not see it (checklist 2)
 
