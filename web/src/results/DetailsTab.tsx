@@ -95,27 +95,33 @@ export function DetailsTab({
     <div className="column-layout">
       <div className="column-layout__column survey-results-header-left">
         {totals}
-        <div className="survey-results-header-line mod-mt-30">
-          <span>Download all results as:</span>
-        </div>
-        <div className="mod-mt-20">
-          <a
-            className="rounded-button"
-            href={exportResultsUrl(API_BASE_URL, survey.id, "json")}
-            download
-          >
-            JSON
-          </a>
-        </div>
-        <div className="mod-mt-20">
-          <a
-            className="rounded-button"
-            href={exportResultsUrl(API_BASE_URL, survey.id, "csv")}
-            download
-          >
-            CSV
-          </a>
-        </div>
+        {/* The sandbox build has no export (D4: exportResults answers 501). The comparison stays
+            inline so the bundler removes it from the normal build. */}
+        {import.meta.env.MODE !== "sandbox" && (
+          <>
+            <div className="survey-results-header-line mod-mt-30">
+              <span>Download all results as:</span>
+            </div>
+            <div className="mod-mt-20">
+              <a
+                className="rounded-button"
+                href={exportResultsUrl(API_BASE_URL, survey.id, "json")}
+                download
+              >
+                JSON
+              </a>
+            </div>
+            <div className="mod-mt-20">
+              <a
+                className="rounded-button"
+                href={exportResultsUrl(API_BASE_URL, survey.id, "csv")}
+                download
+              >
+                CSV
+              </a>
+            </div>
+          </>
+        )}
       </div>
       <div className="column-layout__column column-layout__column--float-right survey-results-header-right">
         {canModify && (

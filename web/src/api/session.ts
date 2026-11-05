@@ -29,9 +29,17 @@ export function useSignOut(): SignOut {
   // A ref, not isPending: two clicks in the same tick both see the old render.
   const inFlight = useRef(false);
   const { mutate, isPending, error } = $api.useMutation("post", "/auth/logout", {
-    onSuccess: ({ redirectUrl }) => {
+    onSuccess: async ({ redirectUrl }) => {
       queryClient.clear();
-      navigateTo(redirectUrl);
+      try {
+        // The sandbox's session is a cookie the page set (D3); the mock cannot clear it.
+        // Inline, so the bundler removes this from the normal build.
+        if (import.meta.env.MODE === "sandbox") {
+          (await import("../sandbox/store")).setSessionCookie(null);
+        }
+      } finally {
+        navigateTo(redirectUrl);
+      }
     },
     onError: () => {
       inFlight.current = false;

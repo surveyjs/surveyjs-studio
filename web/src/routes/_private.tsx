@@ -17,7 +17,8 @@ export const Route = createFileRoute("/_private")({
         // The hosted service (surveyjs.io only) leaves for the server's login; every other
         // instance has the app's own sign-in page.
         const config = await context.queryClient.ensureQueryData(configQueryOptions);
-        if (!isSurveyjsOnly(config.authMethods)) {
+        // The sandbox has no surveyjs.io to leave for: its sign-in page is the account picker.
+        if (import.meta.env.MODE === "sandbox" || !isSurveyjsOnly(config.authMethods)) {
           throw redirect({ to: "/sign-in", search: { returnTo: location.href } });
         }
         navigateTo(`/api/v1/auth/login?returnTo=${encodeURIComponent(location.href)}`);
