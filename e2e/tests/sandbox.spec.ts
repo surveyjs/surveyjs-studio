@@ -91,6 +91,14 @@ test("@sandbox a survey published in the sandbox runs in a new tab and its respo
   page,
   context,
 }) => {
+  // No call to another site (the self-hosted shell's rule), from any page of the context, the run
+  // tab included. A listener on the context sees a tab's first requests too (D9: not page.route).
+  const origin = new URL(String(test.info().project.use.baseURL)).origin;
+  const foreign: string[] = [];
+  context.on("request", (request) => {
+    const { protocol, origin: requested } = new URL(request.url());
+    if (protocol.startsWith("http") && requested !== origin) foreign.push(request.url());
+  });
   await pickAccount(page, "owner");
   const row = surveyRow(page, "Customer feedback");
 
@@ -103,7 +111,7 @@ test("@sandbox a survey published in the sandbox runs in a new tab and its respo
   const tab = await opened;
   const checkTabConsole = watchConsole(tab);
   await expect(tab).toHaveURL(new RegExp(`/s/${FEEDBACK_SURVEY}$`));
-  await tab.getByText("3", { exact: true }).first().click();
+  await tab.locator("[data-name=satisfaction]").getByText("3", { exact: true }).click();
   await tab.getByRole("button", { name: "Complete", exact: true }).click();
   await expect(tab.getByText("Thank you for completing the survey")).toBeVisible();
   checkTabConsole();
@@ -117,6 +125,7 @@ test("@sandbox a survey published in the sandbox runs in a new tab and its respo
   await page.reload();
   await openResultsTab(page, "Details");
   await expect(totalResponses(page)).toContainText("Total responses: 6");
+  expect(foreign).toEqual([]);
 });
 
 test("@sandbox Reset demo data brings the seed back", async ({ page }) => {
@@ -169,7 +178,7 @@ test("@sandbox another browser context starts from the seed and does not see the
   }
 });
 
-/** The Details tab's block that holds "Total responses: N". */
+/** The Details tab's "Total responses: N" line (the label's own parent). */
 function totalResponses(page: Page) {
-  return page.locator("div", { has: page.getByText("Total responses:", { exact: true }) }).last();
+  return page.getByText("Total responses:", { exact: true }).locator("..");
 }
