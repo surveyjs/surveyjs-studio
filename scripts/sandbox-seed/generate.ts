@@ -101,7 +101,12 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
     })),
     definitions: bySurvey(seed.definitions, surveys),
     themes: bySurvey(seed.themes, surveys),
-    history: bySurvey(seed.history, surveys),
+    history: Object.fromEntries(
+      Object.entries(bySurvey(seed.history, surveys)).map(([id, list]) => [
+        id,
+        list.map((h) => ({ id: h.id, at: h.at, userId: h.userId })),
+      ]),
+    ),
     responses: Object.fromEntries(
       Object.entries(responses).map(([id, list]) => [
         id,

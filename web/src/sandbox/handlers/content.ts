@@ -137,7 +137,6 @@ export function contentHandlers(ctx: HandlerContext) {
               id: ctx.newId(),
               at: savedAt,
               userId: user.id.toLowerCase(),
-              snapshot: structuredClone(body),
             });
           }
         });

@@ -400,7 +400,6 @@ export function surveyHandlers(ctx: HandlerContext) {
                 id: ctx.newId(),
                 at: now,
                 userId: lower(user.id),
-                snapshot: structuredClone(definition as Record<string, unknown>),
               },
             ];
           }
@@ -574,7 +573,6 @@ export function surveyHandlers(ctx: HandlerContext) {
                 id: ctx.newId(),
                 at: now,
                 userId: lower(user.id),
-                snapshot: structuredClone(definition),
               },
             ];
           }

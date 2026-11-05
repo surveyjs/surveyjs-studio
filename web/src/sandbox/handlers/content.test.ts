@@ -123,6 +123,27 @@ describe("survey definition", () => {
   });
 });
 
+describe("definition saves and history", () => {
+  it("adds an entry without a snapshot, of the same size whatever the survey's size", async () => {
+    const { call, ctx } = setupSandbox();
+    const path = `/surveys/${SURVEYS.feedback}/definition`;
+    const save = async (json: unknown) =>
+      (await call(path, { ...put(json, "*"), user: USERS.owner })).status;
+    const before = ctx.store.read().history[SURVEYS.feedback]!.length;
+
+    const big = { pages: [{ elements: [{ type: "comment", title: "x".repeat(50_000) }] }] };
+    expect(await save({ title: "Small" })).toBe(204);
+    expect(await save(big)).toBe(204);
+
+    const added = ctx.store.read().history[SURVEYS.feedback]!.slice(before);
+    expect(added).toHaveLength(2);
+    for (const entry of added) {
+      expect(Object.keys(entry).sort()).toEqual(["at", "id", "userId"]);
+    }
+    expect(JSON.stringify(added[1]).length).toBe(JSON.stringify(added[0]).length);
+  });
+});
+
 describe("survey theme", () => {
   it("GET and PUT work as the definition's, without a history entry", async () => {
     const { call } = setupSandbox();

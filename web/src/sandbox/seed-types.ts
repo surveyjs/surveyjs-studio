@@ -76,7 +76,6 @@ export interface SandboxHistoryEntry {
   at: string;
   /** Who saved: null in the seed (and for legacy entries). */
   userId: string | null;
-  snapshot: SandboxJson;
 }
 
 /** `MemorySeed.responses` entries (a `SurveyResponse`). */
