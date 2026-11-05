@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, type ComponentType } from "react";
 
 // The shared routes reach the sandbox UI only through these, and only behind an inline
@@ -7,7 +8,11 @@ import { lazy, Suspense, type ComponentType } from "react";
 let banner: ComponentType<{ compact?: boolean }> | undefined;
 let signIn: ComponentType<{ returnTo: string | undefined }> | undefined;
 
-export function LazySandboxBanner({ compact }: { compact: boolean }) {
+export function LazySandboxBanner() {
+  // The run page is what a respondent sees: the demo banner is a thin strip there.
+  const compact = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/s/"),
+  });
   banner ??= lazy(async () => ({
     default: (await import("./sandbox/SandboxBanner")).SandboxBanner,
   }));

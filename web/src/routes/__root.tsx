@@ -4,7 +4,6 @@ import {
   Outlet,
   createRootRouteWithContext,
   useRouter,
-  useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { configQueryOptions } from "../api/config";
@@ -35,15 +34,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const config = Route.useLoaderData();
-  // The run page is what a respondent sees: the demo banner is a thin strip there.
-  const onRunPage = useRouterState({
-    select: (state) => state.location.pathname.startsWith("/s/"),
-  });
   return (
     <>
       {config.readOnly && <ReadOnlyBanner />}
       {/* Inline, so the bundler removes the sandbox banner from the normal build. */}
-      {import.meta.env.MODE === "sandbox" && <LazySandboxBanner compact={onRunPage} />}
+      {import.meta.env.MODE === "sandbox" && <LazySandboxBanner />}
       <Outlet />
     </>
   );
