@@ -56,6 +56,14 @@ export const unauthenticated = () =>
 export const notFound = () =>
   new ProblemError({ code: "not-found", status: 404, title: "Not found" });
 
+/** The 404 of every public operation: an unknown and an unpublished survey look the same (results/availability.ts). */
+export const surveyNotAvailable = () =>
+  new ProblemError({
+    code: "survey-not-available",
+    status: 404,
+    title: "This survey is not available",
+  });
+
 export const forbidden = (detail: string) =>
   new ProblemError({ code: "forbidden", status: 403, title: "Forbidden", detail });
 

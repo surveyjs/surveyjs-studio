@@ -42,8 +42,11 @@ export type SandboxData = Omit<SandboxSeed, "version"> & {
   files: SandboxFile[];
   /** Idempotency keys of submitted responses: survey id, then key, to the response id. */
   idempotencyKeys: Record<string, Record<string, string>>;
-  /** Saved results views: user id, then survey id, then view name, to the view. */
-  savedViews: Record<string, Record<string, Record<string, SandboxJson>>>;
+  /**
+   * Saved results views: user id, then survey id, then view name, to the view; `null` is a reset
+   * (no layout, not even a legacy one, until the next save).
+   */
+  savedViews: Record<string, Record<string, Record<string, SandboxJson | null>>>;
 };
 
 /** The write would make the document reach `storageLimitKb`, or the browser refused it. */

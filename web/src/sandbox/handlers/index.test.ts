@@ -42,23 +42,10 @@ const answers = (handlers: readonly HttpHandler[], { method, path }: Operation) 
   handlers.some((h) => h.info.method === method && h.info.path === mswPath(path));
 
 /**
- * Operations whose handlers come with Task 4 (files, publishing, results, views) and Task 5
- * (projects and members). Each task removes its operations from this list: a handled operation
+ * Operations whose handlers come with Task 5 (projects and members). Each task removes its operations from this list: a handled operation
  * still listed fails the test.
  */
 const LATER_TASKS: readonly string[] = [
-  "uploadSurveyAsset",
-  "listResults",
-  "deleteResults",
-  "getResultStats",
-  "getResultsView",
-  "saveResultsView",
-  "resetResultsView",
-  "getPublishedSurvey",
-  "submitResponse",
-  "uploadResponseFile",
-  "downloadFile",
-  "getPublicResults",
   "listProjects",
   "createProject",
   "getProject",

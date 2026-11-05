@@ -64,13 +64,22 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * The JSON body of a request. A missing body is `undefined` (the caller says whether it is
- * required); a body in a media type outside `mediaTypes` is `415`; text that is no JSON is `400`.
+ * required); a body longer than `maxLength` is `413`; a body in a media type outside `mediaTypes` is
+ * `415`; text that is no JSON is `400`.
  */
 export async function readJson(
   request: Request,
   mediaTypes: readonly string[] = ["application/json"],
+  maxLength?: number,
 ): Promise<unknown> {
   const text = await request.text();
+  if (maxLength !== undefined && text.length > maxLength) {
+    throw new ProblemError({
+      code: "payload-too-large",
+      status: 413,
+      title: "Payload too large",
+    });
+  }
   if (text === "") return undefined;
   const mediaType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   if (mediaType === undefined || !mediaTypes.includes(mediaType)) {

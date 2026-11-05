@@ -1,16 +1,28 @@
 import type { HttpHandler } from "msw";
 import { contentHandlers } from "./content";
 import type { HandlerContext } from "./context";
+import { fileHandlers } from "./files";
+import { publicHandlers } from "./public";
+import { resultsHandlers } from "./results";
 import { sessionHandlers } from "./session";
 import { surveyHandlers } from "./surveys";
+import { viewHandlers } from "./views";
 import { catchAllHandlers, unsupportedHandlers } from "./unsupported";
 
 export { http } from "./http";
 export type { HandlerContext } from "./context";
 
-/** The handlers of the operations the sandbox answers itself (Tasks 4 and 5 add their areas here). */
+/** The handlers of the operations the sandbox answers itself (Task 5 adds its areas here). */
 export function areaHandlers(context: HandlerContext): HttpHandler[] {
-  return [...sessionHandlers(context), ...surveyHandlers(context), ...contentHandlers(context)];
+  return [
+    ...sessionHandlers(context),
+    ...surveyHandlers(context),
+    ...contentHandlers(context),
+    ...fileHandlers(context),
+    ...publicHandlers(context),
+    ...resultsHandlers(context),
+    ...viewHandlers(context),
+  ];
 }
 
 /**
