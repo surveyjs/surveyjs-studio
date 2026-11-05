@@ -7,6 +7,7 @@ import type { SandboxMembership, SandboxSurvey, SandboxUser } from "../seed-type
 import type { SandboxData, SandboxFile } from "../store";
 import {
   checkName,
+  checkPathId,
   checkProjectId,
   compare,
   failOn,
@@ -96,6 +97,7 @@ export interface FoundSurvey {
 
 /** The survey, 404 when unknown or invisible to the user (they look the same). */
 export function visibleSurvey(data: SandboxData, user: SandboxUser, id: string): FoundSurvey {
+  checkPathId(id, "surveyId");
   const survey = data.surveys.find((candidate) => sameId(candidate.id, id));
   if (!survey) throw notFound();
   const membership = surveyMembership(data, user, survey);

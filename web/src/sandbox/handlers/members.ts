@@ -5,6 +5,7 @@
 import { HttpResponse } from "msw";
 import type { SandboxUser } from "../seed-types";
 import {
+  checkPathId,
   failOn,
   lower,
   mutate,
@@ -197,6 +198,7 @@ export function memberHandlers(ctx: HandlerContext) {
       guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
+        checkPathId(params.userId, "userId");
         const body = requiredObject(
           await readJson(request, ["application/merge-patch+json", "application/json"]),
         );
@@ -228,6 +230,7 @@ export function memberHandlers(ctx: HandlerContext) {
       guarded(() => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
+        checkPathId(params.userId, "userId");
         mutate(ctx, cookies, (data, user) => {
           // Any member may leave; removing someone else takes an admin.
           const { project } = sameId(params.userId, user.id)

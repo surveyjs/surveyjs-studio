@@ -5,6 +5,7 @@ import { HttpResponse } from "msw";
 import type { SandboxMembership, SandboxProject, SandboxUser } from "../seed-types";
 import type { SandboxData } from "../store";
 import {
+  checkPathId,
   failOn,
   lower,
   mutate,
@@ -31,11 +32,7 @@ import {
 
 /** The path's project id is an `Id` of 1 to 64 characters (the contract's schema): 400 otherwise. */
 export function checkProjectPath(projectId: string): void {
-  if (projectId.length === 0 || projectId.length > 64) {
-    throw badRequest(undefined, [
-      { pointer: "/projectId", detail: "must be between 1 and 64 characters" },
-    ]);
-  }
+  checkPathId(projectId, "projectId");
 }
 
 export interface Access {

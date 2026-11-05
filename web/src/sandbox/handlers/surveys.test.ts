@@ -178,6 +178,18 @@ describe("GET /surveys/{id}", () => {
     expect((await call(`/surveys/${SURVEYS.campaign}`, { user: USERS.outsider })).status).toBe(404);
     expect((await call(`/surveys/${SURVEYS.feedback}`)).status).toBe(401);
   });
+
+  it("answers 400 bad-request for an id longer than 64 characters, after the session check", async () => {
+    const { call } = setupSandbox();
+    const long = await call(`/surveys/${"x".repeat(65)}`, { user: USERS.owner });
+    expect(long.status).toBe(400);
+    expect(await long.json()).toMatchObject({
+      code: "bad-request",
+      errors: [{ pointer: "/surveyId", detail: "must NOT have more than 64 characters" }],
+    });
+    expect((await call(`/surveys/${"x".repeat(64)}`, { user: USERS.owner })).status).toBe(404);
+    expect((await call(`/surveys/${"x".repeat(65)}`)).status).toBe(401);
+  });
 });
 
 describe("PATCH /surveys/{id}", () => {

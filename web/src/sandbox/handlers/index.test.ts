@@ -41,9 +41,6 @@ const mswPath = (path: string) => `*/api/v1${path.replace(/\{(\w+)\}/g, ":$1")}`
 const answers = (handlers: readonly HttpHandler[], { method, path }: Operation) =>
   handlers.some((h) => h.info.method === method && h.info.path === mswPath(path));
 
-/** Operations whose handlers are still to come: none; Task 6 deletes this list. */
-const LATER_TASKS: readonly string[] = [];
-
 describe("the contract's operations", () => {
   const operations = contractOperations();
   const context = setupSandbox().ctx;
@@ -58,10 +55,9 @@ describe("the contract's operations", () => {
     for (const operation of operations) {
       const handled = answers(area, operation);
       const listed = UNSUPPORTED_OPERATIONS.includes(operation.id);
-      const later = LATER_TASKS.includes(operation.id);
       expect(
-        [handled, listed, later].filter(Boolean),
-        `${operation.id} must be handled, unsupported or pending exactly once`,
+        [handled, listed].filter(Boolean),
+        `${operation.id} must be handled or unsupported, not both`,
       ).toHaveLength(1);
     }
   });
@@ -69,7 +65,7 @@ describe("the contract's operations", () => {
   it("list only operations of the contract, each with an unsupported handler", () => {
     const ids = operations.map((operation) => operation.id);
     expect(new Set(UNSUPPORTED_OPERATIONS).size).toBe(UNSUPPORTED_OPERATIONS.length);
-    for (const id of [...UNSUPPORTED_OPERATIONS, ...LATER_TASKS]) expect(ids).toContain(id);
+    for (const id of UNSUPPORTED_OPERATIONS) expect(ids).toContain(id);
     for (const id of UNSUPPORTED_OPERATIONS) {
       const operation = operations.find((candidate) => candidate.id === id)!;
       expect(answers(unsupported, operation), id).toBe(true);

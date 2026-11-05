@@ -2,7 +2,7 @@
 // signed-in side of a survey's results. A response is returned as results/export.ts `responseJson`
 // does (no `partial`). The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
-import { mutate, parsePagingQuery, requireSession, view } from "./common";
+import { mutate, parsePagingQuery, requireSession, RESULTS_PAGE, view } from "./common";
 import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { guarded } from "./problems";
@@ -14,7 +14,7 @@ export function resultsHandlers(ctx: HandlerContext) {
     http.get("/surveys/{surveyId}/results", ({ params, request, cookies }) =>
       guarded(() => {
         requireSession(ctx, cookies);
-        const { limit, cursor } = parsePagingQuery(new URL(request.url));
+        const { limit, cursor } = parsePagingQuery(new URL(request.url), RESULTS_PAGE);
         return view(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
           const { items, nextCursor } = responsePage(data, survey.id, limit, cursor);

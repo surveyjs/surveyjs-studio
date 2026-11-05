@@ -5,7 +5,15 @@
 import { HttpResponse } from "msw";
 import type { SandboxJson, SandboxResponse, SandboxSurvey } from "../seed-types";
 import type { SandboxData } from "../store";
-import { compare, isRecord, readJson, requiredObject } from "./common";
+import {
+  checkPathId,
+  compare,
+  isRecord,
+  parsePagingQuery,
+  readJson,
+  requiredObject,
+  RESULTS_PAGE,
+} from "./common";
 import type { HandlerContext } from "./context";
 import { privateKeysOf, withoutKeys } from "./definition";
 import { http } from "./http";
@@ -33,6 +41,7 @@ function clientIdProblem(value: string): string | null {
 
 /** The survey when it exists and is published, archived or not (availability.ts). */
 export function availableSurvey(data: SandboxData, surveyId: string): SandboxSurvey {
+  checkPathId(surveyId, "surveyId");
   const survey = data.surveys.find((candidate) => candidate.id === surveyId.toLowerCase());
   if (!survey?.published) throw surveyNotAvailable();
   return survey;
@@ -95,21 +104,6 @@ export function responsePage(
   };
 }
 
-/** The `limit` of public results: an integer from 1 to 1000 (default 500). */
-function publicLimit(params: URLSearchParams): number {
-  const text = params.get("limit");
-  if (text === null) return 500;
-  const errors: ProblemFieldError[] = [];
-  if (!/^-?\d+$/.test(text)) errors.push({ pointer: "/limit", detail: "must be integer" });
-  else if (Number(text) < 1) errors.push({ pointer: "/limit", detail: "must be >= 1" });
-  else if (Number(text) > 1000) errors.push({ pointer: "/limit", detail: "must be <= 1000" });
-  if (errors.length > 0) throw badRequest(undefined, errors);
-  return Number(text);
-}
-
-/** The largest request body (`limits.maxResponseBytes` of the server's defaults). */
-const MAX_RESPONSE_BYTES = 1048576;
-
 export function publicHandlers(ctx: HandlerContext) {
   return [
     http.get("/public/surveys/{surveyId}", ({ params, request }) =>
@@ -149,9 +143,7 @@ export function publicHandlers(ctx: HandlerContext) {
             },
           ]);
         }
-        const body = requiredObject(
-          await readJson(request, ["application/json"], MAX_RESPONSE_BYTES),
-        );
+        const body = requiredObject(await readJson(request));
         const errors: ProblemFieldError[] = [];
         if (!isRecord(body["data"])) {
           errors.push({
@@ -226,17 +218,13 @@ export function publicHandlers(ctx: HandlerContext) {
 
     http.get("/public/surveys/{surveyId}/results", ({ params, request }) =>
       guarded(() => {
-        const url = new URL(request.url);
-        const limit = publicLimit(url.searchParams);
+        // The path, then the query: the server validates them in that order.
+        checkPathId(params.surveyId, "surveyId");
+        const { limit, cursor } = parsePagingQuery(new URL(request.url), RESULTS_PAGE);
         const data = ctx.store.read();
         const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
         if (!survey?.settings.publicResults) throw surveyNotAvailable();
-        const { items, nextCursor } = responsePage(
-          data,
-          survey.id,
-          limit,
-          url.searchParams.get("cursor") ?? undefined,
-        );
+        const { items, nextCursor } = responsePage(data, survey.id, limit, cursor);
         const definition = data.definitions[survey.id] ?? {};
         const privateQuestions = data.privateResultQuestions[survey.id] ?? [];
         const hidden = privateKeysOf(definition, privateQuestions);

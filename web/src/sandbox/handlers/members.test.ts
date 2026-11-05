@@ -182,6 +182,9 @@ describe("PATCH /projects/{projectId}/members/{userId}", () => {
     for (const body of [{}, { role: "owner" }]) {
       expect((await call(path, patch(body, USERS.admin))).status).toBe(422);
     }
+    const long = await call(`${M}/members/${"x".repeat(65)}`, patch({ role: "user" }, USERS.admin));
+    expect(long.status).toBe(400);
+    expect(await long.json()).toMatchObject({ code: "bad-request" });
   });
 });
 

@@ -143,12 +143,20 @@ describe("uploadSurveyAsset", () => {
     const text = await upload(path, form(bytesOf(5), "notes.txt"));
     expect(text.status).toBe(415);
     expect(await text.json()).toMatchObject({ code: "unsupported-media-type" });
-    const notMultipart = await fetch(`${ORIGIN}/api/v1${path}`, {
+    // Another media type is 415 and no body at all is 422, before the survey is looked up.
+    const notMultipart = await fetch(`${ORIGIN}/api/v1${assets("nope")}`, {
       method: "POST",
       headers: { Cookie: `${SESSION_COOKIE}=${USERS.owner}`, "Content-Type": "application/json" },
       body: "{}",
     });
-    expect(notMultipart.status).toBe(400);
+    expect(notMultipart.status).toBe(415);
+    expect(await notMultipart.json()).toMatchObject({ code: "unsupported-media-type" });
+    const noBody = await fetch(`${ORIGIN}/api/v1${path}`, {
+      method: "POST",
+      headers: { Cookie: `${SESSION_COOKIE}=${USERS.owner}` },
+    });
+    expect(noBody.status).toBe(422);
+    expect(await noBody.json()).toMatchObject({ code: "validation-failed" });
   });
 
   it("answers 401 without a session, 404 for an invisible survey and 403 without modify rights", async () => {

@@ -2,7 +2,8 @@
 // jsdom (whose `File` replaces Node's) and the sandbox must answer the same in a browser's service
 // worker and under msw/node, so the body is read as bytes and split here. Mirrors what the server
 // takes from a multipart body (server/src/files/handlers.ts `readFirstFile`): the first file part.
-import { badRequest } from "./problems";
+import { bodyRequired } from "./common";
+import { badRequest, ProblemError } from "./problems";
 
 export interface FilePart {
   /** The form field the file came in. */
@@ -13,6 +14,24 @@ export interface FilePart {
 }
 
 const unreadable = () => badRequest("The multipart body could not be read.");
+
+/**
+ * The checks the server makes on an upload's body before its handler runs (server/src/api.ts
+ * `bodyGuard`, after authentication and before the path is validated): no body at all is
+ * `422 validation-failed`, a body in any other media type than multipart/form-data is `415`.
+ */
+export function checkMultipart(request: Request): void {
+  const mediaType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  if (mediaType === "multipart/form-data") return;
+  if (mediaType === undefined && request.body === null) throw bodyRequired();
+  throw new ProblemError({
+    code: "unsupported-media-type",
+    status: 415,
+    title: "Unsupported media type",
+    detail: "Send the body as multipart/form-data.",
+  });
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8");
 

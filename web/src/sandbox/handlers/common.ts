@@ -63,23 +63,31 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
+ * The server's limits on request bodies (server/src/config.ts defaults; `/config` advertises them):
+ * every body but a survey document is refused above `maxResponseBytes` (Fastify's `bodyLimit` in
+ * server/src/app.ts), a survey definition or theme above `maxDocumentBytes`.
+ */
+export const BODY_LIMITS = { maxResponseBytes: 1048576, maxDocumentBytes: 30000000 } as const;
+
+/**
  * The JSON body of a request. A missing body is `undefined` (the caller says whether it is
- * required); a body longer than `maxLength` is `413`; a body in a media type outside `mediaTypes` is
- * `415`; text that is no JSON is `400`.
+ * required); a body of more than `maxBytes` bytes is `413 payload-too-large`; a body in a media type
+ * outside `mediaTypes` is `415`; text that is no JSON is `400`.
  */
 export async function readJson(
   request: Request,
   mediaTypes: readonly string[] = ["application/json"],
-  maxLength?: number,
+  maxBytes: number = BODY_LIMITS.maxResponseBytes,
 ): Promise<unknown> {
-  const text = await request.text();
-  if (maxLength !== undefined && text.length > maxLength) {
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > maxBytes) {
     throw new ProblemError({
       code: "payload-too-large",
       status: 413,
       title: "Payload too large",
     });
   }
+  const text = new TextDecoder().decode(bytes);
   if (text === "") return undefined;
   const mediaType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   if (mediaType === undefined || !mediaTypes.includes(mediaType)) {
@@ -115,6 +123,23 @@ export function failOn(errors: ProblemFieldError[]): void {
 /** The code points of `text` (the contract's `maxLength` counts characters). */
 const codePoints = (text: string): number => [...text].length;
 
+/**
+ * Checks a path parameter of the contract's `Id` schema (1 to 64 characters): `400 bad-request`
+ * otherwise, as the server's parameter validation answers before its handler runs.
+ */
+export function checkPathId(value: string, name: string): void {
+  if (value.length === 0) {
+    throw badRequest(undefined, [
+      { pointer: `/${name}`, detail: "must NOT have fewer than 1 characters" },
+    ]);
+  }
+  if (codePoints(value) > 64) {
+    throw badRequest(undefined, [
+      { pointer: `/${name}`, detail: "must NOT have more than 64 characters" },
+    ]);
+  }
+}
+
 /** Checks a survey `name` against the contract's schema (type, 1 to 200 characters). */
 export function checkName(value: unknown, errors: ProblemFieldError[]): void {
   if (typeof value !== "string") {
@@ -136,23 +161,40 @@ export function checkProjectId(value: unknown, errors: ProblemFieldError[]): voi
   }
 }
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+/** The contract's page sizes: the shared `Limit` parameter, and the results lists' own. */
+export interface PageSize {
+  readonly fallback: number;
+  readonly max: number;
+}
 
-/** The `limit` query parameter (integer 1 to 200, default 50); problems go to `errors`. */
-export function parseLimit(params: URLSearchParams, errors: ProblemFieldError[]): number {
+/** The `Limit` parameter of most lists: 1 to 200, default 50. */
+export const LIST_PAGE: PageSize = { fallback: 50, max: 200 };
+/** The `limit` of `listResults` and `getPublicResults`: 1 to 1000, default 500. */
+export const RESULTS_PAGE: PageSize = { fallback: 500, max: 1000 };
+
+/** The `limit` query parameter (an integer from 1 to `max`); problems go to `errors`. */
+export function parseLimit(
+  params: URLSearchParams,
+  errors: ProblemFieldError[],
+  size: PageSize = LIST_PAGE,
+): number {
   const text = params.get("limit");
-  if (text === null) return DEFAULT_LIMIT;
+  if (text === null) return size.fallback;
   if (!/^-?\d+$/.test(text)) errors.push({ pointer: "/limit", detail: "must be integer" });
   else if (Number(text) < 1) errors.push({ pointer: "/limit", detail: "must be >= 1" });
-  else if (Number(text) > MAX_LIMIT) errors.push({ pointer: "/limit", detail: "must be <= 200" });
+  else if (Number(text) > size.max) {
+    errors.push({ pointer: "/limit", detail: `must be <= ${size.max}` });
+  }
   return Number(text);
 }
 
 /** `limit` and `cursor` of a list; a bad `limit` is `400 bad-request` with its field error. */
-export function parsePagingQuery(url: URL): { limit: number; cursor: string | undefined } {
+export function parsePagingQuery(
+  url: URL,
+  size: PageSize = LIST_PAGE,
+): { limit: number; cursor: string | undefined } {
   const errors: ProblemFieldError[] = [];
-  const limit = parseLimit(url.searchParams, errors);
+  const limit = parseLimit(url.searchParams, errors, size);
   if (errors.length > 0) throw badRequest(undefined, errors);
   return { limit, cursor: url.searchParams.get("cursor") ?? undefined };
 }

@@ -10,9 +10,6 @@ import { http } from "./http";
 import { badRequest, guarded, ProblemError } from "./problems";
 import { visibleSurvey } from "./surveys";
 
-/** The server's default `limits.maxResponseBytes`. */
-const MAX_RESPONSE_BYTES = 1048576;
-
 const viewNotFound = () =>
   new ProblemError({ code: "view-not-found", status: 404, title: "View not found" });
 
@@ -49,9 +46,7 @@ export function viewHandlers(ctx: HandlerContext) {
       guarded(async () => {
         requireSession(ctx, cookies);
         const name = viewName(params.view);
-        const state = requiredObject(
-          await readJson(request, ["application/json"], MAX_RESPONSE_BYTES),
-        );
+        const state = requiredObject(await readJson(request));
         mutate(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
           const byUser = (data.savedViews[lower(user.id)] ??= {});

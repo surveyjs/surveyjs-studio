@@ -3,12 +3,10 @@
 import { HttpResponse } from "msw";
 import type { SandboxData } from "../store";
 import { SESSION_COOKIE } from "../store";
+import { BODY_LIMITS } from "./common";
 import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { guarded, unauthenticated } from "./problems";
-
-/** The server's default limits (server/src/config.ts), but the two the settings decide. */
-const SERVER_LIMITS = { maxResponseBytes: 1048576, maxDocumentBytes: 30000000 } as const;
 
 /**
  * The id of the seed user the `msid` cookie names, or null: no cookie, an id that is no user of
@@ -33,7 +31,7 @@ export function sessionHandlers(ctx: HandlerContext) {
         limits: {
           maxAssetBytesPerSurvey: ctx.settings.maxUploadKb * 1024,
           maxFileBytes: ctx.settings.maxUploadKb * 1024,
-          ...SERVER_LIMITS,
+          ...BODY_LIMITS,
         },
         readOnly: false,
         branding: {

@@ -39,6 +39,13 @@ describe("listResults", () => {
     );
     expect((await call(results(SURVEYS.feedback))).status).toBe(401);
     expect((await call(results(SURVEYS.feedback), { user: USERS.member })).status).toBe(404);
+    // The results lists take 1 to 1000 (the contract's own limit, not the shared 1 to 200).
+    expect(
+      (await call(`${results(SURVEYS.feedback)}?limit=1000`, { user: USERS.owner })).status,
+    ).toBe(200);
+    expect(
+      (await call(`${results(SURVEYS.feedback)}?limit=1001`, { user: USERS.owner })).status,
+    ).toBe(400);
     // A project member may read the results.
     expect((await call(results(SURVEYS.campaign), { user: USERS.member })).status).toBe(200);
   });

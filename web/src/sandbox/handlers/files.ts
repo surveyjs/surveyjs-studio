@@ -5,10 +5,10 @@
 // detection beyond the extension). The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
 import type { SandboxData, SandboxFile } from "../store";
-import { mutate, requireSession, view } from "./common";
+import { checkPathId, mutate, requireSession, view } from "./common";
 import { newFileId, type HandlerContext } from "./context";
 import { http } from "./http";
-import { readFirstFile } from "./multipart";
+import { checkMultipart, readFirstFile } from "./multipart";
 import { guarded, notFound, ProblemError, surveyNotAvailable, validationFailed } from "./problems";
 import { modifiableSurvey } from "./surveys";
 
@@ -163,6 +163,7 @@ export function fileHandlers(ctx: HandlerContext) {
     http.post("/surveys/{surveyId}/assets", ({ params, request, cookies }) =>
       guarded(async () => {
         requireSession(ctx, cookies);
+        checkMultipart(request);
         const left = (data: SandboxData, surveyId: string) => quota - assetBytes(data, surveyId);
         const surveyId = view(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
@@ -210,6 +211,8 @@ export function fileHandlers(ctx: HandlerContext) {
     // S11 order: the survey must be available, then the file; any type is stored.
     http.post("/public/surveys/{surveyId}/files", ({ params, request }) =>
       guarded(async () => {
+        checkMultipart(request);
+        checkPathId(params.surveyId, "surveyId");
         const available = (data: SandboxData) => {
           const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
           if (!survey?.published) throw surveyNotAvailable();

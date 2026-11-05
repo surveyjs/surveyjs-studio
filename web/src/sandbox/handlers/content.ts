@@ -6,6 +6,7 @@ import { HttpResponse } from "msw";
 import type { SandboxJson } from "../seed-types";
 import type { SandboxData } from "../store";
 import {
+  BODY_LIMITS,
   compare,
   mutate,
   parsePagingQuery,
@@ -113,7 +114,9 @@ export function contentHandlers(ctx: HandlerContext) {
     (store: Store) => (surveyId: string, request: Request, cookies: Record<string, string>) =>
       guarded(async () => {
         requireSession(ctx, cookies);
-        const body = requiredObject(await readJson(request));
+        const body = requiredObject(
+          await readJson(request, ["application/json"], BODY_LIMITS.maxDocumentBytes),
+        );
         const header = request.headers.get("if-match");
         const read = view(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, surveyId);
