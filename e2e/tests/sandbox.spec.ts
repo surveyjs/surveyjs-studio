@@ -1,8 +1,14 @@
 import type { Page } from "@playwright/test";
-import { expectEditorReady, footerName, editorStatus } from "./support/editor.js";
+import {
+  designerQuestions,
+  expectEditorReady,
+  footerName,
+  editorStatus,
+} from "./support/editor.js";
 import { FEEDBACK_SURVEY, openResultsTab } from "./support/results.js";
 import { openRowMenu, pickMenuItem, surveyRow, surveyRows } from "./support/survey-list.js";
 import { expect, test, watchConsole } from "./support/test.js";
+import { chooseFile, PNG_1X1 } from "./support/uploads.js";
 
 // The sandbox build (`pnpm e2e:sandbox`): the web app with its mock back-end in the browser, on
 // localStorage (ADR 0030, D9). Everything goes through the UI: the user-story helpers that create
@@ -59,6 +65,36 @@ test("@sandbox the owner renames a seeded survey in the editor and the change su
   await expect(footerName(page)).toHaveText(RENAMED);
   await page.goto("/");
   await expect(surveyRow(page, RENAMED)).toBeVisible();
+});
+
+test("@sandbox an image chosen in the editor goes through the service worker and renders", async ({
+  page,
+}) => {
+  await pickAccount(page, "owner");
+  await surveyRow(page, "Customer feedback").locator('[title="Created on"]').click();
+  await expectEditorReady(page);
+  const before = await designerQuestions(page).count();
+  await page.locator(".svc-toolbox").getByRole("button", { name: "Image", exact: true }).click();
+  await expect(designerQuestions(page)).toHaveCount(before + 1);
+
+  // The multipart upload is answered by the worker (D5); the saved URL is loaded through it too.
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      /^\/api\/v1\/surveys\/[0-9a-f-]+\/assets$/.test(new URL(response.url()).pathname),
+  );
+  const question = designerQuestions(page).nth(before);
+  const chooser = page.waitForEvent("filechooser");
+  await question.locator(".sd-file__choose-btn").first().click();
+  await chooseFile(await chooser, "pixel.png", PNG_1X1);
+  expect((await uploaded).status()).toBe(201);
+
+  const image = question.locator("img").first();
+  await expect(image).toHaveAttribute("src", /\/api\/v1\/public\/files\/[\w-]+$/);
+  await expect
+    .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+    .toBe(1);
+  await expect(editorStatus(page)).toHaveText("All changes saved");
 });
 
 test("@sandbox the member sees Marketing and the owner's shared survey", async ({ page }) => {
