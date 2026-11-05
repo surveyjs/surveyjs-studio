@@ -153,6 +153,31 @@ describe("a session that ends in another tab", () => {
   });
 });
 
+describe("the current user's 401 in the sandbox", () => {
+  it("sends a private page to the picker when the session has ended", async () => {
+    document.cookie = `msid=${currentUser.id}; path=/`;
+    server.use(sandboxConfig(), meHandler(), ...surveyListPageHandlers());
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: ["/"] }));
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Sign Out" });
+
+    // What another tab's Reset does, then the window-focus refetch of the current user.
+    store.reset();
+    document.cookie = "msid=; path=/; max-age=0";
+    server.use(unauthenticatedHandler());
+    await queryClient.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);
+
+    expect(await screen.findByRole("heading", { name: "Pick an account" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/sign-in");
+    expect(queryClient.getQueryData(["me"])).toBeUndefined();
+  });
+});
+
 describe("an unknown address in the sandbox", () => {
   it("shows Page not found to a signed-out visitor, with no redirect", async () => {
     server.use(sandboxConfig(), unauthenticatedHandler());

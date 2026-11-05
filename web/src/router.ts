@@ -23,12 +23,17 @@ export function createAppRouter(queryClient: QueryClient, history?: RouterHistor
     }) => {
       if (event.type !== "updated" || event.action?.type !== "error") return;
       const error = event.action.error;
-      // The current user is asked on purpose where a 401 is expected (an anonymous Page not found);
-      // the private guard handles it on private routes.
-      if (event.query?.queryKey[0] === currentUserQueryOptions.queryKey[0]) return;
       if (!(error instanceof ApiError) || error.problem.status !== 401) return;
-      const { location, status } = router.state;
+      const { location, status, matches } = router.state;
       if (status === "pending" || location.pathname === "/sign-in") return;
+      // The current user is asked on purpose where a 401 is expected (an anonymous Page not
+      // found, the run page): only on a private page does it mean the session has ended.
+      const isMe = event.query?.queryKey[0] === currentUserQueryOptions.queryKey[0];
+      if (isMe) {
+        if (!matches.some((match) => match.routeId === "/_private")) return;
+        // The guard must ask again after the picker, not trust the cached user.
+        queryClient.removeQueries({ queryKey: currentUserQueryOptions.queryKey });
+      }
       void router.navigate({ to: "/sign-in", search: { returnTo: location.href } });
     };
     queryClient.getQueryCache().subscribe(onEvent);
