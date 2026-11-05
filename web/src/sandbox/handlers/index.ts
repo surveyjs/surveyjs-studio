@@ -34,5 +34,5 @@ export function areaHandlers(context: HandlerContext): HttpHandler[] {
  * operations (`501 not-implemented`), then a catch-all for any other `/api/v1/*` request.
  */
 export function createSandboxHandlers(context: HandlerContext): HttpHandler[] {
-  return [...areaHandlers(context), ...unsupportedHandlers(), ...catchAllHandlers()];
+  return [...areaHandlers(context), ...unsupportedHandlers(context), ...catchAllHandlers()];
 }
