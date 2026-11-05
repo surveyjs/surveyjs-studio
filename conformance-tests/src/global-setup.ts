@@ -33,6 +33,11 @@ declare module "vitest" {
      * otherwise: oauth.test.ts skips.
      */
     oauth: { stubUrl: string; signUpDomain: string; openSignUpBaseUrl: string } | null;
+    /**
+     * True with `CONFORMANCE_PROVIDER=sandbox`: no server runs; the sandbox's mock handlers answer
+     * under msw/node (src/sandbox-setup.ts) and a session is the `msid` cookie, set without HTTP.
+     */
+    sandbox: boolean;
   }
 }
 
@@ -161,6 +166,7 @@ let oauthStub: OAuthStub | null = null;
  */
 function providerEnv(): Record<string, string> {
   const provider = conformanceProvider();
+  if (provider === "sandbox") throw new Error("CONFORMANCE_PROVIDER=sandbox starts no server");
   if (provider === "memory") {
     // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
     return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
@@ -187,7 +193,7 @@ function providerEnv(): Record<string, string> {
   return env;
 }
 
-const PROVIDERS = ["memory", "azure-legacy", "sqlite", "postgres"] as const;
+const PROVIDERS = ["memory", "azure-legacy", "sqlite", "postgres", "sandbox"] as const;
 type ConformanceProvider = (typeof PROVIDERS)[number];
 
 /** `CONFORMANCE_PROVIDER`, default memory. */
@@ -642,6 +648,10 @@ ${output}`,
 export async function setup(project: TestProject): Promise<(() => Promise<void>) | void> {
   const external = process.env.CONFORMANCE_BASE_URL?.trim();
   const mode = userDirectoryMode();
+  if (conformanceProvider() === "sandbox") {
+    provideSandbox(project, Boolean(external), mode);
+    return;
+  }
   if (external) {
     if (mode !== "default") {
       throw new Error("CONFORMANCE_USER_DIRECTORY cannot be used with CONFORMANCE_BASE_URL");
@@ -658,6 +668,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     project.provide("passwordAdmin", null);
     project.provide("oauth", null);
+    project.provide("sandbox", false);
     return;
   }
   const image = imageTag();
@@ -725,5 +736,40 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
         }
       : null,
   );
+  project.provide("sandbox", false);
   return stopAll;
+}
+
+/** The origin the sandbox run's requests go to; msw/node answers them (src/sandbox-setup.ts). */
+const SANDBOX_ORIGIN = "http://sandbox.test";
+
+/**
+ * `CONFORMANCE_PROVIDER=sandbox` starts no server: each test file's worker registers the sandbox's
+ * mock handlers with msw/node (src/sandbox-setup.ts, a `setupFiles` entry of vitest.config.ts).
+ * Every option that configures a server is refused.
+ */
+function provideSandbox(
+  project: TestProject,
+  external: boolean,
+  mode: "default" | "surveyjs-api",
+): void {
+  const options: [string, boolean][] = [
+    ["CONFORMANCE_BASE_URL", external],
+    ["CONFORMANCE_IMAGE", Boolean(process.env.CONFORMANCE_IMAGE?.trim())],
+    ["CONFORMANCE_USER_DIRECTORY", mode !== "default"],
+    ["CONFORMANCE_AUTH", authMode() !== "default"],
+    ["CONFORMANCE_READ_ONLY", readOnlyEnv().READ_ONLY !== undefined],
+    ["CONFORMANCE_FILE_STORE", Boolean(process.env.CONFORMANCE_FILE_STORE?.trim())],
+  ];
+  const refused = options.filter(([, set]) => set).map(([name]) => name);
+  if (refused.length > 0) {
+    throw new Error(`CONFORMANCE_PROVIDER=sandbox cannot be used with ${refused.join(", ")}`);
+  }
+  project.provide("baseUrl", SANDBOX_ORIGIN);
+  project.provide("ownsServer", false);
+  project.provide("userDirectory", "default");
+  project.provide("webhookSecret", null);
+  project.provide("passwordAdmin", null);
+  project.provide("oauth", null);
+  project.provide("sandbox", true);
 }

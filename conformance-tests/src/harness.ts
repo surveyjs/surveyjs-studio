@@ -4,12 +4,21 @@
  */
 import { openapiPath } from "@surveyjs-studio/contract";
 import { expect, inject, onTestFinished, type TestContext } from "vitest";
-import { fixtureUsers, signIn, SignInUnsupportedError, type SignInResult } from "./sign-in.js";
+import {
+  fixtureUsers,
+  sandboxSession,
+  signIn,
+  SignInUnsupportedError,
+  type CookieJar,
+  type SignInResult,
+} from "./sign-in.js";
 import { createValidator, type Validator } from "./validator.js";
 
 export const baseUrl = inject("baseUrl");
 /** False with `CONFORMANCE_BASE_URL`: a deployment (behind a proxy) decides hop-by-hop headers. */
 export const ownsServer = inject("ownsServer");
+/** True with `CONFORMANCE_PROVIDER=sandbox`: the sandbox's mock handlers answer, under msw/node. */
+export const sandbox = inject("sandbox");
 
 let validatorPromise: Promise<Validator> | undefined;
 
@@ -93,6 +102,7 @@ export async function signedIn(
   returnTo = "/",
   complete: () => Promise<SignInResult> = () => signIn(baseUrl, userId, returnTo),
 ): Promise<SignInResult> {
+  if (sandbox) ctx.skip("the sandbox has no sign-in over HTTP (D3)");
   let result: SignInResult;
   try {
     result = await complete();
@@ -106,7 +116,7 @@ export async function signedIn(
 }
 
 /** Request headers of a signed-in browser that sends its CSRF token. */
-export function sessionHeaders({ jar }: SignInResult): Record<string, string> {
+export function sessionHeaders({ jar }: { jar: CookieJar }): Record<string, string> {
   return { cookie: jar.header(), "x-csrf-token": jar.get("msid_csrf") ?? "" };
 }
 
@@ -114,6 +124,14 @@ const sessions = new Map<string, SignInResult>();
 
 /** Request headers of the user's browser; signs in once per user and test file. */
 export async function as(ctx: TestContext, user: { id: string }): Promise<Record<string, string>> {
+  if (sandbox) {
+    try {
+      return sessionHeaders({ jar: sandboxSession(user.id) });
+    } catch (error) {
+      if (error instanceof SignInUnsupportedError) ctx.skip(error.message);
+      throw error;
+    }
+  }
   let session = sessions.get(user.id);
   if (!session) {
     session = await signedIn(ctx, user.id);

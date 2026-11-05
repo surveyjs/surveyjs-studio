@@ -9,7 +9,7 @@
  * then delete) is registered with `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { walkItems, call, codeOf, as, cleanUp } from "./harness.js";
+import { walkItems, call, codeOf, as, cleanUp, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -213,7 +213,8 @@ describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
     }
   });
 
-  it("answers 403 csrf-token-invalid without the CSRF header", async (ctx) => {
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF header", async (ctx) => {
     const headers = await as(ctx, admin);
     const survey = await created(headers);
     const response = await putDocument({ cookie: headers.cookie ?? "" }, survey.id, document, {

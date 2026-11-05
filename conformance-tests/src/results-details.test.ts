@@ -19,6 +19,7 @@ import {
   submitted,
   walkItems,
   ownSurvey as ownHarnessSurvey,
+  sandbox,
   type OwnSurveyOptions,
 } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
@@ -108,7 +109,8 @@ async function csvOf(response: Response): Promise<string> {
 /** CSV text to records (no embedded line breaks in the large file's data). */
 const recordsOf = (text: string): string[] => text.split("\r\n").slice(0, -1);
 
-describe("exportResults of the fixtures", () => {
+// Export formats are server-only: the sandbox answers exportResults with 501 (D7).
+describe.skipIf(sandbox)("exportResults of the fixtures", () => {
   it("downloads Customer feedback as JSON, the items of a listResults walk", async (ctx) => {
     const olivia = await as(ctx, owner);
     const response = await exported(FEEDBACK, olivia, "?format=json");
@@ -208,7 +210,8 @@ describe("exportResults of the fixtures", () => {
   });
 });
 
-describe("exportResults of own surveys", () => {
+// Export formats are server-only: the sandbox answers exportResults with 501 (D7).
+describe.skipIf(sandbox)("exportResults of own surveys", () => {
   it("exports a survey without responses: [] and a header-only CSV", async (ctx) => {
     const adam = await as(ctx, admin);
     const id = await ownSurvey(adam);
@@ -370,32 +373,36 @@ describe("deleteResults", () => {
     expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
   });
 
-  it("refuses without a CSRF token, without a session and for callers who cannot see it", async (ctx) => {
-    const adam = await as(ctx, admin);
-    const id = await ownSurvey(adam);
-    await submitted(id, { data: { q1: "a" } });
-    const url = `/surveys/${id}/results`;
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)(
+    "refuses without a CSRF token, without a session and for callers who cannot see it",
+    async (ctx) => {
+      const adam = await as(ctx, admin);
+      const id = await ownSurvey(adam);
+      await submitted(id, { data: { q1: "a" } });
+      const url = `/surveys/${id}/results`;
 
-    const noCsrf = await call("DELETE", RESULTS, {
-      path: url,
-      headers: { cookie: adam.cookie ?? "" },
-    });
-    expect(noCsrf.status).toBe(403);
-    expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+      const noCsrf = await call("DELETE", RESULTS, {
+        path: url,
+        headers: { cookie: adam.cookie ?? "" },
+      });
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
 
-    expect((await call("DELETE", RESULTS, { path: url })).status).toBe(401);
+      expect((await call("DELETE", RESULTS, { path: url })).status).toBe(401);
 
-    const oscar = await call("DELETE", RESULTS, { path: url, headers: await as(ctx, outsider) });
-    expect(oscar.status).toBe(404);
-    expect(await codeOf(oscar)).toBe("not-found");
+      const oscar = await call("DELETE", RESULTS, { path: url, headers: await as(ctx, outsider) });
+      expect(oscar.status).toBe(404);
+      expect(await codeOf(oscar)).toBe("not-found");
 
-    const unknown = await call("DELETE", RESULTS, {
-      path: `/surveys/${UNKNOWN_ID}/results`,
-      headers: adam,
-    });
-    expect(unknown.status).toBe(404);
-    expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
-  });
+      const unknown = await call("DELETE", RESULTS, {
+        path: `/surveys/${UNKNOWN_ID}/results`,
+        headers: adam,
+      });
+      expect(unknown.status).toBe(404);
+      expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
+    },
+  );
 
   it("answers 403 forbidden to a user who can see the survey but not modify it", async (ctx) => {
     const adam = await as(ctx, admin);

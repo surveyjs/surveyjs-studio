@@ -1,0 +1,12 @@
+// src/sandbox-setup.ts imports the web's sandbox modules, which use bundler resolution and the DOM
+// types; tsconfig.json leaves it out.
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["src/sandbox-setup.ts"]
+}

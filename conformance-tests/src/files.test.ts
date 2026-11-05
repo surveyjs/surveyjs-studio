@@ -10,7 +10,7 @@
  * created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { call, codeOf, upload, as, cleanUp } from "./harness.js";
+import { call, codeOf, upload, as, cleanUp, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -142,19 +142,27 @@ describe("uploadSurveyAsset and downloadFile", () => {
     await svgFile.body?.cancel();
   });
 
-  it("decides the type from the bytes, not the declared type or name", async (ctx) => {
-    const headers = await as(ctx, admin);
-    const surveyId = await createdSurvey(headers);
+  // The sandbox types a file by its name's extension only, not by its bytes (the spec).
+  it.skipIf(sandbox)(
+    "decides the type from the bytes, not the declared type or name",
+    async (ctx) => {
+      const headers = await as(ctx, admin);
+      const surveyId = await createdSurvey(headers);
 
-    const html = Buffer.from("<!doctype html><html><body>hi</body></html>");
-    const refused = await uploadTo(surveyId, headers, fileForm(html, "a.png", "image/png"));
-    expect(refused.status).toBe(415);
-    expect(await codeOf(refused)).toBe("unsupported-media-type");
+      const html = Buffer.from("<!doctype html><html><body>hi</body></html>");
+      const refused = await uploadTo(surveyId, headers, fileForm(html, "a.png", "image/png"));
+      expect(refused.status).toBe(415);
+      expect(await codeOf(refused)).toBe("unsupported-media-type");
 
-    const { stored } = await uploaded(surveyId, headers, fileForm(PNG_1X1, "a.txt", "text/plain"));
-    expect(stored.contentType).toBe("image/png");
-    expect(stored.name).toBe("a.txt");
-  });
+      const { stored } = await uploaded(
+        surveyId,
+        headers,
+        fileForm(PNG_1X1, "a.txt", "text/plain"),
+      );
+      expect(stored.contentType).toBe("image/png");
+      expect(stored.name).toBe("a.txt");
+    },
+  );
 
   it("keeps a survey's files within limits.maxAssetBytesPerSurvey", async (ctx) => {
     const config = await call("GET", "/config");
@@ -214,7 +222,8 @@ describe("uploadSurveyAsset and downloadFile", () => {
     expect(await codeOf(cut)).toBe("bad-request");
   });
 
-  it("refuses callers who may not change the survey", async (ctx) => {
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)("refuses callers who may not change the survey", async (ctx) => {
     const adminHeaders = await as(ctx, admin);
     const surveyId = await createdSurvey(adminHeaders);
     const form = () => fileForm(PNG_1X1);

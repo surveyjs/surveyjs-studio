@@ -66,6 +66,9 @@ jobs:
       - name: Conformance tests (SQLite, OAuth2 sign-in against the OAuth stub)
         run: pnpm test:conformance:oauth
 
+      - name: Conformance tests (sandbox mock, msw/node)
+        run: pnpm test:conformance:sandbox
+
       # The Azurite conformance run and both end-to-end runs use this image (docker run --network host).
       - name: Build the production image
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio:ci .

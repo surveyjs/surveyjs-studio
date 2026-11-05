@@ -13,7 +13,7 @@
  * with `onTestFinished` right after a survey is created, so it also runs when a test fails.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { GUID, call, codeOf, as, cleanUp, walkItems } from "./harness.js";
+import { GUID, call, codeOf, as, cleanUp, sandbox, walkItems } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -375,7 +375,8 @@ describe("updateSurvey", () => {
     expect(await codeOf(response)).toBe("bad-request");
   });
 
-  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
     const { cookie = "" } = await as(ctx, outsider);
     const response = await patch({ cookie }, fixture.outsiderQuiz, { name: "x" });
     expect(response.status).toBe(403);
@@ -424,7 +425,8 @@ describe("deleteSurvey", () => {
     }
   });
 
-  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
     const { cookie = "" } = await as(ctx, outsider);
     const response = await remove({ cookie }, fixture.outsiderQuiz);
     expect(response.status).toBe(403);
@@ -535,7 +537,8 @@ describe("cloneSurvey", () => {
     expect(await codeOf(response)).toBe("bad-request");
   });
 
-  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
     const { cookie = "" } = await as(ctx, outsider);
     const response = await clone({ cookie }, fixture.outsiderQuiz);
     expect(response.status).toBe(403);
