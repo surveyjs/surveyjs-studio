@@ -1537,7 +1537,7 @@ id, and `src/sandbox/` is not in its manifest.
 **The worker.** `main.tsx` boots the sandbox before it renders: it reads `sandbox.config.json` (a missing or invalid
 file means the defaults and a console warning), opens the store, and starts the worker with the handlers
 (`web/src/sandbox/start.ts`). If the worker cannot start, the page shows "This demo needs a browser with service
-workers…". Shared files reach sandbox UI only through `web/src/sandboxLazy.tsx`, behind the same inline test.
+workers and site storage…". Shared files reach sandbox UI only through `web/src/sandboxLazy.tsx`, behind the same inline test.
 
 **The store.** One document under `studio-sandbox:v1` (`web/src/sandbox/store.ts`): the seed's collections plus the
 files (base64). Each request reads it, and a change is written back in one `setItem`. A missing, old or unparsable

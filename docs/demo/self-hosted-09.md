@@ -53,7 +53,7 @@ and **Source code**, and the button **Reset demo data**.
 3. Open a **private window** (Ctrl+Shift+N) at <http://localhost:5173> and pick **Olivia Owner**.
    - **Check:** the list shows **Customer feedback**, not `Demo renamed`. The private window has its own storage, so it
      starts from the seed. (A private window of Firefox blocks service workers: the page then says "This demo needs a
-     browser with service workers…". Use Chrome or Edge for this step.)
+     browser with service workers and site storage…". Use Chrome or Edge for this step.)
 4. Close the private window.
 
 ## 3. Publish, run in a new tab, submit, see the response (checklist 3)

@@ -21,7 +21,7 @@ if (import.meta.env.MODE === "sandbox") {
       message.style.cssText =
         "font-family: sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem";
       message.textContent =
-        "This demo needs a browser with service workers. Open it in a current browser, not in a private window that blocks them.";
+        "This demo needs a browser with service workers and site storage. Open it in a current browser, not in a private window that blocks them.";
       target.replaceChildren(message);
     }
   }
