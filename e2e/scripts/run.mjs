@@ -21,6 +21,10 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
+// The mode's config sets E2E_MODE only once Playwright loads it, so the config name counts too.
+const sandbox =
+  env["E2E_MODE"] === "sandbox" ||
+  process.argv.slice(2).some((a) => /playwright\.sandbox\.config/.test(a));
 // Playwright never reuses a server: a taken port stops the run here, before the build.
 await requireFreePorts(
   functionalPorts({
@@ -29,13 +33,13 @@ await requireFreePorts(
     sql:
       usesSqlConfig(process.argv.slice(2)) ||
       ["sqlite", "postgres", "password", "oauth", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
-    sandbox: env["E2E_MODE"] === "sandbox",
+    sandbox,
     oauth:
       env["E2E_MODE"] === "oauth" ||
       process.argv.slice(2).some((a) => /playwright.oauth.config/.test(a)),
   }),
 );
 // The sandbox mode serves its own build (`build:sandbox`, into dist-sandbox/) and starts no server.
-if (env["E2E_MODE"] === "sandbox") run("pnpm --filter @surveyjs-studio/web build:sandbox");
+if (sandbox) run("pnpm --filter @surveyjs-studio/web build:sandbox");
 else if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");
 run(["playwright test", ...process.argv.slice(2)].join(" "));
