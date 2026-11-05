@@ -42,8 +42,14 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
 
   useEffect(() => {
     const onFull = () => setFull(true);
+    // Space freed by deleting surveys clears the notice when the visitor comes back to the page.
+    const onFocus = () => setFull(storageIsFull());
     window.addEventListener(STORAGE_FULL_EVENT, onFull);
-    return () => window.removeEventListener(STORAGE_FULL_EVENT, onFull);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener(STORAGE_FULL_EVENT, onFull);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -53,8 +59,8 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
     if (focusNext !== null) target.current?.focus();
   }, [focusNext, confirming, failed]);
 
-  // The editor and the shell give up the height of the banners above the page
-  // (`--read-only-banner-height`, `--page-banner-height`).
+  // The self-hosted shell and its editor give up the height of the banners above the page
+  // (`--page-banner-height`). `--read-only-banner-height` is the read-only banner's own, not set here.
   useEffect(() => {
     const banner = bannerRef.current;
     if (banner === null || typeof ResizeObserver === "undefined") return;
@@ -64,7 +70,6 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
       for (const element of document.querySelectorAll<HTMLElement>("[data-page-banner]")) {
         total += element.offsetHeight;
       }
-      root.style.setProperty("--read-only-banner-height", `${total}px`);
       root.style.setProperty("--page-banner-height", `${total}px`);
     };
     const observer = new ResizeObserver(update);
@@ -72,7 +77,6 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
     update();
     return () => {
       observer.disconnect();
-      root.style.removeProperty("--read-only-banner-height");
       root.style.removeProperty("--page-banner-height");
     };
   }, []);

@@ -143,6 +143,21 @@ describe("SandboxBanner", () => {
     expect(screen.getByRole("button", { name: "Reset demo data" })).toBeTruthy();
   });
 
+  it("clears the full-storage text on window focus once there is room again", () => {
+    store = make(1);
+    store.read();
+    render(<SandboxBanner />);
+    expect(screen.getByText(FULL)).toBeTruthy();
+
+    store = make();
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(screen.queryByText(FULL)).toBeNull();
+    expect(screen.getByText(DEMO)).toBeTruthy();
+  });
+
   it("is compact without the links on the run page", () => {
     render(<SandboxBanner compact />);
 
