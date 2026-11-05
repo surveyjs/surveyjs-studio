@@ -905,32 +905,38 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 ## CI
 
 `.github/workflows/ci.yml` runs on pushes to `master`, `step/**`, `self-hosted/**` and `hosted/**` and on pull requests, on
-`ubuntu-latest` (Docker is available there), with a timeout of 40 minutes. It runs, in this order:
+`ubuntu-latest` (Docker is available there). Its jobs run side by side, each on its own runner, so no two suites share
+a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, the `.nvmrc` Node and
+`pnpm install --frozen-lockfile`):
 
-1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
-   `format:check`;
-2. `test:unit`, `test:conformance` (in-memory), `test:conformance:read-only` (in-memory, `READ_ONLY=true`) and
-   `test:conformance:sqlite` (a new SQLite file) and `test:conformance:password` (SQLite, local accounts and password
-   sign-in) and `test:conformance:oauth` (the same with the OAuth stub) and `test:conformance:sandbox` (the sandbox handlers under `msw/node`);
-3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
-   `org.opencontainers.image.revision`);
-4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
-   fixtures;
-5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`); then `pnpm postgres:up`,
-   `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`, `test:conformance:s3`, and `test:conformance:postgres`
-   on the image;
-6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
-   `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`), and `e2e:sqlite`
-   (the tsx server, whose SQLite file is on the host; files on local disk; Chromium) and `e2e:postgres` (Chromium,
-   every functional spec but the licence notices; files in S3) and `e2e:password` (SQLite, password sign-in on the
-   app's page; Chromium) and `e2e:self-hosted` (SQLite, the self-hosted shell with a brand; Chromium) and `e2e:oauth` (SQLite, GitHub and
-   Google sign-in against the stub; Chromium) and `e2e:sandbox` (the sandbox build on `vite preview`; Chromium);
-7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
-8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
-9. `pnpm demo:azurite:down`, `pnpm postgres:down` and `pnpm s3:down`, which always run (`if: always()`).
+- **`checks`:** `check:deps`, `lint:contract`, `typecheck`, `lint`, `format:check`.
+- **`unit`:** `test:unit`, `test:conformance` (in-memory), `test:conformance:read-only` (in-memory, `READ_ONLY=true`),
+  `test:conformance:sqlite` (a new SQLite file), `test:conformance:password` (SQLite, local accounts and password
+  sign-in), `test:conformance:oauth` (the same with the OAuth stub) and `test:conformance:sandbox` (the sandbox
+  handlers under `msw/node`).
+- **`image`:** `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
+  `org.opencontainers.image.revision`), saved as the `surveyjs-studio-image` artifact (kept one day). The jobs below
+  that test the image load it (`.github/actions/load-image`), so every suite runs on the same image.
+- **`azurite`** (after `image`): `pnpm demo:azurite:up` (the legacy replica and the mock OIDC server, with the
+  fixtures loaded), `test:providers:azurite`, `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`), and
+  `e2e:azurite` on the image (`E2E_TARGET=image`; the `azure-legacy` server and the mock OIDC server, Chromium).
+- **`postgres`** (after `image`): `pnpm postgres:up`, `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`,
+  `test:conformance:s3`, `test:conformance:postgres` on the image, and `e2e:postgres` (the tsx server; Chromium, every
+  functional spec but the licence notices; files in S3).
+- **`e2e-image`** (after `image`), one runner per browser (Chromium, Firefox, WebKit): `e2e --project=<browser>` on
+  the image (memory provider, dev sign-in).
+- **`e2e-modes`:** on Chromium with the tsx server, `e2e:sqlite` (its SQLite file on the host; files on local disk),
+  `e2e:password` (password sign-in on the app's page), `e2e:oauth` (GitHub and Google sign-in against the stub) and
+  `e2e:self-hosted` (the self-hosted shell with a brand); then `e2e:sandbox` (the sandbox build on `vite preview`).
+- **`ci`:** passes only when every job above passed, and fails when any failed, was cancelled or was skipped. It is
+  the one result to wait for.
 
-The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
-same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is
+A job that runs browsers or containers uploads, on failure, its Playwright report and the app containers' logs as
+`playwright-report-<job>` and `docker-logs-<job>` (`.github/actions/failure-artifacts`). The `azurite` and `postgres`
+jobs always stop their containers (`pnpm demo:azurite:down`, `pnpm postgres:down`, `pnpm s3:down`).
+
+The **`publish` job** runs after `ci`, only on a push to `master` and only when `ci` passed. It loads the image the
+`image` job built, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is
 the only job with `packages: write`, and it runs no installed packages, only `docker`. The image's
 `org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
 repository's access rules.

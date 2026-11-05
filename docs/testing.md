@@ -550,7 +550,7 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   and the conformance `429` test.
 - The browsers run with the locale `en-US` and the time zone `UTC` (set in `e2e/playwright.config.ts`), so the
   dates in the list read the same on every machine (`4/14/2026`).
-- Traces are kept for failures; CI uploads `e2e/playwright-report/`.
+- Traces are kept for failures; CI uploads `e2e/playwright-report/` as `playwright-report-<job>`.
 
 Run one browser: `pnpm e2e --project=chromium`.
 
