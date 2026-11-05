@@ -15,6 +15,7 @@ idea.md
 plan.md
 spec.md
 web/src/routeTree.gen.ts
+web/src/sandbox/seed.json
 web/src/shell/surveyjs-site/assets/site
 e2e/visual-report
 e2e/visual-self-hosted-report

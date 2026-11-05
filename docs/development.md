@@ -705,6 +705,13 @@ Moving a survey makes the mover its creator, so a move changes who can modify it
 the changes stay until `pnpm legacy:load`. Do your trying on surveys you create yourself (Create a
 Survey), and keep the fixture surveys unchanged: the test suites read them.
 
+**The sandbox subset (Step 9).** The sandbox loads a small part of these fixtures on a visitor's first visit.
+`server/fixtures/sandbox.json` tags it: the four people `a01` to `a04`, the surveys `a01` to `a07` and both
+projects. It leaves out survey `a08` (1,500 generated responses) and `a09` (the XSS fixture). `pnpm sandbox:seed`
+writes `web/src/sandbox/seed.json` from the shared seed and the seed invitation, and a unit test fails when the
+committed file is stale or larger than `seedBudgetKb`. Run it after you change a fixture or the tag file, and commit
+the result.
+
 To change them:
 
 1. Edit the files and keep them valid legacy data; check the
