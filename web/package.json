@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build && node scripts/check-run-chunks.mjs",
     "preview": "vite preview",
+    "dev:sandbox": "vite --mode sandbox",
+    "build:sandbox": "tsc -p tsconfig.json --noEmit && vite build --mode sandbox && node scripts/check-run-chunks.mjs dist-sandbox",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -16,7 +18,9 @@
     "ace-builds": "1.44.0",
     "jspdf": "4.2.1",
     "jspdf-autotable": "5.0.8",
+    "msw": "2.15.0",
     "openapi-fetch": "0.17.0",
+    "openapi-msw": "2.0.0",
     "openapi-react-query": "0.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -36,8 +40,6 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "jsdom": "30.1.1",
-    "msw": "2.15.0",
-    "openapi-msw": "2.0.0",
     "sass": "1.105.1",
     "vite": "8.3.1"
   }

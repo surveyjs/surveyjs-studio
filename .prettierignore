@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-sandbox
+web/sandbox-public/mockServiceWorker.js
 coverage
 test-results
 playwright-report
