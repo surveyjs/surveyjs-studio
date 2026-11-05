@@ -41,22 +41,8 @@ const mswPath = (path: string) => `*/api/v1${path.replace(/\{(\w+)\}/g, ":$1")}`
 const answers = (handlers: readonly HttpHandler[], { method, path }: Operation) =>
   handlers.some((h) => h.info.method === method && h.info.path === mswPath(path));
 
-/**
- * Operations whose handlers come with Task 5 (projects and members). Each task removes its operations from this list: a handled operation
- * still listed fails the test.
- */
-const LATER_TASKS: readonly string[] = [
-  "listProjects",
-  "createProject",
-  "getProject",
-  "updateProject",
-  "deleteProject",
-  "listMembers",
-  "addMember",
-  "updateMember",
-  "removeMember",
-  "removeInvitation",
-];
+/** Operations whose handlers are still to come: none; Task 6 deletes this list. */
+const LATER_TASKS: readonly string[] = [];
 
 describe("the contract's operations", () => {
   const operations = contractOperations();

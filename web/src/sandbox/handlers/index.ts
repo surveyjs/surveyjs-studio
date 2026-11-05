@@ -2,6 +2,8 @@ import type { HttpHandler } from "msw";
 import { contentHandlers } from "./content";
 import type { HandlerContext } from "./context";
 import { fileHandlers } from "./files";
+import { memberHandlers } from "./members";
+import { projectHandlers } from "./projects";
 import { publicHandlers } from "./public";
 import { resultsHandlers } from "./results";
 import { sessionHandlers } from "./session";
@@ -12,7 +14,7 @@ import { catchAllHandlers, unsupportedHandlers } from "./unsupported";
 export { http } from "./http";
 export type { HandlerContext } from "./context";
 
-/** The handlers of the operations the sandbox answers itself (Task 5 adds its areas here). */
+/** The handlers of the operations the sandbox answers itself. */
 export function areaHandlers(context: HandlerContext): HttpHandler[] {
   return [
     ...sessionHandlers(context),
@@ -22,6 +24,8 @@ export function areaHandlers(context: HandlerContext): HttpHandler[] {
     ...publicHandlers(context),
     ...resultsHandlers(context),
     ...viewHandlers(context),
+    ...projectHandlers(context),
+    ...memberHandlers(context),
   ];
 }
 
