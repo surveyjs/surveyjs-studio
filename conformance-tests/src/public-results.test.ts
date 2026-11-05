@@ -177,24 +177,21 @@ describe("getPublicResults", () => {
 });
 
 describe("getPublicResults rate limit", () => {
-  // Rate limits are server-only: the sandbox has none.
-  it.skipIf(sandbox)(
-    "answers 429 with Retry-After once an address has made too many requests",
-    async () => {
-      const address = `198.51.100.${1 + Math.floor(Math.random() * 254)}`;
-      const tooLongId = "x".repeat(65);
-      let limited: Response | undefined;
-      for (let i = 0; i < 1000 && !limited; i += 1) {
-        const response = await call("GET", PUBLIC_RESULTS, {
-          path: `/public/surveys/${tooLongId}/results`,
-          headers: { "x-forwarded-for": address },
-        });
-        if (response.status === 429) limited = response;
-        else expect(response.status).toBe(400);
-      }
-      expect(limited).toBeDefined();
-      expect(Number(limited?.headers.get("retry-after"))).toBeGreaterThan(0);
-      expect(await codeOf(limited!)).toBe("rate-limited");
-    },
-  );
+  it("answers 429 with Retry-After once an address has made too many requests", async (ctx) => {
+    if (sandbox) ctx.skip("rate limits are server-only");
+    const address = `198.51.100.${1 + Math.floor(Math.random() * 254)}`;
+    const tooLongId = "x".repeat(65);
+    let limited: Response | undefined;
+    for (let i = 0; i < 1000 && !limited; i += 1) {
+      const response = await call("GET", PUBLIC_RESULTS, {
+        path: `/public/surveys/${tooLongId}/results`,
+        headers: { "x-forwarded-for": address },
+      });
+      if (response.status === 429) limited = response;
+      else expect(response.status).toBe(400);
+    }
+    expect(limited).toBeDefined();
+    expect(Number(limited?.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(await codeOf(limited!)).toBe("rate-limited");
+  });
 });

@@ -153,36 +153,33 @@ describe("listSurveys", () => {
     expect(await codeOf(response)).toBe("unauthenticated");
   });
 
-  // Needs survey …a08 (1,500 generated responses), which the sandbox seed leaves out.
-  it.skipIf(sandbox)(
-    "lists the user's active personal surveys by default, newest first",
-    async (ctx) => {
-      const items = await walk(await as(ctx, owner));
-      const ids = idsOf(items);
-      const order = [fixture.apiCreated, fixture.customerFeedback, fixture.draftIdea].map((id) =>
-        ids.indexOf(id),
-      );
-      expect(order.every((index) => index >= 0)).toBe(true);
-      expect(order).toEqual([...order].sort((a, b) => a - b));
-      expect(ids).not.toContain(fixture.oldPoll);
-      expect(items.every((item) => !item.archived && item.projectId === null)).toBe(true);
-      expect(find(items, fixture.customerFeedback)).toEqual({
-        id: fixture.customerFeedback,
-        name: "Customer feedback",
-        projectId: null,
-        published: true,
-        archived: false,
-        createdAt: "2026-03-13T09:12:00.000Z",
-        updatedAt: "2026-04-14T15:30:00.000Z",
-        postId: "33333333-0000-4000-8000-a00000000001",
-        resultId: "44444444-0000-4000-8000-a00000000001",
-        permissions: { canModify: true },
-        settings: { publicResults: true, storeRespondentIp: true },
-      });
-      // Draft idea's published flag is empty (NULL), which means published.
-      expect(find(items, fixture.draftIdea)?.published).toBe(true);
-    },
-  );
+  it("lists the user's active personal surveys by default, newest first", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
+    const items = await walk(await as(ctx, owner));
+    const ids = idsOf(items);
+    const order = [fixture.apiCreated, fixture.customerFeedback, fixture.draftIdea].map((id) =>
+      ids.indexOf(id),
+    );
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(ids).not.toContain(fixture.oldPoll);
+    expect(items.every((item) => !item.archived && item.projectId === null)).toBe(true);
+    expect(find(items, fixture.customerFeedback)).toEqual({
+      id: fixture.customerFeedback,
+      name: "Customer feedback",
+      projectId: null,
+      published: true,
+      archived: false,
+      createdAt: "2026-03-13T09:12:00.000Z",
+      updatedAt: "2026-04-14T15:30:00.000Z",
+      postId: "33333333-0000-4000-8000-a00000000001",
+      resultId: "44444444-0000-4000-8000-a00000000001",
+      permissions: { canModify: true },
+      settings: { publicResults: true, storeRespondentIp: true },
+    });
+    // Draft idea's published flag is empty (NULL), which means published.
+    expect(find(items, fixture.draftIdea)?.published).toBe(true);
+  });
 
   it("lists archived surveys with archived=true", async (ctx) => {
     const items = await walk(await as(ctx, owner), { archived: true });
@@ -401,8 +398,8 @@ describe("createSurvey", () => {
     expect(await codeOf(response)).toBe("bad-request");
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const { cookie = "" } = await as(ctx, outsider);
     const response = await create({ cookie }, { name: "No token" });
     expect(response.status).toBe(403);
@@ -426,22 +423,19 @@ describe("getSurvey", () => {
     });
   });
 
-  // Needs survey …a08 (1,500 generated responses), which the sandbox seed leaves out.
-  it.skipIf(sandbox)(
-    "reads an empty published flag as published and 0 as unpublished",
-    async (ctx) => {
-      const headers = await as(ctx, owner);
-      for (const [id, published] of [
-        [fixture.draftIdea, true],
-        [fixture.apiCreated, true],
-        [fixture.oldPoll, false],
-      ] as const) {
-        const response = await get(headers, id);
-        expect(response.status, id).toBe(200);
-        expect(await response.json(), id).toMatchObject({ published });
-      }
-    },
-  );
+  it("reads an empty published flag as published and 0 as unpublished", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
+    const headers = await as(ctx, owner);
+    for (const [id, published] of [
+      [fixture.draftIdea, true],
+      [fixture.apiCreated, true],
+      [fixture.oldPoll, false],
+    ] as const) {
+      const response = await get(headers, id);
+      expect(response.status, id).toBe(200);
+      expect(await response.json(), id).toMatchObject({ published });
+    }
+  });
 
   it("answers a project survey to a member", async (ctx) => {
     const response = await get(await as(ctx, member), fixture.archivedCampaign);

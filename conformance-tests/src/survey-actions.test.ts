@@ -375,8 +375,8 @@ describe("updateSurvey", () => {
     expect(await codeOf(response)).toBe("bad-request");
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const { cookie = "" } = await as(ctx, outsider);
     const response = await patch({ cookie }, fixture.outsiderQuiz, { name: "x" });
     expect(response.status).toBe(403);
@@ -425,8 +425,8 @@ describe("deleteSurvey", () => {
     }
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const { cookie = "" } = await as(ctx, outsider);
     const response = await remove({ cookie }, fixture.outsiderQuiz);
     expect(response.status).toBe(403);
@@ -537,8 +537,8 @@ describe("cloneSurvey", () => {
     expect(await codeOf(response)).toBe("bad-request");
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+  it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const { cookie = "" } = await as(ctx, outsider);
     const response = await clone({ cookie }, fixture.outsiderQuiz);
     expect(response.status).toBe(403);

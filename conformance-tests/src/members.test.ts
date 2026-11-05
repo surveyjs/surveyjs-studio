@@ -55,8 +55,11 @@ const memberOf = (
   status: "active",
 });
 
-/** Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). */
-const localAccounts = inject("passwordAdmin") !== null;
+/**
+ * Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). The
+ * sandbox is a local directory too (self-hosted Step 9, D6), with the seed's invitation.
+ */
+const localAccounts = inject("passwordAdmin") !== null || sandbox;
 
 const pendingOf = (email: string, role = "user"): Member => ({
   userId: null,
@@ -130,8 +133,7 @@ async function expectProblem(response: Response, status: number, code: string): 
 }
 
 describe("listMembers", () => {
-  // The sandbox is a local directory with the seed's invitation (D6), which this file reads from passwordAdmin.
-  it.skipIf(sandbox)("lists Marketing's members by display name to a plain member", async (ctx) => {
+  it("lists Marketing's members by display name to a plain member", async (ctx) => {
     expect(await page(await as(ctx, member), MARKETING)).toEqual({
       items: [
         memberOf(admin, "admin"),
@@ -150,8 +152,7 @@ describe("listMembers", () => {
     });
   });
 
-  // The sandbox is a local directory with the seed's invitation (D6), which this file reads from passwordAdmin.
-  it.skipIf(sandbox)("pages with a cursor that belongs to the project", async (ctx) => {
+  it("pages with a cursor that belongs to the project", async (ctx) => {
     const olivia = await as(ctx, owner);
     const pages = await walkPages<Member>(
       MEMBERS,
@@ -184,51 +185,44 @@ describe("listMembers", () => {
 });
 
 describe("addMember", () => {
-  // Needs the blocked user …a05, whom the sandbox seed leaves out.
-  it.skipIf(sandbox)(
-    "adds a registered user by email, in any case, as user by default",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const projectId = await ownProject(ctx, "add");
+  it("adds a registered user by email, in any case, as user by default", async (ctx) => {
+    if (sandbox) ctx.skip("needs the blocked user a05, whom the sandbox seed leaves out");
+    const adam = await as(ctx, admin);
+    const projectId = await ownProject(ctx, "add");
 
-      const response = await add(adam, projectId, { email: "MEMBER@Example.COM" });
-      expect(response.status).toBe(201);
-      expect(response.headers.get("location")).toBe(
-        `/api/v1/projects/${projectId}/members/${member.id}`,
-      );
-      expect(await response.json()).toEqual(memberOf(member, "user"));
+    const response = await add(adam, projectId, { email: "MEMBER@Example.COM" });
+    expect(response.status).toBe(201);
+    expect(response.headers.get("location")).toBe(
+      `/api/v1/projects/${projectId}/members/${member.id}`,
+    );
+    expect(await response.json()).toEqual(memberOf(member, "user"));
 
+    await expectProblem(await add(adam, projectId, { email: member.email }), 409, "already-member");
+    if (!localAccounts) {
       await expectProblem(
-        await add(adam, projectId, { email: member.email }),
-        409,
-        "already-member",
+        await add(adam, projectId, { email: `nobody-${randomUUID()}@example.com` }),
+        404,
+        "user-not-found",
       );
-      if (!localAccounts) {
-        await expectProblem(
-          await add(adam, projectId, { email: `nobody-${randomUUID()}@example.com` }),
-          404,
-          "user-not-found",
-        );
-      }
-      for (const body of [{ email: "not-an-email" }, { email: owner.email, role: "owner" }]) {
-        await expectProblem(await add(adam, projectId, body), 422, "validation-failed");
-      }
+    }
+    for (const body of [{ email: "not-an-email" }, { email: owner.email, role: "owner" }]) {
+      await expectProblem(await add(adam, projectId, body), 422, "validation-failed");
+    }
 
-      // Blocked users may be added (R12).
-      expect(await added(adam, projectId, { email: BLOCKED_EMAIL, role: "admin" })).toEqual({
-        userId: blocked.id,
-        displayName: BLOCKED_EMAIL,
-        email: BLOCKED_EMAIL,
-        role: "admin",
-        status: "active",
-      });
-      const project = await call("GET", "/projects/{projectId}", {
-        path: `/projects/${projectId}`,
-        headers: adam,
-      });
-      expect(await project.json()).toMatchObject({ memberCount: 3 });
-    },
-  );
+    // Blocked users may be added (R12).
+    expect(await added(adam, projectId, { email: BLOCKED_EMAIL, role: "admin" })).toEqual({
+      userId: blocked.id,
+      displayName: BLOCKED_EMAIL,
+      email: BLOCKED_EMAIL,
+      role: "admin",
+      status: "active",
+    });
+    const project = await call("GET", "/projects/{projectId}", {
+      path: `/projects/${projectId}`,
+      headers: adam,
+    });
+    expect(await project.json()).toMatchObject({ memberCount: 3 });
+  });
 
   it.runIf(localAccounts)("invites an unknown email, lists it and removes it", async (ctx) => {
     const adam = await as(ctx, admin);
@@ -251,54 +245,49 @@ describe("addMember", () => {
     const url = `/projects/${projectId}/invitations/${email}`;
     const remove = (headers: Headers) =>
       call("DELETE", "/projects/{projectId}/invitations/{email}", { path: url, headers });
-    await expectProblem(await remove(withoutCsrf(adam)), 403, "csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      await expectProblem(await remove(withoutCsrf(adam)), 403, "csrf-token-invalid");
+    }
     expect((await remove(adam)).status).toBe(204);
     await expectProblem(await remove(adam), 404, "not-found");
     expect((await page(adam, projectId)).items).toEqual([memberOf(admin, "admin")]);
   });
 
-  // The sandbox is a local directory (D6): an unknown email becomes a pending member.
-  it.runIf(!localAccounts && !sandbox)(
-    "answers 404 user-not-found for an unknown email",
-    async (ctx) => {
-      const projectId = await ownProject(ctx, "unknown email");
-      await expectProblem(
-        await add(await as(ctx, admin), projectId, { email: `nobody-${randomUUID()}@example.com` }),
-        404,
-        "user-not-found",
-      );
-    },
-  );
+  it.runIf(!localAccounts)("answers 404 user-not-found for an unknown email", async (ctx) => {
+    const projectId = await ownProject(ctx, "unknown email");
+    await expectProblem(
+      await add(await as(ctx, admin), projectId, { email: `nobody-${randomUUID()}@example.com` }),
+      404,
+      "user-not-found",
+    );
+  });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)(
-    "refuses a plain member with 403, a non-member with 404 and no CSRF token with 403",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const projectId = await ownProject(ctx, "add refusals");
-      await added(adam, projectId, { email: member.email });
+  it("refuses a plain member with 403, a non-member with 404 and no CSRF token with 403", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const projectId = await ownProject(ctx, "add refusals");
+    await added(adam, projectId, { email: member.email });
 
-      await expectProblem(
-        await add(await as(ctx, member), projectId, { email: owner.email }),
-        403,
-        "forbidden",
-      );
-      await expectProblem(
-        await add(await as(ctx, outsider), projectId, { email: owner.email }),
-        404,
-        "not-found",
-      );
+    await expectProblem(
+      await add(await as(ctx, member), projectId, { email: owner.email }),
+      403,
+      "forbidden",
+    );
+    await expectProblem(
+      await add(await as(ctx, outsider), projectId, { email: owner.email }),
+      404,
+      "not-found",
+    );
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
       await expectProblem(
         await add(withoutCsrf(adam), projectId, { email: owner.email }),
         403,
         "csrf-token-invalid",
       );
-      expect((await page(adam, projectId)).items.map((m) => m.userId)).toEqual([
-        admin.id,
-        member.id,
-      ]);
-    },
-  );
+    }
+    expect((await page(adam, projectId)).items.map((m) => m.userId)).toEqual([admin.id, member.id]);
+  });
 });
 
 describe("updateMember", () => {
@@ -378,29 +367,28 @@ describe("removeMember", () => {
     await expectProblem(await removeMember(adam, projectId, admin.id), 409, "last-admin");
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)(
-    "answers 404 for a target or caller who is not a member, 403 without the CSRF token",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const projectId = await ownProject(ctx, "remove refusals");
-      await added(adam, projectId, { email: member.email });
+  it("answers 404 for a target or caller who is not a member, 403 without the CSRF token", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const projectId = await ownProject(ctx, "remove refusals");
+    await added(adam, projectId, { email: member.email });
 
-      await expectProblem(await removeMember(adam, projectId, outsider.id), 404, "not-found");
-      await expectProblem(
-        await removeMember(await as(ctx, outsider), projectId, member.id),
-        404,
-        "not-found",
-      );
+    await expectProblem(await removeMember(adam, projectId, outsider.id), 404, "not-found");
+    await expectProblem(
+      await removeMember(await as(ctx, outsider), projectId, member.id),
+      404,
+      "not-found",
+    );
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
       await expectProblem(
         await removeMember(withoutCsrf(adam), projectId, member.id),
         403,
         "csrf-token-invalid",
       );
-      expect((await page(adam, projectId)).items).toEqual([
-        memberOf(admin, "admin"),
-        memberOf(member, "user"),
-      ]);
-    },
-  );
+    }
+    expect((await page(adam, projectId)).items).toEqual([
+      memberOf(admin, "admin"),
+      memberOf(member, "user"),
+    ]);
+  });
 });

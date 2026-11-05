@@ -68,8 +68,8 @@ const walk = (surveyId: string, limit: number, headers: Headers): Promise<Page[]
 const largeId = (n: number) => `66666666-0000-4000-8000-c${n.toString(16).padStart(11, "0")}`;
 
 describe("listResults", () => {
-  // Needs survey …a08 (1,500 generated responses), which the sandbox seed leaves out.
-  it.skipIf(sandbox)("walks the 1,500 generated responses in pages of 500", async (ctx) => {
+  it("walks the 1,500 generated responses in pages of 500", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     const pages = await walk(LARGE, 500, olivia);
     expect(pages.map((p) => p.items.length)).toEqual([500, 500, 500]);
@@ -86,8 +86,8 @@ describe("listResults", () => {
     expect(items[1499]?.id).toBe(largeId(1500));
   });
 
-  // Needs survey …a08 (1,500 generated responses), which the sandbox seed leaves out.
-  it.skipIf(sandbox)("serves 500 items by default and honours limit=1000", async (ctx) => {
+  it("serves 500 items by default and honours limit=1000", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     const first = await page(LARGE, "", olivia);
     expect(first.items).toHaveLength(500);
@@ -150,8 +150,8 @@ describe("listResults", () => {
     expect(result.items.map((item) => item.clientId)).toEqual(["same-client", "same-client"]);
   });
 
-  // Needs survey …a08 (1,500 generated responses), which the sandbox seed leaves out.
-  it.skipIf(sandbox)("refuses a bad limit or cursor with 400", async (ctx) => {
+  it("refuses a bad limit or cursor with 400", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     for (const query of ["?limit=0", "?limit=1001"]) {
       expect((await list(LARGE, query, olivia)).status).toBe(400);

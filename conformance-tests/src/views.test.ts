@@ -199,13 +199,12 @@ describe("views", () => {
     if (ownsServer) expect(response.headers.get("connection")).not.toBe("close");
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)(
-    "refuses an unknown view, a missing CSRF token and a missing session",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const surveyId = await created(adam);
-      expect((await get(surveyId, "charts", adam)).status).toBe(400);
+  it("refuses an unknown view, a missing CSRF token and a missing session", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await created(adam);
+    expect((await get(surveyId, "charts", adam)).status).toBe(400);
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
       const { cookie = "" } = adam;
       for (const response of [
         await put(surveyId, "summary", { cookie }, {}),
@@ -214,11 +213,11 @@ describe("views", () => {
         expect(response.status).toBe(403);
         expect(await codeOf(response)).toBe("csrf-token-invalid");
       }
-      expect((await get(surveyId, "summary")).status).toBe(401);
-      expect((await put(surveyId, "summary", undefined, {})).status).toBe(401);
-      expect((await reset(surveyId, "summary")).status).toBe(401);
-    },
-  );
+    }
+    expect((await get(surveyId, "summary")).status).toBe(401);
+    expect((await put(surveyId, "summary", undefined, {})).status).toBe(401);
+    expect((await reset(surveyId, "summary")).status).toBe(401);
+  });
 
   it("answers 404 not-found to an outsider, on a colleague's survey and on a fixture", async (ctx) => {
     const adam = await as(ctx, admin);

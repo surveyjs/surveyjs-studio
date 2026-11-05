@@ -99,7 +99,7 @@ function sandboxUsers(): Set<string> {
 export function sandboxSession(userId: string): CookieJar {
   if (!sandboxUsers().has(userId.toLowerCase())) {
     throw new SignInUnsupportedError(
-      `user ${userId} is not in the sandbox seed (server/fixtures/sandbox.json)`,
+      `user ${userId} is not in the sandbox seed (web/src/sandbox/seed.json)`,
     );
   }
   const jar = new CookieJar();

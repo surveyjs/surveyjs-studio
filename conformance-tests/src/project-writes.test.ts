@@ -234,24 +234,23 @@ describe("createProject", () => {
     });
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)(
-    "answers 400 for malformed JSON, 401 signed out and 403 without the CSRF token",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const malformed = await call("POST", "/projects", { headers: adam, rawBody: "{" });
-      expect(malformed.status).toBe(400);
-      expect(await codeOf(malformed)).toBe("bad-request");
+  it("answers 400 for malformed JSON, 401 signed out and 403 without the CSRF token", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const malformed = await call("POST", "/projects", { headers: adam, rawBody: "{" });
+    expect(malformed.status).toBe(400);
+    expect(await codeOf(malformed)).toBe("bad-request");
 
-      const signedOut = await create({}, { name: uniqueName("signed out") });
-      expect(signedOut.status).toBe(401);
-      expect(await codeOf(signedOut)).toBe("unauthenticated");
+    const signedOut = await create({}, { name: uniqueName("signed out") });
+    expect(signedOut.status).toBe(401);
+    expect(await codeOf(signedOut)).toBe("unauthenticated");
 
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
       const noCsrf = await create(withoutCsrf(adam), { name: uniqueName("no csrf") });
       expect(noCsrf.status).toBe(403);
       expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
-    },
-  );
+    }
+  });
 });
 
 describe("updateProject", () => {
@@ -389,8 +388,7 @@ describe("deleteProject", () => {
     expect(moved).toMatchObject({ id: survey.id, projectId: null, postId: survey.postId });
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("refuses a plain member with 403 and others with 404 or 400", async (ctx) => {
+  it("refuses a plain member with 403 and others with 404 or 400", async (ctx) => {
     const adam = await as(ctx, admin);
     const mia = await as(ctx, member);
     const project = await createdProject(adam, "delete refusals");
@@ -414,9 +412,12 @@ describe("deleteProject", () => {
     expect(longId.status).toBe(400);
     expect(await codeOf(longId)).toBe("bad-request");
 
-    const noCsrf = await remove(withoutCsrf(adam), project.id);
-    expect(noCsrf.status).toBe(403);
-    expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const noCsrf = await remove(withoutCsrf(adam), project.id);
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
     expect((await get(adam, project.id)).status).toBe(200);
   });
 });

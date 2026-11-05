@@ -213,8 +213,8 @@ describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
     }
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)("answers 403 csrf-token-invalid without the CSRF header", async (ctx) => {
+  it("answers 403 csrf-token-invalid without the CSRF header", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const headers = await as(ctx, admin);
     const survey = await created(headers);
     const response = await putDocument({ cookie: headers.cookie ?? "" }, survey.id, document, {

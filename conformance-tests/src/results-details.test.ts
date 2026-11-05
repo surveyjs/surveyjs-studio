@@ -109,9 +109,9 @@ async function csvOf(response: Response): Promise<string> {
 /** CSV text to records (no embedded line breaks in the large file's data). */
 const recordsOf = (text: string): string[] => text.split("\r\n").slice(0, -1);
 
-// Export formats are server-only: the sandbox answers exportResults with 501 (D7).
-describe.skipIf(sandbox)("exportResults of the fixtures", () => {
+describe("exportResults of the fixtures", () => {
   it("downloads Customer feedback as JSON, the items of a listResults walk", async (ctx) => {
+    if (sandbox) ctx.skip("export formats are server-only: the sandbox answers 501 (D7)");
     const olivia = await as(ctx, owner);
     const response = await exported(FEEDBACK, olivia, "?format=json");
     expect(response.status).toBe(200);
@@ -129,6 +129,7 @@ describe.skipIf(sandbox)("exportResults of the fixtures", () => {
   });
 
   it("downloads Customer feedback as CSV with a byte order mark and CRLF lines", async (ctx) => {
+    if (sandbox) ctx.skip("export formats are server-only: the sandbox answers 501 (D7)");
     const response = await exported(FEEDBACK, await as(ctx, owner), "?format=csv");
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
@@ -147,6 +148,7 @@ describe.skipIf(sandbox)("exportResults of the fixtures", () => {
   });
 
   it("streams all 1,500 responses of API created, as JSON and as CSV", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08 (not in the sandbox seed) and export formats");
     const olivia = await as(ctx, owner);
     const asJson = await exported(LARGE, olivia, "", "application/json");
     expect(asJson.status).toBe(200);
@@ -167,6 +169,7 @@ describe.skipIf(sandbox)("exportResults of the fixtures", () => {
   });
 
   it("negotiates the format from format and Accept", async (ctx) => {
+    if (sandbox) ctx.skip("export formats are server-only: the sandbox answers 501 (D7)");
     const olivia = await as(ctx, owner);
     const typeOf = async (query: string, accept?: string): Promise<string | null> => {
       const response = await exported(FEEDBACK, olivia, query, accept);
@@ -195,7 +198,8 @@ describe.skipIf(sandbox)("exportResults of the fixtures", () => {
 
   it("lets a project member download and hides surveys from outsiders", async (ctx) => {
     const mia = await exported(CAMPAIGN, await as(ctx, member), "?format=json");
-    expect(mia.status).toBe(200);
+    // The sandbox has no export formats (D7): it answers a member who may see the survey with 501.
+    expect(mia.status).toBe(sandbox ? 501 : 200);
     await mia.arrayBuffer();
 
     const oscar = await exported(LARGE, await as(ctx, outsider));
@@ -210,9 +214,9 @@ describe.skipIf(sandbox)("exportResults of the fixtures", () => {
   });
 });
 
-// Export formats are server-only: the sandbox answers exportResults with 501 (D7).
-describe.skipIf(sandbox)("exportResults of own surveys", () => {
+describe("exportResults of own surveys", () => {
   it("exports a survey without responses: [] and a header-only CSV", async (ctx) => {
+    if (sandbox) ctx.skip("export formats are server-only: the sandbox answers 501 (D7)");
     const adam = await as(ctx, admin);
     const id = await ownSurvey(adam);
     const asJson = await exported(id, adam, "?format=json");
@@ -222,6 +226,7 @@ describe.skipIf(sandbox)("exportResults of own surveys", () => {
   });
 
   it("names the file after the survey, with an ASCII fallback and the UTF-8 name", async (ctx) => {
+    if (sandbox) ctx.skip("export formats are server-only: the sandbox answers 501 (D7)");
     const adam = await as(ctx, admin);
     const id = await ownSurvey(adam, { name: 'Größe "Q3" 😀' });
     const response = await exported(id, adam, "?format=csv");
@@ -233,6 +238,7 @@ describe.skipIf(sandbox)("exportResults of own surveys", () => {
   });
 
   it("includes the respondent IP while the setting is on, and never publicly (R12)", async (ctx) => {
+    if (sandbox) ctx.skip("IP capture and export formats are server-only");
     const adam = await as(ctx, admin);
     const id = await ownSurvey(adam);
     const on = await patch(adam, id, {
@@ -373,36 +379,35 @@ describe("deleteResults", () => {
     expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
   });
 
-  // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
-  it.skipIf(sandbox)(
-    "refuses without a CSRF token, without a session and for callers who cannot see it",
-    async (ctx) => {
-      const adam = await as(ctx, admin);
-      const id = await ownSurvey(adam);
-      await submitted(id, { data: { q1: "a" } });
-      const url = `/surveys/${id}/results`;
+  it("refuses without a CSRF token, without a session and for callers who cannot see it", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const id = await ownSurvey(adam);
+    await submitted(id, { data: { q1: "a" } });
+    const url = `/surveys/${id}/results`;
 
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
       const noCsrf = await call("DELETE", RESULTS, {
         path: url,
         headers: { cookie: adam.cookie ?? "" },
       });
       expect(noCsrf.status).toBe(403);
       expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
 
-      expect((await call("DELETE", RESULTS, { path: url })).status).toBe(401);
+    expect((await call("DELETE", RESULTS, { path: url })).status).toBe(401);
 
-      const oscar = await call("DELETE", RESULTS, { path: url, headers: await as(ctx, outsider) });
-      expect(oscar.status).toBe(404);
-      expect(await codeOf(oscar)).toBe("not-found");
+    const oscar = await call("DELETE", RESULTS, { path: url, headers: await as(ctx, outsider) });
+    expect(oscar.status).toBe(404);
+    expect(await codeOf(oscar)).toBe("not-found");
 
-      const unknown = await call("DELETE", RESULTS, {
-        path: `/surveys/${UNKNOWN_ID}/results`,
-        headers: adam,
-      });
-      expect(unknown.status).toBe(404);
-      expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
-    },
-  );
+    const unknown = await call("DELETE", RESULTS, {
+      path: `/surveys/${UNKNOWN_ID}/results`,
+      headers: adam,
+    });
+    expect(unknown.status).toBe(404);
+    expect(await statsOf(id, adam)).toMatchObject({ count: 1 });
+  });
 
   it("answers 403 forbidden to a user who can see the survey but not modify it", async (ctx) => {
     const adam = await as(ctx, admin);
