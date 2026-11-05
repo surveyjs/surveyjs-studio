@@ -10,7 +10,7 @@ import type { SandboxSeed } from "./sandbox/seed-types";
 import { DEFAULT_SETTINGS } from "./sandbox/settings";
 import { createSandboxStore, memoryStorage, type SandboxStore } from "./sandbox/store";
 import { createAppRouter } from "./router";
-import { currentUserQueryOptions } from "./api/session";
+import { client, toApiError } from "./api/client";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { renderApp } from "./test/renderApp";
 import { sampleSurvey, surveyListPageHandlers } from "./test/server";
@@ -128,13 +128,39 @@ describe("a session that ends in another tab", () => {
     // What another tab's Reset does: the data is the seed again and the cookie is gone.
     store.reset();
     document.cookie = "msid=; path=/; max-age=0";
-    server.use(unauthenticatedHandler());
-    await queryClient.fetchQuery(currentUserQueryOptions).catch(() => undefined);
+    server.use(
+      mswHttp.get("*/api/v1/surveys", () =>
+        HttpResponse.json(
+          { type: "about:blank", title: "Sign in required", status: 401, code: "unauthenticated" },
+          { status: 401, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    await queryClient
+      .fetchQuery({
+        queryKey: ["surveys-check"],
+        queryFn: async () => {
+          const { error, response } = await client.GET("/surveys", {});
+          throw toApiError(error, response);
+        },
+      })
+      .catch(() => undefined);
 
     expect(await screen.findByRole("heading", { name: "Pick an account" })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/sign-in");
     expect(router.state.location.search).toEqual({ returnTo: "/?project=personal" });
     expect(screen.getAllByRole("button", { name: /@example\.com/ })).toHaveLength(4);
+  });
+});
+
+describe("an unknown address in the sandbox", () => {
+  it("shows Page not found to a signed-out visitor, with no redirect", async () => {
+    server.use(sandboxConfig(), unauthenticatedHandler());
+
+    const router = renderApp("/no/such/page");
+
+    expect(await screen.findByText("This page doesn't exist or has moved.")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/no/such/page");
   });
 });
 
