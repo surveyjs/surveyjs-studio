@@ -248,13 +248,14 @@ After `{"archived":true}` the same request answers `204 No Content`, and a third
 All five need a session. The two `PUT`s also need the CSRF header and `If-Match` (see
 [Concurrent editing with ETags](concurrency.md)). The examples use the setup of the Step 5 section.
 
-| Operation              | Behaviour                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `getSurveyDefinition`  | `GET /surveys/{surveyId}/definition`. `200`, the definition (`{}` when the survey has none) and an `ETag`. `404` for an unknown survey and for one the user cannot see         |
-| `saveSurveyDefinition` | `PUT /surveys/{surveyId}/definition`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                |
-| `getSurveyTheme`       | `GET /surveys/{surveyId}/theme`. As the definition (`{}` when none)                                                                                                            |
-| `saveSurveyTheme`      | `PUT /surveys/{surveyId}/theme`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                     |
-| `listSurveyHistory`    | `GET /surveys/{surveyId}/history`, query `limit` (1 to 200, default 50) and `cursor`. `200` `{ items: [{ at, user }], nextCursor }`, newest first. `404` as for the definition |
+| Operation               | Behaviour                                                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getSurveyDefinition`   | `GET /surveys/{surveyId}/definition`. `200`, the definition (`{}` when the survey has none) and an `ETag`. `404` for an unknown survey and for one the user cannot see             |
+| `saveSurveyDefinition`  | `PUT /surveys/{surveyId}/definition`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                    |
+| `getSurveyTheme`        | `GET /surveys/{surveyId}/theme`. As the definition (`{}` when none)                                                                                                                |
+| `saveSurveyTheme`       | `PUT /surveys/{surveyId}/theme`, a JSON object, with `If-Match`. `204` with the new `ETag`                                                                                         |
+| `listSurveyHistory`     | `GET /surveys/{surveyId}/history`, query `limit` (1 to 200, default 50) and `cursor`. `200` `{ items: [{ id, at, user }], nextCursor }`, newest first. `404` as for the definition |
+| `getSurveyHistoryEntry` | `GET /surveys/{surveyId}/history/{entryId}`. `200`, the definition saved in that entry. `404` as for the definition, and for an unknown entry                                      |
 
 Rules for the two `PUT`s:
 
@@ -281,7 +282,9 @@ Rules for `listSurveyHistory`:
   [Paging](paging.md); the cursor is opaque, and a bad cursor or `limit` is `400`.
 - `user` is `{ id, displayName }`, or `null` for entries recorded without a user (the legacy editor
   wrote none) and for users that no longer exist.
-- There is no operation yet to read, compare or restore one entry (P1).
+- `id` reads the definition saved in the entry with `getSurveyHistoryEntry` ([ADR 0032](../adr/0032-history-json-view.md)).
+  An entry never changes. A legacy entry whose text cannot be read as a definition gives `{}`. Comparing and restoring
+  entries are not built yet (P1).
 
 Read, edit and save the definition (the full loop with explanations is in
 [Concurrent editing with ETags](concurrency.md#example-a-save-loop-with-curl)):
