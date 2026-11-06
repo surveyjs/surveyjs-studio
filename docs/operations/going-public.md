@@ -11,13 +11,13 @@ Date of the check: 2026-11-06. The check itself rewrote nothing and pushed nothi
 Gitleaks reads the git history, not only the current files. The CI job `secrets` repeats it on every push and pull
 request, over the history of the checked-out commit, so a secret that is committed later fails the build.
 
-| Item         | Value                                                                                          |
-| ------------ | ---------------------------------------------------------------------------------------------- |
-| Tool         | Gitleaks `v8.24.0`, the image `zricethezav/gitleaks:v8.24.0` pinned by digest, default rules   |
-| Command      | `pnpm scan:secrets --all-refs --report <file>`                                                 |
-| Refs scanned | Every local branch, every remote-tracking branch and every tag (`--log-opts=--all`)            |
-| Commits      | 426 with `--all-refs`, 412 for the checked-out history (HEAD), after `git fetch --all --prune` |
-| Result       | 27 findings, all synthetic. After the allowlist: `no leaks found`                              |
+| Item         | Value                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| Tool         | Gitleaks `v8.24.0`, the image `zricethezav/gitleaks:v8.24.0` pinned by digest, default rules |
+| Command      | `pnpm scan:secrets --all-refs --report <file>`                                               |
+| Refs scanned | Every local branch, every remote-tracking branch and every tag (`--log-opts=--all`)          |
+| Commits      | 422 with `--all-refs`, 420 for the checked-out history (HEAD), after the history clean-up    |
+| Result       | All findings synthetic (the table below). With both allowlist files: `no leaks found`        |
 
 `pnpm scan:secrets` mounts the repository into the container read-only and redacts the matches. Without `--all-refs`
 it passes `--log-opts=HEAD` and scans the history reachable from the checked-out commit, which is what CI does.

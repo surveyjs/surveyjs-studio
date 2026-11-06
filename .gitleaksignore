@@ -1,43 +1,25 @@
 # Gitleaks allowlist: findings of the full-history scan, each checked by hand and synthetic.
 # The record is docs/operations/going-public.md. Never add a real secret here: rotate it and rewrite history.
 
-# Azurite storage emulator: the well-known public devstoreaccount1 account key (documented by Microsoft).
-3056e3171c3089510f734e2c2c950843ed8c9c6c:docker/prod-like.env:generic-api-key:20
-3056e3171c3089510f734e2c2c950843ed8c9c6c:docker/prod-like.env:generic-api-key:21
-07a0bbc657f0e645eff204d12958bf58867061f0:docker/azurite.env:generic-api-key:8
-07a0bbc657f0e645eff204d12958bf58867061f0:docker/azurite.env:generic-api-key:9
-
-# Demo and conformance webhook secrets (base64 of plain words, local demo only) and the Svix documentation example secret used as a test constant.
-c7f29e2bc5e86fda16f4fb2e4de1d638a58f2376:server/src/read-only.test.ts:generic-api-key:106
-baa92606a2673d1c31b6c77f1a3492f898ec2d03:conformance-tests/src/global-setup.ts:generic-api-key:27
-baa92606a2673d1c31b6c77f1a3492f898ec2d03:server/src/accounts/handlers.test.ts:generic-api-key:13
-baa92606a2673d1c31b6c77f1a3492f898ec2d03:server/demo-azurite.env:generic-api-key:6
-baa92606a2673d1c31b6c77f1a3492f898ec2d03:server/demo.env:generic-api-key:7
-baa92606a2673d1c31b6c77f1a3492f898ec2d03:server/src/cli/send-account-deleted.test.ts:generic-api-key:7
-5ba8ca14c1b8e5a15f9ff1cfad8c220ce59cf249:server/src/accounts/webhook-secret.test.ts:generic-api-key:4
-5ba8ca14c1b8e5a15f9ff1cfad8c220ce59cf249:server/src/config.test.ts:generic-api-key:12
+# The Azurite devstoreaccount1 key and the demo and conformance webhook secrets recur in the tree, so .gitleaks.toml allowlists
+# those exact values by pattern instead of by commit.
 
 # Test constants: the placeholder session secret 0123456789abcdef0123456789abcdef and similar fixture values.
-15604d532b3dee536f19e8726ba2bc47211b18aa:server/src/config-branding.test.ts:generic-api-key:120
-e18af46014354e883a0cde11ef5f979eb9e12624:server/src/config-branding.test.ts:generic-api-key:120
-b42278b5b0c901377035ff0db49649446a9fe1ea:server/src/smoke/smoke-legacy.azurite.test.ts:generic-api-key:16
-23139fea8c08e7fc103de4ed4ef79071ad623c11:server/src/auth/session.test.ts:generic-api-key:5
-23139fea8c08e7fc103de4ed4ef79071ad623c11:server/src/auth/seal.test.ts:generic-api-key:4
-23139fea8c08e7fc103de4ed4ef79071ad623c11:server/src/config.test.ts:generic-api-key:11
-12cacbba2c22fb194a810701cb7c1b00e3a3cee6:server/src/providers/azure-legacy/provider.test.ts:generic-api-key:6
+59980e7ccdc0aec257b7c35a7c1937cc023af6fd:server/src/config-branding.test.ts:generic-api-key:120
+727ba3927b8a9bdc0ccbf3dccc8e2b496a54d580:server/src/smoke/smoke-legacy.azurite.test.ts:generic-api-key:16
+f48dc8cbd1fd73f214cb00889c4e88ff25a563da:server/src/auth/session.test.ts:generic-api-key:5
+f48dc8cbd1fd73f214cb00889c4e88ff25a563da:server/src/auth/seal.test.ts:generic-api-key:4
+f48dc8cbd1fd73f214cb00889c4e88ff25a563da:server/src/config.test.ts:generic-api-key:11
+9ee5c1c7f729a16ecd2e2232f61c46bab92ff87b:server/src/providers/azure-legacy/provider.test.ts:generic-api-key:6
 
 # The documented example set-password token 7cJ2rQ0wUu8xXnYk3fVb1A in the API docs, the OpenAPI contract and a test.
-9d9b5147538d7e05d2ef34cbe93a0015b5501ad9:docs/api/admin-users.md:generic-api-key:58
-db6661678248740f9c868233d2659e1e8a7850e9:web/src/adminRoutes.test.tsx:generic-api-key:45
-4bab0c710d23ce9e24d04c4cafe5114eb084b282:contract/generated/openapi.d.ts:generic-api-key:1014
-4bab0c710d23ce9e24d04c4cafe5114eb084b282:contract/openapi.yaml:generic-api-key:1889
+141b2922a9c794296f34606be31fce84172f02b8:docs/api/admin-users.md:generic-api-key:58
+3119c69d77830193c3fa11245087eff43b1c25ee:web/src/adminRoutes.test.tsx:generic-api-key:45
+abc9c1f28b9947170e2f64e55e9149f7c173eccc:contract/generated/openapi.d.ts:generic-api-key:1014
+abc9c1f28b9947170e2f64e55e9149f7c173eccc:contract/openapi.yaml:generic-api-key:1889
 
 # An example Idempotency-Key UUID in the API docs.
-96a745f39e1da653cef18f97aefecc295a907eac:docs/api/public-endpoints.md:generic-api-key:66
+05e43c6e94879de6a56c5920f5b37ff4608265de:docs/api/public-endpoints.md:generic-api-key:66
 
 # masterpassword: an entry of the list of common passwords that sign-up refuses.
-c92a823cd7c754e22f1f09107d7aa8fcf29e2a49:server/src/passwords/common-passwords.ts:generic-api-key:63
-
-# The conformance suite's reference webhook secret (base64 of plain words), in its settings file and in the porting guide.
-611cf1b78ff8d89cda0c297a02f010b97d63e0ed:conformance-tests/src/reference-settings.ts:generic-api-key:7
-611cf1b78ff8d89cda0c297a02f010b97d63e0ed:docs/customizing/porting.md:generic-api-key:78
+d936645a3e078798556c27feff643d00a0492c41:server/src/passwords/common-passwords.ts:generic-api-key:63
