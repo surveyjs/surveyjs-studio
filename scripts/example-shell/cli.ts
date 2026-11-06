@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCheck, type CheckDeps } from "./check.js";
 import { extractGuide } from "./extract.js";
@@ -42,7 +42,15 @@ const deps: CheckDeps = {
     // Cleanup runs after a failure too, so nothing here throws. Git cannot delete a node_modules
     // tree of links on Windows: Node's rmSync can, and `prune` then forgets the worktree.
     const removed = spawnSync("git", ["worktree", "remove", "--force", dir], { cwd: root });
-    if (removed.status !== 0) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    if (removed.status !== 0) {
+      // Only ever delete a scratch directory this script made.
+      const inTmp = resolve(dirname(dir)) === resolve(tmpdir());
+      if (!inTmp || !/^example-shell-/.test(basename(dir)))
+        throw new Error(
+          `Refusing to delete ${dir}: not an example-shell-* directory in the temp dir.`,
+        );
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    }
     spawnSync("git", ["worktree", "prune"], { cwd: root });
     if (existsSync(dir))
       console.error(`Could not remove the scratch worktree ${dir}: remove it by hand.`);

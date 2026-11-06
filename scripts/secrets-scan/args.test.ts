@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gitleaksArgs, parseScanArgs } from "./args.js";
+import { GITLEAKS_IMAGE, gitleaksArgs, parseScanArgs } from "./args.js";
 
 describe("gitleaksArgs", () => {
   const base = { repo: "C:\\Work\\x", reportPath: null, allRefs: true };
@@ -12,22 +12,26 @@ describe("gitleaksArgs", () => {
 
   it("runs the pinned image on the mounted history with redaction and the ignore file", () => {
     const args = gitleaksArgs(base);
-    expect(args).toContain("zricethezav/gitleaks:v8.24.0");
-    expect(
-      args.slice(
-        args.indexOf("zricethezav/gitleaks:v8.24.0") + 1,
-        args.indexOf("zricethezav/gitleaks:v8.24.0") + 3,
-      ),
-    ).toEqual(["git", "/repo"]);
+    expect(args).toContain(GITLEAKS_IMAGE);
+    expect(args.slice(args.indexOf(GITLEAKS_IMAGE) + 1, args.indexOf(GITLEAKS_IMAGE) + 3)).toEqual([
+      "git",
+      "/repo",
+    ]);
     expect(args).toContain("--log-opts=--all");
     expect(args).toContain("--redact");
     expect(args).toContain("--gitleaks-ignore-path=/repo/.gitleaksignore");
     expect(args).not.toContain("--report-path");
   });
 
-  it("scans the checked-out history only without allRefs", () => {
-    expect(gitleaksArgs({ ...base, allRefs: false }).some((a) => a.startsWith("--log-opts"))).toBe(
-      false,
+  it("scans the checked-out history only (HEAD) without allRefs", () => {
+    const args = gitleaksArgs({ ...base, allRefs: false });
+    expect(args).toContain("--log-opts=HEAD");
+    expect(args).not.toContain("--log-opts=--all");
+  });
+
+  it("pins the image by tag and digest", () => {
+    expect(GITLEAKS_IMAGE).toBe(
+      "zricethezav/gitleaks:v8.24.0@sha256:2bcceac45179b3a91bff11a824d0fb952585b429e54fc928728b1d4d5c3e5176",
     );
   });
 

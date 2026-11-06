@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   applyOverrides,
   COMMERCIAL_PACKAGES,
+  commercialLicense,
   findProblems,
   renderNotices,
   type Extra,
@@ -40,12 +41,9 @@ function readLicenseText(folder: string): string | null {
   return files.map((file) => readFileSync(join(folder, file), "utf8").trim()).join("\n\n---\n\n");
 }
 
-/** pnpm reports the licence text's id for the commercial packages; the package declares its own. */
-function declaredLicense(folder: string, fallback: string): string {
-  const { license } = JSON.parse(readFileSync(join(folder, "package.json"), "utf8")) as {
-    license?: unknown;
-  };
-  return typeof license === "string" && license !== "" ? license : fallback;
+function readLicenseField(folder: string): unknown {
+  return (JSON.parse(readFileSync(join(folder, "package.json"), "utf8")) as { license?: unknown })
+    .license;
 }
 
 function listPackages(): LicensedPackage[] {
@@ -63,12 +61,14 @@ function listPackages(): LicensedPackage[] {
         if (byKey.has(id)) return;
         const folder = entry.paths[index] ?? entry.paths[0];
         if (folder === undefined) throw new Error(`${id}: pnpm lists no path`);
+        const declared = readLicenseField(folder);
         byKey.set(id, {
           name: entry.name,
           version,
           license: COMMERCIAL_PACKAGES.includes(entry.name)
-            ? declaredLicense(folder, entry.license)
+            ? commercialLicense(declared)
             : entry.license,
+          declared: typeof declared === "string" ? declared : null,
           homepage: entry.homepage ?? null,
           licenseText: readLicenseText(folder),
         });

@@ -1,6 +1,6 @@
 // The settings the conformance suite expects of its server, in one place: the in-process reference
 // server (global-setup.ts) starts with them, CI writes them to an env file for `docker run`
-// (`pnpm exec node --import tsx scripts/conformance/cli.ts reference-env`), and
+// (`node --import tsx scripts/conformance/cli.ts reference-env`), and
 // docs/customizing/porting.md lists them for a port. Pure: no side effects.
 
 /** The account-deleted webhook secret: a synthetic test value (base64 of `my-surveys-conformance-webhook-key`). */

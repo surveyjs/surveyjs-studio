@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applyOverrides, findProblems, renderNotices, type LicensedPackage } from "./notices.js";
+import {
+  applyOverrides,
+  commercialLicense,
+  findProblems,
+  renderNotices,
+  type LicensedPackage,
+} from "./notices.js";
 
 const pkg = (over: Partial<LicensedPackage> & { name: string }): LicensedPackage => ({
   version: "1.0.0",
@@ -75,18 +81,54 @@ describe("findProblems", () => {
 
   it("accepts an override with a reason", () => {
     const pkgs = [pkg({ name: "a", licenseText: null, license: "Unknown" })];
-    const overrides = { "a@1.0.0": { license: "MIT", reason: "package.json of a says MIT" } };
+    const overrides = { a: { license: "MIT", reason: "package.json of a says MIT" } };
     expect(findProblems(pkgs, overrides)).toEqual([]);
     expect(applyOverrides(pkgs, overrides)[0]?.license).toBe("MIT");
   });
 
   it("refuses an override without a reason", () => {
     const pkgs = [pkg({ name: "a", licenseText: null })];
-    const problems = findProblems(pkgs, { "a@1.0.0": { license: "MIT", reason: " " } });
+    const problems = findProblems(pkgs, { a: { license: "MIT", reason: " " } });
     expect(problems[0]).toContain("reason");
+  });
+
+  it("applies a name-keyed override to every version of the package", () => {
+    const pkgs = [
+      pkg({ name: "a", version: "1.0.0", licenseText: null }),
+      pkg({ name: "a", version: "2.0.0", licenseText: null }),
+    ];
+    const overrides = { a: { license: "ISC", reason: "package.json says ISC" } };
+    expect(findProblems(pkgs, overrides)).toEqual([]);
+    expect(applyOverrides(pkgs, overrides).map((p) => p.license)).toEqual(["ISC", "ISC"]);
+  });
+
+  it("fails and names the package when its installed licence differs from the override", () => {
+    const pkgs = [pkg({ name: "a", version: "3.0.0", licenseText: null, declared: "GPL-3.0" })];
+    const problems = findProblems(pkgs, { a: { license: "MIT", reason: "checked" } });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("a@3.0.0");
+    expect(problems[0]).toContain("GPL-3.0");
+  });
+
+  it("accepts an override whose licence equals the installed one", () => {
+    const pkgs = [pkg({ name: "a", licenseText: null, declared: "MIT" })];
+    expect(findProblems(pkgs, { a: { license: "MIT", reason: "checked" } })).toEqual([]);
   });
 
   it("does not need text for the commercial packages, which point at licensing.md", () => {
     expect(findProblems([pkg({ name: "survey-analytics", licenseText: null })], {})).toEqual([]);
+  });
+});
+
+describe("commercialLicense", () => {
+  it("returns the declared licence string", () => {
+    expect(commercialLicense("SEE LICENSE IN LICENSE")).toBe("SEE LICENSE IN LICENSE");
+  });
+  it("never yields pnpm's value for a missing field", () => {
+    expect(commercialLicense(undefined)).toBe("Commercial (SEE LICENSE IN LICENSE)");
+  });
+  it("does not use the legacy object form or an empty string", () => {
+    expect(commercialLicense({ type: "MIT" })).toBe("Commercial (SEE LICENSE IN LICENSE)");
+    expect(commercialLicense("")).toBe("Commercial (SEE LICENSE IN LICENSE)");
   });
 });

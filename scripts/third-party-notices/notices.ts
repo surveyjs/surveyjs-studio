@@ -7,6 +7,8 @@ export interface LicensedPackage {
   license: string;
   homepage: string | null;
   licenseText: string | null;
+  /** The `license` string of the installed package.json, when it was read (checked against an override). */
+  declared?: string | null;
 }
 
 export interface Extra {
@@ -20,7 +22,10 @@ export interface Override {
   reason: string;
 }
 
-/** `name@version` to the licence that package really has. Empty unless a package needs it. */
+/**
+ * Package name (every version) to the licence that package really has. The generator checks it
+ * against the installed package.json, so a bump that changes the licence fails the build.
+ */
 export type Overrides = Readonly<Record<string, Override>>;
 
 /** Survey Creator and the Dashboard are commercial: their entry points at licensing.md instead. */
@@ -33,12 +38,19 @@ export const COMMERCIAL_PACKAGES: readonly string[] = [
 const LICENSING_DOC =
   "https://github.com/surveyjs/surveyjs-studio/blob/master/docs/customizing/licensing.md";
 
+/** The licence of a commercial package: its own `license` string; never pnpm's value, which is MIT. */
+export function commercialLicense(declared: unknown): string {
+  return typeof declared === "string" && declared.trim() !== ""
+    ? declared
+    : "Commercial (SEE LICENSE IN LICENSE)";
+}
+
 const key = (pkg: LicensedPackage): string => `${pkg.name}@${pkg.version}`;
 const isCommercial = (pkg: LicensedPackage): boolean => COMMERCIAL_PACKAGES.includes(pkg.name);
 
 export function applyOverrides(pkgs: LicensedPackage[], overrides: Overrides): LicensedPackage[] {
   return pkgs.map((pkg) => {
-    const override = overrides[key(pkg)];
+    const override = overrides[pkg.name];
     return override ? { ...pkg, license: override.license } : pkg;
   });
 }
@@ -47,10 +59,15 @@ export function applyOverrides(pkgs: LicensedPackage[], overrides: Overrides): L
 export function findProblems(pkgs: LicensedPackage[], overrides: Overrides): string[] {
   const problems: string[] = [];
   for (const pkg of pkgs) {
-    const override = overrides[key(pkg)];
+    const override = overrides[pkg.name];
     if (override) {
       if (override.reason.trim() === "") {
         problems.push(`${key(pkg)}: its override has no reason`);
+      }
+      if (pkg.declared != null && pkg.declared !== override.license) {
+        problems.push(
+          `${key(pkg)}: its package.json declares ${pkg.declared}, the override says ${override.license}`,
+        );
       }
       continue;
     }

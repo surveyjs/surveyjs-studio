@@ -343,7 +343,9 @@ jobs:
         with:
           name: modes
 
-  # Gitleaks over the checkout's full history. Keep the image tag in step with scripts/secrets-scan/args.ts.
+  # Gitleaks over the history reachable from the checked-out commit (--log-opts=HEAD). Without --log-opts it would
+  # scan every ref the clone has, i.e. every upstream branch and tag. Keep the image reference (tag and digest) in
+  # step with scripts/secrets-scan/args.ts.
   # Reviewed findings are listed in .gitleaksignore; the record is docs/operations/going-public.md.
   secrets:
     name: Secrets scan
@@ -358,7 +360,7 @@ jobs:
       # The container user differs from the runner's, so it runs as the runner's user to read the checkout.
       - name: Scan the history for secrets
         run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.0             git /repo --redact --gitleaks-ignore-path=/repo/.gitleaksignore --no-banner
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro"             zricethezav/gitleaks:v8.24.0@sha256:2bcceac45179b3a91bff11a824d0fb952585b429e54fc928728b1d4d5c3e5176             git /repo --log-opts=HEAD --redact             --gitleaks-ignore-path=/repo/.gitleaksignore --no-banner
 
   # The one result to wait for: it fails when any job above failed, was cancelled or was skipped.
   ci:

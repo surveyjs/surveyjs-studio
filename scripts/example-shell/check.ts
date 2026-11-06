@@ -44,6 +44,13 @@ export function runCheck(deps: CheckDeps, guide: Guide): number {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
-    deps.removeWorktree(dir);
+    try {
+      deps.removeWorktree(dir);
+    } catch (error) {
+      // A failed cleanup must not turn the check's result into something else.
+      console.warn(
+        `Warning: could not remove the scratch worktree ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

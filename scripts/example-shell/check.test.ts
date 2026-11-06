@@ -72,4 +72,20 @@ describe("runCheck", () => {
     expect(runCheck(deps, { files, patch: "p" })).not.toBe(0);
     expect(calls).toEqual([]);
   });
+
+  it("keeps the check's result when removing the worktree throws", () => {
+    const { deps } = fakeDeps({
+      removeWorktree: () => {
+        throw new Error("cannot remove");
+      },
+    });
+    expect(runCheck(deps, { files, patch: "p" })).toBe(0);
+    const failing = fakeDeps({
+      run: (_dir, cmd) => (cmd.includes("typecheck") ? 3 : 0),
+      removeWorktree: () => {
+        throw new Error("cannot remove");
+      },
+    });
+    expect(runCheck(failing.deps, { files, patch: "p" })).toBe(3);
+  });
 });
