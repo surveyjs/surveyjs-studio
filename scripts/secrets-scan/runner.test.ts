@@ -28,6 +28,7 @@ describe("gitleaksNativeArgs", () => {
       "--redact",
       "--gitleaks-ignore-path=.gitleaksignore",
       "--no-banner",
+      "--verbose",
     ]);
   });
 });

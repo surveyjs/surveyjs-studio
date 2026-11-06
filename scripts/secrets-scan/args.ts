@@ -38,7 +38,7 @@ export function gitleaksArgs({ repo, reportPath, allRefs, staged, user }: ScanOp
     args.push("-v", `${dir}:/out`);
   }
   args.push(GITLEAKS_IMAGE, "git", "/repo");
-  if (staged) args.push("--pre-commit", "--staged");
+  if (staged) args.push("--pre-commit", "--staged", "--verbose");
   // gitleaks without --log-opts already walks every ref (`git log -p -U0 --full-history --all`), so
   // the checked-out history is HEAD explicitly.
   else args.push(allRefs ? "--log-opts=--all" : "--log-opts=HEAD");

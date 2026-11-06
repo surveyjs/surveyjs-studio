@@ -24,5 +24,6 @@ export function gitleaksNativeArgs(): string[] {
     "--redact",
     "--gitleaks-ignore-path=.gitleaksignore",
     "--no-banner",
+    "--verbose", // print each (redacted) finding, so a blocked commit says why
   ];
 }

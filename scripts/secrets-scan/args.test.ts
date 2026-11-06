@@ -57,6 +57,7 @@ describe("gitleaksArgs", () => {
     expect(args).toContain("--staged");
     expect(args.some((a) => a.startsWith("--log-opts"))).toBe(false);
     expect(args).toContain("--redact");
+    expect(args).toContain("--verbose"); // print each finding, redacted, so the blocked commit says why
     expect(args).toContain("--gitleaks-ignore-path=/repo/.gitleaksignore");
     expect(args.some((a) => a.startsWith("--report"))).toBe(false);
     expect(args.some((a) => a.endsWith(":/out"))).toBe(false);
