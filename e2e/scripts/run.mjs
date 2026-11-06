@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { stripAppVariables } from "../app-variables.mjs";
 import { isImageTarget } from "../image-target.mjs";
-import { functionalPorts, usesAzuriteConfig } from "../ports.mjs";
+import { functionalPorts, usesAzuriteConfig, usesSqliteConfig } from "../ports.mjs";
 import { requireFreePorts } from "./ports.mjs";
 
 const env = stripAppVariables({ ...process.env });
@@ -26,6 +26,7 @@ await requireFreePorts(
   functionalPorts({
     image: imageTarget,
     azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
+    sqlite: usesSqliteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "sqlite",
   }),
 );
 if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");

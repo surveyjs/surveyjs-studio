@@ -49,6 +49,15 @@ export function serializeRequest(request: FastifyRequest) {
 }
 
 /**
+ * The start-up warning of a provider whose stores are not all persistent yet: the SQL providers
+ * keep every store but surveys in memory until self-hosted Step 2. null for the other providers.
+ */
+export function storageWarning(config: AppConfig): string | null {
+  if (config.storageProvider !== "sqlite" && config.storageProvider !== "postgres") return null;
+  return `STORAGE_PROVIDER=${config.storageProvider} stores surveys in the database; users, projects, results, views and files are still kept in memory and lost on restart (self-hosted track Step 2)`;
+}
+
+/**
  * The one `starting` line: which providers and settings this process runs with. Fixed keys, each a
  * setting's name or mode, never a connection string, URL with credentials, secret or token.
  */

@@ -112,13 +112,14 @@ what the app needs, in parallel, each with a 5 s limit, and names the checks tha
 share one run of the checks, and its answer, ready or not, is reused for 5 s: the stores see at most one check every
 5 s, however often `/readyz` is called.
 
-| Check             | When                            | What it does                                                           |
-| ----------------- | ------------------------------- | ---------------------------------------------------------------------- |
-| `sql`             | `STORAGE_PROVIDER=azure-legacy` | `SELECT 1` on the site database (also the `surveyjs-sql` users)        |
-| `surveys-storage` | `STORAGE_PROVIDER=azure-legacy` | Reads the surveys account's properties and lists one table             |
-| `results-storage` | `STORAGE_PROVIDER=azure-legacy` | The same on the results account                                        |
-| `user-api`        | `USER_DIRECTORY=surveyjs-api`   | Looks up an id that never exists: `404` is ready, anything else is not |
-| `memory`          | `STORAGE_PROVIDER=memory`       | Always ready                                                           |
+| Check             | When                                    | What it does                                                           |
+| ----------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| `sql`             | `STORAGE_PROVIDER=azure-legacy`         | `SELECT 1` on the site database (also the `surveyjs-sql` users)        |
+| `surveys-storage` | `STORAGE_PROVIDER=azure-legacy`         | Reads the surveys account's properties and lists one table             |
+| `results-storage` | `STORAGE_PROVIDER=azure-legacy`         | The same on the results account                                        |
+| `user-api`        | `USER_DIRECTORY=surveyjs-api`           | Looks up an id that never exists: `404` is ready, anything else is not |
+| `memory`          | `STORAGE_PROVIDER=memory`               | Always ready                                                           |
+| `database`        | `STORAGE_PROVIDER=sqlite` or `postgres` | `select 1` on the database, waiting at most 3 s                        |
 
 ```text
 200 {"status":"ok"}
@@ -260,12 +261,13 @@ Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API w
 The local configurations, for development, tests and demos. None of them touches real data except the two runs on
 production data, which are for the product owner only. [Running the app](running.md) has the commands.
 
-| Configuration      | Storage and users                                  | Sign-in                                         | Settings file                                   |
-| ------------------ | -------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------- |
-| Memory demo        | `memory`, `MEMORY_SEED=legacy-fixtures`            | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page | `server/demo.env`                               |
-| Azurite demo       | `azure-legacy` on Azurite and SQL Server in Docker | `surveyjs-oidc` against the mock OIDC server    | `docker/azurite.env`, `server/demo-azurite.env` |
-| Prod-like          | The image in the mode 1 configuration, on Azurite  | `surveyjs-oidc` against the mock OIDC server    | `docker/prod-like.env`                          |
-| On production data | `azure-legacy` on the real stores                  | `surveyjs-oidc` against a local the site's sign-in service   | `server/.env` (never committed)                 |
+| Configuration      | Storage and users                                                                                                         | Sign-in                                                    | Settings file                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Memory demo        | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                   | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page            | `server/demo.env`                                                        |
+| Azurite demo       | `azure-legacy` on Azurite and SQL Server in Docker                                                                        | `surveyjs-oidc` against the mock OIDC server               | `docker/azurite.env`, `server/demo-azurite.env`                          |
+| SQLite, PostgreSQL | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for surveys; the rest `memory` until self-hosted Step 2 | `IDENTITY_PROVIDER=dev`                                    | `server/demo.env` with `server/demo-sqlite.env` or `docker/postgres.env` |
+| Prod-like          | The image in the mode 1 configuration, on Azurite                                                                         | `surveyjs-oidc` against the mock OIDC server               | `docker/prod-like.env`                                                   |
+| On production data | `azure-legacy` on the real stores                                                                                         | `surveyjs-oidc` against a local the site's sign-in service | `server/.env` (never committed)                                          |
 
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
@@ -282,7 +284,9 @@ and today the server refuses them at start-up with a message that names the trac
 | `AUTH_METHODS`   | `password`    | `password` and any of `surveyjs`, `google`, `github`, `facebook` |
 | `APP_EDITION`    | `self-hosted` | `self-hosted`                                                    |
 
-The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Mode 1.3 (the
+The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Its Step 1 added
+`STORAGE_PROVIDER=sqlite|postgres` with `SQLITE_PATH` and `DATABASE_URL` ([Development](development.md#sqlite-and-postgresql-modes)),
+for development only: until every store is on SQL (its Step 2) they are refused with `NODE_ENV=production`. Mode 1.3 (the
 hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come from sign-in
 ([ADR 0022](adr/0022-users-from-sign-in.md)).
 
@@ -291,17 +295,17 @@ hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md
 Users come from a **user directory**. Which one is a setting, and some combinations cannot work: the server then
 refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deployment-mode.md)).
 
-| Variable                 | Values                                                                 | Meaning                                                                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `USER_DIRECTORY`         | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                      | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, else `surveyjs-sql`. `local` is refused: the self-hosted track builds it                 |
-| `USER_API_URL`           | An http(s) URL, such as `https://users.example.com/api`                | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped |
-| `USER_API_TOKEN`         | A string; **secret**                                                   | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                     |
-| `ACCOUNT_NOTICES`        | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`                                              |
-| `ACCOUNT_WEBHOOK_SECRET` | `whsec_` and base64 of at least 24 bytes; **secret**                   | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                  |
+| Variable                 | Values                                                                 | Meaning                                                                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `USER_DIRECTORY`         | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                      | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local` is refused: the self-hosted track builds it |
+| `USER_API_URL`           | An http(s) URL, such as `https://users.example.com/api`                | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped         |
+| `USER_API_TOKEN`         | A string; **secret**                                                   | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                             |
+| `ACCOUNT_NOTICES`        | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`                                                      |
+| `ACCOUNT_WEBHOOK_SECRET` | `whsec_` and base64 of at least 24 bytes; **secret**                   | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                          |
 
 **The rules, all reported together at start-up:**
 
-- `USER_DIRECTORY=memory` needs `STORAGE_PROVIDER=memory`; `surveyjs-sql` needs `STORAGE_PROVIDER=azure-legacy`. These
+- `USER_DIRECTORY=memory` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`; `surveyjs-sql` needs `STORAGE_PROVIDER=azure-legacy`. These
   apply to an explicit value only: the default always fits.
 - `surveyjs-api` needs `USER_API_URL` and `USER_API_TOKEN`.
 - `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`, but only **`surveyjs`** can start

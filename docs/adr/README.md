@@ -29,4 +29,6 @@ and add each one to this index.
 | [0020](0020-visual-parity-baselines.md)                    | Visual parity baselines                                                         | Accepted |
 | [0021](0021-production-image-and-web-serving.md)           | The production image and web serving                                            | Accepted |
 | [0022](0022-users-from-sign-in.md)                         | Users from sign-in, not from a user API                                         | Accepted |
-| [0023](0023-history-json-view.md)                          | The JSON of a history entry                                                     | Accepted |
+| [0023](0023-sqlite-driver-node-sqlite.md)                  | The SQLite driver: Node's built-in `node:sqlite`                                | Accepted |
+| [0024](0024-kysely-and-plain-sql-migrations.md)            | Kysely and plain-SQL migrations                                                 | Accepted |
+| [0032](0032-history-json-view.md)                          | The JSON of a history entry                                                     | Accepted |

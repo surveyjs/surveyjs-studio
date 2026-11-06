@@ -1,0 +1,22 @@
+# PostgreSQL for the postgres development mode and its tests (self-hosted track).
+# Start with `pnpm postgres:up`; stop and wipe with `pnpm postgres:down`.
+name: surveyjs-studio-postgres
+services:
+  postgres:
+    image: postgres:18.4-alpine3.23
+    environment:
+      POSTGRES_USER: surveyjs
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see docker/postgres.env)}
+      POSTGRES_DB: surveyjs_studio
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surveyjs -d surveyjs_studio"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-data:

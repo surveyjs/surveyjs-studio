@@ -1,3 +1,4 @@
+import { GUID } from "../domain/guid.js";
 import { AppError } from "../errors.js";
 import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../providers/types.js";
 
@@ -73,6 +74,9 @@ function decode(value: string): Record<string, unknown> {
 const isId = (value: unknown): value is string =>
   typeof value === "string" && value !== "" && value.length <= MAX_ID_LENGTH;
 
+/** Survey and history entry ids are GUIDs in every provider (the SQL stores keep them as `uuid`). */
+const isGuid = (value: unknown): value is string => typeof value === "string" && GUID.test(value);
+
 /** An ISO 8601 UTC timestamp exactly as `Date#toISOString` writes it. */
 function isTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -110,7 +114,7 @@ export function decodeSurveyCursor(value: string, list: SurveyList): SurveyPosit
   if (v !== VERSION || k !== "surveys" || p !== list.scope || a !== list.archived) {
     throw invalidCursor();
   }
-  if (!isTimestamp(u) || !isId(i)) throw invalidCursor();
+  if (!isTimestamp(u) || !isGuid(i)) throw invalidCursor();
   // Stores compare ids case-sensitively and hold them lower-case: an upper-case id would skew a
   // walk, and fails the canonical check below.
   const position = { updatedAt: u, id: i.toLowerCase() };
@@ -178,7 +182,7 @@ export function encodeHistoryCursor(position: HistoryPosition): string {
 /** The position of a history cursor; throws `400 bad-request` ("Invalid cursor.") otherwise. */
 export function decodeHistoryCursor(value: string): HistoryPosition {
   const { v, k, u, i } = decode(value);
-  if (v !== VERSION || k !== "history" || !isTimestamp(u) || !isId(i)) throw invalidCursor();
+  if (v !== VERSION || k !== "history" || !isTimestamp(u) || !isGuid(i)) throw invalidCursor();
   const position = { at: u, id: i.toLowerCase() };
   return canonical(value, position, encodeHistoryCursor(position));
 }

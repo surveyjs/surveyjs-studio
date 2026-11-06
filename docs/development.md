@@ -16,10 +16,12 @@
 
 ## Demo modes
 
-| Mode    | Command                                                                       | Storage                                                                                               |
-| ------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| memory  | `pnpm demo`                                                                   | In memory; data is lost on restart                                                                    |
-| Azurite | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode)) | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server |
+| Mode       | Command                                                                                         | Storage                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| memory     | `pnpm demo`                                                                                     | In memory; data is lost on restart                                                                    |
+| Azurite    | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode))                   | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server |
+| SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Surveys in `server/.data/surveyjs-studio.db`; the other stores in memory until self-hosted Step 2     |
+| PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Surveys in PostgreSQL in Docker; the other stores in memory until self-hosted Step 2                  |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
 the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
@@ -65,8 +67,10 @@ mode needs, and their values in production: [Operations › Configuration by dep
 | `APP_SHELL`                                | non-empty string                                                                                                                                                                                 | `surveyjs-site`                                                                                                                                                            |
 | `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `google`, `github`, `facebook` (at least one); only `surveyjs` can start today: the others need `USER_DIRECTORY=local`, which the self-hosted track builds | `surveyjs`                                                                                                                                                                 |
 | `SURVEYJS_LICENSE_KEY`                     | string                                                                                                                                                                                           | unset (`null` in `/config`)                                                                                                                                                |
-| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`                                                                                                                                                                         | `memory`                                                                                                                                                                   |
-| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`)                                                                                                                                                    | `empty`                                                                                                                                                                    |
+| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`, `sqlite`, `postgres` (`sqlite` and `postgres` are refused when `NODE_ENV=production` until self-hosted Step 2)                                                         | `memory`                                                                                                                                                                   |
+| `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`, and by the memory stores of `sqlite` and `postgres`)                                                                                               | `empty`                                                                                                                                                                    |
+| `SQLITE_PATH`                              | path of the SQLite file (used by `sqlite`); a relative path is resolved against the working directory, and the folder is created                                                                 | `/data/surveyjs-studio.db`                                                                                                                                                 |
+| `DATABASE_URL`                             | `postgres://` or `postgresql://` URL (used by `postgres`); **secret**                                                                                                                            | unset; required when `STORAGE_PROVIDER=postgres`                                                                                                                           |
 | `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                                                                                                                                                         | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
 | `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**                                                                                                                                    | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
 | `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**                                                                                                                                    | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
@@ -76,7 +80,7 @@ mode needs, and their values in production: [Operations › Configuration by dep
 | `LIMIT_MAX_RESPONSE_BYTES`                 | positive integer                                                                                                                                                                                 | `1048576` (1 MB); also the request body limit                                                                                                                              |
 | `LIMIT_MAX_DOCUMENT_BYTES`                 | positive integer                                                                                                                                                                                 | `30000000`; request body limit of the survey definition and theme saves                                                                                                    |
 | `API_DOCS`                                 | `true`, `false`                                                                                                                                                                                  | `true`, but `false` when `NODE_ENV=production`                                                                                                                             |
-| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                                                                                                                                           | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory` and is refused in production and hosted                                                                             |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, `dev`                                                                                                                                                                           | `surveyjs-oidc`; `dev` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres` and is refused in production and hosted                                                     |
 | `SESSION_SECRET`                           | string, at least 32 characters; **secret**                                                                                                                                                       | unset; required in production, and when `PUBLIC_BASE_URL` is https or not on `localhost`, `127.0.0.1` or `[::1]` (a fixed dev constant is used, with a warning, elsewhere) |
 | `SESSION_MAX_AGE_SECONDS`                  | positive integer                                                                                                                                                                                 | `43200` (12 h); absolute expiry                                                                                                                                            |
 | `OIDC_ISSUER_URL`                          | absolute http(s) URL; plain http only on `localhost`, `127.0.0.1` or `[::1]`                                                                                                                     | unset; required for `surveyjs-oidc`                                                                                                                                        |
@@ -89,7 +93,7 @@ mode needs, and their values in production: [Operations › Configuration by dep
 | `PUBLIC_RATE_LIMIT`                        | positive integer (requests per minute per IP, for each of `getPublishedSurvey`, `submitResponse`, `uploadResponseFile` and `getPublicResults`)                                                   | `60`                                                                                                                                                                       |
 | `PUBLIC_FILE_RATE_LIMIT`                   | positive integer (requests per minute per IP for `downloadFile`)                                                                                                                                 | `600`                                                                                                                                                                      |
 | `ACCOUNT_NOTICES`                          | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`                                                                                                                           | `none`; `surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql` or `surveyjs-api`                                                                                          |
-| `USER_DIRECTORY`                           | `memory`, `surveyjs-sql`, `surveyjs-api`, `local` (`local` is refused: not built yet)                                                                                                            | `memory` with `STORAGE_PROVIDER=memory`, else `surveyjs-sql`                                                                                                               |
+| `USER_DIRECTORY`                           | `memory`, `surveyjs-sql`, `surveyjs-api`, `local` (`local` is refused: not built yet)                                                                                                            | `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`                                                                                       |
 | `USER_API_URL`                             | absolute http(s) URL; plain http only on `localhost`, `127.0.0.1` or `[::1]`; a trailing slash is dropped                                                                                        | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
 | `USER_API_TOKEN`                           | string; **secret**                                                                                                                                                                               | unset; required for `USER_DIRECTORY=surveyjs-api`                                                                                                                          |
 | `ACCOUNT_WEBHOOK_SECRET`                   | `whsec_` and the base64 of at least 24 bytes; **secret**                                                                                                                                         | unset: the account-deleted webhook answers `404` (`503 read-only` while `READ_ONLY=true`)                                                                                  |
@@ -403,6 +407,47 @@ The user's id (`11111111-0000-4000-8000-a00000000001` for the owner) works too. 
 these names their legacy `Users.id` as the subject, with their email and name claims. Any other
 text signs in a user the directory does not know, with that text as the subject.
 
+## SQLite and PostgreSQL modes
+
+The SQL providers of the self-hosted track ([data model](architecture/data-model.md),
+[ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)). Until
+self-hosted Step 2 only the **surveys** (records, definitions, themes, history) are in the database; users, projects,
+results, saved views and files are the memory provider's, seeded by `MEMORY_SEED`, and lost on restart. The server
+logs a warning saying so, and refuses these providers with `NODE_ENV=production`. Sign-in is the dev sign-in of
+[`pnpm demo`](#signing-in), with the same seed users.
+
+| Mode       | First                                    | Then                | Database                                                                         |
+| ---------- | ---------------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
+| SQLite     | `pnpm seed:sqlite`                       | `pnpm dev:sqlite`   | `server/.data/surveyjs-studio.db` (git-ignored; delete the folder to start over) |
+| PostgreSQL | `pnpm seed:postgres` (starts PostgreSQL) | `pnpm dev:postgres` | PostgreSQL 18 in Docker on 127.0.0.1:15432 (`docker/compose.postgres.yaml`)      |
+
+`dev:sqlite` and `dev:postgres` run like `pnpm demo` (server on 3000, web app on 5173), with `server/demo.env` plus
+`server/demo-sqlite.env` or [`docker/postgres.env`](../docker/postgres.env) (local-only values). `dev:postgres` starts
+the container first (`pnpm postgres:up`, waits until it is healthy); `pnpm postgres:down` stops it and **deletes its
+volume**.
+
+The server **migrates the database at start-up**. Three commands work on it outside the server; each reads the
+environment, or a file given with `--env-file` (variables already set win):
+
+| Command           | What it does                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `pnpm db:status`  | Lists the applied migrations (with their time), the pending ones, and any a newer version applied. Writes nothing.  |
+| `pnpm db:migrate` | Applies the pending migrations, in one transaction. Refused with `READ_ONLY=true`.                                  |
+| `pnpm seed`       | Migrates, then loads the shared seed (the golden fixtures): each seed survey is replaced, every other survey stays. |
+
+`pnpm seed:sqlite` and `pnpm seed:postgres` run `seed` with the mode's settings. For PostgreSQL, for example:
+`pnpm db:status --env-file docker/postgres.env`. (For SQLite run the commands from `server/`, since
+`demo-sqlite.env` names a relative path: `pnpm --filter @surveyjs-studio/server exec node --env-file=demo-sqlite.env --import tsx src/cli/db.ts status`.)
+
+A database that a newer version migrated stops the server at start-up with "The database has migration NNNN-…, which
+this version of SurveyJS Studio does not know: a newer version migrated it. Run that version or a newer one." With
+`READ_ONLY=true` the server never migrates, and a pending migration stops it with a message naming `pnpm db:migrate`.
+
+Migrations live in `server/sql/sqlite/` and `server/sql/postgres/`: plain SQL, `NNNN-name.sql`, the same numbers and
+names in both, each statement ending with a `;` at the end of a line ([ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)).
+A schema change adds one file to each folder and updates `server/src/sql/schema.ts`; an applied migration is never
+edited.
+
 ## Production data mode
 
 `pnpm dev:prod-data` runs the app on the **real** surveyjs.io stores (the mode 1.1 data) with sign-in
@@ -649,18 +694,19 @@ the same least-privilege login as the inspector above. The output above is the l
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 
-| Package             | Script                                                    | Purpose                                                                                                                                                 |
-| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server`            | `dev`, `start`, `typecheck`                               | Watch mode, plain start, type check                                                                                                                     |
-| `server`            | `dev:demo`, `dev:demo:azurite`                            | The server half of the root `pnpm demo` and `pnpm demo:azurite`; run those instead                                                                      |
-| `server`            | `dev:prod-data`                                           | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
-| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`            | Vite dev server, build (type check first), preview, unit tests                                                                                          |
-| `contract`          | `generate`                                                | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
-| `contract`          | `lint`, `check:generated`                                 | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
-| `contract`          | `build:docs`                                              | Write the self-contained `contract/dist/reference.html`                                                                                                 |
-| `conformance-tests` | `test`, `test:azurite`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                               |
-| `e2e`               | `test`, `test:azurite`                                    | Playwright                                                                                                                                              |
-| `e2e`               | `test:visual`, `capture`                                  | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
+| Package             | Script                                                                                    | Purpose                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`            | `dev`, `start`, `typecheck`                                                               | Watch mode, plain start, type check                                                                                                                     |
+| `server`            | `dev:demo`, `dev:demo:azurite`, `dev:demo:sqlite`, `dev:demo:postgres`                    | The server half of the root `pnpm demo`, `pnpm demo:azurite`, `pnpm dev:sqlite` and `pnpm dev:postgres`; run those instead                              |
+| `server`            | `seed:sqlite`, `seed:postgres`                                                            | The root `pnpm seed:sqlite` and `pnpm seed:postgres` ([SQLite and PostgreSQL modes](#sqlite-and-postgresql-modes))                                      |
+| `server`            | `dev:prod-data`                                                                           | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
+| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`                                            | Vite dev server, build (type check first), preview, unit tests                                                                                          |
+| `contract`          | `generate`                                                                                | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
+| `contract`          | `lint`, `check:generated`                                                                 | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
+| `contract`          | `build:docs`                                                                              | Write the self-contained `contract/dist/reference.html`                                                                                                 |
+| `conformance-tests` | `test`, `test:azurite`, `test:sqlite`, `test:postgres`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                               |
+| `e2e`               | `test`, `test:azurite`, `test:sqlite`                                                     | Playwright                                                                                                                                              |
+| `e2e`               | `test:visual`, `capture`                                                                  | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
 
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
@@ -709,22 +755,25 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pushes to `master` and `step/**` and on pull requests, on
+`.github/workflows/ci.yml` runs on pushes to `master`, `step/**`, `self-hosted/**` and `hosted/**` and on pull requests, on
 `ubuntu-latest` (Docker is available there), with a timeout of 40 minutes. It runs, in this order:
 
 1. `pnpm install --frozen-lockfile`, `check:deps`, `lint:contract`, `typecheck`, `lint`,
    `format:check`;
-2. `test:unit`, `test:conformance` (in-memory) and `test:conformance:read-only` (in-memory, `READ_ONLY=true`);
+2. `test:unit`, `test:conformance` (in-memory), `test:conformance:read-only` (in-memory, `READ_ONLY=true`) and
+   `test:conformance:sqlite` (a new SQLite file);
 3. `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
    `org.opencontainers.image.revision`);
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
-5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`);
+5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`); then `pnpm postgres:up`,
+   `test:providers:postgres`, and `test:conformance:postgres` on the image;
 6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
-   `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`);
+   `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`), and `e2e:sqlite`
+   (the tsx server, whose SQLite file is on the host; Chromium);
 7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
 8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
-9. `pnpm demo:azurite:down`, which always runs (`if: always()`).
+9. `pnpm demo:azurite:down` and `pnpm postgres:down`, which always run (`if: always()`).
 
 The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
 same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is

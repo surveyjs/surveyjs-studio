@@ -1,8 +1,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
-import { startupSummary } from "./logging.js";
-import { createProviders } from "./providers/index.js";
+import { startupSummary, storageWarning } from "./logging.js";
+import { createProviders, type ProviderSet } from "./providers/index.js";
+import { PendingMigrationsError } from "./providers/sql.js";
+import { DatabaseTooNewError, MigrationMismatchError } from "./sql/migrator.js";
 
 let config: AppConfig;
 try {
@@ -17,14 +19,30 @@ try {
 
 // The app's logger exists only once the app is built; until then warnings are dropped.
 let appLog: FastifyBaseLogger | undefined = undefined;
-const providers = await createProviders(config, {
-  logger: { warn: (details, message) => appLog?.warn(details, message) },
-});
+let providers: ProviderSet;
+try {
+  providers = await createProviders(config, {
+    logger: { warn: (details, message) => appLog?.warn(details, message) },
+  });
+} catch (error) {
+  // A database this version must not use: its message says why and what to do.
+  if (
+    error instanceof DatabaseTooNewError ||
+    error instanceof MigrationMismatchError ||
+    error instanceof PendingMigrationsError
+  ) {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  }
+  throw error;
+}
 const app = await buildApp(config, providers);
 appLog = app.log;
 if (config.sessionSecretIsDevDefault) {
   app.log.warn("SESSION_SECRET is not set: using the development-only session secret");
 }
+const storage = storageWarning(config);
+if (storage !== null) app.log.warn(storage);
 
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

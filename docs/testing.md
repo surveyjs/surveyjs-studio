@@ -22,7 +22,7 @@ surveyjs.io, and they run locally only. See [Visual parity](#visual-parity).
 | Command                          | Runs                                                                                                                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test`                      | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                                  |
-| `pnpm test:unit`                 | Vitest projects: `scripts`, `contract`, `server`, `web`                                                                                                         |
+| `pnpm test:unit`                 | Vitest projects: `scripts`, `contract`, `server`, `web` (the server project includes the SQLite provider suite and migrator tests, on temporary files)          |
 | `pnpm test:conformance`          | The conformance suite against a server it starts itself                                                                                                         |
 | `pnpm test:conformance:user-api` | The conformance suite with the server on `USER_DIRECTORY=surveyjs-api`, against the user-API stub it starts (no Docker)                                         |
 | `pnpm e2e`                       | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
@@ -35,6 +35,16 @@ These need the Docker replica (see [Development](development.md#azurite-mode)); 
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey, file and result write tests (create, update, clone, delete, definition and theme saves, files, response rows and completion markers) and the fixture loader tests |
 | `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                                                                                                                     |
+
+These need PostgreSQL in Docker (`pnpm postgres:up`, see [Development](development.md#sqlite-and-postgresql-modes)), except
+the SQLite ones, which need nothing:
+
+| Command                          | Runs                                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the provider suite's survey and lifecycle sections and the migrator suite on PostgreSQL, each on scratch databases it creates and drops |
+| `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                         |
+| `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                               |
+| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor and history specs in SQLite mode, on Chromium                                                                                                        |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -1055,13 +1065,15 @@ answers as on SQL because the stub builds its licences from the same fixture row
 
 Where it runs:
 
-| Test file                                           | Provider                                           | Run with                      |
-| --------------------------------------------------- | -------------------------------------------------- | ----------------------------- |
-| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                     | `pnpm test:unit`              |
-| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                      | `pnpm test:providers:azurite` |
-| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns             | `pnpm test:providers:azurite` |
-| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write   | `pnpm test:providers:azurite` |
-| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub | `pnpm test:unit`              |
+| Test file                                           | Provider                                                                                  | Run with                       |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------ |
+| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                                                            | `pnpm test:unit`               |
+| `sql.provider.test.ts`                              | `sqlite` on a scratch file, migrated and seeded; sections `surveys` and `lifecycle`       | `pnpm test:unit`               |
+| `sql.provider.postgres.test.ts`                     | `postgres` on a scratch database, migrated and seeded; sections `surveys` and `lifecycle` | `pnpm test:providers:postgres` |
+| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                                                             | `pnpm test:providers:azurite`  |
+| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns                                                    | `pnpm test:providers:azurite`  |
+| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write                                          | `pnpm test:providers:azurite`  |
+| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub                                        | `pnpm test:unit`               |
 
 `pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
 `docker/azurite.env`, loads the fixtures into the running replica first, and needs
@@ -1114,6 +1126,14 @@ cleared by a load. The **create tests
 of the provider suite use a fresh, random scope each** (`freshScope()`), so they do not depend on
 earlier runs and leave nothing that another test could see.
 
+**Sections.** `describeProviderSuite(name, create, { sections })` runs only the named sections (`surveys`,
+`results`, `views`, `files`, `users`, `projects`, `notices`, `lifecycle`); the others are reported as skipped.
+The SQL providers run `surveys` and `lifecycle` (`SQL_SUITE_SECTIONS` in `sql-suite-setup.ts`) until self-hosted
+Step 2 puts the other stores on SQL; their scratch database is made by `server/src/sql/scratch-databases.ts`.
+The migrator has its own suite (`server/src/sql/migrator-suite.ts`: order, a second run, a newer database, a renamed
+migration, a failed run rolled back, the shipped migrations) on both dialects; its lock is checked with two processes
+on one SQLite file (`migrator.test.ts`) and two connections on PostgreSQL (`migrator.postgres.test.ts`).
+
 **To run the suite against a new provider**, add a test file next to the others in
 `server/src/providers/` that calls `describeProviderSuite("<name>", () => <create a ProviderSet
 that holds the golden fixtures>)`. If it needs a service, put it in its own Vitest project, as
@@ -1133,13 +1153,22 @@ they were written before `listResults` existed.
 ### Conformance on a provider
 
 `CONFORMANCE_PROVIDER` selects the provider for the server that the conformance suite starts:
-`memory` (default; every app variable is removed; the dev identity provider) or `azure-legacy` (the
+`memory` (default; every app variable is removed; the dev identity provider), `sqlite` or `postgres` (see below) or `azure-legacy` (the
 three `LEGACY_*` variables and the `OIDC_*` settings of the mock OIDC server are passed through, and
 the run fails if one is missing; sign-in goes through the mock). `pnpm test:conformance:azurite`
 sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The
 survey and project tests run on the provider, so on Azurite they read the fixtures from the replica and
 create surveys in it (only in the scopes named in [Test data](#test-data)).
 
+With `sqlite` or `postgres` the setup makes a new database for the run (a SQLite file in a temporary folder, or a
+database on the server of `DATABASE_URL`, from `docker/postgres.env`), runs the server's `pnpm seed` on it, and starts
+the server with the dev sign-in and `MEMORY_SEED=legacy-fixtures` for the stores still in memory; the teardown deletes
+the database. `pnpm test:conformance:sqlite` and `:postgres` (`conformance-tests/sqlite.env`, `postgres.env`) run
+every file but `project-writes.test.ts`: deleting a project moves its surveys in the memory store, not in SQL, until
+self-hosted Step 2. `CONFORMANCE_IMAGE` works with `postgres` (the SQL providers run with `NODE_ENV=development` until
+then), not with `sqlite`, whose file the container cannot see.
+
 The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
-actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The paging spec
-runs in memory mode only.
+actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The survey list, paging, editor and
+history specs also run on the `sqlite` provider (`pnpm e2e:sqlite`: a new database in `e2e/.data/`, emptied by the next
+run, seeded by the server's `pnpm seed` before it starts).

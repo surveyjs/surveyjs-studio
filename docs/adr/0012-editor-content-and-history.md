@@ -7,7 +7,7 @@ Date: 2026-10-16
 Accepted. The product owner has not confirmed rulings R8, R12, R16 (Clear Survey saves), R20 and R22 yet
 (see "For the product owner to confirm").
 **The "No JSON view" of R23 and the "One history snapshot over HTTP" item are superseded by
-[ADR 0023](0023-history-json-view.md)**; diff and restore stay in P1.
+[ADR 0032](0032-history-json-view.md)**; diff and restore stay in P1.
 
 ## Context
 

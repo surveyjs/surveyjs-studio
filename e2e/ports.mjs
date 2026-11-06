@@ -18,11 +18,12 @@ export const ports = {
 
 /**
  * The ports `playwright.config.ts` uses for this run: the tsx target (default) 3000, 3001, 5173 and
- * 5174; Azurite mode on it 3000 and 5173; the image target 5173 and 5174 (Azurite mode: 5173 only).
+ * 5174; Azurite and SQLite mode on it 3000 and 5173; the image target 5173 and 5174 (Azurite mode:
+ * 5173 only).
  */
-export function functionalPorts({ image, azurite }) {
+export function functionalPorts({ image, azurite, sqlite = false }) {
   if (image) return azurite ? [ports.web] : [ports.web, ports.licenceWeb];
-  if (azurite) return [ports.server, ports.web];
+  if (azurite || sqlite) return [ports.server, ports.web];
   return [ports.server, ports.licenceServer, ports.web, ports.licenceWeb];
 }
 
@@ -32,4 +33,9 @@ export const visualPorts = [ports.visualServer, ports.visualWeb];
 /** Whether the arguments pick the Azurite config (`--config playwright.azurite.config.ts`). */
 export function usesAzuriteConfig(args) {
   return args.some((arg) => /(^|[\\/=])playwright\.azurite\.config(\.[cm]?[jt]s)?$/.test(arg));
+}
+
+/** Whether the arguments pick the SQLite config (`--config playwright.sqlite.config.ts`). */
+export function usesSqliteConfig(args) {
+  return args.some((arg) => /(^|[\\/=])playwright\.sqlite\.config(\.[cm]?[jt]s)?$/.test(arg));
 }

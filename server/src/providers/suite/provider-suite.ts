@@ -122,11 +122,31 @@ const storedRecord = (survey: NewSurvey): SurveyRecord => ({
   settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
 });
 
+/** The parts of the suite, by the store they check. */
+export type ProviderSuiteSection =
+  "surveys" | "results" | "views" | "files" | "users" | "projects" | "notices" | "lifecycle";
+
+export interface ProviderSuiteOptions {
+  /**
+   * Runs only these sections; the others are reported as skipped. Default: all. For a provider
+   * whose other stores are not built yet (the SQL providers until self-hosted Step 2).
+   */
+  readonly sections?: readonly ProviderSuiteSection[];
+}
+
 /**
  * Behaviour every provider must show against the golden legacy fixtures. `create` returns a
  * provider that holds them. Everything is checked through the ProviderSet interface.
  */
-export function describeProviderSuite(name: string, create: () => Promise<ProviderSet>): void {
+export function describeProviderSuite(
+  name: string,
+  create: () => Promise<ProviderSet>,
+  options: ProviderSuiteOptions = {},
+): void {
+  const included = (section: ProviderSuiteSection): boolean =>
+    options.sections === undefined || options.sections.includes(section);
+  const describeIn = (section: ProviderSuiteSection) =>
+    included(section) ? describe : describe.skip;
   describe(`provider suite: ${name}`, () => {
     let providers: ProviderSet;
     beforeAll(async () => {
@@ -136,7 +156,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       await providers.close();
     });
 
-    describe("surveys.getSurvey", () => {
+    describeIn("surveys")("surveys.getSurvey", () => {
       it.each(fixtureSurveys.map((survey) => [survey.name, survey] as const))(
         "returns the expected record for %s",
         async (_name, survey) => {
@@ -165,7 +185,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.listSurveys", () => {
+    describeIn("surveys")("surveys.listSurveys", () => {
       it.each([
         [
           "the owner's personal scope",
@@ -215,7 +235,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.listSurveyPage", () => {
+    describeIn("surveys")("surveys.listSurveyPage", () => {
       const owner = { kind: "personal", userId: OWNER_ID } as const;
       const projectAScope = { kind: "project", projectId: PROJECT_A_ID } as const;
 
@@ -284,7 +304,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.createSurvey", () => {
+    describeIn("surveys")("surveys.createSurvey", () => {
       it("stores the survey with the legacy defaults and lower-case ids", async () => {
         const scope = { kind: "personal", userId: randomUUID().toUpperCase() } as const;
         const survey = newSurvey(scope, {
@@ -316,7 +336,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("survey list order and paging over new surveys", () => {
+    describeIn("surveys")("survey list order and paging over new surveys", () => {
       it("orders surveys updated at the same time by id", async () => {
         const scope = freshScope();
         const created = [
@@ -363,7 +383,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.getDefinition", () => {
+    describeIn("surveys")("surveys.getDefinition", () => {
       it.each(
         fixtureDefinitions.map(
           ([survey, definition]) => [survey.name, survey, definition] as const,
@@ -407,7 +427,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.getTheme", () => {
+    describeIn("surveys")("surveys.getTheme", () => {
       it("returns the stored theme of fixture 01", async () => {
         expect((await providers.surveys.getTheme(surveyFeedback.id))?.content).toEqual(
           feedbackTheme,
@@ -429,7 +449,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.getDefinition and getTheme versions", () => {
+    describeIn("surveys")("surveys.getDefinition and getTheme versions", () => {
       it.each(["getDefinition", "getTheme"] as const)(
         "%s returns a version without quotes, the same for two reads",
         async (method) => {
@@ -445,7 +465,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       );
     });
 
-    describe("surveys.saveDefinition", () => {
+    describeIn("surveys")("surveys.saveDefinition", () => {
       const savedAt = (second: number) =>
         `2026-09-01T10:00:${String(second).padStart(2, "0")}.000Z`;
 
@@ -554,7 +574,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.saveTheme", () => {
+    describeIn("surveys")("surveys.saveTheme", () => {
       const savedAt = (second: number) =>
         `2026-09-01T11:00:${String(second).padStart(2, "0")}.000Z`;
 
@@ -633,7 +653,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.listHistory and getHistorySnapshot", () => {
+    describeIn("surveys")("surveys.listHistory and getHistorySnapshot", () => {
       const savedAt = (second: number) =>
         `2026-09-01T12:00:${String(second).padStart(2, "0")}.000Z`;
 
@@ -787,7 +807,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.updateSurvey", () => {
+    describeIn("surveys")("surveys.updateSurvey", () => {
       const UPDATED_AT = "2026-09-01T12:34:56.000Z";
       const created = (scope = freshScope()) =>
         providers.surveys.createSurvey(newSurvey(scope, { name: "Before" }));
@@ -928,7 +948,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.cloneSurvey", () => {
+    describeIn("surveys")("surveys.cloneSurvey", () => {
       const copyOf = (scope: PersonalScope, over: Partial<NewSurvey> = {}) =>
         newSurvey(scope, {
           name: "Copy of source",
@@ -1027,7 +1047,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.deleteSurvey", () => {
+    describeIn("surveys")("surveys.deleteSurvey", () => {
       it("deletes a survey with its definition and theme, once", async () => {
         const scope = freshScope();
         const survey = await providers.surveys.createSurvey(newSurvey(scope), { title: "Gone" });
@@ -1057,7 +1077,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.listPersonalOwnerIds", () => {
+    describeIn("surveys")("surveys.listPersonalOwnerIds", () => {
       it("lists each personal owner once, lower-case and sorted, and no project", async () => {
         const ids = await providers.surveys.listPersonalOwnerIds();
         expect(ids).toEqual(expect.arrayContaining([OWNER_ID, OUTSIDER_ID]));
@@ -1076,7 +1096,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("surveys.listSurveyIds", () => {
+    describeIn("surveys")("surveys.listSurveyIds", () => {
       const sortedIds = (surveys: readonly SurveyRecord[]) => surveys.map((s) => s.id).sort();
 
       it("lists every survey id of a scope, archived ones too, lower-case and ascending", async () => {
@@ -1117,7 +1137,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("results", () => {
+    describeIn("results")("results", () => {
       const sid = (n: number): string =>
         `66666666-0000-4000-8000-b${n.toString(16).padStart(11, "0")}`;
       const freshSurvey = async (): Promise<SurveyRecord> =>
@@ -1468,7 +1488,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("views", () => {
+    describeIn("views")("views", () => {
       const state = {
         elements: [{ name: "q1", isVisible: false }],
         note: "Ünïcødé 😀 & < > \" '",
@@ -1612,7 +1632,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("files", () => {
+    describeIn("files")("files", () => {
       const fileRecord = (
         surveyId: string,
         over: Partial<StoredFileRecord> = {},
@@ -1795,9 +1815,9 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describeUserDirectorySections(() => providers.users);
+    if (included("users")) describeUserDirectorySections(() => providers.users);
 
-    describe("projects.listUserProjects", () => {
+    describeIn("projects")("projects.listUserProjects", () => {
       it.each([
         ["the owner", OWNER_ID, ownerProjects],
         ["the admin", ADMIN_ID, adminProjects],
@@ -1821,7 +1841,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("projects.getUserProject", () => {
+    describeIn("projects")("projects.getUserProject", () => {
       it("returns the user's membership with the full project record", async () => {
         expect(await providers.projects.getUserProject(OWNER_ID, PROJECT_A_ID)).toEqual({
           project: projectA,
@@ -1850,7 +1870,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("projects.listMembers", () => {
+    describeIn("projects")("projects.listMembers", () => {
       it("lists the visible members once each, by display name, the stored Admin read as admin", async () => {
         expect(await providers.projects.listMembers(PROJECT_A_ID)).toEqual(projectAMembers);
         expect(await providers.projects.listMembers(PROJECT_B_ID)).toEqual(projectBMembers);
@@ -1868,7 +1888,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("projects.listMemberUserIds", () => {
+    describeIn("projects")("projects.listMemberUserIds", () => {
       it("lists each member once, sorted, and no outsider", async () => {
         const ids = await providers.projects.listMemberUserIds();
         expect(ids).toEqual(expect.arrayContaining([OWNER_ID, ADMIN_ID, MEMBER_ID]));
@@ -1878,7 +1898,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("projects.listUserProjectIds", () => {
+    describeIn("projects")("projects.listUserProjectIds", () => {
       it("lists the projects of each membership once, lower-case and ascending", async () => {
         const ids = await providers.projects.listUserProjectIds(MEMBER_ID.toUpperCase());
         expect(ids).toEqual(expect.arrayContaining(memberProjects.map((m) => m.project.id).sort()));
@@ -1893,7 +1913,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("projects writes", () => {
+    describeIn("projects")("projects writes", () => {
       // Marketing, Engineering and the fixture memberships are read only (R25): every test creates
       // its own project with fixture users as members (the only users the replica accepts, FK) and
       // deletes it when the test finishes. Oscar Outsider is never added to a project.
@@ -2341,7 +2361,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       });
     });
 
-    describe("notices", () => {
+    describeIn("notices")("notices", () => {
       // ACCOUNT_NOTICES is `none` unless the factory sets it; the licence cases have their own suite.
       it.each(fixtureUsers.map((user) => [user.email, user.id] as const))(
         "gives %s no notices by default",
@@ -2351,7 +2371,7 @@ export function describeProviderSuite(name: string, create: () => Promise<Provid
       );
     });
 
-    describe("lifecycle", () => {
+    describeIn("lifecycle")("lifecycle", () => {
       it("ready reports every check ok", async () => {
         const checks = await providers.ready();
         expect(checks.map((check) => check.name).sort()).toEqual(

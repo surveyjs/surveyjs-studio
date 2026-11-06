@@ -4,6 +4,7 @@ import { createSurveyjsApiDirectory } from "../users/surveyjs-api/client.js";
 import { createAzureLegacyProviders, type LegacyWarningLogger } from "./azure-legacy/index.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createMemoryProviders } from "./memory.js";
+import { openSqlProviders } from "./sql.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
 export type { ProviderSet } from "./types.js";
@@ -49,6 +50,10 @@ const registry: Record<
 > = {
   memory: createMemory,
   "azure-legacy": createAzureLegacy,
+  sqlite: (config, options, accountNotices) =>
+    openSqlProviders(config, accountNotices, options.logger),
+  postgres: (config, options, accountNotices) =>
+    openSqlProviders(config, accountNotices, options.logger),
 };
 
 export async function createProviders(

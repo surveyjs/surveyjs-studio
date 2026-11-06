@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, "step/**"]
+    branches: [master, "step/**", "self-hosted/**", "hosted/**"]
   pull_request:
   # A manual run (Actions › CI › Run workflow); on master it publishes, as a push does.
   workflow_dispatch:
@@ -57,6 +57,9 @@ jobs:
       - name: Conformance tests (in-memory, READ_ONLY=true)
         run: pnpm test:conformance:read-only
 
+      - name: Conformance tests (SQLite, a new database file)
+        run: pnpm test:conformance:sqlite
+
       # The Azurite conformance run and both end-to-end runs use this image (docker run --network host).
       - name: Build the production image
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio:ci .
@@ -66,6 +69,17 @@ jobs:
 
       - name: Provider suite (Azurite)
         run: pnpm test:providers:azurite
+
+      - name: Start PostgreSQL
+        run: pnpm postgres:up
+
+      - name: Provider and migrator suites (PostgreSQL)
+        run: pnpm test:providers:postgres
+
+      - name: Conformance tests (PostgreSQL, on the image)
+        run: pnpm test:conformance:postgres
+        env:
+          CONFORMANCE_IMAGE: surveyjs-studio:ci
 
       - name: Conformance tests (Azure legacy on Azurite, on the image)
         run: pnpm test:conformance:azurite
@@ -88,6 +102,10 @@ jobs:
         env:
           E2E_TARGET: image
           E2E_IMAGE: surveyjs-studio:ci
+
+      # The tsx server: its SQLite file is on the host (no image target).
+      - name: End-to-end tests (SQLite mode)
+        run: pnpm e2e:sqlite
 
       # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job
@@ -134,6 +152,10 @@ jobs:
       - name: Stop the legacy replica
         if: always()
         run: pnpm demo:azurite:down
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: pnpm postgres:down
 
   # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio:<commit sha>. It runs no
   # third-party code, so only this job gets write access to packages.

@@ -282,7 +282,7 @@ Rules for `listSurveyHistory`:
   [Paging](paging.md); the cursor is opaque, and a bad cursor or `limit` is `400`.
 - `user` is `{ id, displayName }`, or `null` for entries recorded without a user (the legacy editor
   wrote none) and for users that no longer exist.
-- `id` reads the definition saved in the entry with `getSurveyHistoryEntry` ([ADR 0023](../adr/0023-history-json-view.md)).
+- `id` reads the definition saved in the entry with `getSurveyHistoryEntry` ([ADR 0032](../adr/0032-history-json-view.md)).
   An entry never changes. A legacy entry whose text cannot be read as a definition gives `{}`. Comparing and restoring
   entries are not built yet (P1).
 

@@ -153,12 +153,15 @@ describe("survey cursors", () => {
     },
   );
 
-  it("accept a 64-character id", () => {
-    const long = { ...position, id: "a".repeat(64) };
-    expect(decodeSurveyCursor(encodeSurveyCursor(long, personalActive), personalActive)).toEqual(
-      long,
-    );
-  });
+  // Survey ids are GUIDs in every provider; the SQL stores' uuid column refuses anything else.
+  it.each(["zzz", "a".repeat(64), "22222222-0000-4000-8000-a0000000000"])(
+    "reject the id %s, which is not a GUID",
+    (id) => {
+      expectInvalid(() =>
+        decodeSurveyCursor(encodeSurveyCursor({ ...position, id }, personalActive), personalActive),
+      );
+    },
+  );
 });
 
 describe("project cursors", () => {
@@ -208,6 +211,7 @@ describe("history cursors", () => {
     ["a loose timestamp", raw({ ...historyPayload, u: "2026-04-14T15:30:00Z" })],
     ["an empty id", raw({ ...historyPayload, i: "" })],
     ["an upper-case id", raw({ ...historyPayload, i: entry.id.toUpperCase() })],
+    ["an id that is not a GUID", raw({ ...historyPayload, i: "zzz" })],
     ["padding", `${raw(historyPayload)}=`],
   ])("reject %s", (_name, cursor) => {
     expectInvalid(() => decodeHistoryCursor(cursor));

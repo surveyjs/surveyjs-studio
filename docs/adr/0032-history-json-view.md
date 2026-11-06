@@ -1,4 +1,4 @@
-# 23. The JSON of a history entry
+# 32. The JSON of a history entry
 
 Date: 2026-10-30
 

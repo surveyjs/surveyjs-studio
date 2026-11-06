@@ -6,6 +6,11 @@ export declare const ports: {
   visualServer: number;
   visualWeb: number;
 };
-export declare function functionalPorts(mode: { image: boolean; azurite: boolean }): number[];
+export declare function functionalPorts(mode: {
+  image: boolean;
+  azurite: boolean;
+  sqlite?: boolean;
+}): number[];
 export declare const visualPorts: number[];
 export declare function usesAzuriteConfig(args: readonly string[]): boolean;
+export declare function usesSqliteConfig(args: readonly string[]): boolean;

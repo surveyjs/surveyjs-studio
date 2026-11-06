@@ -16,7 +16,7 @@ vi.mock("mssql", async (importOriginal) => {
 import { buildApp } from "./app.js";
 import { transactionOf } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
-import { redactUrl, startupSummary } from "./logging.js";
+import { redactUrl, startupSummary, storageWarning } from "./logging.js";
 import { createAzureLegacyProviders } from "./providers/azure-legacy/index.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createProviders } from "./providers/index.js";
@@ -152,6 +152,26 @@ describe("startupSummary", () => {
     const text = JSON.stringify(startupSummary(config));
     for (const canary of Object.values(CANARIES)) expect(text).not.toContain(canary);
     expect(text).not.toContain("canary.net");
+  });
+});
+
+describe("storageWarning", () => {
+  it("warns that the SQL providers keep all but surveys in memory", () => {
+    for (const STORAGE_PROVIDER of ["sqlite", "postgres"]) {
+      const config = loadConfig({
+        IDENTITY_PROVIDER: "dev",
+        STORAGE_PROVIDER,
+        DATABASE_URL: "postgres://u:Pw-Secret-9@h/d",
+      });
+      const warning = storageWarning(config);
+      expect(warning).toBe(
+        `STORAGE_PROVIDER=${STORAGE_PROVIDER} stores surveys in the database; users, projects, results, views and files are still kept in memory and lost on restart (self-hosted track Step 2)`,
+      );
+    }
+  });
+
+  it("has nothing to say about the other providers", () => {
+    expect(storageWarning(loadConfig({ IDENTITY_PROVIDER: "dev" }))).toBeNull();
   });
 });
 
