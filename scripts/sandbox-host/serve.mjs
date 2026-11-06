@@ -12,6 +12,7 @@ const dist = resolve(root, "web/dist-sandbox");
 const deploy = resolve(root, "deploy/sandbox");
 
 const args = process.argv.slice(2);
+/** @param {...string} a */
 const docker = (...a) =>
   execFileSync("docker", a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const removeContainer = () => {

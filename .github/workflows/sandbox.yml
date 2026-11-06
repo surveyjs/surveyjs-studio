@@ -1,9 +1,15 @@
 name: Publish sandbox
 
 # A tag "v*" or a manual run (Actions › Publish sandbox › Run workflow) tests a build of the ref,
-# moves the `sandbox` branch to the tested commit and waits for https://studio.demos.surveyjs.io to
+# points the `sandbox` branch at the tested commit and waits for https://studio.demos.surveyjs.io to
 # show that commit in /version.json. The demos server rebuilds the site from that branch when a push
-# reaches its webhook. To roll back, run it again with an older ref: the push is a force push.
+# reaches its webhook.
+#
+# `sandbox` is a pointer branch: its tree is one file, COMMIT, holding the tested commit id. A push
+# of the source itself would fail whenever the commits touch .github/workflows/*, which the
+# workflow's GITHUB_TOKEN may not do. The demos server reads COMMIT and builds that commit.
+# To roll back, run the workflow again with an older ref: it adds a pointer commit naming it. The
+# ref must already have build:sandbox, sandbox:serve and e2e:sandbox:url, which the tests use.
 on:
   push:
     tags: ["v*"]
@@ -66,7 +72,8 @@ jobs:
         with:
           name: sandbox-test
 
-  # Moves the sandbox branch to the tested commit. This is the step the environment can gate.
+  # Adds a commit naming the tested commit to the sandbox branch. This is the step the environment
+  # can gate. The push is a plain fast-forward.
   publish:
     name: Move the sandbox branch
     needs: test
@@ -81,14 +88,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.test.outputs.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Push the commit to the sandbox branch
+      - name: Point the sandbox branch at the commit
         env:
           SHA: ${{ needs.test.outputs.sha }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
-          git push --force origin "$SHA:refs/heads/sandbox"
-          echo "The sandbox branch is now at $SHA; the demos server rebuilds from it" >> "$GITHUB_STEP_SUMMARY"
+          parent=""
+          if git fetch --depth=1 origin sandbox; then parent=$(git rev-parse FETCH_HEAD); fi
+          blob=$(printf '%s\n' "$SHA" | git hash-object -w --stdin)
+          tree=$(printf '100644 blob %s\tCOMMIT\n' "$blob" | git mktree)
+          commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -m "sandbox: publish $SHA")
+          git push origin "$commit:refs/heads/sandbox"
+          echo "The sandbox branch is now at $commit, which names $SHA; the demos server rebuilds from it" >> "$GITHUB_STEP_SUMMARY"
 
   # Waits for the demos server to serve the commit, then runs the end-to-end tests against it.
   smoke:

@@ -1,8 +1,7 @@
 // The sandbox build's version.json: which commit and which seed data version are live. Only Node
-// built-ins and Vite's types: web's Docker build installs just the web workspace.
+// built-ins and a minimal plugin type (the root has no vite): web's Docker build installs just the web workspace.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import type { Plugin } from "vite";
 
 const REPO_ROOT = new URL("../../", import.meta.url);
 const SEED = new URL("web/src/sandbox/seed.json", REPO_ROOT);
@@ -30,8 +29,16 @@ function gitHead(): string {
   }).trim();
 }
 
+/** The part of a Vite plugin this one uses; Vite's own `Plugin` accepts it. */
+export interface VersionFilePlugin {
+  name: string;
+  generateBundle(this: {
+    emitFile(file: { type: "asset"; fileName: string; source: string }): string;
+  }): void;
+}
+
 /** Emits /version.json: the commit and the seed's data version (a reset offer keys on it). */
-export function sandboxVersionPlugin(): Plugin {
+export function sandboxVersionPlugin(): VersionFilePlugin {
   return {
     name: "sandbox-version-file",
     generateBundle() {

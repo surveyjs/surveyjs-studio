@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-// @ts-expect-error plain ESM JavaScript, run by node without a compile step
-import { waitForVersion } from "./wait-for-version.mjs";
+import { parseWaitArgs, waitForVersion } from "./wait-for-version.mjs";
 
 type Answer = { commit: string } | Error;
 
@@ -59,5 +58,43 @@ describe("waitForVersion", () => {
   it("rejects with the last error's message when every fetch fails", async () => {
     const t = setup([new Error("first"), new Error("connection refused")]);
     await expect(t.run("new")).rejects.toThrow("connection refused");
+  });
+
+  it("names the last commit seen even when the final poll errored", async () => {
+    const t = setup([{ commit: "old" }, new Error("HTTP 502")]);
+    await expect(t.run("new")).rejects.toThrow(/last commit seen: old.*last error: HTTP 502/);
+  });
+});
+
+describe("parseWaitArgs", () => {
+  const base = ["--url", "https://example.test", "--commit", "abc"];
+
+  it("reads the arguments, with the defaults of 30 minutes and 15 seconds", () => {
+    expect(parseWaitArgs(base)).toEqual({
+      url: "https://example.test",
+      commit: "abc",
+      timeoutMs: 30 * 60_000,
+      intervalMs: 15_000,
+    });
+    expect(parseWaitArgs([...base, "--timeout-min", "1", "--interval-s", "5"])).toMatchObject({
+      timeoutMs: 60_000,
+      intervalMs: 5_000,
+    });
+  });
+
+  it.each([
+    [["--timeout-min", "abc"]],
+    [["--timeout-min", "0"]],
+    [["--interval-s", "-5"]],
+    [["--interval-s", "Infinity"]],
+    [["--timeout-min"]],
+    [["--timeout-min", "--interval-s", "5"]],
+    [["--bogus", "1"]],
+  ])("rejects %j", (extra) => {
+    expect(() => parseWaitArgs([...base, ...extra])).toThrow();
+  });
+
+  it("requires the url and the commit", () => {
+    expect(() => parseWaitArgs(["--url", "https://example.test"])).toThrow(/required/);
   });
 });

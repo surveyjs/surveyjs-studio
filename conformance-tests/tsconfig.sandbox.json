@@ -8,5 +8,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src/sandbox-setup.ts"]
+  "include": ["src/sandbox-setup.ts", "sandbox-env.d.ts"]
 }

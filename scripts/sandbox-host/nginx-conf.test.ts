@@ -37,7 +37,7 @@ describe("security-headers.conf", () => {
 describe("nginx.conf", () => {
   it("maps the run page to frame-ancestors *, the rest to 'none'", () => {
     expect(site).toContain("map $request_uri $sandbox_frame_ancestors");
-    const squeezed = site.replace(/[ 	]+/g, " ");
+    const squeezed = site.replace(/\s+/g, " ");
     expect(squeezed).toContain('~^/s/ "*";');
     expect(squeezed).toContain(`default "'none'";`);
   });
