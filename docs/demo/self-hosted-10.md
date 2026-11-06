@@ -117,8 +117,11 @@ On the real server the same happens with `projects/surveyjs-studio-sandbox/confi
 
 ## Live part (after the one-time setup)
 
-The setup is in [Operations](../operations.md#one-time-setup-product-owner): the read-only token and the licence key
-in the demos server's `env/.env`, the push webhook, and the demos-infrastructure branch deployed.
+The setup is in [Operations](../operations.md#one-time-setup-product-owner): the licence key in the demos server's
+`env/.env`, the push webhook, and the demos-infrastructure branch deployed. The read-only token (`STUDIO_GITHUB_TOKEN`)
+is needed only while the repository is private. Once it is public, remove the compose `secrets` blocks in
+`projects/surveyjs-studio-sandbox` first (an empty token is a `401`), and the build then reads the repository with no
+credential.
 
 ### 6. Run the workflow
 

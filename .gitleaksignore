@@ -37,3 +37,7 @@ db6661678248740f9c868233d2659e1e8a7850e9:web/src/adminRoutes.test.tsx:generic-ap
 
 # masterpassword: an entry of the list of common passwords that sign-up refuses.
 c92a823cd7c754e22f1f09107d7aa8fcf29e2a49:server/src/passwords/common-passwords.ts:generic-api-key:63
+
+# The conformance suite's reference webhook secret (base64 of plain words), in its settings file and in the porting guide.
+611cf1b78ff8d89cda0c297a02f010b97d63e0ed:conformance-tests/src/reference-settings.ts:generic-api-key:7
+611cf1b78ff8d89cda0c297a02f010b97d63e0ed:docs/customizing/porting.md:generic-api-key:78

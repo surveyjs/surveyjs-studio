@@ -177,10 +177,11 @@ browsers.
 
 Do this once. Never put a token or key in the repository.
 
-1. **A read-only token.** On GitHub create a fine-grained personal access token for `surveyjs/surveyjs-studio` only,
-   with **Contents: read**. On the demos server put it in `env/.env` as `STUDIO_GITHUB_TOKEN`. The build reads the
-   private repository with it. Fine-grained tokens expire: set a reminder to renew it. An expired token shows as a
-   `smoke` job that times out with the old commit still live.
+1. **A read-only token, only while the repository is private.** On GitHub create a fine-grained personal access token
+   for `surveyjs/surveyjs-studio` only, with **Contents: read**. On the demos server put it in `env/.env` as
+   `STUDIO_GITHUB_TOKEN`. The build reads the private repository with it. Fine-grained tokens expire: set a reminder to
+   renew it. An expired token shows as a `smoke` job that times out with the old commit still live. Once the
+   repository is public you do not need a token (step 5).
 2. **The licence key.** `SURVEYJS_LICENSE_KEY` must be in the same `env/.env` (other demos already use it). It must
    cover `studio.demos.surveyjs.io`. Without it the build still works and the sandbox shows the licence notice.
 3. **The webhook.** In the surveyjs-studio repository, Settings › Webhooks › Add webhook: payload URL
@@ -189,9 +190,12 @@ Do this once. Never put a token or key in the repository.
 4. **The demos-infrastructure change.** Merge or push the branch `feat/surveyjs-studio-sandbox` (the folder
    `projects/surveyjs-studio-sandbox/`, the whd mapping and the Makefile targets) and update the demos server. Then
    run `make up-surveyjs-studio-sandbox` once, or let the first publish trigger it.
-5. **When the repository goes public (Step 11),** remove the `secrets` blocks from the demo's `docker-compose.yml`
-   (the one under the service and the top-level one), and `STUDIO_GITHUB_TOKEN` from `env/.env`. Do not leave the
-   token empty: BuildKit then sends an empty credential and GitHub answers 401, even for a public repository.
+5. **Once the repository is public (after Step 11).** The token is not needed any more. In
+   `projects/surveyjs-studio-sandbox` of demos-infrastructure, remove the `secrets` blocks from the demo's
+   `docker-compose.yml` (the one under the service and the top-level one), and remove `STUDIO_GITHUB_TOKEN` from
+   `env/.env`. Then run `make up-surveyjs-studio-sandbox` once. Do not leave the token empty: BuildKit then sends an
+   empty credential and GitHub answers `401 Unauthorized`, even for a public repository. Revoke the token on GitHub
+   afterwards.
 
 ### Publishing
 

@@ -63,3 +63,10 @@ Details that follow:
   `version` in `server/fixtures/sandbox.json` (D9); a forgotten bump leaves old visitors on data the new code may not
   read.
 - **A visitor's data is lost on a bump.** The reset is the only way forward; the demo's data is disposable.
+
+## Notes
+
+- **2026-11-06: Step 11.** The token goes away at the visibility switch. Once the repository is public, the operator
+  removes the compose file's `secrets` blocks and `STUDIO_GITHUB_TOKEN` from `env/.env`, and revokes the token. The
+  docs ([Operations](../operations.md#one-time-setup-product-owner)) now describe the token as needed only while the
+  repository is private. The ruling on D2 stands: an empty token is a `401`, so the blocks are removed, not emptied.

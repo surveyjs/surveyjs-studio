@@ -16,8 +16,8 @@ pull request, so a secret that is committed later fails the build.
 | Tool         | Gitleaks `v8.24.0`, the image `zricethezav/gitleaks:v8.24.0`, default rules         |
 | Command      | `pnpm scan:secrets --all-refs --report <file>`                                      |
 | Refs scanned | Every local branch, every remote-tracking branch and every tag (`--log-opts=--all`) |
-| Commits      | 417 (after `git fetch --all --prune`)                                               |
-| Result       | 25 findings, all synthetic. After the allowlist: `no leaks found`                   |
+| Commits      | 425 (after `git fetch --all --prune`)                                               |
+| Result       | 27 findings, all synthetic. After the allowlist: `no leaks found`                   |
 
 `pnpm scan:secrets` mounts the repository into the container read-only and redacts the matches. Without `--all-refs`
 it scans the checked-out history only, which is what CI does. Run it again any time:
@@ -32,16 +32,16 @@ Every finding is rule `generic-api-key`. Each one was opened at its commit and l
 example, a documented placeholder or a test constant. The fingerprints are in
 [`.gitleaksignore`](../../.gitleaksignore), grouped with the same reasons.
 
-| File (all commits)                                                                                                                                   | Count | Why it is synthetic                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------- |
-| `docker/azurite.env`, `docker/prod-like.env`                                                                                                         | 4     | The Azurite emulator's well-known `devstoreaccount1` key, which Microsoft publishes |
-| `server/demo.env`, `server/demo-azurite.env`, `conformance-tests/src/global-setup.ts`                                                                | 3     | Demo and conformance webhook secrets. The `whsec_` values are base64 of plain words |
-| `server/src/read-only.test.ts`, `accounts/handlers.test.ts`, `accounts/webhook-secret.test.ts`, `cli/send-account-deleted.test.ts`, `config.test.ts` | 5     | The Svix documentation's example secret, used as a test constant                    |
-| `server/src/auth/session.test.ts`, `auth/seal.test.ts`, `config.test.ts`, `config-branding.test.ts`                                                  | 5     | The placeholder session secret `0123456789abcdef0123456789abcdef`                   |
-| `server/src/smoke/smoke-legacy.azurite.test.ts`, `providers/azure-legacy/provider.test.ts`                                                           | 2     | Fixture keys for the local emulator and a provider that is never reached            |
-| `docs/api/admin-users.md`, `contract/openapi.yaml`, `contract/generated/openapi.d.ts`, `web/src/adminRoutes.test.tsx`                                | 4     | The documented example set-password token `7cJ2rQ0wUu8xXnYk3fVb1A`                  |
-| `docs/api/public-endpoints.md`                                                                                                                       | 1     | An example `Idempotency-Key` UUID                                                   |
-| `server/src/passwords/common-passwords.ts`                                                                                                           | 1     | `masterpassword`, an entry in the list of common passwords that the server refuses  |
+| File (all commits)                                                                                                                                                  | Count | Why it is synthetic                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------- |
+| `docker/azurite.env`, `docker/prod-like.env`                                                                                                                        | 4     | The Azurite emulator's well-known `devstoreaccount1` key, which Microsoft publishes |
+| `server/demo.env`, `server/demo-azurite.env`, `conformance-tests/src/global-setup.ts`, `conformance-tests/src/reference-settings.ts`, `docs/customizing/porting.md` | 5     | Demo and conformance webhook secrets. The `whsec_` values are base64 of plain words |
+| `server/src/read-only.test.ts`, `accounts/handlers.test.ts`, `accounts/webhook-secret.test.ts`, `cli/send-account-deleted.test.ts`, `config.test.ts`                | 5     | The Svix documentation's example secret, used as a test constant                    |
+| `server/src/auth/session.test.ts`, `auth/seal.test.ts`, `config.test.ts`, `config-branding.test.ts`                                                                 | 5     | The placeholder session secret `0123456789abcdef0123456789abcdef`                   |
+| `server/src/smoke/smoke-legacy.azurite.test.ts`, `providers/azure-legacy/provider.test.ts`                                                                          | 2     | Fixture keys for the local emulator and a provider that is never reached            |
+| `docs/api/admin-users.md`, `contract/openapi.yaml`, `contract/generated/openapi.d.ts`, `web/src/adminRoutes.test.tsx`                                               | 4     | The documented example set-password token `7cJ2rQ0wUu8xXnYk3fVb1A`                  |
+| `docs/api/public-endpoints.md`                                                                                                                                      | 1     | An example `Idempotency-Key` UUID                                                   |
+| `server/src/passwords/common-passwords.ts`                                                                                                                          | 1     | `masterpassword`, an entry in the list of common passwords that the server refuses  |
 
 A real secret is never added to `.gitleaksignore`. If the scan finds one, rotate it first. Removing it from the
 history is a rewrite, and that is the product owner's decision.

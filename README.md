@@ -17,78 +17,41 @@ language is accepted when it passes the conformance suite in this repository.
 
 ## Deployment modes
 
-The same code is meant to run in several modes. Configuration chooses the storage, the user
-directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)).
+The same code runs in several modes. Configuration chooses the storage, the user directory, the sign-in methods and
+the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)). Pick yours:
 
-| Mode                                       | What it is                                                                                                                                   | State                                                                                  |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **1.1–1.2 Hosted on the surveyjs.io data** | `studio.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. The old section is removed afterwards | Phase 1, [plan.md](plan.md): built, ready to roll out                                  |
-| **1.3 Hosted on its own data**             | Surveys, results and projects move off Azure. Users stay on surveyjs.io                                                                      | [spec-hosted.md](spec-hosted.md), [plan-hosted.md](plan-hosted.md)                     |
-| **2a Sandbox**                             | `studio.demo.surveyjs.io`: a static site where anyone tries every feature on demo data kept in their browser                                 | [spec-self-hosted.md](spec-self-hosted.md), [plan-self-hosted.md](plan-self-hosted.md) |
-| **2b Free Docker image**                   | A self-hosted service with its own database, password accounts and "Powered by SurveyJS" branding                                            | Same as 2a                                                                             |
-| **3 Custom development**                   | Your own fork: your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). Needs SurveyJS licences                         | Same as 2a                                                                             |
-| **4 Development**                          | Local modes for development and tests: in memory, on a replica of the legacy stores, or (product owner) on the real stores                   | Available now (see [Quick start](#quick-start))                                        |
+### Hosted (modes 1.1 to 1.3)
 
-## Status
+`studio.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. It replaces the
+old My Surveys section. **State:** Phase 1 is built and passed the compatibility smoke test on production on
+2026-10-23; hosting and the rollout are next ([plan.md](plan.md#progress)). Mode 1.3, on its own data, is
+[planned](plan-hosted.md). **Start:** [Running in production](#running-in-production) and
+[Operations](docs/operations.md). What the app does is in the [user guide](docs/user-guide/README.md).
 
-**Phase 1 is done**: Steps 1–14 are merged, and the compatibility smoke test passed on production on 2026-10-23
-([progress](plan.md#progress)). The app is not deployed yet: hosting is the next step. What works:
+### Self-hosted image (mode 2b)
 
-- **Every screen of the current My Surveys.**
-  - **Survey list:**
-    - personal surveys and projects; Active and Archived;
-    - Create a Survey; inline rename;
-    - the "…" menu: Run, Edit, Clone, Publish/Unpublish, the survey IDs, View Results, View History, Move to Project, Archive, Restore and Delete.
-  - **Editor:**
-    - Survey Creator with autosave of the survey and theme;
-    - a "changed by someone else" notice instead of silent overwrites;
-    - image and file uploads with a per-survey quota;
-    - the Embed tab.
-  - **Run page** at `/s/{id}`:
-    - the survey's theme;
-    - file questions, with files stored outside the response;
-    - "Limit to one response";
-    - respondent IP saved only when the owner turns it on;
-    - submissions that count once even when repeated.
-  - **Results:**
-    - Summary, Table and Details over **all** responses, with no 1,000 cap;
-    - per-user saved layouts;
-    - downloads in JSON and CSV, and Table exports in CSV, Excel and PDF;
-    - Delete Results;
-    - Grant Access, with the public page at `/results/{id}`.
-  - **History page**, and the **Projects page**: create, rename and delete projects; add, remove and change members; leave a project.
-- **Every contract operation.** `passwordLogin` answers `501 Not Implemented` only where password sign-in is off: the hosted service. Self-hosted instances with passwords sign in with it.
-- **Two storage providers:**
-  - in memory, for development and tests;
-  - `azure-legacy`, which reads and writes the current surveyjs.io stores in their own formats, so the old pages and `api.surveyjs.io` keep working on the same data.
-- **Sign-in** through surveyjs.io (OAuth 2.0); on self-hosted instances also with an email and a password, Google, GitHub and Facebook ([Signing in with Google and others](docs/customizing/sign-in.md)); and through a development sign-in page with seed users.
-- **Accounts and data protection:**
-  - users come from a user directory chosen by configuration: the surveyjs.io SQL `Users` table, or the surveyjs.io user API that [docs/integrations/surveyjs-user-api.md](docs/integrations/surveyjs-user-api.md) specifies;
-  - a deleted surveyjs.io account erases its data: through a signed webhook, the `pnpm account:erase` command, or a reconciliation check;
-  - security headers, and no respondent answers in the logs;
-  - no legacy URLs in the app: the surveyjs.io site redirects old links using [docs/operations/surveyjs-redirects.md](docs/operations/surveyjs-redirects.md).
-- **Production readiness (Step 14):**
-  - one Docker image that serves the web app and the API from one origin, runs as non-root and has a health check;
-  - `/readyz` names the dependency that fails; JSON logs with a start-up summary, request ids and the operation;
-  - `READ_ONLY=true` for the first phase on production data;
-  - `pnpm smoke:legacy`, which proves on production that `api.surveyjs.io` reads what the app writes.
-- **The same look as surveyjs.io, proven by screenshots:** `pnpm e2e:visual` compares 18 screens with baselines captured from the live site, in Chromium, Firefox and WebKit ([docs/testing.md › Visual parity](docs/testing.md#visual-parity)).
-- **Tests:**
-  - unit tests;
-  - the HTTP conformance suite;
-  - the shared provider suite;
-  - Playwright end-to-end tests in Chromium, Firefox and WebKit.
+A free Docker image: one container with its own database, password accounts and "Powered by SurveyJS" branding.
+**State:** built and tested, published as a private test package until the repository is public
+([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
+[Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
 
-  They run in memory and on the legacy replica, in CI. The visual parity tests run locally on Windows, where the
-  baselines were captured.
+### Sandbox (mode 2a)
 
-**Next:**
+A static site at <https://studio.demos.surveyjs.io> where anyone tries every feature on demo data kept in their
+browser. **State:** built; going live needs the product owner's one-time setup
+([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
+([the sandbox](#the-sandbox)).
 
-- Hosting (most likely Hetzner) as a separate step: the host, the https proxy, DNS, the image registry, the Azure
-  network rules, and the inputs the [runbook](docs/operations.md#what-each-step-needs) lists for its step 1.
-- Then the rollout: internal use read-only, a beta link, the redirects, and the removal of the old section.
+### Custom development (mode 3)
 
-After that, the hosted-migration and self-hosted tracks run at the same time ([After Phase 1](plan.md#after-phase-1)).
+Your own fork with your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). It needs SurveyJS
+licences. **State:** documented. **Start:** [Customizing](docs/customizing/overview.md).
+
+### Development (mode 4)
+
+Local modes for development and tests: in memory, on a replica of the legacy stores, on SQLite or PostgreSQL, or
+(product owner) on the real stores. **State:** available now. **Start:** [Quick start](#quick-start) and
+[Running the app](docs/running.md).
 
 ## Run it
 
@@ -287,6 +250,22 @@ Run from the repository root.
 - Hosted migration, mode 1.3: [spec](spec-hosted.md) and [plan](plan-hosted.md).
 - Self-hosted, modes 2a, 2b and 3: [spec](spec-self-hosted.md) and [plan](plan-self-hosted.md).
 
+**For people who customize Studio (mode 3)**
+
+- [Customizing Studio](docs/customizing/overview.md): what is configuration and what is code.
+  - [shells](docs/customizing/shells.md), with an example that CI builds and tests (`pnpm check:example-shell`);
+  - [providers](docs/customizing/providers.md) for a database or a file store;
+  - [sign-in](docs/customizing/sign-in.md) and [branding](docs/customizing/branding.md);
+  - [porting the back end](docs/customizing/porting.md), tested by `pnpm test:conformance --base <url>`;
+  - [licensing](docs/customizing/licensing.md).
+
+**Contributing and security**
+
+- [Contributing](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and the
+  [security policy](SECURITY.md); the [issue templates](.github/ISSUE_TEMPLATE) are in `.github/`.
+- [Going public](docs/operations/going-public.md): the secrets scan (`pnpm scan:secrets`) and its record, the review
+  before the switch to public, and the GitHub settings to turn on.
+
 **For developers**
 
 - [Architecture](docs/architecture.md): packages, server and web modules, storage providers, the legacy mapping, request flow, identity and session.
@@ -298,7 +277,7 @@ Run from the repository root.
 - [Self-hosting](docs/self-hosting.md): running the free Docker image (mode 2b): settings, an https proxy, PostgreSQL, S3, backups, upgrades.
 - [Operations](docs/operations.md): deployment, monitoring, read-only mode, the configuration by deployment mode, accounts, the erase and reconcile commands, the webhook secret, the header policy, and the rollout and rollback runbook.
 - Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
-- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14.
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14 and the self-hosted Steps 1–11.
 
 **For users and integrators**
 
@@ -323,3 +302,6 @@ Run from the repository root.
 [MIT](LICENSE). Survey Creator, the Form Library and the Dashboard are separate SurveyJS products
 with their own licences. The app takes a SurveyJS licence key from configuration
 (`SURVEYJS_LICENSE_KEY`); no key is stored in the code.
+
+The self-hosted image includes a notice of the third-party packages it contains and their licences, at
+`/app/THIRD_PARTY_NOTICES.md` in the image. It is generated when the image is built.
