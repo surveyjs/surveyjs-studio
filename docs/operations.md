@@ -5,7 +5,8 @@ it, monitoring, read-only mode, the configuration of each deployment mode, the s
 that erase an account's data, the webhook secret, the header policy, the rollout and rollback runbook, and the release
 of the self-hosted image. Every variable, with its values and default, is in
 [Development](development.md#environment-variables-server); how to run each mode on your own machine is in
-[Running the app](running.md).
+[Running the app](running.md). The secrets scan and the review before the repository goes public are in
+[Going public](operations/going-public.md).
 
 Commands are for Git Bash or any POSIX shell, from the repository root, with Node.js 24. Nothing here depends on a
 particular host: "the host" is the machine that runs the container, and "the reverse proxy" is whatever terminates

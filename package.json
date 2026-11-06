@@ -77,6 +77,7 @@
     "image:build": "docker build -t surveyjs-studio:local .",
     "image:build:self-hosted": "docker build --target self-hosted -t surveyjs-studio:self-hosted .",
     "image:prod-data": "node --import tsx scripts/image-prod-data/cli.ts --",
+    "scan:secrets": "node --import tsx scripts/secrets-scan/cli.ts --",
     "image:checks": "node --import tsx scripts/image-checks/cli.ts --",
     "release:tags": "node --import tsx scripts/release-tags/cli.ts --",
     "sandbox:serve": "node scripts/sandbox-host/serve.mjs",

@@ -284,10 +284,27 @@ jobs:
         with:
           name: modes
 
+  # Gitleaks over the checkout's full history. Keep the image tag in step with scripts/secrets-scan/args.ts.
+  # Reviewed findings are listed in .gitleaksignore; the record is docs/operations/going-public.md.
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The container user differs from the runner's, so it runs as the runner's user to read the checkout.
+      - name: Scan the history for secrets
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.0             git /repo --redact --gitleaks-ignore-path=/repo/.gitleaksignore --no-banner
+
   # The one result to wait for: it fails when any job above failed, was cancelled or was skipped.
   ci:
     name: ci
-    needs: [checks, unit, image, azurite, postgres, e2e-image, e2e-modes]
+    needs: [checks, unit, image, azurite, postgres, e2e-image, e2e-modes, secrets]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
