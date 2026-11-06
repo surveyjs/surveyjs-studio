@@ -8,19 +8,21 @@ Date of the check: 2026-11-06. Nothing was rewritten and nothing was pushed for 
 
 ## The scan
 
-Gitleaks reads the whole git history, not only the current files. The CI job `secrets` repeats it on every push and
-pull request, so a secret that is committed later fails the build.
+Gitleaks reads the git history, not only the current files. The CI job `secrets` repeats it on every push and pull
+request, over the history of the checked-out commit, so a secret that is committed later fails the build.
 
-| Item         | Value                                                                               |
-| ------------ | ----------------------------------------------------------------------------------- |
-| Tool         | Gitleaks `v8.24.0`, the image `zricethezav/gitleaks:v8.24.0`, default rules         |
-| Command      | `pnpm scan:secrets --all-refs --report <file>`                                      |
-| Refs scanned | Every local branch, every remote-tracking branch and every tag (`--log-opts=--all`) |
-| Commits      | 425 (after `git fetch --all --prune`)                                               |
-| Result       | 27 findings, all synthetic. After the allowlist: `no leaks found`                   |
+| Item         | Value                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| Tool         | Gitleaks `v8.24.0`, the image `zricethezav/gitleaks:v8.24.0` pinned by digest, default rules   |
+| Command      | `pnpm scan:secrets --all-refs --report <file>`                                                 |
+| Refs scanned | Every local branch, every remote-tracking branch and every tag (`--log-opts=--all`)            |
+| Commits      | 426 with `--all-refs`, 412 for the checked-out history (HEAD), after `git fetch --all --prune` |
+| Result       | 27 findings, all synthetic. After the allowlist: `no leaks found`                              |
 
 `pnpm scan:secrets` mounts the repository into the container read-only and redacts the matches. Without `--all-refs`
-it scans the checked-out history only, which is what CI does. Run it again any time:
+it passes `--log-opts=HEAD` and scans the history reachable from the checked-out commit, which is what CI does.
+(Gitleaks with no `--log-opts` would scan every ref in the clone, so both modes name theirs.) Run the wide scan again
+any time:
 
 ```bash
 pnpm scan:secrets --all-refs
@@ -42,6 +44,10 @@ example, a documented placeholder or a test constant. The fingerprints are in
 | `docs/api/admin-users.md`, `contract/openapi.yaml`, `contract/generated/openapi.d.ts`, `web/src/adminRoutes.test.tsx`                                               | 4     | The documented example set-password token `7cJ2rQ0wUu8xXnYk3fVb1A`                  |
 | `docs/api/public-endpoints.md`                                                                                                                                      | 1     | An example `Idempotency-Key` UUID                                                   |
 | `server/src/passwords/common-passwords.ts`                                                                                                                          | 1     | `masterpassword`, an entry in the list of common passwords that the server refuses  |
+
+The fingerprints in `.gitleaksignore` are bound to commit ids. The step branches must be merged with merge commits,
+never rebased or squashed, or the ids change and the findings come back. Any history rewrite (a mailmap rewrite, for
+example) also needs a re-baseline of the file.
 
 A real secret is never added to `.gitleaksignore`. If the scan finds one, rotate it first. Removing it from the
 history is a rewrite, and that is the product owner's decision.
@@ -74,6 +80,8 @@ the one fixture image. The `states.json` next to the first set is not an image.
   created" and "Draft idea". All are seed data.
 - The fixture image is a single purple pixel.
 
+The review also covered the 19 superseded baseline versions in history, which show seed data only.
+
 Result: no real person's name, address or survey.
 
 ### The planning documents
@@ -98,28 +106,22 @@ Changes made to the current text: none were needed.
 
 Every commit's author address becomes public. `git log --all --format='%ae' | sort -u`:
 
-| Address                            | Commits | Author name                     |
-| ---------------------------------- | ------- | ------------------------------- |
-| `tsv2013@noreply.github.com`       | 416     | tsv2013                         |
-| `tsv2013@users.noreply.github.com` | 12      | tsv2013                         |
-| `[address removed]`          | 12      | Dmitry Kurmanov, dmitrykurmanov |
-
-The first two are GitHub's private addresses. The third is a personal address of a contributor.
+There are three distinct author addresses: the company domain, GitHub noreply addresses, and one personal address.
+The noreply addresses are GitHub's private ones. The personal address is a contributor's, and it is the author email
+on 12 commits.
 
 ### For the product owner to decide
 
 None of these is a secret, so none blocks the switch. Each is in past versions too, so changing it needs a history
 rewrite.
 
-1. **The author address `[address removed]`** (12 commits). Ask the author whether it may be public. If not, the
-   history must be rewritten with a mailmap.
-2. **Production-scale figures.** `docs/demo/step-14.md` and past versions of `docs/operations.md` and the plans say that
-   the production database held N surveys, N of them with an empty published flag (most), measured on
-   2026-10-22. These are usage numbers of the live service.
-3. **References to the site's private source code and its schema.** `docs/architecture/legacy-data-layout.md` and the
-   plans cite files of the surveyjs.io code base (for example `the site's code`), the names of its
-   secrets (`a site secret` and others), and its table, column and blob container names. The page exists to
-   describe that layout, and the user has chosen to publish it. Confirm that the site team agrees.
+1. **A contributor's personal address** is the author email on 12 commits. Ask the author whether it may be public.
+   If not, the history must be rewritten with a mailmap (see the note on `.gitleaksignore` below).
+2. **Production-scale figures.** Production usage counts appear in `docs/demo/step-14.md` and in past versions of
+   `docs/operations.md` and the plans. They are usage numbers of the live service.
+3. **References to the site's private source code and its schema.** The legacy layout page and the plans name the
+   site's private source paths, secret names and schema names. The page exists to describe that layout, and the user
+   has chosen to publish it. Confirm that the site team agrees.
 4. **The local ref `refs/original/refs/heads/self-hosted`.** It is a backup that an earlier history rewrite left in this
    clone. It was scanned with the rest and is clean. Delete it (`git update-ref -d` on that ref) before any
    `git push --mirror`, so that it is not published.
@@ -134,6 +136,7 @@ Do these in **Settings** of the repository as soon as it is public.
 | Code security → Private vulnerability reporting | Turn on, so reporters can write to you privately                                                                                                          |
 | Code security → Dependabot                      | Turn on **Dependabot alerts**                                                                                                                             |
 | Actions → General → Fork pull request workflows | Choose **Require approval for all outside collaborators**                                                                                                 |
+| Branches → master branch protection             | Require the `ci` status check and block force pushes                                                                                                      |
 | Packages (the organisation's page)              | Check that `surveyjs-studio` and `surveyjs-studio-selfhosted-test` are still private. Making a repository public does not publish its packages, but check |
 
 The `secrets` job stays in CI after the switch. Keep [`.gitleaksignore`](../../.gitleaksignore) short: every entry

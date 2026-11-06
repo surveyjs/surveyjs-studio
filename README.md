@@ -31,7 +31,8 @@ old My Surveys section. **State:** Phase 1 is built and passed the compatibility
 ### Self-hosted image (mode 2b)
 
 A free Docker image: one container with its own database, password accounts and "Powered by SurveyJS" branding.
-**State:** built and tested, published as a private test package until the repository is public
+**State:** built and tested, published as a private test package. Pulling it needs Docker Hub access and the shipped licence key
+([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private after the repository goes public
 ([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
 [Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
 
@@ -303,5 +304,5 @@ Run from the repository root.
 with their own licences. The app takes a SurveyJS licence key from configuration
 (`SURVEYJS_LICENSE_KEY`); no key is stored in the code.
 
-The self-hosted image includes a notice of the third-party packages it contains and their licences, at
-`/app/THIRD_PARTY_NOTICES.md` in the image. It is generated when the image is built.
+Both images (the self-hosted one and the hosted one) include a notice of the third-party packages they contain and their licences, at
+`/app/THIRD_PARTY_NOTICES.md` in each image. It is generated when the image is built.

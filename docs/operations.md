@@ -100,7 +100,7 @@ is re-creating the container with the previous tag.
 
 **Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
 `ghcr.io/surveyjs/surveyjs-studio:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
-There is no `latest` tag: a deployment names the commit it runs. The package is private while the repository is;
+There is no `latest` tag: a deployment names the commit it runs. The package is private, and stays private when the repository goes public;
 pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/surveyjs-studio`) comes with the self-hosted
 track.
 

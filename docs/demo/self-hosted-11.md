@@ -44,8 +44,9 @@ Now see the shell on screen, the way a reader of the guide would:
    - **Check:** the header says **Example Studio**, with Olivia's name, **Projects** and **Sign Out**, and the survey
      list is below it.
 
-Stop the demo with Ctrl+C, then `git switch -` and `git branch -D scratch/example-shell` (the scratch files go with
-the branch if you did not commit them: `git restore --staged --worktree web/src/shell` and delete the `example` folder).
+Stop the demo with Ctrl+C. Files you did not commit stay in the working tree when you switch branches, so clean them
+first: `git restore --staged --worktree web/src/shell` and delete the new `example` folder. Then `git switch -` and
+`git branch -D scratch/example-shell`.
 
 ## 2. The conformance suite against the reference image
 
@@ -78,8 +79,10 @@ and a usage message. Neither starts a test.
 pnpm scan:secrets --all-refs
 ```
 
-**Check:** it ends with `425 commits scanned.` and `no leaks found`. (The count grows with each commit. The scan
-reads every branch and tag, and a Docker image runs the tool, so the first run pulls it.) The synthetic values it
+**Check:** it ends with `<N> commits scanned.` and `no leaks found`. (`<N>` is the number of commits it read and grows
+with the repository. `--all-refs` reads every local branch, remote-tracking branch and tag; without it, `pnpm scan:secrets`
+reads only the history of the checked-out commit, which is what CI runs. A Docker image runs the tool, so the first run
+pulls it.) The synthetic values it
 skips are listed in [Going public](../operations/going-public.md#the-findings) and in `.gitleaksignore`.
 
 List the files a visitor to the public repository sees:
@@ -115,7 +118,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --entrypoint head surveyjs-studio:self-hosted
 
 **Check:** the output starts with `# Third-party notices`, then the sentence "SurveyJS Studio includes the components
 below. Each entry gives the licence the package declares and the licence text it ships.", then the first entry,
-`## @aws-sdk/checksums@3.1001.6` with `License: Apache-2.0` and the start of the Apache licence text. The same file is
+a heading with a package name and version, then `License: ...` and the start of its licence text. The same file is
 in the `surveyjs-studio:local` image.
 
 ## 6. The README
