@@ -80,6 +80,7 @@
     "image:checks": "node --import tsx scripts/image-checks/cli.ts --",
     "release:tags": "node --import tsx scripts/release-tags/cli.ts --",
     "sandbox:serve": "node scripts/sandbox-host/serve.mjs",
+    "sandbox:wait": "node scripts/sandbox-host/wait-for-version.mjs",
     "sandbox:seed": "node --import tsx scripts/sandbox-seed/cli.ts",
     "prod-like:up": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --build --wait && pnpm legacy:load",
     "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v"

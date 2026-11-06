@@ -1,0 +1,124 @@
+name: Publish sandbox
+
+# A tag "v*" or a manual run (Actions › Publish sandbox › Run workflow) tests a build of the ref,
+# moves the `sandbox` branch to the tested commit and waits for https://studio.demos.surveyjs.io to
+# show that commit in /version.json. The demos server rebuilds the site from that branch when a push
+# reaches its webhook. To roll back, run it again with an older ref: the push is a force push.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: A branch, tag or full commit id to publish (an older one rolls back)
+        required: false
+        default: master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-sandbox
+  cancel-in-progress: false
+
+jobs:
+  # Builds the sandbox from the ref and runs its end-to-end tests against it, served by nginx
+  # with the server's configuration.
+  test:
+    name: Test the sandbox build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      # The later jobs use this commit, not the ref, which may move meanwhile.
+      - name: Resolve the commit
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup
+
+      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      - name: Install Playwright browsers
+        timeout-minutes: 10
+        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+
+      - name: Build the sandbox
+        env:
+          SANDBOX_COMMIT: ${{ steps.sha.outputs.sha }}
+        run: pnpm build:sandbox
+
+      - name: Serve it with nginx
+        run: pnpm sandbox:serve --port 8080
+
+      - name: End-to-end tests
+        env:
+          E2E_SANDBOX_URL: http://localhost:8080
+        run: pnpm e2e:sandbox:url
+
+      - if: failure()
+        uses: ./.github/actions/failure-artifacts
+        with:
+          name: sandbox-test
+
+  # Moves the sandbox branch to the tested commit. This is the step the environment can gate.
+  publish:
+    name: Move the sandbox branch
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    environment:
+      name: sandbox
+      url: https://studio.demos.surveyjs.io
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.test.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Push the commit to the sandbox branch
+        env:
+          SHA: ${{ needs.test.outputs.sha }}
+        run: |
+          git push --force origin "$SHA:refs/heads/sandbox"
+          echo "The sandbox branch is now at $SHA; the demos server rebuilds from it" >> "$GITHUB_STEP_SUMMARY"
+
+  # Waits for the demos server to serve the commit, then runs the end-to-end tests against it.
+  smoke:
+    name: Smoke-test the live site
+    needs: [test, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.test.outputs.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Install Playwright browsers
+        timeout-minutes: 10
+        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+
+      - name: Wait for the live site to show the commit
+        env:
+          SHA: ${{ needs.test.outputs.sha }}
+        run: pnpm sandbox:wait --url https://studio.demos.surveyjs.io --commit "$SHA" --timeout-min 30
+
+      - name: End-to-end tests against the live site
+        env:
+          E2E_SANDBOX_URL: https://studio.demos.surveyjs.io
+        run: pnpm e2e:sandbox:url
+
+      - if: failure()
+        uses: ./.github/actions/failure-artifacts
+        with:
+          name: sandbox-smoke
