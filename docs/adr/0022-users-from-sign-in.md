@@ -57,13 +57,13 @@ plan Step 2) keeps an app-owned table:
 | Licence notices          | A surveyjs.io site endpoint, asked by the web app's shell for the signed-in user, in the hosted edition only                                                      |
 | Deleted accounts         | The account-deleted webhook only                                                                                                                                  |
 
-**The sign-in server** (`the site's sign-in service` in the surveyjs-site repository) re-reads the account on every
+**The sign-in server** (in the surveyjs-site repository) re-reads the account on every
 `/OAuth/Authorize`, so the code carries the current email, name and `Blocked`, and a session of a deleted account gets
 no code (the session is dropped). UserInfo adds `blocked` (a boolean). Each client decides what a blocked user may do.
 
 ## Consequences
 
-- The site team builds one small change in `the site's sign-in service` and the licence endpoint, instead of four calls with a
+- The site team builds one small change in the sign-in server and the licence endpoint, instead of four calls with a
   service credential.
 - The app keeps a copy of names and emails of the surveyjs.io users its data names. The copy is refreshed only when
   the person signs in, so a member who changed their email on the site and has not signed in since is found by the

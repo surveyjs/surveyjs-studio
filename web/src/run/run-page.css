@@ -1,5 +1,5 @@
 /* The run page fills the window edge to edge, as surveyjs.io's does (its `<body style="margin: 0">`,
-   the site's page markup). Only while a run page is shown. */
+   the site's run page). Only while a run page is shown. */
 body:has(.running-survey) {
   margin: 0;
 }

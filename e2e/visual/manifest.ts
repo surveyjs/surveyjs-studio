@@ -174,7 +174,7 @@ const EDITOR_HIDE_APP: readonly Adjustment[] = [
   },
 ];
 
-// The legacy results page shows this overlay (the site's page markup) while it loads; its content is
+// The legacy results page shows this overlay (the results page's markup) while it loads; its content is
 // already in the DOM beneath it. The app has no confirmed equivalent, so the app side sets no idle.
 const RESULTS_IDLE_LIVE = "#loadingIndicator";
 

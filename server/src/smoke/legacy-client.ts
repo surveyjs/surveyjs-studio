@@ -19,7 +19,7 @@ export class LegacyApiError extends Error {
   }
 }
 
-/** A survey as `getActive` lists it (`the site's code`); only the members read here. */
+/** A survey as `getActive` lists it (the old site's survey model); only the members read here. */
 export interface LegacySurvey {
   readonly Id: string;
   readonly Name: string | null;

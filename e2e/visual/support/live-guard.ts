@@ -20,10 +20,10 @@ const TRACKER_HOSTS = [
  */
 export const LIVE_READ_ALLOWLIST: readonly RegExp[] = [
   // Builds the example code of the editor's Embed Survey tab and returns it as JSON; no store write.
-  // Without it the tab stays on "Loading...". Legacy proof: Controllers/the site's code.
+  // Without it the tab stays on "Loading...". The old site's handler for it reads no store.
   /^https:\/\/surveyjs\.io\/api\/CodeViewer\/getfiles(\?.*)?$/i,
   // The Renewals and Upgrades calculator on /manage computes dates on an in-memory order; nothing is
-  // persisted. Legacy proof: Controllers/the site's code and the site's code.
+  // persisted. The old site's handlers for it write nothing.
   /^https:\/\/surveyjs\.io\/api\/cart\/calcprepare(\?.*)?$/i,
 ];
 

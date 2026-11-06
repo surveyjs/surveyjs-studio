@@ -14,7 +14,7 @@ import { SurveyRow } from "./SurveyRow";
 import { failureMessage, useSurveyActions } from "./useSurveyActions";
 
 /**
- * The My Surveys page in the markup of surveyjs.io's `the site's page markup` (D14):
+ * The My Surveys page in the markup of the site's My Surveys page (D14):
  * the Active/Archived switch, the project drop-down, Create a Survey, and the list of the scope's
  * surveys, newest first, with "Load more" when more pages follow. Each row has the rename pencil and
  * the "…" menu; a failed row action shows one message under the actions until the next action. The

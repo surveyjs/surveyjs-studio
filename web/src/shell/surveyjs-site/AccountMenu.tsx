@@ -21,7 +21,7 @@ export interface AccountMenuItemsProps {
 }
 
 /**
- * The items of the site's Account menu (`the site's page markup`): Settings,
+ * The items of the site's Account menu: Settings,
  * the app's Projects, Users and Change password, Help Desk, Billing, a separator and Sign Out. An item whose link is not
  * configured is left out.
  */
@@ -80,7 +80,7 @@ export type AccountMenuProps = Pick<ShellProps, "user" | "onSignOut" | "signingO
   };
 
 /**
- * The top bar's Account drop-down (`the site's page markup`, type `Drop-Down`, with the
+ * The top bar's Account drop-down (as the site's top-bar item markup, type `Drop-Down`, with the
  * `v2-class---top-menu-item--drop-down-account` modifier). It shows the user's avatar and name where
  * the site shows its account icon and the word "Account".
  */

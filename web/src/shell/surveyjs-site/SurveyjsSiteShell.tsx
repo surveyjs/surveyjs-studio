@@ -8,12 +8,12 @@ import { LicenceNoticeDialog } from "./LicenceNoticeDialog";
 import { useLicenceNotice } from "./licenceNotice";
 import styles from "./SurveyjsSiteShell.module.css";
 
-/** The site toggles this body class while a mobile menu is open (`the site's page markup`). */
+/** The site toggles this body class while a mobile menu is open (the site's mobile-menu script). */
 const MOBILE_MENU_BODY_CLASS = "v2-class---body--mobile-menu-opened";
 
 /**
  * The surveyjs.io look (D14): the site's top bar, footer, cookie banner and licence dialogs around
- * the page, in the layout of `the site's page markup`.
+ * the page, in the site's page layout.
  */
 export function SurveyjsSiteShell({
   user,

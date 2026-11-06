@@ -16,7 +16,7 @@ const MENU = "v2-class---my-surveys-page__survey-context-menu-button";
 const NAME_EDITOR = "v2-class---my-surveys-page__edit-survey-name-container";
 
 /**
- * One survey of the list, in the row markup of `the site's page markup` (table view):
+ * One survey of the list, in the row markup of the site's My Surveys page (table view):
  * the name with the rename pencil, the two dates and the "…" menu. The pencil shows only in the
  * Active view and when the user may modify the survey. A rename shows the new name at once and the
  * old one again if the request fails (the page shows the error). In the Active view a click on the

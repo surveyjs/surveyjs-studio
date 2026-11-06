@@ -17,7 +17,7 @@ import styles from "./ProjectsPage.module.css";
 const privateRoute = getRouteApi("/_private");
 
 /**
- * The Projects page in the markup of surveyjs.io's `the site's page markup`
+ * The Projects page in the markup of the site's Projects page
  * (D14): the intro, a card per project of the user in the server's order, and Create a Project.
  * The route loader has fetched the projects. Nothing changes before the server answers: the page
  * shows the lists the server returns after each action.

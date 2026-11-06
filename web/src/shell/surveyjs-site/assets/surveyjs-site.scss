@@ -5,7 +5,7 @@
 
 @import "site/Content/Styles/fonts.scss";
 
-// The site's `the site's page markup` loads Raleway (500, 700) and Open Sans (400, 600, 700) from Google
+// The site's page layout loads Raleway (500, 700) and Open Sans (400, 600, 700) from Google
 // Fonts. The app is self-contained, so these are the same families, latin subset, kept here (OFL).
 @font-face {
   font-family: "Raleway";
@@ -82,7 +82,7 @@
 // tabs, the rounded buttons and the column layout the page uses.
 @import "site/Content/Styles/pages/survey-results.scss";
 
-// The page styles of `the site's page markup` (its `pageStyles` section), limited to the
+// The page styles of the site's My Surveys page (its `pageStyles` section), limited to the
 // pages that render the My Surveys article, so other pages keep the site's default `main`.
 main:has(> .v2-class---my-surveys-page) {
   display: flex;

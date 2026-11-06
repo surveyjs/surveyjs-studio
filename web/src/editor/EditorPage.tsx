@@ -42,7 +42,7 @@ const CONFLICT_TEXT = "The survey was changed by someone else. Your latest chang
 const RENAME_FAILED_TEXT = "Could not rename the survey. Please try again.";
 
 /**
- * The editor page (`/surveys/$surveyId/edit`), as surveyjs.io's `the site's page markup`: the Creator
+ * The editor page (`/surveys/$surveyId/edit`), as the surveyjs.io editor page does: the Creator
  * fills the page, the site footer is hidden, and a fixed bar at the bottom shows the save status
  * and the survey name. The definition and the theme are read fresh on every open.
  */
@@ -222,7 +222,7 @@ function EditorSession({
 }
 
 /**
- * The page around the Creator, in the markup of `the site's page markup`: the `#creator` container and
+ * The page around the Creator, in the markup of the site's editor page: the `#creator` container and
  * the fixed bottom bar with the survey name and its rename editor (the status at its left is ours).
  * Notices take the top of the container and the Creator the rest, so no part of the Creator slides
  * under the bar. A failed rename shows a notice until the next rename.

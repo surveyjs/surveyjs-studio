@@ -112,7 +112,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 **Inputs needed:**
 
-- the `blocked` claim in `/OAuth/UserInfo` and the re-read on `/OAuth/Authorize`, in `the site's sign-in service` (built 2026-10-28), deployed to staging;
+- the `blocked` claim in `/OAuth/UserInfo` and the re-read on `/OAuth/Authorize`, in the site's sign-in server (built 2026-10-28), deployed to staging;
 - the licence endpoint on the surveyjs.io staging site, designed with the site team;
 - the account-deleted webhook on staging, built to `docs/integrations/surveyjs-user-api.md` (plan.md Step 12).
 

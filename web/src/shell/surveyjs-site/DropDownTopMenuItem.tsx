@@ -16,7 +16,7 @@ export interface DropDownTopMenuItemProps {
 }
 
 /**
- * A top-bar item with a drop-down menu (`the site's page markup`, type `Drop-Down`). For
+ * A top-bar item with a drop-down menu (as the site's top-bar item markup, type `Drop-Down`). For
  * the mouse, the site's CSS opens the menu on hover. The site offers no keyboard access, so the
  * trigger is also a focusable button: Enter, Space or ArrowDown opens the menu (glue class
  * `dropDownOpen` applies the site's hover styles), Escape closes it and returns focus to the

@@ -1,4 +1,4 @@
-// The Survey Creator as surveyjs.io's editor page configures it (the site's page markup and
+// The Survey Creator as surveyjs.io's editor page configures it (the site's editor page and
 // Scripts/editor.tsx): the option values are copied (D14), the code is our own. Only the Creator
 // chunk imports this module (see SurveyEditor.tsx).
 import ace from "ace-builds";

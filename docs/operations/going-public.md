@@ -4,7 +4,7 @@ The repository `surveyjs/surveyjs-studio` is private until the product owner swi
 public with it: every commit, every branch and every tag, and every past version of every file. This page records what
 was checked before the switch, what the scan found, and what to turn on in the GitHub settings afterwards.
 
-Date of the check: 2026-11-06. Nothing was rewritten and nothing was pushed for it.
+Date of the check: 2026-11-06. The check itself rewrote nothing and pushed nothing. The history was rewritten afterwards (see [History clean-up](#history-clean-up)).
 
 ## The scan
 
@@ -61,11 +61,11 @@ history is a rewrite, and that is the product owner's decision.
 ### Branch tips and production identifiers
 
 Every branch tip and tag was searched for Azure SQL and storage host names (`*.database.windows.net`,
-`*.core.windows.net`), public IPv4 addresses, `@devsoftbaltic` and `@surveyjs` addresses, and Hetzner host names.
+`*.core.windows.net`), public IPv4 addresses, company-domain email addresses, and Hetzner host names.
 
 Result: nothing real. The hits are `example` and placeholder names in tests (`prodacct`, `site.database.windows.net`),
 private and documentation address ranges, the placeholder `1.2.3.4`, a container image version, and the Hetzner setup
-guides, which name the provider and not a server. The only other address is `impallari@gmail.com`, in the licence text
+guides, which name the provider and not a server. The only other address is in the licence text
 of the Raleway font.
 
 A search of all added lines in the whole history for addresses outside `example.*` found only that one and a package
@@ -104,31 +104,19 @@ check covered their current text and every past version (64 commits that touch t
 | Anything told in confidence               | None                                                                                                                      |
 | Personal data                             | None                                                                                                                      |
 
-Changes made to the current text: none were needed.
+Changes made to the current text: the production figures and the references to the private site's source code, views and secret names were reworded (see [History clean-up](#history-clean-up)).
 
-### Commit author emails
+## History clean-up
 
-Every commit's author address becomes public. `git log --all --format='%ae' | sort -u`:
+Before publication the history was rewritten:
 
-There are three distinct author addresses: the company domain, GitHub noreply addresses, and one personal address.
-The noreply addresses are GitHub's private ones. The personal address is a contributor's, and it is the author email
-on 12 commits.
+- a contributor's personal email address was replaced by their GitHub noreply address;
+- production figures were removed;
+- references to the private surveyjs.io site's source code, views and secret names were removed.
 
-### For the product owner to decide
+Commit ids changed, so `.gitleaksignore` was re-baselined.
 
-None of these is a secret, so none blocks the switch. Each is in past versions too, so changing it needs a history
-rewrite.
-
-1. **A contributor's personal address** is the author email on 12 commits. Ask the author whether it may be public.
-   If not, the history must be rewritten with a mailmap (see the note on `.gitleaksignore` below).
-2. **Production-scale figures.** Production usage counts appear in `docs/demo/step-14.md` and in past versions of
-   `docs/operations.md` and the plans. They are usage numbers of the live service.
-3. **References to the site's private source code and its schema.** The legacy layout page and the plans name the
-   site's private source paths, secret names and schema names. The page exists to describe that layout, and the user
-   has chosen to publish it. Confirm that the site team agrees.
-4. **The local ref `refs/original/refs/heads/self-hosted`.** It is a backup that an earlier history rewrite left in this
-   clone. It was scanned with the rest and is clean. Delete it (`git update-ref -d` on that ref) before any
-   `git push --mirror`, so that it is not published.
+Before a mirror push, delete any leftover backup refs under `refs/original/`, so that they are not published.
 
 ## After the switch: the GitHub settings
 

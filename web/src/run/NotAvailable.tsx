@@ -3,7 +3,7 @@ import "./run-page.css";
 
 /**
  * The page of a survey that cannot run (unknown, unpublished, or no id): surveyjs.io's heading,
- * its markup, inline style and text copied from `the site's page markup` (D14).
+ * its markup, inline style and text copied from the site's run page (D14).
  */
 export function NotAvailable() {
   useEffect(() => {

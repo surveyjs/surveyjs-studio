@@ -145,7 +145,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 - **After it, users come from sign-in.** A new user directory keeps app-owned profiles, written from UserInfo at every sign-in (id, email, display name, `blocked`). They serve history author names and adding members by email.
 - **The migration seeds a profile** for every user the copied data names (survey owners, members, history authors), from the site's `Users` table.
 - **Adding a member whose email has no profile** creates a pending invitation, which becomes a membership when someone signs in with that email. Admins can list and cancel invitations.
-- **Blocked users** get no session, from UserInfo's `blocked` claim. The sign-in server re-reads the account on every authorization (built in `the site's sign-in service`, 2026-10-28).
+- **Blocked users** get no session, from UserInfo's `blocked` claim. The sign-in server re-reads the account on every authorization (built in the site's sign-in server, 2026-10-28).
 - **Licence notices** come from a surveyjs.io site endpoint for the signed-in user, asked by the web app's shell, in the hosted edition only.
 - **Deleted accounts:** the account-deleted webhook only. Reconciliation is not available with profiles, because "no profile" does not mean "deleted".
 - `ProjectStore` and the other stores move with the data. Profiles and invitations are app-owned tables in the target.

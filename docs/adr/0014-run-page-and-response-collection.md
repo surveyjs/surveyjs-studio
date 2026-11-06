@@ -41,7 +41,7 @@ off.
 
 **Step 14 change (product owner, 2026-10-21): an empty flag means published.** Until Step 14 the mapping read an
 empty (`NULL`) `ispublished` as "not published", so a survey never switched on the old site needed one
-**Publish**. On production N of N surveys (most) have an empty flag, and the old run page ran them.
+**Publish**. On production most surveys have an empty flag, and the old run page ran them.
 Once surveyjs.io redirects old run links to the app, they must keep running. So only `ispublished = 0` is
 unpublished, everywhere in the app: the run page and its two public writes, the survey list and the API's
 `published` field (`publishedFlag` in `mapping.ts`, layout 9.1). Existing rows are not rewritten. Create and clone

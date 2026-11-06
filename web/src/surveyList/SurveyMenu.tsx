@@ -19,7 +19,7 @@ const overflowsRight = (popup: HTMLElement | null) =>
   popup !== null && popup.getBoundingClientRect().right > document.body.offsetWidth;
 
 /**
- * The row's "…" button and its menu, in the markup of `the site's page markup`. The
+ * The row's "…" button and its menu, in the markup of the site's My Surveys row menu button. The
  * entries are `surveyMenuItems`; links (Run, Edit, View Results, View History) navigate, the other
  * items call `onAction`. A click on the dots toggles the menu (as on the site). For the keyboard, the
  * dots are a focusable button: Enter or Space toggle it, Escape closes it and focuses the button

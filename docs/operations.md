@@ -418,7 +418,7 @@ production data, which are for the product owner only. [Running the app](running
 | Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                                             | `surveyjs-oidc` against the mock OIDC server    | `docker/azurite.env`, `server/demo-azurite.env`                                           |
 | SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything, users in memory by default or in the database with `USER_DIRECTORY=local`; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                         | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
 | Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                                              | `surveyjs-oidc` against the mock OIDC server    | `docker/prod-like.env`                                                                    |
-| On production data     | `azure-legacy` on the real stores                                                                                                                                                                                              | `surveyjs-oidc` against a local the site's sign-in service   | `server/.env` (never committed)                                                           |
+| On production data     | `azure-legacy` on the real stores                                                                                                                                                                                              | `surveyjs-oidc` against a local sign-in server  | `server/.env` (never committed)                                                           |
 
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
@@ -776,7 +776,7 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
    ```
 
    On 2026-10-22 production printed `Surveys.theme: varchar(max) COLLATE SQL_Latin1_General_CP1_CI_AS`,
-   `Surveys triggers: none`, `Surveys.ispublished: tinyint, nullable yes, default none` and N of N surveys
+   `Surveys triggers: none`, `Surveys.ispublished: tinyint, nullable yes, default none` and most surveys
    with an empty `ispublished`. If the theme column or the triggers differ, stop: the theme save's compare-and-set
    needs a look ([ADR 0012](adr/0012-editor-content-and-history.md)).
 
@@ -814,7 +814,7 @@ address allow-list, for example).
 
 **What the team will see that differs from the old section** (expected, not failures):
 
-- **The published flag.** most of production surveys have an empty `ispublished` (never switched on the old site).
+- **The published flag.** Most production surveys have an empty `ispublished` (never switched on the old site).
   The app reads an empty flag as published, as the old run page does, and lists those surveys with **Run** and
   **Unpublish**; the old list shows **Publish** for them. Nothing rewrites the stored flags
   ([ADR 0014](adr/0014-run-page-and-response-collection.md), S1). New and cloned surveys keep an empty flag on both

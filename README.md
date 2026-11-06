@@ -194,7 +194,7 @@ Run from the repository root.
 | `pnpm postgres:up`, `pnpm postgres:down`                         | Starts PostgreSQL in Docker; stops it and deletes its data                                                                 |
 | `pnpm seed`, `pnpm seed:sqlite`, `pnpm seed:postgres`            | Migrates the database, then loads the golden fixtures (seed surveys are replaced, others kept)                             |
 | `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                         |
-| `pnpm dev:prod-data`                                             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env`            |
+| `pnpm dev:prod-data`                                             | The app on the **real** surveyjs.io stores, signing in through a local sign-in server; settings in `server/.env`           |
 | `pnpm image:build`                                               | Builds the production image `surveyjs-studio:local` (needs Docker)                                                         |
 | `pnpm image:build:self-hosted`                                   | Builds the self-hosted image `surveyjs-studio:self-hosted` ([Self-hosting](docs/self-hosting.md))                          |
 | `pnpm image:checks`                                              | Checks a self-hosted image as an admin uses it: `--image <tag> [--previous <tag>] [--only <checks>]`                       |

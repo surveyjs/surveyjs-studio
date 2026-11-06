@@ -20,7 +20,7 @@ export interface MenuGroup {
 
 const circle = (name: string) => `top-bar/circle-icons/${name}`;
 
-/** `the site's page markup` */
+/** The site's Products menu markup */
 export const productsMenu: MenuGroup = {
   title: "Products",
   entries: [
@@ -78,7 +78,7 @@ export const productsMenu: MenuGroup = {
   ],
 };
 
-/** `the site's page markup` for a signed-in user. */
+/** The site's Demos menu markup for a signed-in user. */
 export const demosMenu: MenuGroup = {
   title: "Demos",
   entries: [
@@ -133,7 +133,7 @@ export const demosMenu: MenuGroup = {
   ],
 };
 
-/** `the site's page markup` */
+/** The site's new Demos menu markup */
 export const newDemosMenu: MenuGroup = {
   title: "New & Updated Demos",
   entries: [
@@ -161,7 +161,7 @@ export const newDemosMenu: MenuGroup = {
   ],
 };
 
-/** `the site's page markup` (the "Developers" drop-down). */
+/** The site's Guides menu markup (the "Developers" drop-down). */
 export const guidesMenu: MenuGroup = {
   title: "Guides",
   entries: [
@@ -195,7 +195,7 @@ export const guidesMenu: MenuGroup = {
   ],
 };
 
-/** `the site's page markup` */
+/** The site's Industries menu markup */
 export const industriesMenu: MenuGroup = {
   title: "Industries",
   entries: [
@@ -218,7 +218,7 @@ export const industriesMenu: MenuGroup = {
 
 const updated = (name: string) => circle(`stay-updated/${name}`);
 
-/** `the site's page markup` */
+/** The site's Stay Updated menu markup */
 export const stayUpdatedMenu: MenuGroup = {
   title: "Stay Updated",
   entries: [
@@ -275,7 +275,7 @@ export const stayUpdatedMenu: MenuGroup = {
   ],
 };
 
-/** `the site's page markup` (first group of the mobile menu). */
+/** The site's Other menu markup (first group of the mobile menu). */
 export const otherMenu: MenuGroup = {
   title: "",
   entries: [

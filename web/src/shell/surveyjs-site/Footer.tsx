@@ -1,7 +1,7 @@
 import { iconHtml } from "./icons";
 import { isExternal, siteUrl } from "./site";
 
-/** `the site's page markup`: a footer link (outside links open in a new tab). */
+/** The site's footer link markup: a footer link (outside links open in a new tab). */
 function FooterLink({ text, url }: { text: string; url: string }) {
   const external = isExternal(url);
   return (
@@ -147,7 +147,7 @@ const social: readonly { label: string; icon: string; url: string; newTab: boole
 ];
 
 /**
- * The site's footer (`the site's page markup`). The Product Hunt and SourceForge badges are left
+ * The site's footer. The Product Hunt and SourceForge badges are left
  * out: the site loads them from those services at runtime, and My Surveys makes no such calls.
  */
 export function Footer() {

@@ -28,7 +28,7 @@ import {
 import styles from "./ProjectsPage.module.css";
 
 /**
- * One project of the Projects page (`the site's page markup`, the `<details>` card): the name and the
+ * One project of the Projects page (the site's `<details>` card): the name and the
  * project links in the summary; the members, read when the card first opens, and for admins the
  * Add a New Member form in the content. Every action waits for the server's answer; a failure shows
  * one error in the card (and opens it) until the next action.
