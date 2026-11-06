@@ -151,6 +151,93 @@ without an image. The next release skips it: its `tags` job takes the highest ea
 `docker buildx imagetools inspect` finds in `RELEASE_IMAGE`, and the upgrade check is skipped when none is found.
 When `checks` fails before the push, fix the problem and push a new version tag; never push the same tag again.
 
+## The sandbox (studio.demos.surveyjs.io)
+
+The sandbox (mode 2a, [ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md)) is a static site on the shared
+SurveyJS demos server, at `https://studio.demos.surveyjs.io`
+([ADR 0031](adr/0031-publishing-the-sandbox.md)). It keeps no data on the server: visitors' data stays in their
+browsers.
+
+### How a release reaches it
+
+1. A `v*` tag, or a manual run, starts the **Publish sandbox** workflow (`.github/workflows/sandbox.yml`).
+2. `test` builds the sandbox, serves it with the repo's nginx configuration (`pnpm sandbox:serve`) and runs the
+   `@sandbox` suites against it (`pnpm e2e:sandbox:url`) on Chromium.
+3. `publish` adds a commit to the **pointer branch** `sandbox`. Its only file, `COMMIT`, holds the tested commit's sha.
+   The branch is not a copy of the source (the workflow's token may not push commits that change workflow files), so
+   its log is a history of deploys.
+4. The push reaches the demos server's webhook. whd runs `make up-surveyjs-studio-sandbox`, which reads `COMMIT`,
+   fetches that commit with the read-only token and builds the site from source with nginx.
+5. `smoke` waits until the live `/version.json` names the commit (up to 30 minutes), then runs the same suites against
+   the live URL. It runs after the deploy, so it reports a bad site; it does not stop one. Roll back (below) when it
+   fails.
+
+### One-time setup (product owner)
+
+Do this once. Never put a token or key in the repository.
+
+1. **A read-only token.** On GitHub create a fine-grained personal access token for `surveyjs/surveyjs-studio` only,
+   with **Contents: read**. On the demos server put it in `env/.env` as `STUDIO_GITHUB_TOKEN`. The build reads the
+   private repository with it.
+2. **The licence key.** `SURVEYJS_LICENSE_KEY` must be in the same `env/.env` (other demos already use it). It must
+   cover `studio.demos.surveyjs.io`. Without it the build still works and the sandbox shows the licence notice.
+3. **The webhook.** In the surveyjs-studio repository, Settings › Webhooks › Add webhook: payload URL
+   `https://webhook.demos.surveyjs.io`, content type `application/json`, secret the demos server's
+   `GITHUB_WEBHOOK_SECRET`, and only the **push** event. whd acts on pushes to `sandbox` and ignores other branches.
+4. **The demos-infrastructure change.** Merge or push the branch `feat/surveyjs-studio-sandbox` (the folder
+   `projects/surveyjs-studio-sandbox/`, the whd mapping and the Makefile targets) and update the demos server. Then
+   run `make up-surveyjs-studio-sandbox` once, or let the first publish trigger it.
+5. **When the repository goes public (Step 11),** remove the `secrets` blocks from the demo's `docker-compose.yml`
+   (the one under the service and the top-level one), and `STUDIO_GITHUB_TOKEN` from `env/.env`. Do not leave the
+   token empty: BuildKit then sends an empty credential and GitHub answers 401, even for a public repository.
+
+### Publishing
+
+In GitHub: **Actions › Publish sandbox › Run workflow**, with `ref` set to a branch, tag or commit (the default is
+`master`). Or push a `v*` tag. Runs queue one at a time. When it ends green, `https://studio.demos.surveyjs.io/version.json`
+names the commit.
+
+### Rolling back
+
+Run the same workflow with an older `ref` (a tag or a commit). It tests that ref, and adds a pointer commit that names
+it, and the server rebuilds. The older ref must already have the scripts the workflow runs: `build:sandbox`,
+`sandbox:serve` and `e2e:sandbox:url`.
+
+### What is live
+
+```sh
+curl -s https://studio.demos.surveyjs.io/version.json
+# {"commit":"<sha>","dataVersion":1}
+```
+
+`commit` is the source commit the build came from, and `dataVersion` is the seed's `version`.
+
+### Changing `sandbox.config.json` without a rebuild
+
+On the demos server edit `projects/surveyjs-studio-sandbox/config/sandbox.config.json` (`maxUploadKb`,
+`storageLimitKb`, `seedBudgetKb`). The folder is mounted read-only into the container as `/srv/sandbox-config/`, and
+nginx serves that file in place of the build's one. The next page load reads the new values: no rebuild and no
+restart. It is sent `no-store`. Deleting the file goes back to the build's own file.
+
+### The headers
+
+The sandbox's nginx sends the same policy as the server, from `deploy/sandbox/` (see [The header
+policy](#the-header-policy)). The router in front of it uses only `compress@file`, not `security-headers@file`, which
+would replace the CSP. Check as in that section, for example:
+
+```sh
+curl -sI https://studio.demos.surveyjs.io/ | grep -i content-security-policy        # frame-ancestors 'none'
+curl -sI https://studio.demos.surveyjs.io/s/x | grep -i content-security-policy     # frame-ancestors *
+curl -sI https://studio.demos.surveyjs.io/version.json | grep -i cache-control       # no-cache
+```
+
+### Bumping the data version
+
+When a release changes the seed's content or the stored document's format, raise `version` in
+`server/fixtures/sandbox.json` and run `pnpm sandbox:seed` (see [Development](development.md#the-sandbox-step-9)).
+Returning visitors then see **This demo has been updated** and **Reset to continue**, instead of data the new code may
+not read. A visitor with another tab open on the old release gets a message to reload the page.
+
 ## Monitoring
 
 ### Health and readiness
@@ -620,7 +707,7 @@ overwrite one a client sent, so a caller cannot choose the id that appears in th
 **Another static host.** If the web app is ever served apart from the server (a CDN for `web/dist`), that host must
 send the same values per path and route the server paths above to the server; otherwise the run page loses its
 protection against a script in a survey. `vite preview` (and `pnpm demo:preview`, and the end-to-end tests) send them
-from the same module; the Vite dev server (`pnpm demo`) sends none.
+from the same module; the Vite dev server (`pnpm demo`) sends none. The sandbox's own nginx (`deploy/sandbox/`) sends the same policy: see [the sandbox](#the-sandbox-studiodemossurveyjsio).
 
 **Check it** after each deployment:
 
