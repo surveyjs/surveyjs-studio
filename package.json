@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck && tsc -p tsconfig.json --noEmit",
     "check:deps": "tsx scripts/check-deps/cli.ts",
+    "check:example-shell": "node --import tsx scripts/example-shell/cli.ts",
     "test:unit": "vitest run --project=!providers-azurite --project=!providers-postgres --project=!providers-s3",
     "test:providers:azurite": "node --env-file=docker/azurite.env node_modules/vitest/vitest.mjs run --project=providers-azurite",
     "test:providers:postgres": "node --env-file=docker/postgres.env node_modules/vitest/vitest.mjs run --project=providers-postgres",
