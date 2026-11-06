@@ -3,7 +3,7 @@ import {
   REFERENCE_SETTINGS,
   referenceEnv,
 } from "../../conformance-tests/src/reference-settings.js";
-import { UsageError, parseConformanceArgs } from "./args.js";
+import { UsageError, parseConformanceArgs, suiteCommand } from "./args.js";
 
 describe("parseConformanceArgs", () => {
   it("reads --base <url>", () => {
@@ -61,5 +61,21 @@ describe("referenceEnv", () => {
     });
     expect(env.IDENTITY_PROVIDER).toBe("dev");
     expect(env.MEMORY_SEED).toBe("legacy-fixtures");
+  });
+});
+
+describe("suiteCommand", () => {
+  it("passes the arguments after the script name, without a -- (Vitest would read them as filters)", () => {
+    expect(suiteCommand(["-t", "surveys"])).toEqual([
+      "--filter",
+      "@surveyjs-studio/conformance-tests",
+      "test",
+      "-t",
+      "surveys",
+    ]);
+  });
+
+  it("is just the script without arguments", () => {
+    expect(suiteCommand([])).not.toContain("--");
   });
 });

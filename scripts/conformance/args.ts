@@ -33,8 +33,20 @@ function normalizeBase(value: string | undefined): string {
 }
 
 /** Pnpm runs the root script as `cli.ts -- --base url`, so one leading `--` is dropped. */
+export function dropLeadingSeparator(argv: string[]): string[] {
+  return argv[0] === "--" ? argv.slice(1) : argv;
+}
+
+/**
+ * The pnpm arguments that run the package's script. `rest` follows the script name without a `--`
+ * of its own: pnpm forwards it, and Vitest would read everything after a `--` as file filters.
+ */
+export function suiteCommand(rest: string[]): string[] {
+  return ["--filter", "@surveyjs-studio/conformance-tests", "test", ...rest];
+}
+
 export function parseConformanceArgs(argv: string[]): ConformanceArgs {
-  const args = argv[0] === "--" ? argv.slice(1) : argv;
+  const args = dropLeadingSeparator(argv);
   let baseUrl: string | null = null;
   const rest: string[] = [];
   for (let i = 0; i < args.length; i++) {

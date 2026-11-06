@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { referenceEnv } from "../../conformance-tests/src/reference-settings.js";
-import { UsageError, parseConformanceArgs } from "./args.js";
+import { UsageError, dropLeadingSeparator, parseConformanceArgs, suiteCommand } from "./args.js";
 
 function value(args: string[], name: string): string {
   const at = args.indexOf(name);
@@ -27,12 +27,7 @@ function runSuite(argv: string[]): number {
   const { baseUrl, rest } = parseConformanceArgs(argv);
   const env = { ...process.env };
   if (baseUrl !== null) env.CONFORMANCE_BASE_URL = baseUrl;
-  const pnpmArgs = [
-    "--filter",
-    "@surveyjs-studio/conformance-tests",
-    "test",
-    ...(rest.length ? ["--", ...rest] : []),
-  ];
+  const pnpmArgs = suiteCommand(rest);
   // pnpm is a .cmd shim on Windows, which only a shell runs; there the arguments are quoted into one command.
   const result =
     process.platform === "win32"
@@ -51,7 +46,7 @@ function runSuite(argv: string[]): number {
 
 try {
   const argv = process.argv.slice(2);
-  const args = argv[0] === "--" ? argv.slice(1) : argv;
+  const args = dropLeadingSeparator(argv);
   if (args[0] === "reference-env") {
     writeReferenceEnv(args.slice(1));
   } else {
