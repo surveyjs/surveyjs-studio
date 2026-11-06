@@ -16,7 +16,7 @@
     "test:providers:azurite": "node --env-file=docker/azurite.env node_modules/vitest/vitest.mjs run --project=providers-azurite",
     "test:providers:postgres": "node --env-file=docker/postgres.env node_modules/vitest/vitest.mjs run --project=providers-postgres",
     "test:providers:s3": "node --env-file=docker/s3.env node_modules/vitest/vitest.mjs run --project=providers-s3",
-    "test:conformance": "pnpm --filter @surveyjs-studio/conformance-tests test",
+    "test:conformance": "node --import tsx scripts/conformance/cli.ts --",
     "test:conformance:azurite": "pnpm --filter @surveyjs-studio/conformance-tests test:azurite",
     "test:conformance:sqlite": "pnpm --filter @surveyjs-studio/conformance-tests test:sqlite",
     "test:conformance:postgres": "pnpm --filter @surveyjs-studio/conformance-tests test:postgres",

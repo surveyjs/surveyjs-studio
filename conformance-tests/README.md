@@ -18,7 +18,19 @@ A `501` is accepted from any operation as a Problem, because every operation may
 unimplemented in Phase 1. Request headers, cookies and response headers the contract does not
 declare are not checked.
 
-A port in another language (.NET, PHP, ...) is accepted when this suite passes against it.
+A port in another language (.NET, PHP, ...) is accepted when this suite passes against it. Run it with
+`pnpm test:conformance --base <url>`; see [Porting the back end](../docs/customizing/porting.md).
+
+## Run against another server
+
+```sh
+pnpm test:conformance --base http://127.0.0.1:3000
+```
+
+`--base` is the server's origin without `/api/v1`. It sets `CONFORMANCE_BASE_URL` for the run (the variable still
+works), and other arguments go to Vitest. The server must be a fresh instance started with the reference settings
+(`src/reference-settings.ts`, listed in the porting guide) and the legacy fixtures, and `CONFORMANCE_WEBHOOK_SECRET`
+must be its webhook secret. CI runs this against the production image (the `conformance-base` job).
 
 ## Run against the reference server
 
@@ -27,7 +39,7 @@ pnpm test:conformance
 ```
 
 With `CONFORMANCE_BASE_URL` unset, the suite starts `pnpm --filter @surveyjs-studio/server start`
-on a free port (`NODE_ENV=test`, `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=dev`, `MEMORY_SEED=legacy-fixtures`), waits up to 30 s for
+on a free port (`NODE_ENV=test` and the settings of `src/reference-settings.ts`: `STORAGE_PROVIDER=memory`, `IDENTITY_PROVIDER=dev`, `MEMORY_SEED=legacy-fixtures`, ...), waits up to 30 s for
 `/readyz`, and stops it (and its process tree) afterwards. `PUBLIC_BASE_URL` is the server's own
 origin, and `SIGN_IN_RATE_LIMIT` is high enough that the suite never reaches it.
 
