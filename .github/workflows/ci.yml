@@ -41,6 +41,9 @@ jobs:
       - name: Example shell in the shells guide
         run: pnpm check:example-shell
 
+      - name: Links in the docs
+        run: pnpm check:docs-links
+
       - name: Lint
         run: pnpm lint
 
