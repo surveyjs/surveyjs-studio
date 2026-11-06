@@ -3,7 +3,7 @@
 // `detail` and `errors`. The sandbox code does not import server/src; the conformance subset checks
 // that the two agree. Codes are the `Problem.code` enum of contract/openapi.yaml.
 import { HttpResponse } from "msw";
-import { StorageFullError } from "../store";
+import { SandboxOutdatedError, StorageFullError } from "../store";
 
 export const PROBLEM_TYPE_BASE = "https://studio.surveyjs.io/problems/";
 export const PROBLEM_CONTENT_TYPE = "application/problem+json";
@@ -93,7 +93,7 @@ export const STORAGE_FULL_EVENT = "sandbox:storage-full";
 /**
  * Runs `answer` and turns what it throws into the server's answers: a `ProblemError` is its
  * Problem, a `StorageFullError` is `413 quota-exceeded` (and fires `sandbox:storage-full` on
- * `window` when there is one), anything else is `500 internal-error`.
+ * `window` when there is one), a `SandboxOutdatedError` is `503`, anything else is `500 internal-error`.
  */
 export async function guarded(answer: () => Promise<Response> | Response): Promise<Response> {
   try {
@@ -106,6 +106,14 @@ export async function guarded(answer: () => Promise<Response> | Response): Promi
         code: "quota-exceeded",
         status: 413,
         title: "Browser storage is full",
+      });
+    }
+    if (error instanceof SandboxOutdatedError) {
+      // Another tab reset or replaced the data under this page: the page must reload.
+      return problemResponse({
+        code: "internal-error",
+        status: 503,
+        title: "The demo was updated in another tab. Reload this page.",
       });
     }
     console.error("sandbox handler failed", error);

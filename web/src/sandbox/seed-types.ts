@@ -91,7 +91,8 @@ export interface SandboxResponse {
 }
 
 export interface SandboxSeed {
-  readonly version: 1;
+  /** The sandbox data version (server/fixtures/sandbox.json): bumped when seed content or document format changes. */
+  readonly version: number;
   users: SandboxUser[];
   projects: SandboxProject[];
   memberships: SandboxMembership[];

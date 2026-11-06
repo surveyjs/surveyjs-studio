@@ -13,6 +13,8 @@ const root = resolve(import.meta.dirname, "../..");
 export const tagFilePath = resolve(root, "server/fixtures/sandbox.json");
 
 interface Tags {
+  /** The sandbox data version: bump it when the seed content or the document format changes. */
+  version: number;
   users: string[];
   surveys: string[];
   projects: string[];
@@ -25,7 +27,10 @@ const readTags = (): Tags => {
     if (!Array.isArray(value)) throw new Error(`${tagFilePath}: "${name}" must be a list of ids`);
     return value.map((id) => id.toLowerCase());
   };
-  return { users: list("users"), surveys: list("surveys"), projects: list("projects") };
+  const version = tags.version;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 1)
+    throw new Error(`${tagFilePath}: "version" must be a positive integer`);
+  return { version, users: list("users"), surveys: list("surveys"), projects: list("projects") };
 };
 
 /** The entries of a by-survey-id map whose key is tagged, in id order. */
@@ -56,7 +61,7 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
   const responses = bySurvey(seed.responses, surveys);
 
   return {
-    version: 1,
+    version: tags.version,
     users: byId(seed.users.filter((u) => users.has(u.id.toLowerCase()))).map((u) => ({
       id: u.id,
       email: u.email,

@@ -31,7 +31,12 @@ describe("the sandbox seed", () => {
 
   it("has the tagged users, surveys and projects", async () => {
     const seed = await sandboxSeed();
-    expect(seed.version).toBe(1);
+    const tagged = (
+      JSON.parse(readFileSync(resolve(root, "server/fixtures/sandbox.json"), "utf8")) as {
+        version: number;
+      }
+    ).version;
+    expect(seed.version).toBe(tagged);
     expect(seed.users.map((u) => u.id).sort()).toEqual([1, 2, 3, 4].map(user));
     expect(seed.surveys.map((s) => s.id).sort()).toEqual([1, 2, 3, 4, 5, 6, 7].map(survey));
     expect(seed.projects).toHaveLength(2);
