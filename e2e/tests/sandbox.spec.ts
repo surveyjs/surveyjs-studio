@@ -214,6 +214,23 @@ test("@sandbox another browser context starts from the seed and does not see the
   }
 });
 
+test("@sandbox a returning visitor with another data version is offered a reset", async ({
+  page,
+}) => {
+  const check = watchConsole(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Pick an account" })).toBeVisible();
+  await page.evaluate(() => {
+    const document = JSON.parse(localStorage.getItem("studio-sandbox:v1") ?? "null");
+    localStorage.setItem("studio-sandbox:v1", JSON.stringify({ ...document, version: 0 }));
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "This demo has been updated" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset to continue" }).click();
+  await expect(page.getByRole("heading", { name: "Pick an account" })).toBeVisible();
+  check();
+});
+
 /** The Details tab's "Total responses: N" line (the label's own parent). */
 function totalResponses(page: Page) {
   return page.getByText("Total responses:", { exact: true }).locator("..");

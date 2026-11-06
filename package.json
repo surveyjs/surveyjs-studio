@@ -35,6 +35,7 @@
     "e2e:oauth": "pnpm --filter @surveyjs-studio/e2e test:oauth",
     "e2e:self-hosted": "pnpm --filter @surveyjs-studio/e2e test:self-hosted",
     "e2e:sandbox": "pnpm --filter @surveyjs-studio/e2e test:sandbox",
+    "e2e:sandbox:url": "pnpm --filter @surveyjs-studio/e2e test:sandbox:url",
     "e2e:visual": "pnpm --filter @surveyjs-studio/e2e test:visual",
     "e2e:visual:self-hosted": "pnpm --filter @surveyjs-studio/e2e test:visual:self-hosted",
     "e2e:visual:report": "pnpm --filter @surveyjs-studio/e2e exec playwright show-report visual-report",
@@ -78,6 +79,7 @@
     "image:prod-data": "node --import tsx scripts/image-prod-data/cli.ts --",
     "image:checks": "node --import tsx scripts/image-checks/cli.ts --",
     "release:tags": "node --import tsx scripts/release-tags/cli.ts --",
+    "sandbox:serve": "node scripts/sandbox-host/serve.mjs",
     "sandbox:seed": "node --import tsx scripts/sandbox-seed/cli.ts",
     "prod-like:up": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --build --wait && pnpm legacy:load",
     "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v"
