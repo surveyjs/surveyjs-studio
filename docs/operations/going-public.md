@@ -28,6 +28,9 @@ any time:
 pnpm scan:secrets --all-refs
 ```
 
+The scan also runs on the staged files before each commit, through the `.githooks/pre-commit` hook that `pnpm install`
+enables.
+
 ### The findings
 
 Every finding is rule `generic-api-key`. Each one was opened at its commit and line, and each value is a public

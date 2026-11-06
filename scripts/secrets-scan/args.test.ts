@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { GITLEAKS_IMAGE, gitleaksArgs, parseScanArgs } from "./args.js";
+import { GITLEAKS_IMAGE, dockerUser, gitleaksArgs, parseScanArgs } from "./args.js";
 
 describe("gitleaksArgs", () => {
-  const base = { repo: "C:\\Work\\x", reportPath: null, allRefs: true };
+  const base = { repo: "C:\\Work\\x", reportPath: null, allRefs: true, staged: false, user: null };
 
   it("mounts the repository at /repo read-only", () => {
     const args = gitleaksArgs(base);
@@ -50,16 +50,72 @@ describe("gitleaksArgs", () => {
   it("handles forward-slash report paths", () => {
     expect(gitleaksArgs({ ...base, reportPath: "/tmp/a/b.json" })).toContain("/tmp/a:/out");
   });
+
+  it("staged mode scans the index with --pre-commit --staged, no --log-opts and no report", () => {
+    const args = gitleaksArgs({ ...base, allRefs: false, staged: true });
+    expect(args).toContain("--pre-commit");
+    expect(args).toContain("--staged");
+    expect(args.some((a) => a.startsWith("--log-opts"))).toBe(false);
+    expect(args).toContain("--redact");
+    expect(args).toContain("--gitleaks-ignore-path=/repo/.gitleaksignore");
+    expect(args.some((a) => a.startsWith("--report"))).toBe(false);
+    expect(args.some((a) => a.endsWith(":/out"))).toBe(false);
+  });
+
+  it("adds --user before the image when a user is given, and not otherwise", () => {
+    const args = gitleaksArgs({ ...base, user: "1000:1000" });
+    const at = args.indexOf("--user");
+    expect(args.slice(at, at + 2)).toEqual(["--user", "1000:1000"]);
+    expect(at).toBeLessThan(args.indexOf(GITLEAKS_IMAGE));
+    expect(gitleaksArgs(base)).not.toContain("--user");
+  });
+});
+
+describe("dockerUser", () => {
+  it("is null on Windows", () => {
+    expect(
+      dockerUser(
+        "win32",
+        () => 1000,
+        () => 1000,
+      ),
+    ).toBeNull();
+  });
+  it("is uid:gid elsewhere", () => {
+    expect(
+      dockerUser(
+        "linux",
+        () => 1001,
+        () => 123,
+      ),
+    ).toBe("1001:123");
+    expect(
+      dockerUser(
+        "darwin",
+        () => 501,
+        () => 20,
+      ),
+    ).toBe("501:20");
+  });
+  it("is null when the ids are unavailable", () => {
+    expect(dockerUser("linux", undefined, undefined)).toBeNull();
+  });
 });
 
 describe("parseScanArgs", () => {
   it("defaults to no report and the checked-out history", () => {
-    expect(parseScanArgs([])).toEqual({ ok: true, allRefs: false, reportPath: null });
+    expect(parseScanArgs([])).toEqual({
+      ok: true,
+      allRefs: false,
+      staged: false,
+      reportPath: null,
+    });
   });
   it("reads --all-refs and --report", () => {
     expect(parseScanArgs(["--all-refs", "--report", "r.json"])).toEqual({
       ok: true,
       allRefs: true,
+      staged: false,
       reportPath: "r.json",
     });
   });
@@ -67,8 +123,24 @@ describe("parseScanArgs", () => {
     expect(parseScanArgs(["--", "--all-refs"])).toEqual({
       ok: true,
       allRefs: true,
+      staged: false,
       reportPath: null,
     });
+  });
+  it("reads --staged", () => {
+    expect(parseScanArgs(["--staged"])).toEqual({
+      ok: true,
+      allRefs: false,
+      staged: true,
+      reportPath: null,
+    });
+  });
+  it("refuses --staged with --all-refs or --report", () => {
+    const a = parseScanArgs(["--staged", "--all-refs"]);
+    expect(a.ok).toBe(false);
+    expect(a.ok === false && a.message).toMatch(/--staged/);
+    expect(parseScanArgs(["--all-refs", "--staged"]).ok).toBe(false);
+    expect(parseScanArgs(["--staged", "--report", "r.json"]).ok).toBe(false);
   });
   it("refuses an unknown flag and a missing report path", () => {
     expect(parseScanArgs(["--x"]).ok).toBe(false);

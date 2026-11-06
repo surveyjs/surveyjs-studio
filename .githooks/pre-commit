@@ -1,0 +1,4 @@
+#!/bin/sh
+# Scan the staged changes for secrets (gitleaks, or Docker); see CONTRIBUTING.md. Bypass a false positive with `git commit --no-verify`.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+exec node --import tsx scripts/secrets-scan/cli.ts --staged

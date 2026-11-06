@@ -8,6 +8,20 @@ export interface ScanOptions {
   reportPath: string | null;
   /** Scan every ref (all branches and tags) instead of the checked-out history. */
   allRefs: boolean;
+  /** Scan the staged changes (the pre-commit hook) instead of history. Never writes a report. */
+  staged: boolean;
+  /** `uid:gid` for `docker run --user`, so git in the container can read a mount another user owns; null for none. */
+  user: string | null;
+}
+
+/** The `--user` value on a non-Windows host (as CI does); null on Windows or when the ids are unavailable. */
+export function dockerUser(
+  platform: string,
+  getuid: (() => number) | undefined,
+  getgid: (() => number) | undefined,
+): string | null {
+  if (platform === "win32" || getuid === undefined || getgid === undefined) return null;
+  return `${getuid()}:${getgid()}`;
 }
 
 function splitPath(path: string): { dir: string; file: string } {
@@ -15,34 +29,40 @@ function splitPath(path: string): { dir: string; file: string } {
   return { dir: path.slice(0, Math.max(cut, 0)) || ".", file: path.slice(cut + 1) };
 }
 
-export function gitleaksArgs({ repo, reportPath, allRefs }: ScanOptions): string[] {
-  const args = ["run", "--rm", "-v", `${repo}:/repo:ro`];
-  if (reportPath !== null) {
+export function gitleaksArgs({ repo, reportPath, allRefs, staged, user }: ScanOptions): string[] {
+  const args = ["run", "--rm"];
+  if (user !== null) args.push("--user", user);
+  args.push("-v", `${repo}:/repo:ro`);
+  if (reportPath !== null && !staged) {
     const { dir } = splitPath(reportPath);
     args.push("-v", `${dir}:/out`);
   }
   args.push(GITLEAKS_IMAGE, "git", "/repo");
+  if (staged) args.push("--pre-commit", "--staged");
   // gitleaks without --log-opts already walks every ref (`git log -p -U0 --full-history --all`), so
   // the checked-out history is HEAD explicitly.
-  args.push(allRefs ? "--log-opts=--all" : "--log-opts=HEAD");
+  else args.push(allRefs ? "--log-opts=--all" : "--log-opts=HEAD");
   args.push("--redact", "--gitleaks-ignore-path=/repo/.gitleaksignore", "--no-banner");
-  if (reportPath !== null) {
+  if (reportPath !== null && !staged) {
     args.push("--report-format", "json", "--report-path", `/out/${splitPath(reportPath).file}`);
   }
   return args;
 }
 
 export type ParsedScanArgs =
-  { ok: true; allRefs: boolean; reportPath: string | null } | { ok: false; message: string };
+  | { ok: true; allRefs: boolean; staged: boolean; reportPath: string | null }
+  | { ok: false; message: string };
 
 export function parseScanArgs(argv: string[]): ParsedScanArgs {
   let allRefs = false;
+  let staged = false;
   let reportPath: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--")
       continue; // pnpm forwards the separator from the script
     else if (arg === "--all-refs") allRefs = true;
+    else if (arg === "--staged") staged = true;
     else if (arg === "--report") {
       const value = argv[++i];
       if (value === undefined || value.startsWith("--"))
@@ -50,5 +70,7 @@ export function parseScanArgs(argv: string[]): ParsedScanArgs {
       reportPath = value;
     } else return { ok: false, message: `Unknown argument ${arg}.` };
   }
-  return { ok: true, allRefs, reportPath };
+  if (staged && (allRefs || reportPath !== null))
+    return { ok: false, message: "--staged cannot be combined with --all-refs or --report." };
+  return { ok: true, allRefs, staged, reportPath };
 }
