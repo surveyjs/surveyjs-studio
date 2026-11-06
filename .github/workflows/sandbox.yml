@@ -49,10 +49,12 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       - name: Build the sandbox
         env:
@@ -124,9 +126,12 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       - name: Wait for the live site to show the commit
         env:

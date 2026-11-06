@@ -1,0 +1,77 @@
+name: Install a Playwright browser
+description: >-
+  One Playwright browser for the e2e suites, with its system packages. Both the browser and the downloaded .deb
+  packages are cached by runner OS, Playwright version and browser, so a repeat run downloads almost nothing: the slow
+  part is usually the Ubuntu mirror (webkit needs about 180 packages), not the browser. Each attempt is limited to
+  5 minutes and tried up to 3 times; a retry drops the runner's Azure apt mirror for the main Ubuntu archive.
+inputs:
+  browser:
+    description: chromium, firefox or webkit
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Read the Playwright version and the runner image
+      id: version
+      shell: bash
+      run: |
+        echo "playwright=$(node -p "require('./e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+        echo "image=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the cached browser and system packages
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/playwright-apt
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.image }}-${{ steps.version.outputs.playwright }}-${{ inputs.browser }}
+
+    - name: Hand the cached packages to apt
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        if compgen -G "$HOME/.cache/playwright-apt/*.deb" > /dev/null; then
+          sudo cp "$HOME"/.cache/playwright-apt/*.deb /var/cache/apt/archives/
+        fi
+
+    # On a cache hit only the system packages are installed (from the cached .deb files); on a miss, the browser too.
+    - name: Install the browser and its system packages
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browser }}
+        COMMAND: ${{ steps.cache.outputs.cache-hit == 'true' && 'install-deps' || 'install --with-deps' }}
+      run: |
+        for attempt in 1 2 3; do
+          # shellcheck disable=SC2086 # COMMAND is two words on a cache miss
+          if timeout --kill-after=15 300 ./e2e/node_modules/.bin/playwright $COMMAND "$BROWSER"; then
+            exit 0
+          fi
+          echo "::warning::playwright $COMMAND $BROWSER: attempt $attempt failed or took over 5 minutes"
+          if [[ -f /etc/apt/apt-mirrors.txt ]] && grep -q azure.archive.ubuntu.com /etc/apt/apt-mirrors.txt; then
+            echo "Dropping the Azure apt mirror for the next attempt"
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+        done
+        echo "::error::playwright $COMMAND $BROWSER failed 3 times"
+        exit 1
+
+    - name: Keep the downloaded packages for the cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.cache/playwright-apt"
+        if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
+          cp /var/cache/apt/archives/*.deb "$HOME/.cache/playwright-apt/"
+        fi
+        du -sh "$HOME/.cache/ms-playwright" "$HOME/.cache/playwright-apt"
+
+    # Saved right after the install, so a failing test run later in the job still fills the cache.
+    - name: Save the browser and system packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/playwright-apt
+        key: ${{ steps.cache.outputs.cache-primary-key }}

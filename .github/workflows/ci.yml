@@ -133,10 +133,12 @@ jobs:
         env:
           CONFORMANCE_IMAGE: surveyjs-studio:ci
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       - name: End-to-end tests (Azurite mode, on the image)
         run: pnpm e2e:azurite
@@ -188,10 +190,12 @@ jobs:
         env:
           CONFORMANCE_IMAGE: surveyjs-studio:ci
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       # The tsx server on a new database of the PostgreSQL started above, files in a new S3 bucket.
       - name: End-to-end tests (PostgreSQL mode)
@@ -282,12 +286,12 @@ jobs:
 
       - uses: ./.github/actions/load-image
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps "$BROWSER"
-        env:
-          BROWSER: ${{ matrix.browser }}
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: ${{ matrix.browser }}
 
       - name: End-to-end tests (on the image)
         run: pnpm e2e --project="$BROWSER"
@@ -313,10 +317,12 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       # The tsx server: its SQLite file is on the host (no image target).
       - name: End-to-end tests (SQLite mode)

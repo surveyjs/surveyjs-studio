@@ -66,10 +66,12 @@ jobs:
             pnpm image:checks --image "$IMAGE"
           fi
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright Chromium
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       - name: End-to-end tests (SQLite mode, on the self-hosted image)
         run: pnpm e2e:sqlite
