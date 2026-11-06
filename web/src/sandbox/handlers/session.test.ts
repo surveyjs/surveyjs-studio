@@ -22,6 +22,7 @@ describe("GET /config", () => {
   });
 
   it("answers the demo's configuration with no cookie", async () => {
+    vi.stubEnv("VITE_SANDBOX_LICENSE_KEY", "");
     const { call } = setupSandbox();
     const response = await call("/config");
     expect(response.status).toBe(200);

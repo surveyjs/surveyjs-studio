@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SandboxOutdatedError, StorageFullError } from "../store";
-import { guarded, notFound, problemBody, problemResponse, STORAGE_FULL_EVENT } from "./problems";
+import {
+  guarded,
+  notFound,
+  problemBody,
+  problemResponse,
+  OUTDATED_EVENT,
+  STORAGE_FULL_EVENT,
+} from "./problems";
 import { setupSandbox, SURVEYS, USERS } from "./testing";
 
 afterEach(() => vi.restoreAllMocks());
@@ -32,6 +39,17 @@ describe("problem answers", () => {
 });
 
 describe("an outdated demo", () => {
+  it("fires sandbox:outdated on window", async () => {
+    const listener = vi.fn();
+    window.addEventListener(OUTDATED_EVENT, listener);
+    try {
+      await guarded(() => Promise.reject(new SandboxOutdatedError()));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(OUTDATED_EVENT, listener);
+    }
+  });
+
   it("answers 503 asking for a reload", async () => {
     const response = await guarded(() => Promise.reject(new SandboxOutdatedError()));
     expect(response.status).toBe(503);

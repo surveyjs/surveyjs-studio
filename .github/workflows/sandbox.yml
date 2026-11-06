@@ -67,6 +67,10 @@ jobs:
           E2E_SANDBOX_URL: http://localhost:8080
         run: pnpm e2e:sandbox:url
 
+      - name: The nginx log
+        if: failure()
+        run: docker logs studio-sandbox-local || true
+
       - if: failure()
         uses: ./.github/actions/failure-artifacts
         with:

@@ -178,7 +178,8 @@ Do this once. Never put a token or key in the repository.
 
 1. **A read-only token.** On GitHub create a fine-grained personal access token for `surveyjs/surveyjs-studio` only,
    with **Contents: read**. On the demos server put it in `env/.env` as `STUDIO_GITHUB_TOKEN`. The build reads the
-   private repository with it.
+   private repository with it. Fine-grained tokens expire: set a reminder to renew it. An expired token shows as a
+   `smoke` job that times out with the old commit still live.
 2. **The licence key.** `SURVEYJS_LICENSE_KEY` must be in the same `env/.env` (other demos already use it). It must
    cover `studio.demos.surveyjs.io`. Without it the build still works and the sandbox shows the licence notice.
 3. **The webhook.** In the surveyjs-studio repository, Settings › Webhooks › Add webhook: payload URL
@@ -194,7 +195,8 @@ Do this once. Never put a token or key in the repository.
 ### Publishing
 
 In GitHub: **Actions › Publish sandbox › Run workflow**, with `ref` set to a branch, tag or commit (the default is
-`master`). Or push a `v*` tag. Runs queue one at a time. When it ends green, `https://studio.demos.surveyjs.io/version.json`
+`master`). Or push a `v*` tag. One run publishes at a time, and a newer waiting run replaces an older waiting one (GitHub concurrency keeps one
+pending run), so after pushing two tags close together check the Actions list. When it ends green, `https://studio.demos.surveyjs.io/version.json`
 names the commit.
 
 ### Rolling back
@@ -217,7 +219,9 @@ curl -s https://studio.demos.surveyjs.io/version.json
 On the demos server edit `projects/surveyjs-studio-sandbox/config/sandbox.config.json` (`maxUploadKb`,
 `storageLimitKb`, `seedBudgetKb`). The folder is mounted read-only into the container as `/srv/sandbox-config/`, and
 nginx serves that file in place of the build's one. The next page load reads the new values: no rebuild and no
-restart. It is sent `no-store`. Deleting the file goes back to the build's own file.
+restart. It is sent `no-store`. Deleting the file goes back to the build's own file. The file is tracked in
+demos-infrastructure, so an edit on the server is a local change in that checkout: commit it to
+demos-infrastructure (or stash it before a `git pull`).
 
 ### The headers
 
@@ -236,7 +240,7 @@ curl -sI https://studio.demos.surveyjs.io/version.json | grep -i cache-control  
 When a release changes the seed's content or the stored document's format, raise `version` in
 `server/fixtures/sandbox.json` and run `pnpm sandbox:seed` (see [Development](development.md#the-sandbox-step-9)).
 Returning visitors then see **This demo has been updated** and **Reset to continue**, instead of data the new code may
-not read. A visitor with another tab open on the old release gets a message to reload the page.
+not read. A visitor with another tab open on the old release sees the banner **The demo was updated in another tab. Reload this page.** with a **Reload** button.
 
 ## Monitoring
 

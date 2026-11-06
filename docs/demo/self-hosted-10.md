@@ -32,7 +32,7 @@ pnpm sandbox:serve
 ### 2. The headers and the version file
 
 ```sh
-curl -sI http://localhost:8080/ | grep -iE "content-security-policy|cache-control|x-content-type|referrer-policy"
+curl -sI http://localhost:8080/ | grep -iE "content-security-policy|cache-control|x-content-type|referrer-policy|strict-transport"
 curl -sI http://localhost:8080/s/x | grep -i content-security-policy
 curl -sI http://localhost:8080/mockServiceWorker.js | grep -i cache-control
 curl -s http://localhost:8080/version.json
@@ -87,28 +87,30 @@ first server and start one with a mount:
 
 ```sh
 pnpm sandbox:serve --stop
-mkdir -p .tmp-sandbox-config
-echo '{"maxUploadKb": 50, "storageLimitKb": 4096, "seedBudgetKb": 1024}' > .tmp-sandbox-config/sandbox.config.json
+ROOT="$(pwd -W 2>/dev/null || pwd)"
+CFG="$(mktemp -d)"
+CFG_MOUNT="$(cygpath -w "$CFG" 2>/dev/null || echo "$CFG")"
+echo '{"maxUploadKb": 50, "storageLimitKb": 4096, "seedBudgetKb": 1024}' > "$CFG/sandbox.config.json"
 MSYS_NO_PATHCONV=1 docker run --rm -d --name studio-sandbox-config -p 8080:80 \
-  -v "$(pwd -W)/web/dist-sandbox:/usr/share/nginx/html:ro" \
-  -v "$(pwd -W)/deploy/sandbox:/etc/nginx/sandbox:ro" \
-  -v "$(pwd -W)/deploy/sandbox/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
-  -v "$(pwd -W)/.tmp-sandbox-config:/srv/sandbox-config:ro" \
+  -v "$ROOT/web/dist-sandbox:/usr/share/nginx/html:ro" \
+  -v "$ROOT/deploy/sandbox:/etc/nginx/sandbox:ro" \
+  -v "$ROOT/deploy/sandbox/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$CFG_MOUNT:/srv/sandbox-config:ro" \
   nginx:1.30-alpine
 curl -s -D - http://localhost:8080/sandbox.config.json
 ```
 
-(`pwd -W` is Git Bash's way to print a Windows path; on Linux or macOS use `$(pwd)`.)
+(`pwd -W` and `cygpath -w` print Windows paths in Git Bash; elsewhere the `||` falls back to the plain path.)
 
 **Check:** the answer holds `"maxUploadKb": 50` (the build has 200) and `Cache-Control: no-store`. Now edit
-`.tmp-sandbox-config/sandbox.config.json`, set `maxUploadKb` to `75`, and run the `curl` again without restarting.
+`$CFG/sandbox.config.json`, set `maxUploadKb` to `75`, and run the `curl` again without restarting.
 **Check:** it answers `75`. Remove the file and `curl` again: **Check:** the build's `200` is back.
 
 Clean up:
 
 ```sh
 docker rm -f studio-sandbox-config
-rm -rf .tmp-sandbox-config
+rm -rf "$CFG"
 ```
 
 On the real server the same happens with `projects/surveyjs-studio-sandbox/config/sandbox.config.json`.
@@ -142,7 +144,7 @@ in the demos server's `env/.env`, the push webhook, and the demos-infrastructure
    - **Check:** **This demo has been updated** and **Reset to continue** appear. After the reset the app starts on the
      seed, and `https://studio.demos.surveyjs.io/version.json` has `"dataVersion":2`.
 3. Open the site in two tabs, publish the bump again (version `3`), reload one tab and click **Reset to continue**,
-   then use the other, older tab. **Check:** it says the demo was updated in another tab and to reload the page.
+   then use the other, older tab. **Check:** the banner at the top says **The demo was updated in another tab. Reload this page.** with a **Reload** button.
 
 ### 9. The storage-full walk on the live origin
 
