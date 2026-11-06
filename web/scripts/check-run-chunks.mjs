@@ -9,7 +9,7 @@
 // - the public results page (`/results/$surveyId`) is the same: no Dashboard code in the route's
 //   own chunks, the Dashboard and its table only through dynamic imports.
 // - the normal build (any directory but a sandbox one) holds no sandbox code: no manifest entry under
-//   `src/sandbox/`, no chunk that mentions `mockServiceWorker`, no `mockServiceWorker.js` file.
+//   `src/sandbox/`, no chunk that mentions `mockServiceWorker`, no `mockServiceWorker.js` or `version.json` file.
 // Run by `pnpm build` after `vite build`; reads Vite's manifest (`build.manifest` in
 // vite.config.ts) and exits with 1 on a failure. The build directory is the first argument
 // (default `dist`; `dist-sandbox` for the sandbox build).
@@ -65,7 +65,7 @@ function print(title, files) {
 const problems = [];
 
 if (SANDBOX_BUILD) {
-  for (const file of ["mockServiceWorker.js", "sandbox.config.json"]) {
+  for (const file of ["mockServiceWorker.js", "sandbox.config.json", "version.json"]) {
     if (!existsSync(new URL(file, distUrl))) problems.push(`${DIST}/${file} is missing.`);
   }
 } else {
@@ -77,6 +77,9 @@ if (SANDBOX_BUILD) {
   }
   if (existsSync(new URL("mockServiceWorker.js", distUrl))) {
     problems.push(`${DIST}/mockServiceWorker.js exists in the normal build.`);
+  }
+  if (existsSync(new URL("version.json", distUrl))) {
+    problems.push(`${DIST}/version.json exists in the normal build.`);
   }
   // The manifest lists only entries and dynamic imports, so a sandbox module merged into a shared
   // chunk is found by what it contains: the storage key (src/sandbox/store.ts) and a user id only

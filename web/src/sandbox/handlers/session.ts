@@ -20,6 +20,15 @@ export function currentUserId(cookies: Record<string, string>, data: SandboxData
   return user && !user.blocked ? user.id : null;
 }
 
+/**
+ * The SurveyJS licence key the sandbox build baked in (`VITE_SANDBOX_LICENSE_KEY`), or null when
+ * the variable is unset or blank.
+ */
+export function sandboxLicenseKey(raw: string | undefined): string | null {
+  const key = raw?.trim();
+  return key ? key : null;
+}
+
 export function sessionHandlers(ctx: HandlerContext) {
   return [
     http.get("/config", () =>
@@ -27,7 +36,7 @@ export function sessionHandlers(ctx: HandlerContext) {
         edition: "self-hosted",
         shell: "self-hosted",
         authMethods: ["password"],
-        surveyjsLicenseKey: null,
+        surveyjsLicenseKey: sandboxLicenseKey(import.meta.env.VITE_SANDBOX_LICENSE_KEY),
         limits: {
           maxAssetBytesPerSurvey: ctx.settings.maxUploadKb * 1024,
           maxFileBytes: ctx.settings.maxUploadKb * 1024,

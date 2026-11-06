@@ -1,8 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../settings";
+import { sandboxLicenseKey } from "./session";
 import { setupSandbox, USERS } from "./testing";
 
+describe("sandboxLicenseKey", () => {
+  it("is null for an unset, empty or blank value and trims the rest", () => {
+    expect(sandboxLicenseKey(undefined)).toBeNull();
+    expect(sandboxLicenseKey("")).toBeNull();
+    expect(sandboxLicenseKey("  ")).toBeNull();
+    expect(sandboxLicenseKey(" abc ")).toBe("abc");
+  });
+});
+
 describe("GET /config", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("answers the key the build baked in", async () => {
+    vi.stubEnv("VITE_SANDBOX_LICENSE_KEY", "test-key");
+    const config = await (await setupSandbox().call("/config")).json();
+    expect(config.surveyjsLicenseKey).toBe("test-key");
+  });
+
   it("answers the demo's configuration with no cookie", async () => {
     const { call } = setupSandbox();
     const response = await call("/config");
