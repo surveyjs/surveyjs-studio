@@ -4,21 +4,20 @@ The `surveyjs-site` shell looks like surveyjs.io on purpose (decision D14): its 
 styles, fonts, icons and texts are copied from the site. This file records where each copy comes
 from.
 
-**Source:** the surveyjs.io site, repository `the site's repository`, commit
-`(a site commit)` (2026-10-14); the My Surveys page copies (Step 4) come from commit `(a site commit)`
-(2026-10-15), which has no changes to the copied files since `(a site commit)`. Everything under `site/`
+**Source:** the surveyjs.io site's repository, as of 2026-10-14; the My Surveys page copies (Step 4) come from the site as of
+2026-10-15, which has no changes to the copied files since 2026-10-14. Everything under `site/`
 keeps the path it has in that project, so a copy
 can be compared with its original (`site/X` is `X` under the site's static files folder or
 under its project folder). Prettier skips `site/`, so the copies stay comparable line by line (git stores them with LF line endings; the site has CRLF).
 
 ## What is copied
 
-| Copy                                         | Original                                        | Change                                                                                                          |
-| -------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `site/Content/Styles/**/*.scss` (31)         | `the site's source` (same paths)          | None, except `cookies-popup.scss`: the close icon's `url('/Content/Images/…')` is now relative (`../Images/…`). |
-| `site/Content/Fonts/V2/*.woff2` (5)          | `the site's source`                     | None.                                                                                                           |
-| `site/Content/Images/V2/Tour/Close16x16.svg` | `the site's source` | None.                                                                                                           |
-| `site/Views/Shared/V2/_icons/**/*.svg` (52)  | the site's icon partials (same names)           | Extension changed to `.svg`; the leading byte-order mark removed. Each partial is one plain `<svg>`.            |
+| Copy                                         | Original                                           | Change                                                                                                          |
+| -------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `site/Content/Styles/**/*.scss` (31)         | the site's stylesheet folder (same relative paths) | None, except `cookies-popup.scss`: the close icon's `url('/Content/Images/…')` is now relative (`../Images/…`). |
+| `site/Content/Fonts/V2/*.woff2` (5)          | the site's V2 fonts folder                         | None.                                                                                                           |
+| `site/Content/Images/V2/Tour/Close16x16.svg` | the site's tour image folder (same name)           | None.                                                                                                           |
+| `site/Views/Shared/V2/_icons/**/*.svg` (52)  | the site's icon partials (same names)              | Extension changed to `.svg`; the leading byte-order mark removed. Each partial is one plain `<svg>`.            |
 
 Step 4 (the My Surveys page) added these copies to the rows above:
 
@@ -42,7 +41,7 @@ the React row inlines them too.
 
 Step 6 (the survey editor) copies no new style file: the editor page uses rules of the
 `pages/my-surveys.scss` copy above. It copies markup and Creator settings from
-the site's editor page and its `the site's source` (commit `(a site commit)`):
+the site's editor page and its editor script (as of 2026-10-15):
 
 | Copy                                                                                                                                                                                                                                                                                                                                                                                                                                      | In                             | Original                                                                                                                                 |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -56,14 +55,14 @@ the app's own (glue in `src/editor/editor.module.css`); the site has none of the
 The editor's extras (toolbar items, the obfuscated export, the footer rename and the Embed tabs) copy
 these, from the same commit:
 
-| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                | In                                                                                                                                                                                                      | Original                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `icons/editor/v1/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy,react,angular,vanilla}.svg`, `icons/editor/v2/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy}.svg`                                                                                                                                                                                                                                                | `src/editor/creatorSetup.ts` (registered as `icon-eud`, `icon-publish`, `icon-embedsurvey`, `icon-embedcreator`, `icon-copyembedded`, `icon-react`, `icon-angular`, `icon-vanillajs`, as the site does) | `the site's source`, `…/v2/` (same names). None changed                 |
-| `icons/editor/obf-download.svg` (`icon-obf-download`)                                                                                                                                                                                                                                                                                                                                                                               | `src/editor/creatorSetup.ts`                                                                                                                                                                            | the inline `obfIconSvg` string of `the site's source:50`                      |
-| `site/Content/Styles/pages/create-free-survey/embedded-tab.scss`                                                                                                                                                                                                                                                                                                                                                                    | `src/editor/embed/EmbedTab.tsx` (Creator chunk only)                                                                                                                                                    | the same path under `wwwroot/`. None changed                                           |
-| Toolbar items: Clear Survey (`clear-survey`, `icon-clear`, its title and confirm text, before `svd-settings` and fifth in the footer toolbar), Help (`goto-eud`, "Read the tool guide", the end-user guide URL), Run (`run-survey`, "Click here to run this survey..."), the JSON tab's `svc-json-export-list` drop-down ("Download JSON", "Download obfuscated JSON", `survey.obf.json`, "Please fix error(s)", the popup options) | `src/editor/creatorSetup.ts`                                                                                                                                                                            | option values and texts of `the site's source:29-127`, `:281-295`             |
-| The Embed tabs: names (`customembeded`, `customembededcreator`), titles, icons, the component name `svc-tab-customembeded`, the platform choices (texts, icon names, `spg-platform-choice`, default React), "Load Survey JSON from service", the intro text, the Creator licence notice and its two links, the code blocks' markup and class names, "Copy Code"                                                                     | `src/editor/embed/EmbedTab.tsx`, `embedCode.ts`                                                                                                                                                         | the site's editor page, `the site's source` (markup and texts only) |
-| The footer name editor: `…__edit-survey-name-container` with the `v2-class---text-edit` input ("Enter a survey name..."), the Save and Cancel buttons (`V2/components/Button`, Brand, Tertiary, Small), the name and the inline pencil `<svg>` in its `<a style="position: relative;">`                                                                                                                                             | `src/editor/FooterNameEditor.tsx`                                                                                                                                                                       | the site's editor page markup; styled by the `my-surveys.scss:589-684` copy above      |
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                                                | In                                                                                                                                                                                                      | Original                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `icons/editor/v1/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy,react,angular,vanilla}.svg`, `icons/editor/v2/{help,publish,embedsurvey-24x24,embedcreator-24x24,copy}.svg`                                                                                                                                                                                                                                                | `src/editor/creatorSetup.ts` (registered as `icon-eud`, `icon-publish`, `icon-embedsurvey`, `icon-embedcreator`, `icon-copyembedded`, `icon-react`, `icon-angular`, `icon-vanillajs`, as the site does) | the site's icon script folders for v1 and v2 (same names). None changed           |
+| `icons/editor/obf-download.svg` (`icon-obf-download`)                                                                                                                                                                                                                                                                                                                                                                               | `src/editor/creatorSetup.ts`                                                                                                                                                                            | the inline `obfIconSvg` string of the site's editor script                        |
+| `site/Content/Styles/pages/create-free-survey/embedded-tab.scss`                                                                                                                                                                                                                                                                                                                                                                    | `src/editor/embed/EmbedTab.tsx` (Creator chunk only)                                                                                                                                                    | the same relative path on the site. None changed                                  |
+| Toolbar items: Clear Survey (`clear-survey`, `icon-clear`, its title and confirm text, before `svd-settings` and fifth in the footer toolbar), Help (`goto-eud`, "Read the tool guide", the end-user guide URL), Run (`run-survey`, "Click here to run this survey..."), the JSON tab's `svc-json-export-list` drop-down ("Download JSON", "Download obfuscated JSON", `survey.obf.json`, "Please fix error(s)", the popup options) | `src/editor/creatorSetup.ts`                                                                                                                                                                            | option values and texts of the site's editor script                               |
+| The Embed tabs: names (`customembeded`, `customembededcreator`), titles, icons, the component name `svc-tab-customembeded`, the platform choices (texts, icon names, `spg-platform-choice`, default React), "Load Survey JSON from service", the intro text, the Creator licence notice and its two links, the code blocks' markup and class names, "Copy Code"                                                                     | `src/editor/embed/EmbedTab.tsx`, `embedCode.ts`                                                                                                                                                         | the site's editor page, the site's embed tab script (markup and texts only)       |
+| The footer name editor: `…__edit-survey-name-container` with the `v2-class---text-edit` input ("Enter a survey name..."), the Save and Cancel buttons (`V2/components/Button`, Brand, Tertiary, Small), the name and the inline pencil `<svg>` in its `<a style="position: relative;">`                                                                                                                                             | `src/editor/FooterNameEditor.tsx`                                                                                                                                                                       | the site's editor page markup; styled by the `my-surveys.scss:589-684` copy above |
 
 Changes to them:
 
@@ -121,7 +120,7 @@ with the row's menu (Step 5); the menu's entries are the pure function `surveyMe
 
 ## Which styles, and why not the whole stylesheet
 
-The site builds one stylesheet, `/Content/css.V2`, from `the site's source`
+The site builds one stylesheet, `/Content/css.V2`, from the site's main stylesheet
 (`compilerconfig.json` and the site's web optimizer configuration). `app.scss` is not one indivisible file: it
 imports about 200 partials, most of them for the site's own pages (pricing, docs, account pages…).
 The shell's entry, `surveyjs-site.scss`, imports only the 31 partials that the top bar, the menus,
@@ -176,9 +175,9 @@ Reserved Font Names: the files keep their original names and are not modified.
 
 Step 6 (the History page) copies one more file:
 
-| Copy                                  | Used by                                 | Original                                               |
-| ------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| `site/Content/Images/Clock_12x12.svg` | the clock in front of each entry's time | `the site's source`; none changed |
+| Copy                                  | Used by                                 | Original                                 |
+| ------------------------------------- | --------------------------------------- | ---------------------------------------- |
+| `site/Content/Images/Clock_12x12.svg` | the clock in front of each entry's time | the same image on the site; none changed |
 
 The page uses the `.my-surveys-history-item` and `.my-surveys-page__clock-icon` rules of the
 `pages/my-surveys.scss` copy. It shows the time in the browser's locale and time zone with the zone
@@ -217,7 +216,7 @@ Changes and additions:
   the app's own.
 
 Step 9 (the results page, `src/results/`) copies markup and texts from the site's results page
-and `the site's source` (commit `(a site commit)`, the last change of both files,
+and its script (the last change of both files was on
 2026-10-05). No style file is copied: the classes below come from the stylesheets already copied.
 
 | Copy                                                                                                                                                                                                                                                                                                                                                                                                                                                         | In                            | Original                                          |
@@ -241,7 +240,7 @@ Changes and additions:
 - "Back to My Surveys" is the app's own and sits out of the flow where the site draws that panel
   (`results.module.css`), so the page is as tall as the site's.
 - Step 13: the page's styles are `site/Content/Styles/pages/survey-results.scss` (a copy of
-  `the site's source`, byte-order mark removed), imported after
+  the site's results page stylesheet, byte-order mark removed), imported after
   `my-surveys.scss`. The Details tab body has the site's `#resultsInfo` id (its flex rule needs it)
   and the Summary body `#summaryContainer`. The Reset texts are plain `div`s, and the Delete Results
   confirmation block (`#ctrlClearAll`) is always laid out and hidden (`visibility: hidden`) until opened (the site uses `visibility: collapse`; `hidden` takes the same room and keeps the block out of the accessibility tree).
@@ -249,8 +248,8 @@ Changes and additions:
   the charts and the table come from survey-analytics.
 
 Step 10 (the Details tab, `src/results/DetailsTab.tsx`) copies markup and texts from the same two files
-(the site's results page and `the site's source`, last changed by
-commit `(a site commit)`). No style file is copied.
+(the site's results page and its script, last changed on
+2026-10-05). No style file is copied.
 
 | Copy                                                                                                                                                                                                                                                                                                                                                                      | Original                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |

@@ -694,7 +694,7 @@ soon". My Surveys shows the same state as `CurrentUser.notices` when
 (the site's users database connection string secret), so the azure-legacy provider reads them over its existing connection.
 **[C]** the site's user storage code, the site's event storage code
 
-This section was read at legacy commit `(a site commit)` (2026-10-14), later than the rest of the page.
+This section was read from the site as of 2026-10-14, later than the rest of the page.
 
 **When the site asks.** The site layout includes both dialogs on every page
 (the site's page layout, with its two licence popups). For a signed-in visitor, a page script calls
