@@ -81,6 +81,8 @@ port 8080 and a session secret it creates once in `/data/session-secret`. Every 
 
 Branding in detail: [Branding and the licence key](customizing/branding.md).
 
+The licences of the components in the image are in `/app/THIRD_PARTY_NOTICES.md` ([how it is built](customizing/licensing.md#third-party-notices)).
+
 ## Sign in with Google and others
 
 The image signs people in with an email and a password. To add Google, GitHub or Facebook, create an OAuth app at the

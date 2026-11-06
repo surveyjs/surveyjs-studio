@@ -15,6 +15,7 @@ export const CHECK_NAMES = [
   "upgrade",
   "secrets",
   "compose",
+  "notices",
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
@@ -642,6 +643,31 @@ const compose: Check = async (run, { image }) => {
   return PASS;
 };
 
+/** What a real notice always lists: the SurveyJS form library and React. */
+const NOTICE_MARKERS = ["survey-core@", "react@"] as const;
+
+export function missingFromNotices(text: string): string[] {
+  return NOTICE_MARKERS.filter((marker) => !text.includes(marker));
+}
+
+/** The third-party notice the build writes is in the image (THIRD_PARTY_NOTICES.md). */
+const notices: Check = async (run, { image }) => {
+  const read = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("notices", "cat"),
+    "--entrypoint",
+    "cat",
+    image,
+    "/app/THIRD_PARTY_NOTICES.md",
+  ]);
+  if (read.code !== 0) failed("cat /app/THIRD_PARTY_NOTICES.md", read);
+  const missing = missingFromNotices(read.stdout);
+  if (missing.length > 0) fail(`THIRD_PARTY_NOTICES.md does not list: ${missing.join(", ")}`);
+  return PASS;
+};
+
 export const CHECKS: Readonly<Record<CheckName, Check>> = {
   "non-root": nonRoot,
   setup,
@@ -650,4 +676,5 @@ export const CHECKS: Readonly<Record<CheckName, Check>> = {
   upgrade,
   secrets,
   compose,
+  notices,
 };

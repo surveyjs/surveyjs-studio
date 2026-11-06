@@ -36,12 +36,15 @@ RUN test -z "$(find /out/server -name '*.node')" \
     && found="$(find /out/server/node_modules -type d -path '*/@esbuild/*' -prune -print | sed 's|.*/@esbuild/||' | sort -u)" \
     && echo "esbuild platform packages: $found" \
     && test "$found" = "linux-$cpu"
+# The licences of what the image ships (D4: generated here, never committed).
+RUN node --import tsx scripts/third-party-notices/cli.ts --out /out/THIRD_PARTY_NOTICES.md
 
 FROM node:24.22.1-bookworm-slim AS app
 # Links the package in ghcr.io to the repository, so it takes the repository's access rules.
 LABEL org.opencontainers.image.source="https://github.com/surveyjs/surveyjs-studio"
 COPY --from=build /out/server /app/server
 COPY --from=build /src/web/dist /app/web
+COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 
 # The free self-hosted image (mode 2b): build it with --target self-hosted.
 FROM app AS self-hosted
