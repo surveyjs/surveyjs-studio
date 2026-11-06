@@ -37,8 +37,9 @@ const runner = chooseRunner({
   linkedWorktree:
     parsed.staged &&
     isLinkedWorktree(
-      gitOut(["rev-parse", "--absolute-git-dir"]),
-      gitOut(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+      // Resolved by hand: older git has no --path-format. Both may be relative to the working directory.
+      resolve(gitOut(["rev-parse", "--git-dir"]) || "."),
+      resolve(gitOut(["rev-parse", "--git-common-dir"]) || "."),
     ),
 });
 
