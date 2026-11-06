@@ -13,11 +13,11 @@ body:
       label: Mode
       description: Where do you see the problem?
       options:
-        - 1.x hosted
-        - 2a
-        - 2b
-        - 3
-        - 4
+        - "1.x hosted"
+        - "2a"
+        - "2b"
+        - "3"
+        - "4"
     validations:
       required: true
   - type: input
