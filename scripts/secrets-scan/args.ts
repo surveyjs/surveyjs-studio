@@ -42,7 +42,12 @@ export function gitleaksArgs({ repo, reportPath, allRefs, staged, user }: ScanOp
   // gitleaks without --log-opts already walks every ref (`git log -p -U0 --full-history --all`), so
   // the checked-out history is HEAD explicitly.
   else args.push(allRefs ? "--log-opts=--all" : "--log-opts=HEAD");
-  args.push("--redact", "--gitleaks-ignore-path=/repo/.gitleaksignore", "--no-banner");
+  args.push(
+    "--redact",
+    "--gitleaks-ignore-path=/repo/.gitleaksignore",
+    "--config=/repo/.gitleaks.toml",
+    "--no-banner",
+  );
   if (reportPath !== null && !staged) {
     args.push("--report-format", "json", "--report-path", `/out/${splitPath(reportPath).file}`);
   }

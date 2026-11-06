@@ -17,11 +17,17 @@
 ### The pre-commit hook
 
 `pnpm install` also runs the `prepare` script, which sets `git config core.hooksPath .githooks` so that
-`.githooks/pre-commit` scans the staged files with gitleaks before each commit
-(`pnpm scan:secrets --staged`). It uses a `gitleaks` binary on your PATH, or else the pinned gitleaks image in Docker,
-and prints a one-line warning and skips when neither exists (CI scans the history). It does nothing where there is no
-git work tree, no git binary or `CI` is set. Check it with `git config core.hooksPath`. A false positive can be
-bypassed with `git commit --no-verify`; see [Contributing](../CONTRIBUTING.md).
+`.githooks/pre-commit` scans the staged files with gitleaks before each commit (`pnpm scan:secrets --staged`). It uses a
+`gitleaks` binary on your PATH, or else the pinned gitleaks image in Docker. The installer does nothing where there is no
+git work tree of this repository, no git binary, `CI` is set (non-empty and not `false`), or `core.hooksPath` already
+holds another value (it prints one line then). Check it with `git config core.hooksPath`.
+
+A blocked commit shows gitleaks' output. The hook prints a one-line warning and lets the commit through, when there is
+no `node` or `node_modules`, neither gitleaks nor a working Docker (`docker info` gets 5 seconds), `docker run` fails
+with 125, 126 or 127, or you commit from a linked worktree with only Docker available (the worktree's `.git` points
+outside the container's mount). Gitleaks' own exit 1 always blocks. Use `git commit --no-verify` only for a verified
+false positive, or once you have confirmed that the block is a scanner error and the commit is clean. Synthetic values
+that recur are allowlisted by value in `.gitleaks.toml`; see [Contributing](../CONTRIBUTING.md).
 
 ## Demo modes
 

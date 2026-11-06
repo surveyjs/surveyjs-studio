@@ -5,7 +5,19 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { dockerUser, gitleaksArgs, parseScanArgs } from "./args.js";
-import { SKIP_WARNING, chooseRunner, gitleaksNativeArgs } from "./runner.js";
+import {
+  SKIP_WARNING,
+  WORKTREE_WARNING,
+  chooseRunner,
+  exitOutcome,
+  gitleaksNativeArgs,
+  isLinkedWorktree,
+} from "./runner.js";
+
+function gitOut(args: string[]): string {
+  const r = spawnSync("git", args, { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : "";
+}
 
 const parsed = parseScanArgs(process.argv.slice(2));
 if (!parsed.ok) {
@@ -19,11 +31,19 @@ const runner = chooseRunner({
   staged: parsed.staged,
   hasGitleaks:
     parsed.staged && spawnSync("gitleaks", ["version"], { stdio: "ignore" }).status === 0,
-  dockerWorks: parsed.staged && spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0,
+  // A hung daemon counts as unavailable.
+  dockerWorks:
+    parsed.staged && spawnSync("docker", ["info"], { stdio: "ignore", timeout: 5000 }).status === 0,
+  linkedWorktree:
+    parsed.staged &&
+    isLinkedWorktree(
+      gitOut(["rev-parse", "--absolute-git-dir"]),
+      gitOut(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+    ),
 });
 
-if (runner === "skip") {
-  console.warn(SKIP_WARNING);
+if (runner === "skip" || runner === "skip-worktree") {
+  console.warn(runner === "skip" ? SKIP_WARNING : WORKTREE_WARNING);
   process.exit(0);
 }
 
@@ -50,4 +70,6 @@ if (result.error) {
   console.error(`Cannot run ${runner}: ${result.error.message}`);
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+const outcome = exitOutcome({ staged: parsed.staged, runner, status: result.status });
+if (outcome.warning !== null) console.warn(outcome.warning);
+process.exit(outcome.code);

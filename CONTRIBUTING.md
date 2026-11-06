@@ -14,14 +14,28 @@ describes the test suites.
 ## The pre-commit secrets scan
 
 `pnpm install` points git at the tracked hooks in `.githooks` (`core.hooksPath`), so every `git commit` scans the staged
-files for secrets with gitleaks before it goes through. A finding blocks the commit and is printed with the value
-redacted. The scan needs either a `gitleaks` binary on your PATH or Docker; with neither it prints
-`secrets scan skipped: neither gitleaks nor Docker is available; CI will scan` and lets the commit through, and CI scans
-the history anyway.
+files for secrets with gitleaks before it goes through. A blocked commit shows gitleaks' output: the rule, the file and
+the line, with the value redacted.
 
-Bypass the hook with `git commit --no-verify` only for a false positive. If the finding is a real secret, remove it and
-rotate it. A value goes into `.gitleaksignore` only when it is synthetic. The hook is not installed in CI or where
-there is no git; run `pnpm scan:secrets --staged` by hand to scan the staged files at any time.
+The scan needs `node`, the installed `node_modules`, and either a `gitleaks` binary on your PATH or Docker. When
+something is missing, the commit is not blocked. The hook prints one warning line and lets it through, and CI scans the
+history anyway:
+
+- no `node` on PATH or no `node_modules` (a fresh worktree, `git clean -xdf`, a GUI client): `pre-commit: secrets scan
+skipped (run pnpm install; node and node_modules are needed). CI will scan.`;
+- neither gitleaks nor Docker, a Docker daemon that does not answer `docker info` within 5 seconds, or `docker run`
+  itself failing (exit 125, 126 or 127): `secrets scan skipped: ...; CI will scan`;
+- a linked `git worktree` when only Docker is available (its `.git` points outside the mounted directory): install
+  gitleaks, or commit from the main checkout.
+
+Gitleaks exiting with 1 always blocks, because a finding and a gitleaks error look the same. Bypass the hook with
+`git commit --no-verify` only for a verified false positive, or after you have confirmed that the block is a scanner
+error and the commit is clean. If the finding is a real secret, remove it and rotate it.
+
+Allowlisting: the fingerprints in `.gitleaksignore` name a commit, so they never match a staged diff. A synthetic value
+that recurs in the tree goes into the `[allowlist]` of [`.gitleaks.toml`](.gitleaks.toml) as a `regexes` entry; a real
+value never does. The hook is not installed in CI, where there is no git, or when `core.hooksPath` already has another
+value (the installer says so). Run `pnpm scan:secrets --staged` by hand to scan the staged files at any time.
 
 ## Before you open a pull request
 

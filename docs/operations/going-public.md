@@ -29,7 +29,8 @@ pnpm scan:secrets --all-refs
 ```
 
 The scan also runs on the staged files before each commit, through the `.githooks/pre-commit` hook that `pnpm install`
-enables.
+enables. Because `.gitleaksignore` is bound to commit ids, the synthetic values that recur in the tree are also
+allowlisted by value in [`.gitleaks.toml`](../../.gitleaks.toml), which every scan mode reads.
 
 ### The findings
 

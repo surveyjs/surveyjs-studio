@@ -7,7 +7,7 @@
     "node": ">=24.21.0 <25"
   },
   "scripts": {
-    "prepare": "node -e \"import('./scripts/git-hooks/install.mjs').then((m) => m.installHooks()).catch(() => {})\"",
+    "prepare": "node -e \"const f='./scripts/git-hooks/install.mjs';if(require('fs').existsSync(f))import(f).then((m)=>m.installHooks())\"",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

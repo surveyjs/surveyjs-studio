@@ -20,6 +20,7 @@ describe("gitleaksArgs", () => {
     expect(args).toContain("--log-opts=--all");
     expect(args).toContain("--redact");
     expect(args).toContain("--gitleaks-ignore-path=/repo/.gitleaksignore");
+    expect(args).toContain("--config=/repo/.gitleaks.toml");
     expect(args).not.toContain("--report-path");
   });
 
