@@ -59,7 +59,10 @@ describe("the contract's operations", () => {
   const unsupported = unsupportedHandlers(context);
 
   it("are all found in openapi.yaml", () => {
-    expect(operations).toHaveLength(48);
+    // Counted from the text, not a fixed number, so branches that add operations do not conflict here.
+    const declared = openapiText.match(/^\s+operationId:/gm)?.length ?? 0;
+    expect(declared).toBeGreaterThan(0);
+    expect(operations).toHaveLength(declared);
   });
 
   it("are each answered by an area handler or listed as unsupported, never both", () => {
@@ -105,6 +108,7 @@ describe("the contract's operations", () => {
         "updateUser",
         "deleteUser",
         "createUserResetLink",
+        "getSurveyHistoryEntry",
         "exportResults",
         "receiveAccountDeleted",
       ].sort(),
