@@ -1,15 +1,19 @@
 import type { MemorySeed } from "../providers/memory.js";
 import type { SqlDatabase } from "./database.js";
-import { insertSurvey } from "./survey-store.js";
+import { insertResponses } from "./result-store.js";
+import { deleteSurveyRows, insertSurvey } from "./survey-store.js";
+import { isoOf, jsonText } from "./values.js";
 
 export interface SeedReport {
   readonly surveys: number;
+  readonly projects: number;
 }
 
 /**
- * Loads the shared seed into the SQL stores built so far (surveys with their definitions, themes
- * and history), in one transaction. A seed survey that exists is replaced with its history; every
- * other row stays, so running it again resets the seed data and keeps what people made.
+ * Loads the shared seed into the SQL stores (surveys with their definitions, themes, history,
+ * responses, markers and layouts; projects with their members), in one transaction. A seed
+ * survey or project that exists is replaced with what belongs to it; every other row stays, so
+ * running it again resets the seed data and keeps what people made.
  */
 export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Promise<SeedReport> {
   const byId = <T>(map: Record<string, T> | undefined, id: string): T | undefined =>
@@ -17,15 +21,80 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
   await database.db.transaction().execute(async (trx) => {
     for (const survey of seed.surveys) {
       const id = survey.id.toLowerCase();
-      await trx.deleteFrom("surveys").where("id", "=", id).execute();
+      await deleteSurveyRows(trx, id);
       const definition = byId(seed.definitions, id);
       const theme = byId(seed.themes, id);
-      await insertSurvey(trx, survey, {
+      await insertSurvey(trx, database.dialect, survey, {
         ...(definition !== undefined && { definition }),
         ...(theme !== undefined && { theme }),
         history: byId(seed.history, id) ?? [],
       });
+      // The survey's responses and markers went with it (cascade).
+      await insertResponses(trx, database.dialect, id, byId(seed.responses, id) ?? []);
+      const markers = Object.entries(byId(seed.completions, id) ?? {});
+      if (markers.length > 0) {
+        await trx
+          .insertInto("completion_markers")
+          .values(
+            markers.map(([clientId, { partial }]) => ({
+              survey_id: id,
+              client_id: clientId,
+              partial,
+            })),
+          )
+          .execute();
+      }
+      const legacyViews = Object.entries(byId(seed.legacyViews, id) ?? {});
+      if (legacyViews.length > 0) {
+        await trx
+          .insertInto("legacy_views")
+          .values(
+            legacyViews.map(([view, state]) => ({
+              survey_id: id,
+              view: view as "summary" | "table",
+              state: jsonText(database.dialect, state),
+            })),
+          )
+          .execute();
+      }
+      const privateQuestions = byId(seed.privateResultQuestions, id);
+      if (privateQuestions !== undefined) {
+        await trx
+          .insertInto("private_questions")
+          .values({ survey_id: id, names: jsonText(database.dialect, privateQuestions) })
+          .execute();
+      }
+    }
+    // A seed project is replaced with its memberships (cascade); its surveys stay where they are.
+    for (const project of seed.projects) {
+      const id = project.id.toLowerCase();
+      const createdAt = isoOf(project.createdAt);
+      await trx.deleteFrom("projects").where("id", "=", id).execute();
+      await trx
+        .insertInto("projects")
+        .values({
+          id,
+          name: project.name,
+          creator_id: project.creatorId?.toLowerCase() ?? null,
+          created_at: createdAt,
+        })
+        .execute();
+      const members = seed.memberships.filter((m) => m.projectId.toLowerCase() === id);
+      if (members.length > 0) {
+        await trx
+          .insertInto("project_members")
+          .values(
+            members.map((m) => ({
+              project_id: id,
+              user_id: m.userId.toLowerCase(),
+              role: m.role,
+              created_at: createdAt,
+              updated_at: createdAt,
+            })),
+          )
+          .execute();
+      }
     }
   });
-  return { surveys: seed.surveys.length };
+  return { surveys: seed.surveys.length, projects: seed.projects.length };
 }

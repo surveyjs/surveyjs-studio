@@ -16,12 +16,12 @@
 
 ## Demo modes
 
-| Mode       | Command                                                                                         | Storage                                                                                               |
-| ---------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| memory     | `pnpm demo`                                                                                     | In memory; data is lost on restart                                                                    |
-| Azurite    | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode))                   | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server |
-| SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Surveys in `server/.data/surveyjs-studio.db`; the other stores in memory until self-hosted Step 2     |
-| PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Surveys in PostgreSQL in Docker; the other stores in memory until self-hosted Step 2                  |
+| Mode       | Command                                                                                         | Storage                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| memory     | `pnpm demo`                                                                                     | In memory; data is lost on restart                                                                                    |
+| Azurite    | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode))                   | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server                 |
+| SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Everything but users and files in `server/.data/surveyjs-studio.db` (those two in memory until self-hosted Steps 3–4) |
+| PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Everything but users and files in PostgreSQL in Docker (those two in memory until self-hosted Steps 3–4)              |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
 the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
@@ -67,7 +67,7 @@ mode needs, and their values in production: [Operations › Configuration by dep
 | `APP_SHELL`                                | non-empty string                                                                                                                                                                                 | `surveyjs-site`                                                                                                                                                            |
 | `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `google`, `github`, `facebook` (at least one); only `surveyjs` can start today: the others need `USER_DIRECTORY=local`, which the self-hosted track builds | `surveyjs`                                                                                                                                                                 |
 | `SURVEYJS_LICENSE_KEY`                     | string                                                                                                                                                                                           | unset (`null` in `/config`)                                                                                                                                                |
-| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`, `sqlite`, `postgres` (`sqlite` and `postgres` are refused when `NODE_ENV=production` until self-hosted Step 2)                                                         | `memory`                                                                                                                                                                   |
+| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`, `sqlite`, `postgres` (`sqlite` and `postgres` are refused when `NODE_ENV=production` until self-hosted Steps 3 and 4)                                                  | `memory`                                                                                                                                                                   |
 | `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`, and by the memory stores of `sqlite` and `postgres`)                                                                                               | `empty`                                                                                                                                                                    |
 | `SQLITE_PATH`                              | path of the SQLite file (used by `sqlite`); a relative path is resolved against the working directory, and the folder is created                                                                 | `/data/surveyjs-studio.db`                                                                                                                                                 |
 | `DATABASE_URL`                             | `postgres://` or `postgresql://` URL (used by `postgres`); **secret**                                                                                                                            | unset; required when `STORAGE_PROVIDER=postgres`                                                                                                                           |
@@ -410,10 +410,10 @@ text signs in a user the directory does not know, with that text as the subject.
 ## SQLite and PostgreSQL modes
 
 The SQL providers of the self-hosted track ([data model](architecture/data-model.md),
-[ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)). Until
-self-hosted Step 2 only the **surveys** (records, definitions, themes, history) are in the database; users, projects,
-results, saved views and files are the memory provider's, seeded by `MEMORY_SEED`, and lost on restart. The server
-logs a warning saying so, and refuses these providers with `NODE_ENV=production`. Sign-in is the dev sign-in of
+[ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)). Surveys,
+history, responses, results layouts, private questions, projects and members are in the database. Until self-hosted
+Steps 3 and 4 the **users and uploaded files** are the memory provider's, seeded by `MEMORY_SEED`, and lost on restart.
+The server logs a warning saying so, and refuses these providers with `NODE_ENV=production`. Sign-in is the dev sign-in of
 [`pnpm demo`](#signing-in), with the same seed users.
 
 | Mode       | First                                    | Then                | Database                                                                         |
@@ -770,7 +770,8 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
    `test:providers:postgres`, and `test:conformance:postgres` on the image;
 6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
    `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`), and `e2e:sqlite`
-   (the tsx server, whose SQLite file is on the host; Chromium);
+   (the tsx server, whose SQLite file is on the host; Chromium) and `e2e:postgres` (Chromium, every functional spec but
+   the licence notices);
 7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
 8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
 9. `pnpm demo:azurite:down` and `pnpm postgres:down`, which always run (`if: always()`).
@@ -793,3 +794,8 @@ and 6 need Linux (`docker run --network host`); on Windows and macOS run those s
 - TypeScript is strict and ESM. Server, contract and conformance tests use `NodeNext`; web uses `Bundler`.
 - ESLint (flat config) and Prettier. `pnpm format` fixes formatting.
 - Commit messages are conventional: `feat(server): ...`, `fix(web): ...`, `docs: ...`, `chore: ...`.
+- Prettier pads Markdown tables, so one wider cell rewrites every row and two branches that touch a table conflict
+  on all of it. Run `node scripts/git-merge/markdown-tables.mjs --install` once per clone: `.gitattributes` then
+  merges `*.md` without the padding and re-formats the result, and tables conflict only where both sides changed a
+  row. Rows both sides only added at the same place (two new ADRs at the end of the index) are both kept, ours
+  first. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.

@@ -82,47 +82,71 @@ One row per saved definition. Deleted with the survey (`on delete cascade`).
 
 Index `survey_history_order` (`survey_id`, `at` desc, `id` desc) serves `listHistory` paging.
 
+### `survey_responses` (0002)
+
+One row per stored response. Deleted with the survey (`on delete cascade`).
+
+| Column          | Type       | Notes                                                                          |
+| --------------- | ---------- | ------------------------------------------------------------------------------ |
+| `survey_id`     | GUID       | Foreign key to `surveys`                                                       |
+| `id`            | GUID       | Primary key with `survey_id`: the contract's response id                       |
+| `submitted_at`  | timestamp  |                                                                                |
+| `data`          | JSON       | The answers, a JSON object                                                     |
+| `client_id`     | text, null | 1–256 characters (contract `ClientId`), matched exactly                        |
+| `respondent_ip` | text, null | Only when the survey stores respondent addresses                               |
+| `partial`       | boolean    | Legacy partial rows; the app stores `false` (HM Step 4 adds partial responses) |
+
+Index `survey_responses_order` (`survey_id`, `submitted_at`, `id`) serves `listResponsePage` (keyed paging in
+submission order) and `stats`. `appendResponse` inserts with `on conflict do nothing` on the key, which makes a
+repeated response id `exists`, and writes the client's marker in the same transaction.
+
+### `completion_markers` (0002)
+
+`survey_id` (FK, cascade), `client_id` (text, matched exactly), `partial` (boolean); primary key (`survey_id`,
+`client_id`). `completion` reads it: no row is `none`.
+
+### `saved_views`, `legacy_views` and `private_questions` (0002)
+
+| Table               | Columns                                                                                                                  | Notes                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `saved_views`       | `survey_id`, `user_id` (GUIDs), `view` (`summary` or `table`), `state` (JSON, null), `updated_at`; primary key all three | A user's layout; a null `state` is a reset marker                                                    |
+| `legacy_views`      | `survey_id`, `view`, `state` (JSON); primary key (`survey_id`, `view`)                                                   | The legacy per-survey layout, `getView`'s fallback (R4); filled by the seed and the hosted migration |
+| `private_questions` | `survey_id` (primary key), `names` (JSON array, no duplicates)                                                           | The questions hidden from public results                                                             |
+
+The view store does not check that a survey exists, so these tables have **no foreign key**; `deleteSurvey` deletes
+their rows in its transaction. A clone copies none of them; "delete all results" keeps them.
+
+### `projects` and `project_members` (0002)
+
+**`projects`**: `id` (GUID, primary key), `name`, `creator_id` (GUID, null), `created_at`. The creator is the project's
+`ownerId` while they have a membership row (R2); removing or erasing the creator clears `creator_id`, so a creator
+added again is not the owner again.
+
+**`project_members`**: `project_id` (FK, cascade), `user_id` (GUID), `role` (`admin` or `user`), `created_at`,
+`updated_at`; primary key (`project_id`, `user_id`). One row per user: the hosted migration merges the legacy store's
+repeated rows (an admin row wins). Index `project_members_user` serves a user's projects.
+
+Member users are not in the database yet: the project store asks the provider set's **user directory** (the memory one
+until SH Step 4) whether each member's user exists and what it is called. A row whose user the directory does not know
+is an orphan (R11): counted in `memberCount`, neither listed nor an admin. Projects and members are sorted in the code
+with the shared orderings, because SQL's `lower()` and collations differ from JavaScript's.
+
+The last-admin rule, member erasure, adding a member and project deletion run in one transaction each. On PostgreSQL
+the project row is locked first (`select … for update`), so two role changes of one project are decided one after the
+other; on SQLite every transaction already runs alone. `deleteProject` moves the project's surveys to the receiver's
+personal scope (`updated_at` = now; id, creator, published, archived and settings unchanged) and deletes the project
+with its members.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
 "HM" the hosted-migration plan.
-
-### Results (SH Step 2: `ResultStore`)
-
-**`survey_responses`**: `survey_id` (FK, cascade), `id` (GUID; primary key with `survey_id`), `submitted_at`, `data`
-(JSON), `client_id` (text, null), `respondent_ip` (text, null), `partial` (boolean). Index (`survey_id`,
-`submitted_at`, `id`) for the paging of `listResponsePage` and for `stats`. `appendResponse` inserts with
-`on conflict do nothing` on the key, which is the idempotency of the contract's response id.
-
-**`completion_markers`**: `survey_id` (FK, cascade), `client_id` (text), `partial` (boolean); primary key
-(`survey_id`, `client_id`). Client ids match exactly (case-sensitive).
-
-Partial responses (HM Step 4) use `partial = true` rows of `survey_responses`.
-
-### Views and private questions (SH Step 2: `ViewStore`)
-
-**`saved_views`**: `survey_id` (FK, cascade), `user_id` (GUID), `view` (`summary` or `table`), `state` (JSON, null:
-a reset marker), `updated_at`; primary key (`survey_id`, `user_id`, `view`).
-
-**`surveys.private_questions`** (a new column, JSON array of question names, default `[]`): the questions hidden from
-public results. Kept by "delete all results", not copied by a clone.
 
 ### Files (SH Step 3: `FileStore`)
 
 **`files`**: `id` (64 hex digits, primary key), `survey_id` (FK, cascade), `kind` (`asset` or `response`), `name`,
 `content_type`, `size` (bigint), `created_at`. Index (`survey_id`, `kind`) for `usage` and cascades. The bytes are in
 the file store (`FILE_STORE=local|s3`) under the file id; the row is the metadata and the quota's source.
-
-### Projects and members (SH Step 2: `ProjectStore`)
-
-**`projects`**: `id` (GUID, primary key), `name`, `creator_id` (GUID, null: the owner while the creator is a member;
-cleared when the creator leaves), `created_at`.
-
-**`project_members`**: `project_id` (FK, cascade), `user_id` (GUID), `role` (`admin` or `user`), `created_at`,
-`updated_at`; primary key (`project_id`, `user_id`). One row per user: the legacy store's repeated rows are merged by
-the hosted migration (an admin row wins). Index (`user_id`) for `listUserProjects`.
-
-The last-admin rule and the moves of `deleteProject` run inside one transaction.
 
 ### Users, identities and invitations (SH Steps 4 and 8, HM Step 2: `UserDirectory`)
 
@@ -154,25 +178,22 @@ event log, and the audit log can use it later.
 
 Empty and unused in the self-hosted image.
 
-| Table                | Columns                                                                              | Purpose                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `legacy_files`       | `legacy_name` (primary key), `file_id` (FK to `files`, cascade)                      | Legacy editor images and `dxsfile:`/`dxsimage:` uploads                  |
-| `legacy_access_keys` | `key_hash` (primary key), `user_id`, `revoked` (boolean)                             | The `accessKey` API of the compatibility layer                           |
-| `legacy_views`       | `survey_id` (FK, cascade), `view`, `state` (JSON); primary key (`survey_id`, `view`) | The legacy per-survey layouts, `getView`'s fallback (R4)                 |
-| `deleted_responses`  | `survey_id`, `id`, `submitted_at`, `data` (JSON), `deleted_at`                       | The legacy `postdelete{postId}` copies, purged 30 days after the cutover |
+| Table                | Columns                                                         | Purpose                                                                  |
+| -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `legacy_files`       | `legacy_name` (primary key), `file_id` (FK to `files`, cascade) | Legacy editor images and `dxsfile:`/`dxsimage:` uploads                  |
+| `legacy_access_keys` | `key_hash` (primary key), `user_id`, `revoked` (boolean)        | The `accessKey` API of the compatibility layer                           |
+| `deleted_responses`  | `survey_id`, `id`, `submitted_at`, `data` (JSON), `deleted_at`  | The legacy `postdelete{postId}` copies, purged 30 days after the cutover |
 
 ## Mapping to the provider interfaces
 
-| Interface (`server/src/providers/types.ts`) | Tables                                                       | State                    |
-| ------------------------------------------- | ------------------------------------------------------------ | ------------------------ |
-| `SurveyStore`                               | `surveys`, `survey_history`                                  | Built                    |
-| `ResultStore`                               | `survey_responses`, `completion_markers`                     | SH Step 2                |
-| `ViewStore`                                 | `saved_views`, `surveys.private_questions`, (`legacy_views`) | SH Step 2                |
-| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves)     | SH Step 2                |
-| `FileStore`                                 | `files` and the file store                                   | SH Step 3                |
-| `UserDirectory`                             | `users`, `user_identities`, `invitations`                    | SH Steps 4, 8; HM Step 2 |
+| Interface (`server/src/providers/types.ts`) | Tables                                                   | State                    |
+| ------------------------------------------- | -------------------------------------------------------- | ------------------------ |
+| `SurveyStore`                               | `surveys`, `survey_history`                              | Built                    |
+| `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built                    |
+| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built                    |
+| `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built                    |
+| `FileStore`                                 | `files` and the file store                               | SH Step 3                |
+| `UserDirectory`                             | `users`, `user_identities`, `invitations`                | SH Steps 4, 8; HM Step 2 |
 
-Until SH Step 2 the SQL providers keep every store but `SurveyStore` in memory (the memory provider's, seeded by
-`MEMORY_SEED`). The server says so at start-up, refuses `NODE_ENV=production` with them, and the cross-store writes
-(project deletion moving surveys, account erasure, a survey's deletion dropping its results) do not reach the database
-yet.
+Until SH Steps 3 and 4 the SQL providers keep the **files and the users** in memory (the memory provider's, seeded by
+`MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production` with them.

@@ -52,6 +52,40 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
     await second.close();
   });
 
+  it("keeps responses, saved layouts, private questions and projects across restarts", async () => {
+    const { config } = configFor();
+    const first = await createProviders(config);
+    const survey = await first.surveys.createSurvey(newSurvey);
+    const response = {
+      id: "dddddddd-0000-4000-8000-000000000004",
+      submittedAt: "2026-10-01T11:00:00.000Z",
+      data: { q1: "kept" },
+      clientId: "browser-1",
+    };
+    await first.results.appendResponse(survey, response);
+    await first.views.saveView(survey.id, OWNER_ID, "summary", { hidden: ["q1"] });
+    await first.views.savePrivateQuestions(survey.id, ["q1"]);
+    const project = "dddddddd-0000-4000-8000-000000000005";
+    await first.projects.createProject({
+      id: project,
+      name: "Kept",
+      creatorId: OWNER_ID,
+      createdAt: "2026-10-01T10:00:00.000Z",
+    });
+    await first.close();
+
+    const second = await createProviders(config);
+    expect(await second.results.listResponses(survey)).toEqual([{ ...response, partial: false }]);
+    expect(await second.results.completion(survey, "browser-1")).toBe("completed");
+    expect(await second.views.getView(survey.id, OWNER_ID, "summary")).toEqual({ hidden: ["q1"] });
+    expect(await second.views.getPrivateQuestions(survey.id)).toEqual(["q1"]);
+    expect(await second.projects.getUserProject(OWNER_ID, project)).toMatchObject({
+      project: { name: "Kept", ownerId: OWNER_ID, memberCount: 1 },
+      role: "admin",
+    });
+    await second.close();
+  });
+
   it("seeds the memory fallback with MEMORY_SEED, but not the database", async () => {
     const { config } = configFor({ MEMORY_SEED: "legacy-fixtures" });
     const providers = await createProviders(config);
@@ -65,7 +99,7 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
     const error = await createProviders(config).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PendingMigrationsError);
     expect((error as Error).message).toBe(
-      "READ_ONLY=true, but the database lacks migration 0001-surveys: run pnpm db:migrate (or start once without READ_ONLY) first.",
+      "READ_ONLY=true, but the database lacks migrations 0001-surveys, 0002-results-views-projects: run pnpm db:migrate (or start once without READ_ONLY) first.",
     );
     const database = openDatabase({ dialect: "sqlite", path });
     expect((await migrationStatus(database)).applied).toEqual([]);

@@ -131,11 +131,12 @@ See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/
 
 ### SQLite and PostgreSQL modes
 
-The SQL providers of the self-hosted track (surveys only so far; the other stores stay in memory until its Step 2):
+The SQL providers of the self-hosted track (everything but users and uploaded files so far; those stay in memory until
+its Steps 3 and 4):
 
 ```sh
-pnpm seed:sqlite && pnpm dev:sqlite       # surveys in server/.data/surveyjs-studio.db
-pnpm seed:postgres && pnpm dev:postgres   # surveys in PostgreSQL in Docker (pnpm postgres:down deletes it)
+pnpm seed:sqlite && pnpm dev:sqlite       # data in server/.data/surveyjs-studio.db
+pnpm seed:postgres && pnpm dev:postgres   # data in PostgreSQL in Docker (pnpm postgres:down deletes it)
 ```
 
 See [Development](docs/development.md#sqlite-and-postgresql-modes).
@@ -195,8 +196,8 @@ Run from the repository root.
 | `pnpm demo:azurite:up`                                           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures    |
 | `pnpm demo:azurite`                                              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                        |
 | `pnpm demo:azurite:down`                                         | Stops the replica and deletes its data                                                                                       |
-| `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the surveys in a SQLite file (`server/.data/`)                                                        |
-| `pnpm dev:postgres`                                              | Like `pnpm demo`, with the surveys in PostgreSQL in Docker (starts it)                                                       |
+| `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the data in a SQLite file (`server/.data/`); users and files stay in memory                           |
+| `pnpm dev:postgres`                                              | Like `pnpm demo`, with the data in PostgreSQL in Docker (starts it); users and files stay in memory                          |
 | `pnpm postgres:up`, `pnpm postgres:down`                         | Starts PostgreSQL in Docker; stops it and deletes its data                                                                   |
 | `pnpm seed`, `pnpm seed:sqlite`, `pnpm seed:postgres`            | Migrates the database, then loads the golden fixtures (seed surveys are replaced, others kept)                               |
 | `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                           |
@@ -222,6 +223,7 @@ Run from the repository root.
 | `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                               |
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                           |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                         |
+| `pnpm e2e:postgres`                                              | Playwright tests on the `postgres` provider, every functional spec but the licence notices (Chromium; needs `postgres:up`)   |
 | `pnpm e2e:visual`                                                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))          |
 | `pnpm e2e:visual:report`                                         | Opens the visual parity report                                                                                               |
 | `pnpm visual:capture`                                            | A person captures the baselines from surveyjs.io ([how](docs/testing.md#capturing-baselines))                                |

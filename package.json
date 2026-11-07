@@ -25,6 +25,7 @@
     "e2e": "pnpm --filter @surveyjs-studio/e2e test",
     "e2e:azurite": "pnpm --filter @surveyjs-studio/e2e test:azurite",
     "e2e:sqlite": "pnpm --filter @surveyjs-studio/e2e test:sqlite",
+    "e2e:postgres": "pnpm --filter @surveyjs-studio/e2e test:postgres",
     "e2e:visual": "pnpm --filter @surveyjs-studio/e2e test:visual",
     "e2e:visual:report": "pnpm --filter @surveyjs-studio/e2e exec playwright show-report visual-report",
     "visual:capture": "pnpm --filter @surveyjs-studio/e2e capture",

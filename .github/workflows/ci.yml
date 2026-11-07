@@ -107,6 +107,10 @@ jobs:
       - name: End-to-end tests (SQLite mode)
         run: pnpm e2e:sqlite
 
+      # The tsx server on a new database of the PostgreSQL started above.
+      - name: End-to-end tests (PostgreSQL mode)
+        run: pnpm e2e:postgres
+
       # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'

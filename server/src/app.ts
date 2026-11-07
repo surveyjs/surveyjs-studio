@@ -15,7 +15,7 @@ import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
-import { REDACTED_LOG_PATHS, serializeRequest } from "./logging.js";
+import { REDACTED_LOG_PATHS, loggableError, serializeRequest } from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createReadiness } from "./readiness.js";
@@ -130,7 +130,7 @@ export async function buildApp(
     // A 501 for a not-yet-implemented operation and a read-only refusal are expected answers, not
     // server faults.
     if (body.status >= 500 && body.code !== "not-implemented" && body.code !== "read-only") {
-      request.log.error({ err: error }, "unhandled error");
+      request.log.error({ err: loggableError(error) }, "unhandled error");
     }
     return sendProblem(reply, body);
   });

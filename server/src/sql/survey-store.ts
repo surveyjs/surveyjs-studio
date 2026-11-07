@@ -12,9 +12,9 @@ import type {
   Versioned,
 } from "../domain/types.js";
 import type { SurveyStore } from "../providers/types.js";
-import type { SqlDatabase } from "./database.js";
+import type { SqlDatabase, SqlDialectName } from "./database.js";
 import type { DatabaseSchema, SurveysTable } from "./schema.js";
-import { flagOf, isoOf, jsonOf } from "./values.js";
+import { flagOf, isoOf, jsonOf, jsonText } from "./values.js";
 
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
 
@@ -121,6 +121,7 @@ export interface StoredSurveyContent {
 /** Stores a survey row with its documents and history entries (create, clone and the seed). */
 export async function insertSurvey(
   db: Kysely<DatabaseSchema>,
+  dialect: SqlDialectName,
   record: SurveyRecord,
   content: StoredSurveyContent = {},
 ): Promise<void> {
@@ -130,9 +131,9 @@ export async function insertSurvey(
     .values({
       id,
       ...columnsOf(record),
-      definition: content.definition === undefined ? null : JSON.stringify(content.definition),
+      definition: content.definition === undefined ? null : jsonText(dialect, content.definition),
       definition_version: versionOf(content.definition),
-      theme: content.theme === undefined ? null : JSON.stringify(content.theme),
+      theme: content.theme === undefined ? null : jsonText(dialect, content.theme),
       theme_version: versionOf(content.theme),
     })
     .execute();
@@ -145,11 +146,27 @@ export async function insertSurvey(
           id: entry.id.toLowerCase(),
           at: isoOf(entry.at),
           user_id: entry.userId?.toLowerCase() ?? null,
-          snapshot: JSON.stringify(entry.snapshot),
+          snapshot: jsonText(dialect, entry.snapshot),
         })),
       )
       .execute();
   }
+}
+
+/**
+ * Deletes a survey and everything stored for it: history, responses and markers by cascade, and the
+ * results layouts and private questions, which have no foreign key. Run it inside a transaction.
+ * false when there was no such survey.
+ */
+export async function deleteSurveyRows(
+  trx: Kysely<DatabaseSchema>,
+  survey: string,
+): Promise<boolean> {
+  for (const table of ["saved_views", "legacy_views", "private_questions"] as const) {
+    await trx.deleteFrom(table).where("survey_id", "=", survey).execute();
+  }
+  const result = await trx.deleteFrom("surveys").where("id", "=", survey).executeTakeFirst();
+  return result.numDeletedRows > 0n;
 }
 
 /** The survey store on SQLite or PostgreSQL (docs/architecture/data-model.md). */
@@ -181,7 +198,7 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
     theme: Record<string, unknown> | undefined,
   ): Promise<SurveyRecord> => {
     await db.transaction().execute((trx) =>
-      insertSurvey(trx, record, {
+      insertSurvey(trx, database.dialect, record, {
         ...(definition !== undefined && {
           definition,
           history: [
@@ -237,7 +254,7 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
       const result = await trx
         .updateTable("surveys")
         .set({
-          [column]: JSON.stringify(content),
+          [column]: jsonText(database.dialect, content),
           [versionColumn]: version,
           updated_at: isoOf(save.savedAt),
         })
@@ -306,7 +323,7 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
             id: randomUUID(),
             at: isoOf(savedAt),
             user_id: userId.toLowerCase(),
-            snapshot: JSON.stringify(definition),
+            snapshot: jsonText(database.dialect, definition),
           })
           .execute();
       }),
@@ -383,8 +400,7 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
     deleteSurvey: async (id) => {
       const survey = key(id);
       if (survey === null) return false;
-      const result = await db.deleteFrom("surveys").where("id", "=", survey).executeTakeFirst();
-      return result.numDeletedRows > 0n;
+      return db.transaction().execute((trx) => deleteSurveyRows(trx, survey));
     },
     listPersonalOwnerIds: async () => {
       const rows = await db

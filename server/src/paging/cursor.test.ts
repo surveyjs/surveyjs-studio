@@ -254,6 +254,7 @@ describe("results cursors", () => {
     ["an extra member", raw({ ...resultsPayload, x: 1 })],
     ["a missing survey", raw({ v: 1, k: "results", u: place.submittedAt, i: place.id })],
     ["an id of 65 characters", raw({ ...resultsPayload, i: "a".repeat(65) })],
+    ["an id that is not a GUID", raw({ ...resultsPayload, i: "zzz" })],
     ["padding", `${raw(resultsPayload)}=`],
   ])("rejects %s", (_name, cursor) => {
     expectInvalid(() => decodeResultsCursor(cursor, survey));

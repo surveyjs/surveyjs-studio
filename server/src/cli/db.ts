@@ -73,7 +73,7 @@ async function apply(database: SqlDatabase, io: CliIo): Promise<number> {
 async function seed(database: SqlDatabase, io: CliIo): Promise<number> {
   await apply(database, io);
   const report = await seedSqlStores(database, await legacyFixtureSeed());
-  io.out(`Seeded ${report.surveys} surveys.\n`);
+  io.out(`Seeded ${report.surveys} surveys and ${report.projects} projects.\n`);
   return 0;
 }
 

@@ -156,7 +156,7 @@ describe("startupSummary", () => {
 });
 
 describe("storageWarning", () => {
-  it("warns that the SQL providers keep all but surveys in memory", () => {
+  it("warns that the SQL providers still keep users and files in memory", () => {
     for (const STORAGE_PROVIDER of ["sqlite", "postgres"]) {
       const config = loadConfig({
         IDENTITY_PROVIDER: "dev",
@@ -165,7 +165,7 @@ describe("storageWarning", () => {
       });
       const warning = storageWarning(config);
       expect(warning).toBe(
-        `STORAGE_PROVIDER=${STORAGE_PROVIDER} stores surveys in the database; users, projects, results, views and files are still kept in memory and lost on restart (self-hosted track Step 2)`,
+        `STORAGE_PROVIDER=${STORAGE_PROVIDER} keeps users and uploaded files in memory: they are lost on restart (self-hosted track Steps 3 and 4)`,
       );
     }
   });
@@ -232,6 +232,38 @@ describe("canary run", () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>)
       .filter((entry) => entry.msg === "request completed");
     expect(completed.some((entry) => entry.operationId === "listSurveys")).toBe(true);
+  });
+
+  it("logs a database error's code but not its details, which hold stored text", async () => {
+    // As pg's DatabaseError carries them: `where` quotes the JSON being stored, `detail` a value.
+    const driverError = Object.assign(new Error("unsupported Unicode escape sequence"), {
+      name: "error",
+      severity: "ERROR",
+      code: "22P05",
+      detail: "\\u0000 cannot be converted to text canary-detail",
+      where: 'JSON data, line 1: {"q":"canary-answer',
+      routine: "json_lex",
+    });
+    const { lines } = await run(
+      (providers) => ({
+        ...providers,
+        surveys: { ...providers.surveys, getSurvey: () => Promise.reject(driverError) },
+      }),
+      async (app) => {
+        const response = await app.inject(
+          "/api/v1/public/surveys/22222222-0000-4000-8000-a00000000001",
+        );
+        expect(response.statusCode).toBe(500);
+        return [response.body];
+      },
+    );
+    const logged = lines.join("");
+    expect(logged).not.toContain("canary");
+    const errors = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.msg === "unhandled error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.err).toMatchObject({ type: "DatabaseError", code: "22P05" });
   });
 
   it("logs the operationId on a successful contract request", async () => {

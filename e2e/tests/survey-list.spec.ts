@@ -166,6 +166,8 @@ test("My Surveys opens the list the user looked at last, and Back still returns"
   await expect(page).toHaveURL("/?project=personal");
   await chooseProject(page, "Marketing");
   await expect(page).toHaveURL(`/?project=${MARKETING}`);
+  // The list is remembered once it is shown, which can come after the URL changes.
+  await expect(surveysNamed(page, "Campaign survey")).toHaveCount(1);
 
   // Another tab of the same browser: `/` opens Marketing.
   const tab = await context.newPage();
@@ -189,6 +191,7 @@ test("My Surveys opens the list the user looked at last, and Back still returns"
   // A reload keeps the archived view with the remembered project.
   await chooseProject(page, "Marketing");
   await expect(page).toHaveURL(`/?project=${MARKETING}`);
+  await expect(surveysNamed(page, "Campaign survey")).toHaveCount(1);
   await page.goto("/?archived=true");
   await expect(page).toHaveURL(`/?project=${MARKETING}&archived=true`);
   await expect(surveyNames(page)).toHaveText(["Archived campaign"]);
