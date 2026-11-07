@@ -14,7 +14,13 @@ import { loadContract } from "./contract.js";
 import { newFileId } from "./domain/file-id.js";
 import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
-import { MEMBER_ID, ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
+import {
+  feedbackHistoryIds,
+  MEMBER_ID,
+  ownerUser,
+  PROJECT_A_ID,
+  surveyFeedback,
+} from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
@@ -320,6 +326,7 @@ function contractOperations(): ContractOperation[] {
     projectId: PROJECT_A_ID,
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,
+    entryId: feedbackHistoryIds[0] ?? "",
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
@@ -356,7 +363,10 @@ describe("contract coverage", () => {
   const operations = contractOperations();
 
   it("finds every operation of the contract", () => {
-    expect(operations).toHaveLength(42);
+    // Counted from the YAML text, not a fixed number, so branches that add operations do not conflict here.
+    const declared = readFileSync(openapiPath, "utf8").match(/^\s+operationId:/gm)?.length ?? 0;
+    expect(declared).toBeGreaterThan(0);
+    expect(operations).toHaveLength(declared);
   });
 
   it.each(operations.map((op) => [op.operationId, op] as const))(

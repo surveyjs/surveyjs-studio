@@ -1,11 +1,19 @@
 import { iconHtml } from "./icons";
 
-/** The site's `components/circle-icon/Icon` partial: a small icon box. */
-export function Icon({ name, type }: { name: string; type?: string }) {
+/** The site's `components/circle-icon/Icon` partial: an icon box, small unless `size` is given. */
+export function Icon({
+  name,
+  type,
+  size = "small",
+}: {
+  name: string;
+  type?: string;
+  size?: string;
+}) {
   const typeClass = type ? ` v2-class---icon--${type.toLowerCase()}` : "";
   return (
     <div
-      className={`v2-class---icon v2-class---icon--small${typeClass}`}
+      className={`v2-class---icon v2-class---icon--${size.toLowerCase()}${typeClass}`}
       dangerouslySetInnerHTML={iconHtml(name)}
     />
   );

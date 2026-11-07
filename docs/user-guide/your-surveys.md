@@ -98,9 +98,10 @@ available." and has a **Back to My Surveys** link.
 
 In the Active view a click on a row opens the editor too.
 
-## Loading more
+## Long lists
 
-The list loads 50 surveys at a time. With 50 or fewer surveys the page looks like the one on
-surveyjs.io. With more, a **Load more** button appears under the list. Click it until it goes away.
-Surveys you create while the page is open appear at the top at once and never shift the rows you
+As on surveyjs.io, the page shows every survey of the list, so the browser's Find (Ctrl+F) finds any
+of them. The list arrives 50 surveys at a time: the first 50 show at once and the rest follow by
+themselves, with no click. If a part fails to load, the page says "Could not load more surveys.
+Please try again." and shows a **Load more** button that tries again. Surveys you create while the page is open appear at the top at once and never shift the rows you
 already see.
