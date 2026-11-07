@@ -194,13 +194,13 @@ function historyPage(
   const items = matching.slice(0, limit);
   const last = items.at(-1);
   return HttpResponse.json({
-    items: items.map(({ at, userId }) => {
+    items: items.map(({ id, at, userId }) => {
       // null when nobody has that id any more.
       const author =
         userId === null
           ? null
           : (data.users.find((user) => user.id.toLowerCase() === userId.toLowerCase()) ?? null);
-      return { at, user: author && { id: author.id, displayName: author.displayName } };
+      return { id, at, user: author && { id: author.id, displayName: author.displayName } };
     }),
     nextCursor:
       matching.length > items.length && last

@@ -190,7 +190,8 @@ describe("GET /surveys/{id}/history", () => {
     expect(after.items[0].user).toEqual({ id: USERS.owner, displayName: "Olivia Owner" });
     const times: string[] = after.items.map((entry: { at: string }) => entry.at);
     expect([...times].sort().reverse()).toEqual(times);
-    expect(Object.keys(after.items[0]).sort()).toEqual(["at", "user"]);
+    expect(Object.keys(after.items[0]).sort()).toEqual(["at", "id", "user"]);
+    expect(new Set(after.items.map((entry: { id: string }) => entry.id)).size).toBe(4);
   });
 
   it("pages with cursors; a cursor of another kind or a bad one is 400", async () => {
