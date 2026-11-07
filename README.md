@@ -131,7 +131,8 @@ See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/
 
 ### SQLite and PostgreSQL modes
 
-The SQL providers of the self-hosted track (everything but users so far; those stay in memory until its Step 4):
+The SQL providers of the self-hosted track. Users stay in memory unless `USER_DIRECTORY=local` keeps them in the
+database, with password sign-in ([Development](docs/development.md#password-sign-in)):
 
 ```sh
 pnpm seed:sqlite && pnpm dev:sqlite       # data in server/.data/surveyjs-studio.db
@@ -224,9 +225,11 @@ Run from the repository root.
 | `pnpm test:providers:s3`                                         | Byte-store and provider suites with files in S3 (needs `s3:up`)                                                              |
 | `pnpm test:conformance:sqlite`, `pnpm test:conformance:postgres` | Conformance suite on the SQL providers, a new seeded database per run (`postgres` needs `postgres:up`)                       |
 | `pnpm test:conformance:s3`                                       | Conformance suite on `sqlite` with the files in a new S3 bucket (needs `s3:up`)                                              |
+| `pnpm test:conformance:password`                                 | Conformance suite on `sqlite` with local accounts and password sign-in                                                       |
 | `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                               |
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                           |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                         |
+| `pnpm e2e:password`                                              | Playwright password sign-in tests: the first admin, the forced change, the back-off (Chromium)                               |
 | `pnpm e2e:postgres`                                              | Playwright tests on the `postgres` provider, every functional spec but the licence notices (Chromium; needs `postgres:up`)   |
 | `pnpm e2e:visual`                                                | Visual parity: the app against the surveyjs.io baselines (local only; see [Testing](docs/testing.md#visual-parity))          |
 | `pnpm e2e:visual:report`                                         | Opens the visual parity report                                                                                               |

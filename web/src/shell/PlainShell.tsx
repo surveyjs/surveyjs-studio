@@ -10,6 +10,7 @@ export function PlainShell({
   signingOut,
   signOutError,
   projectsLink,
+  changePasswordLink,
   children,
 }: ShellProps) {
   return (
@@ -31,6 +32,11 @@ export function PlainShell({
           </nav>
         )}
         <span>{user.displayName}</span>
+        {changePasswordLink && (
+          <a href={changePasswordLink.href} onClick={followAppLink(changePasswordLink)}>
+            Change password
+          </a>
+        )}
         <button type="button" onClick={onSignOut} disabled={signingOut}>
           Sign Out
         </button>

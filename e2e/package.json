@@ -9,7 +9,8 @@
     "test:azurite": "node scripts/run.mjs --config playwright.azurite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:sqlite": "node scripts/run.mjs --config playwright.sqlite.config.ts",
-    "test:postgres": "node scripts/run.mjs --config playwright.postgres.config.ts"
+    "test:postgres": "node scripts/run.mjs --config playwright.postgres.config.ts",
+    "test:password": "node scripts/run.mjs --config playwright.password.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

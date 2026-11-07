@@ -111,11 +111,11 @@ live in `providers/ordering.ts`, so every provider sorts the same way. The write
 `createSurvey` (Step 4), `updateSurvey`, `cloneSurvey` and `deleteSurvey` (Step 5) and `saveDefinition`
 and `saveTheme` (Step 6), the file writes of the `FileStore` (Step 7) `appendResponse` of the `ResultStore` (Step 8) and `saveView` and `resetView` of the `ViewStore` (Step 9), and `deleteAll` of the `ResultStore`, the kind-limited `deleteSurveyFiles` and `savePrivateQuestions` (Step 10), the six project and member writes of the `ProjectStore` (Step 11), and `eraseMember` (Step 12).
 
-| Provider             | `STORAGE_PROVIDER`   | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory`             | `memory` (default)   | Holds records in memory and returns copies. Empty unless `MEMORY_SEED=legacy-fixtures`, which loads the golden fixtures in `server/fixtures/legacy/` through the same mapping as the legacy provider                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `azure-legacy`       | `azure-legacy`       | Works on the real surveyjs.io stores: SQL for users, surveys, projects and memberships, through a lazily created pool. `ready()` checks SQL and both storage accounts. A skipped row is reported as a warning with ids only. It reads everything and writes only survey creation, update, clone, delete, the definition and theme saves, the editor and respondent files, result rows with their completion markers, the users' saved results layouts in a container of its own, the deletion of all results of a survey and the survey's private-question list, and (Step 11) the creation, rename and deletion of projects and the adding, role change and removal of members, in `providers/azure-legacy/writes.ts`; ESLint forbids write calls in the rest of the folder. See [Writing to the legacy stores](#writing-to-the-legacy-stores) |
-| `sqlite`, `postgres` | `sqlite`, `postgres` | The SQL providers of the self-hosted track (`providers/sql.ts`, `sql/`; [data model](architecture/data-model.md), [ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)): one implementation over Kysely, with SQLite through `node:sqlite` or PostgreSQL through `pg`. The database is migrated at start-up (never with `READ_ONLY=true`; a database a newer version migrated stops the start). `ready()` runs `select 1` (`database`) and checks the byte store (`files`). The survey, result, view and project stores are on SQL (self-hosted Steps 1 and 2); the file metadata is in the database and the bytes in a byte store (`FILE_STORE=local                                                                                                                                     | s3`, [ADR 0025](adr/0025-file-storage-for-the-sql-providers.md)); the users are the `memory`provider's, seeded by`MEMORY_SEED`, until Step 4, so these providers log a warning at start-up and are refused with `NODE_ENV=production`. The SQL project store resolves member users through that user directory |
+| Provider             | `STORAGE_PROVIDER`   | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory`             | `memory` (default)   | Holds records in memory and returns copies. Empty unless `MEMORY_SEED=legacy-fixtures`, which loads the golden fixtures in `server/fixtures/legacy/` through the same mapping as the legacy provider                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `azure-legacy`       | `azure-legacy`       | Works on the real surveyjs.io stores: SQL for users, surveys, projects and memberships, through a lazily created pool. `ready()` checks SQL and both storage accounts. A skipped row is reported as a warning with ids only. It reads everything and writes only survey creation, update, clone, delete, the definition and theme saves, the editor and respondent files, result rows with their completion markers, the users' saved results layouts in a container of its own, the deletion of all results of a survey and the survey's private-question list, and (Step 11) the creation, rename and deletion of projects and the adding, role change and removal of members, in `providers/azure-legacy/writes.ts`; ESLint forbids write calls in the rest of the folder. See [Writing to the legacy stores](#writing-to-the-legacy-stores)                                                                                                                                                                                                                                                             |
+| `sqlite`, `postgres` | `sqlite`, `postgres` | The SQL providers of the self-hosted track (`providers/sql.ts`, `sql/`; [data model](architecture/data-model.md), [ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)): one implementation over Kysely, with SQLite through `node:sqlite` or PostgreSQL through `pg`. The database is migrated at start-up (never with `READ_ONLY=true`; a database a newer version migrated stops the start). `ready()` runs `select 1` (`database`) and checks the byte store (`files`). The survey, result, view and project stores are on SQL (self-hosted Steps 1 and 2); the file metadata is in the database and the bytes in a byte store (`FILE_STORE` `local` or `s3`, [ADR 0025](adr/0025-file-storage-for-the-sql-providers.md)); the users are the database's local accounts with `USER_DIRECTORY=local` (self-hosted Step 4), else the `memory` provider's, seeded by `MEMORY_SEED`: then these providers log a warning at start-up and are refused with `NODE_ENV=production`. The SQL project store resolves member users through the user directory |
 
 `createProviders` picks the provider from `STORAGE_PROVIDER`. The settings are described in
 [Development](development.md#environment-variables-server): `STORAGE_PROVIDER`, `MEMORY_SEED`
@@ -792,19 +792,21 @@ Step 3 adds sign-in. The client-facing description (flow, cookies, errors, CSRF 
 sign-in parameters and keeps them in a sealed transaction cookie, `msid_auth_<state key>`. A
 provider only talks to the identity service.
 
-| Member                              | Does                                                                                              |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `authorizationUrl(params)`          | The URL to send the browser to. `params` are `state`, `nonce` and the PKCE `codeVerifier`         |
-| `finishSignIn(callbackUrl, params)` | Checks what came back and returns `{ sub, email?, name?, picture? }`. A bad code is a `400` error |
-| `endSessionUrl()`                   | Where the browser goes after local sign-out                                                       |
-| `routes` (optional)                 | Fastify routes the provider serves itself, outside `/api/v1`                                      |
+| Member                              | Does                                                                                                                 |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `authorizationUrl(transaction)`     | The URL to send the browser to. The sign-in transaction has `state`, `nonce`, the PKCE `codeVerifier` and `returnTo` |
+| `finishSignIn(callbackUrl, params)` | Checks what came back and returns `{ sub, email?, name?, picture? }`. A bad code is a `400` error                    |
+| `endSessionUrl()`                   | Where the browser goes after local sign-out                                                                          |
+| `routes` (optional)                 | Fastify routes the provider serves itself, outside `/api/v1`                                                         |
 
-`IDENTITY_PROVIDER` selects the implementation (`auth/providers/index.ts`).
+`IDENTITY_PROVIDER` selects the implementation (`auth/providers/index.ts`). When `AUTH_METHODS` has no
+`surveyjs` and `IDENTITY_PROVIDER` is not `dev`, the `local` provider is used instead.
 
 | Provider                              | What it does                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dev` (`providers/dev.ts`)            | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`                                                                                                         |
+| `dev` (`providers/dev.ts`)            | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`, `sqlite` and `postgres`                                                                                |
 | `surveyjs-oidc` (`providers/oidc.ts`) | Authorization code flow with PKCE (S256) and `state`, through `openid-client`, with `client_secret_post`. The identity always comes from the UserInfo endpoint ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)). Discovery is **lazy**: done at the first sign-in, cached, and retried after a failure, so start-up and `/readyz` never depend on the issuer. Tokens are dropped after the callback |
+| `local` (`providers/local.ts`)        | For password sign-in alone. `authorizationUrl` is the app's own sign-in page, `PUBLIC_BASE_URL/sign-in?returnTo=…`; `endSessionUrl` is `PUBLIC_BASE_URL/`. There is no callback: `passwordLogin` sets the session ([Local accounts and the session epoch](#local-accounts-and-the-session-epoch))                                                                                                          |
 
 `surveyjs-oidc` has two modes (`OIDC_DISCOVERY`):
 
@@ -863,6 +865,10 @@ a payload with a wrong field type, or an expired `exp`. The reader never tells w
 }
 ```
 
+A session of a local account (`passwordLogin`, `changeOwnPassword`) also carries `"epoch"`: the
+account's session epoch when it was issued, a non-negative integer. A reader treats a missing
+`epoch` as 0.
+
 `exp` is epoch **seconds**; the session is expired when `now >= exp`. `csrf` equals the `msid_csrf` cookie
 issued with it. A transaction cookie holds `{ state, nonce, codeVerifier, returnTo, exp }` with `exp`
 ten minutes ahead. Its name is `msid_auth_` plus the first 16 characters of `state` (base64url), so
@@ -875,6 +881,8 @@ What this means, honestly:
 
 - The session is **stateless**. Nothing is stored on the server, so a session **cannot be revoked**
   before its 12 hours end (absolute; it does not slide). Changing `SESSION_SECRET` ends all of them.
+  The one exception is a local account's session epoch, which ends all of a user's sessions at once
+  ([Local accounts and the session epoch](#local-accounts-and-the-session-epoch)).
 - The secret must be shared by every instance behind a load balancer. `SESSION_SECRET` is required
   when `NODE_ENV=production`, and also when `PUBLIC_BASE_URL` is https or its host is not
   `localhost`, `127.0.0.1` or `[::1]`, so a deployment that forgets `NODE_ENV` cannot run with the
@@ -914,6 +922,36 @@ answers `429 rate-limited` with `Retry-After`.
 | `logout`         | With or without a session: clears `msid`, `msid_csrf` and every `msid_auth_*` cookie received, returns `{ redirectUrl }` from `endSessionUrl()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `getCurrentUser` | `request.user` plus `notices`. If the notice store fails, `notices` is `[]`, the error is logged, and the answer is still `200`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
+### Local accounts and the session epoch
+
+Self-hosted Step 4. `USER_DIRECTORY=local` gives the provider set a `LocalAccountStore`
+(`providers/types.ts`; `accounts` is `null` for every other directory) over the same accounts as the
+local `UserDirectory`: on SQL the `users` and `password_links` tables of migration 0004
+([data model](architecture/data-model.md)), in memory a map seeded from the memory seed. The seed's
+users become active accounts without a password (a blocked one disabled), so the dev sign-in still
+works for them. `AUTH_METHODS=password` needs this directory. The decisions are in
+[ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md).
+
+| Piece                       | Does                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passwords/hash.ts`         | argon2id through `node:crypto`, PHC strings (m=19456, t=2, p=1); `dummyHash()` for unknown emails                                                                                                                                                                                                                       |
+| `passwords/policy.ts`       | At least 12 code points, not in `common-passwords.ts`. The message names the rule, never the value                                                                                                                                                                                                                      |
+| `passwords/lockout.ts`      | The back-off per lower-cased email, in memory (at most 10,000 emails): `begin` counts an attempt as a failure before its password is checked (concurrent attempts cannot pass the lock) and `succeeded` clears it; the fifth failure in a row locks for 60 s, doubling to 1 h; a full map drops an unlocked email first |
+| `auth/bootstrap.ts`         | At start-up, while no account is an active admin and not `READ_ONLY`: the admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (must change), else a one-time setup token logged as a link                                                                                                                                         |
+| `auth/password-handlers.ts` | `passwordLogin`, `changeOwnPassword`, `setPasswordWithLink`. `changeOwnPassword` refuses the current password as the new one. Link tokens are stored as their SHA-256 (base64url); a link is used up by one `UPDATE … WHERE used_at IS NULL AND expires_at > now`                                                       |
+| `auth/session-check.ts`     | After the session is decoded, compares its `epoch` (0 when absent) with the account's and checks the account is active, caching the account for 60 s; the forced change (`401 password-change-required`) is checked here as well                                                                                        |
+| `auth/providers/local.ts`   | `login` redirects to the web sign-in page                                                                                                                                                                                                                                                                               |
+
+`setPassword` raises `session_epoch` in the same statement that stores the hash (and activates an
+invited account), and returns the new epoch: `changeOwnPassword` seals it into the new cookie and
+calls `forget` on the session check, so the other sessions of the user end at once on this server.
+`getCurrentUser` adds `instanceRole` and `mustChangePassword` for a local account. The sign-in
+operations, `changeOwnPassword` included, share the per-address `SIGN_IN_RATE_LIMIT`.
+
+The SQL `ProjectStore` reads member users through a `UserLookup(db, ids)`: on the local directory one
+batched `SELECT` of `users` on the caller's transaction (SQLite has one connection), otherwise the
+directory's `getUser`.
+
 ### Account notices
 
 `AccountNotices.noticesFor(userId)` (`notices/account-notices.ts`) is the fourth member of the provider
@@ -944,7 +982,15 @@ props: `user`, `notices`, `links`, `onSignOut` (plus `signingOut` and `signOutEr
 
 The private routes sit under the pathless layout route `routes/_private.tsx`. Its `beforeLoad` ensures
 `GET /me`; on `401` it navigates (a full page load) to `/api/v1/auth/login?returnTo=<path, query and
-hash>`. The route never settles while the browser leaves, so no private page flashes. `/` is private.
+hash>`, or, when `/config.authMethods` has `password`, redirects in the app to `/sign-in?returnTo=…`.
+The route never settles while the browser leaves, so no private page flashes. A user whose `/me` has
+`mustChangePassword` is redirected to `/change-password?returnTo=…` before any other private page.
+`/sign-in` and `/set-password` sit outside `_private`, in `AnonymousShell` with the configured
+shell's styles; `/change-password` is a private page (`web/src/account/`). After a sign-in or a
+password change the app reloads at `returnTo` when it is a path of the app (the server's rule), else
+at `/`. With `password`, the shells link to `/change-password` (`PlainShell` in its header, `surveyjs-site` in the account
+menu after Projects). On a site without `password`, `/sign-in` leaves for `/api/v1/auth/login` and the other two pages
+say passwords are not used. `/` is private.
 `api/csrf.ts` adds `X-CSRF-Token` (from `msid_csrf`) to every unsafe request. Sign-out posts to
 `logout`, clears the query cache, and navigates to `redirectUrl`. `logout` answers also without a
 session, so an expired session still leaves the provider's session.
@@ -958,14 +1004,16 @@ the two cannot be one interface. Step 12 splits the old `Directory` into `UserDi
 
 ### The user directories
 
-| `USER_DIRECTORY`                           | Where                             | Users come from                                | `ACCOUNT_NOTICES=surveyjs-licenses`              |
-| ------------------------------------------ | --------------------------------- | ---------------------------------------------- | ------------------------------------------------ |
-| `memory` (default with memory storage)     | `providers/memory.ts`             | The seed's users (a fixed list, never created) | Refused (memory has no licence tables)           |
-| `surveyjs-sql` (default with azure-legacy) | `providers/azure-legacy/index.ts` | `SELECT`s of the site's `Users` table          | The SQL licence reader (`licenceNoticesFromSql`) |
-| `surveyjs-api`                             | `users/surveyjs-api/client.ts`    | The surveyjs.io user API                       | The API's licence list through `licenceNotices`  |
-| `local`                                    | not built (self-hosted track)     | Refused at start-up                            |                                                  |
+| `USER_DIRECTORY`                           | Where                                                  | Users come from                                    | `ACCOUNT_NOTICES=surveyjs-licenses`              |
+| ------------------------------------------ | ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------ |
+| `memory` (default with memory storage)     | `providers/memory.ts`                                  | The seed's users (a fixed list, never created)     | Refused (memory has no licence tables)           |
+| `surveyjs-sql` (default with azure-legacy) | `providers/azure-legacy/index.ts`                      | `SELECT`s of the site's `Users` table              | The SQL licence reader (`licenceNoticesFromSql`) |
+| `surveyjs-api`                             | `users/surveyjs-api/client.ts`                         | The surveyjs.io user API                           | The API's licence list through `licenceNotices`  |
+| `local`                                    | `providers/memory-accounts.ts`, `sql/account-store.ts` | The instance's own accounts (`users` table on SQL) | Refused                                          |
 
-All three built directories are `external`: they never create a user. `createProviders(config)` composes the set:
+The first three are `external`: they never create a user. `local` (self-hosted Step 4, with
+`STORAGE_PROVIDER=memory`, `sqlite` or `postgres`) keeps accounts of its own:
+[Local accounts and the session epoch](#local-accounts-and-the-session-epoch). `createProviders(config)` composes the set:
 the storage provider builds its own pieces; with `USER_DIRECTORY=surveyjs-api` the set's `users` and `notices` are
 replaced by the client's, and the storage provider is given no licence setting, because the API answers licence
 state. Readiness stays the storage provider's. `sessionUser` calls `users.signInUser(claims)`; the claims fallback and

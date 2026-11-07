@@ -60,6 +60,9 @@ jobs:
       - name: Conformance tests (SQLite, a new database file)
         run: pnpm test:conformance:sqlite
 
+      - name: Conformance tests (SQLite, local accounts and password sign-in)
+        run: pnpm test:conformance:password
+
       # The Azurite conformance run and both end-to-end runs use this image (docker run --network host).
       - name: Build the production image
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio:ci .
@@ -120,6 +123,10 @@ jobs:
       # The tsx server on a new database of the PostgreSQL started above, files in a new S3 bucket.
       - name: End-to-end tests (PostgreSQL mode)
         run: pnpm e2e:postgres
+
+      # The tsx server on a new SQLite file, signing in with passwords on the app's own page.
+      - name: End-to-end tests (password mode)
+        run: pnpm e2e:password
 
       # Only a push or a manual run on master publishes; the publish job pushes this same, tested image.
       - name: Save the image for the publish job

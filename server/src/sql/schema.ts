@@ -117,6 +117,29 @@ export interface FilesTable {
   created_at: Timestamp;
 }
 
+export interface UsersTable {
+  id: string;
+  /** Stored lower-case. */
+  email: string;
+  display_name: string;
+  instance_role: "admin" | "user";
+  status: "invited" | "active" | "disabled";
+  password_hash: string | null;
+  must_change_password: Flag;
+  session_epoch: number;
+  created_at: Timestamp;
+  last_sign_in_at: Timestamp | null;
+}
+
+export interface PasswordLinksTable {
+  token_hash: string;
+  user_id: string;
+  purpose: "setup" | "invitation" | "reset";
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  used_at: Timestamp | null;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -129,4 +152,6 @@ export interface DatabaseSchema {
   projects: ProjectsTable;
   project_members: ProjectMembersTable;
   files: FilesTable;
+  users: UsersTable;
+  password_links: PasswordLinksTable;
 }

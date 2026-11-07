@@ -10,6 +10,8 @@ export interface SessionPayload {
   readonly csrf: string;
   /** Absolute expiry, epoch seconds. */
   readonly exp: number;
+  /** A local account's session epoch when it signed in (ADR 0026); absent for other sign-ins. */
+  readonly epoch?: number;
 }
 
 export type Clock = () => number;
@@ -26,8 +28,14 @@ export function createSession(
   csrf: string,
   maxAgeSeconds: number,
   now: Clock = Date.now,
+  epoch?: number,
 ): SessionPayload {
-  return { ...user, csrf, exp: Math.floor(now() / 1000) + maxAgeSeconds };
+  return {
+    ...user,
+    csrf,
+    exp: Math.floor(now() / 1000) + maxAgeSeconds,
+    ...(epoch !== undefined && { epoch }),
+  };
 }
 
 export function encodeSession(secret: string, session: SessionPayload): string {
@@ -56,11 +64,17 @@ export function decodeSession(
 
 function asSession(value: unknown): SessionPayload | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const { sub, name, email, avatarUrl, csrf, exp } = value as Record<string, unknown>;
+  const { sub, name, email, avatarUrl, csrf, exp, epoch } = value as Record<string, unknown>;
   if (typeof sub !== "string" || sub === "") return null;
   if (typeof name !== "string" || typeof email !== "string") return null;
   if (avatarUrl !== null && typeof avatarUrl !== "string") return null;
   if (typeof csrf !== "string" || csrf === "") return null;
   if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
-  return { sub, name, email, avatarUrl, csrf, exp };
+  if (
+    epoch !== undefined &&
+    !(typeof epoch === "number" && Number.isInteger(epoch) && epoch >= 0)
+  ) {
+    return null;
+  }
+  return { sub, name, email, avatarUrl, csrf, exp, ...(epoch !== undefined && { epoch }) };
 }

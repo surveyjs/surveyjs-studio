@@ -161,7 +161,16 @@ paths:
       tags: [Session]
       operationId: passwordLogin
       summary: Sign in with email and password
-      x-phase: P1
+      description: |
+        Signs in a local account (`USER_DIRECTORY=local`, `AUTH_METHODS` lists
+        `password`). A wrong password and an unknown email get the same answer,
+        `401 invalid-credentials`. After 5 failures for one email, further attempts
+        are refused for a time that doubles with each failure
+        (`429 account-locked`, with `Retry-After`), whether or not the email
+        exists. The per-address sign-in rate limit applies too (`429 rate-limited`).
+        When the account must change its password first, the session is limited
+        to `getCurrentUser` (`mustChangePassword: true`), `changeOwnPassword` and
+        `logout`. `501` when password sign-in is not enabled.
       security: []
       requestBody:
         required: true
@@ -171,15 +180,95 @@ paths:
               type: object
               required: [email, password]
               properties:
-                email: { type: string, format: email }
-                password: { type: string, format: password, minLength: 1 }
+                email: { type: string, format: email, maxLength: 320 }
+                password: { type: string, format: password, minLength: 1, maxLength: 1024 }
       responses:
         '204':
           description: Signed in; session cookies are set.
           headers:
             Set-Cookie: { $ref: '#/components/headers/SetCookie' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /auth/password-link:
+    post:
+      tags: [Session]
+      operationId: setPasswordWithLink
+      summary: Set a password with a one-time link
+      description: |
+        Sets the password of a local account from a set-password link: invitations
+        and resets (a link works once and for 7 days), and the first admin's setup
+        link, which the server writes to its log while the instance has no admin
+        (it works once, until the server restarts). The setup link creates that
+        admin: `email` and `displayName` are required with it and ignored
+        otherwise. An unknown, used or expired link gets `400 link-invalid`. The password must have at least 12 characters and
+        not be a common one (`422 password-too-weak`). The account is not signed
+        in: sign in with the new password next. `501` when password sign-in is not
+        enabled.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string, minLength: 1, maxLength: 256 }
+                password: { type: string, format: password, minLength: 1, maxLength: 1024 }
+                email:
+                  type: string
+                  format: email
+                  maxLength: 320
+                  description: The first admin's email; required with the setup link.
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: The first admin's name; required with the setup link.
+      responses:
+        '204': { description: The password is set. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /me/password:
+    post:
+      tags: [Session]
+      operationId: changeOwnPassword
+      summary: Change your password
+      description: |
+        Changes the signed-in local account's password. The current password must
+        be given (`403 invalid-credentials` otherwise); the new one must have at
+        least 12 characters and not be a common one (`422 password-too-weak`).
+        Every other session of the account ends (it gets `401` within a minute);
+        this one is renewed with new session cookies. `501` for an account that is
+        not a local one.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password, minLength: 1, maxLength: 1024 }
+                newPassword: { type: string, format: password, minLength: 1, maxLength: 1024 }
+      responses:
+        '204':
+          description: The password is changed; new session cookies are set.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetCookie' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
         '501': { $ref: '#/components/responses/NotImplemented' }
   /me:
     get:
@@ -1378,7 +1467,10 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Unauthorized:
-      description: Not signed in, or the credentials are invalid (`unauthenticated`).
+      description: >-
+        Not signed in, or the credentials are invalid (`unauthenticated`,
+        `invalid-credentials`), or the session must change its password first
+        (`password-change-required`).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -1574,6 +1666,11 @@ components:
             - rate-limited
             - not-implemented
             - read-only
+            - invalid-credentials
+            - account-locked
+            - password-too-weak
+            - password-change-required
+            - link-invalid
             - internal-error
         errors:
           type: array
@@ -1594,6 +1691,15 @@ components:
         displayName: { type: string }
         email: { type: string, format: email }
         avatarUrl: { type: [string, 'null'], format: uri }
+        instanceRole:
+          type: string
+          enum: [admin, user]
+          description: A local account's role on this instance (`USER_DIRECTORY=local`); absent otherwise.
+        mustChangePassword:
+          type: boolean
+          description: >-
+            A local account that must change its password before anything else; the
+            session then answers `401 password-change-required` to other operations.
         notices:
           type: array
           description: Account notices shown by the shell, such as licence expiry on the hosted edition.

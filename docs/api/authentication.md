@@ -2,19 +2,22 @@
 
 How a client signs in to the API, how the session cookie works, and what the server checks on each
 request. The contract is [`contract/openapi.yaml`](../../contract/openapi.yaml); the operations are
-`login`, `loginCallback`, `logout`, `getCurrentUser` and `passwordLogin` (tag Session). How the server
+`login`, `loginCallback`, `logout`, `getCurrentUser`, `passwordLogin`, `changeOwnPassword` and
+`setPasswordWithLink` (tag Session). How the server
 builds the session: [Architecture](../architecture.md#identity-and-session).
 
 ## Summary
 
-- Sign-in is a **browser redirect flow**. There is no API call that takes a password
-  (`passwordLogin` answers `501 not-implemented`; it is planned for P1).
+- Sign-in is a **browser redirect flow** through an identity provider. A self-hosted instance with
+  its own accounts (`USER_DIRECTORY=local`, `AUTH_METHODS=password`) also signs in with
+  **`passwordLogin`**, an email and a password ([Password sign-in](#password-sign-in)). Without
+  `password` in `AUTH_METHODS`, `passwordLogin` answers `501 not-implemented`.
 - The result is a **session cookie** `msid`. It is encrypted and signed. The server keeps no session
   state.
 - A request that changes data also needs the **CSRF header** `X-CSRF-Token`.
 - API tokens (`Authorization: Bearer ...`) are P1. In Phase 1 they never authenticate a request.
 - Operations marked `security: []` in the contract (`login`, `loginCallback`, `getConfig`,
-  `passwordLogin` and `/public/*`) need no session. `logout` works with or without one.
+  `passwordLogin`, `setPasswordWithLink` and `/public/*`) need no session. `logout` works with or without one.
 
 ## The sign-in flow
 
@@ -72,6 +75,49 @@ answers `302` to `PUBLIC_BASE_URL/` instead of `400`.
 Every error is a [Problem Details](conventions.md#errors) body. The browser shows it as it is, because
 both operations are navigations, not `fetch` calls.
 
+## Password sign-in
+
+With `AUTH_METHODS=password` (self-hosted, `USER_DIRECTORY=local`) the instance keeps its own
+accounts and signs them in without an identity provider.
+
+```sh
+curl -c cookies.txt -X POST -H "Content-Type: application/json"   -d '{"email":"owner@example.com","password":"my long password"}'   http://localhost:3000/api/v1/auth/password/login
+```
+
+`204` sets `msid` and `msid_csrf`, as the callback does. The email is not case-sensitive.
+
+| Operation             | Request                                                         | Success                     |
+| --------------------- | --------------------------------------------------------------- | --------------------------- |
+| `passwordLogin`       | `POST /auth/password/login` with `email`, `password`            | `204`, Set-Cookie (session) |
+| `changeOwnPassword`   | `POST /me/password` with `currentPassword`, `newPassword`; CSRF | `204`, Set-Cookie (session) |
+| `setPasswordWithLink` | `POST /auth/password-link` with `token`, `password`             | `204`                       |
+
+| Status | Code                       | When                                                                                                                                                                        |
+| ------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | `invalid-credentials`      | `passwordLogin`: the email or the password is wrong. The answer is the same for an unknown email and for a disabled account                                                 |
+| 403    | `invalid-credentials`      | `changeOwnPassword`: the current password is wrong                                                                                                                          |
+| 422    | `password-too-weak`        | The new password is shorter than 12 characters, on the list of common passwords, or (`changeOwnPassword`) the current one; `detail` says which. A link is not used up by it |
+| 429    | `account-locked`           | Five failures in a row for this email. `Retry-After` gives the seconds; the wait doubles with each further failure, up to an hour                                           |
+| 400    | `link-invalid`             | `setPasswordWithLink`: the link was used, has expired, or was never issued                                                                                                  |
+| 401    | `password-change-required` | Any session operation but `getCurrentUser`, `changeOwnPassword` and `logout`, while the account must change its password                                                    |
+| 501    | `not-implemented`          | `password` is not in `AUTH_METHODS`                                                                                                                                         |
+| 503    | `read-only`                | `changeOwnPassword` and `setPasswordWithLink` under `READ_ONLY=true`. `passwordLogin` still works there                                                                     |
+
+- **The forced change.** `getCurrentUser` answers `instanceRole` (`admin` or `user`) and
+  `mustChangePassword` for a local account. The first admin made from `ADMIN_PASSWORD` must change
+  it first; meanwhile the other operations answer `401 password-change-required`. The web app sends
+  such a user to `/change-password`.
+- **A password change ends the user's other sessions.** `changeOwnPassword` answers with a new
+  session for this browser; every older session of the user answers `401 unauthenticated` on its
+  next request (on the same server at once, on another instance within a minute). See
+  [ADR 0026](../adr/0026-revoking-stateless-sessions-with-an-epoch.md).
+- **The first admin's setup link.** A server with no admin and no `ADMIN_EMAIL` writes a one-time
+  link `PUBLIC_BASE_URL/set-password?setup=<token>` to its log. Its `setPasswordWithLink` call also
+  sends `email` and `displayName` (without them, or with an email that already has an account: `400 bad-request`, and
+  the link still works), and creates that admin.
+- **`login`** sends the browser to the app's own page `PUBLIC_BASE_URL/sign-in?returnTo=<path>` when
+  `AUTH_METHODS` has no `surveyjs` (and `IDENTITY_PROVIDER` is not `dev`). `logout` answers `redirectUrl` `PUBLIC_BASE_URL/`.
+
 ## `returnTo`
 
 `returnTo` says where to land after sign-in. It is accepted only when it is a **path on this site**:
@@ -104,7 +150,9 @@ HTTPS.
 
 - The session is **stateless**: the server stores nothing. It cannot end one session from the
   server side. A session ends by expiry (12 hours after sign-in, no renewal), by `logout` in
-  that browser, or when `SESSION_SECRET` changes (that ends every session at once).
+  that browser, or when `SESSION_SECRET` changes (that ends every session at once). On a local
+  user directory a password change also ends all of the user's sessions
+  ([Password sign-in](#password-sign-in)).
 - The tokens of the identity provider are discarded after the callback. They are never in a
   cookie.
 - The values are opaque to clients. The format, for implementers of another server, is in
@@ -210,8 +258,8 @@ otherwise). The web app always navigates to `redirectUrl`.
 
 ## Rate limiting
 
-`login`, `loginCallback` and `passwordLogin` allow `SIGN_IN_RATE_LIMIT` requests per minute (default
-30). The counter is **per operation and per client**. Above it:
+`login`, `loginCallback`, `passwordLogin`, `changeOwnPassword` and `setPasswordWithLink` allow
+`SIGN_IN_RATE_LIMIT` requests per minute (default 30). The counter is **per operation and per client**. Above it:
 
 ```text
 HTTP/1.1 429 Too Many Requests
@@ -234,4 +282,4 @@ The public respondent operations use the same address and their own, higher limi
 | `IDENTITY_PROVIDER=surveyjs-oidc` (default) | Sign in at `OIDC_ISSUER_URL`: `auth.surveyjs.io`, or the local mock OIDC server                                                               |
 | `IDENTITY_PROVIDER=dev`                     | A "Sign in as…" page at `/__dev/sign-in`. Memory storage, self-hosted, development only. See [ADR 0007](../adr/0007-dev-identity-provider.md) |
 
-`GET /config` lists `authMethods`. The values are `surveyjs` (surveyjs.io accounts), `password`, `google`, `github` and `facebook`; only `surveyjs` works in Phase 1. The others need the local user directory of the self-hosted track, and a server configured with one of them refuses to start ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md)).
+`GET /config` lists `authMethods`. The values are `surveyjs` (surveyjs.io accounts), `password`, `google`, `github` and `facebook`. `password` needs `USER_DIRECTORY=local` ([Password sign-in](#password-sign-in)). `google`, `github` and `facebook` come with self-hosted Step 8; until then a server configured with one of them refuses to start ([ADR 0018](../adr/0018-accounts-by-deployment-mode.md)). With `password` and no `surveyjs`, the server needs no `OIDC_*` settings.

@@ -1,7 +1,9 @@
 # Signing in
 
-My Surveys has no accounts of its own. You sign in with your surveyjs.io account, and the pages
-you see belong to it. This page describes what you see in the surveyjs.io look (the `surveyjs-site`
+On studio.surveyjs.io, My Surveys has no accounts of its own. You sign in with your surveyjs.io
+account, and the pages you see belong to it. A self-hosted My Surveys can keep its own accounts
+instead: then you sign in with an email and a password (see
+[Signing in with a password](#signing-in-with-a-password)). This page describes what you see in the surveyjs.io look (the `surveyjs-site`
 shell). The window around the page can differ if your administrator chose another shell.
 
 ## Sign in
@@ -34,6 +36,61 @@ Contact SurveyJS support.
 
 A server started with `pnpm demo` has no surveyjs.io behind it. It shows a "Sign in as…" page with
 the test users, with no password. See [Step 3 demo](../demo/step-03.md).
+
+## Signing in with a password
+
+On a self-hosted My Surveys with its own accounts, the sign-in page is part of My Surveys.
+
+1. Open any page of My Surveys. If you are not signed in, the **Sign in** page opens.
+2. Enter your email and password, and choose **Sign in**. Upper and lower case in the email do not
+   matter; in the password they do.
+3. You come back to the page you opened in step 1.
+
+If the instance also allows surveyjs.io accounts, the page has a **Sign in with SurveyJS** link too.
+
+The session lasts 12 hours, as above.
+
+### Choosing a password
+
+A password needs **at least 12 characters**, and it must not be a common one (such as
+"password1234"). A few words in a row make a password that is long and easy to remember.
+
+### Changing your password
+
+Choose **Change password** in the account menu (in the plain shell: in the header), or open
+`/change-password`. Enter your current password, then the new one twice, and choose **Change
+password**. The new password must differ from the current one.
+
+Changing the password ends your sessions **everywhere else**, within a minute. A page left open
+in another browser or device stops loading its data; reload it, and the **Sign in** page opens.
+The browser you changed it in stays signed in.
+
+### The first sign-in of the first admin
+
+When the operator created the first admin with a password in the server's settings
+(`ADMIN_EMAIL` and `ADMIN_PASSWORD`), that password must be changed at the first sign-in:
+
+1. Sign in with that email and password.
+2. The **Change your password** page opens: "You must choose a new password before you continue."
+   Nothing else opens until you do.
+3. Enter the password you signed in with, then a new one twice, and choose **Change password**.
+4. You come back to the page you opened.
+
+### The setup link
+
+When the operator set no first admin, the server writes a one-time link to its log: "This instance
+has no admin yet. Open this one-time link to create the first one". Open it, enter the admin's
+email, name and password (twice), and choose **Create the admin**. Then choose **Sign in**.
+
+The link works once. If it is lost, restarting the server writes a new one, as long as there is no
+admin yet.
+
+### Too many failed attempts
+
+After five wrong passwords in a row for an email, the page says "Too many failed attempts. Try
+again in 1 minute(s)." Each further failure doubles the wait, up to an hour. A successful sign-in
+resets it. The same happens for an email that has no account: the page never tells whether an
+account exists.
 
 ## The account menu
 
@@ -105,10 +162,15 @@ deployment should have it reviewed (see [Architecture](../architecture.md#open-f
 
 ## Troubleshooting
 
-| What you see                                             | What to do                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------------ |
-| "The sign-in expired or was not started in this browser" | Open the page you want again, and sign in again. Do not use an old link. |
-| "Too many sign-in attempts"                              | Wait a minute, then try again.                                           |
-| "Sign-in is unavailable"                                 | The sign-in service did not answer. Try again later.                     |
-| You are sent to sign in again after a while              | The 12 hours are over. Sign in again.                                    |
-| You signed in and still land on the sign-in page         | The browser blocks cookies for this site. Allow them, and try again.     |
+| What you see                                                    | What to do                                                               |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| "The sign-in expired or was not started in this browser"        | Open the page you want again, and sign in again. Do not use an old link. |
+| "Too many sign-in attempts"                                     | Wait a minute, then try again.                                           |
+| "Sign-in is unavailable"                                        | The sign-in service did not answer. Try again later.                     |
+| You are sent to sign in again after a while                     | The 12 hours are over. Sign in again.                                    |
+| You signed in and still land on the sign-in page                | The browser blocks cookies for this site. Allow them, and try again.     |
+| "The email or the password is wrong."                           | Check both, and the keyboard layout. The password is case-sensitive.     |
+| "Too many failed attempts. Try again in …"                      | Wait as long as it says, then try again.                                 |
+| "Use at least 12 characters." or "This password is too common." | Choose a longer or less common password.                                 |
+| "This link was used already, has expired, …"                    | Ask for a new link, or restart the server for a lost setup link.         |
+| You are asked to sign in again after a password change          | The password was changed in another browser. Sign in with the new one.   |

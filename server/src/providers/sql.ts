@@ -4,7 +4,8 @@ import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
 import { openByteStore, type ByteStore } from "../bytes/index.js";
 import { createSqlFileStore } from "../sql/file-store.js";
-import { createSqlProjectStore } from "../sql/project-store.js";
+import { createSqlLocalAccounts, usersById } from "../sql/account-store.js";
+import { createSqlProjectStore, directoryLookup } from "../sql/project-store.js";
 import { createSqlResultStore } from "../sql/result-store.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { createSqlViewStore } from "../sql/view-store.js";
@@ -16,6 +17,8 @@ import type { ProviderSet, ReadinessCheck } from "./types.js";
 export interface SqlProviderOptions {
   /** Where the file bytes are (FILE_STORE); their metadata is in the database. */
   readonly bytes: ByteStore;
+  /** USER_DIRECTORY=local: the users are the database's local accounts, not the memory provider's. */
+  readonly localAccounts?: boolean;
   /**
    * Seeds the memory provider behind the users (`MEMORY_SEED`), which stay in memory until
    * self-hosted Step 4 (local users).
@@ -68,6 +71,7 @@ export async function openSqlProviders(
   return createSqlProviders(database, {
     accountNotices,
     bytes: openByteStore(config.files!),
+    localAccounts: config.userDirectory === "local",
     ...(config.memorySeed === "legacy-fixtures" && { fallbackSeed: await legacyFixtureSeed() }),
   });
 }
@@ -103,9 +107,10 @@ const probe = (database: SqlDatabase): Promise<Check> =>
 
 /**
  * The SQL provider set on an open, migrated database (self-hosted track): surveys, results, views,
- * projects and file metadata in the database, file bytes in `bytes`. The users are still the
- * memory provider's (`fallbackSeed`) until Step 4, so they are lost on restart. Member users are
- * looked up in that directory. `close` closes the database.
+ * projects and file metadata in the database, file bytes in `bytes`. With `localAccounts` the users
+ * are the database's local accounts too; otherwise they are the memory provider's (`fallbackSeed`)
+ * and lost on restart. Member users are looked up in whichever directory it is. `close` closes
+ * the database.
  */
 export function createSqlProviders(
   database: SqlDatabase,
@@ -114,14 +119,17 @@ export function createSqlProviders(
   const fallback = createMemoryProviders(options.fallbackSeed, {
     ...(options.accountNotices && { accountNotices: options.accountNotices }),
   });
+  // The local directory's users are in this database; the memory one's are the fallback's.
+  const local = options.localAccounts ? createSqlLocalAccounts(database) : null;
   return {
     name: database.dialect,
     surveys: createSqlSurveyStore(database),
-    users: fallback.users,
-    projects: createSqlProjectStore(database, fallback.users),
+    users: local?.users ?? fallback.users,
+    projects: createSqlProjectStore(database, local ? usersById : directoryLookup(fallback.users)),
     files: createSqlFileStore(database, options.bytes),
     results: createSqlResultStore(database),
     views: createSqlViewStore(database),
+    accounts: local?.accounts ?? null,
     notices: fallback.notices,
     readinessNames: ["database", "files"],
     ready: async () => {

@@ -14,11 +14,13 @@ export interface AccountMenuItemsProps {
   licenceWarning?: boolean;
   /** The app's Projects page, listed after Settings (the site has no such item). */
   projectsLink?: ShellAppLink;
+  /** The app's change-password page, after Projects (an instance with passwords). */
+  changePasswordLink?: ShellAppLink;
 }
 
 /**
  * The items of the site's Account menu (`the site's page markup`): Settings,
- * the app's Projects, Help Desk, Billing, a separator and Sign Out. An item whose link is not
+ * the app's Projects and Change password, Help Desk, Billing, a separator and Sign Out. An item whose link is not
  * configured is left out.
  */
 export function AccountMenuItems({
@@ -27,6 +29,7 @@ export function AccountMenuItems({
   signingOut,
   licenceWarning,
   projectsLink,
+  changePasswordLink,
 }: AccountMenuItemsProps) {
   const link = (name: string) => (Object.hasOwn(links, name) ? links[name] : undefined);
   const settings = link("settings");
@@ -47,6 +50,7 @@ export function AccountMenuItems({
         </div>
       )}
       {projectsLink && <AppMenuItem text="Projects" link={projectsLink} />}
+      {changePasswordLink && <AppMenuItem text="Change password" link={changePasswordLink} />}
       {helpDesk !== undefined && <DropDownMenuItem text="Help Desk" url={helpDesk} external />}
       {billing !== undefined && <DropDownMenuItem text="Billing" url={billing} external={false} />}
       <DropDownMenuSeparator />

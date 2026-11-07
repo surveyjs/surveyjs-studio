@@ -14,6 +14,23 @@ import type { SqlDatabase } from "./database.js";
 import type { DatabaseSchema } from "./schema.js";
 import { isoOf } from "./values.js";
 
+/**
+ * The users of `ids` that exist, by lower-case id. `db` is the caller's: inside a transaction it
+ * is the transaction, so a lookup in the same SQLite database does not wait on it.
+ */
+export type UserLookup = (
+  db: Kysely<DatabaseSchema>,
+  ids: readonly string[],
+) => Promise<ReadonlyMap<string, User>>;
+
+/** A lookup through a user directory outside the database (the memory one). */
+export const directoryLookup =
+  (users: UserDirectory): UserLookup =>
+  async (_db, ids) => {
+    const found = await Promise.all([...new Set(ids)].map((id) => users.getUser(id)));
+    return new Map(found.flatMap((user) => (user ? [[user.id, user] as const] : [])));
+  };
+
 /** A GUID as stored (lower-case); null for a value that is not a GUID, which no row can have. */
 const key = (id: string): string | null => (GUID.test(id) ? id.toLowerCase() : null);
 
@@ -22,12 +39,15 @@ const distinctSorted = (values: readonly string[]): string[] => [...new Set(valu
 
 /**
  * The project store on SQLite or PostgreSQL (docs/architecture/data-model.md). Member users are
- * resolved through `users`, the provider set's user directory (R6, R11): a row whose user the
- * directory does not know is an orphan, counted but neither shown nor an admin. The last-admin
+ * resolved through `lookupUsers`, the storage provider's own users (R6, R11): a row whose user is
+ * not found is an orphan, counted but neither shown nor an admin. The last-admin
  * rule and project deletion run inside transactions; on PostgreSQL the project row is locked
  * first, so two role changes of one project are decided one after the other.
  */
-export function createSqlProjectStore(database: SqlDatabase, users: UserDirectory): ProjectStore {
+export function createSqlProjectStore(
+  database: SqlDatabase,
+  lookupUsers: UserLookup,
+): ProjectStore {
   const { db } = database;
 
   /** Locks the project row for this transaction (PostgreSQL); false when there is no project. */
@@ -47,18 +67,20 @@ export function createSqlProjectStore(database: SqlDatabase, users: UserDirector
       .select(["user_id", "role"])
       .where("project_id", "=", project)
       .execute();
-    return Promise.all(
-      rows.map(async (row) => {
-        const user = await users.getUser(row.user_id);
-        return {
-          userId: row.user_id,
-          role: row.role,
-          userExists: user !== null,
-          displayName: user?.displayName ?? "",
-          user,
-        };
-      }),
+    const users = await lookupUsers(
+      trx,
+      rows.map((row) => row.user_id),
     );
+    return rows.map((row) => {
+      const user = users.get(row.user_id) ?? null;
+      return {
+        userId: row.user_id,
+        role: row.role,
+        userExists: user !== null,
+        displayName: user?.displayName ?? "",
+        user,
+      };
+    });
   };
 
   /** Memberships with the project as stored now: the owner while the creator is a member (R2). */

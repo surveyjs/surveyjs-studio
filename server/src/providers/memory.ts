@@ -35,6 +35,7 @@ import {
   projectListOrder,
   surveyListOrder,
 } from "./ordering.js";
+import { createMemoryLocalAccounts } from "./memory-accounts.js";
 import { createMemoryFileStore } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
@@ -87,6 +88,8 @@ const versionOf = (content: Record<string, unknown> | undefined): string =>
 export interface MemoryOptions {
   /** `ACCOUNT_NOTICES`; default `none`. Only the demo settings: the memory store has no licences. */
   readonly accountNotices?: AccountNoticesSetting;
+  /** `local` (USER_DIRECTORY=local): the users are local accounts made from the seed's users. */
+  readonly userDirectory?: "external" | "local";
 }
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
@@ -221,7 +224,10 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     role: m.role,
   });
 
-  const findUser = (id: string) => users.find((u) => u.id === lower(id));
+  const local =
+    options.userDirectory === "local" ? createMemoryLocalAccounts(seed?.users ?? []) : null;
+  const findUser = (id: string): User | undefined =>
+    local ? local.findUser(id) : users.find((u) => u.id === lower(id));
 
   /** The project's rows as the last-admin rule sees them (R8, R11). */
   const factsOf = (projectId: string): MembershipFacts[] =>
@@ -362,7 +368,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     files: createMemoryFileStore(),
     results: results.store,
     views: views.store,
-    users: {
+    users: local?.users ?? {
       kind: "external",
       getUser: (id) => {
         const found = findUser(id);
@@ -507,6 +513,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
             : [],
         ),
     },
+    accounts: local?.accounts ?? null,
     notices,
     readinessNames: ["memory"],
     ready: () => Promise.resolve([{ name: "memory", ok: true }]),

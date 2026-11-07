@@ -8,7 +8,11 @@ import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
 import { createIdentityProvider } from "./auth/providers/index.js";
 import type { Clock } from "./auth/session.js";
+import { bootstrapFirstAdmin } from "./auth/bootstrap.js";
+import { createPasswordHandlers } from "./auth/password-handlers.js";
+import { createSessionCheck } from "./auth/session-check.js";
 import { createSessionHandlers } from "./auth/session-handlers.js";
+import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
@@ -47,7 +51,13 @@ const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getPublicResults",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
-const SIGN_IN_OPERATIONS: readonly OperationId[] = ["login", "loginCallback", "passwordLogin"];
+const SIGN_IN_OPERATIONS: readonly OperationId[] = [
+  "login",
+  "loginCallback",
+  "passwordLogin",
+  "setPasswordWithLink",
+  "changeOwnPassword",
+];
 
 function sendProblem(reply: FastifyReply, body: Problem): FastifyReply {
   return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
@@ -168,6 +178,17 @@ export async function buildApp(
   const identity = options.identity ?? (await createIdentityProvider(config));
   if (identity.routes) await app.register(identity.routes);
 
+  // USER_DIRECTORY=local: the first admin, the per-request session check and the sign-in back-off.
+  const accounts = providers.accounts;
+  const local = accounts
+    ? {
+        accounts,
+        bootstrap: await bootstrapFirstAdmin(config, accounts, app.log, options.now),
+        sessionCheck: createSessionCheck({ accounts, ...(options.now && { now: options.now }) }),
+        lockout: createLockout({ ...(options.now && { now: options.now }) }),
+      }
+    : null;
+
   const window = 60_000;
   const signInLimit: RateLimit = {
     max: config.signInRateLimitPerMinute,
@@ -185,10 +206,21 @@ export async function buildApp(
     contract,
     handlers: {
       ...createHandlers(config),
+      ...(local &&
+        config.authMethods.includes("password") &&
+        createPasswordHandlers({
+          config,
+          accounts: local.accounts,
+          sessionCheck: local.sessionCheck,
+          lockout: local.lockout,
+          setupToken: local.bootstrap.setupToken,
+          ...(options.now && { now: options.now }),
+        })),
       ...createSessionHandlers({
         config,
         identity,
         users: providers.users,
+        accounts,
         notices: providers.notices,
         ...(options.now && { now: options.now }),
       }),
@@ -244,6 +276,7 @@ export async function buildApp(
     authentication: {
       sessionSecret: config.sessionSecret,
       ...(options.now && { now: options.now }),
+      ...(local && { sessionCheck: local.sessionCheck }),
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),

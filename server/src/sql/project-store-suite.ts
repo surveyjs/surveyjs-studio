@@ -4,7 +4,7 @@ import { createMemoryProviders } from "../providers/memory.js";
 import type { ProjectStore } from "../providers/types.js";
 import { openDatabase, type SqlDatabase, type SqlDialectName } from "./database.js";
 import { migrate } from "./migrator.js";
-import { createSqlProjectStore } from "./project-store.js";
+import { createSqlProjectStore, directoryLookup } from "./project-store.js";
 import { scratchDatabase, type ScratchDatabase } from "./scratch-databases.js";
 
 const NOW = { now: "2026-10-02T10:00:00.000Z" };
@@ -32,7 +32,7 @@ export function describeSqlProjectStoreSuite(dialect: SqlDialectName): void {
         projects: [],
         memberships: [],
       }).users;
-      projects = createSqlProjectStore(database, users);
+      projects = createSqlProjectStore(database, directoryLookup(users));
     });
     afterAll(async () => {
       await database.close();

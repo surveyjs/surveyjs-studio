@@ -45,8 +45,10 @@ the SQLite ones, which need nothing:
 | `pnpm test:providers:s3`         | The Vitest project `providers-s3` (`*.s3.test.ts`, needs `pnpm s3:up`): the byte-store suite and the full provider suite with files in S3, and the `s3:bucket` command, each in buckets it creates and removes                      |
 | `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                                                     |
 | `pnpm test:conformance:s3`       | The same with the files in a new bucket of the local S3 server (`CONFORMANCE_FILE_STORE=s3`), removed afterwards                                                                                                                    |
+| `pnpm test:conformance:password` | The conformance suite against a server on `sqlite` with the local user directory and password sign-in (`CONFORMANCE_AUTH=password`): `password.test.ts` runs, and every other file runs on local accounts                           |
 | `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                                                           |
 | `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor, history, upload and run specs in SQLite mode (files on local disk), on Chromium                                                                                                 |
+| `pnpm e2e:password`              | Playwright password spec in password mode (SQLite, `AUTH_METHODS=password`, a first admin from `ADMIN_EMAIL`): the forced change, sign out and in, the back-off message; on Chromium                                                |
 | `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` and bucket `surveyjs-studio-e2e` per run; needs `postgres:up` and `s3:up`), on Chromium                           |
 
 CI runs all of them (see [Development](development.md#ci)).
@@ -1170,14 +1172,27 @@ With `sqlite` or `postgres` the setup makes a new database for the run (a SQLite
 database on the server of `DATABASE_URL`, from `docker/postgres.env`), runs the server's `pnpm seed` on it, and starts
 the server with the dev sign-in and `MEMORY_SEED=legacy-fixtures` for the stores still in memory; the teardown deletes
 the database. `pnpm test:conformance:sqlite` and `:postgres` (`conformance-tests/sqlite.env`, `postgres.env`) run
-every file. `CONFORMANCE_IMAGE` works with `postgres` (the SQL providers run with `NODE_ENV=development` until
-self-hosted Step 4), not with `sqlite`, whose file the container cannot see. Each SQL run keeps its files in a new
+every file. `CONFORMANCE_IMAGE` works with `postgres` (with `NODE_ENV=development`: the dev sign-in the suite
+uses is refused in production), not with `sqlite`, whose file the container cannot see. Each SQL run keeps its files in a new
 temporary folder, or with `CONFORMANCE_FILE_STORE=s3` (`pnpm test:conformance:s3`) in a new bucket made and removed by
 the server's `s3:bucket` command.
+
+`CONFORMANCE_AUTH=password` (`pnpm test:conformance:password`, `conformance-tests/password.env`, on `sqlite`) starts the
+server with `USER_DIRECTORY=local`, `AUTH_METHODS=password` and a first admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD`
+(synthetic values in `global-setup.ts`, provided to the tests as `passwordAdmin`). The seed's users are local accounts
+without a password and still sign in through the dev sign-in, so every file runs on the local directory, and
+`password.test.ts` signs the admin in with its password: the forced change (`401 password-change-required`), the same
+`401` for a wrong password and an unknown email, the back-off (`429` with `Retry-After`), a link nobody issued, and a
+password change ending the other sessions at once. Its tests run in order: the last one changes the admin's password.
+The other runs skip it, and the `501` test of `passwordLogin` skips in this one. The setup link of a server without
+`ADMIN_*` is covered by the server's tests (`server/src/auth/password-sign-in.test.ts`), which read the log.
 
 The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
 actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The survey list, paging, editor and
 history, upload and run specs also run on the `sqlite` provider with files on local disk, and every functional spec but
 the licence notices on `postgres` with files in S3 (`pnpm e2e:postgres`, a new database `surveyjs_studio_e2e` and bucket
 `surveyjs-studio-e2e` per run). SQLite mode (`pnpm e2e:sqlite`) uses a new database and files folder in `e2e/.data/`,
-emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts.
+emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts. Password mode (`pnpm e2e:password`,
+`playwright.password.config.ts`) runs `password.spec.ts` alone on a SQLite server with password sign-in only (no dev
+sign-in), in the same folder; the other modes ignore that spec. Its first test changes the first admin's password, so
+it is one test, and a second run needs a new database (each run makes one).

@@ -1,7 +1,9 @@
 import { isIP } from "node:net";
 import { isAbsolute, resolve } from "node:path";
+import { fullFormats } from "ajv-formats/dist/formats.js";
 import { z } from "zod";
 import { isWebhookSecret } from "./accounts/webhook-secret.js";
+import { passwordProblem } from "./passwords/policy.js";
 import type { DatabaseTarget } from "./sql/database.js";
 
 export class ConfigError extends Error {
@@ -37,12 +39,19 @@ export type FilesConfig =
 export const AUTH_METHODS = ["surveyjs", "password", "google", "github", "facebook"] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
 
-/** `USER_DIRECTORY` values; `local` is refused until the self-hosted track builds it (R8). */
+/** `USER_DIRECTORY` values (R8). */
 export const USER_DIRECTORIES = ["memory", "surveyjs-sql", "surveyjs-api", "local"] as const;
-export type UserDirectorySetting = Exclude<(typeof USER_DIRECTORIES)[number], "local">;
+export type UserDirectorySetting = (typeof USER_DIRECTORIES)[number];
 
-/** Sign-in methods that need the local user directory (R8). */
-const LOCAL_DIRECTORY_METHODS: readonly string[] = ["password", "google", "github", "facebook"];
+/** OAuth2 sign-in methods, which the self-hosted track builds in its Step 8. */
+const LATER_METHODS: readonly string[] = ["google", "github", "facebook"];
+
+/** The first admin of an empty local directory (`ADMIN_EMAIL`, `ADMIN_PASSWORD`). Secret: the password. */
+export interface BootstrapAdmin {
+  /** Lower-cased. */
+  readonly email: string;
+  readonly password: string;
+}
 
 export interface UserApiConfig {
   /** `USER_API_URL` without a trailing slash. */
@@ -68,6 +77,8 @@ export interface AppConfig {
   readonly database: DatabaseTarget | null;
   /** Where the SQL providers keep file bytes; null for the other providers (they keep their own). */
   readonly files: FilesConfig | null;
+  /** Set only with USER_DIRECTORY=local and both ADMIN_* settings. Secret: the password. */
+  readonly bootstrapAdmin: BootstrapAdmin | null;
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -256,6 +267,9 @@ const envSchema = z.object({
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  ADMIN_EMAIL: z.string().optional(),
+  // Plain string (checked in loadConfig): a schema check here could echo the password.
+  ADMIN_PASSWORD: z.string().optional(),
   PUBLIC_BASE_URL: publicBaseUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
@@ -357,8 +371,8 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   if (directory === "surveyjs-sql" && storage !== "azure-legacy") {
     problems.push("USER_DIRECTORY: surveyjs-sql requires STORAGE_PROVIDER=azure-legacy");
   }
-  if (directory === "local") {
-    problems.push("USER_DIRECTORY: local is not available yet (self-hosted track)");
+  if (directory === "local" && storage !== "memory" && !SQL_PROVIDERS.includes(storage)) {
+    problems.push("USER_DIRECTORY: local requires STORAGE_PROVIDER=memory, sqlite or postgres");
   }
   if (directory === "surveyjs-api") {
     for (const name of ["USER_API_URL", "USER_API_TOKEN"]) {
@@ -377,12 +391,25 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
     }
   }
   for (const method of csvItems(env.AUTH_METHODS)) {
-    if (LOCAL_DIRECTORY_METHODS.includes(method)) {
-      problems.push(
-        `AUTH_METHODS: ${method} requires USER_DIRECTORY=local, which is not available yet (self-hosted track)`,
-      );
+    if (method === "password" && directory !== "local") {
+      problems.push("AUTH_METHODS: password requires USER_DIRECTORY=local");
+    }
+    if (LATER_METHODS.includes(method)) {
+      problems.push(`AUTH_METHODS: ${method} is not available yet (self-hosted track Step 8)`);
     }
   }
+  // A surveyjs.io identity has no local account to sign in to until identities are linked (Step 8):
+  // every request of its session would be refused. The dev sign-in's users are local accounts.
+  if (
+    directory === "local" &&
+    csvItems(env.AUTH_METHODS ?? "surveyjs").includes("surveyjs") &&
+    env.IDENTITY_PROVIDER !== "dev"
+  ) {
+    problems.push(
+      "AUTH_METHODS: surveyjs with USER_DIRECTORY=local is not available yet (self-hosted track Step 8): use AUTH_METHODS=password",
+    );
+  }
+  problems.push(...bootstrapProblems(env));
   const effective = directory ?? (storage === "azure-legacy" ? "surveyjs-sql" : "memory");
   if (
     env.ACCOUNT_NOTICES === "surveyjs-licenses" &&
@@ -402,14 +429,35 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
+function bootstrapProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const { ADMIN_EMAIL: email, ADMIN_PASSWORD: password } = env;
+  if (email === undefined && password === undefined) return problems;
+  if (env.USER_DIRECTORY !== "local") {
+    problems.push("ADMIN_EMAIL: requires USER_DIRECTORY=local");
+    return problems;
+  }
+  if (email === undefined) problems.push("ADMIN_EMAIL: required with ADMIN_PASSWORD");
+  if (password === undefined) problems.push("ADMIN_PASSWORD: required with ADMIN_EMAIL");
+  // The contract's `format: email` (ajv-formats, full mode), which sign-in checks too.
+  if (email !== undefined && !(fullFormats.email as RegExp).test(email)) {
+    problems.push("ADMIN_EMAIL: must be an email address");
+  }
+  const weak = password === undefined ? null : passwordProblem(password);
+  if (weak !== null) problems.push(`ADMIN_PASSWORD: ${weak}`);
+  return problems;
+}
+
 /** The SQL providers' settings (self-hosted track). Never echoes DATABASE_URL, which holds a password. */
 function databaseProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const storage = env.STORAGE_PROVIDER;
   if (storage === undefined || !SQL_PROVIDERS.includes(storage)) return problems;
-  if (env.NODE_ENV === "production") {
+  // With the memory directory the users are lost on restart: development only.
+  if (env.NODE_ENV === "production" && (env.USER_DIRECTORY ?? "memory") === "memory") {
     problems.push(
-      `STORAGE_PROVIDER: ${storage} is not allowed when NODE_ENV=production until every store is on SQL (self-hosted track)`,
+      `USER_DIRECTORY: memory is not allowed when NODE_ENV=production (STORAGE_PROVIDER=${storage} keeps users in memory); use local`,
     );
   }
   if (storage === "postgres") {
@@ -469,7 +517,10 @@ function identityProblems(env: Record<string, string | undefined>): string[] {
     if (storage !== "memory" && !SQL_PROVIDERS.includes(storage)) {
       problems.push("IDENTITY_PROVIDER: dev requires STORAGE_PROVIDER=memory, sqlite or postgres");
     }
-  } else if (provider === "surveyjs-oidc") {
+  } else if (
+    provider === "surveyjs-oidc" &&
+    csvItems(env.AUTH_METHODS ?? "surveyjs").includes("surveyjs")
+  ) {
     for (const name of ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"]) {
       if (env[name] === undefined) {
         problems.push(`${name}: required when IDENTITY_PROVIDER=surveyjs-oidc`);
@@ -618,9 +669,12 @@ export function loadConfig(
     publicRateLimitPerMinute: e.PUBLIC_RATE_LIMIT,
     publicFileRateLimitPerMinute: e.PUBLIC_FILE_RATE_LIMIT,
     accountNotices: e.ACCOUNT_NOTICES,
-    // `local` never gets here: accountProblems refuses it.
-    userDirectory: (e.USER_DIRECTORY ??
-      (e.STORAGE_PROVIDER === "azure-legacy" ? "surveyjs-sql" : "memory")) as UserDirectorySetting,
+    userDirectory:
+      e.USER_DIRECTORY ?? (e.STORAGE_PROVIDER === "azure-legacy" ? "surveyjs-sql" : "memory"),
+    bootstrapAdmin:
+      e.USER_DIRECTORY === "local" && e.ADMIN_EMAIL !== undefined && e.ADMIN_PASSWORD !== undefined
+        ? Object.freeze({ email: e.ADMIN_EMAIL.toLowerCase(), password: e.ADMIN_PASSWORD })
+        : null,
     userApi:
       e.USER_DIRECTORY === "surveyjs-api" &&
       e.USER_API_URL !== undefined &&

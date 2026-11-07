@@ -39,5 +39,7 @@ export interface ShellProps {
    * calls `navigate`.
    */
   projectsLink?: ShellAppLink;
+  /** In-app link to the change-password page, for an instance with passwords (AUTH_METHODS). */
+  changePasswordLink?: ShellAppLink;
   children: ReactNode;
 }

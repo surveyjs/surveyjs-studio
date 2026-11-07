@@ -41,7 +41,7 @@ describe("db CLI", () => {
     const first = capture();
     expect(await run(["migrate"], first.io, { env })).toBe(0);
     expect(first.out).toMatch(
-      /^Database: sqlite, .+test\.db\nApplied 3 migrations: 0001-surveys, 0002-results-views-projects, 0003-files\n$/,
+      /^Database: sqlite, .+test\.db\nApplied 4 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts\n$/,
     );
 
     const second = capture();
@@ -81,7 +81,7 @@ describe("db CLI", () => {
     const result = capture();
     expect(await run(["seed"], result.io, { env })).toBe(0);
     expect(result.out).toMatch(
-      /^Database: sqlite, .+\nApplied 3 migrations: 0001-surveys, 0002-results-views-projects, 0003-files\nSeeded 9 surveys and 2 projects\.\n$/,
+      /^Database: sqlite, .+\nApplied 4 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts\nSeeded 9 surveys and 2 projects\.\n$/,
     );
     const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
     const store = createSqlSurveyStore(database);

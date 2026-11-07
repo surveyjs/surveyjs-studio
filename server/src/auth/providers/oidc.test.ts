@@ -282,7 +282,13 @@ function sessionHeaders(callback: Awaited<ReturnType<typeof signInThroughIssuer>
   return { cookie: `msid=${msid}; msid_csrf=${csrf}`, "x-csrf-token": csrf };
 }
 
-const params = { state: "state-1", nonce: "nonce-1", codeVerifier: "v".repeat(43) };
+const params = {
+  state: "state-1",
+  nonce: "nonce-1",
+  codeVerifier: "v".repeat(43),
+  returnTo: "/",
+  exp: 2_000_000_000,
+};
 
 describe("surveyjs-oidc provider against an auth.surveyjs.io-like server (OAuth 2.0 + UserInfo)", () => {
   it("builds the authorization URL: code flow, PKCE S256, state, OAuth scopes, no nonce", async () => {

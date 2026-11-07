@@ -1,4 +1,4 @@
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, inject, it, onTestFinished } from "vitest";
 import { baseUrl, call, cleanUp, codeOf, sessionHeaders, signedIn, validator } from "./harness.js";
 import { CookieJar, finishSignIn, fixtureUsers, startSignIn } from "./sign-in.js";
 
@@ -94,13 +94,17 @@ describe(`server at ${baseUrl}`, () => {
       expect(jar.get("msid_csrf")).toBeUndefined();
     });
 
-    it("passwordLogin answers 501 not-implemented", async () => {
-      const response = await call("POST", "/auth/password/login", {
-        body: { email: "owner@example.com", password: "secret" },
-      });
-      expect(response.status).toBe(501);
-      expect(await codeOf(response)).toBe("not-implemented");
-    });
+    // With password sign-in on (CONFORMANCE_AUTH=password) src/password.test.ts tests it instead.
+    it.skipIf(inject("passwordAdmin") !== null)(
+      "passwordLogin answers 501 not-implemented without password sign-in",
+      async () => {
+        const response = await call("POST", "/auth/password/login", {
+          body: { email: "owner@example.com", password: "secret" },
+        });
+        expect(response.status).toBe(501);
+        expect(await codeOf(response)).toBe("not-implemented");
+      },
+    );
   });
 
   describe("session", () => {

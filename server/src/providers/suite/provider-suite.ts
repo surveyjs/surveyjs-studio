@@ -11,7 +11,13 @@ import type {
   SurveyRecord,
 } from "../../domain/types.js";
 import { surveyListOrder } from "../ordering.js";
-import type { AppendOutcome, ProviderSet, ResponsePosition, SurveyPosition } from "../types.js";
+import type {
+  AppendOutcome,
+  ProviderSet,
+  ResponsePosition,
+  SurveyPosition,
+  UserDirectoryKind,
+} from "../types.js";
 import {
   ADMIN_ID,
   BLOCKED_ID,
@@ -132,6 +138,8 @@ export interface ProviderSuiteOptions {
    * whose other stores are not built yet (the SQL providers until self-hosted Step 2).
    */
   readonly sections?: readonly ProviderSuiteSection[];
+  /** The provider's user directory kind; default `external`. */
+  readonly userDirectoryKind?: UserDirectoryKind;
 }
 
 /**
@@ -1815,7 +1823,9 @@ export function describeProviderSuite(
       });
     });
 
-    if (included("users")) describeUserDirectorySections(() => providers.users);
+    if (included("users")) {
+      describeUserDirectorySections(() => providers.users, options.userDirectoryKind);
+    }
 
     describeIn("projects")("projects.listUserProjects", () => {
       it.each([

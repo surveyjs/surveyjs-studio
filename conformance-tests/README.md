@@ -86,6 +86,21 @@ pnpm test:conformance:user-api   # reads user-api.env
 The mode cannot be combined with `CONFORMANCE_BASE_URL`. The stub and the reference server are stopped
 afterwards.
 
+## Run with password sign-in
+
+`CONFORMANCE_AUTH=password` runs the reference server with the local user directory
+(`USER_DIRECTORY=local`), `AUTH_METHODS=password` and a first admin from `ADMIN_EMAIL` and
+`ADMIN_PASSWORD` (synthetic values in `src/global-setup.ts`). The fixture users become accounts without
+a password and still sign in through the dev sign-in, so every file runs on local accounts.
+`src/password.test.ts` runs only in this mode: the admin's sign-in and forced change, the same answer
+for a wrong password and an unknown email, the back-off, and a password change ending the other
+sessions. It needs `CONFORMANCE_PROVIDER=memory`, `sqlite` or `postgres` and the default user
+directory, and cannot be combined with `CONFORMANCE_BASE_URL`.
+
+```sh
+pnpm test:conformance:password   # reads password.env (sqlite)
+```
+
 ## Run read-only
 
 `CONFORMANCE_READ_ONLY=true` runs the reference server with `READ_ONLY=true`. The script runs only
@@ -117,13 +132,14 @@ PowerShell: `$env:CONFORMANCE_BASE_URL = "http://127.0.0.1:3000"; pnpm test:conf
 
 The server must be a fresh, in-memory/empty instance. No child process is started in this mode.
 
-| Variable                     | Meaning                                                                |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `CONFORMANCE_BASE_URL`       | The origin of the server to test                                       |
-| `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped |
-| `CONFORMANCE_PROVIDER`       | `memory` (default) or `azure-legacy`; the reference server only        |
-| `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                 |
-| `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                 |
+| Variable                     | Meaning                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| `CONFORMANCE_BASE_URL`       | The origin of the server to test                                                      |
+| `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped                |
+| `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite` or `postgres`; the reference server only |
+| `CONFORMANCE_AUTH`           | `default` or `password`; the reference server only                                    |
+| `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                                |
+| `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                |
 
 Two more files check the server's edge. `src/security-headers.test.ts` expects the headers of
 [ADR 0019](../docs/adr/0019-run-page-isolation-and-security-headers.md) on an API answer, a problem

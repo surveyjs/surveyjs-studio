@@ -10,7 +10,10 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PrivateRouteImport } from './routes/_private'
+import { Route as SetPasswordRouteImport } from './routes/set-password'
+import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as PrivateIndexRouteImport } from './routes/_private/index'
+import { Route as PrivateChangePasswordRouteImport } from './routes/_private/change-password'
 import { Route as PrivateProjectsRouteImport } from './routes/_private/projects'
 import { Route as ResultsSurveyIdRouteImport } from './routes/results/$surveyId'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
@@ -22,12 +25,29 @@ const PrivateRoute = PrivateRouteImport.update({
   id: '/_private',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetPasswordRoute = SetPasswordRouteImport.update({
+  id: '/set-password',
+  path: '/set-password',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/set-password.lazy').then((d) => d.Route))
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/sign-in.lazy').then((d) => d.Route))
 const PrivateIndexRoute = PrivateIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PrivateRoute,
 } as any).lazy(() =>
   import('./routes/_private/index.lazy').then((d) => d.Route),
+)
+const PrivateChangePasswordRoute = PrivateChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
+  getParentRoute: () => PrivateRoute,
+} as any).lazy(() =>
+  import('./routes/_private/change-password.lazy').then((d) => d.Route),
 )
 const PrivateProjectsRoute = PrivateProjectsRouteImport.update({
   id: '/projects',
@@ -81,6 +101,9 @@ const PrivateSurveysSurveyIdResultsRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof PrivateIndexRoute
+  '/set-password': typeof SetPasswordRoute
+  '/sign-in': typeof SignInRoute
+  '/change-password': typeof PrivateChangePasswordRoute
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
@@ -89,6 +112,9 @@ export interface FileRoutesByFullPath {
   '/surveys/$surveyId/results': typeof PrivateSurveysSurveyIdResultsRoute
 }
 export interface FileRoutesByTo {
+  '/set-password': typeof SetPasswordRoute
+  '/sign-in': typeof SignInRoute
+  '/change-password': typeof PrivateChangePasswordRoute
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
@@ -100,6 +126,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_private': typeof PrivateRouteWithChildren
+  '/set-password': typeof SetPasswordRoute
+  '/sign-in': typeof SignInRoute
+  '/_private/change-password': typeof PrivateChangePasswordRoute
   '/_private/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
@@ -112,6 +141,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/set-password'
+    | '/sign-in'
+    | '/change-password'
     | '/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
@@ -120,6 +152,9 @@ export interface FileRouteTypes {
     | '/surveys/$surveyId/results'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/set-password'
+    | '/sign-in'
+    | '/change-password'
     | '/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
@@ -130,6 +165,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_private'
+    | '/set-password'
+    | '/sign-in'
+    | '/_private/change-password'
     | '/_private/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
@@ -141,6 +179,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   PrivateRoute: typeof PrivateRouteWithChildren
+  SetPasswordRoute: typeof SetPasswordRoute
+  SignInRoute: typeof SignInRoute
   ResultsSurveyIdRoute: typeof ResultsSurveyIdRoute
   SSurveyIdRoute: typeof SSurveyIdRoute
 }
@@ -154,11 +194,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/set-password': {
+      id: '/set-password'
+      path: '/set-password'
+      fullPath: '/set-password'
+      preLoaderRoute: typeof SetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_private/': {
       id: '/_private/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof PrivateIndexRouteImport
+      parentRoute: typeof PrivateRoute
+    }
+    '/_private/change-password': {
+      id: '/_private/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof PrivateChangePasswordRouteImport
       parentRoute: typeof PrivateRoute
     }
     '/_private/projects': {
@@ -207,6 +268,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface PrivateRouteChildren {
+  PrivateChangePasswordRoute: typeof PrivateChangePasswordRoute
   PrivateProjectsRoute: typeof PrivateProjectsRoute
   PrivateIndexRoute: typeof PrivateIndexRoute
   PrivateSurveysSurveyIdEditRoute: typeof PrivateSurveysSurveyIdEditRoute
@@ -215,6 +277,7 @@ interface PrivateRouteChildren {
 }
 
 const PrivateRouteChildren: PrivateRouteChildren = {
+  PrivateChangePasswordRoute: PrivateChangePasswordRoute,
   PrivateProjectsRoute: PrivateProjectsRoute,
   PrivateIndexRoute: PrivateIndexRoute,
   PrivateSurveysSurveyIdEditRoute: PrivateSurveysSurveyIdEditRoute,
@@ -227,6 +290,8 @@ const PrivateRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   PrivateRoute: PrivateRouteWithChildren,
+  SetPasswordRoute: SetPasswordRoute,
+  SignInRoute: SignInRoute,
   ResultsSurveyIdRoute: ResultsSurveyIdRoute,
   SSurveyIdRoute: SSurveyIdRoute,
 }

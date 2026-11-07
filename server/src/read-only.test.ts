@@ -18,6 +18,8 @@ import { READ_ONLY_ALLOWED, refusedWhenReadOnly } from "./read-only.js";
  * decides whether it belongs here or on the allow-list.
  */
 const REFUSED = [
+  "changeOwnPassword",
+  "setPasswordWithLink",
   "createProject",
   "updateProject",
   "deleteProject",

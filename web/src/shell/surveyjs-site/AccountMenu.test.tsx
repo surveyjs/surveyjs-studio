@@ -103,6 +103,27 @@ describe("AccountMenu", () => {
     ).not.toBeNull();
   });
 
+  it("lists Change password after Projects on an instance with passwords", () => {
+    renderMenu({
+      projectsLink: { href: "/projects", navigate: vi.fn() },
+      changePasswordLink: { href: "/change-password", navigate: vi.fn() },
+    });
+
+    expect(screen.getByRole("link", { name: "Change password" }).getAttribute("href")).toBe(
+      "/change-password",
+    );
+    const items = screen.getByRole("navigation").querySelectorAll("a");
+    const names = Array.from(items, (item) => item.textContent.trim());
+    expect(names).toEqual([
+      "Settings",
+      "Projects",
+      "Change password",
+      "Help Desk",
+      "Billing",
+      "Sign Out",
+    ]);
+  });
+
   describe("Projects", () => {
     function renderWithProjects() {
       const navigate = vi.fn();

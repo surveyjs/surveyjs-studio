@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { ShellAppLink } from "../types";
 import { AccountIcon, AccountMenu, AccountMenuItems, type AccountMenuProps } from "./AccountMenu";
 import {
   DropDownMenuGroupTitle,
@@ -59,14 +60,14 @@ export function Header(props: HeaderProps) {
   const fixedShown = scrolledAway && mobileMenu === null;
   const close = () => onMobileMenu(null);
   // The page changes under the mobile menu, so the menu closes first.
-  const { projectsLink } = props;
-  const mobileProjectsLink = projectsLink && {
-    href: projectsLink.href,
-    navigate: () => {
-      close();
-      projectsLink.navigate();
-    },
-  };
+  const closing = (link: ShellAppLink | undefined) =>
+    link && {
+      href: link.href,
+      navigate: () => {
+        close();
+        link.navigate();
+      },
+    };
 
   return (
     <>
@@ -104,7 +105,8 @@ export function Header(props: HeaderProps) {
                   onSignOut={props.onSignOut}
                   signingOut={props.signingOut}
                   licenceWarning={props.licenceWarning}
-                  projectsLink={mobileProjectsLink}
+                  projectsLink={closing(props.projectsLink)}
+                  changePasswordLink={closing(props.changePasswordLink)}
                 />
               </ul>
             </div>
@@ -206,6 +208,7 @@ function TopBarMenu(props: HeaderProps) {
             signingOut={props.signingOut}
             licenceWarning={props.licenceWarning}
             projectsLink={props.projectsLink}
+            changePasswordLink={props.changePasswordLink}
             twinkling={twinkling}
           />
 

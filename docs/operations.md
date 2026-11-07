@@ -262,13 +262,13 @@ Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API w
 The local configurations, for development, tests and demos. None of them touches real data except the two runs on
 production data, which are for the product owner only. [Running the app](running.md) has the commands.
 
-| Configuration          | Storage and users                                                                                                                                                                                           | Sign-in                                                    | Settings file                                                                             |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Memory demo            | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                                                                                     | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page            | `server/demo.env`                                                                         |
-| Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                          | `surveyjs-oidc` against the mock OIDC server               | `docker/azurite.env`, `server/demo-azurite.env`                                           |
-| SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything but users, which stay `memory` until self-hosted Step 4; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                                    | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
-| Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                           | `surveyjs-oidc` against the mock OIDC server               | `docker/prod-like.env`                                                                    |
-| On production data     | `azure-legacy` on the real stores                                                                                                                                                                           | `surveyjs-oidc` against a local the site's sign-in service | `server/.env` (never committed)                                                           |
+| Configuration          | Storage and users                                                                                                                                                                                                              | Sign-in                                                    | Settings file                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Memory demo            | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                                                                                                        | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page            | `server/demo.env`                                                                         |
+| Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                                             | `surveyjs-oidc` against the mock OIDC server               | `docker/azurite.env`, `server/demo-azurite.env`                                           |
+| SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything, users in memory by default or in the database with `USER_DIRECTORY=local`; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                                    | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
+| Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                                              | `surveyjs-oidc` against the mock OIDC server               | `docker/prod-like.env`                                                                    |
+| On production data     | `azure-legacy` on the real stores                                                                                                                                                                                              | `surveyjs-oidc` against a local the site's sign-in service | `server/.env` (never committed)                                                           |
 
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
@@ -276,8 +276,10 @@ hosted deployment by mistake.
 ### Modes 2b and 3: coming with the self-hosted track
 
 The free Docker image (2b) and custom development (3) are built by the self-hosted track
-([spec](../spec-self-hosted.md), [plan](../plan-self-hosted.md)). Step 12 already defined their account settings,
-and today the server refuses them at start-up with a message that names the track:
+([spec](../spec-self-hosted.md), [plan](../plan-self-hosted.md)). Step 12 defined their account settings; the
+track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and the server refuses `google`, `github`
+and `facebook` until its Step 8, with a message that names the step (so is `surveyjs` with `local`: a surveyjs.io
+identity has no local account to sign in to until Step 8 links them):
 
 | Variable         | Mode 2b       | Mode 3                                                           |
 | ---------------- | ------------- | ---------------------------------------------------------------- |
@@ -287,8 +289,8 @@ and today the server refuses them at start-up with a message that names the trac
 
 The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Its Step 1 added
 `STORAGE_PROVIDER=sqlite|postgres` with `SQLITE_PATH` and `DATABASE_URL` ([Development](development.md#sqlite-and-postgresql-modes)),
-for development only: until every store is on SQL (its Step 4: the users) they are refused with
-`NODE_ENV=production`. Mode 1.3 (the
+and its Step 4 the local accounts, so with `NODE_ENV=production` they run with `USER_DIRECTORY=local` (and are
+refused with `memory`, which would lose the users). The image comes with the track's Step 7. Mode 1.3 (the
 hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come from sign-in
 ([ADR 0022](adr/0022-users-from-sign-in.md)).
 
@@ -297,21 +299,28 @@ hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md
 Users come from a **user directory**. Which one is a setting, and some combinations cannot work: the server then
 refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deployment-mode.md)).
 
-| Variable                 | Values                                                                 | Meaning                                                                                                                                                                  |
-| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `USER_DIRECTORY`         | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                      | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local` is refused: the self-hosted track builds it |
-| `USER_API_URL`           | An http(s) URL, such as `https://users.example.com/api`                | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped         |
-| `USER_API_TOKEN`         | A string; **secret**                                                   | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                             |
-| `ACCOUNT_NOTICES`        | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`                                                      |
-| `ACCOUNT_WEBHOOK_SECRET` | `whsec_` and base64 of at least 24 bytes; **secret**                   | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                          |
+| Variable                        | Values                                                                 | Meaning                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                      | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts)) |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | An email; a password (**secret**)                                      | `local` only, both or neither: the first admin ([below](#local-accounts))                                                                                                            |
+| `USER_API_URL`                  | An http(s) URL, such as `https://users.example.com/api`                | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped                     |
+| `USER_API_TOKEN`                | A string; **secret**                                                   | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                                         |
+| `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`                                                                  |
+| `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                   | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                      |
 
 **The rules, all reported together at start-up:**
 
 - `USER_DIRECTORY=memory` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`; `surveyjs-sql` needs `STORAGE_PROVIDER=azure-legacy`. These
   apply to an explicit value only: the default always fits.
 - `surveyjs-api` needs `USER_API_URL` and `USER_API_TOKEN`.
-- `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`, but only **`surveyjs`** can start
-  today: each of the others needs `USER_DIRECTORY=local` and says so. `oidc` is no longer a value.
+- `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`. `password` needs
+  `USER_DIRECTORY=local`; `google`, `github` and `facebook` are refused until self-hosted Step 8. The `OIDC_*` settings
+  are required only when the list has `surveyjs`. `oidc` is no longer a value.
+- `USER_DIRECTORY=local` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, and `AUTH_METHODS=password`: `surveyjs`
+  on `local` is refused until self-hosted Step 8 (except with the development sign-in, `IDENTITY_PROVIDER=dev`).
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` come together, only with `local`; the password must pass the password rules (the
+  message names the rule, never the value).
+- With `NODE_ENV=production`, `sqlite` and `postgres` need `USER_DIRECTORY=local`.
 - `ACCOUNT_NOTICES=surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql` or `surveyjs-api`.
 
 **The usual settings in mode 1** (the hosted app for surveyjs.io users):
@@ -332,6 +341,39 @@ ACCOUNT_WEBHOOK_SECRET=whsec_…       # secret; the same one the site signs wit
 With the user API, a failed call (a time-out, a network error, any status but `200` and `404`) is an error and never
 read as "unknown". `/readyz` then checks the API too (`user-api`): a lookup of an id that never exists must answer
 `404` within 5 s.
+
+### Local accounts
+
+`USER_DIRECTORY=local` (self-hosted) keeps the instance's own accounts: on `sqlite` and `postgres` in the `users` table,
+backed up with the database. With `AUTH_METHODS=password` users sign in with an email and a password on the app's own
+`/sign-in` page, and no `OIDC_*` setting is needed ([ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md)).
+
+```text
+STORAGE_PROVIDER=postgres              # or sqlite
+DATABASE_URL=postgres://…              # secret
+USER_DIRECTORY=local
+AUTH_METHODS=password
+SESSION_SECRET=…                       # secret; required with NODE_ENV=production
+ADMIN_EMAIL=you@example.com            # optional: the first admin
+ADMIN_PASSWORD=…                       # secret; must be changed at the first sign-in
+```
+
+**The first admin.** At start-up, while no account is an active admin:
+
+- with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, the server creates that admin, who must change the password at the first
+  sign-in. Remove `ADMIN_PASSWORD` from the settings afterwards: it is used only while there is no admin. An
+  `ADMIN_EMAIL` that already has an account creates nothing (a warning says so);
+- without them, the server logs at `warn` a one-time link, "This instance has no admin yet. Open this one-time link to
+  create the first one: `PUBLIC_BASE_URL/set-password?setup=…`". **The link is a secret**: whoever opens it first
+  becomes the admin, so keep the log private until it is used. It works once; a restart writes a new one while there is
+  still no admin.
+
+`READ_ONLY=true` creates no admin and logs no link.
+
+**Sessions.** A password change ends all of the user's other sessions: at once on the same server, within a minute
+on another one. The failed sign-ins of an email are counted in the server's memory: from the fifth failure in a row
+the email waits 60 s, doubling to an hour (`429 account-locked`); a restart forgets the counts. The per-address limit
+`SIGN_IN_RATE_LIMIT` applies too, so set `TRUST_PROXY` behind a reverse proxy.
 
 ## Erasing an account's data
 
