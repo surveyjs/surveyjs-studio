@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
@@ -8,9 +11,11 @@ import type { ProviderSet } from "./types.js";
 describe("createProviders with STORAGE_PROVIDER=postgres", () => {
   let scratch: ScratchDatabase | undefined;
   let providers: ProviderSet | undefined;
+  const filesRoot = mkdtempSync(join(tmpdir(), "surveyjs-studio-files-"));
   afterAll(async () => {
     await providers?.close();
     await scratch?.drop();
+    rmSync(filesRoot, { recursive: true, force: true });
   });
 
   it("logs a closed database connection with its code only, and keeps serving", async () => {
@@ -20,6 +25,7 @@ describe("createProviders with STORAGE_PROVIDER=postgres", () => {
       IDENTITY_PROVIDER: "dev",
       STORAGE_PROVIDER: "postgres",
       DATABASE_URL: scratch.target.url,
+      FILES_PATH: filesRoot,
     });
     const warnings: { details: Readonly<Record<string, string>>; message: string }[] = [];
     providers = await createProviders(config, {
@@ -41,7 +47,10 @@ describe("createProviders with STORAGE_PROVIDER=postgres", () => {
       details: { code: "57P01" },
       message: "A database connection was closed; the next query opens a new one.",
     });
-    expect(await providers.ready()).toEqual([{ name: "database", ok: true }]);
+    expect(await providers.ready()).toEqual([
+      { name: "database", ok: true },
+      { name: "files", ok: true },
+    ]);
     expect(JSON.stringify(warnings)).not.toContain("Local-Postgres-Pwd-1");
   });
 });

@@ -31,4 +31,5 @@ and add each one to this index.
 | [0022](0022-users-from-sign-in.md)                         | Users from sign-in, not from a user API                                         | Accepted |
 | [0023](0023-sqlite-driver-node-sqlite.md)                  | The SQLite driver: Node's built-in `node:sqlite`                                | Accepted |
 | [0024](0024-kysely-and-plain-sql-migrations.md)            | Kysely and plain-SQL migrations                                                 | Accepted |
+| [0025](0025-file-storage-for-the-sql-providers.md)         | File storage for the SQL providers                                              | Accepted |
 | [0032](0032-history-json-view.md)                          | The JSON of a history entry                                                     | Accepted |

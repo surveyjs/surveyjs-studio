@@ -42,10 +42,12 @@ the SQLite ones, which need nothing:
 | Command                          | Runs                                                                                                                                                                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test:providers:postgres`   | The Vitest project `providers-postgres` (`*.postgres.test.ts`): the full provider suite, the migrator suite, the SQL-only concurrency suites and the pool's reconnect on PostgreSQL, each on scratch databases it creates and drops |
+| `pnpm test:providers:s3`         | The Vitest project `providers-s3` (`*.s3.test.ts`, needs `pnpm s3:up`): the byte-store suite and the full provider suite with files in S3, and the `s3:bucket` command, each in buckets it creates and removes                      |
 | `pnpm test:conformance:sqlite`   | The conformance suite against a server on `sqlite`, with a new database file seeded for the run                                                                                                                                     |
+| `pnpm test:conformance:s3`       | The same with the files in a new bucket of the local S3 server (`CONFORMANCE_FILE_STORE=s3`), removed afterwards                                                                                                                    |
 | `pnpm test:conformance:postgres` | The conformance suite against a server on `postgres`, with a new database for the run, dropped afterwards                                                                                                                           |
-| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor and history specs in SQLite mode, on Chromium                                                                                                                                    |
-| `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` per run), on Chromium                                                                                             |
+| `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor, history, upload and run specs in SQLite mode (files on local disk), on Chromium                                                                                                 |
+| `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` and bucket `surveyjs-studio-e2e` per run; needs `postgres:up` and `s3:up`), on Chromium                           |
 
 CI runs all of them (see [Development](development.md#ci)).
 
@@ -1071,6 +1073,7 @@ Where it runs:
 | `memory.provider.test.ts`                           | `memory`, seeded with fixtures                        | `pnpm test:unit`               |
 | `sql.provider.test.ts`                              | `sqlite` on a scratch file, migrated and seeded       | `pnpm test:unit`               |
 | `sql.provider.postgres.test.ts`                     | `postgres` on a scratch database, migrated and seeded | `pnpm test:providers:postgres` |
+| `sql.provider.s3.test.ts`                           | `sqlite` with its files in a scratch S3 bucket        | `pnpm test:providers:s3`       |
 | `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                         | `pnpm test:providers:azurite`  |
 | `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns                | `pnpm test:providers:azurite`  |
 | `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write      | `pnpm test:providers:azurite`  |
@@ -1168,10 +1171,13 @@ database on the server of `DATABASE_URL`, from `docker/postgres.env`), runs the 
 the server with the dev sign-in and `MEMORY_SEED=legacy-fixtures` for the stores still in memory; the teardown deletes
 the database. `pnpm test:conformance:sqlite` and `:postgres` (`conformance-tests/sqlite.env`, `postgres.env`) run
 every file. `CONFORMANCE_IMAGE` works with `postgres` (the SQL providers run with `NODE_ENV=development` until
-self-hosted Steps 3 and 4), not with `sqlite`, whose file the container cannot see.
+self-hosted Step 4), not with `sqlite`, whose file the container cannot see. Each SQL run keeps its files in a new
+temporary folder, or with `CONFORMANCE_FILE_STORE=s3` (`pnpm test:conformance:s3`) in a new bucket made and removed by
+the server's `s3:bucket` command.
 
 The end-to-end tests run on the memory provider (`pnpm e2e`) and, for the sign-in, survey list, survey
 actions, editor, history, uploads, run, results and results-details specs, on the `azure-legacy` provider with the mock OIDC server (`pnpm e2e:azurite`). The survey list, paging, editor and
-history specs also run on the `sqlite` provider, and every functional spec but the licence notices on `postgres`
-(`pnpm e2e:postgres`, a new database `surveyjs_studio_e2e` per run). SQLite mode (`pnpm e2e:sqlite`) uses a new
-database in `e2e/.data/`, emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts.
+history, upload and run specs also run on the `sqlite` provider with files on local disk, and every functional spec but
+the licence notices on `postgres` with files in S3 (`pnpm e2e:postgres`, a new database `surveyjs_studio_e2e` and bucket
+`surveyjs-studio-e2e` per run). SQLite mode (`pnpm e2e:sqlite`) uses a new database and files folder in `e2e/.data/`,
+emptied by the next run. Both are seeded by the server's `pnpm seed` before it starts.

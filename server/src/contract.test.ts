@@ -22,7 +22,11 @@ describe("loadContract", () => {
     );
     try {
       const contract = await loadContract(openapiPath);
-      expect(contract.operations).toHaveLength(41);
+      // Counted from the YAML text, not a fixed number, so branches that add operations do not conflict here.
+      const declared =
+        (await readFile(openapiPath, "utf8")).match(/^\s+operationId:/gm)?.length ?? 0;
+      expect(declared).toBeGreaterThan(0);
+      expect(contract.operations).toHaveLength(declared);
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     } finally {
       for (const spy of spies) spy.mockRestore();

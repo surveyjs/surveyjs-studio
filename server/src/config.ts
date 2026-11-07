@@ -17,6 +17,23 @@ export type StorageProvider = (typeof STORAGE_PROVIDERS)[number];
 /** Providers whose users and other stores are still the memory ones (self-hosted track Steps 1–4). */
 const SQL_PROVIDERS: readonly string[] = ["sqlite", "postgres"];
 
+/** `FILE_STORE` and its settings. Secret (the S3 secret key): never log or echo. */
+export type FilesConfig =
+  | { readonly kind: "local"; readonly path: string }
+  | {
+      readonly kind: "s3";
+      readonly bucket: string;
+      readonly region: string;
+      /** Without a trailing slash; null: AWS S3 itself. */
+      readonly endpoint: string | null;
+      readonly forcePathStyle: boolean;
+      /** null: the AWS SDK's default credential chain. */
+      readonly credentials: {
+        readonly accessKeyId: string;
+        readonly secretAccessKey: string;
+      } | null;
+    };
+
 export const AUTH_METHODS = ["surveyjs", "password", "google", "github", "facebook"] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
 
@@ -49,6 +66,8 @@ export interface AppConfig {
   readonly legacy: LegacyConfig | null;
   /** Set only when storageProvider is `sqlite` or `postgres`. Secret (the URL): never log or echo. */
   readonly database: DatabaseTarget | null;
+  /** Where the SQL providers keep file bytes; null for the other providers (they keep their own). */
+  readonly files: FilesConfig | null;
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -226,6 +245,17 @@ const envSchema = z.object({
   // Plain string (checked in loadConfig): a schema check here could echo the password.
   DATABASE_URL: z.string().optional(),
   SQLITE_PATH: z.string().min(1).default("/data/surveyjs-studio.db"),
+  FILE_STORE: z.enum(["local", "s3"]).optional(),
+  FILES_PATH: z.string().min(1).default("/data/files"),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_ENDPOINT: httpUrl.optional(),
+  S3_FORCE_PATH_STYLE: z
+    .enum(["true", "false"], { error: "must be true or false" })
+    .default("false"),
+  // Plain strings (checked in loadConfig): a schema check here could echo the secret.
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
   PUBLIC_BASE_URL: publicBaseUrl.optional(),
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: positiveInt.default(52428800),
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
@@ -396,6 +426,35 @@ function databaseProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** FILE_STORE and the S3 settings. Never echoes S3_SECRET_ACCESS_KEY. */
+function fileProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const storage = env.STORAGE_PROVIDER ?? "memory";
+  if (env.FILE_STORE !== undefined && !SQL_PROVIDERS.includes(storage)) {
+    problems.push("FILE_STORE: requires STORAGE_PROVIDER=sqlite or postgres");
+  }
+  if (env.FILE_STORE !== "s3") return problems;
+  if (env.S3_BUCKET === undefined) problems.push("S3_BUCKET: required when FILE_STORE=s3");
+  const both = "(set both, or neither for the AWS default credentials)";
+  if (env.S3_ACCESS_KEY_ID !== undefined && env.S3_SECRET_ACCESS_KEY === undefined) {
+    problems.push(`S3_SECRET_ACCESS_KEY: required with S3_ACCESS_KEY_ID ${both}`);
+  }
+  if (env.S3_SECRET_ACCESS_KEY !== undefined && env.S3_ACCESS_KEY_ID === undefined) {
+    problems.push(`S3_ACCESS_KEY_ID: required with S3_SECRET_ACCESS_KEY ${both}`);
+  }
+  // Plain http only to a server on this machine (the local S3 server); never in transit.
+  const endpoint = env.S3_ENDPOINT;
+  if (
+    endpoint !== undefined &&
+    URL.canParse(endpoint) &&
+    new URL(endpoint).protocol === "http:" &&
+    !isLoopback(endpoint)
+  ) {
+    problems.push("S3_ENDPOINT: must be https unless its host is localhost, 127.0.0.1 or [::1]");
+  }
+  return problems;
+}
+
 function identityProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const provider = env.IDENTITY_PROVIDER ?? "surveyjs-oidc";
@@ -449,6 +508,26 @@ function databaseOf(e: z.infer<typeof envSchema>): DatabaseTarget | null {
   return null;
 }
 
+/** Where the SQL providers keep file bytes; null for the other providers. */
+function filesOf(e: z.infer<typeof envSchema>): FilesConfig | null {
+  if (e.STORAGE_PROVIDER !== "sqlite" && e.STORAGE_PROVIDER !== "postgres") return null;
+  if (e.FILE_STORE !== "s3") return Object.freeze({ kind: "local", path: resolve(e.FILES_PATH) });
+  return Object.freeze({
+    kind: "s3",
+    bucket: e.S3_BUCKET ?? "",
+    region: e.S3_REGION,
+    endpoint: e.S3_ENDPOINT?.replace(/[/]+$/, "") ?? null,
+    forcePathStyle: e.S3_FORCE_PATH_STYLE === "true",
+    credentials:
+      e.S3_ACCESS_KEY_ID !== undefined && e.S3_SECRET_ACCESS_KEY !== undefined
+        ? Object.freeze({
+            accessKeyId: e.S3_ACCESS_KEY_ID,
+            secretAccessKey: e.S3_SECRET_ACCESS_KEY,
+          })
+        : null,
+  });
+}
+
 export function loadConfig(
   rawEnv: Record<string, string | undefined>,
   options: LoadConfigOptions = {},
@@ -473,6 +552,7 @@ export function loadConfig(
     }
   }
   problems.push(...databaseProblems(env));
+  problems.push(...fileProblems(env));
   if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
     problems.push("SESSION_SECRET: must be at least 32 characters");
   }
@@ -503,6 +583,7 @@ export function loadConfig(
           })
         : null,
     database: databaseOf(e),
+    files: filesOf(e),
     publicBaseUrl: e.PUBLIC_BASE_URL ?? "http://localhost:3000",
     limits: Object.freeze({
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,

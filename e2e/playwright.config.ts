@@ -26,9 +26,11 @@ stripAppVariables(process.env);
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,
 //   editor, history, uploads, run, results, results-details, projects and xss specs, on Chromium.
 // - sqlite (E2E_MODE=sqlite, `pnpm e2e:sqlite`): the sqlite provider on a new database file seeded
-//   with the golden fixtures, and the dev sign-in; the survey list and editor specs, on Chromium.
+//   with the golden fixtures, files on local disk, and the dev sign-in; the survey list, editor,
+//   history, upload and run specs, on Chromium.
 // - postgres (E2E_MODE=postgres, `pnpm e2e:postgres`): the postgres provider on a new database
-//   (`pnpm postgres:up` first), seeded the same way; every functional spec but the licence notices
+//   (`pnpm postgres:up` first) with files in a new bucket of the local S3 server (`pnpm s3:up`),
+//   seeded the same way; every functional spec but the licence notices
 //   (which need the second server), on Chromium.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
@@ -142,8 +144,14 @@ const sqlWebServers = (): WebServers => [
         ? {
             STORAGE_PROVIDER: "sqlite",
             SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
+            FILE_STORE: "local",
+            FILES_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "files"),
           }
-        : { STORAGE_PROVIDER: "postgres", DATABASE_URL: process.env["E2E_DATABASE_URL"] ?? "" }),
+        : {
+            STORAGE_PROVIDER: "postgres",
+            DATABASE_URL: process.env["E2E_DATABASE_URL"] ?? "",
+            ...JSON.parse(process.env["E2E_S3_SETTINGS"] ?? "{}"),
+          }),
       PORT: String(ports.server),
     },
   },
@@ -247,6 +255,8 @@ export default defineConfig({
             "survey-list-paging.spec.ts",
             "editor.spec.ts",
             "history.spec.ts",
+            "uploads.spec.ts",
+            "run.spec.ts",
           ],
           use: { ...devices["Desktop Chrome"], viewport },
         },

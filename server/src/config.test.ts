@@ -47,6 +47,7 @@ describe("loadConfig", () => {
       memorySeed: "empty",
       legacy: null,
       database: null,
+      files: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -352,6 +353,83 @@ describe("loadConfig", () => {
         );
       },
     );
+  });
+
+  describe("file storage", () => {
+    const S3_SECRET = "S3-Secret-Value-88";
+    const sqlite = { STORAGE_PROVIDER: "sqlite" };
+    const s3 = { ...sqlite, FILE_STORE: "s3", S3_BUCKET: "studio-files" };
+
+    it("keeps the SQL providers' files on local disk by default, under /data/files", () => {
+      expect(loadConfig(sqlite).files).toEqual({ kind: "local", path: resolve("/data/files") });
+      expect(loadConfig({ ...sqlite, FILES_PATH: ".data/files" }).files).toEqual({
+        kind: "local",
+        path: resolve(".data/files"),
+      });
+    });
+
+    it("leaves files to the other providers' own stores", () => {
+      expect(loadConfig({}).files).toBeNull();
+      expect(messageOf(() => loadConfig({ FILE_STORE: "local" }))).toContain(
+        "  - FILE_STORE: requires STORAGE_PROVIDER=sqlite or postgres",
+      );
+    });
+
+    it("reads the S3 settings, with the AWS defaults", () => {
+      expect(loadConfig(s3).files).toEqual({
+        kind: "s3",
+        bucket: "studio-files",
+        region: "us-east-1",
+        endpoint: null,
+        forcePathStyle: false,
+        credentials: null,
+      });
+      const config = loadConfig({
+        ...s3,
+        S3_REGION: "eu-central",
+        S3_ENDPOINT: "https://s3.example.net/",
+        S3_FORCE_PATH_STYLE: "true",
+        S3_ACCESS_KEY_ID: "key-id",
+        S3_SECRET_ACCESS_KEY: S3_SECRET,
+      });
+      expect(config.files).toEqual({
+        kind: "s3",
+        bucket: "studio-files",
+        region: "eu-central",
+        endpoint: "https://s3.example.net",
+        forcePathStyle: true,
+        credentials: { accessKeyId: "key-id", secretAccessKey: S3_SECRET },
+      });
+      expect(Object.isFrozen(config.files)).toBe(true);
+    });
+
+    it.each([
+      [{ ...sqlite, FILE_STORE: "s3" }, "S3_BUCKET: required when FILE_STORE=s3"],
+      [
+        { ...s3, S3_ACCESS_KEY_ID: "key-id" },
+        "S3_SECRET_ACCESS_KEY: required with S3_ACCESS_KEY_ID (set both, or neither for the AWS default credentials)",
+      ],
+      [
+        { ...s3, S3_SECRET_ACCESS_KEY: S3_SECRET },
+        "S3_ACCESS_KEY_ID: required with S3_SECRET_ACCESS_KEY (set both, or neither for the AWS default credentials)",
+      ],
+      [
+        { ...s3, S3_ENDPOINT: "http://s3.example.net" },
+        "S3_ENDPOINT: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+      ],
+      [{ ...s3, S3_FORCE_PATH_STYLE: "yes" }, "S3_FORCE_PATH_STYLE"],
+      [{ ...sqlite, FILE_STORE: "azure" }, "FILE_STORE"],
+    ])("refuses %j", (env, line) => {
+      const message = messageOf(() => loadConfig(env));
+      expect(message).toContain(line);
+      expect(message).not.toContain(S3_SECRET);
+    });
+
+    it("accepts a plain-http endpoint on this machine (the local S3 server)", () => {
+      expect(loadConfig({ ...s3, S3_ENDPOINT: "http://127.0.0.1:19000" }).files).toMatchObject({
+        endpoint: "http://127.0.0.1:19000",
+      });
+    });
   });
 
   describe("empty and blank values", () => {

@@ -131,12 +131,12 @@ See [Development](docs/development.md#azurite-mode) and the [demo scripts](docs/
 
 ### SQLite and PostgreSQL modes
 
-The SQL providers of the self-hosted track (everything but users and uploaded files so far; those stay in memory until
-its Steps 3 and 4):
+The SQL providers of the self-hosted track (everything but users so far; those stay in memory until its Step 4):
 
 ```sh
 pnpm seed:sqlite && pnpm dev:sqlite       # data in server/.data/surveyjs-studio.db
 pnpm seed:postgres && pnpm dev:postgres   # data in PostgreSQL in Docker (pnpm postgres:down deletes it)
+pnpm seed:sqlite && pnpm dev:s3           # as dev:sqlite, files in RustFS, an S3-compatible server in Docker
 ```
 
 See [Development](docs/development.md#sqlite-and-postgresql-modes).
@@ -196,8 +196,10 @@ Run from the repository root.
 | `pnpm demo:azurite:up`                                           | Starts the legacy replica (Azurite and SQL Server) and the mock OIDC server (needs Docker), and loads the golden fixtures    |
 | `pnpm demo:azurite`                                              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                        |
 | `pnpm demo:azurite:down`                                         | Stops the replica and deletes its data                                                                                       |
-| `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the data in a SQLite file (`server/.data/`); users and files stay in memory                           |
-| `pnpm dev:postgres`                                              | Like `pnpm demo`, with the data in PostgreSQL in Docker (starts it); users and files stay in memory                          |
+| `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the data and files under `server/.data/`; users stay in memory                                        |
+| `pnpm dev:postgres`                                              | Like `pnpm demo`, with the data in PostgreSQL in Docker (starts it); users stay in memory                                    |
+| `pnpm dev:s3`                                                    | Like `pnpm dev:sqlite`, with the files in RustFS (starts it)                                                                 |
+| `pnpm s3:up`, `pnpm s3:down`, `pnpm s3:bucket`                   | Starts RustFS and creates the dev bucket; stops it and deletes its data; creates or removes a bucket                         |
 | `pnpm postgres:up`, `pnpm postgres:down`                         | Starts PostgreSQL in Docker; stops it and deletes its data                                                                   |
 | `pnpm seed`, `pnpm seed:sqlite`, `pnpm seed:postgres`            | Migrates the database, then loads the golden fixtures (seed surveys are replaced, others kept)                               |
 | `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                           |
@@ -219,7 +221,9 @@ Run from the repository root.
 | `pnpm test:providers:azurite`                                    | Provider suite on the replica (needs `demo:azurite:up`)                                                                      |
 | `pnpm test:conformance:azurite`                                  | Conformance suite on the `azure-legacy` provider and the replica                                                             |
 | `pnpm test:providers:postgres`                                   | Provider and migrator suites on PostgreSQL (needs `postgres:up`)                                                             |
+| `pnpm test:providers:s3`                                         | Byte-store and provider suites with files in S3 (needs `s3:up`)                                                              |
 | `pnpm test:conformance:sqlite`, `pnpm test:conformance:postgres` | Conformance suite on the SQL providers, a new seeded database per run (`postgres` needs `postgres:up`)                       |
+| `pnpm test:conformance:s3`                                       | Conformance suite on `sqlite` with the files in a new S3 bucket (needs `s3:up`)                                              |
 | `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                               |
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                           |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                         |

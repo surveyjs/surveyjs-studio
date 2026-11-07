@@ -363,7 +363,10 @@ describe("contract coverage", () => {
   const operations = contractOperations();
 
   it("finds every operation of the contract", () => {
-    expect(operations).toHaveLength(41);
+    // Counted from the YAML text, not a fixed number, so branches that add operations do not conflict here.
+    const declared = readFileSync(openapiPath, "utf8").match(/^\s+operationId:/gm)?.length ?? 0;
+    expect(declared).toBeGreaterThan(0);
+    expect(operations).toHaveLength(declared);
   });
 
   it.each(operations.map((op) => [op.operationId, op] as const))(

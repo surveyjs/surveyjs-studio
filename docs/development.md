@@ -16,12 +16,13 @@
 
 ## Demo modes
 
-| Mode       | Command                                                                                         | Storage                                                                                                               |
-| ---------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| memory     | `pnpm demo`                                                                                     | In memory; data is lost on restart                                                                                    |
-| Azurite    | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode))                   | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server                 |
-| SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Everything but users and files in `server/.data/surveyjs-studio.db` (those two in memory until self-hosted Steps 3–4) |
-| PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Everything but users and files in PostgreSQL in Docker (those two in memory until self-hosted Steps 3–4)              |
+| Mode       | Command                                                                                         | Storage                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| memory     | `pnpm demo`                                                                                     | In memory; data is lost on restart                                                                    |
+| Azurite    | `pnpm demo:azurite:up`, then `pnpm demo:azurite` (see [below](#azurite-mode))                   | Local replica of the legacy stores, read through `azure-legacy`; sign-in through the mock OIDC server |
+| SQLite     | `pnpm seed:sqlite` once, then `pnpm dev:sqlite` (see [below](#sqlite-and-postgresql-modes))     | Everything but users in `server/.data/` (users in memory until self-hosted Step 4)                    |
+| PostgreSQL | `pnpm seed:postgres` once, then `pnpm dev:postgres` (see [below](#sqlite-and-postgresql-modes)) | Everything but users in PostgreSQL in Docker, files in `server/.data/files`                           |
+| S3         | `pnpm seed:sqlite` once, then `pnpm dev:s3` (see [below](#files-in-s3))                         | Like SQLite, with the files in RustFS, an S3-compatible server in Docker                              |
 
 `pnpm demo` builds the API reference (`contract/dist/reference.html`), then starts two processes:
 the server on <http://127.0.0.1:3000> (`node --watch --import tsx`, restarts on change; `tsx watch` hangs on Windows under `concurrently`) and the web app on
@@ -67,10 +68,17 @@ mode needs, and their values in production: [Operations › Configuration by dep
 | `APP_SHELL`                                | non-empty string                                                                                                                                                                                 | `surveyjs-site`                                                                                                                                                            |
 | `AUTH_METHODS`                             | comma list of `surveyjs`, `password`, `google`, `github`, `facebook` (at least one); only `surveyjs` can start today: the others need `USER_DIRECTORY=local`, which the self-hosted track builds | `surveyjs`                                                                                                                                                                 |
 | `SURVEYJS_LICENSE_KEY`                     | string                                                                                                                                                                                           | unset (`null` in `/config`)                                                                                                                                                |
-| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`, `sqlite`, `postgres` (`sqlite` and `postgres` are refused when `NODE_ENV=production` until self-hosted Steps 3 and 4)                                                  | `memory`                                                                                                                                                                   |
+| `STORAGE_PROVIDER`                         | `memory`, `azure-legacy`, `sqlite`, `postgres` (`sqlite` and `postgres` are refused when `NODE_ENV=production` until self-hosted Step 4)                                                         | `memory`                                                                                                                                                                   |
 | `MEMORY_SEED`                              | `empty`, `legacy-fixtures` (used by `memory`, and by the memory stores of `sqlite` and `postgres`)                                                                                               | `empty`                                                                                                                                                                    |
 | `SQLITE_PATH`                              | path of the SQLite file (used by `sqlite`); a relative path is resolved against the working directory, and the folder is created                                                                 | `/data/surveyjs-studio.db`                                                                                                                                                 |
 | `DATABASE_URL`                             | `postgres://` or `postgresql://` URL (used by `postgres`); **secret**                                                                                                                            | unset; required when `STORAGE_PROVIDER=postgres`                                                                                                                           |
+| `FILE_STORE`                               | `local`, `s3`; only with `sqlite` and `postgres` ([ADR 0025](adr/0025-file-storage-for-the-sql-providers.md))                                                                                    | `local`                                                                                                                                                                    |
+| `FILES_PATH`                               | folder of the uploaded files with `FILE_STORE=local`; a relative path is resolved against the working directory                                                                                  | `/data/files`                                                                                                                                                              |
+| `S3_BUCKET`                                | bucket of the files with `FILE_STORE=s3`; the app never creates it                                                                                                                               | unset; required when `FILE_STORE=s3`                                                                                                                                       |
+| `S3_REGION`                                | AWS region (any value for most S3-compatible services)                                                                                                                                           | `us-east-1`                                                                                                                                                                |
+| `S3_ENDPOINT`                              | URL of an S3-compatible service; https unless on `localhost`, `127.0.0.1` or `[::1]`                                                                                                             | unset: AWS S3                                                                                                                                                              |
+| `S3_FORCE_PATH_STYLE`                      | `true`, `false`; `true` for services without virtual-host buckets (RustFS, MinIO)                                                                                                                | `false`                                                                                                                                                                    |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the S3 keys, both or neither; the secret is **secret**                                                                                                                                           | unset: the AWS SDK's default credentials                                                                                                                                   |
 | `LEGACY_SQL_CONNECTION_STRING`             | SQL Server connection string; **secret**                                                                                                                                                         | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
 | `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (surveys account); **secret**                                                                                                                                    | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
 | `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Azure Storage connection string (results account); **secret**                                                                                                                                    | unset; required when `STORAGE_PROVIDER=azure-legacy`                                                                                                                       |
@@ -411,8 +419,9 @@ text signs in a user the directory does not know, with that text as the subject.
 
 The SQL providers of the self-hosted track ([data model](architecture/data-model.md),
 [ADR 0023](adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)). Surveys,
-history, responses, results layouts, private questions, projects and members are in the database. Until self-hosted
-Steps 3 and 4 the **users and uploaded files** are the memory provider's, seeded by `MEMORY_SEED`, and lost on restart.
+history, responses, results layouts, private questions, projects, members and the files' metadata are in the database;
+the files' bytes are in `server/.data/files` (`FILES_PATH`), or in S3 with [`pnpm dev:s3`](#files-in-s3). Until
+self-hosted Step 4 the **users** are the memory provider's, seeded by `MEMORY_SEED`, and lost on restart.
 The server logs a warning saying so, and refuses these providers with `NODE_ENV=production`. Sign-in is the dev sign-in of
 [`pnpm demo`](#signing-in), with the same seed users.
 
@@ -447,6 +456,21 @@ Migrations live in `server/sql/sqlite/` and `server/sql/postgres/`: plain SQL, `
 names in both, each statement ending with a `;` at the end of a line ([ADR 0024](adr/0024-kysely-and-plain-sql-migrations.md)).
 A schema change adds one file to each folder and updates `server/src/sql/schema.ts`; an applied migration is never
 edited.
+
+### Files in S3
+
+`FILE_STORE=s3` keeps the files in an S3-compatible bucket ([ADR 0025](adr/0025-file-storage-for-the-sql-providers.md)).
+Locally that is RustFS (`docker/compose.s3.yaml`, settings in [`docker/s3.env`](../docker/s3.env); MinIO's images are
+no longer published):
+
+| Command                | What it does                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm s3:up`           | Starts RustFS on 127.0.0.1:19000 (console on 19001, keys in `docker/s3.env`) and creates the bucket `surveyjs-studio-files` |
+| `pnpm dev:s3`          | `pnpm s3:up`, then the SQLite mode with its files in that bucket                                                            |
+| `pnpm s3:bucket create | remove <name>`                                                                                                              | Creates a bucket (fine when it exists), or removes one with its objects |
+| `pnpm s3:down`         | Stops RustFS and **deletes its data**                                                                                       |
+
+The app never creates or removes a bucket: readiness (`/readyz`, check `files`) reports one it cannot reach.
 
 ## Production data mode
 
@@ -694,19 +718,19 @@ the same least-privilege login as the inspector above. The output above is the l
 
 Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 
-| Package             | Script                                                                                    | Purpose                                                                                                                                                 |
-| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server`            | `dev`, `start`, `typecheck`                                                               | Watch mode, plain start, type check                                                                                                                     |
-| `server`            | `dev:demo`, `dev:demo:azurite`, `dev:demo:sqlite`, `dev:demo:postgres`                    | The server half of the root `pnpm demo`, `pnpm demo:azurite`, `pnpm dev:sqlite` and `pnpm dev:postgres`; run those instead                              |
-| `server`            | `seed:sqlite`, `seed:postgres`                                                            | The root `pnpm seed:sqlite` and `pnpm seed:postgres` ([SQLite and PostgreSQL modes](#sqlite-and-postgresql-modes))                                      |
-| `server`            | `dev:prod-data`                                                                           | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                             |
-| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`                                            | Vite dev server, build (type check first), preview, unit tests                                                                                          |
-| `contract`          | `generate`                                                                                | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                        |
-| `contract`          | `lint`, `check:generated`                                                                 | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale |
-| `contract`          | `build:docs`                                                                              | Write the self-contained `contract/dist/reference.html`                                                                                                 |
-| `conformance-tests` | `test`, `test:azurite`, `test:sqlite`, `test:postgres`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                               |
-| `e2e`               | `test`, `test:azurite`, `test:sqlite`                                                     | Playwright                                                                                                                                              |
-| `e2e`               | `test:visual`, `capture`                                                                  | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                       |
+| Package             | Script                                                                                               | Purpose                                                                                                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`            | `dev`, `start`, `typecheck`                                                                          | Watch mode, plain start, type check                                                                                                                                   |
+| `server`            | `dev:demo`, `dev:demo:azurite`, `dev:demo:sqlite`, `dev:demo:postgres`                               | The server half of the root `pnpm demo`, `pnpm demo:azurite`, `pnpm dev:sqlite` and `pnpm dev:postgres`; run those instead                                            |
+| `server`            | `seed:sqlite`, `seed:postgres`                                                                       | The root `pnpm seed:sqlite` and `pnpm seed:postgres` ([SQLite and PostgreSQL modes](#sqlite-and-postgresql-modes)); `dev:demo:s3` is the server half of `pnpm dev:s3` |
+| `server`            | `dev:prod-data`                                                                                      | The server with `server/.env`; run it through the root `pnpm dev:prod-data` ([production data mode](#production-data-mode))                                           |
+| `web`               | `dev`, `build`, `preview`, `test`, `typecheck`                                                       | Vite dev server, build (type check first), preview, unit tests                                                                                                        |
+| `contract`          | `generate`                                                                                           | Regenerate `generated/openapi.d.ts` after editing `openapi.yaml`                                                                                                      |
+| `contract`          | `lint`, `check:generated`                                                                            | Redocly lint (telemetry off, update notice suppressed; known exceptions in `contract/.redocly.lint-ignore.yaml`); fail if the committed types are stale               |
+| `contract`          | `build:docs`                                                                                         | Write the self-contained `contract/dist/reference.html`                                                                                                               |
+| `conformance-tests` | `test`, `test:azurite`, `test:sqlite`, `test:postgres`, `test:s3`, `test:user-api`, `test:read-only` | See [testing](testing.md)                                                                                                                                             |
+| `e2e`               | `test`, `test:azurite`, `test:sqlite`                                                                | Playwright                                                                                                                                                            |
+| `e2e`               | `test:visual`, `capture`                                                                             | The visual parity run and the baseline capture (Step 13); see [Testing](testing.md#visual-parity)                                                                     |
 
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
@@ -767,14 +791,15 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 4. `pnpm demo:azurite:up`, which starts the legacy replica and the mock OIDC server and loads the
    fixtures;
 5. `test:providers:azurite`, and `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`); then `pnpm postgres:up`,
-   `test:providers:postgres`, and `test:conformance:postgres` on the image;
+   `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`, `test:conformance:s3`, and `test:conformance:postgres`
+   on the image;
 6. the browser install, `e2e` (memory provider, dev sign-in, three browsers) and `e2e:azurite` (the
    `azure-legacy` server and the mock OIDC server, Chromium), both on the image (`E2E_TARGET=image`), and `e2e:sqlite`
-   (the tsx server, whose SQLite file is on the host; Chromium) and `e2e:postgres` (Chromium, every functional spec but
-   the licence notices);
+   (the tsx server, whose SQLite file is on the host; files on local disk; Chromium) and `e2e:postgres` (Chromium,
+   every functional spec but the licence notices; files in S3);
 7. on a push to `master`, it saves the image as an artifact for the `publish` job (kept one day);
 8. on failure, it uploads the Playwright report and the app containers' logs (`docker-logs/`);
-9. `pnpm demo:azurite:down` and `pnpm postgres:down`, which always run (`if: always()`).
+9. `pnpm demo:azurite:down`, `pnpm postgres:down` and `pnpm s3:down`, which always run (`if: always()`).
 
 The **`publish` job** runs after it, only on a push to `master` and only when every step above passed. It loads that
 same image, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is

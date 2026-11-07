@@ -14,6 +14,7 @@ export default defineConfig({
             "**/node_modules/**",
             "server/src/**/*.azurite.test.ts",
             "server/src/**/*.postgres.test.ts",
+            "server/src/**/*.s3.test.ts",
           ],
         },
       },
@@ -24,6 +25,16 @@ export default defineConfig({
         test: {
           name: "providers-postgres",
           include: ["server/src/**/*.postgres.test.ts"],
+          testTimeout: 30_000,
+          hookTimeout: 60_000,
+        },
+      },
+      {
+        // Needs the local S3 server (`pnpm s3:up`). Not part of `pnpm test:unit`; run with
+        // `pnpm test:providers:s3`, which reads docker/s3.env. Each file makes its own buckets.
+        test: {
+          name: "providers-s3",
+          include: ["server/src/**/*.s3.test.ts"],
           testTimeout: 30_000,
           hookTimeout: 60_000,
         },

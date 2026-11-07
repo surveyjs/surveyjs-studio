@@ -57,6 +57,14 @@ const appVariables = [
   "MEMORY_SEED",
   "DATABASE_URL",
   "SQLITE_PATH",
+  "FILE_STORE",
+  "FILES_PATH",
+  "S3_BUCKET",
+  "S3_REGION",
+  "S3_ENDPOINT",
+  "S3_FORCE_PATH_STYLE",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
   "PUBLIC_BASE_URL",
   "LIMIT_MAX_ASSET_BYTES_PER_SURVEY",
   "LIMIT_MAX_FILE_BYTES",
@@ -150,6 +158,58 @@ function conformanceProvider(): ConformanceProvider {
 /** The run's own database for `CONFORMANCE_PROVIDER=sqlite|postgres`; set in setup(). */
 let sqlDatabase: { env: Record<string, string>; drop: () => Promise<void> } | null = null;
 
+/** The S3 settings forwarded with `CONFORMANCE_FILE_STORE=s3` (from docker/s3.env). */
+const s3Variables = [
+  "S3_ENDPOINT",
+  "S3_REGION",
+  "S3_FORCE_PATH_STYLE",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+] as const;
+
+/**
+ * Where the run's server keeps file bytes: a new temporary folder (`FILE_STORE=local`), or with
+ * `CONFORMANCE_FILE_STORE=s3` a new bucket on the local S3 server (`pnpm s3:up`), made and removed
+ * by the server's `s3:bucket` command. `clean` is this process's environment without app variables.
+ */
+function prepareFiles(clean: NodeJS.ProcessEnv): { env: Record<string, string>; drop: () => void } {
+  const store = process.env.CONFORMANCE_FILE_STORE?.trim() || "local";
+  if (store === "local") {
+    const dir = mkdtempSync(join(tmpdir(), "surveyjs-studio-conformance-files-"));
+    return {
+      env: { FILE_STORE: "local", FILES_PATH: dir },
+      drop: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }),
+    };
+  }
+  if (store !== "s3") {
+    throw new Error(`CONFORMANCE_FILE_STORE must be local or s3, got "${store}"`);
+  }
+  const s3: Record<string, string> = {};
+  for (const name of s3Variables) {
+    const value = process.env[name]?.trim();
+    if (!value) throw new Error(`CONFORMANCE_FILE_STORE=s3 needs ${name} (docker/s3.env)`);
+    s3[name] = value;
+  }
+  const bucket = `conformance-${randomBytes(5).toString("hex")}`;
+  const bucketCommand = (command: "create" | "remove") => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "server/src/cli/s3-bucket.ts", command, bucket],
+      { cwd: repoRoot, env: { ...clean, ...s3 }, encoding: "utf8" },
+    );
+    if (result.status !== 0) {
+      throw new Error(
+        `s3:bucket ${command} failed (exit ${String(result.status)}):\n${result.stderr}`,
+      );
+    }
+  };
+  bucketCommand("create");
+  return {
+    env: { FILE_STORE: "s3", S3_BUCKET: bucket, ...s3 },
+    drop: () => bucketCommand("remove"),
+  };
+}
+
 /**
  * A new database for the run: a SQLite file in a temporary folder, or a new database on the
  * PostgreSQL server of `DATABASE_URL` (`pnpm test:conformance:postgres` reads docker/postgres.env).
@@ -188,6 +248,13 @@ async function prepareSqlDatabase(
   }
   const clean = { ...process.env };
   for (const name of appVariables) delete clean[name];
+  const files = prepareFiles(clean);
+  env = { ...env, ...files.env };
+  const dropDatabase = drop;
+  drop = async () => {
+    await dropDatabase();
+    files.drop();
+  };
   const seeded = spawnSync(process.execPath, ["--import", "tsx", "server/src/cli/db.ts", "seed"], {
     cwd: repoRoot,
     env: { ...clean, ...env },

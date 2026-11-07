@@ -121,6 +121,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       expect((await migrate(database)).applied).toEqual(shipped);
       expect(await tablesOf(database)).toEqual([
         "completion_markers",
+        "files",
         "legacy_views",
         "private_questions",
         "project_members",
