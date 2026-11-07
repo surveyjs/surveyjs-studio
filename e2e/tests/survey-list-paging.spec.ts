@@ -37,19 +37,19 @@ async function fillEngineering(page: Page, browserName: string): Promise<void> {
   expect(await activeEngineeringSurveyCount(page)).toBeGreaterThan(PAGE_SIZE);
 }
 
-test("a list longer than one page loads the rest with Load more", async ({ page, browserName }) => {
+test("a list longer than one page loads in whole without a click", async ({
+  page,
+  browserName,
+}) => {
   await signInAt(page, "/", "admin");
   await fillEngineering(page, browserName);
 
   await page.goto(`/?project=${ENGINEERING}`);
   const rows = surveyRows(page);
-  const loadMore = loadMoreButton(page);
-  await expect(rows).toHaveCount(PAGE_SIZE);
-  await expect(loadMore).toBeVisible();
 
-  // Each click must add rows, until the list ends and the button goes.
+  // Like surveyjs.io, the page holds the whole list, so the browser's Find sees every survey.
   await loadAllPages(page);
-  await expect(loadMore).toHaveCount(0);
+  await expect(loadMoreButton(page)).toHaveCount(0);
   const texts = await rows.allInnerTexts();
   expect(texts.length).toBeGreaterThan(PAGE_SIZE);
   // A row's text is its name and its two dates; no row may come twice.

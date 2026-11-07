@@ -59,7 +59,9 @@ if (isLocalHttpsIssuer(issuer)) {
     composeEnv["ISSUER_CA_PEM"] = pem;
     composeEnv["CONTAINER_CA_FILE"] = "/certs/issuer-ca.pem";
   } catch (error) {
-    console.error(`Cannot reach the sign-in issuer ${issuer}: is the site's sign-in service running?`);
+    console.error(
+      `Cannot reach the sign-in issuer ${issuer}: is the site's sign-in service running?`,
+    );
     console.error(`  ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }

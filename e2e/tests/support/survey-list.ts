@@ -34,17 +34,14 @@ export async function expectSurveyRow(
 }
 
 /**
- * Clicks "Load more" until the list ends, waiting for each page's rows. The list must be shown.
- * Scopes that tests write to (the outsider's, Engineering) can hold more than one page.
+ * Waits until the list has loaded every page by itself (it is `aria-busy` until then). The list must
+ * be shown. Scopes that tests write to (the outsider's, Engineering) can hold more than one page.
  */
 export async function loadAllPages(page: Page): Promise<void> {
-  const rows = surveyRows(page);
-  const loadMore = loadMoreButton(page);
-  while ((await loadMore.count()) > 0) {
-    const shown = await rows.count();
-    await loadMore.click();
-    await expect.poll(() => rows.count()).toBeGreaterThan(shown);
-  }
+  await expect(page.locator(".v2-class---my-surveys-page__list")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
 }
 
 /** The one row whose name equals `name` exactly. */

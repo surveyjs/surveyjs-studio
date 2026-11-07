@@ -76,3 +76,23 @@ export function historyHandler(
       : HttpResponse.json(page);
   });
 }
+
+/**
+ * Answers `GET /surveys/{id}/history/{entryId}` with the entry's definition from `definitions`, and
+ * 404 for an entry it does not have.
+ */
+export function historyEntryHandler(
+  definitions: Record<string, Record<string, unknown>>,
+  onRequest?: (entryId: string) => void,
+) {
+  return http.get("/surveys/{surveyId}/history/{entryId}", ({ params, response }) => {
+    onRequest?.(params.entryId);
+    const definition = definitions[params.entryId];
+    return definition === undefined
+      ? response(404).json(
+          { type: "about:blank", title: "Not found", status: 404, code: "not-found" },
+          { headers: { "Content-Type": "application/problem+json" } },
+        )
+      : response(200).json(definition);
+  });
+}

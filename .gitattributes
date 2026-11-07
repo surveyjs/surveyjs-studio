@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Prettier pads tables to the widest cell; this driver merges them without the padding (docs/development.md › Conventions).
+*.md merge=markdown-tables
