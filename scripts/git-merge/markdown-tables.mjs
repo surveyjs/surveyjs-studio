@@ -1,7 +1,8 @@
 // A git merge driver for Markdown. Prettier pads every table to its widest cell, so a change to one cell can re-pad
 // the whole table; two branches that each touch a table then conflict on every row. This driver drops the padding
 // from the three versions, runs git's own 3-way merge on them, and formats a clean result with Prettier. Tables then
-// conflict only where both sides changed the same row.
+// conflict only where both sides changed the same row. Rows that both sides only added at the same place (two new
+// entries at the end of an index) are kept, ours first, instead of conflicting.
 //
 // .gitattributes routes *.md here (`merge=markdown-tables`); `node scripts/git-merge/markdown-tables.mjs --install`
 // defines the driver in .git/config. Without that definition git uses its normal text merge. The driver also falls
@@ -51,6 +52,67 @@ export function compactTables(/** @type {string} */ text) {
     .join("\n");
 }
 
+/**
+ * Resolves the conflicts (diff3 style, from `git merge-file --diff3`) where both sides only added table rows at the
+ * same place: keeps the rows common to both once, then ours, then theirs. Other conflicts stay, without their base
+ * section. Returns the text and the number of conflicts left.
+ */
+export function resolveRowInsertions(/** @type {string} */ text, markerSize = "7") {
+  const size = Number(markerSize);
+  const open = "<".repeat(size);
+  const baseMark = "|".repeat(size);
+  const separator = "=".repeat(size);
+  const close = ">".repeat(size);
+  const is = (/** @type {string | undefined} */ line, /** @type {string} */ marker) =>
+    line !== undefined && (line === marker || line.startsWith(`${marker} `));
+  const rowsOnly = (/** @type {string[]} */ lines) =>
+    lines.length > 0 && lines.every((l) => TABLE_ROW.test(l) && !DELIMITER_ROW.test(l));
+  const lines = text.split("\n");
+  /** @type {string[]} */
+  const out = [];
+  let conflicts = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = /** @type {string} */ (lines[i]);
+    if (!is(line, open)) {
+      out.push(line);
+      continue;
+    }
+    /** @type {string[]} */ const ours = [];
+    /** @type {string[]} */ const base = [];
+    /** @type {string[]} */ const theirs = [];
+    let part = ours;
+    let j = i + 1;
+    for (; j < lines.length && !is(lines[j], close); j++) {
+      const inner = /** @type {string} */ (lines[j]);
+      if (part === ours && is(inner, baseMark)) part = base;
+      else if (part !== theirs && inner === separator) part = theirs;
+      else part.push(inner);
+    }
+    if (base.length === 0 && rowsOnly(ours) && rowsOnly(theirs)) {
+      // diff3 style does not trim the lines both sides added alike; write those once.
+      let head = 0;
+      while (head < ours.length && head < theirs.length && ours[head] === theirs[head]) head++;
+      let tail = 0;
+      while (
+        tail < ours.length - head &&
+        tail < theirs.length - head &&
+        ours[ours.length - 1 - tail] === theirs[theirs.length - 1 - tail]
+      )
+        tail++;
+      out.push(
+        ...ours.slice(0, ours.length - tail),
+        ...theirs.slice(head, theirs.length - tail),
+        ...ours.slice(ours.length - tail),
+      );
+    } else {
+      conflicts++;
+      out.push(line, ...ours, separator, ...theirs, lines[j] ?? `${close} theirs`);
+    }
+    i = j;
+  }
+  return { text: out.join("\n"), conflicts };
+}
+
 /** Prettier from this repository, or null when it is not installed. */
 async function loadPrettier(/** @type {string} */ root) {
   try {
@@ -69,11 +131,13 @@ function mergeFile(
   /** @type {string} */ base,
   /** @type {string} */ other,
   /** @type {string} */ markerSize,
+  diff3 = false,
 ) {
   const result = spawnSync(
     "git",
     [
       "merge-file",
+      ...(diff3 ? ["--diff3"] : []),
       `--marker-size=${markerSize}`,
       "-L",
       "ours",
@@ -111,13 +175,15 @@ export async function mergeMarkdown({ base, current, other, markerSize = "7", pa
 
   for (const file of [base, current, other])
     writeFileSync(file, compactTables(readFileSync(file, "utf8")));
-  const conflicts = mergeFile(current, base, other, markerSize);
-  if (conflicts === 0) {
-    const options = (await prettier.resolveConfig(absolute)) ?? {};
-    const merged = readFileSync(current, "utf8");
-    writeFileSync(current, await prettier.format(merged, { ...options, filepath: absolute }));
+  mergeFile(current, base, other, markerSize, true);
+  const { text, conflicts } = resolveRowInsertions(readFileSync(current, "utf8"), markerSize);
+  if (conflicts > 0) {
+    writeFileSync(current, text);
+    return conflicts;
   }
-  return conflicts;
+  const options = (await prettier.resolveConfig(absolute)) ?? {};
+  writeFileSync(current, await prettier.format(text, { ...options, filepath: absolute }));
+  return 0;
 }
 
 /** Defines the driver in this clone's .git/config. Returns false when git refuses. */

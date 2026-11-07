@@ -797,4 +797,5 @@ and 6 need Linux (`docker run --network host`); on Windows and macOS run those s
 - Prettier pads Markdown tables, so one wider cell rewrites every row and two branches that touch a table conflict
   on all of it. Run `node scripts/git-merge/markdown-tables.mjs --install` once per clone: `.gitattributes` then
   merges `*.md` without the padding and re-formats the result, and tables conflict only where both sides changed a
-  row. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.
+  row. Rows both sides only added at the same place (two new ADRs at the end of the index) are both kept, ours
+  first. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.

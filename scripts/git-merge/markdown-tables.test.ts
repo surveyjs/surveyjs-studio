@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as prettier from "prettier";
 import { afterEach, describe, expect, it } from "vitest";
-import { compactRow, compactTables, mergeMarkdown } from "./markdown-tables.mjs";
+import {
+  compactRow,
+  compactTables,
+  mergeMarkdown,
+  resolveRowInsertions,
+} from "./markdown-tables.mjs";
 
 const root = resolve(import.meta.dirname, "..", "..");
 
@@ -63,6 +68,55 @@ describe("compactTables", () => {
         "| after | y |",
       ].join("\n"),
     );
+  });
+});
+
+describe("resolveRowInsertions", () => {
+  const conflict = (ours: string[], base: string[], theirs: string[]) =>
+    [
+      "before",
+      "<<<<<<< ours",
+      ...ours,
+      "||||||| base",
+      ...base,
+      "=======",
+      ...theirs,
+      ">>>>>>> theirs",
+      "after",
+    ].join("\n");
+
+  it("keeps rows both sides added at the same place, ours first", () => {
+    expect(resolveRowInsertions(conflict(["| 0025 | a |"], [], ["| 0032 | b |"]))).toEqual({
+      text: "before\n| 0025 | a |\n| 0032 | b |\nafter",
+      conflicts: 0,
+    });
+  });
+
+  it("writes the rows both sides added alike once", () => {
+    const { text } = resolveRowInsertions(
+      conflict(["| x |", "| 0025 |", "| y |"], [], ["| x |", "| 0032 |", "| y |"]),
+    );
+    expect(text).toBe("before\n| x |\n| 0025 |\n| 0032 |\n| y |\nafter");
+  });
+
+  it("leaves a changed row, or added text, as a conflict without its base section", () => {
+    expect(resolveRowInsertions(conflict(["| a | 1 |"], ["| a |"], ["| a | 2 |"]))).toEqual({
+      text: "before\n<<<<<<< ours\n| a | 1 |\n=======\n| a | 2 |\n>>>>>>> theirs\nafter",
+      conflicts: 1,
+    });
+    expect(resolveRowInsertions(conflict(["Ours."], [], ["| b |"])).conflicts).toBe(1);
+  });
+
+  it("follows the marker size git passes", () => {
+    const text = [
+      "<<<<<<<<< ours",
+      "| a |",
+      "|||||||||",
+      "=========",
+      "| b |",
+      ">>>>>>>>> theirs",
+    ].join("\n");
+    expect(resolveRowInsertions(text, "9")).toEqual({ text: "| a |\n| b |", conflicts: 0 });
   });
 });
 
@@ -152,6 +206,23 @@ describe("mergeMarkdown", () => {
     expect(await mergeMarkdown({ ...paths, path: "docs/x.md", root })).toBe(1);
     expect(readFileSync(paths.current, "utf8")).toContain(
       "<<<<<<< ours\n| `b` | Two, ours |\n=======",
+    );
+  });
+
+  it("keeps the entries both sides added to the end of an index", async () => {
+    const index = (rows: [string, string][]) => table(rows);
+    const paths = files(
+      await index(base),
+      await index([...base, ["`d`", "Added on the branch, with a longer text"]]),
+      await index([...base, ["`e`", "Added on master"]]),
+    );
+    expect(await mergeMarkdown({ ...paths, path: "docs/x.md", root })).toBe(0);
+    expect(readFileSync(paths.current, "utf8")).toBe(
+      await index([
+        ...base,
+        ["`d`", "Added on the branch, with a longer text"],
+        ["`e`", "Added on master"],
+      ]),
     );
   });
 
