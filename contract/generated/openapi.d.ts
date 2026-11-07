@@ -594,6 +594,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/surveys/{surveyId}/history/{entryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                entryId: components["parameters"]["HistoryEntryId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the definition saved in a history entry
+         * @description The survey JSON as it was saved in that entry, for every survey the user
+         *     can see. An entry never changes. A legacy entry whose stored text cannot
+         *     be read as a definition gives `{}`.
+         */
+        get: operations["getSurveyHistoryEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/surveys/{surveyId}/results": {
         parameters: {
             query?: never;
@@ -1314,6 +1339,8 @@ export interface components {
             size: number;
         };
         HistoryEntry: {
+            /** @description Reads the definition saved in this entry (`getSurveyHistoryEntry`). */
+            id: components["schemas"]["Id"];
             at: components["schemas"]["Timestamp"];
             /** @description Who saved. `null` for legacy entries recorded without a user. */
             user: {
@@ -1672,6 +1699,7 @@ export interface components {
     parameters: {
         SurveyId: components["schemas"]["Id"];
         ProjectId: components["schemas"]["Id"];
+        HistoryEntryId: components["schemas"]["Id"];
         UserId: components["schemas"]["Id"];
         /** @description Page size. */
         Limit: number;
@@ -2722,6 +2750,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getSurveyHistoryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                entryId: components["parameters"]["HistoryEntryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The SurveyJS survey JSON of that entry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveyDefinition"];
                 };
             };
             400: components["responses"]["BadRequest"];

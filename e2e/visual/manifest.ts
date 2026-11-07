@@ -385,13 +385,6 @@ export const SCREENS: readonly Screen[] = [
         category: "live-data",
       },
     ],
-    residual: [
-      {
-        what: "the entry times are not underlined",
-        reason: "ADR 0012 R23: no JSON view, so the time is not a link",
-        category: "departure",
-      },
-    ],
     maxDiffPixelRatio: 0.005,
   },
   {

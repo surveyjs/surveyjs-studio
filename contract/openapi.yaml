@@ -1036,6 +1036,27 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /surveys/{surveyId}/history/{entryId}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - { $ref: '#/components/parameters/HistoryEntryId' }
+    get:
+      tags: [History]
+      operationId: getSurveyHistoryEntry
+      summary: Get the definition saved in a history entry
+      description: |
+        The survey JSON as it was saved in that entry, for every survey the user
+        can see. An entry never changes. A legacy entry whose stored text cannot
+        be read as a definition gives `{}`.
+      responses:
+        '200':
+          description: The SurveyJS survey JSON of that entry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------------------------------------------------------------- Results
   /surveys/{surveyId}/results:
@@ -1534,6 +1555,11 @@ components:
       schema: { $ref: '#/components/schemas/Id' }
     ProjectId:
       name: projectId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    HistoryEntryId:
+      name: entryId
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Id' }
@@ -2255,8 +2281,11 @@ components:
     # ------------------------------------------------------------ History
     HistoryEntry:
       type: object
-      required: [at, user]
+      required: [id, at, user]
       properties:
+        id:
+          $ref: '#/components/schemas/Id'
+          description: Reads the definition saved in this entry (`getSurveyHistoryEntry`).
         at: { $ref: '#/components/schemas/Timestamp' }
         user:
           description: Who saved. `null` for legacy entries recorded without a user.
