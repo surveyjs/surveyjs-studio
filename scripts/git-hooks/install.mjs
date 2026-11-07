@@ -1,8 +1,10 @@
-// `prepare` script: point git at the tracked hooks in .githooks. Does nothing, and never fails, outside this
+// `prepare` script: point git at the tracked hooks in .githooks, and define the Markdown merge driver that
+// .gitattributes names (scripts/git-merge/markdown-tables.mjs). Does nothing, and never fails, outside this
 // repository's git work tree, in CI, or without git (the Docker image build has no .git and no git binary).
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installDriver } from "../git-merge/markdown-tables.mjs";
 
 const HOOKS_DIR = ".githooks";
 
@@ -35,6 +37,10 @@ export function decideHooks({ hasGit, inWorkTree, ci, atPackageRoot, currentHook
   };
 }
 
+/** @param {string} root */
+const currentHooksPathIsOurs = (root) =>
+  git(["config", "--get", "core.hooksPath"], root) === HOOKS_DIR;
+
 /** @param {string[]} args @param {string} cwd */
 function git(args, cwd) {
   const result = spawnSync("git", args, { encoding: "utf8", cwd });
@@ -59,6 +65,11 @@ export function installHooks() {
       git(["config", "core.hooksPath", HOOKS_DIR], root) === null
     )
       console.warn("git hooks: could not set core.hooksPath; the pre-commit secrets scan is off.");
+    // The merge driver does not depend on core.hooksPath: define it wherever the hooks could be installed.
+    if (decision.action !== "none" || currentHooksPathIsOurs(root)) {
+      if (!installDriver(root))
+        console.warn("git merge: could not define the markdown-tables merge driver.");
+    }
   } catch (error) {
     // never fail an install
     console.warn(`git hooks: not installed (${error instanceof Error ? error.message : error}).`);

@@ -20,7 +20,8 @@
 `.githooks/pre-commit` scans the staged files with gitleaks before each commit (`pnpm scan:secrets --staged`). It uses a
 `gitleaks` binary on your PATH, or else the pinned gitleaks image in Docker. The installer does nothing where there is no
 git work tree of this repository, no git binary, `CI` is set (non-empty and not `false`), or `core.hooksPath` already
-holds another value (it prints one line then). Check it with `git config core.hooksPath`.
+holds another value (it prints one line then). Check it with `git config core.hooksPath`. Where it installs the hook, it
+also defines the Markdown merge driver ([Conventions](#conventions)).
 
 A blocked commit shows gitleaks' output. The hook prints a one-line warning and lets the commit through, when there is
 no `node` or `node_modules`, neither gitleaks nor a working Docker (`docker info` gets 5 seconds), `docker run` fails
@@ -1004,7 +1005,8 @@ and 6 need Linux (`docker run --network host`); on Windows and macOS run those s
 - ESLint (flat config) and Prettier. `pnpm format` fixes formatting.
 - Commit messages are conventional: `feat(server): ...`, `fix(web): ...`, `docs: ...`, `chore: ...`.
 - Prettier pads Markdown tables, so one wider cell rewrites every row and two branches that touch a table conflict
-  on all of it. Run `node scripts/git-merge/markdown-tables.mjs --install` once per clone: `.gitattributes` then
-  merges `*.md` without the padding and re-formats the result, and tables conflict only where both sides changed a
-  row. Rows both sides only added at the same place (two new ADRs at the end of the index) are both kept, ours
-  first. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.
+  on all of it. `pnpm install` defines a merge driver for that (or run
+  `node scripts/git-merge/markdown-tables.mjs --install`): `.gitattributes` then merges `*.md` without the padding and
+  re-formats the result, and tables conflict only where both sides changed a row. Rows both sides only added at the
+  same place (two new ADRs at the end of the index) are both kept, ours first. A conflict that remains is left
+  unpadded; resolve it, then run `pnpm format`.
