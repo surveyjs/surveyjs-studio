@@ -19,6 +19,8 @@ export const contentKeys = {
   definition: (surveyId: string) => ["content", surveyId.toLowerCase(), "definition"] as const,
   theme: (surveyId: string) => ["content", surveyId.toLowerCase(), "theme"] as const,
   history: (surveyId: string) => ["content", surveyId.toLowerCase(), "history"] as const,
+  historyEntry: (surveyId: string, entryId: string) =>
+    ["content", surveyId.toLowerCase(), "history-entry", entryId.toLowerCase()] as const,
 };
 
 function etagOf(response: Response): string {
@@ -116,6 +118,21 @@ export const historyInfiniteQueryOptions = (surveyId: string) =>
     },
     getNextPageParam: (page) => page.nextCursor,
     ...freshReadOnce,
+  });
+
+/** The definition saved in one history entry. An entry never changes, so it is read once. */
+export const historyEntryQueryOptions = (surveyId: string, entryId: string) =>
+  queryOptions({
+    queryKey: contentKeys.historyEntry(surveyId, entryId),
+    staleTime: Infinity,
+    queryFn: async ({ signal }): Promise<SurveyDefinition> => {
+      const { data, error, response } = await client.GET("/surveys/{surveyId}/history/{entryId}", {
+        params: { path: { surveyId, entryId } },
+        signal,
+      });
+      if (!response.ok || data === undefined) throw toApiError(error, response);
+      return data;
+    },
   });
 
 /**
