@@ -7,7 +7,14 @@ import {
   withCleanup,
 } from "./support/editor.js";
 import { signInAt, users } from "./support/sign-in.js";
-import { createSurveyViaApi, openRowMenu, pickMenuItem, surveyRow } from "./support/survey-list.js";
+import {
+  copiedValues,
+  createSurveyViaApi,
+  openRowMenu,
+  pickMenuItem,
+  recordClipboard,
+  surveyRow,
+} from "./support/survey-list.js";
 import { expect, test } from "./support/test.js";
 
 // The History page (US 57). Runs in memory mode on three browsers and in Azurite mode on the
@@ -84,4 +91,23 @@ test("legacy history entries are listed without a user", async ({ page }) => {
     await expect(entry.locator("time")).toBeVisible();
     await expect(entry).not.toContainText(" by ");
   }
+});
+
+test("an entry opens the JSON saved in it, and Copy JSON copies it", async ({ page }) => {
+  await recordClipboard(page);
+  await signInAt(page, "/", "owner");
+  await page.goto(`/surveys/${CUSTOMER_FEEDBACK}/history`);
+  const entry = historyEntries(page).first();
+  const toggle = entry.getByRole("button", { expanded: false });
+  await toggle.click();
+
+  const code = entry.locator("pre code");
+  await expect(code).toContainText('"title": "Customer feedback');
+  const shown = await code.textContent();
+  await entry.getByRole("button", { name: "Copy JSON" }).click();
+  await expect(entry.getByRole("button", { name: "Copied" })).toBeVisible();
+  expect(await copiedValues(page)).toEqual([shown]);
+
+  await entry.getByRole("button", { expanded: true }).click();
+  await expect(code).toHaveCount(0);
 });

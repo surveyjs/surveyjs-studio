@@ -1,7 +1,7 @@
-import { fireEvent, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryPage as HistoryPageData } from "../api/content";
-import { historyHandler } from "../test/content-handlers";
+import { historyEntryHandler, historyHandler } from "../test/content-handlers";
 import { renderApp } from "../test/renderApp";
 import { configHandler, meHandler, sampleSurvey, server, surveyHandler } from "../test/server";
 
@@ -9,20 +9,38 @@ const path = `/surveys/${sampleSurvey.id}/history`;
 const ada = { id: "u1", displayName: "Ada Admin" };
 const first: HistoryPageData = {
   items: [
-    { at: "2026-10-03T10:00:00.000Z", user: ada },
-    { at: "2026-10-02T10:00:00.000Z", user: null },
+    { id: "e3", at: "2026-10-03T10:00:00.000Z", user: ada },
+    { id: "e2", at: "2026-10-02T10:00:00.000Z", user: null },
   ],
   nextCursor: "c2",
 };
 const second: HistoryPageData = {
-  items: [{ at: "2026-10-01T10:00:00.000Z", user: { id: "u2", displayName: "Bob Builder" } }],
+  items: [
+    { id: "e1", at: "2026-10-01T10:00:00.000Z", user: { id: "u2", displayName: "Bob Builder" } },
+  ],
   nextCursor: null,
 };
+
+const saved = { title: "Then", pages: [{ name: "page1" }] };
+const savedText = JSON.stringify(saved, null, 2);
+const writeText = vi.fn<(text: string) => Promise<void>>();
+
+beforeEach(() => {
+  writeText.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+});
+
+afterEach(() => {
+  Reflect.deleteProperty(navigator, "clipboard");
+});
 
 function open(pages: Record<string, HistoryPageData>) {
   server.use(configHandler(), meHandler(), surveyHandler(), historyHandler(pages));
   renderApp(path);
 }
+
+/** The toggle of the first entry ("… by Ada Admin"), once the list is shown. */
+const firstToggle = () => screen.findByRole("button", { name: /by Ada Admin/ });
 
 describe("the history page", () => {
   it("lists the entries in the server's order, with the user when known", async () => {
@@ -52,6 +70,71 @@ describe("the history page", () => {
     expect(await screen.findByText(/by Bob Builder/)).toBeTruthy();
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(screen.queryByText("Show more")).toBeNull();
+  });
+
+  it("shows an entry's JSON on click, reads it once and hides it on the next click", async () => {
+    const requested: string[] = [];
+    server.use(historyEntryHandler({ e3: saved }, (entryId) => requested.push(entryId)));
+    open({ "": { ...first, nextCursor: null } });
+    const toggle = await firstToggle();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(toggle);
+
+    const json = await screen.findByText((_, element) => element?.tagName === "CODE");
+    expect(json.textContent).toBe(savedText);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "Copy JSON" })).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Copy JSON" })).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(await screen.findByRole("button", { name: "Copy JSON" })).toBeTruthy();
+    expect(requested).toEqual(["e3"]);
+  });
+
+  it("copies the entry's JSON and says so", async () => {
+    server.use(historyEntryHandler({ e3: saved }));
+    open({ "": { ...first, nextCursor: null } });
+    fireEvent.click(await firstToggle());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Copy JSON" }));
+
+    expect(writeText).toHaveBeenCalledWith(savedText);
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("shows a clipboard failure", async () => {
+    writeText.mockRejectedValue(new Error("denied"));
+    server.use(historyEntryHandler({ e3: saved }));
+    open({ "": { ...first, nextCursor: null } });
+    fireEvent.click(await firstToggle());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Copy JSON" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Could not copy to the clipboard.");
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+  });
+
+  it("says so when an entry's JSON cannot be loaded and tries again on the next open", async () => {
+    server.use(historyEntryHandler({}));
+    open({ "": { ...first, nextCursor: null } });
+    const toggle = await firstToggle();
+    fireEvent.click(toggle);
+
+    const item = screen.getAllByRole("listitem")[0]!;
+    expect((await within(item).findByRole("alert")).textContent).toBe(
+      "Could not load this version. Please try again.",
+    );
+
+    server.use(historyEntryHandler({ e3: saved }));
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    expect(await within(item).findByRole("button", { name: "Copy JSON" })).toBeTruthy();
+    expect(within(item).queryByRole("alert")).toBeNull();
   });
 
   it("says so when there are no edits", async () => {

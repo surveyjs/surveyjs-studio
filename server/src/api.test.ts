@@ -14,7 +14,13 @@ import { loadContract } from "./contract.js";
 import { newFileId } from "./domain/file-id.js";
 import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
-import { MEMBER_ID, ownerUser, PROJECT_A_ID, surveyFeedback } from "./providers/suite/expected.js";
+import {
+  feedbackHistoryIds,
+  MEMBER_ID,
+  ownerUser,
+  PROJECT_A_ID,
+  surveyFeedback,
+} from "./providers/suite/expected.js";
 
 const testEnv = { NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
 let app: FastifyInstance | undefined;
@@ -320,6 +326,7 @@ function contractOperations(): ContractOperation[] {
     projectId: PROJECT_A_ID,
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,
+    entryId: feedbackHistoryIds[0] ?? "",
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
