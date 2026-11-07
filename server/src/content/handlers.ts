@@ -75,5 +75,10 @@ export function createContentHandlers(options: ContentServiceOptions): Handlers 
         surveyIdOf(request.params),
         request.query as HistoryListQuery,
       ),
+
+    getSurveyHistoryEntry: (request) => {
+      const { surveyId, entryId } = request.params as { surveyId: string; entryId: string };
+      return service.getHistoryEntry(requireUser(request), surveyId, entryId);
+    },
   };
 }

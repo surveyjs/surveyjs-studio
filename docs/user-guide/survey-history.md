@@ -18,6 +18,15 @@ version, the **newest first**:
   example `10/15/2026, 9:30 AM UTC`);
 - **by** and the name of the person who saved it, when it is known.
 
+Click the time of a row to see the survey JSON saved in that version. It opens under the row, with a
+**Copy JSON** button above it that copies the JSON to the clipboard; the button reads **Copied** for a
+moment after. Click the time again to hide it. While the JSON loads, the row says "Loading…"; if it
+cannot be loaded, "Could not load this version. Please try again." shows, and the next click tries
+again. If the browser does not allow copying, "Could not copy to the clipboard." shows; you can still
+select the JSON and copy it yourself.
+
+Versions saved by the old surveyjs.io editor open the same way.
+
 The list shows 50 entries at a time. When there are more, a **Show more** link loads the next ones. A
 survey that was never saved shows "No edits yet.". **Back to My Surveys** returns to the list.
 
@@ -46,4 +55,4 @@ shows without a name and with a new time.
 
 ## Not here yet
 
-You cannot open, compare or restore an older version from the page yet. The versions are kept for that.
+You cannot compare two versions or restore an older one from the page yet.
