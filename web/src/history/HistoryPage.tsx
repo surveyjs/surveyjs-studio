@@ -1,11 +1,23 @@
-import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { historyInfiniteQueryOptions } from "../api/content";
+import { useEffect, useId, useState } from "react";
+import {
+  historyEntryQueryOptions,
+  historyInfiniteQueryOptions,
+  type HistoryPage as HistoryPageData,
+} from "../api/content";
 import { surveyQueryOptions } from "../api/surveys";
 import clockIcon from "../shell/surveyjs-site/assets/site/Content/Images/Clock_12x12.svg";
+import { Icon } from "../shell/surveyjs-site/SiteIcon";
 import { formatHistoryTime } from "../surveyList/formatDate";
 import { surveyListSearch } from "../surveyList/search";
+import { CLIPBOARD_ERROR } from "../surveyList/useSurveyActions";
 import styles from "./history.module.css";
+
+type HistoryEntry = HistoryPageData["items"][number];
+
+/** How long "Copied" replaces "Copy JSON" after a copy. */
+const COPIED_FOR_MS = 2000;
 
 const linkButton = `v2-class---paragraph-link ${styles.linkButton}`;
 
@@ -46,18 +58,7 @@ export function HistoryPage({ surveyId }: { surveyId: string }) {
         ) : (
           <ul className={styles.list}>
             {entries.map((entry, index) => (
-              <li
-                key={`${entry.at}-${index}`}
-                className={`my-surveys-history-item ${styles.entry}`}
-              >
-                <img className="my-surveys-page__clock-icon" src={clockIcon} alt="" />{" "}
-                <time dateTime={entry.at}>{formatHistoryTime(entry.at)}</time>
-                {entry.user ? (
-                  <span className="my-surveys-history-item__user">
-                    {` by ${entry.user.displayName}`}
-                  </span>
-                ) : null}
-              </li>
+              <HistoryItem key={`${entry.id}-${index}`} surveyId={surveyId} entry={entry} />
             ))}
           </ul>
         )}
@@ -85,5 +86,106 @@ export function HistoryPage({ surveyId }: { surveyId: string }) {
         </Link>
       </p>
     </section>
+  );
+}
+
+/**
+ * One entry: its time (and user) toggles the JSON saved in it, read when first opened, with Copy
+ * JSON above it (the site's `loadItem` and `copyJSON`).
+ */
+function HistoryItem({ surveyId, entry }: { surveyId: string; entry: HistoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const jsonId = useId();
+  return (
+    <li className="my-surveys-history-item">
+      <div>
+        <button
+          type="button"
+          className={`action-link ${styles.toggle}`}
+          aria-expanded={open}
+          aria-controls={jsonId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <img className="my-surveys-page__clock-icon" src={clockIcon} alt="" />{" "}
+          <time dateTime={entry.at}>{formatHistoryTime(entry.at)}</time>
+          {entry.user ? (
+            <span className="my-surveys-history-item__user">{` by ${entry.user.displayName}`}</span>
+          ) : null}
+        </button>
+      </div>
+      {open ? <EntryJson id={jsonId} surveyId={surveyId} entryId={entry.id} /> : null}
+    </li>
+  );
+}
+
+/** The JSON of an open entry; mounted on each open, so a failed read is tried again. */
+function EntryJson({ id, surveyId, entryId }: { id: string; surveyId: string; entryId: string }) {
+  const entry = useQuery(historyEntryQueryOptions(surveyId, entryId));
+  const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), COPIED_FOR_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  if (entry.isError) {
+    return (
+      <p id={id} className="v2-class---paragraph" role="alert">
+        Could not load this version. Please try again.
+      </p>
+    );
+  }
+  if (entry.data === undefined) {
+    return (
+      <p id={id} className="v2-class---paragraph">
+        Loading…
+      </p>
+    );
+  }
+  const text = JSON.stringify(entry.data, null, 2);
+  const copy = () => {
+    setCopyFailed(false);
+    let writing: Promise<void>;
+    try {
+      writing = navigator.clipboard.writeText(text);
+    } catch (failure) {
+      // No clipboard API (an insecure context).
+      writing = Promise.reject(failure instanceof Error ? failure : new Error(String(failure)));
+    }
+    writing.then(
+      () => setCopied(true),
+      () => setCopyFailed(true),
+    );
+  };
+  const label = copied ? "Copied" : "Copy JSON";
+
+  return (
+    <div id={id} className={styles.json}>
+      <button
+        type="button"
+        className="v2-class---footer-toolbar-item v2-class---footer-toolbar-item--button"
+        title={label}
+        onClick={copy}
+      >
+        <span className="v2-class---footer-toolbar-item__icon v2-class---footer-toolbar-item__icon--normal">
+          <Icon name="24x24/Copy-Code" type="Primary" size="Smedium" />
+        </span>
+        <span className="v2-class---footer-toolbar-item__icon v2-class---footer-toolbar-item__icon--small">
+          <Icon name="20x20/Copy-Code" type="Primary" size="SSmedium" />
+        </span>
+        <span className="v2-class---footer-toolbar-item__text">{label}</span>
+      </button>
+      {copyFailed ? (
+        <p className="v2-class---paragraph" role="alert">
+          {CLIPBOARD_ERROR}
+        </p>
+      ) : null}
+      <div className="svc-custom-embedded-tab__code-container" style={{ userSelect: "text" }}>
+        <pre className="source-code source-code-embed language-json" tabIndex={-1}>
+          <code className="content-js language-javascript">{text}</code>
+        </pre>
+      </div>
+    </div>
   );
 }

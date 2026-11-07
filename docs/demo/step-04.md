@@ -174,7 +174,7 @@ pnpm e2e
 ```
 
 Expected: all pass. `pnpm e2e` runs the survey list specs in three browsers, including the paging spec
-(it creates more than 50 surveys in Engineering and checks Load more).
+(it creates more than 50 surveys in Engineering and checks that the list loads them all).
 
 With the replica running (`pnpm demo:azurite:up`; stop any demo first, the tests use ports 3000 and 5173):
 

@@ -1003,3 +1003,8 @@ and 6 need Linux (`docker run --network host`); on Windows and macOS run those s
 - TypeScript is strict and ESM. Server, contract and conformance tests use `NodeNext`; web uses `Bundler`.
 - ESLint (flat config) and Prettier. `pnpm format` fixes formatting.
 - Commit messages are conventional: `feat(server): ...`, `fix(web): ...`, `docs: ...`, `chore: ...`.
+- Prettier pads Markdown tables, so one wider cell rewrites every row and two branches that touch a table conflict
+  on all of it. Run `node scripts/git-merge/markdown-tables.mjs --install` once per clone: `.gitattributes` then
+  merges `*.md` without the padding and re-formats the result, and tables conflict only where both sides changed a
+  row. Rows both sides only added at the same place (two new ADRs at the end of the index) are both kept, ours
+  first. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.

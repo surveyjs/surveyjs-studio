@@ -1,6 +1,6 @@
 import { useSuspenseInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { projectsQueryOptions } from "../api/projects";
 import { hasArchivedQueryOptions, surveyListQueryOptions, useCreateSurvey } from "../api/surveys";
 import { iconHtml } from "../shell/surveyjs-site/icons";
@@ -16,9 +16,11 @@ import { failureMessage, useSurveyActions } from "./useSurveyActions";
 /**
  * The My Surveys page in the markup of the site's My Surveys page (D14):
  * the Active/Archived switch, the project drop-down, Create a Survey, and the list of the scope's
- * surveys, newest first, with "Load more" when more pages follow. Each row has the rename pencil and
- * the "…" menu; a failed row action shows one message under the actions until the next action. The
- * route loader has fetched the first page, the archived check and the projects.
+ * surveys, newest first. Like surveyjs.io, the page ends up holding the whole list, so the browser's
+ * Find sees every survey: the pages after the first load one after another without a click. A page
+ * that fails stops that, with a message and "Load more" to try it again. Each row has the rename
+ * pencil and the "…" menu; a failed row action shows one message under the actions until the next
+ * action. The route loader has fetched the first page, the archived check and the projects.
  */
 export function SurveyListPage({ project, archived }: SurveyListParams) {
   const navigate = useNavigate();
@@ -31,6 +33,14 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
   const creating = useRef(false);
 
   const surveys = list.data.pages.flatMap((page) => page.items);
+
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
+  // The page count is a dependency: a fast page can arrive without a render that shows it fetching,
+  // and the other values alone would then not change.
+  const pageCount = list.data.pages.length;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [pageCount, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
   const createSurvey = () => {
     if (creating.current) return;
@@ -113,7 +123,10 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
               />
             </div>
           ) : (
-            <div className="v2-class---my-surveys-page__list v2-class---my-surveys-page__list--table-view">
+            <div
+              className="v2-class---my-surveys-page__list v2-class---my-surveys-page__list--table-view"
+              aria-busy={hasNextPage && !isFetchNextPageError}
+            >
               {surveys.map((survey) => (
                 <SurveyRow
                   key={survey.id}
@@ -126,15 +139,21 @@ export function SurveyListPage({ project, archived }: SurveyListParams) {
             </div>
           )}
 
-          {list.hasNextPage && (
+          {isFetchNextPageError && (
+            <p className={styles.error} role="alert">
+              Could not load more surveys. Please try again.
+            </p>
+          )}
+
+          {isFetchNextPageError && hasNextPage && (
             <div className={styles.loadMore}>
               <SiteButton
                 text="Load more"
                 style="Brand"
                 mode="Secondary"
                 size="Small"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
               />
             </div>
           )}

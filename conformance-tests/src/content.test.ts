@@ -35,6 +35,7 @@ interface Survey {
 }
 
 interface HistoryEntry {
+  id: string;
   at: string;
   user: { id: string; displayName: string } | null;
 }
@@ -101,6 +102,13 @@ async function history(headers: Headers, id: string): Promise<HistoryEntry[]> {
   const page = (await response.json()) as HistoryPage;
   expect(page.nextCursor).toBeNull();
   return page.items;
+}
+
+function getEntry(headers: Headers, surveyId: string, entryId: string): Promise<Response> {
+  return call("GET", "/surveys/{surveyId}/history/{entryId}", {
+    path: `/surveys/${surveyId}/history/${entryId}`,
+    headers,
+  });
 }
 
 describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
@@ -362,5 +370,65 @@ describe("the survey history", () => {
       });
       expect(response.status).toBe(404);
     }
+  });
+});
+
+describe("a survey history entry", () => {
+  it("gives the definition saved in it", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { definition: { title: "Start" } });
+    let tag = await etagOf(await getDocument(headers, survey.id, "definition"));
+    for (const title of ["One", "Two"]) {
+      await tick();
+      const saved = await putDocument(headers, survey.id, "definition", {
+        body: { title, pages: [] },
+        ifMatch: tag,
+      });
+      tag = await etagOf(saved);
+    }
+    const entries = await history(headers, survey.id);
+    expect(new Set(entries.map((entry) => entry.id)).size).toBe(3);
+
+    const definitions = [];
+    for (const entry of entries) {
+      const response = await getEntry(headers, survey.id, entry.id);
+      expect(response.status).toBe(200);
+      definitions.push(await response.json());
+    }
+    expect(definitions).toEqual([
+      { title: "Two", pages: [] },
+      { title: "One", pages: [] },
+      { title: "Start" },
+    ]);
+  });
+
+  it("gives the definitions of the legacy entries of Customer feedback", async (ctx) => {
+    const headers = await as(ctx, owner);
+    const titles = [];
+    for (const entry of await history(headers, fixture.feedback)) {
+      const response = await getEntry(headers, fixture.feedback, entry.id);
+      expect(response.status).toBe(200);
+      titles.push(((await response.json()) as { title: string }).title);
+    }
+    expect(titles.sort()).toEqual(["Customer feedback", "Customer feedback (draft)"]);
+  });
+
+  it("answers 404 for an unknown entry and for an entry of another survey", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { definition: { title: "Start" } });
+    const other = await created(headers, { definition: { title: "Other" } });
+    const [otherEntry] = await history(headers, other.id);
+    for (const entryId of [UNKNOWN_ID, otherEntry?.id ?? ""]) {
+      const response = await getEntry(headers, survey.id, entryId);
+      expect(response.status).toBe(404);
+      expect(await codeOf(response)).toBe("not-found");
+    }
+  });
+
+  it("answers 404 for a survey the user cannot see", async (ctx) => {
+    const [entry] = await history(await as(ctx, owner), fixture.feedback);
+    const headers = await as(ctx, outsider);
+    const response = await getEntry(headers, fixture.feedback, entry?.id ?? UNKNOWN_ID);
+    expect(response.status).toBe(404);
   });
 });
