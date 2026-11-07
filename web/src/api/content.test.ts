@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   definitionHandler,
   editConflictHandler,
+  historyEntryHandler,
   historyHandler,
   saveDefinitionHandler,
   saveThemeHandler,
@@ -14,6 +15,7 @@ import { ApiError } from "./client";
 import {
   contentKeys,
   definitionQueryOptions,
+  historyEntryQueryOptions,
   historyInfiniteQueryOptions,
   markSavedContentStale,
   saveDefinition,
@@ -83,7 +85,7 @@ describe("saving documents", () => {
 
 describe("history", () => {
   it("follows nextCursor", async () => {
-    const entry = (at: string) => ({ at, user: null });
+    const entry = (at: string) => ({ id: at, at, user: null });
     const requested: (string | null)[] = [];
     server.use(
       historyHandler(
@@ -103,6 +105,24 @@ describe("history", () => {
       "2026-04-01T10:00:00.000Z",
     ]);
     expect(requested).toEqual([null, "c2"]);
+  });
+});
+
+describe("a history entry", () => {
+  it("reads the definition saved in it", async () => {
+    server.use(historyEntryHandler({ e1: { title: "Then" } }));
+    expect(await newClient().fetchQuery(historyEntryQueryOptions(id, "e1"))).toEqual({
+      title: "Then",
+    });
+  });
+
+  it("rejects an unknown entry with the not-found ApiError", async () => {
+    server.use(historyEntryHandler({}));
+    const error = await newClient()
+      .fetchQuery(historyEntryQueryOptions(id, "e9"))
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).problem.code).toBe("not-found");
   });
 });
 

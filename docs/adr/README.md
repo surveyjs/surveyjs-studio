@@ -18,7 +18,7 @@ and add each one to this index.
 | [0009](0009-survey-permissions-follow-legacy.md)           | Survey permissions follow the legacy rules                                      | Accepted |
 | [0010](0010-writing-to-the-legacy-stores.md)               | Writing to the legacy stores                                                    | Accepted |
 | [0011](0011-survey-actions.md)                             | Survey actions: who may do what, and what each one changes                      | Accepted |
-| [0012](0012-editor-content-and-history.md)                 | The editor, survey content and history                                          | Accepted |
+| [0012](0012-editor-content-and-history.md)                 | The editor, survey content and history (its "No JSON view" superseded by 0023)  | Accepted |
 | [0013](0013-editor-uploads-and-files.md)                   | Editor uploads and file serving                                                 | Accepted |
 | [0014](0014-run-page-and-response-collection.md)           | Run page and response collection                                                | Accepted |
 | [0015](0015-results-summary-table-and-views.md)            | Results: Summary, Table and saved layouts                                       | Accepted |
@@ -38,3 +38,4 @@ and add each one to this index.
 | [0029](0029-linking-identities-by-verified-email.md)       | Linking identities by verified email                                            | Accepted |
 | [0030](0030-the-sandbox-mock-in-the-browser.md)            | The sandbox mock in the browser                                                 | Accepted |
 | [0031](0031-publishing-the-sandbox.md)                     | Publishing the sandbox                                                          | Accepted |
+| [0032](0032-history-json-view.md)                          | The JSON of a history entry                                                     | Accepted |

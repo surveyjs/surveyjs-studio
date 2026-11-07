@@ -34,7 +34,9 @@ if (isLocalHttpsIssuer(issuer) && process.env["NODE_EXTRA_CA_CERTS"] === undefin
     writeFileSync(caFile, pem);
     childEnv["NODE_EXTRA_CA_CERTS"] = caFile;
   } catch (error) {
-    console.error(`Cannot reach the sign-in issuer ${issuer}: is the site's sign-in service running?`);
+    console.error(
+      `Cannot reach the sign-in issuer ${issuer}: is the site's sign-in service running?`,
+    );
     console.error(`  ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
