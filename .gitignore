@@ -13,6 +13,7 @@ docker-logs/
 !.env.example
 *.tsbuildinfo
 e2e/visual-report/
+e2e/visual-self-hosted-report/
 e2e/visual/.auth/
 e2e/visual/.state/
 e2e/visual/.self-baselines/

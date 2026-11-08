@@ -103,6 +103,7 @@ describe("the ports of each configuration", () => {
   it("detects the SQL configs in the arguments", () => {
     expect(usesSqlConfig(["--config", "playwright.sqlite.config.ts"])).toBe(true);
     expect(usesSqlConfig(["--config=e2e\\playwright.postgres.config.ts"])).toBe(true);
+    expect(usesSqlConfig(["--config", "playwright.self-hosted.config.ts"])).toBe(true);
     expect(usesSqlConfig(["--config", "playwright.password.config.ts"])).toBe(true);
     expect(usesSqlConfig(["--config", "playwright.azurite.config.ts"])).toBe(false);
     expect(usesSqlConfig(["playwrightXsqliteXconfig.ts"])).toBe(false);

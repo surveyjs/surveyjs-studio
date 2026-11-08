@@ -95,6 +95,20 @@ describe("the editor page", () => {
     expect(document.getElementById("creator")!.className).not.toContain("belowBanner");
   });
 
+  it("adds the Embed tabs only where /config offers them (the surveyjs-site shell, D21)", async () => {
+    await openEditor();
+    expect(editor.props!.embed).toBe(true);
+  });
+
+  it("leaves the Embed tabs out in the self-hosted shell", async () => {
+    await openEditor(sampleSurvey, {
+      ...appConfig,
+      shell: "self-hosted",
+      features: { embed: false, apiDocs: false, apiTokens: false },
+    });
+    expect(editor.props!.embed).toBe(false);
+  });
+
   it("is read-only without modify rights", async () => {
     await openEditor({ ...sampleSurvey, permissions: { canModify: false } });
 

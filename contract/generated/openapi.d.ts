@@ -1091,9 +1091,10 @@ export interface components {
             /** @enum {string} */
             edition: "hosted" | "self-hosted";
             /**
-             * @description The look-and-feel shell; `surveyjs-site` reproduces surveyjs.io.
+             * @description The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `self-hosted` is the
+             *     self-hosted look, with the instance's branding and "Powered by SurveyJS".
              * @example surveyjs-site
-             * @example powered-by-surveyjs
+             * @example self-hosted
              */
             shell: string;
             /**
@@ -1127,6 +1128,38 @@ export interface components {
             links?: {
                 [key: string]: string;
             };
+            branding?: components["schemas"]["Branding"];
+            features?: components["schemas"]["Features"];
+        };
+        /** @description The instance's branding, shown by the `self-hosted` shell. */
+        Branding: {
+            /** @description The instance's name (`BRAND_NAME`). */
+            name: string;
+            /** @description An https URL or a path on this site (`BRAND_LOGO_URL`); `null` for none. */
+            logoUrl: string | null;
+            /** @description The accent colour (`BRAND_ACCENT_COLOR`). */
+            accentColor: string;
+            /** Format: uri */
+            termsUrl: string | null;
+            /** Format: uri */
+            privacyUrl: string | null;
+            /**
+             * @description Whether "Powered by SurveyJS" shows. `BRANDING=off` hides it, and needs the
+             *     instance's own SurveyJS licence key; the SurveyJS libraries decide what a key allows.
+             */
+            poweredBy: boolean;
+        };
+        /**
+         * @description What the shell offers. The Embed tab, the API docs and API tokens are shown only in the
+         *     `surveyjs-site` shell; elsewhere `/api/docs` answers `404`.
+         */
+        Features: {
+            /** @description The editor's Embed Survey and Embed Creator tabs. */
+            embed: boolean;
+            /** @description The API reference at `/api/docs`. */
+            apiDocs: boolean;
+            /** @description The API tokens page (hosted track). */
+            apiTokens: boolean;
         };
         /** @enum {string} */
         ProjectRole: "admin" | "user";

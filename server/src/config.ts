@@ -60,6 +60,30 @@ export interface UserApiConfig {
   readonly token: string;
 }
 
+/** The instance's branding (`/config.branding`, the self-hosted shell). */
+export interface BrandingConfig {
+  /** `BRAND_NAME`, trimmed; default "My Surveys". */
+  readonly name: string;
+  /** `BRAND_LOGO_URL`: an https URL or a path on this site; null for none. */
+  readonly logoUrl: string | null;
+  /** `BRAND_ACCENT_COLOR`, lower-case `#rgb` or `#rrggbb`; default the SurveyJS green. */
+  readonly accentColor: string;
+  readonly termsUrl: string | null;
+  readonly privacyUrl: string | null;
+  /** "Powered by SurveyJS" shows; `BRANDING=off` (with a licence key) hides it. */
+  readonly poweredBy: boolean;
+}
+
+/** What the configured shell offers (`/config.features`, D21). */
+export interface FeaturesConfig {
+  readonly embed: boolean;
+  readonly apiDocs: boolean;
+  readonly apiTokens: boolean;
+}
+
+/** The shell that reproduces surveyjs.io: the only one with the Embed tab, API docs and tokens. */
+export const SITE_SHELL = "surveyjs-site";
+
 export interface AppConfig {
   readonly nodeEnv: "development" | "test" | "production";
   readonly host: string;
@@ -69,6 +93,8 @@ export interface AppConfig {
   readonly shell: string;
   readonly authMethods: readonly AuthMethod[];
   readonly surveyjsLicenseKey: string | null;
+  readonly branding: BrandingConfig;
+  readonly features: FeaturesConfig;
   readonly storageProvider: StorageProvider;
   readonly memorySeed: "empty" | "legacy-fixtures";
   /** Set only when storageProvider is `azure-legacy`. Secrets: never log or echo these values. */
@@ -251,6 +277,13 @@ const envSchema = z.object({
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
+  // Checked in brandingProblems.
+  BRAND_NAME: z.string().optional(),
+  BRAND_LOGO_URL: z.string().optional(),
+  BRAND_ACCENT_COLOR: z.string().optional(),
+  TERMS_URL: z.string().optional(),
+  PRIVACY_URL: z.string().optional(),
+  BRANDING: z.enum(["on", "off"]).default("on"),
   STORAGE_PROVIDER: z.enum(STORAGE_PROVIDERS).default("memory"),
   MEMORY_SEED: z.enum(["empty", "legacy-fixtures"]).default("empty"),
   // Plain string (checked in loadConfig): a schema check here could echo the password.
@@ -430,6 +463,58 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
 }
 
 /** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
+/** `API_DOCS` (default on outside production), and only in the surveyjs-site shell (D21). */
+function apiDocsOf(e: {
+  NODE_ENV: string;
+  API_DOCS?: "true" | "false";
+  APP_SHELL: string;
+}): boolean {
+  const wanted = e.API_DOCS === undefined ? e.NODE_ENV !== "production" : e.API_DOCS === "true";
+  return wanted && e.APP_SHELL === SITE_SHELL;
+}
+
+const ACCENT_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** Whether `value` parses as an absolute URL with one of the protocols. */
+function isUrl(value: string, protocols: readonly string[]): boolean {
+  return URL.canParse(value) && protocols.includes(new URL(value).protocol);
+}
+
+/** BRAND_*, TERMS_URL, PRIVACY_URL, BRANDING (ADR 0027) and API_DOCS by shell (D21). */
+function brandingProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const name = env.BRAND_NAME;
+  if (name !== undefined && name.trim().length > 80) {
+    problems.push("BRAND_NAME: must be at most 80 characters");
+  }
+  const logo = env.BRAND_LOGO_URL;
+  // A path of this site, or https: what the pages' CSP lets an image load from.
+  const sitePath = logo !== undefined && logo.startsWith("/") && !logo.startsWith("//");
+  if (logo !== undefined && !sitePath && !isUrl(logo, ["https:"])) {
+    problems.push("BRAND_LOGO_URL: must be an https URL or a path on this site (/...)");
+  }
+  const colour = env.BRAND_ACCENT_COLOR;
+  if (colour !== undefined && !ACCENT_COLOR.test(colour)) {
+    problems.push("BRAND_ACCENT_COLOR: must be a colour like #19b394");
+  }
+  for (const variable of ["TERMS_URL", "PRIVACY_URL"] as const) {
+    const url = env[variable];
+    if (url !== undefined && !isUrl(url, ["http:", "https:"])) {
+      problems.push(`${variable}: must be an http(s) URL`);
+    }
+  }
+  // The libraries decide what a key allows; the app asks for one before it hides the mark.
+  if (env.BRANDING === "off" && !env.SURVEYJS_LICENSE_KEY?.trim()) {
+    problems.push("BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)");
+  }
+  if (env.API_DOCS === "true" && (env.APP_SHELL ?? SITE_SHELL) !== SITE_SHELL) {
+    problems.push(
+      `API_DOCS: true requires APP_SHELL=${SITE_SHELL} (the API docs are shown only there)`,
+    );
+  }
+  return problems;
+}
+
 function bootstrapProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const { ADMIN_EMAIL: email, ADMIN_PASSWORD: password } = env;
@@ -608,6 +693,7 @@ export function loadConfig(
     problems.push("SESSION_SECRET: must be at least 32 characters");
   }
   problems.push(...accountProblems(env));
+  problems.push(...brandingProblems(env));
   if (options.skipIdentityRules !== true) problems.push(...identityProblems(env));
   if (!parsed.success || problems.length > 0) {
     const lines = problems.map((p) => `  - ${p}`).join("\n");
@@ -623,6 +709,19 @@ export function loadConfig(
     shell: e.APP_SHELL,
     authMethods: Object.freeze([...e.AUTH_METHODS]),
     surveyjsLicenseKey: e.SURVEYJS_LICENSE_KEY ?? null,
+    branding: Object.freeze({
+      name: e.BRAND_NAME?.trim() || "My Surveys",
+      logoUrl: e.BRAND_LOGO_URL ?? null,
+      accentColor: (e.BRAND_ACCENT_COLOR ?? "#19b394").toLowerCase(),
+      termsUrl: e.TERMS_URL ?? null,
+      privacyUrl: e.PRIVACY_URL ?? null,
+      poweredBy: e.BRANDING !== "off",
+    }),
+    features: Object.freeze({
+      embed: e.APP_SHELL === SITE_SHELL,
+      apiDocs: apiDocsOf(e),
+      apiTokens: e.APP_SHELL === SITE_SHELL,
+    }),
     storageProvider: e.STORAGE_PROVIDER,
     memorySeed: e.MEMORY_SEED,
     legacy:
@@ -642,7 +741,7 @@ export function loadConfig(
       maxResponseBytes: e.LIMIT_MAX_RESPONSE_BYTES,
       maxDocumentBytes: e.LIMIT_MAX_DOCUMENT_BYTES,
     }),
-    apiDocs: e.API_DOCS === undefined ? e.NODE_ENV !== "production" : e.API_DOCS === "true",
+    apiDocs: apiDocsOf(e),
     identityProvider: e.IDENTITY_PROVIDER,
     sessionSecret: e.SESSION_SECRET ?? DEV_SESSION_SECRET,
     sessionSecretIsDevDefault: e.SESSION_SECRET === undefined,

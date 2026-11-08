@@ -33,4 +33,5 @@ and add each one to this index.
 | [0024](0024-kysely-and-plain-sql-migrations.md)            | Kysely and plain-SQL migrations                                                 | Accepted |
 | [0025](0025-file-storage-for-the-sql-providers.md)         | File storage for the SQL providers                                              | Accepted |
 | [0026](0026-revoking-stateless-sessions-with-an-epoch.md)  | Revoking stateless sessions with an epoch                                       | Accepted |
+| [0027](0027-branding-and-the-licence-key.md)               | Branding and the licence key                                                    | Accepted |
 | [0032](0032-history-json-view.md)                          | The JSON of a history entry                                                     | Accepted |

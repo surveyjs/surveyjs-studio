@@ -1,6 +1,12 @@
 import { lazy, Suspense, type ReactElement, type ReactNode } from "react";
-import { PlainShell } from "./PlainShell";
-import type { ShellProps } from "./types";
+import type { components } from "@surveyjs-studio/contract/types";
+import { AnonymousShell, PlainShell } from "./PlainShell";
+import { DEFAULT_BRANDING, type ShellProps } from "./types";
+
+type AppConfig = components["schemas"]["AppConfig"];
+
+/** The self-hosted shell's name (APP_SHELL=self-hosted). */
+export const SELF_HOSTED_SHELL = "self-hosted";
 
 type RenderShell = (props: ShellProps) => ReactElement;
 type RenderStyles = (children: ReactNode) => ReactElement;
@@ -14,8 +20,20 @@ const SurveyjsSiteStyles = lazy(async () => ({
   default: (await import("./surveyjs-site/SiteStyles")).SiteStyles,
 }));
 
+// The self-hosted shell, its frame and its footer, loaded on demand too: its own stylesheets reach
+// the browser only with APP_SHELL=self-hosted.
+const selfHosted = () => import("./self-hosted/SelfHostedShell");
+const SelfHostedShell = lazy(async () => ({ default: (await selfHosted()).SelfHostedShell }));
+const SelfHostedFrame = lazy(async () => ({ default: (await selfHosted()).SelfHostedFrame }));
+const SelfHostedFooter = lazy(async () => ({ default: (await selfHosted()).SelfHostedFooter }));
+
 const shells: Record<string, RenderShell> = {
   plain: (props) => <PlainShell {...props} />,
+  [SELF_HOSTED_SHELL]: (props) => (
+    <Suspense fallback={null}>
+      <SelfHostedShell {...props} branding={props.branding ?? DEFAULT_BRANDING} />
+    </Suspense>
+  ),
   "surveyjs-site": (props) => (
     <Suspense fallback={null}>
       <SurveyjsSiteShell {...props} />
@@ -36,6 +54,49 @@ const shellStyles: Record<string, RenderStyles> = {
 export function renderShell(name: string, props: ShellProps): ReactElement {
   const render = Object.hasOwn(shells, name) ? shells[name]! : shells["plain"]!;
   return render(props);
+}
+
+/**
+ * A page of a visitor who is not signed in (sign-in, set-password): the self-hosted frame with the
+ * instance's branding, else the configured shell's styles around the plain frame without account
+ * controls.
+ */
+export function renderAnonymousPage(config: AppConfig, children: ReactNode): ReactElement {
+  if (config.shell === SELF_HOSTED_SHELL) {
+    return (
+      <Suspense fallback={null}>
+        <SelfHostedFrame branding={config.branding ?? DEFAULT_BRANDING}>{children}</SelfHostedFrame>
+      </Suspense>
+    );
+  }
+  return renderShellStyles(config.shell, <AnonymousShell>{children}</AnonymousShell>);
+}
+
+/**
+ * The public results page: the self-hosted frame with the instance's branding (the page brings its
+ * own `<main>`), else no shell but the configured shell's styles (ADR 0016 R19).
+ */
+export function renderPublicPage(config: AppConfig, children: ReactNode): ReactElement {
+  if (config.shell === SELF_HOSTED_SHELL) {
+    return (
+      <Suspense fallback={null}>
+        <SelfHostedFrame branding={config.branding ?? DEFAULT_BRANDING} ownMain>
+          {children}
+        </SelfHostedFrame>
+      </Suspense>
+    );
+  }
+  return renderShellStyles(config.shell, children);
+}
+
+/** The run page's footer: the self-hosted footer in that shell, else nothing. */
+export function renderRunFooter(config: AppConfig): ReactElement | null {
+  if (config.shell !== SELF_HOSTED_SHELL) return null;
+  return (
+    <Suspense fallback={null}>
+      <SelfHostedFooter branding={config.branding ?? DEFAULT_BRANDING} standalone />
+    </Suspense>
+  );
 }
 
 /**

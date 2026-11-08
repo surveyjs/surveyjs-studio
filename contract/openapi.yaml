@@ -1970,8 +1970,10 @@ components:
           enum: [hosted, self-hosted]
         shell:
           type: string
-          description: The look-and-feel shell; `surveyjs-site` reproduces surveyjs.io.
-          examples: [surveyjs-site, powered-by-surveyjs]
+          description: |
+            The look-and-feel shell: `surveyjs-site` reproduces surveyjs.io; `self-hosted` is the
+            self-hosted look, with the instance's branding and "Powered by SurveyJS".
+          examples: [surveyjs-site, self-hosted]
         authMethods:
           type: array
           description: |
@@ -2010,6 +2012,38 @@ components:
           type: object
           description: Shell links, such as account settings and help desk.
           additionalProperties: { type: string, format: uri }
+        branding: { $ref: '#/components/schemas/Branding' }
+        features: { $ref: '#/components/schemas/Features' }
+    Branding:
+      type: object
+      description: The instance's branding, shown by the `self-hosted` shell.
+      required: [name, logoUrl, accentColor, termsUrl, privacyUrl, poweredBy]
+      properties:
+        name: { type: string, description: The instance's name (`BRAND_NAME`). }
+        logoUrl:
+          type: [string, 'null']
+          description: An https URL or a path on this site (`BRAND_LOGO_URL`); `null` for none.
+        accentColor:
+          type: string
+          pattern: '^#(?:[0-9a-f]{3}|[0-9a-f]{6})$'
+          description: The accent colour (`BRAND_ACCENT_COLOR`).
+        termsUrl: { type: [string, 'null'], format: uri }
+        privacyUrl: { type: [string, 'null'], format: uri }
+        poweredBy:
+          type: boolean
+          description: |
+            Whether "Powered by SurveyJS" shows. `BRANDING=off` hides it, and needs the
+            instance's own SurveyJS licence key; the SurveyJS libraries decide what a key allows.
+    Features:
+      type: object
+      description: |
+        What the shell offers. The Embed tab, the API docs and API tokens are shown only in the
+        `surveyjs-site` shell; elsewhere `/api/docs` answers `404`.
+      required: [embed, apiDocs, apiTokens]
+      properties:
+        embed: { type: boolean, description: The editor's Embed Survey and Embed Creator tabs. }
+        apiDocs: { type: boolean, description: The API reference at `/api/docs`. }
+        apiTokens: { type: boolean, description: The API tokens page (hosted track). }
 
     # ----------------------------------------------------------- Projects
     ProjectRole:

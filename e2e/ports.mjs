@@ -14,6 +14,9 @@ export const ports = {
   /** The server and the preview of the visual run. */
   visualServer: 3002,
   visualWeb: 5175,
+  /** The server and the preview of the self-hosted shell's visual run. */
+  selfHostedVisualServer: 3003,
+  selfHostedVisualWeb: 5176,
 };
 
 /**
@@ -27,6 +30,9 @@ export function functionalPorts({ image, azurite, sql = false }) {
   return [ports.server, ports.licenceServer, ports.web, ports.licenceWeb];
 }
 
+/** The ports of `pnpm e2e:visual:self-hosted`. */
+export const selfHostedVisualPorts = [ports.selfHostedVisualServer, ports.selfHostedVisualWeb];
+
 /** The ports of `pnpm e2e:visual`. */
 export const visualPorts = [ports.visualServer, ports.visualWeb];
 
@@ -36,11 +42,13 @@ export function usesAzuriteConfig(args) {
 }
 
 /**
- * Whether the arguments pick a SQL config (`--config playwright.sqlite.config.ts`, `postgres` or
- * `password`).
+ * Whether the arguments pick a SQL config (`--config playwright.sqlite.config.ts`, `postgres`,
+ * `password` or `self-hosted`).
  */
 export function usesSqlConfig(args) {
   return args.some((arg) =>
-    /(^|[\\/=])playwright\.(sqlite|postgres|password)\.config(\.[cm]?[jt]s)?$/.test(arg),
+    /(^|[\\/=])playwright\.(sqlite|postgres|password|self-hosted)\.config(\.[cm]?[jt]s)?$/.test(
+      arg,
+    ),
   );
 }

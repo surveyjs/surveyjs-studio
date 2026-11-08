@@ -1,0 +1,745 @@
+/*
+ * Neutral styles for the app's pages inside the self-hosted shell. The pages are shared with the
+ * surveyjs-site shell and keep its markup (the `v2-class---*` names); here they get the shell's own
+ * plain look instead of surveyjs.io's. Every rule is scoped to .sh-app, so the surveyjs-site look
+ * never sees them, and uses the custom properties of self-hosted.css.
+ */
+
+/* ---------------------------------------------------------------- Type */
+
+.sh-app .v2-class---header {
+  margin: 0 0 20px;
+}
+
+.sh-app .v2-class---header__title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.sh-app h2,
+.sh-app h3 {
+  font-weight: 600;
+}
+
+.sh-app .v2-class---paragraph {
+  margin: 0 0 12px;
+}
+
+.sh-app .v2-class---paragraph-link {
+  color: var(--sh-accent-text);
+}
+
+/* ---------------------------------------------------------------- Buttons
+   The pages' buttons are anchors (SiteButton): outlined, or filled for a primary action. */
+
+.sh-app .v2-class---button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--sh-accent-text);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  color: var(--sh-accent-text);
+  font: inherit;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---button:hover {
+  background: var(--sh-subtle);
+}
+
+.sh-app .v2-class---button[class*="-primary"] {
+  background: var(--sh-accent-text);
+  color: #fff;
+}
+
+.sh-app .v2-class---button[class*="-primary"]:hover {
+  filter: brightness(1.1);
+}
+
+.sh-app .v2-class---button[disabled],
+.sh-app .v2-class---button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.sh-app .v2-class---button:focus-visible,
+.sh-app [role="button"]:focus-visible,
+.sh-app a:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- Form fields */
+
+.sh-app .v2-class---text-edit {
+  display: inline-flex;
+}
+
+.sh-app .v2-class---text-edit__input,
+.sh-app input[type="text"],
+.sh-app input[type="email"],
+.sh-app input[type="password"] {
+  min-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  color: var(--sh-text);
+  font: inherit;
+}
+
+.sh-app .v2-class---text-edit__input:focus,
+.sh-app input:focus {
+  border-color: var(--sh-accent);
+  outline: 1px solid var(--sh-accent);
+}
+
+/* ---------------------------------------------------------------- Switch (Active / Archived) */
+
+.sh-app .v2-class---switcher {
+  position: relative;
+  display: inline-flex;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---switcher input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---switcher__text {
+  padding: 5px 14px;
+  color: var(--sh-muted);
+}
+
+.sh-app .v2-class---switcher__text--active {
+  background: var(--sh-accent-text);
+  color: #fff;
+}
+
+.sh-app .v2-class---switcher:has(input:focus-visible) {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- Drop-down buttons and menus */
+
+.sh-app .v2-class---drop-down-button {
+  position: relative;
+  display: inline-flex;
+}
+
+.sh-app .v2-class---drop-down-button__selected-item-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  cursor: pointer;
+}
+
+.sh-app .v2-class---drop-down-button__selected-item-icon-container {
+  display: flex;
+}
+
+.sh-app .v2-class---drop-down-menu--popup-menu {
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  padding: 4px 0;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+  text-align: left;
+  cursor: default;
+}
+
+.sh-app .v2-class---drop-down-menu--left {
+  left: auto;
+  right: 0;
+}
+
+.sh-app .v2-class---drop-down-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-app .v2-class---drop-down-menu-item {
+  position: relative;
+}
+
+.sh-app .v2-class---drop-down-menu-item__link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  color: var(--sh-text);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---drop-down-menu-item__link:hover,
+.sh-app .v2-class---drop-down-menu-item__link:focus-visible {
+  background: var(--sh-subtle);
+}
+
+.sh-app .v2-class---drop-down-menu-item__link--selected {
+  font-weight: 600;
+}
+
+.sh-app .v2-class---drop-down-menu-item__text {
+  flex: 1;
+}
+
+.sh-app .v2-class---drop-down-menu-item__separator {
+  margin: 4px 0;
+  border-top: 1px solid var(--sh-border);
+}
+
+/* A submenu (Survey IDs, Move to Project) opens beside its item. */
+.sh-app .v2-class---my-surveys-page__move-to-project-menu {
+  display: none;
+  top: -5px;
+  left: 100%;
+}
+
+.sh-app .v2-class---my-surveys-page__move-to-project-menu.v2-class---drop-down-menu--open {
+  display: block;
+}
+
+.sh-app .v2-class---my-surveys-page__move-to-project-menu.v2-class---drop-down-menu--left {
+  left: auto;
+  right: 100%;
+}
+
+.sh-app .v2-class---my-surveys-page__move-to-project-icon-container {
+  display: flex;
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------- My Surveys */
+
+.sh-app .v2-class---my-surveys-page__actions-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sh-app .v2-class---my-surveys-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.sh-app .v2-class---my-surveys-page__list {
+  border-top: 1px solid var(--sh-border);
+}
+
+.sh-app .v2-class---my-surveys-page__list-item {
+  position: relative;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--sh-border);
+  cursor: pointer;
+}
+
+.sh-app .v2-class---my-surveys-page__list-item:hover,
+.sh-app .v2-class---my-surveys-page__list-item--dd-open {
+  background: var(--sh-subtle);
+}
+
+.sh-app .v2-class---my-surveys-page__list-item-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-name-container {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The rename pencil shows on hover, and while the focus is in its row. */
+.sh-app .v2-class---my-surveys-page__edit-icon {
+  display: none;
+}
+
+.sh-app .v2-class---my-surveys-page__list-item:hover .v2-class---my-surveys-page__edit-icon,
+.sh-app .v2-class---my-surveys-page__list-item:focus-within .v2-class---my-surveys-page__edit-icon {
+  display: flex;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-details-container {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: var(--sh-muted);
+  font-size: 13px;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-date-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-date-item-icon {
+  display: flex;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-context-menu-button-svg-container {
+  display: flex;
+  padding: 4px 6px;
+  border-radius: var(--sh-radius);
+  cursor: pointer;
+}
+
+.sh-app .v2-class---my-surveys-page__survey-context-menu-button-svg-container:hover {
+  background: var(--sh-border);
+}
+
+.sh-app .v2-class---my-surveys-page__edit-survey-name-container {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.sh-app .v2-class---my-surveys-page__no-surveys-container {
+  padding: 32px 0;
+  color: var(--sh-muted);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- Projects */
+
+.sh-app .v2-class---account-page__projects {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.sh-app .v2-class---account-page__project {
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+}
+
+.sh-app .v2-class---account-page__project > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---account-page__project > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sh-app .v2-class---account-page__project-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 16px;
+}
+
+.sh-app .v2-class---account-page__project-summary-left,
+.sh-app .v2-class---account-page__project-summary-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sh-app .v2-class---account-page__project-summary-left {
+  gap: 10px;
+}
+
+.sh-app .v2-class---account-page__project-title {
+  font-weight: 600;
+}
+
+.sh-app .v2-class---expand-collapse-button {
+  display: flex;
+  transition: transform 0.15s;
+}
+
+.sh-app .v2-class---account-page__project[open] .v2-class---expand-collapse-button {
+  transform: rotate(180deg);
+}
+
+.sh-app .v2-class---account-page--for-mobile-only {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .sh-app .v2-class---account-page--not-for-mobile {
+    display: none;
+  }
+
+  .sh-app .v2-class---account-page--for-mobile-only {
+    display: flex;
+    margin-bottom: 8px;
+  }
+}
+
+.sh-app .v2-class---account-page__project-link,
+.sh-app .v2-class---account-page__project-button {
+  color: var(--sh-accent-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---account-page__project-link:hover,
+.sh-app .v2-class---account-page__project-button:hover {
+  text-decoration: underline;
+}
+
+.sh-app .v2-class---account-page__project-link--red {
+  color: var(--sh-danger);
+}
+
+.sh-app .v2-class---account-page__project-hidden-content {
+  padding: 0 16px 16px;
+}
+
+.sh-app .v2-class---account-page__project-users-list {
+  border-top: 1px solid var(--sh-border);
+}
+
+.sh-app .v2-class---account-page__project-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sh-border);
+}
+
+.sh-app .v2-class---account-page__project-user-left,
+.sh-app .v2-class---account-page__project-user-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sh-app .v2-class---account-page__project-user-remove-button {
+  display: flex;
+  cursor: pointer;
+}
+
+.sh-app .v2-class---account-page__project-user-admin-label {
+  padding: 0 8px;
+  border: 1px solid var(--sh-border);
+  border-radius: 999px;
+  color: var(--sh-muted);
+  font-size: 12px;
+}
+
+.sh-app .v2-class---add-assignment__button,
+.sh-app .v2-class---account-page__add-project-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--sh-accent-text);
+  cursor: pointer;
+}
+
+.sh-app .v2-class---account-page__add-project-button {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px dashed var(--sh-border);
+  border-radius: var(--sh-radius);
+}
+
+.sh-app .v2-class---add-assignment__button svg,
+.sh-app .v2-class---account-page__add-project-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sh-app .v2-class---account-page__add-project,
+.sh-app .v2-class---account-page__project-add-user-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.sh-app .v2-class---account-page__actions-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---------------------------------------------------------------- Editor
+   The Creator takes the whole width between the header and the footer; the bar under it shows the
+   save status (left) and the survey's name (centre). */
+
+.sh-app .sh-content:has(#creator) {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  padding: 0;
+}
+
+.sh-app #creator {
+  /* The header, the bar and the footer. */
+  height: calc(100vh - 176px);
+}
+
+.sh-app .v2-class---edit-survey-change-name-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 6px 24px;
+  border-top: 1px solid var(--sh-border);
+  background: var(--sh-subtle);
+}
+
+.sh-app #edit-survey-change-name-container > [role="status"] {
+  position: absolute;
+  left: 24px;
+  color: var(--sh-muted);
+  font: inherit;
+}
+
+.sh-app
+  .v2-class---edit-survey-change-name-container
+  .v2-class---my-surveys-page__survey-name-container {
+  flex: 0 1 auto;
+  max-width: 50%;
+}
+
+.sh-app .v2-class---my-surveys-page__actions-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---------------------------------------------------------------- Results (and history) */
+
+.sh-app .survey-results-page {
+  position: relative;
+}
+
+.sh-app .survey-results-page__title {
+  margin: 0 0 4px;
+  color: var(--sh-muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.sh-app .survey-results-page__description {
+  margin: 0 0 16px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* "Back to My Surveys", at the top right of the page. */
+.sh-app .survey-results-page > p:last-child {
+  position: absolute;
+  top: 0;
+  right: 0;
+  margin: 0;
+}
+
+.sh-app .tabs__wrapper {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 0;
+  border-bottom: 1px solid var(--sh-border);
+  list-style: none;
+}
+
+.sh-app .tabs__tab {
+  display: block;
+  margin-bottom: -1px;
+  padding: 8px 16px;
+  border-bottom: 2px solid transparent;
+  color: var(--sh-muted);
+  text-decoration: none;
+}
+
+.sh-app .tabs__tab:hover {
+  color: var(--sh-text);
+}
+
+.sh-app .tabs__tab--active {
+  border-bottom-color: var(--sh-accent);
+  color: var(--sh-text);
+  font-weight: 600;
+}
+
+.sh-app .column-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+}
+
+.sh-app .column-layout__column {
+  flex: 1 1 320px;
+}
+
+.sh-app .survey-results-header-line {
+  margin: 0 0 8px;
+}
+
+.sh-app .mod-mt-20 {
+  margin-top: 20px;
+}
+
+.sh-app .mod-mt-30 {
+  margin-top: 30px;
+}
+
+.sh-app .rounded-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--sh-accent-text);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  color: var(--sh-accent-text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sh-app .rounded-button:hover {
+  background: var(--sh-subtle);
+}
+
+.sh-app .rounded-button--danger {
+  border-color: var(--sh-danger);
+  color: var(--sh-danger);
+}
+
+.sh-app .rounded-button.btn-sm {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.sh-app .action-link {
+  color: var(--sh-accent-text);
+  cursor: pointer;
+}
+
+/* History */
+
+.sh-app .my-surveys-page__title {
+  margin: 0 0 20px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.sh-app .my-surveys-page__clock-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+
+.sh-app .my-surveys-history-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--sh-border);
+}
+
+.sh-app .my-surveys-history-item__user {
+  color: var(--sh-muted);
+}
+
+.sh-app .mod-mb-50 {
+  margin-bottom: 32px;
+}
+
+/* ---------------------------------------------------------------- Users and the account forms
+   The app's own pages use native buttons; inside an <article> (not the Creator or the Dashboard,
+   which keep their own look) they take the shell's outlined button. */
+
+.sh-app .sh-content article button {
+  padding: 3px 10px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius);
+  background: var(--sh-surface);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sh-app .sh-content article button:hover {
+  border-color: var(--sh-accent);
+}
+
+.sh-app .sh-content article button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sh-app .sh-content article button[type="submit"] {
+  padding: 6px 14px;
+  border-color: var(--sh-accent-text);
+  background: var(--sh-accent-text);
+  color: #fff;
+  font-size: inherit;
+}
+
+.sh-app .sh-content table {
+  border-collapse: collapse;
+}
+
+.sh-app .sh-content thead th {
+  color: var(--sh-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.sh-app .sh-content form + .v2-class---paragraph {
+  margin-top: 12px;
+  color: var(--sh-muted);
+}

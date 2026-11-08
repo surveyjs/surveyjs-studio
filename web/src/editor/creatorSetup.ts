@@ -250,11 +250,11 @@ const openInNewTab = (url: string) => window.open(url, "_blank", "noopener");
 /**
  * The toolbar items and tabs surveyjs.io adds to its editor: Clear Survey (not in read-only mode),
  * the obfuscated JSON export, Help ("Read the tool guide"), Run, and the Embed Survey and Embed
- * Creator tabs, in the site's order.
+ * Creator tabs (only with `embed`: the surveyjs-site shell, D21), in the site's order.
  */
 export function addSiteToolbarItemsAndTabs(
   creator: SurveyCreator,
-  context: { readonly surveyId: string; readonly readOnly: boolean },
+  context: { readonly surveyId: string; readonly readOnly: boolean; readonly embed: boolean },
 ): void {
   if (!context.readOnly) addClearSurvey(creator);
   addObfuscatedExport(creator);
@@ -282,7 +282,7 @@ export function addSiteToolbarItemsAndTabs(
       action: () => openInNewTab(`/s/${encodeURIComponent(context.surveyId)}`),
     }),
   );
-  addEmbedTabs(creator, context.surveyId);
+  if (context.embed) addEmbedTabs(creator, context.surveyId);
 }
 
 /** A Creator, how to load documents into it and how to close it. */
@@ -311,6 +311,8 @@ export function createCreator(options: {
   readonly surveyId: string;
   readonly saves: EditorSaves | null;
   readonly uploads: EditorUploads | null;
+  /** The Embed tabs (`/config.features.embed`). */
+  readonly embed: boolean;
   readonly onPendingChange?: (pending: boolean) => void;
 }): CreatorSession {
   configureOnce();
@@ -326,7 +328,11 @@ export function createCreator(options: {
   creator.onCreatorThemeSelected.add(() => saveCreatorTheme(creator));
 
   const { saves, uploads } = options;
-  addSiteToolbarItemsAndTabs(creator, { surveyId: options.surveyId, readOnly: saves === null });
+  addSiteToolbarItemsAndTabs(creator, {
+    surveyId: options.surveyId,
+    readOnly: saves === null,
+    embed: options.embed,
+  });
 
   if (saves === null) {
     creator.readOnly = true;

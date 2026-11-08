@@ -5,6 +5,8 @@ export declare const ports: {
   licenceWeb: number;
   visualServer: number;
   visualWeb: number;
+  selfHostedVisualServer: number;
+  selfHostedVisualWeb: number;
 };
 export declare function functionalPorts(mode: {
   image: boolean;
@@ -12,5 +14,6 @@ export declare function functionalPorts(mode: {
   sql?: boolean;
 }): number[];
 export declare const visualPorts: number[];
+export declare const selfHostedVisualPorts: number[];
 export declare function usesAzuriteConfig(args: readonly string[]): boolean;
 export declare function usesSqlConfig(args: readonly string[]): boolean;

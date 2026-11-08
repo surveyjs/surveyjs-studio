@@ -20,6 +20,8 @@ export function createHandlers(config: AppConfig): Handlers {
     },
     readOnly: config.readOnly,
     links: shellLinks(config.shellLinks),
+    branding: { ...config.branding },
+    features: { ...config.features },
   };
 
   return {
