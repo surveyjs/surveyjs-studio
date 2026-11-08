@@ -17,6 +17,7 @@ export const CLIENT_ROUTES: readonly RegExp[] = Object.freeze([
   route(`/s/${SEGMENT}`),
   route(`/results/${SEGMENT}`),
   route("/sign-in"),
+  route("/sign-in/refused"),
   route("/set-password"),
   route("/change-password"),
   route("/admin/users"),

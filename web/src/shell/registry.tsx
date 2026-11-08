@@ -9,6 +9,9 @@ type AppConfig = components["schemas"]["AppConfig"];
 /** The self-hosted shell's name (APP_SHELL=self-hosted). */
 export const SELF_HOSTED_SHELL = "self-hosted";
 
+/** The surveyjs.io shell's name (APP_SHELL=surveyjs-site, the default). */
+const SITE_SHELL = "surveyjs-site";
+
 type RenderShell = (props: ShellProps) => ReactElement;
 type RenderStyles = (children: ReactNode) => ReactElement;
 
@@ -59,8 +62,9 @@ export function renderShell(name: string, props: ShellProps): ReactElement {
 
 /**
  * A page of a visitor who is not signed in (sign-in, set-password): the self-hosted frame with the
- * instance's branding, else the configured shell's styles around the plain frame without account
- * controls.
+ * instance's branding; in the surveyjs-site shell the site's styles around a `<main>` as tall as the
+ * window (the page's own container draws the page, without the site's header and footer); else the
+ * plain frame without account controls.
  */
 export function renderAnonymousPage(config: AppConfig, children: ReactNode): ReactElement {
   if (config.shell === SELF_HOSTED_SHELL) {
@@ -69,6 +73,9 @@ export function renderAnonymousPage(config: AppConfig, children: ReactNode): Rea
         <SelfHostedFrame branding={config.branding ?? DEFAULT_BRANDING}>{children}</SelfHostedFrame>
       </Suspense>
     );
+  }
+  if (config.shell === SITE_SHELL) {
+    return renderShellStyles(config.shell, <main style={{ minHeight: "100vh" }}>{children}</main>);
   }
   return renderShellStyles(config.shell, <AnonymousShell>{children}</AnonymousShell>);
 }

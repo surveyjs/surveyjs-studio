@@ -34,12 +34,17 @@ describe("decideAccountChange", () => {
 });
 
 describe("nextStatus", () => {
-  it("disables any account, and enables one by whether it has a password", () => {
+  it("disables any account, and enables one by whether it can sign in", () => {
     expect(nextStatus("active", "disabled", true)).toBe("disabled");
     expect(nextStatus("invited", "disabled", false)).toBe("disabled");
     expect(nextStatus("disabled", "active", true)).toBe("active");
     expect(nextStatus("disabled", "active", false)).toBe("invited");
     expect(nextStatus("invited", "active", false)).toBe("invited");
     expect(nextStatus("active", undefined, true)).toBe("active");
+  });
+
+  it("makes an invited account active once it can sign in (an identity linked), keeps an active one", () => {
+    expect(nextStatus("invited", "active", true)).toBe("active");
+    expect(nextStatus("active", "active", false)).toBe("active");
   });
 });

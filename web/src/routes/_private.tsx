@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute, getRouteApi, redirect } from "@tanstack/react-router";
 import { ApiError } from "../api/client";
+import { isSurveyjsOnly } from "../account/authMethods";
 import { configQueryOptions } from "../api/config";
 import { currentUserQueryOptions } from "../api/session";
 import { navigateTo } from "../navigation";
@@ -13,10 +14,10 @@ export const Route = createFileRoute("/_private")({
       user = await context.queryClient.ensureQueryData(currentUserQueryOptions);
     } catch (error) {
       if (error instanceof ApiError && error.problem.status === 401) {
-        // With passwords the sign-in page is the app's own; else the server's login leaves for
-        // the identity provider.
+        // The hosted service (surveyjs.io only) leaves for the server's login; every other
+        // instance has the app's own sign-in page.
         const config = await context.queryClient.ensureQueryData(configQueryOptions);
-        if (config.authMethods.includes("password")) {
+        if (!isSurveyjsOnly(config.authMethods)) {
           throw redirect({ to: "/sign-in", search: { returnTo: location.href } });
         }
         navigateTo(`/api/v1/auth/login?returnTo=${encodeURIComponent(location.href)}`);

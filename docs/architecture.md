@@ -639,15 +639,16 @@ Step 11 builds `createProject`, `updateProject`, `deleteProject`, `listMembers`,
 `removeMember` in `projects/service.ts`. The client view is [API: Step 11](api/README.md#step-11-projects-and-members);
 the reasons are in [ADR 0017](adr/0017-projects-and-members.md). The service checks, in this order:
 
-| Operation       | Checks and effect                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createProject` | A given name is not blank (`422` at `/name`); `ProjectStore.createProject` with a new GUID, the caller as creator and the clock; `201` with `Location`                                |
-| `updateProject` | The name (`422`); the caller is a member (`404`) and an admin (`403`); `renameProject`; the project read again; `200`. A patch without a name writes nothing                          |
-| `deleteProject` | Member (`404`), admin (`403`); the visible members are read and `surveyReceiver` picks the owner when they are a visible member, else the caller; `ProjectStore.deleteProject`; `204` |
-| `listMembers`   | Member (`404`); the cursor is decoded after that check, bound to the project (`400`); the whole member list is cut into a page                                                        |
-| `addMember`     | Member (`404`), admin (`403`); only then `findUserByEmail` (`404 user-not-found`); `addMember` (`409 already-member`); `201` with `Location`                                          |
-| `updateMember`  | Member (`404`), admin (`403`); `setMemberRole` (`404` for a target who is not a visible member, `409 last-admin`); `200`                                                              |
-| `removeMember`  | The caller removing themselves needs only membership (`404`); removing someone else needs an admin (`403`); `removeMember` (`404`, `409 last-admin`); `204`                           |
+| Operation          | Checks and effect                                                                                                                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createProject`    | A given name is not blank (`422` at `/name`); `ProjectStore.createProject` with a new GUID, the caller as creator and the clock; `201` with `Location`                                                                                                            |
+| `updateProject`    | The name (`422`); the caller is a member (`404`) and an admin (`403`); `renameProject`; the project read again; `200`. A patch without a name writes nothing                                                                                                      |
+| `deleteProject`    | Member (`404`), admin (`403`); the visible members are read and `surveyReceiver` picks the owner when they are a visible member, else the caller; `ProjectStore.deleteProject`; `204`                                                                             |
+| `listMembers`      | Member (`404`); the cursor is decoded after that check, bound to the project (`400`); the whole member list is cut into a page                                                                                                                                    |
+| `addMember`        | Member (`404`), admin (`403`); only then `findUserByEmail`: no user means `404 user-not-found`, or, with a local directory, an invitation (`409 already-invited`, else `201` with `status: "pending"`); `addMember` (`409 already-member`); `201` with `Location` |
+| `removeInvitation` | Member (`404`), admin (`403`); `InvitationStore.removeInvitation` (`404` when there is none); `204`                                                                                                                                                               |
+| `updateMember`     | Member (`404`), admin (`403`); `setMemberRole` (`404` for a target who is not a visible member, `409 last-admin`); `200`                                                                                                                                          |
+| `removeMember`     | The caller removing themselves needs only membership (`404`); removing someone else needs an admin (`403`); `removeMember` (`404`, `409 last-admin`); `204`                                                                                                       |
 
 `projects/rules.ts` is pure and holds three decisions over the membership rows (`MembershipFacts`: user id, role,
 whether the user exists). `decideRoleChange` answers `not-found`, `unchanged` (every row of the user already has the
@@ -802,11 +803,12 @@ provider only talks to the identity service.
 `IDENTITY_PROVIDER` selects the implementation (`auth/providers/index.ts`). When `AUTH_METHODS` has no
 `surveyjs` and `IDENTITY_PROVIDER` is not `dev`, the `local` provider is used instead.
 
-| Provider                              | What it does                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dev` (`providers/dev.ts`)            | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`, `sqlite` and `postgres`                                                                                |
-| `surveyjs-oidc` (`providers/oidc.ts`) | Authorization code flow with PKCE (S256) and `state`, through `openid-client`, with `client_secret_post`. The identity always comes from the UserInfo endpoint ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)). Discovery is **lazy**: done at the first sign-in, cached, and retried after a failure, so start-up and `/readyz` never depend on the issuer. Tokens are dropped after the callback |
-| `local` (`providers/local.ts`)        | For password sign-in alone. `authorizationUrl` is the app's own sign-in page, `PUBLIC_BASE_URL/sign-in?returnTo=…`; `endSessionUrl` is `PUBLIC_BASE_URL/`. There is no callback: `passwordLogin` sets the session ([Local accounts and the session epoch](#local-accounts-and-the-session-epoch))                                                                                                          |
+| Provider                                                                                    | What it does                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev` (`providers/dev.ts`)                                                                  | A "Sign in as…" page at `GET /__dev/sign-in` lists the users of the memory seed. A choice goes to the regular callback with the user id as `code`. See [ADR 0007](adr/0007-dev-identity-provider.md). Refused with `NODE_ENV=production`, `APP_EDITION=hosted` and any storage other than `memory`, `sqlite` and `postgres`                                                                                               |
+| `surveyjs-oidc` (`providers/oidc.ts`)                                                       | Authorization code flow with PKCE (S256) and `state`, through `openid-client`, with `client_secret_post`. The identity always comes from the UserInfo endpoint ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)). Discovery is **lazy**: done at the first sign-in, cached, and retried after a failure, so start-up and `/readyz` never depend on the issuer. Tokens are dropped after the callback                |
+| `google`, `github`, `facebook` (`providers/oidc.ts` for Google, `github.ts`, `facebook.ts`) | Authorization code flow with PKCE (S256) and `state`; Google through OpenID discovery and an ID token with a `nonce`, GitHub and Facebook through their APIs (Facebook calls carry `appsecret_proof`). Each returns the claims with `emailVerified` by the rules of [ADR 0029](adr/0029-linking-identities-by-verified-email.md). The endpoints are in `providers/endpoints.ts`; `OAUTH_STUB_URL` points them at the stub |
+| `local` (`providers/local.ts`)                                                              | For password sign-in alone. `authorizationUrl` is the app's own sign-in page, `PUBLIC_BASE_URL/sign-in?returnTo=…`; `endSessionUrl` is `PUBLIC_BASE_URL/`. There is no callback: `passwordLogin` sets the session ([Local accounts and the session epoch](#local-accounts-and-the-session-epoch))                                                                                                                         |
 
 `surveyjs-oidc` has two modes (`OIDC_DISCOVERY`):
 
@@ -951,6 +953,23 @@ operations, `changeOwnPassword` included, share the per-address `SIGN_IN_RATE_LI
 The SQL `ProjectStore` reads member users through a `UserLookup(db, ids)`: on the local directory one
 batched `SELECT` of `users` on the caller's transaction (SQLite has one connection), otherwise the
 directory's `getUser`.
+
+### OAuth2 sign-in and invitations
+
+Self-hosted Step 8 ([ADR 0029](adr/0029-linking-identities-by-verified-email.md)). `login?provider=<method>` puts the
+provider into the sealed transaction; the one callback finishes it with that provider. With a local directory
+`resolveExternalSignIn` (`auth/external-sign-in.ts`) turns the claims into an account in the order of D3: a linked
+identity (`user_identities`), else a verified email naming an account (the identity is linked, an `invited` account
+becomes `active`), else a new account when `decideJoin` (`auth/join-policy.ts`, pure) allows it, else a refusal. A
+`disabled` account is refused; a refusal redirects to the web page `/sign-in/refused`. Two sign-ins of the same new
+identity at once make one account: the store refuses the second link, and that sign-in starts over once. With
+`READ_ONLY=true` the steps that would write throw `503 read-only`.
+
+The `InvitationStore` (`providers/types.ts`; `invitations` is `null` unless the directory is local) holds
+`project_invitations`. `addMember` writes one for an unknown email, and the email's invitations are claimed (moved into
+`project_members`) after any successful sign-in of it: OAuth, `passwordLogin` and `setPasswordWithLink`.
+`listMembers` returns pending members after the real ones. The web app reads `authMethods` from `/config` for the
+buttons, and shows a `Pending` badge for a member whose `status` is `pending`.
 
 ### The instance admin
 

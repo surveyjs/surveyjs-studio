@@ -2,7 +2,7 @@ import { useState } from "react";
 import { passwordErrorMessage, useChangeOwnPassword } from "../api/passwords";
 import { navigateTo } from "../navigation";
 import { PageHeader } from "../surveyList/PageHeader";
-import { AccountForm, Field } from "./AccountForm";
+import { AccountForm, AccountPage, Field } from "./AccountForm";
 import { appPath } from "./returnTo";
 
 /**
@@ -45,7 +45,7 @@ export function ChangePasswordPage({
       : null;
 
   return (
-    <>
+    <AccountPage>
       <PageHeader title="Change your password" />
       {forced && (
         <p className="v2-class---paragraph">
@@ -84,6 +84,6 @@ export function ChangePasswordPage({
       <p className="v2-class---paragraph">
         Use at least 12 characters. A few words make a password that is long and easy to remember.
       </p>
-    </>
+    </AccountPage>
   );
 }

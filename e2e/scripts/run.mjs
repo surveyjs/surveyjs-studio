@@ -28,7 +28,10 @@ await requireFreePorts(
     azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
     sql:
       usesSqlConfig(process.argv.slice(2)) ||
-      ["sqlite", "postgres", "password", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
+      ["sqlite", "postgres", "password", "oauth", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
+    oauth:
+      env["E2E_MODE"] === "oauth" ||
+      process.argv.slice(2).some((a) => /playwright.oauth.config/.test(a)),
   }),
 );
 if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");

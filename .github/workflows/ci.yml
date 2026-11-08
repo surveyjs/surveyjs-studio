@@ -63,6 +63,9 @@ jobs:
       - name: Conformance tests (SQLite, local accounts and password sign-in)
         run: pnpm test:conformance:password
 
+      - name: Conformance tests (SQLite, OAuth2 sign-in against the OAuth stub)
+        run: pnpm test:conformance:oauth
+
       # The Azurite conformance run and both end-to-end runs use this image (docker run --network host).
       - name: Build the production image
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio:ci .
@@ -127,6 +130,10 @@ jobs:
       # The tsx server on a new SQLite file, signing in with passwords on the app's own page.
       - name: End-to-end tests (password mode)
         run: pnpm e2e:password
+
+      # The same, plus GitHub and Google sign-in against the OAuth stub (port 5180).
+      - name: End-to-end tests (OAuth mode)
+        run: pnpm e2e:oauth
 
       # The tsx server on a new SQLite file, in the self-hosted shell with an instance's branding.
       - name: End-to-end tests (self-hosted mode)

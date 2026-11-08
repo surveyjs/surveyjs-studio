@@ -8,7 +8,7 @@ import { loadConfig } from "../../config.js";
 import { createProviders } from "../../providers/index.js";
 import { blockedUser, ownerUser } from "../../providers/suite/expected.js";
 import { cookieValue, transactionOf } from "../testing.js";
-import { createOidcIdentityProvider } from "./oidc.js";
+import { createOidcIdentityProvider, verifiedUnlessFalse } from "./oidc.js";
 
 const CLIENT_ID = "my-surveys-test";
 const CLIENT_SECRET = "test-client-secret-value";
@@ -302,6 +302,7 @@ describe("surveyjs-oidc provider against an auth.surveyjs.io-like server (OAuth 
         scopes: "profile email",
       },
       publicBaseUrl: PUBLIC_BASE_URL,
+      emailVerified: verifiedUnlessFalse,
     });
     const url = await provider.authorizationUrl(params);
     expect(url.origin + url.pathname).toBe(`${issuer.issuer}/authorize`);

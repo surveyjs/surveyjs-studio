@@ -17,6 +17,8 @@ export const ports = {
   /** The server and the preview of the self-hosted shell's visual run. */
   selfHostedVisualServer: 3003,
   selfHostedVisualWeb: 5176,
+  /** The OAuth stub of the oauth mode. */
+  oauthStub: 5180,
 };
 
 /**
@@ -24,7 +26,8 @@ export const ports = {
  * 5174; Azurite and the SQL modes on it 3000 and 5173; the image target 5173 and 5174 (Azurite and
  * the SQL modes: 5173 only).
  */
-export function functionalPorts({ image, azurite, sql = false }) {
+export function functionalPorts({ image, azurite, sql = false, oauth = false }) {
+  if (oauth && !image) return [ports.server, ports.web, ports.oauthStub];
   if (image) return azurite || sql ? [ports.web] : [ports.web, ports.licenceWeb];
   if (azurite || sql) return [ports.server, ports.web];
   return [ports.server, ports.licenceServer, ports.web, ports.licenceWeb];
@@ -43,11 +46,11 @@ export function usesAzuriteConfig(args) {
 
 /**
  * Whether the arguments pick a SQL config (`--config playwright.sqlite.config.ts`, `postgres`,
- * `password` or `self-hosted`).
+ * `password`, `oauth` or `self-hosted`).
  */
 export function usesSqlConfig(args) {
   return args.some((arg) =>
-    /(^|[\\/=])playwright\.(sqlite|postgres|password|self-hosted)\.config(\.[cm]?[jt]s)?$/.test(
+    /(^|[\\/=])playwright\.(sqlite|postgres|password|oauth|self-hosted)\.config(\.[cm]?[jt]s)?$/.test(
       arg,
     ),
   );

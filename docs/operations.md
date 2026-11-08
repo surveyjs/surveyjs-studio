@@ -214,6 +214,9 @@ that restarts.
 sign-out keep working. The web app shows that sentence in a banner on every page, and the editor opens read-only.
 Change the setting and [re-create the container](#running-the-image) to switch.
 
+- **Sign-in with Google, GitHub, Facebook or surveyjs.io** works only for an identity already linked to an active
+  account. A sign-in that would link an identity, create an account or activate an invited one answers `503`
+  `read-only`.
 - **Refused:** every operation that is not a `GET`, except `logout` and `passwordLogin`. Today that is the survey,
   project and member writes, the definition and theme saves, the uploads, Delete Results, the saved layouts, the
   respondent's submit and file upload, and the account-deleted webhook. A write operation added later is refused too
@@ -324,13 +327,12 @@ production data, which are for the product owner only. [Running the app](running
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
 
-### Modes 2b and 3: coming with the self-hosted track
+### Modes 2b and 3: the self-hosted track
 
 The free Docker image (2b) and custom development (3) are built by the self-hosted track
 ([spec](../spec-self-hosted.md), [plan](../plan-self-hosted.md)). Step 12 defined their account settings; the
-track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and the server refuses `google`, `github`
-and `facebook` until its Step 8, with a message that names the step (so is `surveyjs` with `local`: a surveyjs.io
-identity has no local account to sign in to until Step 8 links them):
+track's Step 4 built `USER_DIRECTORY=local` with `AUTH_METHODS=password`, and its Step 8 added `google`, `github`,
+`facebook` and `surveyjs` as sign-in methods for it ([Signing in with Google and others](customizing/sign-in.md)):
 
 | Variable         | Mode 2b       | Mode 3                                                           |
 | ---------------- | ------------- | ---------------------------------------------------------------- |
@@ -354,10 +356,17 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
 | Variable                        | Values                                                                 | Meaning                                                                                                                                                                              |
 | ------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                      | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts)) |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | An email; a password (**secret**)                                      | `local` only, both or neither: the first admin ([below](#local-accounts))                                                                                                            |
+| `ADMIN_EMAIL`                   | An email                                                               | `local` only: the first admin ([below](#local-accounts)). With `password` in `AUTH_METHODS` it comes with `ADMIN_PASSWORD`, or neither is set; without it, required                  |
+| `ADMIN_PASSWORD`                | A password; **secret**                                                 | `local` with `password` in `AUTH_METHODS` only, with `ADMIN_EMAIL`: the first admin's password, changed at the first sign-in                                                         |
 | `USER_API_URL`                  | An http(s) URL, such as `https://users.example.com/api`                | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped                     |
 | `USER_API_TOKEN`                | A string; **secret**                                                   | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                                         |
 | `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`                                                                  |
+| `GOOGLE_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                      | Google's OAuth2 client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `google`. Never logged                                                       |
+| `GITHUB_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                      | GitHub's OAuth2 client (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `github`. Never logged                                                       |
+| `FACEBOOK_CLIENT_ID`, `_SECRET` | Strings; the secret is **secret**                                      | Facebook's OAuth2 client (`FACEBOOK_CLIENT_ID`, `FACEBOOK_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `facebook`. Never logged                                               |
+| `SIGN_UP_DOMAINS`               | Comma-separated domains                                                | `local` only: an email on one of these domains may create an account by signing in. Default none                                                                                     |
+| `OPEN_SIGN_UP`                  | `on`, `off`                                                            | `local` only: `on` lets anyone with a verified email create an account through an OAuth2 method. Default `off`                                                                       |
+| `OAUTH_STUB_URL`                | An http(s) URL                                                         | Development and tests: points Google, GitHub and Facebook at a stub. Refused in production                                                                                           |
 | `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                   | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                      |
 
 **The rules, all reported together at start-up:**
@@ -366,12 +375,18 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
   apply to an explicit value only: the default always fits.
 - `surveyjs-api` needs `USER_API_URL` and `USER_API_TOKEN`.
 - `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`. `password` needs
-  `USER_DIRECTORY=local`; `google`, `github` and `facebook` are refused until self-hosted Step 8. The `OIDC_*` settings
-  are required only when the list has `surveyjs`. `oidc` is no longer a value.
-- `USER_DIRECTORY=local` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, and `AUTH_METHODS=password`: `surveyjs`
-  on `local` is refused until self-hosted Step 8 (except with the development sign-in, `IDENTITY_PROVIDER=dev`).
+  `USER_DIRECTORY=local`; so do `google`, `github` and `facebook`, and each also needs its `<METHOD>_CLIENT_ID` and
+  `<METHOD>_CLIENT_SECRET`. The `OIDC_*` settings are required only when the list has `surveyjs`. `oidc` is no longer
+  a value.
+- `USER_DIRECTORY=local` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`.
+- `SIGN_UP_DOMAINS` (comma-separated domains, no `@`, no wildcard) and `OPEN_SIGN_UP=on` need `USER_DIRECTORY=local`;
+  `OPEN_SIGN_UP=on` also needs `surveyjs`, `google`, `github` or `facebook` in `AUTH_METHODS`.
+- `OAUTH_STUB_URL` is for development and tests: refused with `NODE_ENV=production`; http only on `localhost`,
+  `127.0.0.1` or `[::1]`.
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` come together, only with `local`; the password must pass the password rules (the
-  message names the rule, never the value).
+  message names the rule, never the value). Without `password` in `AUTH_METHODS`, `ADMIN_EMAIL` is required and
+  `ADMIN_PASSWORD` is refused: the first admin signs in with an OAuth2 method ([below](#local-accounts)). The dev
+  sign-in (`IDENTITY_PROVIDER=dev`) needs no `ADMIN_EMAIL`.
 - With `NODE_ENV=production`, `sqlite` and `postgres` need `USER_DIRECTORY=local`.
 - `ACCOUNT_NOTICES=surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql` or `surveyjs-api`.
 
@@ -406,6 +421,9 @@ what the licence key does, is in [Branding and the licence key](customizing/bran
 `USER_DIRECTORY=local` (self-hosted) keeps the instance's own accounts: on `sqlite` and `postgres` in the `users` table,
 backed up with the database. With `AUTH_METHODS=password` users sign in with an email and a password on the app's own
 `/sign-in` page, and no `OIDC_*` setting is needed ([ADR 0026](adr/0026-revoking-stateless-sessions-with-an-epoch.md)).
+Add `google`, `github`, `facebook` or `surveyjs` to `AUTH_METHODS` for a button each. All of them use one redirect
+address, `<PUBLIC_BASE_URL>/api/v1/auth/callback`; who may join is set by invitations, `SIGN_UP_DOMAINS` and
+`OPEN_SIGN_UP` ([ADR 0029](adr/0029-linking-identities-by-verified-email.md)).
 
 ```text
 STORAGE_PROVIDER=postgres              # or sqlite
@@ -417,7 +435,7 @@ ADMIN_EMAIL=you@example.com            # optional: the first admin
 ADMIN_PASSWORD=…                       # secret; must be changed at the first sign-in
 ```
 
-**The first admin.** At start-up, while no account is an active admin:
+**The first admin.** With passwords, at start-up, while no active admin has a password:
 
 - with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, the server creates that admin, who must change the password at the first
   sign-in. Remove `ADMIN_PASSWORD` from the settings afterwards: it is used only while there is no admin. An
@@ -426,6 +444,12 @@ ADMIN_PASSWORD=…                       # secret; must be changed at the first 
   create the first one: `PUBLIC_BASE_URL/set-password?setup=…`". **The link is a secret**: whoever opens it first
   becomes the admin, so keep the log private until it is used. It works once; a restart writes a new one while there is
   still no admin.
+
+Without `password` in `AUTH_METHODS` (say `AUTH_METHODS=google`), `ADMIN_EMAIL` is required and no link is ever
+logged. While no account is an active admin, the server creates that admin, active and without a password. Their first
+sign-in with any enabled method, using that email verified, links to the account. An `ADMIN_EMAIL` that already has an
+account creates nothing (a warning says so). See
+[Instances without passwords](customizing/sign-in.md#instances-without-passwords).
 
 `READ_ONLY=true` creates no admin and logs no link.
 

@@ -4,7 +4,9 @@ Date: 2026-10-19
 
 ## Status
 
-Accepted. **The user API of R9 is superseded by [ADR 0022](0022-users-from-sign-in.md)**; the account-deleted
+Accepted. **Extended by [ADR 0029](0029-linking-identities-by-verified-email.md):** `google`, `github`, `facebook` and
+`surveyjs` are now valid with `USER_DIRECTORY=local`, so the "not available yet" refusals below no longer exist
+(`USER_DIRECTORY=local` has been built since Step 4). **The user API of R9 is superseded by [ADR 0022](0022-users-from-sign-in.md)**; the account-deleted
 webhook of R9 stands. The product owner has not confirmed the successor rule (the first member by name), that the signed webhook
 is trusted without asking the user directory, that saved layouts and history entries are kept, that `oidc` is dropped
 from `AUTH_METHODS`, the erasure fixture user, that reconciliation is a capped, dry-run-first command, that

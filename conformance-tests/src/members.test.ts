@@ -11,7 +11,7 @@
  * fails; it deletes the project as Adam, or as Mia when Adam is no longer an admin.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
+import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
 import { call, codeOf, as, listPage, walkPages } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -29,10 +29,11 @@ const MEMBER = "/projects/{projectId}/members/{userId}";
 type Headers = Record<string, string>;
 
 interface Member {
-  userId: string;
+  userId: string | null;
   displayName: string;
   email: string;
   role: string;
+  status?: string;
 }
 
 interface MemberPage {
@@ -46,7 +47,27 @@ const withoutCsrf = (headers: Headers): Headers => ({ cookie: headers.cookie ?? 
 const memberOf = (
   user: { id: string; displayName: string; email: string },
   role: string,
-): Member => ({ userId: user.id, displayName: user.displayName, email: user.email, role });
+): Member => ({
+  userId: user.id,
+  displayName: user.displayName,
+  email: user.email,
+  role,
+  status: "active",
+});
+
+/** Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). */
+const localAccounts = inject("passwordAdmin") !== null;
+
+const pendingOf = (email: string, role = "user"): Member => ({
+  userId: null,
+  displayName: email,
+  email,
+  role,
+  status: "pending",
+});
+
+/** The shared seed's invitation to Marketing; only local-directory instances have it. */
+const seededPending = localAccounts ? [pendingOf("invited@example.com")] : [];
 
 /** A project of Adam's with a unique name; deleted at the end as Adam, else as Mia. */
 async function ownProject(ctx: TestContext, purpose: string): Promise<string> {
@@ -111,7 +132,12 @@ async function expectProblem(response: Response, status: number, code: string): 
 describe("listMembers", () => {
   it("lists Marketing's members by display name to a plain member", async (ctx) => {
     expect(await page(await as(ctx, member), MARKETING)).toEqual({
-      items: [memberOf(admin, "admin"), memberOf(member, "user"), memberOf(owner, "admin")],
+      items: [
+        memberOf(admin, "admin"),
+        memberOf(member, "user"),
+        memberOf(owner, "admin"),
+        ...seededPending,
+      ],
       nextCursor: null,
     });
   });
@@ -130,11 +156,12 @@ describe("listMembers", () => {
       `/projects/${MARKETING}/members?limit=1`,
       olivia,
     );
-    expect(pages.map((p) => p.items.length)).toEqual([1, 1, 1]);
+    expect(pages.map((p) => p.items.length)).toEqual(localAccounts ? [1, 1, 1, 1] : [1, 1, 1]);
     expect(pages.flatMap((p) => p.items)).toEqual([
       memberOf(admin, "admin"),
       memberOf(member, "user"),
       memberOf(owner, "admin"),
+      ...seededPending,
     ]);
 
     const first = String(pages[0]?.nextCursor);
@@ -167,11 +194,13 @@ describe("addMember", () => {
     expect(await response.json()).toEqual(memberOf(member, "user"));
 
     await expectProblem(await add(adam, projectId, { email: member.email }), 409, "already-member");
-    await expectProblem(
-      await add(adam, projectId, { email: `nobody-${randomUUID()}@example.com` }),
-      404,
-      "user-not-found",
-    );
+    if (!localAccounts) {
+      await expectProblem(
+        await add(adam, projectId, { email: `nobody-${randomUUID()}@example.com` }),
+        404,
+        "user-not-found",
+      );
+    }
     for (const body of [{ email: "not-an-email" }, { email: owner.email, role: "owner" }]) {
       await expectProblem(await add(adam, projectId, body), 422, "validation-failed");
     }
@@ -182,12 +211,49 @@ describe("addMember", () => {
       displayName: BLOCKED_EMAIL,
       email: BLOCKED_EMAIL,
       role: "admin",
+      status: "active",
     });
     const project = await call("GET", "/projects/{projectId}", {
       path: `/projects/${projectId}`,
       headers: adam,
     });
     expect(await project.json()).toMatchObject({ memberCount: 3 });
+  });
+
+  it.runIf(localAccounts)("invites an unknown email, lists it and removes it", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const projectId = await ownProject(ctx, "invite");
+    const email = `new-${randomUUID().slice(0, 8)}@example.com`;
+
+    const response = await add(adam, projectId, { email: email.toUpperCase(), role: "admin" });
+    expect(response.status).toBe(201);
+    expect(response.headers.get("location")).toBe(
+      `/api/v1/projects/${projectId}/invitations/${email}`,
+    );
+    expect(await response.json()).toEqual(pendingOf(email, "admin"));
+    await expectProblem(await add(adam, projectId, { email }), 409, "already-invited");
+
+    expect((await page(adam, projectId)).items).toEqual([
+      memberOf(admin, "admin"),
+      pendingOf(email, "admin"),
+    ]);
+
+    const url = `/projects/${projectId}/invitations/${email}`;
+    const remove = (headers: Headers) =>
+      call("DELETE", "/projects/{projectId}/invitations/{email}", { path: url, headers });
+    await expectProblem(await remove(withoutCsrf(adam)), 403, "csrf-token-invalid");
+    expect((await remove(adam)).status).toBe(204);
+    await expectProblem(await remove(adam), 404, "not-found");
+    expect((await page(adam, projectId)).items).toEqual([memberOf(admin, "admin")]);
+  });
+
+  it.runIf(!localAccounts)("answers 404 user-not-found for an unknown email", async (ctx) => {
+    const projectId = await ownProject(ctx, "unknown email");
+    await expectProblem(
+      await add(await as(ctx, admin), projectId, { email: `nobody-${randomUUID()}@example.com` }),
+      404,
+      "user-not-found",
+    );
   });
 
   it("refuses a plain member with 403, a non-member with 404 and no CSRF token with 403", async (ctx) => {

@@ -37,11 +37,12 @@ import {
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryLocalAccounts } from "./memory-accounts.js";
+import { createMemoryInvitations } from "./memory-invitations.js";
 import { seedInstanceAdmin } from "./seed-instance-admin.js";
 import { createMemoryFileStore } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
-import type { ProviderSet } from "./types.js";
+import type { ProjectInvitation, ProviderSet } from "./types.js";
 import { GUID } from "../domain/guid.js";
 
 /**
@@ -60,6 +61,8 @@ export interface MemorySeed {
   surveys: SurveyRecord[];
   projects: MemorySeedProject[];
   memberships: { userId: string; projectId: string; role: ProjectRole }[];
+  /** Pending project invitations; loaded only with a local user directory. */
+  invitations?: readonly ProjectInvitation[];
   /** Survey definitions by survey id. */
   definitions?: Record<string, SurveyDefinition>;
   /** Survey themes by survey id. */
@@ -230,6 +233,19 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     options.userDirectory === "local"
       ? createMemoryLocalAccounts(seed?.users ?? [], seed ? [seedInstanceAdmin] : [])
       : null;
+  const invitations = local
+    ? createMemoryInvitations(
+        {
+          exists: (projectId) => projects.has(projectId),
+          isMember: (projectId, userId) =>
+            memberships.some((m) => m.projectId === projectId && m.userId === userId),
+          addMember: (projectId, userId, role) => {
+            memberships.push({ projectId, userId, role });
+          },
+        },
+        seed?.invitations,
+      )
+    : null;
   const findUser = (id: string): User | undefined =>
     local ? local.findUser(id) : users.find((u) => u.id === lower(id));
 
@@ -458,6 +474,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
           moved.push(survey.id);
         });
         memberships = memberships.filter((m) => m.projectId !== key);
+        invitations?.dropProject(key);
         projects.delete(key);
         return Promise.resolve(moved.sort());
       },
@@ -530,6 +547,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         ),
     },
     accounts: local?.accounts ?? null,
+    invitations: invitations?.store ?? null,
     notices,
     readinessNames: ["memory"],
     ready: () => Promise.resolve([{ name: "memory", ok: true }]),

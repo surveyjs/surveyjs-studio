@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { EXTERNAL_METHODS, type ExternalMethod } from "../config.js";
 import { TRANSACTION_MAX_AGE_SECONDS } from "./cookies.js";
 import { seal, unseal } from "./seal.js";
 import type { Clock } from "./session.js";
@@ -15,18 +16,25 @@ export interface SignInParameters {
 export interface SignInTransaction extends SignInParameters {
   /** The validated, normalised path to open after sign-in. */
   readonly returnTo: string;
+  /** The sign-in method `login?provider=` started; absent: the primary provider finishes it. */
+  readonly provider?: ExternalMethod;
   /** Absolute expiry, epoch seconds (the cookie's Max-Age, enforced on the server too). */
   readonly exp: number;
 }
 
 const random = () => randomBytes(32).toString("base64url");
 
-export function createTransaction(returnTo: string, now: Clock = Date.now): SignInTransaction {
+export function createTransaction(
+  returnTo: string,
+  provider: ExternalMethod | undefined,
+  now: Clock = Date.now,
+): SignInTransaction {
   return {
     state: random(),
     nonce: random(),
     codeVerifier: random(),
     returnTo,
+    ...(provider && { provider }),
     exp: Math.floor(now() / 1000) + TRANSACTION_MAX_AGE_SECONDS,
   };
 }
@@ -51,9 +59,12 @@ export function decodeTransaction(
     return null;
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const { state, nonce, codeVerifier, returnTo, exp } = parsed as Record<string, unknown>;
+  const { state, nonce, codeVerifier, returnTo, exp, provider } = parsed as Record<string, unknown>;
   const strings = [state, nonce, codeVerifier, returnTo];
   if (!strings.every((text) => typeof text === "string" && text !== "")) return null;
+  if (provider !== undefined && !(EXTERNAL_METHODS as readonly unknown[]).includes(provider)) {
+    return null;
+  }
   if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
   if (Math.floor(now() / 1000) >= exp) return null;
   return {
@@ -61,6 +72,7 @@ export function decodeTransaction(
     nonce: nonce as string,
     codeVerifier: codeVerifier as string,
     returnTo: returnTo as string,
+    ...(provider !== undefined && { provider: provider as ExternalMethod }),
     exp,
   };
 }

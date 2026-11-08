@@ -13,6 +13,7 @@ type ProjectPatch = components["schemas"]["ProjectPatch"];
 type MemberPatch = components["schemas"]["MemberPatch"];
 
 type ProjectParams = { projectId: string };
+type InvitationParams = { projectId: string; email: string };
 type MemberParams = { projectId: string; userId: string };
 
 /** The project and member operations. Requests reach them validated by the contract. */
@@ -56,10 +57,12 @@ export function createProjectHandlers(options: ProjectsServiceOptions): Handlers
         projectId,
         request.body as MemberCreate,
       );
-      return reply
-        .code(201)
-        .header("location", `/api/v1/projects/${projectId.toLowerCase()}/members/${member.userId}`)
-        .send(member);
+      const base = `/api/v1/projects/${projectId.toLowerCase()}`;
+      const location =
+        member.userId === null
+          ? `${base}/invitations/${encodeURIComponent(member.email).replaceAll("%40", "@")}`
+          : `${base}/members/${member.userId}`;
+      return reply.code(201).header("location", location).send(member);
     },
 
     updateMember: (request) => {
@@ -70,6 +73,12 @@ export function createProjectHandlers(options: ProjectsServiceOptions): Handlers
         userId,
         request.body as MemberPatch,
       );
+    },
+
+    removeInvitation: async (request, reply) => {
+      const { projectId, email } = request.params as InvitationParams;
+      await service.removeInvitation(requireUser(request), projectId, email);
+      return reply.code(204).send();
     },
 
     removeMember: async (request, reply) => {

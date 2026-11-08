@@ -10,6 +10,16 @@ export const selfMember: Member = {
   displayName: currentUser.displayName,
   email: currentUser.email,
   role: "admin",
+  status: "active",
+};
+
+/** Someone invited by email who has not signed in yet. */
+export const pendingMember: Member = {
+  userId: null,
+  displayName: "invited@example.test",
+  email: "invited@example.test",
+  role: "user",
+  status: "pending",
 };
 
 export const otherMember: Member = {
@@ -17,6 +27,7 @@ export const otherMember: Member = {
   displayName: "Mia Member",
   email: "member@example.test",
   role: "user",
+  status: "active",
 };
 
 /** Answers `GET /projects/{id}/members` with one page; `onRequest` sees each request URL. */
@@ -81,5 +92,6 @@ export function projectWriteHandlers(
     mswHttp.post("*/api/v1/projects/:projectId/members", handle),
     mswHttp.patch("*/api/v1/projects/:projectId/members/:userId", handle),
     mswHttp.delete("*/api/v1/projects/:projectId/members/:userId", handle),
+    mswHttp.delete("*/api/v1/projects/:projectId/invitations/:email", handle),
   ];
 }

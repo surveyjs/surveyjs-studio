@@ -2,7 +2,7 @@ import { useState } from "react";
 import { passwordErrorMessage, useSetPasswordWithLink } from "../api/passwords";
 import { navigateTo } from "../navigation";
 import { PageHeader } from "../surveyList/PageHeader";
-import { AccountForm, Field } from "./AccountForm";
+import { AccountForm, AccountPage, Field } from "./AccountForm";
 
 /**
  * The page of a one-time link. `?setup=` is the first admin's setup link, which the server writes
@@ -29,23 +29,23 @@ export function SetPasswordPage({
 
   if (linkToken === undefined || linkToken === "") {
     return (
-      <>
+      <AccountPage>
         <PageHeader title="Set your password" />
         <p className="v2-class---paragraph">
           This link is not complete. Open the whole link you were given, or ask for a new one.
         </p>
-      </>
+      </AccountPage>
     );
   }
 
   if (link.isSuccess) {
     return (
-      <>
+      <AccountPage>
         <PageHeader title={firstAdmin ? "Create the first admin" : "Set your password"} />
         <p className="v2-class---paragraph">
           {firstAdmin ? "The admin was created." : "Your password was set."} Opening My Surveys…
         </p>
-      </>
+      </AccountPage>
     );
   }
 
@@ -74,7 +74,7 @@ export function SetPasswordPage({
       : null;
 
   return (
-    <>
+    <AccountPage>
       <PageHeader title={firstAdmin ? "Create the first admin" : "Set your password"} />
       {firstAdmin && (
         <p className="v2-class---paragraph">
@@ -123,6 +123,6 @@ export function SetPasswordPage({
       <p className="v2-class---paragraph">
         Use at least 12 characters. A few words make a password that is long and easy to remember.
       </p>
-    </>
+    </AccountPage>
   );
 }

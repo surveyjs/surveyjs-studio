@@ -18,6 +18,8 @@ function routeFilePaths(): string[] {
     .map((file) => {
       const segments = file
         .slice(0, -".tsx".length)
+        // `sign-in_.refused` is the page /sign-in/refused (the `_` ends the layout nesting).
+        .replaceAll("_.", "/")
         .split("/")
         .filter((segment) => segment !== "_private" && segment !== "index")
         .map((segment) => (segment.startsWith("$") ? "abc" : segment));
@@ -36,6 +38,7 @@ describe("isClientRoute", () => {
     "/s/abc",
     "/results/abc",
     "/sign-in",
+    "/sign-in/refused",
     "/set-password",
     "/change-password",
     "/admin/users",

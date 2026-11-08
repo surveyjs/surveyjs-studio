@@ -1,6 +1,13 @@
 /* The Users page: the create form in a row, the one-time link box, and the user table. Colours
    are the site's (color-styles.scss); the plain shell gets the same layout. */
 
+/* The plain shell's page layout: a margin and a centred column, by padding alone. :where() keeps
+   it below the site's page container (my-surveys.scss, Section-Size), which sets every padding,
+   and below the self-hosted shell's reset (self-hosted-pages.css). */
+:where(.container) {
+  padding: 24px max(16px, calc((100% - 1200px) / 2));
+}
+
 .page {
   display: flex;
   flex-direction: column;
@@ -18,6 +25,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  accent-color: #19b394; /* $Primary--Primary */
 }
 
 .link {
@@ -64,4 +72,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* The site's buttons take the whole width on a phone (button.scss); a row's actions stay side by
+   side and wrap. */
+.actions button {
+  width: auto;
 }

@@ -26,11 +26,17 @@ export async function hasPasswordAdmin(accounts: LocalAccountStore): Promise<boo
 }
 
 /**
- * The first admin of a local directory (spec: S4). Runs at start-up while no active admin has a
- * password (`hasPasswordAdmin`): with ADMIN_EMAIL and ADMIN_PASSWORD it creates that admin, who must change the password at
- * first sign-in; without them it writes a one-time setup link to the log, which creates the admin
- * with the email, name and password chosen on the setup page. The link lives in this process only:
- * a restart writes a new one while there is still no admin. READ_ONLY=true writes nothing.
+ * The first admin of a local directory (spec: S4). READ_ONLY=true writes nothing.
+ *
+ * With passwords: runs at start-up while no active admin has a password (`hasPasswordAdmin`). With
+ * ADMIN_EMAIL and ADMIN_PASSWORD it creates that admin, who must change the password at first
+ * sign-in; without them it writes a one-time setup link to the log, which creates the admin with
+ * the email, name and password chosen on the setup page. The link lives in this process only: a
+ * restart writes a new one while there is still no admin.
+ *
+ * Without passwords: runs while there is no active instance admin at all. It creates the admin
+ * from ADMIN_EMAIL, active and without a password; their first OAuth2 sign-in with that verified
+ * email links to it (D3). It never writes a setup link, whose page needs passwords.
  */
 export async function bootstrapFirstAdmin(
   config: AppConfig,
@@ -38,30 +44,40 @@ export async function bootstrapFirstAdmin(
   log: FastifyBaseLogger,
   now: () => number = Date.now,
 ): Promise<Bootstrap> {
-  if (config.readOnly || (await hasPasswordAdmin(accounts))) return { setupToken: null };
+  const none = { setupToken: null };
+  if (config.readOnly) return none;
+  const passwords = config.authMethods.includes("password");
+  const hasAdmin = passwords
+    ? await hasPasswordAdmin(accounts)
+    : (await accounts.countActiveAdmins()) > 0;
+  if (hasAdmin) return none;
   const admin = config.bootstrapAdmin;
   if (admin !== null) {
     if (await accounts.accountByEmail(admin.email)) {
       log.warn(
         "ADMIN_EMAIL names an existing account, which was left as it is: no admin was created",
       );
-      return { setupToken: null };
+      return none;
     }
+    const password = passwords ? admin.password : null;
     await accounts.createAccount({
       id: randomUUID(),
       email: admin.email,
       displayName: admin.email.split("@")[0] || admin.email,
       instanceRole: "admin",
       status: "active",
-      passwordHash: await hashPassword(admin.password),
-      mustChangePassword: true,
+      passwordHash: password === null ? null : await hashPassword(password),
+      mustChangePassword: password !== null,
       createdAt: new Date(now()).toISOString(),
     });
     log.info(
-      "created the first admin from ADMIN_EMAIL; the password must be changed at first sign-in",
+      password === null
+        ? "created the first admin from ADMIN_EMAIL; they sign in with an OAuth2 method using that email"
+        : "created the first admin from ADMIN_EMAIL; the password must be changed at first sign-in",
     );
-    return { setupToken: null };
+    return none;
   }
+  if (!passwords) return none;
   const setupToken = randomBytes(24).toString("base64url");
   // The one place a secret is logged, on purpose: the operator opens it to create the admin.
   log.warn(

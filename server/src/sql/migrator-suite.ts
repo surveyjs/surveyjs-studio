@@ -125,12 +125,14 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "legacy_views",
         "password_links",
         "private_questions",
+        "project_invitations",
         "project_members",
         "projects",
         "saved_views",
         "survey_history",
         "survey_responses",
         "surveys",
+        "user_identities",
         "users",
       ]);
       expect((await migrationStatus(database)).pending).toEqual([]);

@@ -79,12 +79,12 @@ afterEach(async () => {
 type Headers = Record<string, string>;
 
 /** The app on a memory store with the seed above, its clock fixed at NOW. */
-async function start(): Promise<{
+async function start(userDirectory: "external" | "local" = "external"): Promise<{
   providers: ProviderSet;
   as: (user: User) => Promise<Headers>;
 }> {
   const config = loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev" });
-  const providers = createMemoryProviders(seed);
+  const providers = createMemoryProviders(seed, { userDirectory });
   const server = await buildApp(config, providers, {
     identity: createDevIdentityProvider({ publicBaseUrl: config.publicBaseUrl, users: seed.users }),
     now: () => Date.parse(NOW),
@@ -124,6 +124,7 @@ const member = (u: User, role: "admin" | "user") => ({
   displayName: u.displayName,
   email: u.email,
   role,
+  status: "active",
 });
 
 describe("getProject", () => {
@@ -310,5 +311,127 @@ describe("check order", () => {
     const leave = await send("DELETE", `/projects/${TEAM}/members/${BOB.id}`, bob);
     expect(leave.statusCode).toBe(204);
     expect((await send("GET", `/projects/${TEAM}`, bob)).statusCode).toBe(404);
+  });
+});
+
+describe("pending members", () => {
+  const pending = (email: string, role: "admin" | "user" = "user") => ({
+    userId: null,
+    displayName: email,
+    email,
+    role,
+    status: "pending",
+  });
+
+  it("adds an email no account has as an invitation, with its own Location", async () => {
+    const { as } = await start("local");
+    const res = await send("POST", `/projects/${TEAM}/members`, await as(ANN), {
+      email: "New.Person@example.test",
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toStrictEqual(pending("new.person@example.test"));
+    expect(res.headers.location).toBe(
+      `/api/v1/projects/${TEAM}/invitations/new.person@example.test`,
+    );
+  });
+
+  it("still makes a member of an email that has an account", async () => {
+    const { as } = await start("local");
+    const res = await send("POST", `/projects/${TEAM}/members`, await as(ANN), {
+      email: DAN.email,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toStrictEqual(member(DAN, "user"));
+  });
+
+  it("answers 409 already-invited whatever the letter case", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    const first = await send("POST", `/projects/${TEAM}/members`, ann, {
+      email: "Alice@Example.com",
+    });
+    expect(first.statusCode).toBe(201);
+    const again = await send("POST", `/projects/${TEAM}/members`, ann, {
+      email: "alice@example.com",
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ code: "already-invited" });
+  });
+
+  it("keeps 404 user-not-found without local accounts", async () => {
+    const { as } = await start("external");
+    const res = await send("POST", `/projects/${TEAM}/members`, await as(ANN), {
+      email: "nobody@example.test",
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "user-not-found" });
+  });
+
+  it("lists the invitations after the members, by email", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    for (const email of ["zed@example.test", "amy@example.test"]) {
+      await send("POST", `/projects/${TEAM}/members`, ann, { email });
+    }
+    const res = await send("GET", `/projects/${TEAM}/members`, ann);
+    expect(res.json()).toStrictEqual({
+      items: [
+        member(ANN, "admin"),
+        member(BOB, "user"),
+        member(CARA, "user"),
+        pending("amy@example.test"),
+        pending("zed@example.test"),
+      ],
+      nextCursor: null,
+    });
+    const first = await send("GET", `/projects/${TEAM}/members?limit=3`, ann);
+    const cursor = String(first.json<{ nextCursor: string }>().nextCursor);
+    const second = await send("GET", `/projects/${TEAM}/members?limit=3&cursor=${cursor}`, ann);
+    const items = second.json<{ items: unknown[]; nextCursor: string | null }>();
+    expect(items.items).toStrictEqual([pending("amy@example.test"), pending("zed@example.test")]);
+    expect(items.nextCursor).toBeNull();
+  });
+
+  it("removes an invitation, once, for admins only", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    await send("POST", `/projects/${TEAM}/members`, ann, { email: "amy@example.test" });
+    const url = `/projects/${TEAM}/invitations/AMY@example.test`;
+    const denied = await send("DELETE", url, await as(BOB));
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: "forbidden" });
+    expect((await send("DELETE", url, ann)).statusCode).toBe(204);
+    const again = await send("DELETE", url, ann);
+    expect(again.statusCode).toBe(404);
+    expect(again.json()).toMatchObject({ code: "not-found" });
+    expect(
+      (await send("DELETE", `/projects/${GONE}/invitations/x@example.test`, ann)).statusCode,
+    ).toBe(404);
+  });
+
+  it("round-trips the Location of an email with reserved characters", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    const email = "a#b+c%41?d@example.test";
+    const res = await send("POST", `/projects/${TEAM}/members`, ann, { email });
+    expect(res.statusCode).toBe(201);
+    const location = String(res.headers.location);
+    expect(location).toBe(`/api/v1/projects/${TEAM}/invitations/a%23b%2Bc%2541%3Fd@example.test`);
+    const removed = await send("DELETE", location.slice("/api/v1".length), ann);
+    expect(removed.statusCode).toBe(204);
+    const list = await send("GET", `/projects/${TEAM}/members`, ann);
+    expect(list.json<{ items: { email: string }[] }>().items.map((m) => m.email)).not.toContain(
+      email,
+    );
+  });
+
+  it("answers 404 without local accounts", async () => {
+    const { as } = await start("external");
+    const res = await send(
+      "DELETE",
+      `/projects/${TEAM}/invitations/amy@example.test`,
+      await as(ANN),
+    );
+    expect(res.statusCode).toBe(404);
   });
 });

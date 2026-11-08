@@ -30,6 +30,9 @@ export const userNotFoundText = (email: string): string =>
   `${email} is not a registered surveyjs.io user. Ask them to sign up first.`;
 export const alreadyMemberText = (email: string): string =>
   `${email} is already a member of this project.`;
+export const alreadyInvitedText = (email: string): string => `${email} is already invited.`;
+export const willJoinText = (email: string): string =>
+  `${email} will join when they first sign in.`;
 export const actionFailedText = (action: ProjectAction): string =>
   `Could not ${VERBS[action]}. Please try again.`;
 
@@ -39,6 +42,7 @@ export function projectErrorText(error: unknown, action: ProjectAction, email = 
     const { code } = error.problem;
     if (code === "user-not-found") return userNotFoundText(email);
     if (code === "already-member") return alreadyMemberText(email);
+    if (code === "already-invited") return alreadyInvitedText(email);
     if (code === "last-admin") return LAST_ADMIN_TEXT;
     if (code === "forbidden") return ADMINS_ONLY_TEXT;
     if (code === "validation-failed" && (action === "create" || action === "rename")) {

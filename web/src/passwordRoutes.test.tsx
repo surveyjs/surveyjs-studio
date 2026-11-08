@@ -120,7 +120,7 @@ describe("sign-in page", () => {
 
     const link = await screen.findByRole("link", { name: "Sign in with SurveyJS" });
     expect(link.getAttribute("href")).toBe(
-      `/api/v1/auth/login?returnTo=${encodeURIComponent("/projects")}`,
+      `/api/v1/auth/login?provider=surveyjs&returnTo=${encodeURIComponent("/projects")}`,
     );
   });
 
@@ -131,6 +131,126 @@ describe("sign-in page", () => {
 
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
     expect(screen.queryByRole("link", { name: "Sign in with SurveyJS" })).toBeNull();
+  });
+});
+
+describe("sign-in page with OAuth2 providers", () => {
+  const providers = {
+    ...appConfig,
+    authMethods: ["password" as const, "github" as const, "google" as const],
+  };
+
+  it("shows the form, then one link per provider in AUTH_METHODS order", async () => {
+    server.use(configHandler(providers));
+
+    renderApp(`/sign-in?returnTo=${encodeURIComponent("/projects?x=1")}`);
+
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    expect(screen.getByLabelText("Email")).toBeTruthy();
+    const links = screen.getAllByRole("link", { name: /^Sign in with / });
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      [
+        "Sign in with GitHub",
+        `/api/v1/auth/login?provider=github&returnTo=${encodeURIComponent("/projects?x=1")}`,
+      ],
+      [
+        "Sign in with Google",
+        `/api/v1/auth/login?provider=google&returnTo=${encodeURIComponent("/projects?x=1")}`,
+      ],
+    ]);
+    expect(screen.getByText("or")).toBeTruthy();
+  });
+
+  it("with one provider only shows no form and does not redirect", async () => {
+    server.use(configHandler({ ...appConfig, authMethods: ["github"] }));
+
+    renderApp("/sign-in");
+
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Sign in with GitHub" }).getAttribute("href")).toBe(
+      "/api/v1/auth/login?provider=github&returnTo=%2F",
+    );
+    expect(navigateTo).not.toHaveBeenCalled();
+  });
+
+  it("sends a signed-out visitor to the sign-in page when only a provider is enabled", async () => {
+    server.use(configHandler({ ...appConfig, authMethods: ["github"] }), unauthenticatedHandler());
+
+    const router = renderApp("/projects");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/sign-in");
+    expect(navigateTo).not.toHaveBeenCalled();
+  });
+
+  it("shows no Change password link for an account without a password", async () => {
+    server.use(configHandler(providers), meHandler({ ...currentUser, hasPassword: false }));
+
+    renderApp("/");
+
+    await screen.findByRole("heading", { level: 1, name: "My Surveys" });
+    expect(screen.queryByRole("link", { name: "Change password" })).toBeNull();
+  });
+
+  it("shows the Change password link when the account has a password", async () => {
+    server.use(configHandler(providers), meHandler({ ...currentUser, hasPassword: true }));
+
+    renderApp("/");
+
+    expect(await screen.findByRole("link", { name: "Change password" })).toBeTruthy();
+  });
+});
+
+describe("the refused sign-in page", () => {
+  const notInvited =
+    "This instance is open to invited people only. Ask a project admin or the person who runs it to invite your email address, then sign in again.";
+  const expected: [string, string][] = [
+    ["?reason=not-invited&provider=github", notInvited],
+    [
+      "?reason=email-unverified&provider=github",
+      "Your GitHub account didn't share a verified email address. Verify it with GitHub, or sign in another way.",
+    ],
+    [
+      "?reason=disabled&provider=google",
+      "This account is disabled. Ask the person who runs this instance.",
+    ],
+    [
+      "?reason=cancelled&provider=facebook",
+      "You cancelled the sign-in at Facebook. Sign in again, or choose another way.",
+    ],
+    [
+      "?reason=unavailable&provider=google",
+      "Google could not be reached. Try again in a few minutes, or sign in another way.",
+    ],
+    [
+      "?reason=read-only&provider=github",
+      "This instance is read-only for maintenance, so first sign-ins are paused. Try again later.",
+    ],
+    [
+      "?reason=cancelled&provider=nope",
+      "You cancelled the sign-in. Sign in again, or choose another way.",
+    ],
+    [
+      "?reason=unavailable",
+      "The sign-in provider could not be reached. Try again in a few minutes, or sign in another way.",
+    ],
+    ["?reason=whatever", notInvited],
+  ];
+
+  it.each(expected)("explains %s", async (search, text) => {
+    server.use(configHandler({ ...appConfig, authMethods: ["github"] }));
+
+    renderApp(`/sign-in/refused${search}`);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "You can't sign in yet" }),
+    ).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to sign in" }).getAttribute("href")).toBe(
+      "/sign-in",
+    );
   });
 });
 

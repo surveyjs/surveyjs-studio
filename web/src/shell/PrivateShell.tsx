@@ -30,12 +30,13 @@ export function PrivateShell({
     // The shells render without the router: they get the link and a function that follows it.
     projectsLink: { href: "/projects", navigate: () => void navigate({ to: "/projects" }) },
     homeLink: { href: "/", navigate: () => void navigate({ to: "/" }) },
-    ...(config.authMethods.includes("password") && {
-      changePasswordLink: {
-        href: "/change-password",
-        navigate: () => void navigate({ to: "/change-password" }),
-      },
-    }),
+    ...(config.authMethods.includes("password") &&
+      user.hasPassword !== false && {
+        changePasswordLink: {
+          href: "/change-password",
+          navigate: () => void navigate({ to: "/change-password" }),
+        },
+      }),
     ...(user.instanceRole === "admin" && {
       usersLink: {
         href: "/admin/users",

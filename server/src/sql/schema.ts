@@ -140,6 +140,25 @@ export interface PasswordLinksTable {
   used_at: Timestamp | null;
 }
 
+export interface UserIdentitiesTable {
+  provider: "surveyjs" | "google" | "github" | "facebook";
+  subject: string;
+  user_id: string;
+  /** Lower-case, at link time. */
+  email: string | null;
+  email_verified: Flag;
+  created_at: Timestamp;
+}
+
+export interface ProjectInvitationsTable {
+  project_id: string;
+  /** Stored lower-case. */
+  email: string;
+  role: "admin" | "user";
+  invited_by: string;
+  created_at: Timestamp;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -154,4 +173,6 @@ export interface DatabaseSchema {
   files: FilesTable;
   users: UsersTable;
   password_links: PasswordLinksTable;
+  user_identities: UserIdentitiesTable;
+  project_invitations: ProjectInvitationsTable;
 }

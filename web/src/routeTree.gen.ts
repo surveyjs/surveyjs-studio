@@ -17,6 +17,7 @@ import { Route as PrivateChangePasswordRouteImport } from './routes/_private/cha
 import { Route as PrivateProjectsRouteImport } from './routes/_private/projects'
 import { Route as ResultsSurveyIdRouteImport } from './routes/results/$surveyId'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
+import { Route as SignInRefusedRouteImport } from './routes/sign-in_.refused'
 import { Route as PrivateAdminUsersRouteImport } from './routes/_private/admin/users'
 import { Route as PrivateSurveysSurveyIdEditRouteImport } from './routes/_private/surveys/$surveyId/edit'
 import { Route as PrivateSurveysSurveyIdHistoryRouteImport } from './routes/_private/surveys/$surveyId/history'
@@ -69,6 +70,13 @@ const SSurveyIdRoute = SSurveyIdRouteImport.update({
   path: '/s/$surveyId',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/s/$surveyId.lazy').then((d) => d.Route))
+const SignInRefusedRoute = SignInRefusedRouteImport.update({
+  id: '/sign-in_/refused',
+  path: '/sign-in/refused',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/sign-in_.refused.lazy').then((d) => d.Route),
+)
 const PrivateAdminUsersRoute = PrivateAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -115,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sign-in/refused': typeof SignInRefusedRoute
   '/admin/users': typeof PrivateAdminUsersRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
   '/surveys/$surveyId/history': typeof PrivateSurveysSurveyIdHistoryRoute
@@ -127,6 +136,7 @@ export interface FileRoutesByTo {
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sign-in/refused': typeof SignInRefusedRoute
   '/': typeof PrivateIndexRoute
   '/admin/users': typeof PrivateAdminUsersRoute
   '/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
@@ -142,6 +152,7 @@ export interface FileRoutesById {
   '/_private/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sign-in_/refused': typeof SignInRefusedRoute
   '/_private/': typeof PrivateIndexRoute
   '/_private/admin/users': typeof PrivateAdminUsersRoute
   '/_private/surveys/$surveyId/edit': typeof PrivateSurveysSurveyIdEditRoute
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
+    | '/sign-in/refused'
     | '/admin/users'
     | '/surveys/$surveyId/edit'
     | '/surveys/$surveyId/history'
@@ -170,6 +182,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
+    | '/sign-in/refused'
     | '/'
     | '/admin/users'
     | '/surveys/$surveyId/edit'
@@ -184,6 +197,7 @@ export interface FileRouteTypes {
     | '/_private/projects'
     | '/results/$surveyId'
     | '/s/$surveyId'
+    | '/sign-in_/refused'
     | '/_private/'
     | '/_private/admin/users'
     | '/_private/surveys/$surveyId/edit'
@@ -197,6 +211,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   ResultsSurveyIdRoute: typeof ResultsSurveyIdRoute
   SSurveyIdRoute: typeof SSurveyIdRoute
+  SignInRefusedRoute: typeof SignInRefusedRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -255,6 +270,13 @@ declare module '@tanstack/react-router' {
       path: '/s/$surveyId'
       fullPath: '/s/$surveyId'
       preLoaderRoute: typeof SSurveyIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in_/refused': {
+      id: '/sign-in_/refused'
+      path: '/sign-in/refused'
+      fullPath: '/sign-in/refused'
+      preLoaderRoute: typeof SignInRefusedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_private/admin/users': {
@@ -317,6 +339,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   ResultsSurveyIdRoute: ResultsSurveyIdRoute,
   SSurveyIdRoute: SSurveyIdRoute,
+  SignInRefusedRoute: SignInRefusedRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

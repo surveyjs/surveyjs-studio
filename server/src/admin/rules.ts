@@ -23,16 +23,17 @@ export function decideAccountChange(
 }
 
 /**
- * The status after an admin sets `wanted`: `disabled` disables any account; `active` enables a
- * disabled one, as `invited` when it never set a password, and leaves an invited one invited.
+ * The status after setting `wanted` (an admin, or an identity linked at sign-in): `disabled`
+ * disables any account; `active` keeps an active account active and makes a disabled or invited
+ * one active when it can sign in (it has a password or a linked identity), else `invited`.
  */
 export function nextStatus(
   current: AccountStatus,
   wanted: "active" | "disabled" | undefined,
-  hasPassword: boolean,
+  canSignIn: boolean,
 ): AccountStatus {
   if (wanted === undefined) return current;
   if (wanted === "disabled") return "disabled";
-  if (current === "disabled") return hasPassword ? "active" : "invited";
-  return current;
+  if (current === "active") return "active";
+  return canSignIn ? "active" : "invited";
 }

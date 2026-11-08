@@ -32,10 +32,12 @@ export function memberControls(
   viewerId: string,
 ): MemberControls {
   const admin = project.role === "admin";
+  // A pending member has no user yet: an admin can withdraw the invitation, nothing else.
+  const joined = member.userId !== null;
   return {
     remove: admin,
-    makeAdmin: admin && member.role === "user",
-    removeAdminRights: admin && member.role === "admin",
-    self: member.userId.toLowerCase() === viewerId.toLowerCase(),
+    makeAdmin: admin && joined && member.role === "user",
+    removeAdminRights: admin && joined && member.role === "admin",
+    self: member.userId?.toLowerCase() === viewerId.toLowerCase(),
   };
 }

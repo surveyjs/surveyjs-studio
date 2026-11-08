@@ -255,6 +255,27 @@ export function describeLocalAccountSuite(
       expect(enabled).toMatchObject({ outcome: "updated", account: { status: "invited" } });
     });
 
+    it("enables an account with a linked identity and no password as active", async () => {
+      const invited = await store.accounts.createAccount(
+        newAccount({ status: "invited", passwordHash: null }),
+      );
+      await store.accounts.linkIdentity({
+        provider: "github",
+        subject: randomUUID(),
+        userId: invited.user.id,
+        email: invited.user.email,
+        emailVerified: true,
+        createdAt: AT,
+      });
+      expect(
+        await store.accounts.updateAccount(invited.user.id, { status: "active" }),
+      ).toMatchObject({ outcome: "updated", account: { status: "active" } });
+      await store.accounts.updateAccount(invited.user.id, { status: "disabled" });
+      expect(
+        await store.accounts.updateAccount(invited.user.id, { status: "active" }),
+      ).toMatchObject({ outcome: "updated", account: { status: "active" } });
+    });
+
     it("never demotes, disables or deletes the last active admin", async () => {
       // A store of its own: the other tests leave active admins behind.
       const own = await create();
@@ -309,6 +330,58 @@ export function describeLocalAccountSuite(
       expect(await store.accounts.usePasswordLink(tokenHash, AT, "$argon2id$x")).toBeNull();
       expect(await store.accounts.deleteAccount(account.user.id)).toBe("not-found");
       expect(await store.accounts.deleteAccount("not-a-guid")).toBe("not-found");
+    });
+
+    it("links an identity to an account, once per provider and subject", async () => {
+      const account = await store.accounts.createAccount(newAccount());
+      const other = await store.accounts.createAccount(newAccount());
+      const subject = randomUUID();
+      const link = {
+        provider: "google" as const,
+        subject,
+        userId: account.user.id,
+        email: "linked@example.com",
+        emailVerified: true,
+        createdAt: AT,
+      };
+      expect(await store.accounts.accountByIdentity("google", subject)).toBeNull();
+      expect(await store.accounts.linkIdentity(link)).toBe("linked");
+      expect(await store.accounts.accountByIdentity("google", subject)).toEqual(account);
+      // Taken: by the same account or by another one.
+      expect(await store.accounts.linkIdentity(link)).toBe("taken");
+      expect(await store.accounts.linkIdentity({ ...link, userId: other.user.id })).toBe("taken");
+      expect((await store.accounts.accountByIdentity("google", subject))?.user.id).toBe(
+        account.user.id,
+      );
+      // The same subject at another provider is another identity.
+      expect(await store.accounts.accountByIdentity("github", subject)).toBeNull();
+      expect(
+        await store.accounts.linkIdentity({
+          ...link,
+          provider: "github",
+          userId: other.user.id,
+          email: null,
+          emailVerified: false,
+        }),
+      ).toBe("linked");
+      expect((await store.accounts.accountByIdentity("github", subject))?.user.id).toBe(
+        other.user.id,
+      );
+    });
+
+    it("removes an account's identities with the account", async () => {
+      const account = await store.accounts.createAccount(newAccount());
+      const subject = randomUUID();
+      await store.accounts.linkIdentity({
+        provider: "facebook",
+        subject,
+        userId: account.user.id,
+        email: null,
+        emailVerified: false,
+        createdAt: AT,
+      });
+      expect(await store.accounts.deleteAccount(account.user.id)).toBe("deleted");
+      expect(await store.accounts.accountByIdentity("facebook", subject)).toBeNull();
     });
 
     it("resets a password: no password, a new epoch, only the new link works", async () => {

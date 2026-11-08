@@ -100,6 +100,13 @@ paths:
           in: query
           description: A same-origin path to open after sign-in.
           schema: { type: string, default: /, pattern: '^/' }
+        - name: provider
+          in: query
+          description: >-
+            The sign-in method to start. Without it, the default of this instance
+            (the sign-in page, or surveyjs.io when that is the only method). A
+            method that is not enabled answers `400`.
+          schema: { type: string, enum: [surveyjs, google, github, facebook] }
       responses:
         '302':
           description: Redirect to the identity provider.
@@ -115,10 +122,34 @@ paths:
       description: |
         The identity provider redirects here. The server exchanges the code, sets
         the `msid` and `msid_csrf` cookies, and redirects to `returnTo`.
+
+        With `USER_DIRECTORY=local`, an OAuth2 sign-in reaches a local account: the one
+        its identity is linked to, else the one its verified email names (the identity
+        is linked to it), else a new one when the email is invited, its domain is in
+        `SIGN_UP_DOMAINS` or `OPEN_SIGN_UP=on`. The email's pending project invitations
+        become memberships. Otherwise the redirect goes to
+        `/sign-in/refused?reason=<reason>&provider=<method>` with no session; the
+        reasons are `not-invited`, `email-unverified` and `disabled`. While
+        `READ_ONLY=true` only an identity already linked to an active account signs in;
+        a sign-in that would link an identity, create an account or activate an invited
+        one is refused with the reason `read-only`.
+
+        A sign-in started by `login?provider=<method>` also goes to that page when it
+        fails at the callback: `cancelled` when the provider sends `error=access_denied`
+        (the person said no), `unavailable` when the provider cannot be reached or
+        answers unexpectedly. A sign-in started without `provider` (surveyjs.io alone,
+        the dev sign-in) answers these as problems: `400`, `500` and `503 read-only`.
       security: []
       parameters:
-        - { name: code, in: query, required: true, schema: { type: string } }
+        - name: code
+          in: query
+          description: The authorization code; absent when the provider sends `error`.
+          schema: { type: string }
         - { name: state, in: query, required: true, schema: { type: string } }
+        - name: error
+          in: query
+          description: The provider's OAuth2 error, such as `access_denied`.
+          schema: { type: string }
       responses:
         '302':
           description: Signed in; redirect back into the application.
@@ -132,6 +163,14 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503':
+          description: >-
+            `READ_ONLY=true` and a sign-in started without `provider` would write
+            (`read-only`): link an identity, create an account or activate an invited one.
+            No session is created.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /auth/logout:
     post:
       tags: [Session]
@@ -372,8 +411,8 @@ paths:
       summary: Change a user's instance role or status
       description: |
         Instance admins only. `status` may be set to `disabled` or `active`: disabling
-        ends the user's sessions within a minute; enabling an account that never set a
-        password makes it `invited` again. Demoting, disabling or deleting the last
+        ends the user's sessions within a minute; enabling an account that has neither a
+        password nor a linked sign-in method makes it `invited` again. Demoting, disabling or deleting the last
         active instance admin fails with `409 last-instance-admin`, also for yourself.
       security:
         - cookieAuth: []
@@ -597,8 +636,12 @@ paths:
       operationId: addMember
       summary: Add a member
       description: |
-        Admins only. The email must belong to a registered user; otherwise the
-        server returns `404` with code `user-not-found`.
+        Admins only. With an email that belongs to a registered user, the user
+        becomes a member. When the instance has local accounts and no account has
+        the email, the email is invited instead: the answer is a pending member
+        (`status: pending`, `userId: null`) who joins at their first sign-in. On
+        instances without local accounts an unknown email returns `404` with code
+        `user-not-found`. Inviting an email twice returns `409 already-invited`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -610,7 +653,10 @@ paths:
             schema: { $ref: '#/components/schemas/MemberCreate' }
       responses:
         '201':
-          description: Added.
+          description: |
+            Added. A pending member when the instance has local accounts and no
+            account has the email; the `Location` of a pending member is
+            `/api/v1/projects/{projectId}/invitations/{email}`.
           headers:
             Location: { $ref: '#/components/headers/Location' }
           content:
@@ -679,6 +725,32 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /projects/{projectId}/invitations/{email}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - name: email
+        in: path
+        required: true
+        description: The invited email address, in any letter case.
+        schema: { type: string, format: email }
+    delete:
+      tags: [Members]
+      operationId: removeInvitation
+      summary: Remove a pending member
+      description: |
+        Admins only. Withdraws the invitation of an email that has not joined the
+        project yet. Answers `404` when the project has no invitation for the email.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Removed. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ---------------------------------------------------------------- Surveys
@@ -1672,7 +1744,7 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state. Codes:
-        `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+        `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
         `last-instance-admin`.
       content:
         application/problem+json:
@@ -1823,6 +1895,7 @@ components:
             - view-not-found
             - survey-not-archived
             - already-member
+            - already-invited
             - last-admin
             - already-completed
             - edit-conflict
@@ -1865,10 +1938,12 @@ components:
         status:
           type: string
           enum: [invited, active, disabled]
-          description: '`invited` until the user sets a password with their link.'
+          description: >-
+            `invited` until the user sets a password with their link, or an OAuth2 sign-in
+            links an identity to the account.
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         lastSignInAt:
-          description: The last password sign-in; `null` before the first.
+          description: The last sign-in, with a password or an OAuth2 method; `null` before the first.
           oneOf:
             - { $ref: '#/components/schemas/Timestamp' }
             - { type: 'null' }
@@ -1942,6 +2017,11 @@ components:
           description: >-
             A local account that must change its password before anything else; the
             session then answers `401 password-change-required` to other operations.
+        hasPassword:
+          type: boolean
+          description: >-
+            Whether a local account has a password (`USER_DIRECTORY=local`); false for an
+            account made by an OAuth2 sign-in. Absent for the other directories.
         notices:
           type: array
           description: Account notices shown by the shell, such as licence expiry on the hosted edition.
@@ -2101,12 +2181,22 @@ components:
 
     Member:
       type: object
-      required: [userId, displayName, email, role]
+      required: [userId, displayName, email, role, status]
       properties:
-        userId: { $ref: '#/components/schemas/Id' }
-        displayName: { type: string }
+        userId:
+          description: The user's ID; `null` while the member is pending.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
+        displayName:
+          type: string
+          description: A pending member's display name is their email.
         email: { type: string, format: email }
         role: { $ref: '#/components/schemas/ProjectRole' }
+        status:
+          type: string
+          enum: [active, pending]
+          description: '`pending` for an invited email that has not signed in yet.'
     MemberCreate:
       type: object
       required: [email]

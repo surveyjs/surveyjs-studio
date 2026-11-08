@@ -1,11 +1,24 @@
 /* The sign-in, set-password and change-password forms: one column of fields. Colours and type are
    the site's (color-styles.scss, text-styles.scss); the plain shell gets the same layout. */
 
+/* The plain shell's page layout: a margin and a centred column, by padding alone. :where() keeps
+   it below the site's page container (my-surveys.scss, Section-Size), which sets every padding,
+   and below the self-hosted shell's reset (self-hosted-pages.css). */
+:where(.container) {
+  padding: 24px max(16px, calc((100% - 1200px) / 2));
+}
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 16px;
   max-width: 400px;
+}
+
+/* Room above and below the form, which the site's header and paragraph styles leave out.
+   :where(): the self-hosted shell spaces it itself. */
+:where(.form) {
+  margin: 16px 0;
 }
 
 .field {
@@ -25,4 +38,11 @@
 
 .form > button {
   align-self: flex-start;
+}
+
+/* The plain shell's text boxes: the page's font and some room. The site's and the self-hosted
+   shell's text-edit styles replace both. */
+:where(.field input) {
+  padding: 4px 6px;
+  font: inherit;
 }

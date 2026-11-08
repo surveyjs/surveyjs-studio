@@ -10,6 +10,7 @@ import {
 import {
   membersHandler,
   otherMember,
+  pendingMember,
   problemAnswer,
   projectWriteHandlers,
   selfMember,
@@ -344,6 +345,25 @@ describe("the Projects page", () => {
       ).toBe("");
     });
 
+    it("tells the admin a new address will join at the first sign-in", async () => {
+      const { marketingCard } = await add(() => ({
+        status: 201,
+        body: { ...pendingMember, email: "nobody@example.test" },
+      }));
+
+      expect(
+        await marketingCard.findByText("nobody@example.test will join when they first sign in."),
+      ).toBeTruthy();
+    });
+
+    it("explains an address that is already invited", async () => {
+      const { marketingCard } = await add(() => problemAnswer(409, "already-invited"));
+
+      expect((await marketingCard.findByRole("alert")).textContent).toBe(
+        "nobody@example.test is already invited.",
+      );
+    });
+
     it("explains an address that is already a member", async () => {
       const { marketingCard } = await add(() => problemAnswer(409, "already-member"));
 
@@ -402,6 +422,33 @@ describe("the Projects page", () => {
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "DELETE", path: `/api/v1/projects/${marketing.id}/members/${otherMember.userId}` },
+    ]);
+  });
+
+  it("shows a pending member with a badge, no role links, and removes the invitation", async () => {
+    const { writes } = await renderProjects(undefined, success, () => [
+      selfMember,
+      otherMember,
+      pendingMember,
+    ]);
+    const marketingCard = await open("Marketing");
+
+    const row = within(memberRow("invited@example.test"));
+    expect(row.getByText("Pending")).toBeTruthy();
+    expect(row.queryByRole("link", { name: "Make Admin" })).toBeNull();
+    expect(row.queryByRole("link", { name: "Remove Admin Rights" })).toBeNull();
+
+    fireEvent.click(marketingCard.getByRole("button", { name: "Remove invited@example.test" }));
+
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(
+      removeMemberConfirmation("invited@example.test"),
+    );
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes.map(({ method, path }) => ({ method, path }))).toEqual([
+      {
+        method: "DELETE",
+        path: `/api/v1/projects/${marketing.id}/invitations/invited%40example.test`,
+      },
     ]);
   });
 

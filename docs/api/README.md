@@ -435,15 +435,16 @@ The export, the CSV rules, the file names, a failure part way and the delete are
 All seven need a session. The six that change data also need the CSRF header. Paging of `listMembers`:
 [Paging](paging.md).
 
-| Operation       | Behaviour                                                                                                                                           |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createProject` | `POST /projects`, `{ name }`. Any signed-in user. `201`, `Location` and the project: `role` `admin`, `memberCount` 1, `ownerId` the caller          |
-| `updateProject` | `PATCH /projects/{projectId}`, `{ name }` as a merge patch. Admins only. `200` and the project. A patch without `name` changes nothing              |
-| `deleteProject` | `DELETE /projects/{projectId}`. Admins only. `204`. The surveys move to the owner's personal scope, or to the admin who deletes                     |
-| `listMembers`   | `GET /projects/{projectId}/members`, `limit` and `cursor`. Any member. `200 { items, nextCursor }` with `{ userId, displayName, email, role }`      |
-| `addMember`     | `POST /projects/{projectId}/members`, `{ email, role? }`. Admins only. `201`, `Location` and the member. `404 user-not-found`, `409 already-member` |
-| `updateMember`  | `PATCH /projects/{projectId}/members/{userId}`, `{ role }` (`admin` or `user`). Admins only. `200` and the member. `409 last-admin`                 |
-| `removeMember`  | `DELETE /projects/{projectId}/members/{userId}`. An admin removes anyone; any member removes themselves (leaves). `204`. `409 last-admin`           |
+| Operation          | Behaviour                                                                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createProject`    | `POST /projects`, `{ name }`. Any signed-in user. `201`, `Location` and the project: `role` `admin`, `memberCount` 1, `ownerId` the caller                                          |
+| `updateProject`    | `PATCH /projects/{projectId}`, `{ name }` as a merge patch. Admins only. `200` and the project. A patch without `name` changes nothing                                              |
+| `deleteProject`    | `DELETE /projects/{projectId}`. Admins only. `204`. The surveys move to the owner's personal scope, or to the admin who deletes                                                     |
+| `listMembers`      | `GET /projects/{projectId}/members`, `limit` and `cursor`. Any member. `200 { items, nextCursor }` with `{ userId, displayName, email, role }`                                      |
+| `addMember`        | `POST /projects/{projectId}/members`, `{ email, role? }`. Admins only. `201`, `Location` and the member. `404 user-not-found` (hosted), `409 already-member`, `409 already-invited` |
+| `removeInvitation` | `DELETE /projects/{projectId}/invitations/{email}`. Admins only. `204`. `404` when the project has no invitation for the email                                                      |
+| `updateMember`     | `PATCH /projects/{projectId}/members/{userId}`, `{ role }` (`admin` or `user`). Admins only. `200` and the member. `409 last-admin`                                                 |
+| `removeMember`     | `DELETE /projects/{projectId}/members/{userId}`. An admin removes anyone; any member removes themselves (leaves). `204`. `409 last-admin`                                           |
 
 Rules:
 
@@ -501,7 +502,11 @@ curl -i -X DELETE "${AUTH[@]}" "$API/projects/$P"
 # HTTP/1.1 204 No Content
 ```
 
-An address nobody registered answers `404` with `"code":"user-not-found"`; adding a member twice answers `409`
+An address nobody registered answers `404` with `"code":"user-not-found"` on the hosted service. On a self-hosted
+instance with local accounts it creates an invitation instead: `201` with a `Member` whose `status` is `pending` and
+`userId` is `null`; it becomes a membership at that email's first sign-in, and `removeInvitation` withdraws it
+([ADR 0029](../adr/0029-linking-identities-by-verified-email.md)). Adding an invited email again answers `409` with
+`"code":"already-invited"`; adding a member twice answers `409`
 with `"code":"already-member"`; the last admin leaving answers `409` with `"code":"last-admin"`. The reasons are
 in [ADR 0017](../adr/0017-projects-and-members.md); for users the page is
 [Projects and team members](../user-guide/projects-and-team-members.md).

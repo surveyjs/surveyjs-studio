@@ -30,6 +30,7 @@ const REFUSED = [
   "addMember",
   "updateMember",
   "removeMember",
+  "removeInvitation",
   "createSurvey",
   "updateSurvey",
   "deleteSurvey",

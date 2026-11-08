@@ -46,7 +46,8 @@ On a self-hosted My Surveys with its own accounts, the sign-in page is part of M
    matter; in the password they do.
 3. You come back to the page you opened in step 1.
 
-If the instance also allows surveyjs.io accounts, the page has a **Sign in with SurveyJS** link too.
+If the instance also allows surveyjs.io, Google, GitHub or Facebook, the page has a **Sign in with …** link for each.
+See [Signing in with a provider](#signing-in-with-a-provider).
 
 The session lasts 12 hours, as above.
 
@@ -100,6 +101,27 @@ After five wrong passwords in a row for an email, the page says "Too many failed
 again in 1 minute(s)." Each further failure doubles the wait, up to an hour. A successful sign-in
 resets it. The same happens for an email that has no account: the page never tells whether an
 account exists.
+
+## Signing in with a provider
+
+A **Sign in with Google** (or GitHub, Facebook, SurveyJS) link on the **Sign in** page takes you to that provider.
+After you sign in there, you come back to the page you opened.
+
+- **Your first time.** The provider must share a **verified email address**. If your email already belongs to an
+  account, the provider is linked to it, and you land in that account (your password, if you have one, still works).
+  If it does not, you need an invitation, or the instance must let your email domain, or anyone, join. Your name is
+  the one the provider gives; if it has none, your email.
+- **Next times.** The provider alone is enough.
+- **No password.** An account made through a provider has no password, so the account menu has no **Change
+  password**. An instance admin can still send you a set-password link.
+- **If you are refused**, the page **You can't sign in yet** says why: you are not invited ("This instance is open to
+  invited people only. Ask a project admin or the person who runs it to invite your email address, then sign in
+  again."), the provider did not share a verified email ("Verify it with …, or sign in another way"), or your account
+  is disabled. **Back to sign in** returns to the sign-in page.
+- **Signing out** of My Surveys does not sign you out of Google, GitHub or Facebook. The next **Sign in with …** may
+  not ask for a password.
+
+An invitation you had is used at your first sign-in, whichever way you sign in.
 
 ## The account menu
 
@@ -171,15 +193,16 @@ deployment should have it reviewed (see [Architecture](../architecture.md#open-f
 
 ## Troubleshooting
 
-| What you see                                                    | What to do                                                               |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| "The sign-in expired or was not started in this browser"        | Open the page you want again, and sign in again. Do not use an old link. |
-| "Too many sign-in attempts"                                     | Wait a minute, then try again.                                           |
-| "Sign-in is unavailable"                                        | The sign-in service did not answer. Try again later.                     |
-| You are sent to sign in again after a while                     | The 12 hours are over. Sign in again.                                    |
-| You signed in and still land on the sign-in page                | The browser blocks cookies for this site. Allow them, and try again.     |
-| "The email or the password is wrong."                           | Check both, and the keyboard layout. The password is case-sensitive.     |
-| "Too many failed attempts. Try again in …"                      | Wait as long as it says, then try again.                                 |
-| "Use at least 12 characters." or "This password is too common." | Choose a longer or less common password.                                 |
-| "This link was used already, has expired, …"                    | Ask for a new link, or restart the server for a lost setup link.         |
-| You are asked to sign in again after a password change          | The password was changed in another browser. Sign in with the new one.   |
+| What you see                                                    | What to do                                                                |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| "The sign-in expired or was not started in this browser"        | Open the page you want again, and sign in again. Do not use an old link.  |
+| "Too many sign-in attempts"                                     | Wait a minute, then try again.                                            |
+| "Sign-in is unavailable"                                        | The sign-in service did not answer. Try again later.                      |
+| You are sent to sign in again after a while                     | The 12 hours are over. Sign in again.                                     |
+| You signed in and still land on the sign-in page                | The browser blocks cookies for this site. Allow them, and try again.      |
+| "The email or the password is wrong."                           | Check both, and the keyboard layout. The password is case-sensitive.      |
+| "Too many failed attempts. Try again in …"                      | Wait as long as it says, then try again.                                  |
+| "Use at least 12 characters." or "This password is too common." | Choose a longer or less common password.                                  |
+| "This link was used already, has expired, …"                    | Ask for a new link, or restart the server for a lost setup link.          |
+| You are asked to sign in again after a password change          | The password was changed in another browser. Sign in with the new one.    |
+| "You can't sign in yet"                                         | The sign-in was refused: read the reason on the page, and ask your admin. |

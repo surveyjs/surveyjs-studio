@@ -37,6 +37,23 @@ export interface paths {
          * Finish sign-in
          * @description The identity provider redirects here. The server exchanges the code, sets
          *     the `msid` and `msid_csrf` cookies, and redirects to `returnTo`.
+         *
+         *     With `USER_DIRECTORY=local`, an OAuth2 sign-in reaches a local account: the one
+         *     its identity is linked to, else the one its verified email names (the identity
+         *     is linked to it), else a new one when the email is invited, its domain is in
+         *     `SIGN_UP_DOMAINS` or `OPEN_SIGN_UP=on`. The email's pending project invitations
+         *     become memberships. Otherwise the redirect goes to
+         *     `/sign-in/refused?reason=<reason>&provider=<method>` with no session; the
+         *     reasons are `not-invited`, `email-unverified` and `disabled`. While
+         *     `READ_ONLY=true` only an identity already linked to an active account signs in;
+         *     a sign-in that would link an identity, create an account or activate an invited
+         *     one is refused with the reason `read-only`.
+         *
+         *     A sign-in started by `login?provider=<method>` also goes to that page when it
+         *     fails at the callback: `cancelled` when the provider sends `error=access_denied`
+         *     (the person said no), `unavailable` when the provider cannot be reached or
+         *     answers unexpectedly. A sign-in started without `provider` (surveyjs.io alone,
+         *     the dev sign-in) answers these as problems: `400`, `500` and `503 read-only`.
          */
         get: operations["loginCallback"];
         put?: never;
@@ -246,8 +263,8 @@ export interface paths {
         /**
          * Change a user's instance role or status
          * @description Instance admins only. `status` may be set to `disabled` or `active`: disabling
-         *     ends the user's sessions within a minute; enabling an account that never set a
-         *     password makes it `invited` again. Demoting, disabling or deleting the last
+         *     ends the user's sessions within a minute; enabling an account that has neither a
+         *     password nor a linked sign-in method makes it `invited` again. Demoting, disabling or deleting the last
          *     active instance admin fails with `409 last-instance-admin`, also for yourself.
          */
         patch: operations["updateUser"];
@@ -355,8 +372,12 @@ export interface paths {
         put?: never;
         /**
          * Add a member
-         * @description Admins only. The email must belong to a registered user; otherwise the
-         *     server returns `404` with code `user-not-found`.
+         * @description Admins only. With an email that belongs to a registered user, the user
+         *     becomes a member. When the instance has local accounts and no account has
+         *     the email, the email is invited instead: the answer is a pending member
+         *     (`status: pending`, `userId: null`) who joins at their first sign-in. On
+         *     instances without local accounts an unknown email returns `404` with code
+         *     `user-not-found`. Inviting an email twice returns `409 already-invited`.
          */
         post: operations["addMember"];
         delete?: never;
@@ -395,6 +416,31 @@ export interface paths {
          *     nothing and answers `200`.
          */
         patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/projects/{projectId}/invitations/{email}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The invited email address, in any letter case. */
+                email: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a pending member
+         * @description Admins only. Withdraws the invitation of an email that has not joined the
+         *     project yet. Answers `404` when the project has no invitation for the email.
+         */
+        delete: operations["removeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/surveys": {
@@ -979,7 +1025,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -1005,12 +1051,12 @@ export interface components {
             displayName: string;
             instanceRole: components["schemas"]["InstanceRole"];
             /**
-             * @description `invited` until the user sets a password with their link.
+             * @description `invited` until the user sets a password with their link, or an OAuth2 sign-in links an identity to the account.
              * @enum {string}
              */
             status: "invited" | "active" | "disabled";
             createdAt: components["schemas"]["Timestamp"];
-            /** @description The last password sign-in; `null` before the first. */
+            /** @description The last sign-in, with a password or an OAuth2 method; `null` before the first. */
             lastSignInAt: components["schemas"]["Timestamp"] | null;
         };
         AdminUserPage: {
@@ -1073,6 +1119,8 @@ export interface components {
             instanceRole?: components["schemas"]["InstanceRole"];
             /** @description A local account that must change its password before anything else; the session then answers `401 password-change-required` to other operations. */
             mustChangePassword?: boolean;
+            /** @description Whether a local account has a password (`USER_DIRECTORY=local`); false for an account made by an OAuth2 sign-in. Absent for the other directories. */
+            hasPassword?: boolean;
             /** @description Account notices shown by the shell, such as licence expiry on the hosted edition. */
             notices?: components["schemas"]["Notice"][];
         };
@@ -1203,11 +1251,18 @@ export interface components {
             nextCursor: components["schemas"]["Cursor"];
         };
         Member: {
-            userId: components["schemas"]["Id"];
+            /** @description The user's ID; `null` while the member is pending. */
+            userId: components["schemas"]["Id"] | null;
+            /** @description A pending member's display name is their email. */
             displayName: string;
             /** Format: email */
             email: string;
             role: components["schemas"]["ProjectRole"];
+            /**
+             * @description `pending` for an invited email that has not signed in yet.
+             * @enum {string}
+             */
+            status: "active" | "pending";
         };
         MemberCreate: {
             /** Format: email */
@@ -1533,7 +1588,7 @@ export interface components {
         };
         /**
          * @description The request conflicts with the current state. Codes:
-         *     `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+         *     `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
          *     `last-instance-admin`.
          */
         Conflict: {
@@ -1738,6 +1793,8 @@ export interface operations {
             query?: {
                 /** @description A same-origin path to open after sign-in. */
                 returnTo?: string;
+                /** @description The sign-in method to start. Without it, the default of this instance (the sign-in page, or surveyjs.io when that is the only method). A method that is not enabled answers `400`. */
+                provider?: "surveyjs" | "google" | "github" | "facebook";
             };
             header?: never;
             path?: never;
@@ -1760,8 +1817,11 @@ export interface operations {
     loginCallback: {
         parameters: {
             query: {
-                code: string;
+                /** @description The authorization code; absent when the provider sends `error`. */
+                code?: string;
                 state: string;
+                /** @description The provider's OAuth2 error, such as `access_denied`. */
+                error?: string;
             };
             header?: never;
             path?: never;
@@ -1789,6 +1849,15 @@ export interface operations {
                 };
             };
             429: components["responses"]["TooManyRequests"];
+            /** @description `READ_ONLY=true` and a sign-in started without `provider` would write (`read-only`): link an identity, create an account or activate an invited one. No session is created. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     logout: {
@@ -2301,7 +2370,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Added. */
+            /**
+             * @description Added. A pending member when the instance has local accounts and no
+             *     account has the email; the `Location` of a pending member is
+             *     `/api/v1/projects/{projectId}/invitations/{email}`.
+             */
             201: {
                 headers: {
                     Location: components["headers"]["Location"];
@@ -2379,6 +2452,33 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    removeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The invited email address, in any letter case. */
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["ReadOnly"];
         };
     };

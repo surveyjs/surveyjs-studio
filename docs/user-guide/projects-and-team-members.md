@@ -53,14 +53,32 @@ Open a card to see its members. Each row shows the display name, and an **Admin*
 2. Type the email address of the new member in "Enter the new member's email..." and click **Add** (or press
    Enter).
 
-The person must **already be registered** at surveyjs.io. They join as a plain member, and the card shows them at
-once. You cannot invite someone who has no account. The answers on the page:
+They join as a plain member. What happens next depends on the instance:
 
-- "{email} is not a registered surveyjs.io user. Ask them to sign up first." (the address is not known);
-- "{email} is already a member of this project.".
+- **The person has an account.** The card shows them at once.
+- **A self-hosted instance with its own accounts, and no account has that email.** The email is **invited**: the card
+  says "{email} will join when they first sign in." and shows a row with a **Pending** badge ([below](#pending-members)).
+- **studio.surveyjs.io.** The person must already be registered at surveyjs.io. You cannot invite someone who has no
+  account.
 
-The first message tells an admin that an address has no account. Only project admins can get it, but an admin
-can try any address (the old site did the same).
+The answers on the page:
+
+- "{email} is not a registered surveyjs.io user. Ask them to sign up first." (studio.surveyjs.io only: the address is
+  not known). Only project admins can get it, but an admin can try any address (the old site did the same);
+- "{email} is already a member of this project.";
+- "{email} is already invited." (the email is pending in this project).
+
+### Pending members
+
+A pending member is an email that has been added but has not signed in yet.
+
+- The row shows the email as its name, a **Pending** badge, and an "x". It has no **Make Admin** link: the role
+  cannot change until the person joins.
+- The person joins at their **first sign-in**, whichever way they use: Google, GitHub, a password, or a set-password
+  link from an instance admin. From then on they are a plain member, and the badge is gone after a reload.
+- A person who signs in for the first time with a provider also needs an invitation to get an account, unless the
+  instance lets their email domain join, or lets anyone join ([Signing in with Google and others](../customizing/sign-in.md#who-may-join)).
+- To take the invitation back, click the "x" on the pending row. The browser asks before it removes it.
 
 ### Make an admin, remove admin rights
 
@@ -129,4 +147,6 @@ Changes show after a reload of the other page.
 - Rename keeps the project's creation date.
 - The page asks before each removal, leaving and deletion, with the texts above.
 - The list of projects and members has a fixed order: by name ignoring case, then id (members by display name).
-- Not built: inviting people who have no account, a project description, transferring the ownership.
+- Inviting people who have no account works on a self-hosted instance with its own accounts (pending members). It is
+  not built for studio.surveyjs.io.
+- Not built: a project description, transferring the ownership.
