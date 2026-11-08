@@ -56,6 +56,7 @@ import {
   ownerPersonalSurveys,
   ownerProjects,
   projectA,
+  projectB,
   projectAActiveSurveys,
   projectAArchivedSurveys,
   projectAMembers,
@@ -1850,6 +1851,32 @@ export function describeProviderSuite(
         expect(await providers.projects.listUserProjects(UNKNOWN_ID)).toEqual([]);
       });
     });
+
+    describeIn("projects")(
+      "projects.listProjects and getProject (an instance admin's view)",
+      () => {
+        it("lists every project in project list order", async () => {
+          const all = await providers.projects.listProjects();
+          // Other tests' projects may be there too (R25): the fixture ones, in order, are checked.
+          expect(all.filter(({ id }) => id === PROJECT_A_ID || id === PROJECT_B_ID)).toEqual([
+            projectB,
+            projectA,
+          ]);
+          const order = all.map(({ name, id }) => [name.toLowerCase(), id] as const);
+          expect(order).toEqual(
+            [...order].sort(([an, ai], [bn, bi]) =>
+              an < bn ? -1 : an > bn ? 1 : ai < bi ? -1 : ai > bi ? 1 : 0,
+            ),
+          );
+        });
+
+        it("gets one project whoever asks, or null", async () => {
+          expect(await providers.projects.getProject(PROJECT_A_ID.toUpperCase())).toEqual(projectA);
+          expect(await providers.projects.getProject(UNKNOWN_ID)).toBeNull();
+          expect(await providers.projects.getProject("personal")).toBeNull();
+        });
+      },
+    );
 
     describeIn("projects")("projects.getUserProject", () => {
       it("returns the user's membership with the full project record", async () => {

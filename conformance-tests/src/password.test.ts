@@ -80,11 +80,11 @@ describe.skipIf(admin === null)("password sign-in", () => {
     expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
-  it("answers 400 link-invalid for a set-password link nobody issued", async () => {
+  it("answers 410 link-invalid for a set-password link nobody issued", async () => {
     const response = await call("POST", "/auth/password-link", {
       body: { token: randomBytes(24).toString("base64url"), password: NEW_PASSWORD },
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(410);
     expect(await codeOf(response)).toBe("link-invalid");
   });
 

@@ -19,6 +19,7 @@ export const CLIENT_ROUTES: readonly RegExp[] = Object.freeze([
   route("/sign-in"),
   route("/set-password"),
   route("/change-password"),
+  route("/admin/users"),
 ]);
 
 export function isClientRoute(pathname: string): boolean {

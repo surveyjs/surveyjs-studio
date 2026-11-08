@@ -8,6 +8,7 @@ import type { Lockout } from "../passwords/lockout.js";
 import { passwordProblem } from "../passwords/policy.js";
 import type { LocalAccountStore } from "../providers/types.js";
 import { requireUser } from "./authenticate.js";
+import { hasPasswordAdmin } from "./bootstrap.js";
 import { sessionCookies } from "./cookies.js";
 import { generateCsrfToken, sameInConstantTime } from "./csrf.js";
 import type { SessionCheck } from "./session-check.js";
@@ -57,7 +58,7 @@ function weakPassword(problem: string): AppError {
 const linkInvalid = (): AppError =>
   new AppError({
     code: "link-invalid",
-    status: 400,
+    status: 410,
     title: "Link not valid",
     detail: "This link was used already, has expired, or is not a link of this site.",
   });
@@ -95,6 +96,22 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
       void reply.header("retry-after", String(wait));
       throw locked(wait);
     }
+  };
+
+  /**
+   * The answer of a link that set a password: 204 with a session of the new epoch, so the user lands
+   * signed in (S19), when the account may sign in; a disabled account gets no session.
+   */
+  const signInWithLink = async (reply: FastifyReply, userId: string, epoch: number) => {
+    const account = await accounts.account(userId);
+    if (!account || account.status !== "active") return reply.code(204).send();
+    await accounts.recordSignIn(account.user.id, nowIso());
+    const user = {
+      sub: account.user.id,
+      name: account.user.displayName,
+      email: account.user.email,
+    };
+    return reply.code(204).header("set-cookie", cookiesFor(user, epoch)).send();
   };
 
   return {
@@ -182,7 +199,7 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
         const claimed = setupToken;
         setupToken = null;
         try {
-          if ((await accounts.countActiveAdmins()) > 0) throw linkInvalid();
+          if (await hasPasswordAdmin(accounts)) throw linkInvalid();
           if (await accounts.accountByEmail(email)) {
             setupToken = claimed;
             throw new AppError({
@@ -192,7 +209,7 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
               detail: "An account with this email exists. Choose another email.",
             });
           }
-          await accounts.createAccount({
+          const admin = await accounts.createAccount({
             id: randomUUID(),
             email,
             displayName,
@@ -202,21 +219,26 @@ export function createPasswordHandlers(options: PasswordHandlerOptions): Handler
             mustChangePassword: false,
             createdAt: nowIso(),
           });
+          // The new admin lands signed in, as a user who sets a password with a link (S19).
+          return await signInWithLink(reply, admin.user.id, admin.sessionEpoch);
         } catch (error) {
           // A store failure keeps the link usable; an admin made meanwhile ends it for good.
           if (!(error instanceof AppError)) setupToken = claimed;
           throw error;
         }
-        return reply.code(204).send();
       }
       // The rules first: a weak password does not use the link up.
       const problem = passwordProblem(password);
       if (problem !== null) throw weakPassword(problem);
-      const userId = await accounts.usePasswordLink(linkTokenHash(token), nowIso());
-      if (userId === null) throw linkInvalid();
-      await accounts.setPassword(userId, await hashPassword(password), { mustChange: false });
-      sessionCheck.forget(userId);
-      return reply.code(204).send();
+      // The link is used and the password stored together: a failed write keeps the link.
+      const used = await accounts.usePasswordLink(
+        linkTokenHash(token),
+        nowIso(),
+        await hashPassword(password),
+      );
+      if (used === null) throw linkInvalid();
+      sessionCheck.forget(used.userId);
+      return signInWithLink(reply, used.userId, used.epoch);
     },
   };
 }

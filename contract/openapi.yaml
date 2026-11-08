@@ -56,6 +56,8 @@ tags:
     description: Sign-in, sign-out and the current user.
   - name: Config
     description: Runtime settings the front-end needs before it renders.
+  - name: Admin
+    description: The instance admin's user management (self-hosted, local accounts).
   - name: Projects
     description: Projects group surveys and are shared with members.
   - name: Members
@@ -202,9 +204,10 @@ paths:
         link, which the server writes to its log while the instance has no admin
         (it works once, until the server restarts). The setup link creates that
         admin: `email` and `displayName` are required with it and ignored
-        otherwise. An unknown, used or expired link gets `400 link-invalid`. The password must have at least 12 characters and
-        not be a common one (`422 password-too-weak`). The account is not signed
-        in: sign in with the new password next. `501` when password sign-in is not
+        otherwise. An unknown, used or expired link gets `410 link-invalid`. The password must have at least 12 characters and
+        not be a common one (`422 password-too-weak`). An account that may sign in
+        lands signed in: the answer sets the session cookies. A disabled account's
+        password is set, but no session starts. `501` when password sign-in is not
         enabled.
       security: []
       requestBody:
@@ -228,8 +231,12 @@ paths:
                   maxLength: 128
                   description: The first admin's name; required with the setup link.
       responses:
-        '204': { description: The password is set. }
+        '204':
+          description: The password is set; the session cookies too, unless the account is disabled.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetCookie' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '410': { $ref: '#/components/responses/Gone' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/ReadOnly' }
@@ -299,15 +306,165 @@ paths:
               schema: { $ref: '#/components/schemas/AppConfig' }
 
   # --------------------------------------------------------------- Projects
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      summary: List the instance's users
+      description: |
+        Instance admins only (`403 forbidden` otherwise). Every local account, with its
+        status, instance role and last sign-in, ordered by email. `501` when the instance
+        has no local accounts (`USER_DIRECTORY=local`).
+      security:
+        - cookieAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of users.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+    post:
+      tags: [Admin]
+      operationId: createUser
+      summary: Create a user and their set-password link
+      description: |
+        Instance admins only. Creates an `invited` account and returns its one-time
+        set-password link, valid for 7 days: the only time the link is shown. Send it to
+        the user yourself; there is no email. The user sets a password with it
+        (`setPasswordWithLink`) and becomes `active`. An email that already has an
+        account gets `409 email-taken`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserCreate' }
+      responses:
+        '201':
+          description: Created, with the set-password link.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /admin/users/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    patch:
+      tags: [Admin]
+      operationId: updateUser
+      summary: Change a user's instance role or status
+      description: |
+        Instance admins only. `status` may be set to `disabled` or `active`: disabling
+        ends the user's sessions within a minute; enabling an account that never set a
+        password makes it `invited` again. Demoting, disabling or deleting the last
+        active instance admin fails with `409 last-instance-admin`, also for yourself.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/AdminUserPatch' }
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+    delete:
+      tags: [Admin]
+      operationId: deleteUser
+      summary: Delete a user and erase their data
+      description: |
+        Instance admins only. Erases the user's data as the account-deleted webhook does:
+        their personal surveys with their results and files go, they leave every project
+        (an admin is promoted where none would remain, a project with no other member is
+        deleted), then the account is deleted and its sessions end. The last active
+        instance admin cannot be deleted (`409 last-instance-admin`).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /admin/users/{userId}/reset-link:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    post:
+      tags: [Admin]
+      operationId: createUserResetLink
+      summary: Reset a user's password
+      description: |
+        Instance admins only. Clears the user's password, ends their sessions within a
+        minute, makes their earlier links unusable, and returns a new one-time
+        set-password link, valid for 7 days: the only time it is shown. For an `invited`
+        user it is a new invitation link.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '201':
+          description: The new set-password link.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasswordLink' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
   /projects:
     get:
       tags: [Projects]
       operationId: listProjects
       summary: List the projects the user belongs to
-      description: Personal surveys are not a project; see `GET /surveys?project=personal`.
+      description: |
+        Personal surveys are not a project; see `GET /surveys?project=personal`. With
+        `scope=all` an instance admin gets every project of the instance (the ones they
+        are not a member of with `role: admin`); others get `403 forbidden`.
       parameters:
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Cursor' }
+        - name: scope
+          in: query
+          required: false
+          description: '`member` (default): the user''s projects; `all`: every project (instance admins).'
+          schema: { type: string, enum: [member, all], default: member }
       responses:
         '200':
           description: A page of projects.
@@ -316,6 +473,7 @@ paths:
               schema: { $ref: '#/components/schemas/ProjectPage' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [Projects]
       operationId: createProject
@@ -1514,7 +1672,8 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state. Codes:
-        `survey-not-archived`, `already-member`, `last-admin`, `already-completed`.
+        `survey-not-archived`, `already-member`, `last-admin`, `already-completed`, `email-taken`,
+        `last-instance-admin`.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -1523,6 +1682,16 @@ components:
             title: Archive the survey before deleting it
             status: 409
             code: survey-not-archived
+    Gone:
+      description: The link was used, has expired, or was never issued (`link-invalid`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://studio.surveyjs.io/problems/link-invalid
+            title: Link not valid
+            status: 410
+            code: link-invalid
     PreconditionFailed:
       description: The document changed since it was read (`edit-conflict`).
       content:
@@ -1671,6 +1840,8 @@ components:
             - password-too-weak
             - password-change-required
             - link-invalid
+            - email-taken
+            - last-instance-admin
             - internal-error
         errors:
           type: array
@@ -1682,6 +1853,78 @@ components:
               pointer: { type: string, description: JSON Pointer to the invalid field. }
               detail: { type: string }
 
+    # ------------------------------------------------------------ Admin
+    AdminUser:
+      type: object
+      required: [id, email, displayName, instanceRole, status, createdAt, lastSignInAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        instanceRole: { $ref: '#/components/schemas/InstanceRole' }
+        status:
+          type: string
+          enum: [invited, active, disabled]
+          description: '`invited` until the user sets a password with their link.'
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        lastSignInAt:
+          description: The last password sign-in; `null` before the first.
+          oneOf:
+            - { $ref: '#/components/schemas/Timestamp' }
+            - { type: 'null' }
+      examples:
+        - id: 3c4a7fdf-94a1-41ec-96d0-41749c260100
+          email: alex@example.com
+          displayName: Alex
+          instanceRole: user
+          status: active
+          createdAt: '2026-10-29T10:00:00.000Z'
+          lastSignInAt: '2026-10-30T08:15:00.000Z'
+    AdminUserPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminUser' } }
+        nextCursor: { $ref: '#/components/schemas/Cursor' }
+    AdminUserCreate:
+      type: object
+      required: [email, displayName]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        instanceRole: { $ref: '#/components/schemas/InstanceRole', default: user }
+    AdminUserPatch:
+      type: object
+      minProperties: 1
+      properties:
+        instanceRole: { $ref: '#/components/schemas/InstanceRole' }
+        status:
+          type: string
+          enum: [active, disabled]
+    InstanceRole:
+      type: string
+      enum: [admin, user]
+      description: '`admin` manages the instance''s users and every project.'
+    PasswordLink:
+      type: object
+      required: [url, expiresAt]
+      description: A one-time set-password link. Only this answer shows it; the server keeps a hash.
+      properties:
+        url:
+          type: string
+          format: uri
+          description: '`PUBLIC_BASE_URL/set-password?token=…`, to send to the user.'
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+      examples:
+        - url: https://studio.example.com/set-password?token=7cJ2rQ0wUu8xXnYk3fVb1A
+          expiresAt: '2026-11-05T10:00:00.000Z'
+    CreatedUser:
+      type: object
+      required: [user, link]
+      properties:
+        user: { $ref: '#/components/schemas/AdminUser' }
+        link: { $ref: '#/components/schemas/PasswordLink' }
+
     # ------------------------------------------------------------ Session
     CurrentUser:
       type: object
@@ -1692,8 +1935,7 @@ components:
         email: { type: string, format: email }
         avatarUrl: { type: [string, 'null'], format: uri }
         instanceRole:
-          type: string
-          enum: [admin, user]
+          $ref: '#/components/schemas/InstanceRole'
           description: A local account's role on this instance (`USER_DIRECTORY=local`); absent otherwise.
         mustChangePassword:
           type: boolean
@@ -1790,7 +2032,9 @@ components:
             - { type: 'null' }
         role:
           $ref: '#/components/schemas/ProjectRole'
-          description: The current user's role in this project.
+          description: |
+            The current user's role in this project. An instance admin gets `admin` on every
+            project, a member or not: they may use every admin action on it.
         memberCount: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
       examples:

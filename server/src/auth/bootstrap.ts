@@ -12,8 +12,22 @@ export interface Bootstrap {
 }
 
 /**
- * The first admin of a local directory (spec: S4). Runs at start-up while no account is an active
- * admin: with ADMIN_EMAIL and ADMIN_PASSWORD it creates that admin, who must change the password at
+ * Whether an active instance admin can sign in with a password. The seed's instance admin has no
+ * password (the dev sign-in signs it in), and neither has an admin whose password was reset: the
+ * first admin is still made while no such admin exists.
+ */
+export async function hasPasswordAdmin(accounts: LocalAccountStore): Promise<boolean> {
+  return (await accounts.listAccounts()).some(
+    (account) =>
+      account.instanceRole === "admin" &&
+      account.status === "active" &&
+      account.passwordHash !== null,
+  );
+}
+
+/**
+ * The first admin of a local directory (spec: S4). Runs at start-up while no active admin has a
+ * password (`hasPasswordAdmin`): with ADMIN_EMAIL and ADMIN_PASSWORD it creates that admin, who must change the password at
  * first sign-in; without them it writes a one-time setup link to the log, which creates the admin
  * with the email, name and password chosen on the setup page. The link lives in this process only:
  * a restart writes a new one while there is still no admin. READ_ONLY=true writes nothing.
@@ -24,7 +38,7 @@ export async function bootstrapFirstAdmin(
   log: FastifyBaseLogger,
   now: () => number = Date.now,
 ): Promise<Bootstrap> {
-  if (config.readOnly || (await accounts.countActiveAdmins()) > 0) return { setupToken: null };
+  if (config.readOnly || (await hasPasswordAdmin(accounts))) return { setupToken: null };
   const admin = config.bootstrapAdmin;
   if (admin !== null) {
     if (await accounts.accountByEmail(admin.email)) {

@@ -41,5 +41,7 @@ export interface ShellProps {
   projectsLink?: ShellAppLink;
   /** In-app link to the change-password page, for an instance with passwords (AUTH_METHODS). */
   changePasswordLink?: ShellAppLink;
+  /** In-app link to the Users page, for an instance admin. */
+  usersLink?: ShellAppLink;
   children: ReactNode;
 }

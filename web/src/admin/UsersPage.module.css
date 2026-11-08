@@ -1,0 +1,67 @@
+/* The Users page: the create form in a row, the one-time link box, and the user table. Colours
+   are the site's (color-styles.scss); the plain shell gets the same layout. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.link {
+  padding: 12px 16px;
+  border: 1px solid #19b394; /* $Primary--Primary */
+  border-radius: 4px;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.linkRow input {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.error {
+  color: #e60a3e; /* $Special--Red */
+  font-weight: 600;
+}
+
+/* The table may be wider than a phone: it scrolls on its own. */
+.tableBox {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table th,
+.table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #d6d6d6;
+  text-align: left;
+  vertical-align: top;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

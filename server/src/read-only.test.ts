@@ -20,6 +20,10 @@ import { READ_ONLY_ALLOWED, refusedWhenReadOnly } from "./read-only.js";
 const REFUSED = [
   "changeOwnPassword",
   "setPasswordWithLink",
+  "createUser",
+  "updateUser",
+  "deleteUser",
+  "createUserResetLink",
   "createProject",
   "updateProject",
   "deleteProject",

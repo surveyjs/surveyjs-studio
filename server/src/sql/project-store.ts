@@ -1,6 +1,12 @@
 import type { Kysely } from "kysely";
 import { GUID } from "../domain/guid.js";
-import type { ProjectMember, ProjectMembership, ProjectRole, User } from "../domain/types.js";
+import type {
+  ProjectMember,
+  ProjectMembership,
+  ProjectRecord,
+  ProjectRole,
+  User,
+} from "../domain/types.js";
 import {
   decideMemberErasure,
   decideRemoval,
@@ -8,7 +14,7 @@ import {
   isAdminRole,
   type ErasureFacts,
 } from "../projects/rules.js";
-import { memberListOrder, projectListOrder } from "../providers/ordering.js";
+import { memberListOrder, projectListOrder, projectRecordOrder } from "../providers/ordering.js";
 import type { ProjectStore, UserDirectory } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
 import type { DatabaseSchema } from "./schema.js";
@@ -83,6 +89,46 @@ export function createSqlProjectStore(
     });
   };
 
+  /** Projects with a member, as stored now: the owner while the creator is a member (R2). */
+  const records = async (projectId?: string): Promise<ProjectRecord[]> => {
+    let query = db
+      .selectFrom("projects as p")
+      .select((eb) => [
+        "p.id",
+        "p.name",
+        "p.creator_id",
+        "p.created_at",
+        eb
+          .selectFrom("project_members as c")
+          .select((c) => c.fn.countAll<number | string | bigint>().as("n"))
+          .whereRef("c.project_id", "=", "p.id")
+          .as("member_count"),
+        eb
+          .selectFrom("project_members as o")
+          .select("o.user_id")
+          .whereRef("o.project_id", "=", "p.id")
+          .whereRef("o.user_id", "=", "p.creator_id")
+          .as("owner_row"),
+      ])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom("project_members as m")
+            .select("m.user_id")
+            .whereRef("m.project_id", "=", "p.id"),
+        ),
+      );
+    if (projectId !== undefined) query = query.where("p.id", "=", projectId);
+    const rows = await query.execute();
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      ownerId: row.owner_row === null ? null : row.creator_id,
+      createdAt: isoOf(row.created_at),
+      memberCount: Number(row.member_count),
+    }));
+  };
+
   /** Memberships with the project as stored now: the owner while the creator is a member (R2). */
   const memberships = async (userId: string, projectId?: string): Promise<ProjectMembership[]> => {
     let query = db
@@ -134,6 +180,11 @@ export function createSqlProjectStore(
     listUserProjects: async (userId) => {
       const user = key(userId);
       return user === null ? [] : (await memberships(user)).sort(projectListOrder);
+    },
+    listProjects: async () => (await records()).sort(projectRecordOrder),
+    getProject: async (projectId) => {
+      const project = key(projectId);
+      return project === null ? null : ((await records(project))[0] ?? null);
     },
     getUserProject: async (userId, projectId) => {
       const user = key(userId);

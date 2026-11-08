@@ -3,6 +3,7 @@ import type { Security } from "../contract.js";
 import { AppError } from "../errors.js";
 import { CSRF_COOKIE, parseCookies, SESSION_COOKIE } from "./cookies.js";
 import { csrfTokensMatch } from "./csrf.js";
+import type { InstanceRole } from "../providers/types.js";
 import type { SessionCheck } from "./session-check.js";
 import { decodeSession, type Clock } from "./session.js";
 
@@ -12,6 +13,8 @@ export interface RequestUser {
   readonly displayName: string;
   readonly email: string;
   readonly avatarUrl: string | null;
+  /** A local account's instance role (USER_DIRECTORY=local), from the session check. */
+  readonly instanceRole?: InstanceRole;
 }
 
 declare module "fastify" {
@@ -83,9 +86,10 @@ export function authenticationHook(
       if (rule.kind === "optional") return;
       throw unauthenticated();
     }
+    let instanceRole: InstanceRole | undefined;
     if (options.sessionCheck) {
       try {
-        await options.sessionCheck.check(session, operationId);
+        instanceRole = (await options.sessionCheck.check(session, operationId)).instanceRole;
       } catch (error) {
         // An ended session is no session where none is needed (logout).
         if (rule.kind === "optional") return;
@@ -109,6 +113,7 @@ export function authenticationHook(
       displayName: session.name,
       email: session.email,
       avatarUrl: session.avatarUrl,
+      ...(instanceRole && { instanceRole }),
     };
   };
 }

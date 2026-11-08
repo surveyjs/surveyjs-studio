@@ -1,3 +1,4 @@
+import { decideAccountChange, nextStatus } from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
@@ -44,27 +45,40 @@ const accountOf = (stored: StoredAccount): LocalAccount => ({
   mustChangePassword: stored.mustChangePassword,
   sessionEpoch: stored.sessionEpoch,
   lastSignInAt: stored.lastSignInAt,
+  createdAt: stored.createdAt,
 });
+
+/** The seed's accounts were made at this time, as in the SQL seed (sql/seed.ts). */
+const SEED_CREATED_AT = "2025-01-01T00:00:00.000Z";
 
 /**
  * Local accounts in process memory (USER_DIRECTORY=local with STORAGE_PROVIDER=memory). The seed
- * users become active accounts without a password (a blocked one disabled), as in the SQL seed.
+ * users become active accounts without a password (a blocked one disabled), and `seedAdmins` active
+ * instance admins without one, as in the SQL seed.
  */
-export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): MemoryLocalAccounts {
+export function createMemoryLocalAccounts(
+  seedUsers: readonly User[] = [],
+  seedAdmins: readonly User[] = [],
+): MemoryLocalAccounts {
   const byId = new Map<string, StoredAccount>();
   const links = new Map<string, StoredLink>();
-  for (const user of seedUsers) {
+  const seeded = [
+    ...seedUsers.map((user) => ({ user, instanceRole: "user" as const })),
+    ...seedAdmins.map((user) => ({ user, instanceRole: "admin" as const })),
+  ];
+  for (const { user, instanceRole } of seeded) {
     const id = user.id.toLowerCase();
     byId.set(id, {
       id,
       email: user.email.toLowerCase(),
       displayName: user.displayName,
-      instanceRole: "user",
+      instanceRole,
       status: user.blocked ? "disabled" : "active",
       passwordHash: null,
       mustChangePassword: false,
       sessionEpoch: 0,
       lastSignInAt: null,
+      createdAt: SEED_CREATED_AT,
     });
   }
 
@@ -75,13 +89,27 @@ export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): Memo
     return wanted.trim() === "" ? undefined : [...byId.values()].find((a) => a.email === wanted);
   };
 
+  const activeAdmins = () =>
+    [...byId.values()].filter((a) => a.instanceRole === "admin" && a.status === "active").length;
+
+  /** Stores the hash, activates an invited account and raises the epoch; null for no account. */
+  const setPassword = (id: string, passwordHash: string, mustChange: boolean): number | null => {
+    const found = find(id);
+    if (!found) return null;
+    const updated: StoredAccount = {
+      ...found,
+      passwordHash,
+      mustChangePassword: mustChange,
+      status: found.status === "invited" ? "active" : found.status,
+      sessionEpoch: found.sessionEpoch + 1,
+    };
+    byId.set(found.id, updated);
+    return updated.sessionEpoch;
+  };
+
   const accounts: LocalAccountStore = {
     countAccounts: () => Promise.resolve(byId.size),
-    countActiveAdmins: () =>
-      Promise.resolve(
-        [...byId.values()].filter((a) => a.instanceRole === "admin" && a.status === "active")
-          .length,
-      ),
+    countActiveAdmins: () => Promise.resolve(activeAdmins()),
     createAccount: (account: NewLocalAccount) => {
       const id = account.id.toLowerCase();
       if (!GUID.test(id)) return Promise.reject(new Error("Account ids must be GUIDs"));
@@ -98,6 +126,7 @@ export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): Memo
         mustChangePassword: account.mustChangePassword,
         sessionEpoch: 0,
         lastSignInAt: null,
+        createdAt: account.createdAt,
       };
       byId.set(id, stored);
       return Promise.resolve(accountOf(stored));
@@ -110,19 +139,58 @@ export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): Memo
       const found = findByEmail(email);
       return Promise.resolve(found ? accountOf(found) : null);
     },
-    setPassword: (id, passwordHash, { mustChange }) => {
+    listAccounts: () =>
+      Promise.resolve(
+        [...byId.values()]
+          .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
+          .map(accountOf),
+      ),
+    updateAccount: (id, change) => {
       const found = find(id);
-      if (!found) return Promise.resolve(null);
+      if (!found) return Promise.resolve({ outcome: "not-found" as const });
+      const after = {
+        instanceRole: change.instanceRole ?? found.instanceRole,
+        status: nextStatus(found.status, change.status, found.passwordHash !== null),
+      };
+      if (decideAccountChange(found, after, activeAdmins()) === "last-instance-admin") {
+        return Promise.resolve({ outcome: "last-instance-admin" as const });
+      }
+      const disabling = after.status === "disabled" && found.status !== "disabled";
       const updated: StoredAccount = {
         ...found,
-        passwordHash,
-        mustChangePassword: mustChange,
-        status: found.status === "invited" ? "active" : found.status,
+        ...after,
+        sessionEpoch: found.sessionEpoch + (disabling ? 1 : 0),
+      };
+      byId.set(found.id, updated);
+      return Promise.resolve({ outcome: "updated" as const, account: accountOf(updated) });
+    },
+    deleteAccount: (id) => {
+      const found = find(id);
+      if (!found) return Promise.resolve("not-found" as const);
+      if (decideAccountChange(found, null, activeAdmins()) === "last-instance-admin") {
+        return Promise.resolve("last-instance-admin" as const);
+      }
+      byId.delete(found.id);
+      for (const [tokenHash, link] of links) if (link.userId === found.id) links.delete(tokenHash);
+      return Promise.resolve("deleted" as const);
+    },
+    resetPassword: (id, { tokenHash, expiresAt }) => {
+      const found = find(id);
+      if (!found) return Promise.resolve(null);
+      for (const link of links.values()) if (link.userId === found.id) link.used = true;
+      const purpose: PasswordLinkPurpose = found.status === "invited" ? "invitation" : "reset";
+      links.set(tokenHash, { userId: found.id, purpose, expiresAt, used: false });
+      const updated: StoredAccount = {
+        ...found,
+        passwordHash: null,
+        mustChangePassword: false,
         sessionEpoch: found.sessionEpoch + 1,
       };
       byId.set(found.id, updated);
       return Promise.resolve(updated.sessionEpoch);
     },
+    setPassword: (id, passwordHash, { mustChange }) =>
+      Promise.resolve(setPassword(id, passwordHash, mustChange)),
     recordSignIn: (id, at) => {
       const found = find(id);
       if (found) byId.set(found.id, { ...found, lastSignInAt: at });
@@ -132,13 +200,15 @@ export function createMemoryLocalAccounts(seedUsers: readonly User[] = []): Memo
       links.set(tokenHash, { userId: userId.toLowerCase(), purpose, expiresAt, used: false });
       return Promise.resolve();
     },
-    usePasswordLink: (tokenHash, at) => {
+    usePasswordLink: (tokenHash, at, passwordHash) => {
       const link = links.get(tokenHash);
       if (!link || link.used || Date.parse(link.expiresAt) <= Date.parse(at)) {
         return Promise.resolve(null);
       }
+      const epoch = setPassword(link.userId, passwordHash, false);
+      if (epoch === null) return Promise.resolve(null);
       link.used = true;
-      return Promise.resolve(link.userId);
+      return Promise.resolve({ userId: link.userId, epoch });
     },
   };
 

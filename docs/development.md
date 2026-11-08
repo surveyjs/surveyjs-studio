@@ -478,6 +478,9 @@ Open <http://localhost:5173>: the **Sign in** page opens. Sign in as the first a
   (`/__dev/sign-in`), as `IDENTITY_PROVIDER=dev` stays set.
 - A database seeded before Step 4 has no seed users in `users`: delete `server/.data/` and run
   `pnpm seed:sqlite` again.
+- The seed has an instance admin of its own, Ivy Instance (`instance-admin@example.com`), on the dev sign-in page
+  (`/__dev/sign-in`) of a local directory. She and the first admin open **Users** in the account menu
+  ([Managing users](user-guide/managing-users.md)).
 - The same works with `dev:postgres` and `dev:s3`, and with `pnpm demo` (memory: the accounts are lost on restart).
 
 ### Files in S3

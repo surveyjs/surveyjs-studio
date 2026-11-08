@@ -4,6 +4,8 @@ import {
   decodeHistoryCursor,
   decodeMembersCursor,
   decodeProjectCursor,
+  decodeUsersCursor,
+  encodeUsersCursor,
   decodeResultsCursor,
   decodeSurveyCursor,
   encodeHistoryCursor,
@@ -191,6 +193,25 @@ describe("project cursors", () => {
     ["a value over 1024 characters", raw({ ...projectPayload, n: "n".repeat(1024) })],
   ])("reject %s", (_name, cursor) => {
     expectInvalid(() => decodeProjectCursor(cursor));
+  });
+});
+
+describe("user list cursors", () => {
+  const userPosition = { email: "nina@example.com", id: MARKETING };
+  const usersPayload = { v: 1, k: "users", e: "nina@example.com", i: MARKETING };
+
+  it("round-trip a position, with the email lower-cased", () => {
+    const cursor = encodeUsersCursor({ email: "Nina@Example.com", id: MARKETING });
+    expect(cursor).toBe(raw(usersPayload));
+    expect(decodeUsersCursor(cursor)).toEqual(userPosition);
+  });
+
+  it.each([
+    ["a project cursor", encodeProjectCursor({ name: "marketing", id: MARKETING })],
+    ["an email that is not a string", raw({ ...usersPayload, e: 1 })],
+    ["an email that is not lower-case", raw({ ...usersPayload, e: "Nina@example.com" })],
+  ])("reject %s", (_name, cursor) => {
+    expectInvalid(() => decodeUsersCursor(cursor));
   });
 });
 
