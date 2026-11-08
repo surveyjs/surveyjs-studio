@@ -1,0 +1,19 @@
+# SurveyJS Studio, self-hosted, with SQLite: one container, one volume.
+# Copy .env.example to .env, fill it in, then run: docker compose -f compose.sqlite.yml up -d
+# Its own project name (compose.postgres.yml has another): the two examples never share a volume.
+name: surveyjs-studio
+services:
+  app:
+    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}
+    restart: unless-stopped
+    ports:
+      - "${SURVEYJS_STUDIO_PORT:-8080}:8080"
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env (the address people open, e.g. https://surveys.example.com)}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env (the first administrator)}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (the first administrator's one-time password)}
+    volumes:
+      - surveyjs-studio-data:/data
+
+volumes:
+  surveyjs-studio-data:

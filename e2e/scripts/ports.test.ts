@@ -91,6 +91,7 @@ describe("the ports of each configuration", () => {
     expect(functionalPorts({ image: false, azurite: true })).toEqual([3000, 5173]);
     expect(functionalPorts({ image: true, azurite: true })).toEqual([5173]);
     expect(functionalPorts({ image: false, azurite: false, sql: true })).toEqual([3000, 5173]);
+    expect(functionalPorts({ image: true, azurite: false, sql: true })).toEqual([5173]);
     expect(visualPorts).toEqual([3002, 5175]);
   });
 

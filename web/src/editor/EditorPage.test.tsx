@@ -96,7 +96,11 @@ describe("the editor page", () => {
   });
 
   it("adds the Embed tabs only where /config offers them (the surveyjs-site shell, D21)", async () => {
-    await openEditor();
+    await openEditor(sampleSurvey, {
+      ...appConfig,
+      shell: "surveyjs-site",
+      features: { embed: true, apiDocs: true, apiTokens: true },
+    });
     expect(editor.props!.embed).toBe(true);
   });
 

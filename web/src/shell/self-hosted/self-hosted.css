@@ -186,3 +186,16 @@ body:has(.sh-app) {
 .sh-app .sh-account__link:hover {
   text-decoration: underline;
 }
+
+/* Text for screen readers only. */
+.sh-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

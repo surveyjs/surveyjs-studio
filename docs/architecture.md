@@ -1346,8 +1346,10 @@ TanStack Query, `staleTime: Infinity`, no refetch on focus), then builds one For
 - **The model** (`run/RunSurvey.tsx`) is built once per mount: `new Model(forRunPage(definition, cookieName))`
   (`withServerFileStorage`, without the old service's `surveyId`, `surveyPostId` and `clientId`, which would make
   the library load from or post to `api.surveyjs.io`, and with the cookie name below),
-  `applyTheme(theme)` when the theme has keys, `focusFirstQuestionAutomatic = false`, `showBrandInfo = true`
-  (the footer block is the library's), `locale` from the URL, `setValue` for each prefilled answer, `onComplete`
+  `applyTheme(theme)` when the theme has keys, `focusFirstQuestionAutomatic = false`, `showBrandInfo` (the
+  footer block is the library's, with its logo from `surveyjs.io`; the `self-hosted` shell instead adds the same
+  block, `run/BrandInfo.tsx`, to the `contentBottom` layout container with the logo from the app, and none with
+  `BRANDING=off`), `locale` from the URL, `setValue` for each prefilled answer, `onComplete`
   and `onUploadFiles`.
 - **One response per respondent.** The limit is on when the returned definition has a non-empty `cookieName`.
   Then the page keeps one id for the browser (`my-surveys.client-id` in local storage; without storage, an id for

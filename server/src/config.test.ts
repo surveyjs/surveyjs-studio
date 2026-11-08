@@ -515,11 +515,29 @@ describe("loadConfig", () => {
         "S3_ENDPOINT: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
       [{ ...s3, S3_FORCE_PATH_STYLE: "yes" }, "S3_FORCE_PATH_STYLE"],
+      [{ ...s3, S3_ALLOW_HTTP: "yes" }, "S3_ALLOW_HTTP"],
+      [
+        { ...s3, S3_ENDPOINT: "http://s3:9000", S3_ALLOW_HTTP: "false" },
+        "S3_ENDPOINT: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+      ],
       [{ ...sqlite, FILE_STORE: "azure" }, "FILE_STORE"],
     ])("refuses %j", (env, line) => {
       const message = messageOf(() => loadConfig(env));
       expect(message).toContain(line);
       expect(message).not.toContain(S3_SECRET);
+    });
+
+    it("refuses plain http to another host without S3_ALLOW_HTTP, accepts it with true", () => {
+      const env = { ...s3, S3_ENDPOINT: "http://s3:9000" };
+      expect(messageOf(() => loadConfig(env))).toContain(
+        "S3_ENDPOINT: must be https unless its host is localhost, 127.0.0.1 or [::1]",
+      );
+      expect(loadConfig({ ...env, S3_ALLOW_HTTP: "true" }).files).toMatchObject({
+        endpoint: "http://s3:9000",
+      });
+      expect(
+        loadConfig({ ...s3, S3_ENDPOINT: "https://s3.example.net", S3_ALLOW_HTTP: "true" }).files,
+      ).toMatchObject({ endpoint: "https://s3.example.net" });
     });
 
     it("accepts a plain-http endpoint on this machine (the local S3 server)", () => {

@@ -20,7 +20,12 @@ import { loadContract } from "./contract.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
-import { REDACTED_LOG_PATHS, loggableError, serializeRequest } from "./logging.js";
+import {
+  REDACTED_LOG_PATHS,
+  loggableError,
+  publicUrlWarning,
+  serializeRequest,
+} from "./logging.js";
 import { createProjectHandlers } from "./projects/handlers.js";
 import type { ProviderSet } from "./providers/index.js";
 import { createReadiness } from "./readiness.js";
@@ -178,6 +183,10 @@ export async function buildApp(
 
   const identity = options.identity ?? (await createIdentityProvider(config));
   if (identity.routes) await app.register(identity.routes);
+
+  // Before the setup link (logged by the bootstrap below), so the admin reads it first.
+  const publicUrl = publicUrlWarning(config);
+  if (publicUrl !== null) app.log.warn(publicUrl);
 
   // USER_DIRECTORY=local: the first admin, the per-request session check and the sign-in back-off.
   const accounts = providers.accounts;

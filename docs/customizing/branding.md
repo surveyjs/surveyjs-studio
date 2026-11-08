@@ -104,19 +104,21 @@ The editor, the results dashboard and the PDF export are commercial SurveyJS com
 `SURVEYJS_LICENSE_KEY`. With a key, users see no licence banner; without one, the components show the SurveyJS banner
 about a missing licence and stay usable.
 
-- **The free official image** comes with a SurveyJS key (shipped in the image, or obtained from surveyjs.io) that is
-  meant to be used with "Powered by SurveyJS" shown. Keep `BRANDING=on`, the default.
+- **The free official image** comes with a SurveyJS key of its own (`SURVEYJS_IMAGE_LICENSE_KEY`) that is meant to be
+  used with "Powered by SurveyJS" shown. The app uses it when `SURVEYJS_LICENSE_KEY` is unset. Keep `BRANDING=on`, the
+  default.
 - **With your own SurveyJS licence**, set it in `SURVEYJS_LICENSE_KEY` and switch the mark off with `BRANDING=off`, to
   white-label the instance.
 
-`BRANDING=off` without a `SURVEYJS_LICENSE_KEY` stops the server at start-up:
+`BRANDING=off` stops the server at start-up unless `SURVEYJS_LICENSE_KEY` is set to a key other than the image's:
 
 ```text
 Invalid configuration:
-  - BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)
+  - BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key
 ```
 
-My Surveys does not tell one kind of key from another: what a key allows is checked by the SurveyJS libraries. The key is
+This rule only asks for a key of your own; it does not read keys. What a key allows is checked by the SurveyJS
+libraries, and that check is the real one: anyone can set an environment variable. The key is
 public by nature, like any licence key in a web page: `/config` hands it to the browser.
 
 ## What the shell offers

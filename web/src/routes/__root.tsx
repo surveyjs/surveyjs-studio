@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import {
   Link,
   Outlet,
@@ -7,7 +7,10 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { configQueryOptions } from "../api/config";
+import { currentUserQueryOptions } from "../api/session";
 import { AnonymousShell } from "../shell/PlainShell";
+import { PrivateShell } from "../shell/PrivateShell";
+import { SELF_HOSTED_SHELL, renderAnonymousPage } from "../shell/registry";
 import { ReadOnlyBanner } from "../shell/ReadOnlyBanner";
 import { PageHeader } from "../surveyList/PageHeader";
 import { applySurveyJSLicense } from "../surveyjs/license";
@@ -40,12 +43,31 @@ function RootLayout() {
 
 /**
  * An address the app does not know, surveyjs.io's old ones included (they are never redirected
- * here, R22). The root renders outside the shell, so the page has none; it uses the site's header,
- * paragraph and small primary button classes.
+ * here, R22). In the self-hosted shell the page sits in its frame (the signed-in shell for a user,
+ * else the frame of a visitor who is not signed in); elsewhere the root renders outside the shell,
+ * so the page has none and uses the site's header, paragraph and small primary button classes.
  */
 function PageNotFound() {
+  const config = Route.useLoaderData();
+  const framed = config.shell === SELF_HOSTED_SHELL;
+  // Only the self-hosted shell needs to know who is asking; the others never call /me here.
+  const me = useQuery({ ...currentUserQueryOptions, enabled: framed, retry: false });
+  const content = <NotFoundContent main={!framed} />;
+  if (!framed) return content;
+  if (me.isPending) return null;
+  return me.data ? (
+    <PrivateShell config={config} user={me.data}>
+      {content}
+    </PrivateShell>
+  ) : (
+    renderAnonymousPage(config, content)
+  );
+}
+
+function NotFoundContent({ main }: { main: boolean }) {
+  const Wrapper = main ? "main" : "div";
   return (
-    <main>
+    <Wrapper>
       <PageHeader title="Page not found" />
       <p className="v2-class---paragraph">This page doesn't exist or has moved.</p>
       <Link
@@ -56,7 +78,7 @@ function PageNotFound() {
           Go to My Surveys
         </span>
       </Link>
-    </main>
+    </Wrapper>
   );
 }
 

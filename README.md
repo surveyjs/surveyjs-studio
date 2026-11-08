@@ -90,12 +90,25 @@ directory, the sign-in methods and the look ([idea.md §3.0](idea.md#30-deployme
 
 After that, the hosted-migration and self-hosted tracks run at the same time ([After Phase 1](plan.md#after-phase-1)).
 
+## Run it
+
+The self-hosted image (mode 2b) runs with one command, with a built-in database on the volume `surveyjs-studio`:
+
+```sh
+docker run -d --name surveyjs-studio -p 8080:8080 -v surveyjs-studio:/data <image>
+```
+
+`docker logs surveyjs-studio` shows a one-time link that creates the first administrator; then open
+<http://localhost:8080>. `<image>` is `surveyjs-studio:self-hosted` after `pnpm image:build:self-hosted`, or a release
+of the private test package `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` until the image is published.
+[Self-hosting](docs/self-hosting.md) covers the settings, an https proxy, PostgreSQL, S3, backups and upgrades.
+
 ## Quick start
 
 You need Node.js 24 (the version in [`.nvmrc`](.nvmrc)) and pnpm 12.11.2.
 
 ```sh
-nvm use            # or any other way to get Node 24.21.0; nvm-windows: nvm use 24.21.0
+nvm use            # or any other way to get Node 24.22.1; nvm-windows: nvm use 24.22.1
 corepack enable    # makes the pnpm version in package.json available
 pnpm install
 pnpm demo
@@ -149,15 +162,16 @@ prod-like, and the two runs on production data), how to start and stop each one,
 
 ## Running in production
 
-One image serves every deployment mode; its settings choose the mode. Build it with `pnpm image:build`, try it with
-`pnpm prod-like:up`, and run it behind an https reverse proxy. [Operations](docs/operations.md) has the details.
+The hosted image serves modes 1 and 4; its settings choose the mode. Build it with `pnpm image:build`, try it with
+`pnpm prod-like:up`, and run it behind an https reverse proxy. [Operations](docs/operations.md) has the details. The
+self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-hosting](docs/self-hosting.md)).
 
 | Mode      | Settings                                                                                                               | Ready                                    |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | 1.1       | `APP_EDITION=hosted`, `STORAGE_PROVIDER=azure-legacy` with the three `LEGACY_*` strings, sign-in at `auth.surveyjs.io` | Yes: from rollout step 1                 |
 | 1.2       | As 1.1, plus `ACCOUNT_WEBHOOK_SECRET`                                                                                  | Yes: from rollout step 4                 |
 | 1.3       | The hosted-migration track                                                                                             | Not yet                                  |
-| 2a, 2b, 3 | The self-hosted track                                                                                                  | Not yet                                  |
+| 2a, 2b, 3 | The self-hosted track; 2b is the self-hosted image ([Self-hosting](docs/self-hosting.md))                              | 2b built (a test package); 2a, 3 not yet |
 | 4         | In memory or on the local replica, with the dev sign-in or the mock OIDC server                                        | Yes ([Running the app](docs/running.md)) |
 
 - [Configuration by deployment mode](docs/operations.md#configuration-by-deployment-mode): every setting of each mode.
@@ -206,6 +220,10 @@ Run from the repository root.
 | `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                           |
 | `pnpm dev:prod-data`                                             | The app on the **real** surveyjs.io stores, signing in through a local the site's sign-in service; settings in `server/.env` |
 | `pnpm image:build`                                               | Builds the production image `surveyjs-studio:local` (needs Docker)                                                           |
+| `pnpm image:build:self-hosted`                                   | Builds the self-hosted image `surveyjs-studio:self-hosted` ([Self-hosting](docs/self-hosting.md))                            |
+| `pnpm image:checks`                                              | Checks a self-hosted image as an admin uses it: `--image <tag> [--previous <tag>] [--only <checks>]`                         |
+| `pnpm backup`, `pnpm restore`                                    | `surveyjs-studio backup` and `restore` in the repository (SQLite and local files)                                            |
+| `pnpm release:tags`                                              | The image tags of a release tag ref, or with `--previous <tag>` the release before it                                        |
 | `pnpm prod-like:up`                                              | The image in the mode 1 configuration on the replica and the mock OIDC server, at <http://localhost:8080>                    |
 | `pnpm prod-like:down`                                            | Stops the prod-like containers and deletes their data                                                                        |
 | `pnpm image:prod-data`                                           | The image on the **real** stores in `server/.env`, at <http://localhost:3000>                                                |
@@ -260,6 +278,7 @@ Run from the repository root.
 - [Testing](docs/testing.md): the test seams and how to run each suite. [Visual parity](docs/testing.md#visual-parity) compares the app with surveyjs.io, and [ADR 0020](docs/adr/0020-visual-parity-baselines.md) records why.
 - [Architecture decision records](docs/adr/README.md).
 - [Legacy data layout](docs/architecture/legacy-data-layout.md): how surveyjs.io stores My Surveys data today.
+- [Self-hosting](docs/self-hosting.md): running the free Docker image (mode 2b): settings, an https proxy, PostgreSQL, S3, backups, upgrades.
 - [Operations](docs/operations.md): deployment, monitoring, read-only mode, the configuration by deployment mode, accounts, the erase and reconcile commands, the webhook secret, the header policy, and the rollout and rollback runbook.
 - Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
 - [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14.

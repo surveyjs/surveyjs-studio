@@ -52,12 +52,27 @@ describe("branding settings", () => {
     expect(load({ BRAND_LOGO_URL: "/brand/logo.png" }).branding.logoUrl).toBe("/brand/logo.png");
   });
 
-  it("switches the Powered by mark off only with a licence key", () => {
+  it.each(["/\\evil.example/logo.png", "/\\\\evil.example"])(
+    "refuses a backslash in a site path (%s): browsers read it as a slash",
+    (logo) => {
+      expect(messageOf(() => load({ BRAND_LOGO_URL: logo }))).toContain(
+        "  - BRAND_LOGO_URL: must be an https URL or a path on this site (/...)",
+      );
+    },
+  );
+
+  it.each(["/\t/evil.example", "/\n/evil.example", "/ /logo.png", "/\x7f/logo.png"])(
+    "refuses whitespace and control characters in a site path (%j): URL parsers strip them",
+    (logo) => {
+      expect(messageOf(() => load({ BRAND_LOGO_URL: logo }))).toContain(
+        "  - BRAND_LOGO_URL: must be an https URL or a path on this site (/...)",
+      );
+    },
+  );
+
+  it("switches the Powered by mark off with a licence key of your own", () => {
     expect(load({ BRANDING: "off", SURVEYJS_LICENSE_KEY: "own-key" }).branding.poweredBy).toBe(
       false,
-    );
-    expect(messageOf(() => load({ BRANDING: "off" }))).toContain(
-      "  - BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)",
     );
   });
 
@@ -81,6 +96,63 @@ describe("branding settings", () => {
   });
 });
 
+describe("the image's licence key", () => {
+  const RULE =
+    "BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key";
+
+  it("uses the image's key when SURVEYJS_LICENSE_KEY is unset, with the mark on", () => {
+    const config = load({ SURVEYJS_IMAGE_LICENSE_KEY: " image-key " });
+    expect(config.surveyjsLicenseKey).toBe("image-key");
+    expect(config.branding.poweredBy).toBe(true);
+  });
+
+  it("prefers SURVEYJS_LICENSE_KEY when both are set", () => {
+    const config = load({
+      SURVEYJS_LICENSE_KEY: " own-key ",
+      SURVEYJS_IMAGE_LICENSE_KEY: "image-key",
+    });
+    expect(config.surveyjsLicenseKey).toBe("own-key");
+  });
+
+  it("has no key when neither is set", () => {
+    expect(load({}).surveyjsLicenseKey).toBeNull();
+  });
+
+  it.each([
+    [{ SURVEYJS_LICENSE_KEY: "image-key", SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{ SURVEYJS_LICENSE_KEY: " image-key ", SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{ SURVEYJS_IMAGE_LICENSE_KEY: "image-key" }],
+    [{}],
+  ])("refuses BRANDING=off with %j", (keys) => {
+    const message = messageOf(() => load({ BRANDING: "off", ...keys }));
+    expect(message).toContain(`  - ${RULE}`);
+    expect(message).not.toContain("image-key");
+    expect(message).not.toContain("own-key");
+  });
+
+  it("starts with BRANDING=off and a key of your own beside the image's", () => {
+    const config = load({
+      BRANDING: "off",
+      SURVEYJS_LICENSE_KEY: "own-key",
+      SURVEYJS_IMAGE_LICENSE_KEY: "image-key",
+    });
+    expect(config.branding.poweredBy).toBe(false);
+    expect(config.surveyjsLicenseKey).toBe("own-key");
+  });
+
+  it("never puts a key in a ConfigError", () => {
+    const message = messageOf(() =>
+      load({
+        BRANDING: "off",
+        SURVEYJS_LICENSE_KEY: "own-key",
+        SURVEYJS_IMAGE_LICENSE_KEY: "own-key",
+        BRAND_LOGO_URL: "http://x.example",
+      }),
+    );
+    expect(message).not.toContain("own-key");
+  });
+});
+
 describe("features by shell", () => {
   it("shows the Embed tab, the API docs and API tokens in the surveyjs-site shell", () => {
     expect(load({ NODE_ENV: "test", API_DOCS: "true" }).features).toEqual({
@@ -100,6 +172,21 @@ describe("features by shell", () => {
     expect(messageOf(() => load({ APP_SHELL: "self-hosted", API_DOCS: "true" }))).toContain(
       "  - API_DOCS: true requires APP_SHELL=surveyjs-site (the API docs are shown only there)",
     );
+  });
+
+  it("honours API_DOCS=true in production in the surveyjs-site shell", () => {
+    const config = loadConfig({
+      NODE_ENV: "production",
+      APP_SHELL: "surveyjs-site",
+      API_DOCS: "true",
+      PUBLIC_BASE_URL: "https://a.example",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
+      OIDC_ISSUER_URL: "https://auth.example.com",
+      OIDC_CLIENT_ID: "client-id",
+      OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
+    });
+    expect(config.apiDocs).toBe(true);
+    expect(config.features.apiDocs).toBe(true);
   });
 
   it("keeps the API docs off where API_DOCS keeps them off", () => {

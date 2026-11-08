@@ -80,6 +80,31 @@ export function storageWarning(config: AppConfig): string | null {
 }
 
 /**
+ * The start-up warning of an S3 endpoint that is plain http to another machine (allowed only by
+ * S3_ALLOW_HTTP=true). null otherwise.
+ */
+export function s3EndpointWarning(config: AppConfig): string | null {
+  if (config.files?.kind !== "s3" || config.files.endpoint === null) return null;
+  if (!URL.canParse(config.files.endpoint)) return null;
+  const url = new URL(config.files.endpoint);
+  if (url.protocol !== "http:") return null;
+  if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return null;
+  return "S3_ENDPOINT is plain http (S3_ALLOW_HTTP=true): keep the S3 server on a private network";
+}
+
+/**
+ * The start-up warning of a production server whose PUBLIC_BASE_URL names this machine: the
+ * sign-in and set-password links, the sign-out redirect and the addresses of uploaded files use it.
+ * null otherwise.
+ */
+export function publicUrlWarning(config: AppConfig): string | null {
+  if (config.nodeEnv !== "production") return null;
+  const host = new URL(config.publicBaseUrl).hostname;
+  if (host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]") return null;
+  return `PUBLIC_BASE_URL is ${config.publicBaseUrl}: links, sign-out and the addresses of uploaded files use it; set it to the address people open before anyone uploads`;
+}
+
+/**
  * The one `starting` line: which providers and settings this process runs with. Fixed keys, each a
  * setting's name or mode, never a connection string, URL with credentials, secret or token.
  */

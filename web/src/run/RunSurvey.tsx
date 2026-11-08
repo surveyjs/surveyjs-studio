@@ -3,6 +3,7 @@ import { Model, type ITheme } from "survey-core";
 import "survey-core/survey-core.css";
 import { Survey } from "survey-react-ui";
 import { submitResponse, uploadResponseFile } from "../api/public";
+import { BUNDLED_BRAND_INFO } from "./BrandInfo";
 import type { ClientIds } from "./clientId";
 import { completedBeforeCookie, runCookieName } from "./cookie";
 import { forRunPage } from "./definition";
@@ -21,9 +22,26 @@ export interface RunSurveyProps {
   readonly clientIds: ClientIds;
   /** The configured limit per respondent file (`limits.maxFileBytes`). */
   readonly maxFileBytes: number;
+  /** The brand block under the survey. */
+  readonly brandInfo: RunBrandInfo;
 }
 
-function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: RunSurveyProps) {
+/**
+ * The brand block under the survey: `library` the Form Library's own (`showBrandInfo`, its logo from
+ * surveyjs.io, as surveyjs.io's run page), `bundled` the same block with the logo from the app
+ * (BrandInfo.tsx: the self-hosted shell), `none` without one (BRANDING=off).
+ */
+export type RunBrandInfo = "library" | "bundled" | "none";
+
+function createModel({
+  surveyId,
+  data,
+  kind,
+  search,
+  clientIds,
+  maxFileBytes,
+  brandInfo,
+}: RunSurveyProps) {
   const { survey, limitCookie } = data;
   // The library writes and reads its cookie under this name, a token without attributes.
   const cookieName = limitCookie === null ? null : runCookieName(limitCookie, surveyId);
@@ -34,9 +52,19 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
   }
   const model = new Model(forRunPage(survey.definition, cookieName));
   if (Object.keys(survey.theme).length > 0) model.applyTheme(survey.theme as ITheme);
-  // As surveyjs.io's run page: no jump to the first question, and the library's brand footer.
+  // As surveyjs.io's run page: no jump to the first question. The library's brand block shows only
+  // for brandInfo "library"; "bundled" adds the app's own block below.
   model.focusFirstQuestionAutomatic = false;
-  model.showBrandInfo = true;
+  model.showBrandInfo = brandInfo === "library";
+  if (brandInfo === "bundled") {
+    // Last in the container, after the navigation buttons, as the library's block is.
+    model.addLayoutElement({
+      id: BUNDLED_BRAND_INFO,
+      container: "contentBottom",
+      component: BUNDLED_BRAND_INFO,
+      index: Number.MAX_SAFE_INTEGER,
+    });
+  }
   const locale = localeOf(search);
   if (locale !== undefined) model.locale = locale;
   for (const [name, value] of prefillValues(search)) model.setValue(name, value);
@@ -62,7 +90,7 @@ function createModel({ surveyId, data, kind, search, clientIds, maxFileBytes }: 
  * library's translations when the URL asks for a language other than English.
  */
 export function RunSurvey(props: RunSurveyProps) {
-  const { surveyId, data, kind, search, clientIds, maxFileBytes } = props;
+  const { surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo } = props;
   const [model, setModel] = useState<Model | null>(null);
 
   useEffect(() => {
@@ -70,7 +98,7 @@ export function RunSurvey(props: RunSurveyProps) {
     let closed = false;
     const build = () => {
       if (closed) return;
-      created = createModel({ surveyId, data, kind, search, clientIds, maxFileBytes });
+      created = createModel({ surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo });
       setModel(created);
     };
     if (needsLocales(localeOf(search))) {
@@ -86,7 +114,7 @@ export function RunSurvey(props: RunSurveyProps) {
       closed = true;
       created?.dispose();
     };
-  }, [surveyId, data, kind, search, clientIds, maxFileBytes]);
+  }, [surveyId, data, kind, search, clientIds, maxFileBytes, brandInfo]);
 
   if (model === null) return <p role="status">Loading the survey…</p>;
   return <Survey model={model} />;

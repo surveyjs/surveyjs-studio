@@ -169,6 +169,15 @@ describe("validator (real contract, smoke)", () => {
         maxDocumentBytes: 1,
       },
       readOnly: false,
+      branding: {
+        name: "My Surveys",
+        logoUrl: null,
+        accentColor: "#19b394",
+        termsUrl: null,
+        privacyUrl: null,
+        poweredBy: true,
+      },
+      features: { embed: true, apiDocs: true, apiTokens: true },
     };
     expect(await v.check("GET", "/config", respond(200, config, JSON_TYPE))).toEqual([]);
     const bad = respond(200, { ...config, edition: "x" }, JSON_TYPE);

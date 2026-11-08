@@ -277,6 +277,8 @@ const envSchema = z.object({
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
   AUTH_METHODS: authMethods.default(["surveyjs"]),
   SURVEYJS_LICENSE_KEY: z.string().optional(),
+  // The key built into the official image (ADR 0027); the used key is SURVEYJS_LICENSE_KEY, else this.
+  SURVEYJS_IMAGE_LICENSE_KEY: z.string().optional(),
   // Checked in brandingProblems.
   BRAND_NAME: z.string().optional(),
   BRAND_LOGO_URL: z.string().optional(),
@@ -297,6 +299,7 @@ const envSchema = z.object({
   S3_FORCE_PATH_STYLE: z
     .enum(["true", "false"], { error: "must be true or false" })
     .default("false"),
+  S3_ALLOW_HTTP: z.enum(["true", "false"], { error: "must be true or false" }).default("false"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
@@ -312,6 +315,13 @@ const envSchema = z.object({
   IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
   SESSION_SECRET: z.string().optional(),
+  SESSION_SECRET_FILE: z
+    .string()
+    .optional()
+    .refine(
+      (v) => v === undefined || v.trim() === "" || isAbsolute(v.trim()),
+      "must be an absolute path",
+    ),
   SESSION_MAX_AGE_SECONDS: positiveInt.default(43200),
   OIDC_ISSUER_URL: httpUrl.optional(),
   OIDC_CLIENT_ID: z.string().optional(),
@@ -462,7 +472,6 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
-/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
 /** `API_DOCS` (default on outside production), and only in the surveyjs-site shell (D21). */
 function apiDocsOf(e: {
   NODE_ENV: string;
@@ -488,8 +497,15 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
     problems.push("BRAND_NAME: must be at most 80 characters");
   }
   const logo = env.BRAND_LOGO_URL;
-  // A path of this site, or https: what the pages' CSP lets an image load from.
-  const sitePath = logo !== undefined && logo.startsWith("/") && !logo.startsWith("//");
+  // A path of this site, or https: what the pages' CSP lets an image load from. A backslash is
+  // refused: browsers read "/\host" as "//host", another site. So is any whitespace or control
+  // character: URL parsers strip a tab or a newline, so "/<tab>/host" would read as "//host".
+  const sitePath =
+    logo !== undefined &&
+    logo.startsWith("/") &&
+    !logo.startsWith("//") &&
+    // eslint-disable-next-line no-control-regex -- the control characters are the point
+    !/[\\\x00-\x20\x7f]/.test(logo);
   if (logo !== undefined && !sitePath && !isUrl(logo, ["https:"])) {
     problems.push("BRAND_LOGO_URL: must be an https URL or a path on this site (/...)");
   }
@@ -503,9 +519,13 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
       problems.push(`${variable}: must be an http(s) URL`);
     }
   }
-  // The libraries decide what a key allows; the app asks for one before it hides the mark.
-  if (env.BRANDING === "off" && !env.SURVEYJS_LICENSE_KEY?.trim()) {
-    problems.push("BRANDING: off requires SURVEYJS_LICENSE_KEY (your own SurveyJS licence key)");
+  // The libraries decide what a key allows; the app asks for the admin's own key before it hides
+  // the mark: set, and not the image's (ADR 0027). Not a security boundary. Keys are never named.
+  const ownKey = env.SURVEYJS_LICENSE_KEY?.trim();
+  if (env.BRANDING === "off" && (!ownKey || ownKey === env.SURVEYJS_IMAGE_LICENSE_KEY?.trim())) {
+    problems.push(
+      "BRANDING: off requires SURVEYJS_LICENSE_KEY set to your own SurveyJS licence key, not the image's key",
+    );
   }
   if (env.API_DOCS === "true" && (env.APP_SHELL ?? SITE_SHELL) !== SITE_SHELL) {
     problems.push(
@@ -515,6 +535,7 @@ function brandingProblems(env: Record<string, string | undefined>): string[] {
   return problems;
 }
 
+/** ADMIN_EMAIL and ADMIN_PASSWORD. Never echoes the password. */
 function bootstrapProblems(env: Record<string, string | undefined>): string[] {
   const problems: string[] = [];
   const { ADMIN_EMAIL: email, ADMIN_PASSWORD: password } = env;
@@ -575,9 +596,11 @@ function fileProblems(env: Record<string, string | undefined>): string[] {
   if (env.S3_SECRET_ACCESS_KEY !== undefined && env.S3_ACCESS_KEY_ID === undefined) {
     problems.push(`S3_ACCESS_KEY_ID: required with S3_SECRET_ACCESS_KEY ${both}`);
   }
-  // Plain http only to a server on this machine (the local S3 server); never in transit.
+  // Plain http only to a server on this machine (the local S3 server), or with S3_ALLOW_HTTP=true
+  // (an S3 server on a private network, such as the Compose example).
   const endpoint = env.S3_ENDPOINT;
   if (
+    env.S3_ALLOW_HTTP !== "true" &&
     endpoint !== undefined &&
     URL.canParse(endpoint) &&
     new URL(endpoint).protocol === "http:" &&
@@ -708,7 +731,8 @@ export function loadConfig(
     edition: e.APP_EDITION,
     shell: e.APP_SHELL,
     authMethods: Object.freeze([...e.AUTH_METHODS]),
-    surveyjsLicenseKey: e.SURVEYJS_LICENSE_KEY ?? null,
+    surveyjsLicenseKey:
+      e.SURVEYJS_LICENSE_KEY?.trim() || e.SURVEYJS_IMAGE_LICENSE_KEY?.trim() || null,
     branding: Object.freeze({
       name: e.BRAND_NAME?.trim() || "My Surveys",
       logoUrl: e.BRAND_LOGO_URL ?? null,

@@ -1,6 +1,6 @@
 import { createLazyFileRoute, getRouteApi } from "@tanstack/react-router";
 import { RunPage } from "../../run/RunPage";
-import { renderRunFooter } from "../../shell/registry";
+import { renderRunFooter, runBrandInfo } from "../../shell/registry";
 
 export const Route = createLazyFileRoute("/s/$surveyId")({
   component: Run,
@@ -14,7 +14,12 @@ function Run() {
   // Another survey is another page: a new read and a new survey model.
   return (
     <>
-      <RunPage key={surveyId} surveyId={surveyId} search={Route.useSearch()} />
+      <RunPage
+        key={surveyId}
+        surveyId={surveyId}
+        search={Route.useSearch()}
+        brandInfo={runBrandInfo(config)}
+      />
       {renderRunFooter(config)}
     </>
   );

@@ -2,9 +2,10 @@
 
 For the people who run My Surveys: the SurveyJS team and the surveyjs.io site team. It covers the image and how to run
 it, monitoring, read-only mode, the configuration of each deployment mode, the settings for accounts, the two commands
-that erase an account's data, the webhook secret, the header policy, and the rollout and rollback runbook. Every
-variable, with its values and default, is in [Development](development.md#environment-variables-server); how to run
-each mode on your own machine is in [Running the app](running.md).
+that erase an account's data, the webhook secret, the header policy, the rollout and rollback runbook, and the release
+of the self-hosted image. Every variable, with its values and default, is in
+[Development](development.md#environment-variables-server); how to run each mode on your own machine is in
+[Running the app](running.md).
 
 Commands are for Git Bash or any POSIX shell, from the repository root, with Node.js 24. Nothing here depends on a
 particular host: "the host" is the machine that runs the container, and "the reverse proxy" is whatever terminates
@@ -12,10 +13,20 @@ https in front of it.
 
 ## Deployment
 
-My Surveys ships as one Docker image: the server, which also serves the built web app. Build it from the repository
+My Surveys ships as a Docker image: the server, which also serves the built web app. Build it from the repository
 root with `pnpm image:build` (`docker build -t surveyjs-studio:local .`). Try it locally with `pnpm prod-like:up`
-([prod-like mode](development.md#prod-like-mode)). The same image serves every deployment mode: only its settings
-differ ([below](#configuration-by-deployment-mode)).
+([prod-like mode](development.md#prod-like-mode)). The same image serves modes 1 and 4: only its settings differ
+([below](#configuration-by-deployment-mode)).
+
+The `Dockerfile` has two targets, built from the same stages ([ADR 0028](adr/0028-the-self-hosted-image.md)):
+
+| Target        | Build                                 | What it is                                                               |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------ |
+| `runtime`     | `docker build .` (the last stage)     | The hosted image: port 3000, no defaults; this section describes it      |
+| `self-hosted` | `docker build --target self-hosted .` | The free image (mode 2b): port 8080, SQLite on `/data`, password sign-in |
+
+The self-hosted image is for self-hosting admins: [Self-hosting](self-hosting.md). It is released from `v*` tags
+([below](#releasing-the-self-hosted-image)).
 
 | Item     | Value                                                                                                                                            |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -100,6 +111,45 @@ firewall; then `deploy/hetzner/setup.sh` installs Docker and Caddy for https and
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
 (`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
 `docker run --rm --entrypoint sh surveyjs-studio:<tag> -c 'find /app -name "*.env*"'`.
+
+## Releasing the self-hosted image
+
+A release is a git tag `vX.Y.Z` on a `master` commit whose CI passed (`vX.Y.Z-rc.1` and the like for a pre-release):
+
+```sh
+git tag v1.2.3 <commit> && git push origin v1.2.3
+```
+
+The push starts `.github/workflows/release.yml`:
+
+1. **`tags`**: the image tags (`scripts/release-tags`): `v1.2.3`, `v1.2` and `latest`; a pre-release gets only its own
+   tag. Any other `v*` tag fails the run here. It also finds the previous release: the highest earlier release that has an image in `RELEASE_IMAGE`.
+2. **`checks`**: `.github/workflows/self-hosted-image.yml`, as in CI: the amd64 image, the image checks (with the upgrade
+   from the previous release, pulled from `RELEASE_IMAGE`) and the e2e suites on the image.
+3. **`publish`**: builds linux/amd64 and linux/arm64 with an SBOM and provenance, and pushes every tag to
+   `RELEASE_IMAGE`. Then the arm64 image must answer `/healthz` within 90 s under QEMU, and the amd64 image must pass a
+   vulnerability scan (Grype: no critical vulnerability that has a fix). The scan report and the SBOM are the run's
+   artifacts; the tags and the digest are in its summary.
+
+**Where it goes.** `RELEASE_IMAGE` (the workflow's `env`) is `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test`, a
+private test package, until Docker Hub access and the shipped licence key exist
+([ADR 0028](adr/0028-the-self-hosted-image.md)).
+
+**The licence key.** The repository secret `SURVEYJS_IMAGE_LICENSE_KEY` becomes the image's
+`SURVEYJS_IMAGE_LICENSE_KEY`. The build reads it from the environment by name; it is never on a command line. While the
+secret is unset the image has no key, and the SurveyJS components show their licence notice.
+
+**A bad release.** If the smoke run or the scan fails, the tags are already pushed and the run is red. Delete the
+release by hand: on GitHub, open the package, find the version that carries the tags, and delete it. `latest` and
+`vX.Y` then name nothing until the next release; to point them back, run
+`docker buildx imagetools create --tag <RELEASE_IMAGE>:latest <RELEASE_IMAGE>:<previous tag>` (the same for `vX.Y`).
+Fix the problem and release a new patch version; never push a tag `vX.Y.Z` twice. This is safe while the package is a
+private test package with no users (ADR 0028).
+
+A release whose `checks` job fails pushes nothing, and a deleted release has no image either. Both leave a git tag
+without an image. The next release skips it: its `tags` job takes the highest earlier release that
+`docker buildx imagetools inspect` finds in `RELEASE_IMAGE`, and the upgrade check is skipped when none is found.
+When `checks` fails before the push, fix the problem and push a new version tag; never push the same tag again.
 
 ## Monitoring
 
@@ -291,7 +341,8 @@ identity has no local account to sign in to until Step 8 links them):
 The track adds the SQL storage providers, the "Powered by SurveyJS" shell and the settings they need. Its Step 1 added
 `STORAGE_PROVIDER=sqlite|postgres` with `SQLITE_PATH` and `DATABASE_URL` ([Development](development.md#sqlite-and-postgresql-modes)),
 and its Step 4 the local accounts, so with `NODE_ENV=production` they run with `USER_DIRECTORY=local` (and are
-refused with `memory`, which would lose the users). The image comes with the track's Step 7. Mode 1.3 (the
+refused with `memory`, which would lose the users). The image is the `self-hosted` target
+([Self-hosting](self-hosting.md)). Mode 1.3 (the
 hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md)); its users come from sign-in
 ([ADR 0022](adr/0022-users-from-sign-in.md)).
 

@@ -52,7 +52,7 @@ bytes are in a `ByteStore` (`server/src/bytes/`) under the key `{survey id}/{fil
   them (`requestChecksumCalculation` and `responseChecksumValidation` `WHEN_REQUIRED`): several S3-compatible services
   refuse the headers newer SDK versions add by default. `S3_FORCE_PATH_STYLE=true` serves services without
   virtual-host buckets. Calls give up after 3 s without a connection or 30 s without data, and readiness waits at most
-  3 s, like the database check. `S3_ENDPOINT` is https unless it is on this machine. Without keys the SDK's default
+  3 s, like the database check. `S3_ENDPOINT` is https unless it is on this machine; self-hosted Step 7 added the opt-in `S3_ALLOW_HTTP=true` for an S3 server on a private network, such as the Compose example (a start-up warning says so). Without keys the SDK's default
   credential chain is used (IAM roles, environment, profile).
 - **The app never creates or deletes a bucket.** Readiness (`files`) reports a missing or unreachable one
   (`HeadBucket`, with the error's name or HTTP status, never its message).

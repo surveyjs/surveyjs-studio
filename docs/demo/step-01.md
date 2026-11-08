@@ -9,9 +9,9 @@ shows the configuration, generated API docs, tests and CI.
 
 ## Before you start
 
-You need Git, Node.js 24.21.0 (see `.nvmrc`) and pnpm 12.11.2.
+You need Git, Node.js 24.22.1 (see `.nvmrc`) and pnpm 12.11.2.
 
-- Switch Node: `nvm use` (nvm-windows: `nvm use 24.21.0`). Check with `node -v`.
+- Switch Node: `nvm use` (nvm-windows: `nvm use 24.22.1`). Check with `node -v`.
 - pnpm: run `corepack enable` (on Windows this may need an administrator shell). If you cannot,
   either install it with `npm install -g pnpm@12.11.2`, or type `corepack pnpm` wherever this page
   says `pnpm`.

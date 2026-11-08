@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, type CSSProperties, type ReactNode } from "react";
 import { followAppLink, type ShellAppLink, type ShellBranding, type ShellProps } from "../types";
 import { accentTextColor } from "./accentText";
 import "./self-hosted.css";
@@ -63,7 +63,7 @@ export function SelfHostedFooter({
           target="_blank"
           rel="noopener noreferrer"
         >
-          Powered by SurveyJS
+          Powered by SurveyJS <span className="sh-visually-hidden">(opens in a new tab)</span>
         </a>
       )}
     </footer>
@@ -90,6 +90,11 @@ export function SelfHostedFrame({
   ownMain?: boolean;
   children: ReactNode;
 }) {
+  // A layout effect runs before the passive effects of the pages inside, so a page that sets its
+  // own title (run, public results) still wins.
+  useLayoutEffect(() => {
+    document.title = branding.name;
+  }, [branding.name]);
   const Content = ownMain ? "div" : "main";
   return (
     <div className="sh-app" style={accentStyle(branding)}>

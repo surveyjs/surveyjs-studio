@@ -1,0 +1,217 @@
+name: Release
+
+# A tag vX.Y.Z (or vX.Y.Z-pre) pushes the self-hosted image for linux/amd64 and linux/arm64 to
+# RELEASE_IMAGE: vX.Y.Z, vX.Y and latest (a pre-release pushes only its own tag). Before the push,
+# the image checks and the e2e suites run on the amd64 image (self-hosted-image.yml); after it, the
+# arm64 image must start under QEMU and the amd64 image must pass a vulnerability scan. A failure
+# after the push leaves the tags in place: delete them by hand (docs/operations.md).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # A private test package until Docker Hub access and the shipped licence key exist (ADR 0028).
+  RELEASE_IMAGE: ghcr.io/surveyjs/surveyjs-studio-selfhosted-test
+
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # packages: read finds which earlier release is in the registry (below).
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ steps.tags.outputs.version }}
+      tags: ${{ steps.tags.outputs.tags }}
+      previous-image: ${{ steps.tags.outputs.previous-image }}
+    steps:
+      # Every tag, for the previous release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # The highest earlier release that has an image: a git tag whose release failed before the
+      # push, or whose image was deleted by hand, has none and is skipped.
+      - name: The image tags and the previous release
+        id: tags
+        run: |
+          tags="$(pnpm --silent release:tags "$GITHUB_REF")"
+          previous=""
+          while IFS= read -r candidate; do
+            [ -n "$candidate" ] || continue
+            if docker buildx imagetools inspect "$RELEASE_IMAGE:$candidate" > /dev/null 2>&1; then
+              previous="$candidate"
+              break
+            fi
+            echo "No image for $candidate: skipped"
+          done < <(pnpm --silent release:tags --previous "$GITHUB_REF_NAME")
+          {
+            echo "version=$GITHUB_REF_NAME"
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+            echo "previous-image=${previous:+$RELEASE_IMAGE:$previous}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "Tags: $(echo "$tags" | paste -sd ' ')"
+            echo
+            echo "Previous release: ${previous:-none (the upgrade check is skipped)}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+  checks:
+    needs: tags
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/self-hosted-image.yml
+    with:
+      image-tag: ${{ needs.tags.outputs.version }}
+      previous-image: ${{ needs.tags.outputs.previous-image }}
+
+  # Builds both platforms with the release's licence key and pushes them. It runs a third-party
+  # scanner only after the push, on the pushed image.
+  publish:
+    needs: [tags, checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The emulator image by digest (tonistiigi/binfmt qemu-v10.2.3), not the action's moving default.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # The licence key goes in by name (--build-arg NAME reads the step's environment), never on
+      # the command line. It is empty while the secret is unset.
+      - name: Build and push linux/amd64 and linux/arm64
+        id: push
+        env:
+          SURVEYJS_IMAGE_LICENSE_KEY: ${{ secrets.SURVEYJS_IMAGE_LICENSE_KEY }}
+          VERSION: ${{ needs.tags.outputs.version }}
+          TAGS: ${{ needs.tags.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args+=(--tag "$RELEASE_IMAGE:$tag")
+          done <<< "$TAGS"
+          docker buildx build --target self-hosted --platform linux/amd64,linux/arm64 \
+            --build-arg "VERSION=$VERSION" --build-arg SURVEYJS_IMAGE_LICENSE_KEY \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --sbom=true --provenance=mode=max --metadata-file build-metadata.json \
+            "${args[@]}" --push .
+          digest="$(jq -r '."containerimage.digest"' build-metadata.json)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "Pushed $RELEASE_IMAGE@$digest as:"
+            echo
+            while IFS= read -r tag; do [ -n "$tag" ] && echo "- \`$RELEASE_IMAGE:$tag\`"; done <<< "$TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The x86 suites never run the arm64 image: it must at least start and answer /healthz.
+      - name: Smoke-run the arm64 image (QEMU)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          docker run -d --name release-smoke-arm64 --platform linux/arm64 -p 127.0.0.1:8080:8080 "$RELEASE_IMAGE@$DIGEST"
+          for _ in $(seq 1 90); do
+            if [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/healthz)" = "200" ]; then
+              echo "The arm64 image answers /healthz" >> "$GITHUB_STEP_SUMMARY"
+              docker rm -f release-smoke-arm64 > /dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the arm64 image did not answer /healthz with 200 within 90 s"
+          docker logs release-smoke-arm64 || true
+          docker rm -f release-smoke-arm64 > /dev/null || true
+          exit 1
+
+      # By the amd64 image's own digest, not the index's: the smoke run has stored the index digest
+      # for the arm64 image, and Docker will not repoint it ("cannot overwrite digest").
+      - name: Pull the pushed linux/amd64 image for the scan
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          amd64="$(docker buildx imagetools inspect "$RELEASE_IMAGE@$DIGEST" --format '{{json .Manifest}}' \
+            | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest')"
+          if [ "$(printf '%s' "$amd64" | grep -c '^sha256:')" != 1 ]; then
+            echo "::error::expected one linux/amd64 image in $RELEASE_IMAGE@$DIGEST, found: ${amd64:-none}"
+            exit 1
+          fi
+          docker pull "$RELEASE_IMAGE@$amd64"
+          docker tag "$RELEASE_IMAGE@$amd64" surveyjs-studio:release-amd64
+
+      - name: Save the SBOM
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: docker buildx imagetools inspect "$RELEASE_IMAGE@$DIGEST" --format '{{ json .SBOM }}' > sbom.json
+
+      - name: Sign out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+      # Fails on a critical vulnerability that has a fix. It runs even when the smoke run failed.
+      - name: Scan the linux/amd64 image
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: surveyjs-studio:release-amd64
+          severity-cutoff: critical
+          only-fixed: true
+          fail-build: true
+          output-format: sarif
+          output-file: grype.sarif
+
+      - name: Upload the scan report and the SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-scan-and-sbom
+          path: |
+            grype.sarif
+            sbom.json
+          if-no-files-found: ignore
+          retention-days: 90

@@ -10,9 +10,14 @@ import {
 import { appConfig, configHandler, meHandler, server, surveyListPageHandlers } from "./test/server";
 
 vi.mock("./navigation", () => ({ navigateTo: vi.fn() }));
-// jsdom does not run the Form Library or the Dashboard here.
+// jsdom does not run the Form Library or the Dashboard here. The fake shows which brand block the
+// survey gets.
 vi.mock("./run/RunSurvey", () => ({
-  RunSurvey: ({ data }: RunSurveyProps) => <p data-testid="fake-survey">{data.survey.name}</p>,
+  RunSurvey: ({ data, brandInfo }: RunSurveyProps) => (
+    <p data-testid="fake-survey" data-brand-info={String(brandInfo)}>
+      {data.survey.name}
+    </p>
+  ),
 }));
 vi.mock("./results/SummaryView", async () => {
   const { fakeResultsWidget } = await import("./test/fakeResultsWidget");
@@ -46,7 +51,9 @@ beforeEach(() => {
 /** The page shows "Powered by SurveyJS" and Terms in the shell's footer (a lazy chunk: awaited). */
 async function expectBranding() {
   const footer = await screen.findByRole("contentinfo");
-  expect(within(footer).getByRole("link", { name: "Powered by SurveyJS" })).toBeTruthy();
+  expect(
+    within(footer).getByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
+  ).toBeTruthy();
   expect(within(footer).getByRole("link", { name: "Terms" })).toBeTruthy();
 }
 
@@ -86,14 +93,26 @@ describe("the self-hosted shell", () => {
     await expectBranding();
   });
 
-  it("puts the footer under a running survey", async () => {
+  it("puts the brand block and the footer under a running survey", async () => {
     server.use(configHandler(selfHosted), publishedSurveyHandler());
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    expect(await screen.findByTestId("fake-survey")).toBeTruthy();
+    // The library's brand block with the logo from the app: the library's own is on surveyjs.io (S11).
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("bundled");
     await expectBranding();
     expect(screen.queryByRole("banner")).toBeNull();
+  });
+
+  it("has no brand block under a running survey with BRANDING=off", async () => {
+    server.use(
+      configHandler({ ...selfHosted, branding: { ...branding, poweredBy: false } }),
+      publishedSurveyHandler(),
+    );
+
+    renderApp(`/s/${samplePublishedSurvey.id}`);
+
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("none");
   });
 
   it("frames the public results page", async () => {
@@ -118,12 +137,14 @@ describe("the self-hosted shell", () => {
     expect(document.querySelectorAll("main")).toHaveLength(1);
   });
 
-  it("has no footer under a running survey in the surveyjs-site shell", async () => {
+  it("has no footer under a running survey in the surveyjs-site shell, but the library's", async () => {
     server.use(configHandler(), publishedSurveyHandler());
 
     renderApp(`/s/${samplePublishedSurvey.id}`);
 
-    expect(await screen.findByTestId("fake-survey")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Powered by SurveyJS" })).toBeNull();
+    expect((await screen.findByTestId("fake-survey")).dataset["brandInfo"]).toBe("library");
+    expect(
+      screen.queryByRole("link", { name: "Powered by SurveyJS (opens in a new tab)" }),
+    ).toBeNull();
   });
 });
