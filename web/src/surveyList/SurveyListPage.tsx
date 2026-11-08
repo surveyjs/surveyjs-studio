@@ -14,7 +14,7 @@ import { SurveyRow } from "./SurveyRow";
 import { failureMessage, useSurveyActions } from "./useSurveyActions";
 
 /**
- * The My Surveys page in the markup of surveyjs.io's `the site's page markup` (D14):
+ * The My Surveys page in the markup of the site's My Surveys page (D14):
  * the Active/Archived switch, the project drop-down, Create a Survey, and the list of the scope's
  * surveys, newest first. Like surveyjs.io, the page ends up holding the whole list, so the browser's
  * Find sees every survey: the pages after the first load one after another without a click. A page

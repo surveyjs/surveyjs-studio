@@ -38,7 +38,7 @@ export type HeaderProps = AccountMenuProps & {
 };
 
 /**
- * The site's top bar (`the site's page markup`): the bar at the top of the page, the same bar
+ * The site's top bar: the bar at the top of the page, the same bar
  * fixed to the top once the first one scrolls away, and the mobile menus.
  */
 export function Header(props: HeaderProps) {
@@ -124,7 +124,7 @@ function mobileMenuClass(opened: boolean): string {
     : "v2-class---mobile-menu";
 }
 
-/** `the site's page markup` with the mono logo, linking to the surveyjs.io home page. */
+/** The site's top-bar title markup with the mono logo, linking to the surveyjs.io home page. */
 function Title({ size }: { size?: "Small" }) {
   return (
     <div className="v2-class---top-bar__title">
@@ -140,7 +140,7 @@ function Title({ size }: { size?: "Small" }) {
   );
 }
 
-/** `the site's page markup` for a signed-in user. */
+/** The site's top-bar menu markup for a signed-in user. */
 function TopBarMenu(props: HeaderProps) {
   const { user, twinkling, onMobileMenu } = props;
   const iconClass = twinkling

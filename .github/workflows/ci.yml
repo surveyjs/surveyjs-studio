@@ -38,6 +38,12 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Example shell in the shells guide
+        run: pnpm check:example-shell
+
+      - name: Links in the docs
+        run: pnpm check:docs-links
+
       - name: Lint
         run: pnpm lint
 
@@ -127,10 +133,12 @@ jobs:
         env:
           CONFORMANCE_IMAGE: surveyjs-studio:ci
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       - name: End-to-end tests (Azurite mode, on the image)
         run: pnpm e2e:azurite
@@ -182,10 +190,12 @@ jobs:
         env:
           CONFORMANCE_IMAGE: surveyjs-studio:ci
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       # The tsx server on a new database of the PostgreSQL started above, files in a new S3 bucket.
       - name: End-to-end tests (PostgreSQL mode)
@@ -203,6 +213,59 @@ jobs:
       - name: Stop the local S3 server
         if: always()
         run: pnpm s3:down
+
+  # The conformance suite against a running server, as a port's author runs it.
+  # The commands of docs/customizing/porting.md; keep them the same.
+  conformance-base:
+    name: Conformance tests against the image (--base)
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - uses: ./.github/actions/load-image
+
+      - name: Write the reference settings and start the image
+        run: |
+          node --import tsx scripts/conformance/cli.ts reference-env --port 3000 --out ref.env
+          docker run -d --name reference --network host --env-file ref.env -e NODE_ENV=development surveyjs-studio:ci
+
+      - name: Wait for the server
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000/readyz > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "The server was not ready after 60 s" >&2
+          exit 1
+
+      - name: Conformance tests against the running image
+        run: |
+          export CONFORMANCE_WEBHOOK_SECRET="$(grep '^ACCOUNT_WEBHOOK_SECRET=' ref.env | cut -d= -f2-)"
+          pnpm test:conformance --base http://127.0.0.1:3000
+
+      - name: Save the server log
+        if: failure()
+        run: |
+          mkdir -p docker-logs
+          docker logs reference > docker-logs/reference.log 2>&1 || true
+
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docker-logs-conformance-base
+          path: docker-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop the server
+        if: always()
+        run: docker rm -f reference
 
   # The memory provider and the dev sign-in, on the image: one browser per runner.
   e2e-image:
@@ -223,12 +286,12 @@ jobs:
 
       - uses: ./.github/actions/load-image
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps "$BROWSER"
-        env:
-          BROWSER: ${{ matrix.browser }}
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: ${{ matrix.browser }}
 
       - name: End-to-end tests (on the image)
         run: pnpm e2e --project="$BROWSER"
@@ -254,10 +317,12 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # The download sometimes hangs: fail fast, so a re-run starts soon.
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm --filter @surveyjs-studio/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
 
       # The tsx server: its SQLite file is on the host (no image target).
       - name: End-to-end tests (SQLite mode)
@@ -284,10 +349,29 @@ jobs:
         with:
           name: modes
 
+  # Gitleaks over the history reachable from the checked-out commit (--log-opts=HEAD). Without --log-opts it would
+  # scan every ref the clone has, i.e. every upstream branch and tag. Keep the image reference (tag and digest) in
+  # step with scripts/secrets-scan/args.ts.
+  # Reviewed findings are listed in .gitleaksignore; the record is docs/operations/going-public.md.
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The container user differs from the runner's, so it runs as the runner's user to read the checkout.
+      - name: Scan the history for secrets
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro"             zricethezav/gitleaks:v8.24.0@sha256:2bcceac45179b3a91bff11a824d0fb952585b429e54fc928728b1d4d5c3e5176             git /repo --log-opts=HEAD --redact             --gitleaks-ignore-path=/repo/.gitleaksignore --no-banner
+
   # The one result to wait for: it fails when any job above failed, was cancelled or was skipped.
   ci:
     name: ci
-    needs: [checks, unit, image, azurite, postgres, e2e-image, e2e-modes]
+    needs: [checks, unit, image, azurite, postgres, e2e-image, e2e-modes, secrets, conformance-base]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

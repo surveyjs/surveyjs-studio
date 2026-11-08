@@ -3,6 +3,7 @@ import {
   CHECK_NAMES,
   RESOURCE_PREFIX,
   backupFolderName,
+  missingFromNotices,
   parseCheckArgs,
   redactLogLine,
   resourceName,
@@ -112,5 +113,21 @@ describe("redactLogLine", () => {
     expect(
       redactLogLine('{"msg":"Open http://localhost:8080/set-password?setup=AbC-d_9 to start"}'),
     ).toBe('{"msg":"Open http://localhost:8080/set-password?setup=<redacted> to start"}');
+  });
+});
+
+describe("notices check", () => {
+  it("is one of the checks, last", () => {
+    expect(CHECK_NAMES[CHECK_NAMES.length - 1]).toBe("notices");
+    expect(parseCheckArgs(["--image", "a:1", "--only", "notices"])).toMatchObject({
+      ok: true,
+      options: { only: ["notices"] },
+    });
+  });
+
+  it("names the packages the notice must list that it does not", () => {
+    expect(missingFromNotices("## survey-core@3.2.2\n## react@19.3.0\n")).toEqual([]);
+    expect(missingFromNotices("## survey-core@3.2.2\n")).toEqual(["react@"]);
+    expect(missingFromNotices("")).toEqual(["survey-core@", "react@"]);
   });
 });

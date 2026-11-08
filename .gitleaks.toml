@@ -1,0 +1,20 @@
+# Gitleaks configuration: the default rules plus an allowlist of well-known synthetic values.
+# .gitleaksignore holds commit-scoped fingerprints for the history scan; those never match a staged diff,
+# so the values that recur in the tree are allowlisted here by value. Only synthetic values go in this file.
+title = "surveyjs-studio"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic values published for local development and documentation"
+regexes = [
+  # Azurite storage emulator: Microsoft's published devstoreaccount1 account key.
+  '''Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==''',
+  # The Svix documentation example webhook secret, used as a test constant.
+  '''MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw''',
+  # The local demo webhook secret (base64 of "my-surveys-local-demo-webhook-key").
+  '''bXktc3VydmV5cy1sb2NhbC1kZW1vLXdlYmhvb2sta2V5''',
+  # The conformance reference webhook secret (base64 of "my-surveys-conformance-webhook-key").
+  '''whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==''',
+]

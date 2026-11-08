@@ -4,7 +4,7 @@ import { SiteButton } from "../shell/surveyjs-site/SiteButton";
 import { useRenameEditor } from "../surveyList/useRenameEditor";
 
 /**
- * The survey name in the editor's bottom bar, with its rename editor, as `the site's page markup` has it.
+ * The survey name in the editor's bottom bar, with its rename editor, as the site's editor page has it.
  * A click on the name opens the editor with the name; Enter, Save or leaving the box saves, Escape or
  * Cancel restores the name. A blank or unchanged name sends nothing. Saving closes the editor at once
  * and shows the new name; when the rename fails the old name returns and `onRenamed(false)` is
@@ -124,7 +124,7 @@ export function FooterNameEditor({
   );
 }
 
-/** The pencil of `the site's page markup`, with its clip-path id made unique. */
+/** The pencil of the site's editor page, with its clip-path id made unique. */
 function PencilIcon() {
   const clipId = useId();
   return (

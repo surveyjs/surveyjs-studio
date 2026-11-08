@@ -1,5 +1,5 @@
 /**
- * The account links of the surveyjs.io top bar's Account menu (`the site's page markup`),
+ * The account links of the surveyjs.io top bar's Account menu,
  * as absolute URLs. They are the built-in `/config.links`; `SHELL_LINKS` is merged over them.
  */
 export const DEFAULT_SHELL_LINKS: Readonly<Record<"settings" | "helpDesk" | "billing", string>> =

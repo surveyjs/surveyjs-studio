@@ -4,7 +4,7 @@ import { SiteButton } from "../shell/surveyjs-site/SiteButton";
 import styles from "./ProjectsPage.module.css";
 
 /**
- * "Add a New Member" of a project card (`the site's page markup`, admins): the button, or the email box
+ * "Add a New Member" of a project card (the site's Projects page, for admins): the button, or the email box
  * with Add and Cancel (Cancel clears the text and the card's error). Add waits for the server: success clears and closes the form, a refusal
  * keeps it open with the address (the card shows the error).
  */

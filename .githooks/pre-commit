@@ -1,0 +1,11 @@
+#!/bin/sh
+# Scan the staged changes for secrets (gitleaks, or Docker); see CONTRIBUTING.md. Bypass a false positive with
+# `git commit --no-verify`.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+# Without node or the installed dependencies (a fresh worktree, `git clean -xdf`, a GUI client with no node on
+# PATH) the scan cannot run: say so and let the commit through rather than block it confusingly.
+if ! command -v node >/dev/null 2>&1 || [ ! -d node_modules/tsx ]; then
+  echo "pre-commit: secrets scan skipped (run pnpm install; node and node_modules are needed). CI will scan."
+  exit 0
+fi
+exec node --import tsx scripts/secrets-scan/cli.ts --staged

@@ -4,7 +4,7 @@ import { iconHtml } from "../shell/surveyjs-site/icons";
 import type { MemberControls } from "./controls";
 
 /**
- * One member of a project card (`the site's page markup`, the users list): for admins the remove "x", the
+ * One member of a project card (the site's Projects page, the users list): for admins the remove "x", the
  * display name, the Admin badge of an admin member, the Pending badge of an invited email, and for admins the Make Admin or Remove Admin
  * Rights pill.
  */

@@ -136,7 +136,7 @@ Surveys with an empty ispublished: <n> of <m>
 ```
 
 The counts depend on what the replica holds. The product owner ran it on production on 2026-10-22: the same column
-type, collation and triggers, and N of N surveys with an empty flag. The theme save needs no change
+type, collation and triggers, and most surveys with an empty flag. The theme save needs no change
 ([ADR 0012](../adr/0012-editor-content-and-history.md)).
 
 **The port check.** Start `pnpm demo` in one window and run `pnpm e2e` in another. Expected: the e2e run stops at once

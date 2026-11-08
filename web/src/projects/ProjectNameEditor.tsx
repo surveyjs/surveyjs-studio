@@ -4,7 +4,7 @@ import { projectErrorText } from "./messages";
 import styles from "./ProjectsPage.module.css";
 
 /**
- * The project name editor of `the site's page markup` (a new project, or a rename): the name in a text box,
+ * The project name editor of the site's Projects page (a new project, or a rename): the name in a text box,
  * Save and Cancel. It opens focused; Enter saves. Save sends the name as typed and waits for the
  * server: success closes the editor, a refusal shows under it and the editor stays.
  */

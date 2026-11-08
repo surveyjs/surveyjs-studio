@@ -12,9 +12,9 @@ import { resolvePath, type VisualIds } from "./paths.js";
 // Both sides call this module, so a screen is opened and prepared the same way on the live site and
 // in the app. It only navigates, hovers and clicks: the live capture is read only.
 
-/** Both sides keep the cookie consent here (`the site's page markup`, `CookieBanner.tsx`). */
+/** Both sides keep the cookie consent here (the site's cookie banner and `CookieBanner.tsx`). */
 const COOKIE_KEY = "isInformedAboutCookieAndPolicies";
-/** The legacy editor starts its tour unless this is set (`the site's page markup`). The app has no tour. */
+/** The legacy editor starts its tour unless this is set (the site's editor page). The app has no tour. */
 const TOUR_KEY = "isTourRejected";
 
 const STEP_TIMEOUT = 30_000;
@@ -134,7 +134,7 @@ export async function openScreen(
       try {
         if (flags.consent) localStorage.setItem(flags.cookieKey, "true");
         localStorage.setItem(flags.tourKey, "true");
-        // The licence popups (the site's page markup) show only while these are unset; a
+        // The licence popups (the site's licence-expired popup) show only while these are unset; a
         // licensed account would otherwise get a 710x296 popup over the page.
         localStorage.setItem("expiredNotificationDateTime", "seen");
         localStorage.setItem("expiresSoonNotificationDateTime", "seen");

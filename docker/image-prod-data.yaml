@@ -3,7 +3,7 @@
 # which checks the file, reads the issuer's certificate and sets the variables used below.
 #
 # Networking: openid-client checks that the issuer's metadata names the configured issuer, so the
-# app must reach the local the site's sign-in service as https://localhost:<port>, as the browser does (the
+# app must reach the local sign-in server as https://localhost:<port>, as the browser does (the
 # development certificate is for localhost). issuer-forward owns the app's network namespace and
 # maps that port of its localhost (and any other endpoint of the env file on this machine) to the
 # same port on the host. The app answers on its port 3000, published as 127.0.0.1:3000.

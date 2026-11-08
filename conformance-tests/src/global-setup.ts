@@ -8,6 +8,11 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { TestProject } from "vitest/node";
 import { startOAuthStub, type OAuthStub } from "../../server/src/testing/oauth-stub.js";
+import {
+  REFERENCE_SETTINGS,
+  REFERENCE_WEBHOOK_SECRET,
+  referenceEnv,
+} from "./reference-settings.js";
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -53,9 +58,8 @@ const IMAGE_SESSION_SECRET = "conformance-local-only-session-secret-not-a-real-v
 // The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
 const USER_API_TOKEN = "conformance-user-api-token";
 
-// The reference server's account-deleted webhook secret: a synthetic test value (the base64 of
-// the 34-byte text `my-surveys-conformance-webhook-key`).
-const WEBHOOK_SECRET = "whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==";
+// The reference server's account-deleted webhook secret (see reference-settings.ts).
+const WEBHOOK_SECRET = REFERENCE_WEBHOOK_SECRET;
 
 // The password run's first admin (CONFORMANCE_AUTH=password): synthetic local-only test values.
 const PASSWORD_ADMIN = {
@@ -158,6 +162,13 @@ const SIGN_UP_DOMAIN = "allowed.example";
 /** The OAuth stub of `CONFORMANCE_AUTH=oauth`, started in setup(). */
 let oauthStub: OAuthStub | null = null;
 
+/** The reference settings that name the memory provider and its identity; `providerEnv` decides them per provider. */
+const PROVIDER_SETTINGS = ["STORAGE_PROVIDER", "IDENTITY_PROVIDER", "MEMORY_SEED"];
+
+function pick(settings: Readonly<Record<string, string>>, names: string[]): Record<string, string> {
+  return Object.fromEntries(names.map((name) => [name, settings[name] ?? ""]));
+}
+
 /**
  * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
  * through the mock OIDC server: the three `LEGACY_*` connection strings and the `OIDC_*` settings are
@@ -169,12 +180,15 @@ function providerEnv(): Record<string, string> {
   if (provider === "sandbox") throw new Error("CONFORMANCE_PROVIDER=sandbox starts no server");
   if (provider === "memory") {
     // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
-    return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
+    return pick(REFERENCE_SETTINGS, PROVIDER_SETTINGS);
   }
   if (provider === "sqlite" || provider === "postgres") {
     if (sqlDatabase === null) throw new Error("the SQL database is prepared in setup()");
     // Users and projects come from the memory fallback's seed until self-hosted Step 4.
-    return { IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures", ...sqlDatabase.env };
+    return {
+      ...pick(REFERENCE_SETTINGS, ["IDENTITY_PROVIDER", "MEMORY_SEED"]),
+      ...sqlDatabase.env,
+    };
   }
   const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
   const missing: string[] = [];
@@ -395,6 +409,10 @@ function readOnlyEnv(): Record<string, string> {
   return value === "true" ? { READ_ONLY: "true" } : {};
 }
 
+function omit(settings: Record<string, string>, names: string[]): Record<string, string> {
+  return Object.fromEntries(Object.entries(settings).filter(([name]) => !names.includes(name)));
+}
+
 function serverEnv(
   port: number,
   stubUrl: string | null,
@@ -405,26 +423,8 @@ function serverEnv(
   return {
     ...env,
     NODE_ENV: "test",
-    HOST: "127.0.0.1",
-    PORT: String(port),
-    LOG_LEVEL: "warn",
-    // Sign-in redirects (and the OIDC redirect_uri) point at the server under test.
-    PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
-    // The suite signs in many times from one IP; the limit itself is tested in the server tests.
-    SIGN_IN_RATE_LIMIT: "100000",
-    // The suite reaches the server from loopback; the rate-limit test sends its own X-Forwarded-For.
-    TRUST_PROXY: "127.0.0.1,::1",
-    // The suite reads public surveys many times from one IP; the limits are tested in the server tests.
-    PUBLIC_RATE_LIMIT: "300",
-    PUBLIC_FILE_RATE_LIMIT: "10000",
-    // Small, so the 413 test stays cheap (it reads the limit from /config).
-    LIMIT_MAX_DOCUMENT_BYTES: "262144",
-    // Small, so the quota tests stay cheap (they read the limit from /config).
-    LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",
-    // Small, so the 413 test stays cheap (it reads the limit from /config).
-    LIMIT_MAX_FILE_BYTES: "65536",
-    // The account-deleted webhook tests sign with the same secret.
-    ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    // The values the suite expects of its server: reference-settings.ts. The provider ones are below.
+    ...omit(referenceEnv(port), PROVIDER_SETTINGS),
     ...providerEnv(),
     ...userDirectoryEnv(stubUrl),
     ...authEnv(),

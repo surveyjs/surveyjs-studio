@@ -64,7 +64,7 @@ function loopbackEndpoints(env: Record<string, string | undefined>): Endpoint[] 
 
 /**
  * The ports the forwarder maps from the app's localhost to the host, in ascending order: the
- * issuer's (the site's sign-in service on this machine) and any other endpoint of the env file on this machine.
+ * issuer's (the sign-in server on this machine) and any other endpoint of the env file on this machine.
  */
 export function forwardedPorts(env: Record<string, string | undefined>): number[] {
   return [...new Set(loopbackEndpoints(env).map((endpoint) => endpoint.port))].sort(

@@ -5,7 +5,8 @@ it, monitoring, read-only mode, the configuration of each deployment mode, the s
 that erase an account's data, the webhook secret, the header policy, the rollout and rollback runbook, and the release
 of the self-hosted image. Every variable, with its values and default, is in
 [Development](development.md#environment-variables-server); how to run each mode on your own machine is in
-[Running the app](running.md).
+[Running the app](running.md). The secrets scan and the review before the repository goes public are in
+[Going public](operations/going-public.md).
 
 Commands are for Git Bash or any POSIX shell, from the repository root, with Node.js 24. Nothing here depends on a
 particular host: "the host" is the machine that runs the container, and "the reverse proxy" is whatever terminates
@@ -99,7 +100,7 @@ is re-creating the container with the previous tag.
 
 **Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
 `ghcr.io/surveyjs/surveyjs-studio:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
-There is no `latest` tag: a deployment names the commit it runs. The package is private while the repository is;
+There is no `latest` tag: a deployment names the commit it runs. The package is private, and stays private when the repository goes public;
 pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/surveyjs-studio`) comes with the self-hosted
 track.
 
@@ -176,10 +177,11 @@ browsers.
 
 Do this once. Never put a token or key in the repository.
 
-1. **A read-only token.** On GitHub create a fine-grained personal access token for `surveyjs/surveyjs-studio` only,
-   with **Contents: read**. On the demos server put it in `env/.env` as `STUDIO_GITHUB_TOKEN`. The build reads the
-   private repository with it. Fine-grained tokens expire: set a reminder to renew it. An expired token shows as a
-   `smoke` job that times out with the old commit still live.
+1. **A read-only token, only while the repository is private.** On GitHub create a fine-grained personal access token
+   for `surveyjs/surveyjs-studio` only, with **Contents: read**. On the demos server put it in `env/.env` as
+   `STUDIO_GITHUB_TOKEN`. The build reads the private repository with it. Fine-grained tokens expire: set a reminder to
+   renew it. An expired token shows as a `smoke` job that times out with the old commit still live. Once the
+   repository is public you do not need a token (step 5).
 2. **The licence key.** `SURVEYJS_LICENSE_KEY` must be in the same `env/.env` (other demos already use it). It must
    cover `studio.demos.surveyjs.io`. Without it the build still works and the sandbox shows the licence notice.
 3. **The webhook.** In the surveyjs-studio repository, Settings › Webhooks › Add webhook: payload URL
@@ -188,9 +190,12 @@ Do this once. Never put a token or key in the repository.
 4. **The demos-infrastructure change.** Merge or push the branch `feat/surveyjs-studio-sandbox` (the folder
    `projects/surveyjs-studio-sandbox/`, the whd mapping and the Makefile targets) and update the demos server. Then
    run `make up-surveyjs-studio-sandbox` once, or let the first publish trigger it.
-5. **When the repository goes public (Step 11),** remove the `secrets` blocks from the demo's `docker-compose.yml`
-   (the one under the service and the top-level one), and `STUDIO_GITHUB_TOKEN` from `env/.env`. Do not leave the
-   token empty: BuildKit then sends an empty credential and GitHub answers 401, even for a public repository.
+5. **Once the repository is public (after Step 11).** The token is not needed any more. In
+   `projects/surveyjs-studio-sandbox` of demos-infrastructure, remove the `secrets` blocks from the demo's
+   `docker-compose.yml` (the one under the service and the top-level one), and remove `STUDIO_GITHUB_TOKEN` from
+   `env/.env`. Then run `make up-surveyjs-studio-sandbox` once. Do not leave the token empty: BuildKit then sends an
+   empty credential and GitHub answers `401 Unauthorized`, even for a public repository. Revoke the token on GitHub
+   afterwards.
 
 ### Publishing
 
@@ -407,13 +412,13 @@ Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API w
 The local configurations, for development, tests and demos. None of them touches real data except the two runs on
 production data, which are for the product owner only. [Running the app](running.md) has the commands.
 
-| Configuration          | Storage and users                                                                                                                                                                                                              | Sign-in                                                    | Settings file                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Memory demo            | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                                                                                                        | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page            | `server/demo.env`                                                                         |
-| Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                                             | `surveyjs-oidc` against the mock OIDC server               | `docker/azurite.env`, `server/demo-azurite.env`                                           |
-| SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything, users in memory by default or in the database with `USER_DIRECTORY=local`; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                                    | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
-| Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                                              | `surveyjs-oidc` against the mock OIDC server               | `docker/prod-like.env`                                                                    |
-| On production data     | `azure-legacy` on the real stores                                                                                                                                                                                              | `surveyjs-oidc` against a local the site's sign-in service | `server/.env` (never committed)                                                           |
+| Configuration          | Storage and users                                                                                                                                                                                                              | Sign-in                                         | Settings file                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Memory demo            | `memory`, `MEMORY_SEED=legacy-fixtures`                                                                                                                                                                                        | `IDENTITY_PROVIDER=dev`, the "Sign in as…" page | `server/demo.env`                                                                         |
+| Azurite demo           | `azure-legacy` on Azurite and SQL Server in Docker                                                                                                                                                                             | `surveyjs-oidc` against the mock OIDC server    | `docker/azurite.env`, `server/demo-azurite.env`                                           |
+| SQLite, PostgreSQL, S3 | `sqlite` (a file under `server/.data/`) or `postgres` (in Docker) for everything, users in memory by default or in the database with `USER_DIRECTORY=local`; files under `server/.data/files`, or in RustFS with `pnpm dev:s3` | `IDENTITY_PROVIDER=dev`                         | `server/demo.env` with `server/demo-sqlite.env`, `docker/postgres.env` or `docker/s3.env` |
+| Prod-like              | The image in the mode 1 configuration, on Azurite                                                                                                                                                                              | `surveyjs-oidc` against the mock OIDC server    | `docker/prod-like.env`                                                                    |
+| On production data     | `azure-legacy` on the real stores                                                                                                                                                                                              | `surveyjs-oidc` against a local sign-in server  | `server/.env` (never committed)                                                           |
 
 The dev sign-in is refused at start-up when `NODE_ENV=production` or `APP_EDITION=hosted`, so it cannot reach a
 hosted deployment by mistake.
@@ -771,7 +776,7 @@ There is no staging copy of the data: the compatibility smoke test runs on produ
    ```
 
    On 2026-10-22 production printed `Surveys.theme: varchar(max) COLLATE SQL_Latin1_General_CP1_CI_AS`,
-   `Surveys triggers: none`, `Surveys.ispublished: tinyint, nullable yes, default none` and N of N surveys
+   `Surveys triggers: none`, `Surveys.ispublished: tinyint, nullable yes, default none` and most surveys
    with an empty `ispublished`. If the theme column or the triggers differ, stop: the theme save's compare-and-set
    needs a look ([ADR 0012](adr/0012-editor-content-and-history.md)).
 
@@ -809,7 +814,7 @@ address allow-list, for example).
 
 **What the team will see that differs from the old section** (expected, not failures):
 
-- **The published flag.** most of production surveys have an empty `ispublished` (never switched on the old site).
+- **The published flag.** Most production surveys have an empty `ispublished` (never switched on the old site).
   The app reads an empty flag as published, as the old run page does, and lists those surveys with **Run** and
   **Unpublish**; the old list shows **Publish** for them. Nothing rewrites the stored flags
   ([ADR 0014](adr/0014-run-page-and-response-collection.md), S1). New and cloned surveys keep an empty flag on both

@@ -18,8 +18,8 @@ export interface LicenceNoticeDialogProps {
 }
 
 /**
- * The site's licence dialogs (`the site's page markup` and
- * `the site's page markup`). The headline is the notice's message and "Renew" opens the
+ * The site's licence dialogs (its licence-expired and
+ * licence-expires-soon popups). The headline is the notice's message and "Renew" opens the
  * notice's action link; the paragraphs are the site's.
  */
 export function LicenceNoticeDialog({ notice, helpDeskUrl, onDismiss }: LicenceNoticeDialogProps) {

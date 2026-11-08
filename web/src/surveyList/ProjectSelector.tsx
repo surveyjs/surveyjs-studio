@@ -10,7 +10,7 @@ const ITEM_LINK = "v2-class---drop-down-menu-item__link";
 const SELECTED_ITEM_LINK = `${ITEM_LINK} v2-class---drop-down-menu-item__link--selected`;
 
 /**
- * The project drop-down of `the site's page markup`: the selected scope, and a menu of
+ * The project drop-down of the site's My Surveys page: the selected scope, and a menu of
  * links to Personal Surveys and each project's active list, then Manage Projects (the app's own
  * item, to the Projects page). A click on the button toggles the menu (as on the site); for the
  * keyboard, the button is focusable and Enter, Space or ArrowDown open it. Escape, a click outside

@@ -23,7 +23,7 @@ const linkButton = `v2-class---paragraph-link ${styles.linkButton}`;
 
 /**
  * The edits of one survey, newest first, with the user when known (US 57). The frame, heading and
- * entries are the site's History page (`the site's page markup`).
+ * entries are the site's History page.
  */
 export function HistoryPage({ surveyId }: { surveyId: string }) {
   const { data: survey } = useSuspenseQuery(surveyQueryOptions(surveyId));

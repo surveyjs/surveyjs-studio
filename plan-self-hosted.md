@@ -42,17 +42,17 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 
 | Step | Name                                                          | Status |
 | ---- | ------------------------------------------------------------- | ------ |
-| 1    | The logical data model, migrations and the SQL survey store   | ☐      |
-| 2    | SQL providers: results, views, projects and erasure           | ☐      |
-| 3    | File storage: local disk and S3-compatible                    | ☐      |
-| 4    | Password sign-in and local accounts                           | ☐      |
-| 5    | The instance admin                                            | ☐      |
-| 6    | The "Powered by SurveyJS" shell, branding and the licence key | ☐      |
-| 7    | The Docker image                                              | ☐      |
-| 8    | OAuth2 sign-in and pending invitations                        | ☐      |
-| 9    | The sandbox mock back-end                                     | ☐      |
-| 10   | Publishing the sandbox                                        | ☐      |
-| 11   | Developer documentation and open-source readiness             | ☐      |
+| 1    | The logical data model, migrations and the SQL survey store   | ☑      |
+| 2    | SQL providers: results, views, projects and erasure           | ☑      |
+| 3    | File storage: local disk and S3-compatible                    | ☑      |
+| 4    | Password sign-in and local accounts                           | ☑      |
+| 5    | The instance admin                                            | ☑      |
+| 6    | The "Powered by SurveyJS" shell, branding and the licence key | ☑      |
+| 7    | The Docker image                                              | ☑      |
+| 8    | OAuth2 sign-in and pending invitations                        | ☑      |
+| 9    | The sandbox mock back-end                                     | ☑      |
+| 10   | Publishing the sandbox                                        | ☑      |
+| 11   | Developer documentation and open-source readiness             | ☑      |
 
 **Step 8 note (D6, [ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md)):** the tests use one stub on `node:http` for all four providers (`pnpm oauth-stub`) instead of mock-oauth2-server and Compose stubs. It needs no Docker. The Azurite mode keeps its mock-oauth2-server.
 
@@ -592,6 +592,15 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 1. Follow `shells.md` in a scratch branch. The example shell appears with `APP_SHELL=example`.
 2. Follow `porting.md` to run the conformance suite against the running image. It passes.
 3. The secrets scan report is clean, and the hygiene files are present.
+
+**Progress note (Step 11).** Built as planned: `docs/customizing/` (overview, shells, providers, sign-in, porting, licensing), the secrets scan with its record in [`docs/operations/going-public.md`](docs/operations/going-public.md), the hygiene files, the third-party notice and the demo walk [self-hosted-11](docs/demo/self-hosted-11.md). The decisions:
+
+- **D1.** The guide's code is the test's code: `shells.md` carries the example shell as fenced blocks, and `pnpm check:example-shell` builds and tests them in a scratch worktree, so `web/src/shell/` never gains an `example` shell.
+- **D2.** `pnpm test:conformance --base <url>` is a thin CLI that sets `CONFORMANCE_BASE_URL`; the env-variable route still works.
+- **D3.** The reference settings the suite expects live in one file, `conformance-tests/src/reference-settings.ts`, which `porting.md` documents and CI writes to an env file for `docker run`.
+- **D4.** The third-party notice is generated in the image build by `scripts/third-party-notices/cli.ts`, not committed.
+- **D5.** The scan's record is `going-public.md`: the scan, the D18 review, the screenshot review and the GitHub settings to turn on after the switch.
+- **D6.** The sandbox token goes away at the switch: the docs say to remove the compose `secrets` blocks once the repository is public, ADR 0031 has a dated note, and the demos-infrastructure change is made after the branch.
 
 ---
 

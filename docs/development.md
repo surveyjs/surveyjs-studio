@@ -14,6 +14,22 @@
    `pnpm --filter @surveyjs-studio/e2e exec playwright install chromium firefox webkit`
    (on Linux add `--with-deps`, as CI does).
 
+### The pre-commit hook
+
+`pnpm install` also runs the `prepare` script, which sets `git config core.hooksPath .githooks` so that
+`.githooks/pre-commit` scans the staged files with gitleaks before each commit (`pnpm scan:secrets --staged`). It uses a
+`gitleaks` binary on your PATH, or else the pinned gitleaks image in Docker. The installer does nothing where there is no
+git work tree of this repository, no git binary, `CI` is set (non-empty and not `false`), or `core.hooksPath` already
+holds another value (it prints one line then). Check it with `git config core.hooksPath`. Where it installs the hook, it
+also defines the Markdown merge driver ([Conventions](#conventions)).
+
+A blocked commit shows gitleaks' output. The hook prints a one-line warning and lets the commit through, when there is
+no `node` or `node_modules`, neither gitleaks nor a working Docker (`docker info` gets 5 seconds), `docker run` fails
+with 125, 126 or 127, or you commit from a linked worktree with only Docker available (the worktree's `.git` points
+outside the container's mount). Gitleaks' own exit 1 always blocks. Use `git commit --no-verify` only for a verified
+false positive, or once you have confirmed that the block is a scanner error and the commit is clean. Synthetic values
+that recur are allowlisted by value in `.gitleaks.toml`; see [Contributing](../CONTRIBUTING.md).
+
 ## Demo modes
 
 | Mode       | Command                                                                                         | Storage                                                                                                |
@@ -615,23 +631,23 @@ Operators: [Operations › The sandbox](operations.md#the-sandbox-studiodemossur
 ## Production data mode
 
 `pnpm dev:prod-data` runs the app on the **real** surveyjs.io stores (the mode 1.1 data) with sign-in
-through a the site's sign-in service instance running on this machine. It reads and writes production data:
+through a sign-in server instance running on this machine. It reads and writes production data:
 everything you do there is real.
 
-1. **Register the client** in the site's sign-in service: client id `my-surveys` with the redirect URI
+1. **Register the client** in the sign-in server: client id `my-surveys` with the redirect URI
    `http://localhost:5173/api/v1/auth/callback` (and `http://localhost:5173/` after sign-out, if
    the server checks it). The browser uses the Vite origin, which proxies `/api` to the server.
 2. **Fill in `server/.env`**: copy `server/.env.example` and set the three `LEGACY_*` connection
    strings, `OIDC_CLIENT_SECRET` and `SESSION_SECRET`. The file is gitignored; never commit it or
    put a real value in the template.
-3. **Start the site's sign-in service**, then run `pnpm dev:prod-data` and open <http://localhost:5173>.
+3. **Start the sign-in server**, then run `pnpm dev:prod-data` and open <http://localhost:5173>.
 
 The launcher refuses to start while a required value is empty, prints the SQL server, database and
 storage accounts it is about to use (never a key or password), then starts the server (`--env-file=.env`)
 and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 
 - **The issuer is `https://localhost:7100`**: its metadata names that address, and
-  `http://localhost:5100` only redirects there. the site's sign-in service publishes RFC 8414 metadata with the
+  `http://localhost:5100` only redirects there. The sign-in server publishes RFC 8414 metadata with the
   scopes `profile` and `email` and no ID token, so `OIDC_DISCOVERY` and `OIDC_SCOPES` keep their
   defaults ([ADR 0008](adr/0008-surveyjs-auth-oauth2-userinfo.md)).
 - **Its certificate is the self-signed ASP.NET development certificate**, which Node rejects. For an
@@ -681,9 +697,9 @@ To see the logs: `docker compose --env-file docker/azurite.env -f docker/compose
 [production data mode](#production-data-mode) but without Vite: the app is at <http://localhost:3000>. It reads and
 writes production data.
 
-1. **Register the redirect URI** `http://localhost:3000/api/v1/auth/callback` in the the site's sign-in service client (and
+1. **Register the redirect URI** `http://localhost:3000/api/v1/auth/callback` in the sign-in server client (and
    `http://localhost:3000/` after sign-out, if the server checks it).
-2. **Start the site's sign-in service** on this machine, then run `pnpm image:prod-data`. Stop it with Ctrl+C.
+2. **Start the sign-in server** on this machine, then run `pnpm image:prod-data`. Stop it with Ctrl+C.
 
 The launcher:
 
@@ -703,7 +719,7 @@ Only `server/.env` reaches the container: variables set in the shell do not over
 container. The service `issuer-forward` (`alpine/socat`) owns the app's network namespace and forwards the issuer's
 port of its localhost to the same port on the host (`host.docker.internal`), so the metadata's issuer matches and
 the certificate's `localhost` name fits. It forwards every other endpoint of the file on this machine the same way.
-It also publishes the app's port 3000. On Docker Desktop this reaches a service the host runs on 127.0.0.1 (the site's sign-in service
+It also publishes the app's port 3000. On Docker Desktop this reaches a service the host runs on 127.0.0.1 (the sign-in server
 on `localhost` listens there and on ::1); on Linux, `host.docker.internal` is the bridge address, so the issuer must
 listen there too.
 
@@ -989,7 +1005,8 @@ and 6 need Linux (`docker run --network host`); on Windows and macOS run those s
 - ESLint (flat config) and Prettier. `pnpm format` fixes formatting.
 - Commit messages are conventional: `feat(server): ...`, `fix(web): ...`, `docs: ...`, `chore: ...`.
 - Prettier pads Markdown tables, so one wider cell rewrites every row and two branches that touch a table conflict
-  on all of it. Run `node scripts/git-merge/markdown-tables.mjs --install` once per clone: `.gitattributes` then
-  merges `*.md` without the padding and re-formats the result, and tables conflict only where both sides changed a
-  row. Rows both sides only added at the same place (two new ADRs at the end of the index) are both kept, ours
-  first. A conflict that remains is left unpadded; resolve it, then run `pnpm format`.
+  on all of it. `pnpm install` defines a merge driver for that (or run
+  `node scripts/git-merge/markdown-tables.mjs --install`): `.gitattributes` then merges `*.md` without the padding and
+  re-formats the result, and tables conflict only where both sides changed a row. Rows both sides only added at the
+  same place (two new ADRs at the end of the index) are both kept, ours first. A conflict that remains is left
+  unpadded; resolve it, then run `pnpm format`.

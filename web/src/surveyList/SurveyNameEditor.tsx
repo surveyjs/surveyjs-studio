@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { SiteButton } from "../shell/surveyjs-site/SiteButton";
 
 /**
- * The inline rename editor of `the site's page markup`: the name in a text box, Save and Cancel. Enter
+ * The inline rename editor of the site's My Surveys page: the name in a text box, Save and Cancel. Enter
  * saves and Escape cancels, as on the site; the box opens focused with the name selected.
  */
 export function SurveyNameEditor({

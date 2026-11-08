@@ -6,7 +6,7 @@ import { readStored, writeStored } from "./storage";
 import styles from "./SurveyjsSiteShell.module.css";
 
 /**
- * The site's consent flag (`the site's page markup`): once set, the banner is not shown
+ * The site's consent flag (from its cookie banner): once set, the banner is not shown
  * again. The site stores `true` for both "Accept All" and "Confirm My Choices".
  */
 export const COOKIE_CONSENT_KEY = "isInformedAboutCookieAndPolicies";
@@ -171,7 +171,7 @@ function Provider({ name, url }: { name: string; url: string }) {
 }
 
 /**
- * `the site's page markup` with a checkbox. As on the site, the choice is not stored:
+ * The site's FAQ question markup with a checkbox. As on the site, the choice is not stored:
  * both buttons record the same consent.
  */
 function CookieCategory(props: {

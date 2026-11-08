@@ -212,21 +212,18 @@ variable from your shell removed so only explicit values reach it, waits for
 pnpm test:conformance
 ```
 
-Against another back end, start it first, then give the suite its origin without `/api/v1`.
-The server must be a fresh, empty instance.
-
-Git Bash:
+Against another back end, start it first, with the reference settings
+(`conformance-tests/src/reference-settings.ts`) and the legacy fixtures, then give the suite its origin without
+`/api/v1`. The server must be a fresh instance. Set `CONFORMANCE_WEBHOOK_SECRET` to its webhook secret:
 
 ```sh
-CONFORMANCE_BASE_URL=http://127.0.0.1:3000 pnpm test:conformance
+pnpm test:conformance --base http://127.0.0.1:3000
 ```
 
-PowerShell:
-
-```powershell
-$env:CONFORMANCE_BASE_URL = "http://127.0.0.1:3000"; pnpm test:conformance
-Remove-Item Env:CONFORMANCE_BASE_URL
-```
+`--base` goes through `scripts/conformance/cli.ts`, which sets `CONFORMANCE_BASE_URL` and runs the package script, so
+`CONFORMANCE_BASE_URL=... pnpm test:conformance` still works. Other arguments go to Vitest. CI runs the command against
+the production image (job `conformance-base`); the steps, the settings table and how to read failures are in
+[Porting the back end](customizing/porting.md).
 
 A port is accepted when this suite passes against it.
 

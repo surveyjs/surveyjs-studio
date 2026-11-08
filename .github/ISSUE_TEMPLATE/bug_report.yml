@@ -1,0 +1,53 @@
+name: Bug report
+description: Something does not work as the docs say
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. For a security problem, do not use this form. Follow the
+        [security policy](https://github.com/surveyjs/surveyjs-studio/security/policy).
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: >-
+        Where do you see the problem? The modes are explained in the README's deployment-mode sections:
+        https://github.com/surveyjs/surveyjs-studio#deployment-modes
+      options:
+        - "1.x hosted"
+        - "2a"
+        - "2b"
+        - "3"
+        - "4"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release, the image tag or the commit hash.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Add error messages and logs. Remove secrets first.
+    validations:
+      required: true
