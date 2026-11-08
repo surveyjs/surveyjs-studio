@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateTo } from "../navigation";
-import { STORAGE_FULL_EVENT } from "./handlers/problems";
+import { OUTDATED_EVENT, STORAGE_FULL_EVENT } from "./handlers/problems";
 import styles from "./sandbox.module.css";
 import { sandboxStore } from "./start";
 import { setSessionCookie, STORAGE_WRITTEN_EVENT } from "./store";
@@ -8,6 +8,7 @@ import { setSessionCookie, STORAGE_WRITTEN_EVENT } from "./store";
 export const DEMO_TEXT =
   "This is a demo. Your data stays in this browser, and other visitors don't see it.";
 export const FULL_TEXT = "Browser storage is full. Reset the demo data to continue.";
+export const OUTDATED_TEXT = "The demo was updated in another tab. Reload this page.";
 const CONFIRM_TEXT = "Reset all demo data? Your changes in this browser are lost.";
 const RESET_FAILED_TEXT =
   "Could not reset the demo data. Clear this site's data in the browser and reload.";
@@ -31,6 +32,7 @@ function storageIsFull(): boolean {
  */
 export function SandboxBanner({ compact = false }: { compact?: boolean }) {
   const [full, setFull] = useState(storageIsFull);
+  const [outdated, setOutdated] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [failed, setFailed] = useState(false);
   const bannerRef = useRef<HTMLElement>(null);
@@ -44,10 +46,14 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
     const onFull = () => setFull(true);
     // A write that is stored proves there is room again (say, after deleting surveys).
     const onWritten = () => setFull(false);
+    // Stays until the page is reloaded: the data this page holds is out of date.
+    const onOutdated = () => setOutdated(true);
     window.addEventListener(STORAGE_FULL_EVENT, onFull);
+    window.addEventListener(OUTDATED_EVENT, onOutdated);
     window.addEventListener(STORAGE_WRITTEN_EVENT, onWritten);
     return () => {
       window.removeEventListener(STORAGE_FULL_EVENT, onFull);
+      window.removeEventListener(OUTDATED_EVENT, onOutdated);
       window.removeEventListener(STORAGE_WRITTEN_EVENT, onWritten);
     };
   }, []);
@@ -111,7 +117,12 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
       className={`${styles.banner} ${compact ? styles.compact : ""}`}
     >
       {/* Present from the start, so a screen reader announces the text when it appears. */}
-      <span role="alert">{full ? FULL_TEXT : null}</span>
+      <span role="alert">{outdated ? OUTDATED_TEXT : full ? FULL_TEXT : null}</span>
+      {outdated && (
+        <button type="button" className={styles.bannerButton} onClick={() => location.reload()}>
+          Reload
+        </button>
+      )}
       {confirming ? (
         <>
           <span>{CONFIRM_TEXT}</span>
@@ -124,8 +135,8 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
         </>
       ) : (
         <>
-          {!full && <span>{DEMO_TEXT}</span>}
-          {!compact && !full && (
+          {!full && !outdated && <span>{DEMO_TEXT}</span>}
+          {!compact && !full && !outdated && (
             <>
               <a href={SELF_HOSTING_URL} target="_blank" rel="noreferrer">
                 Run it yourself

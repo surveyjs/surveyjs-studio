@@ -11,7 +11,28 @@ import { createAppRouter } from "./router";
 let booted = true;
 if (import.meta.env.MODE === "sandbox") {
   try {
-    await (await import("./sandbox/start")).startSandbox();
+    const { startSandbox, sandboxStore } = await import("./sandbox/start");
+    if ((await startSandbox()) === "outdated") {
+      // The stored data has another data version: offer a reset instead of the app.
+      booted = false;
+      const [{ SandboxOutdated }, { setSessionCookie }] = await Promise.all([
+        import("./sandbox/SandboxOutdated"),
+        import("./sandbox/store"),
+      ]);
+      const outdatedRoot = document.getElementById("root");
+      if (!outdatedRoot) throw new Error("Missing #root element");
+      createRoot(outdatedRoot).render(
+        <StrictMode>
+          <SandboxOutdated
+            onReset={() => {
+              sandboxStore().reset();
+              setSessionCookie(null);
+              location.reload();
+            }}
+          />
+        </StrictMode>,
+      );
+    }
   } catch (error) {
     booted = false;
     console.error("The sandbox could not start.", error);

@@ -519,7 +519,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 
 ## Step 10: Publishing the sandbox
 
-**Goal:** the sandbox is live at `studio.demo.surveyjs.io`, deployed from CI.
+**Goal:** the sandbox is live at `studio.demos.surveyjs.io`, deployed from CI.
 
 **Inputs needed:** the static hosting or CDN, DNS for the subdomain, and a licence key for that domain.
 
@@ -548,8 +548,10 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 
 **Demo checklist**
 
-1. Open `https://studio.demo.surveyjs.io`, pick an account and try the full loop.
+1. Open `https://studio.demos.surveyjs.io`, pick an account and try the full loop.
 2. Deploy a release with a changed seed version. Returning visitors are offered a reset.
+
+**Progress note (Step 10).** Built with the decisions of [ADR 0031](docs/adr/0031-publishing-the-sandbox.md): the site is served by the shared demos server; the `sandbox` branch is a pointer branch holding the tested commit, because the workflow's token cannot push commits that change workflow files; the smoke check runs after the deploy and does not gate it; and the read-only token goes away at Step 11. The one-time setup (token, licence key, webhook) is the product owner's and is in [Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio). The demo walk is [self-hosted-10](docs/demo/self-hosted-10.md); its live part waits for that setup.
 
 ---
 

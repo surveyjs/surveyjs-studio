@@ -1562,6 +1562,16 @@ picker (the `/me` query on pages that are not private is the exception). The she
 sent while a page closes may be lost. There is no CSRF, no rate limit, no IP capture and no byte-sniffing of file
 types. Exports, the admin's users and password operations answer 501.
 
+**Hosting and the version guard (Step 10).** The built site is served at `https://studio.demos.surveyjs.io` by nginx
+on the shared demos server, with the repo's own configuration (`deploy/sandbox/`): the server's security headers,
+cache rules and a `/sandbox.config.json` that can be replaced without a rebuild ([ADR
+0031](adr/0031-publishing-the-sandbox.md), [Operations](operations.md#the-sandbox-studiodemossurveyjsio)). A release
+is a commit on the pointer branch `sandbox`, moved by the Publish sandbox workflow after the suites pass; the demos
+server builds the commit it names, and `/version.json` reports it. The store compares the stored document's `version`
+with the seed's (`server/fixtures/sandbox.json`): a damaged document is reseeded silently, a valid one of another
+version is _outdated_, and the app shows **This demo has been updated** with **Reset to continue** before it starts
+anything. A request in a running tab that finds an outdated document answers `503` and never overwrites it.
+
 ## Build and run
 
 - `server` runs TypeScript directly with `tsx`; there is no server build.

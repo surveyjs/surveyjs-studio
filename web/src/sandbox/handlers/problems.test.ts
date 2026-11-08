@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StorageFullError } from "../store";
-import { guarded, notFound, problemBody, problemResponse, STORAGE_FULL_EVENT } from "./problems";
+import { SandboxOutdatedError, StorageFullError } from "../store";
+import {
+  guarded,
+  notFound,
+  problemBody,
+  problemResponse,
+  OUTDATED_EVENT,
+  STORAGE_FULL_EVENT,
+} from "./problems";
 import { setupSandbox, SURVEYS, USERS } from "./testing";
 
 afterEach(() => vi.restoreAllMocks());
@@ -28,6 +35,27 @@ describe("problem answers", () => {
     const failed = await guarded(() => Promise.reject(new Error("boom")));
     expect(failed.status).toBe(500);
     expect(await failed.json()).toMatchObject({ code: "internal-error" });
+  });
+});
+
+describe("an outdated demo", () => {
+  it("fires sandbox:outdated on window", async () => {
+    const listener = vi.fn();
+    window.addEventListener(OUTDATED_EVENT, listener);
+    try {
+      await guarded(() => Promise.reject(new SandboxOutdatedError()));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(OUTDATED_EVENT, listener);
+    }
+  });
+
+  it("answers 503 asking for a reload", async () => {
+    const response = await guarded(() => Promise.reject(new SandboxOutdatedError()));
+    expect(response.status).toBe(503);
+    expect((await response.json()).title).toBe(
+      "The demo was updated in another tab. Reload this page.",
+    );
   });
 });
 

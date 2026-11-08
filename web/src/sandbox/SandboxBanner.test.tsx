@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "../navigation";
-import { STORAGE_FULL_EVENT } from "./handlers/problems";
+import { OUTDATED_EVENT, STORAGE_FULL_EVENT } from "./handlers/problems";
 import { SandboxBanner } from "./SandboxBanner";
 import seedJson from "./seed.json";
 import type { SandboxSeed } from "./seed-types";
@@ -33,6 +33,29 @@ afterEach(() => {
 });
 
 describe("SandboxBanner", () => {
+  it("shows the reload message and button on the outdated event, and Reload reloads", () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    try {
+      render(<SandboxBanner />);
+      const banner = screen.getByRole("complementary", { name: "Demo notice" });
+      expect(within(banner).getByRole("alert").textContent).toBe("");
+
+      act(() => {
+        window.dispatchEvent(new Event(OUTDATED_EVENT));
+      });
+
+      expect(within(banner).getByRole("alert").textContent).toBe(
+        "The demo was updated in another tab. Reload this page.",
+      );
+      expect(screen.queryByText(DEMO)).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("shows the demo text and the two links", () => {
     render(<SandboxBanner />);
 

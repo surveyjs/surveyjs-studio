@@ -52,6 +52,10 @@ const password = process.env["E2E_MODE"] === "password";
 const selfHosted = process.env["E2E_MODE"] === "self-hosted";
 const oauth = process.env["E2E_MODE"] === "oauth";
 const sandbox = process.env["E2E_MODE"] === "sandbox";
+// E2E_SANDBOX_URL (sandbox mode; `pnpm e2e:sandbox:url`): an already running host of the sandbox
+// build, such as `pnpm sandbox:serve` or the published demo. No server starts, and the host spec
+// (headers and caching: only a real host answers it) runs too.
+const sandboxUrl = sandbox ? process.env["E2E_SANDBOX_URL"] : undefined;
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
@@ -370,6 +374,7 @@ const allButNotices = [
   "self-hosted.spec.ts",
   "oauth.spec.ts",
   "sandbox.spec.ts",
+  "sandbox-host.spec.ts",
 ];
 
 export default defineConfig({
@@ -381,13 +386,18 @@ export default defineConfig({
   reporter: process.env["CI"] ? [["line"], ["html", { open: "never" }]] : "list",
   // A fixed locale and time zone, so the list's dates read the same on every machine.
   use: {
-    baseURL: `http://localhost:${sandbox ? ports.sandboxWeb : ports.web}`,
+    baseURL: sandboxUrl ?? `http://localhost:${sandbox ? ports.sandboxWeb : ports.web}`,
     trace: "retain-on-failure",
     locale: "en-US",
     timezoneId: "UTC",
   },
   projects: sandbox
-    ? [{ name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium }]
+    ? [
+        { name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium },
+        ...(sandboxUrl
+          ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
+          : []),
+      ]
     : oauth
       ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
       : selfHosted
@@ -463,6 +473,7 @@ export default defineConfig({
                         "self-hosted.spec.ts",
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
+                        "sandbox-host.spec.ts",
                       ],
                       use: chromium,
                     },
@@ -473,6 +484,7 @@ export default defineConfig({
                         "self-hosted.spec.ts",
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
+                        "sandbox-host.spec.ts",
                       ],
                       use: { ...devices["Desktop Firefox"], viewport },
                     },
@@ -483,25 +495,28 @@ export default defineConfig({
                         "self-hosted.spec.ts",
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
+                        "sandbox-host.spec.ts",
                       ],
                       use: { ...devices["Desktop Safari"], viewport },
                     },
                   ],
-  webServer: sandbox
-    ? [
-        {
-          command: `pnpm --filter @surveyjs-studio/web exec vite preview --mode sandbox --port ${ports.sandboxWeb} --strictPort`,
-          url: `http://localhost:${ports.sandboxWeb}/`,
-          reuseExistingServer: false,
-          timeout: 60_000,
-        },
-      ]
-    : imageTarget
-      ? imageWebServers()
-      : sqlite || postgres || password || selfHosted || oauth
-        ? sqlWebServers()
-        : azurite
-          ? azuriteWebServers
-          : memoryWebServers,
+  webServer: sandboxUrl
+    ? undefined
+    : sandbox
+      ? [
+          {
+            command: `pnpm --filter @surveyjs-studio/web exec vite preview --mode sandbox --port ${ports.sandboxWeb} --strictPort`,
+            url: `http://localhost:${ports.sandboxWeb}/`,
+            reuseExistingServer: false,
+            timeout: 60_000,
+          },
+        ]
+      : imageTarget
+        ? imageWebServers()
+        : sqlite || postgres || password || selfHosted || oauth
+          ? sqlWebServers()
+          : azurite
+            ? azuriteWebServers
+            : memoryWebServers,
   ...(imageTarget && { globalTeardown: "./image-teardown.mjs" }),
 });

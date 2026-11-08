@@ -25,21 +25,25 @@ try {
 const sandbox =
   env["E2E_MODE"] === "sandbox" ||
   process.argv.slice(2).some((a) => /playwright\.sandbox\.config/.test(a));
+// E2E_SANDBOX_URL names a running host of the sandbox build: nothing is built or started.
+const externalSandbox = sandbox && !!env["E2E_SANDBOX_URL"];
 // Playwright never reuses a server: a taken port stops the run here, before the build.
-await requireFreePorts(
-  functionalPorts({
-    image: imageTarget,
-    azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
-    sql:
-      usesSqlConfig(process.argv.slice(2)) ||
-      ["sqlite", "postgres", "password", "oauth", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
-    sandbox,
-    oauth:
-      env["E2E_MODE"] === "oauth" ||
-      process.argv.slice(2).some((a) => /playwright.oauth.config/.test(a)),
-  }),
-);
+if (!externalSandbox)
+  await requireFreePorts(
+    functionalPorts({
+      image: imageTarget,
+      azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
+      sql:
+        usesSqlConfig(process.argv.slice(2)) ||
+        ["sqlite", "postgres", "password", "oauth", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
+      sandbox,
+      oauth:
+        env["E2E_MODE"] === "oauth" ||
+        process.argv.slice(2).some((a) => /playwright.oauth.config/.test(a)),
+    }),
+  );
 // The sandbox mode serves its own build (`build:sandbox`, into dist-sandbox/) and starts no server.
-if (sandbox) run("pnpm --filter @surveyjs-studio/web build:sandbox");
+if (externalSandbox) console.log(`Testing the sandbox at ${env["E2E_SANDBOX_URL"]}`);
+else if (sandbox) run("pnpm --filter @surveyjs-studio/web build:sandbox");
 else if (!imageTarget) run("pnpm --filter @surveyjs-studio/web build");
 run(["playwright test", ...process.argv.slice(2)].join(" "));

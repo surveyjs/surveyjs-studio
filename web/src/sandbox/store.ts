@@ -41,7 +41,7 @@ export interface SandboxFile {
 
 /** The seed plus what writes add. */
 export type SandboxData = Omit<SandboxSeed, "version"> & {
-  readonly version: 1;
+  readonly version: number;
   files: SandboxFile[];
   /** Idempotency keys of submitted responses: survey id, then key, to the response id. */
   idempotencyKeys: Record<string, Record<string, string>>;
@@ -60,8 +60,22 @@ export class StorageFullError extends Error {
   }
 }
 
+/** The stored document has another data version than this build's seed; it is left as it is. */
+export class SandboxOutdatedError extends Error {
+  constructor(message = "The stored demo data has another data version.") {
+    super(message);
+    this.name = "SandboxOutdatedError";
+  }
+}
+
 export interface SandboxStore {
-  /** The stored document; a missing, unparsable or different-version one is replaced by the seed first. */
+  /**
+   * `fresh`: nothing usable is stored (missing, unparsable or damaged), the next read seeds it;
+   * `current`: a valid document with the seed's version; `outdated`: an object with another
+   * numeric `version`, which `read` and `write` refuse to touch and only `reset` replaces.
+   */
+  status(): "fresh" | "current" | "outdated";
+  /** The stored document; a missing, unparsable or damaged one is replaced by the seed first. Throws `SandboxOutdatedError` for another data version. */
   read(): SandboxData;
   /**
    * Applies `change` to a deep copy of the stored document (its return value, or the copy when it
@@ -97,10 +111,12 @@ const MAPS = [
   "savedViews",
 ] as const;
 
-function isValid(value: unknown, version: number): value is SandboxData {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const doc = value as Record<string, unknown>;
-  if (doc.version !== version) return false;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Whether the document has the collections and maps of a sandbox document (its version aside). */
+function isWellFormed(doc: Record<string, unknown>): doc is Record<string, unknown> & SandboxData {
   if (!COLLECTIONS.every((key) => Array.isArray(doc[key]))) return false;
   return MAPS.every((key) => {
     const entry = doc[key];
@@ -123,16 +139,25 @@ export function createSandboxStore(options: {
   });
   const kbOf = (text: string) => (text.length * 2) / 1024;
 
-  function read(): SandboxData {
+  function inspect():
+    { status: "fresh" } | { status: "outdated" } | { status: "current"; data: SandboxData } {
     const stored = storage.getItem(STORAGE_KEY);
-    if (stored !== null) {
-      try {
-        const parsed: unknown = JSON.parse(stored);
-        if (isValid(parsed, seed.version)) return parsed;
-      } catch {
-        // Unparsable: reseed below.
-      }
+    if (stored === null) return { status: "fresh" };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stored);
+    } catch {
+      return { status: "fresh" };
     }
+    if (!isObject(parsed) || typeof parsed.version !== "number") return { status: "fresh" };
+    if (parsed.version !== seed.version) return { status: "outdated" };
+    return isWellFormed(parsed) ? { status: "current", data: parsed } : { status: "fresh" };
+  }
+
+  function read(): SandboxData {
+    const found = inspect();
+    if (found.status === "outdated") throw new SandboxOutdatedError();
+    if (found.status === "current") return found.data;
     const data = freshDocument();
     try {
       storage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -144,6 +169,7 @@ export function createSandboxStore(options: {
 
   return {
     read,
+    status: () => inspect().status,
     write(change) {
       const copy = structuredClone(read());
       const next = change(copy) ?? copy;

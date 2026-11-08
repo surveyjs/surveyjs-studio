@@ -1,6 +1,7 @@
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { sandboxVersionPlugin } from "../scripts/sandbox-host/version-file.ts";
 import { securityHeaders } from "../server/src/web/security-headers.ts";
 
 // E2E_API_PROXY_TARGET points a second preview at another server (the e2e licence-notice run).
@@ -72,7 +73,12 @@ export default defineConfig(({ mode }) => {
   const proxy = sandbox ? {} : apiProxy;
   return {
     // The router plugin must come before the React plugin.
-    plugins: [tanstackRouter({ target: "react" }), react(), securityHeadersPlugin(proxy)],
+    plugins: [
+      tanstackRouter({ target: "react" }),
+      react(),
+      securityHeadersPlugin(proxy),
+      ...(sandbox ? [sandboxVersionPlugin()] : []),
+    ],
     server: { port: 5173, strictPort: true, proxy },
     // Only the sandbox has a public directory (the worker script and its settings).
     publicDir: sandbox ? "sandbox-public" : false,

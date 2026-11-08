@@ -589,6 +589,29 @@ operation to the contract:
 `scripts/sandbox-seed/generate.test.ts` fails when the file is stale or larger than `seedBudgetKb`. A feature that
 adds small data to the shared seed adds its id to the tag file.
 
+### Publishing the sandbox (Step 10)
+
+Operators: [Operations › The sandbox](operations.md#the-sandbox-studiodemossurveyjsio) and
+[ADR 0031](adr/0031-publishing-the-sandbox.md).
+
+- **The licence key.** `VITE_SANDBOX_LICENSE_KEY` is read at build time and baked into the bundle. The sandbox's
+  `/config` answers it as `surveyjsLicenseKey`; empty or unset answers `null` and the licence notice shows. Put it in
+  your shell or an untracked env file, never in the repository.
+- **`version.json`.** `pnpm build:sandbox` writes `web/dist-sandbox/version.json` = `{"commit", "dataVersion"}`. The
+  commit is `SANDBOX_COMMIT` when set, else `git rev-parse HEAD`, else `unknown`. `dataVersion` is the seed's
+  `version`.
+- **The data version.** `version` in `server/fixtures/sandbox.json` is the version of the stored document. Raise it
+  whenever the seed's content or the document's format changes, then run `pnpm sandbox:seed` and commit `seed.json`.
+  A returning visitor whose stored `version` differs sees **This demo has been updated** and **Reset to continue**.
+  A request from another tab that finds such a document answers `503`.
+- **The production server locally.** After `pnpm build:sandbox`, `pnpm sandbox:serve [--port 8080]` serves
+  `web/dist-sandbox` with `deploy/sandbox/nginx.conf` in `nginx:1.30-alpine` (Docker needed) and prints the URL;
+  `pnpm sandbox:serve --stop` removes it. Check headers with `curl -sI <url>/`.
+- **The suites against a URL.** `E2E_SANDBOX_URL=<url> pnpm e2e:sandbox:url` runs the `sandbox-chromium` and
+  `sandbox-host` Playwright projects against a running site (the `sandbox-host` project checks the headers, the cache
+  rules and `version.json`). The Publish sandbox workflow uses it twice: on its own nginx and on the live site.
+  `pnpm sandbox:wait --url <url> --commit <sha> --timeout-min N` waits until `/version.json` names the commit.
+
 ## Production data mode
 
 `pnpm dev:prod-data` runs the app on the **real** surveyjs.io stores (the mode 1.1 data) with sign-in

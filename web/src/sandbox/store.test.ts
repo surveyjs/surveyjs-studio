@@ -4,6 +4,7 @@ import type { SandboxSeed } from "./seed-types";
 import { DEFAULT_SETTINGS } from "./settings";
 import {
   SESSION_COOKIE,
+  SandboxOutdatedError,
   STORAGE_KEY,
   StorageFullError,
   createSandboxStore,
@@ -69,7 +70,6 @@ describe("sandbox store", () => {
   });
 
   it.each([
-    ["a different version", JSON.stringify({ ...seed, version: 0 })],
     ["unparsable JSON", "{"],
     ["a missing collection", JSON.stringify({ version: 1, users: [] })],
     ["a non-object", "null"],
@@ -79,6 +79,46 @@ describe("sandbox store", () => {
     const data = make(storage).read();
     expect(data.surveys).toEqual(seed.surveys);
     expect(make(storage).read().version).toBe(1);
+  });
+
+  describe("the data version", () => {
+    const stored = (version: number) =>
+      JSON.stringify({ ...seed, files: [], idempotencyKeys: {}, savedViews: {}, version });
+
+    it.each([
+      ["an empty storage", null],
+      ["unparsable JSON", "{"],
+      ["a document without collections", JSON.stringify({ version: 1 })],
+    ])("is fresh for %s", (_name, text) => {
+      const storage = memoryStorage();
+      if (text !== null) storage.setItem(STORAGE_KEY, text);
+      expect(make(storage).status()).toBe("fresh");
+    });
+
+    it("is current after a read", () => {
+      const store = make();
+      store.read();
+      expect(store.status()).toBe("current");
+    });
+
+    it("is outdated for another version, which is neither read, written nor overwritten", () => {
+      const storage = memoryStorage();
+      const text = stored(0);
+      storage.setItem(STORAGE_KEY, text);
+      const store = make(storage);
+      expect(store.status()).toBe("outdated");
+      expect(() => store.read()).toThrow(SandboxOutdatedError);
+      expect(() => store.write(() => {})).toThrow(SandboxOutdatedError);
+      expect(storage.getItem(STORAGE_KEY)).toBe(text);
+      store.reset();
+      expect(store.status()).toBe("current");
+    });
+
+    it("is outdated for a newer version too", () => {
+      const storage = memoryStorage();
+      storage.setItem(STORAGE_KEY, stored(2));
+      expect(make(storage).status()).toBe("outdated");
+    });
   });
 
   it("refuses a write that reaches the limit and leaves the document unchanged", () => {

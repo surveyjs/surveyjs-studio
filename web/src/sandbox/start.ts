@@ -15,15 +15,18 @@ export function sandboxStore(): SandboxStore {
 
 /**
  * Starts the in-browser back-end: the store on localStorage (seeded on the first read) and the
- * mock handlers in a service worker. Resolves once the worker controls the page.
+ * mock handlers in a service worker. Resolves once the worker controls the page. Resolves
+ * `"outdated"`, starting no worker, when the stored data has another data version: the caller
+ * offers `sandboxStore().reset()`.
  */
-export async function startSandbox(): Promise<void> {
+export async function startSandbox(): Promise<"started" | "outdated"> {
   const settings = await loadSandboxSettings();
   store = createSandboxStore({
     storage: window.localStorage,
     seed: seedJson as unknown as SandboxSeed,
     settings,
   });
+  if (store.status() === "outdated") return "outdated";
   const worker = setupWorker(
     ...createSandboxHandlers({
       store,
@@ -38,4 +41,5 @@ export async function startSandbox(): Promise<void> {
     quiet: true,
     onUnhandledRequest: "bypass",
   });
+  return "started";
 }
