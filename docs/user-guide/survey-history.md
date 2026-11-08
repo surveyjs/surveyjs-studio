@@ -27,6 +27,9 @@ select the JSON and copy it yourself.
 
 Versions saved by the old surveyjs.io editor open the same way.
 
+In the sandbox demo, which keeps its data in your browser, only the 20 newest versions of a survey keep
+their JSON. An older one says "The demo keeps the JSON of the 20 newest saves of a survey."
+
 The list shows 50 entries at a time. When there are more, a **Show more** link loads the next ones. A
 survey that was never saved shows "No edits yet.". **Back to My Surveys** returns to the list.
 

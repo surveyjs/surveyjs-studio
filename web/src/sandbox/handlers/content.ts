@@ -7,7 +7,6 @@ import type { SandboxJson } from "../seed-types";
 import type { SandboxData } from "../store";
 import {
   BODY_LIMITS,
-  compare,
   mutate,
   parsePagingQuery,
   readJson,
@@ -18,7 +17,8 @@ import {
 import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { decodeHistoryCursor, encodeHistoryCursor, type HistoryPosition } from "./paging";
-import { guarded, ProblemError } from "./problems";
+import { addHistoryEntry, HISTORY_SNAPSHOTS, historyOrder } from "./history";
+import { guarded, notFound, ProblemError } from "./problems";
 import { modifiableSurvey, visibleSurvey } from "./surveys";
 
 /** Asks proxies that compress responses to leave the ETag as sent (a rewritten tag never matches on save). */
@@ -133,11 +133,12 @@ export function contentHandlers(ctx: HandlerContext) {
           data[store][survey.id] = structuredClone(body);
           survey.updatedAt = savedAt;
           if (store === "definitions") {
-            (data.history[survey.id] ??= []).push({
-              id: ctx.newId(),
-              at: savedAt,
-              userId: user.id.toLowerCase(),
-            });
+            addHistoryEntry(
+              data,
+              survey.id,
+              { id: ctx.newId(), at: savedAt, userId: user.id.toLowerCase() },
+              body,
+            );
           }
         });
         return new HttpResponse(null, { status: 204, headers: { ETag: formatEtag(version) } });
@@ -167,12 +168,33 @@ export function contentHandlers(ctx: HandlerContext) {
         });
       }),
     ),
+
+    // server/src/content/service.ts getHistoryEntry: 404 for an invisible survey and for an
+    // unknown entry; an entry past the newest HISTORY_SNAPSHOTS has no JSON here (501).
+    http.get("/surveys/{surveyId}/history/{entryId}", ({ params, cookies }) =>
+      guarded(() => {
+        requireSession(ctx, cookies);
+        const snapshot = view(ctx, cookies, (data, user) => {
+          const { survey } = visibleSurvey(data, user, params.surveyId);
+          const entryId = params.entryId.toLowerCase();
+          const entry = data.history[survey.id]?.find((e) => e.id.toLowerCase() === entryId);
+          if (!entry) throw notFound();
+          return entry.snapshot;
+        });
+        if (snapshot === undefined) throw olderEntry();
+        return HttpResponse.json(snapshot);
+      }),
+    ),
   ];
 }
 
-/** `at` descending, then id descending (code-point order of the lower-case ids): `historyOrder`. */
-const historyOrder = (a: { at: string; id: string }, b: { at: string; id: string }): number =>
-  Date.parse(b.at) - Date.parse(a.at) || compare(b.id, a.id);
+const olderEntry = () =>
+  new ProblemError({
+    code: "not-implemented",
+    status: 501,
+    title: "Not implemented",
+    detail: `The demo keeps the JSON of the ${HISTORY_SNAPSHOTS} newest saves of a survey.`,
+  });
 
 /** After the position in `historyOrder` (times compared as instants): `isAfterHistory`. */
 function isAfterHistory(entry: { at: string; id: string }, position: HistoryPosition): boolean {
