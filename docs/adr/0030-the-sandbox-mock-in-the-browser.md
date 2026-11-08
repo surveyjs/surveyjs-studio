@@ -23,7 +23,7 @@ kept in step with the real server?
 | D4  | Navigations are the app's  | The service worker never sees a page navigation. So in the sandbox build the private guard sends a 401 to `/sign-in`, `/sign-in` shows **Pick an account**, `logout` answers `redirectUrl: "/sign-in"`, and the export links are hidden                                                                                                     |
 | D5  | Files are same-origin URLs | Uploaded bytes are base64 in the document. `StoredFile.url` is `<origin>/api/v1/public/files/<fileId>`, answered by the mock with the server's headers, so `<img>`, `<video>` and the Dashboard load them through the worker                                                                                                                |
 | D6  | A local directory          | `/config` answers `shell: "self-hosted"`, `features: {embed: false, apiDocs: false, apiTokens: false}` and `authMethods: ["password"]`, so no code path offers a surveyjs.io redirect. `/me` has `hasPassword: false` and no `instanceRole`. `addMember` with an unknown email makes a pending member                                       |
-| D7  | What answers 501           | `login`, `loginCallback`, `passwordLogin`, `setPasswordWithLink`, `changeOwnPassword`, the five `/admin/users` operations, `getSurveyHistoryEntry`, `exportResults`, `receiveAccountDeleted`, and a catch-all for any other `/api/v1/*` request. A unit test fails when the contract gains an operation that is neither handled nor listed  |
+| D7  | What answers 501           | `login`, `loginCallback`, `passwordLogin`, `setPasswordWithLink`, `changeOwnPassword`, the five `/admin/users` operations, `exportResults`, `receiveAccountDeleted`, and a catch-all for any other `/api/v1/*` request. A unit test fails when the contract gains an operation that is neither handled nor listed                           |
 | D8  | A generated seed           | `pnpm sandbox:seed` writes `web/src/sandbox/seed.json` from `legacyFixtureSeed()` and `withSeedInvitation`, restricted by the tag file `server/fixtures/sandbox.json`. A unit test regenerates it in memory and fails when the file is stale or larger than `seedBudgetKb`                                                                  |
 | D9  | `@sandbox` tests, for now  | The existing user-story specs create data through `page.request`, which bypasses a page's service worker. So `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI only. Running the existing specs on the sandbox build is a follow-up                                                                              |
 | D10 | Pages closing mid-request  | MSW answers from the page, so a `keepalive` request sent while a page closes (saving a results view on `pagehide`) may be lost. Documented, not fixed                                                                                                                                                                                       |
@@ -85,9 +85,12 @@ Details that follow:
   `413 quota-exceeded`), while the banner shows the full-storage text.
 - **There is no cross-tab lock.** Two tabs writing at nearly the same moment both start from the same document, and
   only the last write is kept.
-- **History keeps no snapshots.** An entry is `{ id, at, userId }`, so auto-saves do not grow the document by the size
-  of the survey. `getSurveyHistoryEntry` ([ADR 0032](0032-history-json-view.md)) answers `501`, and the History page
-  shows "Could not load this version." when an entry is opened.
+- **History keeps the JSON of a survey's 20 newest saves only** (2026-11-08, for [ADR 0032](0032-history-json-view.md)).
+  The editor saves after nearly every change, so a copy per save would fill the 4 MB of browser storage in one editing
+  session. Each entry is `{ id, at, userId, snapshot }`; a save drops `snapshot` from the survey's entries past the
+  newest 20 (`handlers/history.ts`). `getSurveyHistoryEntry` answers `200` with the JSON, `404` as on the server, and
+  `501` with the reason for an older entry, which the History page shows in place of "Please try again". The seed
+  keeps its legacy entries' JSON.
 - **A new contract operation needs a handler or an entry in the unsupported list.** The coverage test fails
   until it has one ([Development](../development.md#the-sandbox-step-9)).
 - **The seed is a snapshot.** A change to the shared fixtures or the tag file needs `pnpm sandbox:seed` and a commit.

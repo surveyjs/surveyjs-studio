@@ -24,6 +24,7 @@ import {
 import { newFileId, type HandlerContext } from "./context";
 import { http } from "./http";
 import { cloneName, MAX_NAME_UNITS, nextNewSurveyName } from "./naming";
+import { addHistoryEntry } from "./history";
 import {
   decodeSurveyCursor,
   encodeSurveyCursor,
@@ -394,14 +395,14 @@ export function surveyHandlers(ctx: HandlerContext) {
           const now = ctx.now().toISOString();
           const survey = createdSurvey(data, user, scope, surveyName, now);
           if (definition !== undefined) {
-            data.definitions[survey.id] = structuredClone(definition as Record<string, unknown>);
-            data.history[survey.id] = [
-              {
-                id: ctx.newId(),
-                at: now,
-                userId: lower(user.id),
-              },
-            ];
+            const stored = structuredClone(definition as Record<string, unknown>);
+            data.definitions[survey.id] = stored;
+            addHistoryEntry(
+              data,
+              survey.id,
+              { id: ctx.newId(), at: now, userId: lower(user.id) },
+              stored,
+            );
           }
           return surveyJson(survey, canModify(survey, user, scope.membership), []);
         });
@@ -568,13 +569,12 @@ export function surveyHandlers(ctx: HandlerContext) {
           const definition = rewritten(data.definitions[source.id]);
           if (definition !== undefined) {
             data.definitions[copyId] = definition;
-            data.history[copyId] = [
-              {
-                id: ctx.newId(),
-                at: now,
-                userId: lower(user.id),
-              },
-            ];
+            addHistoryEntry(
+              data,
+              copyId,
+              { id: ctx.newId(), at: now, userId: lower(user.id) },
+              definition,
+            );
           }
           const theme = rewritten(data.themes[source.id]);
           if (theme !== undefined) data.themes[copyId] = theme;
