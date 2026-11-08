@@ -8,7 +8,7 @@
  * `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { call, codeOf, as, cleanUp, ownsServer } from "./harness.js";
+import { call, codeOf, as, cleanUp, ownsServer, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -203,13 +203,16 @@ describe("views", () => {
     const adam = await as(ctx, admin);
     const surveyId = await created(adam);
     expect((await get(surveyId, "charts", adam)).status).toBe(400);
-    const { cookie = "" } = adam;
-    for (const response of [
-      await put(surveyId, "summary", { cookie }, {}),
-      await reset(surveyId, "summary", { cookie }),
-    ]) {
-      expect(response.status).toBe(403);
-      expect(await codeOf(response)).toBe("csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const { cookie = "" } = adam;
+      for (const response of [
+        await put(surveyId, "summary", { cookie }, {}),
+        await reset(surveyId, "summary", { cookie }),
+      ]) {
+        expect(response.status).toBe(403);
+        expect(await codeOf(response)).toBe("csrf-token-invalid");
+      }
     }
     expect((await get(surveyId, "summary")).status).toBe(401);
     expect((await put(surveyId, "summary", undefined, {})).status).toBe(401);

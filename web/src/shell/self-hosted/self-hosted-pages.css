@@ -526,8 +526,8 @@
 }
 
 .sh-app #creator {
-  /* The header, the bar and the footer. */
-  height: calc(100vh - 176px);
+  /* The header, the bar and the footer, and the page banner above the shell (the sandbox's). */
+  height: calc(100vh - 176px - var(--page-banner-height, 0px));
 }
 
 .sh-app .v2-class---edit-survey-change-name-container {

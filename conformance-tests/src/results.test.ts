@@ -18,6 +18,7 @@ import {
   walkPages,
   submitted,
   ownSurvey as ownHarnessSurvey,
+  sandbox,
 } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -68,6 +69,7 @@ const largeId = (n: number) => `66666666-0000-4000-8000-c${n.toString(16).padSta
 
 describe("listResults", () => {
   it("walks the 1,500 generated responses in pages of 500", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     const pages = await walk(LARGE, 500, olivia);
     expect(pages.map((p) => p.items.length)).toEqual([500, 500, 500]);
@@ -85,6 +87,7 @@ describe("listResults", () => {
   });
 
   it("serves 500 items by default and honours limit=1000", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     const first = await page(LARGE, "", olivia);
     expect(first.items).toHaveLength(500);
@@ -148,6 +151,7 @@ describe("listResults", () => {
   });
 
   it("refuses a bad limit or cursor with 400", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const olivia = await as(ctx, owner);
     for (const query of ["?limit=0", "?limit=1001"]) {
       expect((await list(LARGE, query, olivia)).status).toBe(400);

@@ -17,6 +17,8 @@ export const ports = {
   /** The server and the preview of the self-hosted shell's visual run. */
   selfHostedVisualServer: 3003,
   selfHostedVisualWeb: 5176,
+  /** The preview of the sandbox build (sandbox mode; no server). */
+  sandboxWeb: 5177,
   /** The OAuth stub of the oauth mode. */
   oauthStub: 5180,
 };
@@ -26,7 +28,8 @@ export const ports = {
  * 5174; Azurite and the SQL modes on it 3000 and 5173; the image target 5173 and 5174 (Azurite and
  * the SQL modes: 5173 only).
  */
-export function functionalPorts({ image, azurite, sql = false, oauth = false }) {
+export function functionalPorts({ image, azurite, sql = false, oauth = false, sandbox = false }) {
+  if (sandbox) return [ports.sandboxWeb];
   if (oauth && !image) return [ports.server, ports.web, ports.oauthStub];
   if (image) return azurite || sql ? [ports.web] : [ports.web, ports.licenceWeb];
   if (azurite || sql) return [ports.server, ports.web];

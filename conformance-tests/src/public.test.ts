@@ -13,7 +13,16 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { call, codeOf, as, newSurvey, ownSurvey, ownsServer, setPublished } from "./harness.js";
+import {
+  call,
+  codeOf,
+  as,
+  newSurvey,
+  ownSurvey,
+  ownsServer,
+  sandbox,
+  setPublished,
+} from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -309,7 +318,8 @@ describe("submitResponse", () => {
 });
 
 describe("public rate limit", () => {
-  it("answers 429 with Retry-After once an address has made too many requests", async () => {
+  it("answers 429 with Retry-After once an address has made too many requests", async (ctx) => {
+    if (sandbox) ctx.skip("rate limits are server-only");
     const address = `198.51.100.${1 + Math.floor(Math.random() * 254)}`;
     const tooLongId = "x".repeat(65);
     let limited: Response | undefined;

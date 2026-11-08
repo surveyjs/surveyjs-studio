@@ -2,8 +2,10 @@
  * Sign-in driver: signs in over HTTP only, the way a browser would, by following the redirects
  * of `/auth/login`. It completes the dev identity provider's "Sign in as…" page
  * (`IDENTITY_PROVIDER=dev`) and the login form of the mock OIDC server (mock-oauth2-server, used
- * in Azurite mode); other identity providers are reported as unsupported.
+ * in Azurite mode); other identity providers are reported as unsupported. The sandbox
+ * (`CONFORMANCE_PROVIDER=sandbox`) has no sign-in over HTTP: `sandboxSession` sets its cookie.
  */
+import { readFileSync } from "node:fs";
 
 /** Users of the legacy fixtures (server/fixtures/legacy) the reference server is seeded with. */
 export const fixtureUsers = {
@@ -62,6 +64,10 @@ export class CookieJar {
     return this.values.get(name);
   }
 
+  set(name: string, value: string): void {
+    this.values.set(name, value);
+  }
+
   /** The `Cookie` request header. */
   header(): string {
     return [...this.values].map(([name, value]) => `${name}=${value}`).join("; ");
@@ -69,6 +75,37 @@ export class CookieJar {
 }
 
 export class SignInUnsupportedError extends Error {}
+
+let sandboxUserIds: Set<string> | undefined;
+
+/** The ids of the users of the sandbox seed (web/src/sandbox/seed.json), lower case. */
+function sandboxUsers(): Set<string> {
+  if (!sandboxUserIds) {
+    const seed = JSON.parse(
+      readFileSync(new URL("../../web/src/sandbox/seed.json", import.meta.url), "utf8"),
+    ) as { users: { id: string; blocked?: boolean }[] };
+    sandboxUserIds = new Set(
+      seed.users.filter((user) => !user.blocked).map((user) => user.id.toLowerCase()),
+    );
+  }
+  return sandboxUserIds;
+}
+
+/**
+ * A session of the sandbox (D3 of self-hosted Step 9): the `msid` cookie naming a user of its seed,
+ * and no CSRF cookie; no HTTP. A fixture user the seed leaves out (blocked, erasable, the instance
+ * admin) cannot sign in there: SignInUnsupportedError.
+ */
+export function sandboxSession(userId: string): CookieJar {
+  if (!sandboxUsers().has(userId.toLowerCase())) {
+    throw new SignInUnsupportedError(
+      `user ${userId} is not in the sandbox seed (web/src/sandbox/seed.json)`,
+    );
+  }
+  const jar = new CookieJar();
+  jar.set("msid", userId);
+  return jar;
+}
 
 const DEV_SIGN_IN_PATH = "/__dev/sign-in";
 

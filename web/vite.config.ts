@@ -5,7 +5,7 @@ import { securityHeaders } from "../server/src/web/security-headers.ts";
 
 // E2E_API_PROXY_TARGET points a second preview at another server (the e2e licence-notice run).
 const backend = process.env["E2E_API_PROXY_TARGET"] ?? "http://127.0.0.1:3000";
-const proxy = {
+const apiProxy = {
   "/api": backend,
   // The dev identity provider's "Sign in as…" page (IDENTITY_PROVIDER=dev only).
   "/__dev": backend,
@@ -17,7 +17,7 @@ const proxy = {
  * R17: the SPA's security headers on `vite preview`; the proxied paths keep the server's own. The
  * dev server gets none: Vite dev injects inline scripts.
  */
-function securityHeadersPlugin(): Plugin {
+function securityHeadersPlugin(proxy: Record<string, string>): Plugin {
   const proxied = Object.keys(proxy);
   return {
     name: "my-surveys-security-headers",
@@ -66,71 +66,79 @@ const dashboardTableModules =
 const dashboardExportModules =
   /[\\/]node_modules[\\/](jspdf|jspdf-autotable|xlsx|fflate|fast-png|iobuffer|pako|@babel[\\/]runtime)[\\/]/;
 
-export default defineConfig({
-  // The router plugin must come before the React plugin.
-  plugins: [tanstackRouter({ target: "react" }), react(), securityHeadersPlugin()],
-  server: { port: 5173, strictPort: true, proxy },
-  build: {
-    // survey-core (see src/surveyjs/license.ts) and the Survey Creator are intentionally big lazy
-    // chunks.
-    chunkSizeWarningLimit: 2900,
-    // dist/.vite/manifest.json: the chunk check reads each route's chunks from it.
-    manifest: true,
-    rolldownOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            // Chunks with stable names. The e2e tests look for `survey-creator-*` (the editor
-            // page only, src/editor/SurveyEditor.tsx), `survey-form-*` (the run page and the
-            // editor) and `survey-dashboard-*` (the results page only: the Summary, the Table
-            // tab's `survey-dashboard-table-*` and the first PDF or Excel export's
-            // `survey-dashboard-export-*`); the build's chunk check (scripts/check-run-chunks.mjs)
-            // keeps the Creator and the Dashboard out of the run page and the Dashboard out of the
-            // results route's own chunk. Each group takes only the modules it names: their shared
-            // dependencies (React, survey-core) stay where they are.
-            {
-              name: "survey-creator",
-              test: creatorModules,
-              priority: 1,
-              includeDependenciesRecursively: false,
-            },
-            { name: "survey-core", test: surveyCoreModules, priority: 2 },
-            {
-              name: "survey-form",
-              test: surveyFormModules,
-              priority: 3,
-              includeDependenciesRecursively: false,
-            },
-            {
-              name: "survey-i18n",
-              test: surveyLocaleModules,
-              priority: 3,
-              includeDependenciesRecursively: false,
-            },
-            {
-              name: "survey-dashboard",
-              test: dashboardModules,
-              priority: 3,
-              includeDependenciesRecursively: false,
-            },
-            {
-              name: "survey-dashboard-table",
-              test: dashboardTableModules,
-              priority: 3,
-              includeDependenciesRecursively: false,
-            },
-            {
-              name: "survey-dashboard-export",
-              test: dashboardExportModules,
-              priority: 3,
-              includeDependenciesRecursively: false,
-            },
-          ],
+export default defineConfig(({ mode }) => {
+  // The sandbox build (D1): the app with an in-browser mock back-end, so nothing is proxied.
+  const sandbox = mode === "sandbox";
+  const proxy = sandbox ? {} : apiProxy;
+  return {
+    // The router plugin must come before the React plugin.
+    plugins: [tanstackRouter({ target: "react" }), react(), securityHeadersPlugin(proxy)],
+    server: { port: 5173, strictPort: true, proxy },
+    // Only the sandbox has a public directory (the worker script and its settings).
+    publicDir: sandbox ? "sandbox-public" : false,
+    build: {
+      ...(sandbox ? { outDir: "dist-sandbox" } : {}),
+      // survey-core (see src/surveyjs/license.ts) and the Survey Creator are intentionally big lazy
+      // chunks.
+      chunkSizeWarningLimit: 2900,
+      // dist/.vite/manifest.json: the chunk check reads each route's chunks from it.
+      manifest: true,
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              // Chunks with stable names. The e2e tests look for `survey-creator-*` (the editor
+              // page only, src/editor/SurveyEditor.tsx), `survey-form-*` (the run page and the
+              // editor) and `survey-dashboard-*` (the results page only: the Summary, the Table
+              // tab's `survey-dashboard-table-*` and the first PDF or Excel export's
+              // `survey-dashboard-export-*`); the build's chunk check (scripts/check-run-chunks.mjs)
+              // keeps the Creator and the Dashboard out of the run page and the Dashboard out of the
+              // results route's own chunk. Each group takes only the modules it names: their shared
+              // dependencies (React, survey-core) stay where they are.
+              {
+                name: "survey-creator",
+                test: creatorModules,
+                priority: 1,
+                includeDependenciesRecursively: false,
+              },
+              { name: "survey-core", test: surveyCoreModules, priority: 2 },
+              {
+                name: "survey-form",
+                test: surveyFormModules,
+                priority: 3,
+                includeDependenciesRecursively: false,
+              },
+              {
+                name: "survey-i18n",
+                test: surveyLocaleModules,
+                priority: 3,
+                includeDependenciesRecursively: false,
+              },
+              {
+                name: "survey-dashboard",
+                test: dashboardModules,
+                priority: 3,
+                includeDependenciesRecursively: false,
+              },
+              {
+                name: "survey-dashboard-table",
+                test: dashboardTableModules,
+                priority: 3,
+                includeDependenciesRecursively: false,
+              },
+              {
+                name: "survey-dashboard-export",
+                test: dashboardExportModules,
+                priority: 3,
+                includeDependenciesRecursively: false,
+              },
+            ],
+          },
         },
       },
     },
-  },
-  // The surveyjs-site shell compiles the site's own SCSS partials, which use @import.
-  css: { preprocessorOptions: { scss: { silenceDeprecations: ["import"] } } },
-  preview: { port: 5173, strictPort: true, proxy },
+    // The surveyjs-site shell compiles the site's own SCSS partials, which use @import.
+    css: { preprocessorOptions: { scss: { silenceDeprecations: ["import"] } } },
+    preview: { port: 5173, strictPort: true, proxy },
+  };
 });

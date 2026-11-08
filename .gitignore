@@ -19,3 +19,4 @@ e2e/visual/.state/
 e2e/visual/.self-baselines/
 .local/
 .data/
+web/dist-sandbox/

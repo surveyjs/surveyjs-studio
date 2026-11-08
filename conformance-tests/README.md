@@ -125,6 +125,21 @@ pnpm test:conformance:oauth      # reads oauth.env (sqlite)
 pnpm test:conformance:read-only   # reads read-only.env
 ```
 
+## Run against the sandbox mock
+
+`CONFORMANCE_PROVIDER=sandbox` starts no server. Each test file registers the sandbox's mock handlers
+(`web/src/sandbox/handlers`, the demo's in-browser back-end) with `msw/node`
+(`src/sandbox-setup.ts`), over its own in-memory store of the sandbox seed, and the requests go to
+`http://sandbox.test`. A session is the `msid` cookie naming a seed user, set without HTTP; tests
+for users the seed leaves out are skipped. The script runs a subset of 13 files. The sandbox has no
+CSRF token, so the CSRF assertions run only when `sandbox` is false. Tests that check only CSRF,
+need a fixture the seed leaves out, or need server-only behaviour (rate limits, IP addresses, export
+formats, file types read from the bytes) skip themselves there with `ctx.skip`.
+
+```sh
+pnpm test:conformance:sandbox   # reads sandbox.env
+```
+
 ## The account-deleted webhook
 
 The reference server always runs with a fixed, synthetic `ACCOUNT_WEBHOOK_SECRET`, and

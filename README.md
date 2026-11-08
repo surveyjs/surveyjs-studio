@@ -155,6 +155,16 @@ pnpm seed:sqlite && pnpm dev:s3           # as dev:sqlite, files in RustFS, an S
 
 See [Development](docs/development.md#sqlite-and-postgresql-modes).
 
+### The sandbox
+
+The web app with an in-browser back-end: the data stays in the browser's localStorage, and no server runs.
+
+```sh
+pnpm dev:sandbox   # http://localhost:5173, pick an account
+```
+
+See [Development](docs/development.md#the-sandbox-step-9) and [ADR 0030](docs/adr/0030-the-sandbox-mock-in-the-browser.md).
+
 ### Every run mode
 
 [Running the app](docs/running.md) lists every configuration that runs today (the memory and Azurite demos,
@@ -204,7 +214,9 @@ Run from the repository root.
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm demo`                                                      | Builds the API reference, then starts the server (3000) and the web app (5173) with in-memory storage and the dev sign-in    |
 | `pnpm demo:preview`                                              | Builds the app, then serves it with the security headers (the content-security policy); `pnpm demo` sends none               |
+| `pnpm dev:sandbox`                                               | The sandbox: the web app (5173) with its mock back-end in the browser; no server                                             |
 | `pnpm build`                                                     | Builds the API reference and the production web bundle                                                                       |
+| `pnpm build:sandbox`                                             | Builds the sandbox into `web/dist-sandbox/`                                                                                  |
 | `pnpm test`                                                      | `test:unit`, then `test:conformance`                                                                                         |
 | `pnpm test:unit`                                                 | Vitest across contract, server, web and repository scripts                                                                   |
 | `pnpm test:conformance`                                          | Conformance suite against a server it starts itself                                                                          |
@@ -245,11 +257,14 @@ Run from the repository root.
 | `pnpm test:conformance:s3`                                       | Conformance suite on `sqlite` with the files in a new S3 bucket (needs `s3:up`)                                              |
 | `pnpm test:conformance:password`                                 | Conformance suite on `sqlite` with local accounts and password sign-in                                                       |
 | `pnpm test:conformance:oauth`                                    | Conformance suite on `sqlite` with local accounts and Google, GitHub, Facebook and surveyjs.io against the stub              |
+| `pnpm test:conformance:sandbox`                                  | The sandbox subset of the conformance suite against the mock handlers (`msw/node`, no server)                                |
 | `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                               |
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                           |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                         |
 | `pnpm oauth-stub`                                                | The local stand-in for Google, GitHub, Facebook and surveyjs.io sign-in (port 5180; development and tests only)              |
+| `pnpm sandbox:seed`                                              | Writes `web/src/sandbox/seed.json` from the shared fixtures and `server/fixtures/sandbox.json`                               |
 | `pnpm e2e:password`                                              | Playwright password sign-in tests: the first admin, the forced change, the back-off (Chromium)                               |
+| `pnpm e2e:sandbox`                                               | Playwright `@sandbox` specs on the sandbox build (Chromium)                                                                  |
 | `pnpm e2e:self-hosted`                                           | Playwright branding tests in the self-hosted shell: sign-in, My Surveys, editor, results, run page (Chromium)                |
 | `pnpm e2e:visual:self-hosted`                                    | Visual tests of the self-hosted shell against its own baselines (local only)                                                 |
 | `pnpm e2e:postgres`                                              | Playwright tests on the `postgres` provider, every functional spec but the licence notices (Chromium; needs `postgres:up`)   |

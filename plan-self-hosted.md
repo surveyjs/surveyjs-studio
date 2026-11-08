@@ -513,6 +513,8 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 4. Reset demo data. The seed is back.
 5. Set `maxUploadKb` to 50 in `sandbox.config.json` and reload. Uploading a 100 KB image shows the quota message.
 
+**Progress note (Step 9).** Built as planned, with the decisions of [ADR 0030](docs/adr/0030-the-sandbox-mock-in-the-browser.md). D9: the `@sandbox` browser tests are one dedicated spec (`e2e/tests/sandbox.spec.ts`) for now. The existing user-story specs create data through `page.request`, which bypasses the page's service worker, so running them on the sandbox build is a follow-up. The demo walk is [self-hosted-09](docs/demo/self-hosted-09.md).
+
 ---
 
 ## Step 10: Publishing the sandbox

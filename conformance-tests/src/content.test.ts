@@ -9,7 +9,7 @@
  * then delete) is registered with `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { walkItems, call, codeOf, as, cleanUp } from "./harness.js";
+import { walkItems, call, codeOf, as, cleanUp, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -222,6 +222,7 @@ describe.each(["definition", "theme"] as const)("the survey %s", (document) => {
   });
 
   it("answers 403 csrf-token-invalid without the CSRF header", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const headers = await as(ctx, admin);
     const survey = await created(headers);
     const response = await putDocument({ cookie: headers.cookie ?? "" }, survey.id, document, {
@@ -374,6 +375,7 @@ describe("the survey history", () => {
 
 describe("a survey history entry", () => {
   it("gives the definition saved in it", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox keeps no history snapshots: it answers 501 (D7)");
     const headers = await as(ctx, admin);
     const survey = await created(headers, { definition: { title: "Start" } });
     let tag = await etagOf(await getDocument(headers, survey.id, "definition"));
@@ -402,6 +404,7 @@ describe("a survey history entry", () => {
   });
 
   it("gives the definitions of the legacy entries of Customer feedback", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox keeps no history snapshots: it answers 501 (D7)");
     const headers = await as(ctx, owner);
     const titles = [];
     for (const entry of await history(headers, fixture.feedback)) {
@@ -413,6 +416,7 @@ describe("a survey history entry", () => {
   });
 
   it("answers 404 for an unknown entry and for an entry of another survey", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox keeps no history snapshots: it answers 501 (D7)");
     const headers = await as(ctx, admin);
     const survey = await created(headers, { definition: { title: "Start" } });
     const other = await created(headers, { definition: { title: "Other" } });

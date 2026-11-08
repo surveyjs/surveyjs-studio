@@ -1,0 +1,34 @@
+name: Upload the failure artifacts
+description: >-
+  The Playwright report and the app containers' logs, named after the job. Call it with
+  `if: failure()`.
+inputs:
+  name:
+    description: The job's short name, appended to the artifact names
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: playwright-report-${{ inputs.name }}
+        path: e2e/playwright-report/
+        if-no-files-found: ignore
+        retention-days: 7
+
+    # The suites save each app container's log to docker-logs/ when they remove it; this adds the
+    # app containers still there (a server that failed to start).
+    - name: Collect the app container logs
+      shell: bash
+      run: |
+        mkdir -p docker-logs
+        for name in $(docker ps -a --filter name=surveyjs-studio-e2e --filter name=surveyjs-studio-conformance --format '{{.Names}}'); do
+          docker logs "$name" > "docker-logs/$name.log" 2>&1 || true
+        done
+
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: docker-logs-${{ inputs.name }}
+        path: docker-logs/
+        if-no-files-found: ignore
+        retention-days: 7

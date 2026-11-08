@@ -8,9 +8,13 @@
 //   them, and the table's chunk does not import the export libraries;
 // - the public results page (`/results/$surveyId`) is the same: no Dashboard code in the route's
 //   own chunks, the Dashboard and its table only through dynamic imports.
+// - the normal build (any directory but a sandbox one) holds no sandbox code: no manifest entry under
+//   `src/sandbox/`, no chunk that mentions `mockServiceWorker`, no `mockServiceWorker.js` file.
 // Run by `pnpm build` after `vite build`; reads Vite's manifest (`build.manifest` in
-// vite.config.ts) and exits with 1 on a failure.
-import { readFile } from "node:fs/promises";
+// vite.config.ts) and exits with 1 on a failure. The build directory is the first argument
+// (default `dist`; `dist-sandbox` for the sandbox build).
+import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 
 const ENTRY = "index.html";
 const RUN_ROUTE = "src/routes/s/$surveyId.lazy.tsx";
@@ -25,9 +29,11 @@ const DASHBOARD_JS = /^assets\/survey-dashboard-(?!table-|export-)[^/]*\.js$/;
 const DASHBOARD_TABLE_JS = /^assets\/survey-dashboard-table-[^/]*\.js$/;
 const DASHBOARD_EXPORT_JS = /^assets\/survey-dashboard-export-[^/]*\.js$/;
 
-const manifest = JSON.parse(
-  await readFile(new URL("../dist/.vite/manifest.json", import.meta.url), "utf8"),
-);
+const DIST = process.argv[2] ?? "dist";
+const distUrl = new URL(`../${DIST}/`, import.meta.url);
+const SANDBOX_BUILD = /sandbox/.test(DIST);
+
+const manifest = JSON.parse(await readFile(new URL(".vite/manifest.json", distUrl), "utf8"));
 
 /**
  * The files (JS and CSS) of `key` and of the chunks it imports, recursively. The entry's
@@ -57,6 +63,41 @@ function print(title, files) {
 }
 
 const problems = [];
+
+if (SANDBOX_BUILD) {
+  for (const file of ["mockServiceWorker.js", "sandbox.config.json"]) {
+    if (!existsSync(new URL(file, distUrl))) problems.push(`${DIST}/${file} is missing.`);
+  }
+} else {
+  const sandboxEntries = Object.keys(manifest).filter(
+    (key) => key.startsWith("src/sandbox/") || (manifest[key].src ?? "").startsWith("src/sandbox/"),
+  );
+  if (sandboxEntries.length > 0) {
+    problems.push(`Sandbox sources in the normal build: ${sandboxEntries.join(", ")}`);
+  }
+  if (existsSync(new URL("mockServiceWorker.js", distUrl))) {
+    problems.push(`${DIST}/mockServiceWorker.js exists in the normal build.`);
+  }
+  // The manifest lists only entries and dynamic imports, so a sandbox module merged into a shared
+  // chunk is found by what it contains: the storage key (src/sandbox/store.ts) and a user id only
+  // seed.json holds. "mockServiceWorker" is msw's default worker URL (start.ts uses it); it
+  // catches msw, not other sandbox code.
+  const MARKERS = [
+    "mockServiceWorker",
+    "studio-sandbox:v1",
+    "11111111-0000-4000-8000-a00000000001",
+  ];
+  const mentioning = [];
+  for (const name of await readdir(new URL("assets/", distUrl))) {
+    if (!name.endsWith(".js")) continue;
+    const text = await readFile(new URL(`assets/${name}`, distUrl), "utf8");
+    const found = MARKERS.filter((marker) => text.includes(marker));
+    if (found.length > 0) mentioning.push(`assets/${name} (${found.join(", ")})`);
+  }
+  if (mentioning.length > 0) {
+    problems.push(`Chunks with sandbox code in the normal build: ${mentioning.join(", ")}`);
+  }
+}
 
 const runFiles = [...collect(RUN_ROUTE, true, collect(ENTRY, false))].sort();
 print(`The run page (${RUN_ROUTE}) can load:`, runFiles);

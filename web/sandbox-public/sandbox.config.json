@@ -1,0 +1,5 @@
+{
+  "maxUploadKb": 200,
+  "storageLimitKb": 4096,
+  "seedBudgetKb": 1024
+}

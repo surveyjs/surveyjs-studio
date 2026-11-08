@@ -12,7 +12,8 @@
     "test:oauth": "node --env-file=oauth.env node_modules/vitest/vitest.mjs run src/oauth.test.ts",
     "test:user-api": "node --env-file=user-api.env node_modules/vitest/vitest.mjs run",
     "test:read-only": "node --env-file=read-only.env node_modules/vitest/vitest.mjs run src/read-only.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test:sandbox": "node --env-file=sandbox.env node_modules/vitest/vitest.mjs run src/surveys.test.ts src/survey-actions.test.ts src/content.test.ts src/files.test.ts src/public.test.ts src/public-files.test.ts src/results.test.ts src/results-details.test.ts src/public-results.test.ts src/views.test.ts src/projects.test.ts src/project-writes.test.ts src/members.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.sandbox.json --noEmit"
   },
   "dependencies": {
     "@surveyjs-studio/contract": "workspace:*",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@types/node": "24.19.0",
     "@types/pg": "8.23.1",
+    "msw": "2.15.0",
     "pg": "8.23.1",
     "vitest": "5.0.2"
   }

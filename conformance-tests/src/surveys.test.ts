@@ -11,7 +11,7 @@
  * (This file archives nothing; `survey-actions.test.ts` archives only in the admin's scope.)
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { GUID, cleanUp, call, codeOf, as, listPage, walkPages } from "./harness.js";
+import { GUID, cleanUp, call, codeOf, as, listPage, sandbox, walkPages } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider } = fixtureUsers;
@@ -154,6 +154,7 @@ describe("listSurveys", () => {
   });
 
   it("lists the user's active personal surveys by default, newest first", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const items = await walk(await as(ctx, owner));
     const ids = idsOf(items);
     const order = [fixture.apiCreated, fixture.customerFeedback, fixture.draftIdea].map((id) =>
@@ -398,6 +399,7 @@ describe("createSurvey", () => {
   });
 
   it("answers 403 csrf-token-invalid without the CSRF token", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox has no CSRF token (D3)");
     const { cookie = "" } = await as(ctx, outsider);
     const response = await create({ cookie }, { name: "No token" });
     expect(response.status).toBe(403);
@@ -422,6 +424,7 @@ describe("getSurvey", () => {
   });
 
   it("reads an empty published flag as published and 0 as unpublished", async (ctx) => {
+    if (sandbox) ctx.skip("needs survey a08, which the sandbox seed leaves out");
     const headers = await as(ctx, owner);
     for (const [id, published] of [
       [fixture.draftIdea, true],

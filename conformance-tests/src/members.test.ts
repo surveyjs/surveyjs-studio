@@ -12,7 +12,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
-import { call, codeOf, as, listPage, walkPages } from "./harness.js";
+import { call, codeOf, as, listPage, sandbox, walkPages } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, member, outsider, blocked } = fixtureUsers;
@@ -55,8 +55,11 @@ const memberOf = (
   status: "active",
 });
 
-/** Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). */
-const localAccounts = inject("passwordAdmin") !== null;
+/**
+ * Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). The
+ * sandbox is a local directory too (self-hosted Step 9, D6), with the seed's invitation.
+ */
+const localAccounts = inject("passwordAdmin") !== null || sandbox;
 
 const pendingOf = (email: string, role = "user"): Member => ({
   userId: null,
@@ -183,6 +186,7 @@ describe("listMembers", () => {
 
 describe("addMember", () => {
   it("adds a registered user by email, in any case, as user by default", async (ctx) => {
+    if (sandbox) ctx.skip("needs the blocked user a05, whom the sandbox seed leaves out");
     const adam = await as(ctx, admin);
     const projectId = await ownProject(ctx, "add");
 
@@ -241,7 +245,10 @@ describe("addMember", () => {
     const url = `/projects/${projectId}/invitations/${email}`;
     const remove = (headers: Headers) =>
       call("DELETE", "/projects/{projectId}/invitations/{email}", { path: url, headers });
-    await expectProblem(await remove(withoutCsrf(adam)), 403, "csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      await expectProblem(await remove(withoutCsrf(adam)), 403, "csrf-token-invalid");
+    }
     expect((await remove(adam)).status).toBe(204);
     await expectProblem(await remove(adam), 404, "not-found");
     expect((await page(adam, projectId)).items).toEqual([memberOf(admin, "admin")]);
@@ -271,11 +278,14 @@ describe("addMember", () => {
       404,
       "not-found",
     );
-    await expectProblem(
-      await add(withoutCsrf(adam), projectId, { email: owner.email }),
-      403,
-      "csrf-token-invalid",
-    );
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      await expectProblem(
+        await add(withoutCsrf(adam), projectId, { email: owner.email }),
+        403,
+        "csrf-token-invalid",
+      );
+    }
     expect((await page(adam, projectId)).items.map((m) => m.userId)).toEqual([admin.id, member.id]);
   });
 });
@@ -368,11 +378,14 @@ describe("removeMember", () => {
       404,
       "not-found",
     );
-    await expectProblem(
-      await removeMember(withoutCsrf(adam), projectId, member.id),
-      403,
-      "csrf-token-invalid",
-    );
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      await expectProblem(
+        await removeMember(withoutCsrf(adam), projectId, member.id),
+        403,
+        "csrf-token-invalid",
+      );
+    }
     expect((await page(adam, projectId)).items).toEqual([
       memberOf(admin, "admin"),
       memberOf(member, "user"),

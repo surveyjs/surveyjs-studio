@@ -1,0 +1,463 @@
+{
+  "version": 1,
+  "users": [
+    {
+      "id": "11111111-0000-4000-8000-a00000000001",
+      "email": "owner@example.com",
+      "displayName": "Olivia Owner",
+      "blocked": false
+    },
+    {
+      "id": "11111111-0000-4000-8000-a00000000002",
+      "email": "admin@example.com",
+      "displayName": "Adam Admin",
+      "blocked": false
+    },
+    {
+      "id": "11111111-0000-4000-8000-a00000000003",
+      "email": "member@example.com",
+      "displayName": "Mia Member",
+      "blocked": false
+    },
+    {
+      "id": "11111111-0000-4000-8000-a00000000004",
+      "email": "outsider@example.com",
+      "displayName": "Oscar Outsider",
+      "blocked": false
+    }
+  ],
+  "projects": [
+    {
+      "id": "55555555-0000-4000-8000-a00000000001",
+      "name": "Marketing",
+      "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "createdAt": "2025-11-21T10:00:00.000Z"
+    },
+    {
+      "id": "55555555-0000-4000-8000-a00000000002",
+      "name": "Engineering",
+      "creatorId": "11111111-0000-4000-8000-a00000000002",
+      "createdAt": "2025-12-01T09:00:00.000Z"
+    }
+  ],
+  "memberships": [
+    {
+      "userId": "11111111-0000-4000-8000-a00000000001",
+      "projectId": "55555555-0000-4000-8000-a00000000001",
+      "role": "admin"
+    },
+    {
+      "userId": "11111111-0000-4000-8000-a00000000002",
+      "projectId": "55555555-0000-4000-8000-a00000000001",
+      "role": "admin"
+    },
+    {
+      "userId": "11111111-0000-4000-8000-a00000000003",
+      "projectId": "55555555-0000-4000-8000-a00000000001",
+      "role": "user"
+    },
+    {
+      "userId": "11111111-0000-4000-8000-a00000000001",
+      "projectId": "55555555-0000-4000-8000-a00000000002",
+      "role": "user"
+    },
+    {
+      "userId": "11111111-0000-4000-8000-a00000000002",
+      "projectId": "55555555-0000-4000-8000-a00000000002",
+      "role": "admin"
+    }
+  ],
+  "invitations": [
+    {
+      "projectId": "55555555-0000-4000-8000-a00000000001",
+      "email": "invited@example.com",
+      "role": "user",
+      "invitedBy": "11111111-0000-4000-8000-a00000000001",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "surveys": [
+    {
+      "id": "22222222-0000-4000-8000-a00000000001",
+      "name": "Customer feedback",
+      "owner": {
+        "kind": "personal",
+        "userId": "11111111-0000-4000-8000-a00000000001"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "postId": "33333333-0000-4000-8000-a00000000001",
+      "resultId": "44444444-0000-4000-8000-a00000000001",
+      "published": true,
+      "archived": false,
+      "createdAt": "2026-03-13T09:12:00.000Z",
+      "updatedAt": "2026-04-14T15:30:00.000Z",
+      "settings": {
+        "publicResults": true,
+        "storeRespondentIp": true,
+        "useCookies": true
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000002",
+      "name": "Draft idea",
+      "owner": {
+        "kind": "personal",
+        "userId": "11111111-0000-4000-8000-a00000000001"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "postId": "33333333-0000-4000-8000-a00000000002",
+      "resultId": "44444444-0000-4000-8000-a00000000002",
+      "published": true,
+      "archived": false,
+      "createdAt": "2026-02-01T08:00:00.000Z",
+      "updatedAt": "2026-02-02T08:00:00.000Z",
+      "settings": {
+        "publicResults": false,
+        "storeRespondentIp": false,
+        "useCookies": false
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000003",
+      "name": "Old poll",
+      "owner": {
+        "kind": "personal",
+        "userId": "11111111-0000-4000-8000-a00000000001"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "postId": "33333333-0000-4000-8000-a00000000003",
+      "resultId": "44444444-0000-4000-8000-a00000000003",
+      "published": false,
+      "archived": true,
+      "createdAt": "2025-12-10T12:00:00.000Z",
+      "updatedAt": "2026-05-20T12:00:00.123Z",
+      "settings": {
+        "publicResults": false,
+        "storeRespondentIp": false,
+        "useCookies": false
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000004",
+      "name": "Campaign survey",
+      "owner": {
+        "kind": "project",
+        "projectId": "55555555-0000-4000-8000-a00000000001"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000003",
+      "postId": "33333333-0000-4000-8000-a00000000004",
+      "resultId": "44444444-0000-4000-8000-a00000000004",
+      "published": true,
+      "archived": false,
+      "createdAt": "2026-01-15T13:00:00.000Z",
+      "updatedAt": "2026-06-10T09:05:00.000Z",
+      "settings": {
+        "publicResults": false,
+        "storeRespondentIp": true,
+        "useCookies": false
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000005",
+      "name": "Archived campaign",
+      "owner": {
+        "kind": "project",
+        "projectId": "55555555-0000-4000-8000-a00000000001"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "postId": "33333333-0000-4000-8000-a00000000005",
+      "resultId": "44444444-0000-4000-8000-a00000000005",
+      "published": true,
+      "archived": true,
+      "createdAt": "2025-12-20T10:00:00.000Z",
+      "updatedAt": "2026-03-01T10:00:00.000Z",
+      "settings": {
+        "publicResults": true,
+        "storeRespondentIp": false,
+        "useCookies": true
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000006",
+      "name": "Engineering retro",
+      "owner": {
+        "kind": "project",
+        "projectId": "55555555-0000-4000-8000-a00000000002"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000002",
+      "postId": "33333333-0000-4000-8000-a00000000006",
+      "resultId": "44444444-0000-4000-8000-a00000000006",
+      "published": false,
+      "archived": false,
+      "createdAt": "2026-02-14T16:00:00.000Z",
+      "updatedAt": "2026-07-01T16:45:30.000Z",
+      "settings": {
+        "publicResults": false,
+        "storeRespondentIp": false,
+        "useCookies": false
+      }
+    },
+    {
+      "id": "22222222-0000-4000-8000-a00000000007",
+      "name": "Outsider quiz",
+      "owner": {
+        "kind": "personal",
+        "userId": "11111111-0000-4000-8000-a00000000004"
+      },
+      "creatorId": "11111111-0000-4000-8000-a00000000004",
+      "postId": "33333333-0000-4000-8000-a00000000007",
+      "resultId": "44444444-0000-4000-8000-a00000000007",
+      "published": true,
+      "archived": false,
+      "createdAt": "2026-04-01T07:00:00.000Z",
+      "updatedAt": "2026-04-02T07:30:00.000Z",
+      "settings": {
+        "publicResults": false,
+        "storeRespondentIp": true,
+        "useCookies": true
+      }
+    }
+  ],
+  "definitions": {
+    "22222222-0000-4000-8000-a00000000001": {
+      "title": "Customer feedback",
+      "pages": [
+        {
+          "name": "page1",
+          "elements": [
+            {
+              "type": "rating",
+              "name": "satisfaction",
+              "title": "How satisfied are you?"
+            },
+            {
+              "type": "file",
+              "name": "receipt",
+              "title": "Upload your receipt"
+            }
+          ]
+        }
+      ]
+    },
+    "22222222-0000-4000-8000-a00000000004": {
+      "title": "Campaign survey",
+      "pages": [
+        {
+          "name": "page1",
+          "elements": [
+            {
+              "type": "rating",
+              "name": "satisfaction",
+              "title": "How satisfied are you?"
+            },
+            {
+              "type": "file",
+              "name": "receipt",
+              "title": "Upload your receipt"
+            }
+          ]
+        }
+      ]
+    },
+    "22222222-0000-4000-8000-a00000000006": {
+      "title": "Engineering retro",
+      "pages": [
+        {
+          "name": "page1",
+          "elements": [
+            {
+              "type": "rating",
+              "name": "satisfaction",
+              "title": "How satisfied are you?"
+            },
+            {
+              "type": "file",
+              "name": "receipt",
+              "title": "Upload your receipt"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "themes": {
+    "22222222-0000-4000-8000-a00000000001": {
+      "themeName": "default",
+      "colorPalette": "light",
+      "cssVariables": {
+        "--sjs-primary-backcolor": "#19b394"
+      }
+    }
+  },
+  "history": {
+    "22222222-0000-4000-8000-a00000000001": [
+      {
+        "id": "88888888-0000-4000-8000-a00000000001",
+        "at": "2026-04-14T15:30:00.000Z",
+        "userId": null
+      },
+      {
+        "id": "88888888-0000-4000-8000-a00000000002",
+        "at": "2026-04-14T15:30:00.000Z",
+        "userId": null
+      }
+    ]
+  },
+  "responses": {
+    "22222222-0000-4000-8000-a00000000001": [
+      {
+        "id": "66666666-0000-4000-8000-a00000000001",
+        "submittedAt": "2026-04-01T08:00:00.500Z",
+        "data": {
+          "satisfaction": 4
+        },
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000002",
+        "submittedAt": "2026-04-01T09:15:00.000Z",
+        "data": {
+          "satisfaction": 2
+        },
+        "clientId": "client-0001",
+        "partial": true
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000003",
+        "submittedAt": "2026-04-01T10:30:00.000Z",
+        "data": {
+          "satisfaction": 5
+        },
+        "respondentIp": "203.0.113.7",
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000004",
+        "submittedAt": "2026-04-01T11:45:00.000Z",
+        "data": {
+          "satisfaction": 3,
+          "receipt": [
+            {
+              "name": "receipt.png",
+              "type": "image/png",
+              "content": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          ]
+        },
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000005",
+        "submittedAt": "2026-04-01T12:00:00.000Z",
+        "data": {
+          "satisfaction": 1,
+          "receipt": "dxsimage:99999999-0000-4000-8000-a00000000002.png"
+        },
+        "partial": false
+      }
+    ],
+    "22222222-0000-4000-8000-a00000000004": [
+      {
+        "id": "66666666-0000-4000-8000-a00000000011",
+        "submittedAt": "2026-04-02T08:00:00.500Z",
+        "data": {
+          "satisfaction": 4
+        },
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000012",
+        "submittedAt": "2026-04-02T09:15:00.000Z",
+        "data": {
+          "satisfaction": 2
+        },
+        "clientId": "client-0002",
+        "partial": true
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000013",
+        "submittedAt": "2026-04-02T10:30:00.000Z",
+        "data": {
+          "satisfaction": 5
+        },
+        "respondentIp": "203.0.113.7",
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000014",
+        "submittedAt": "2026-04-02T11:45:00.000Z",
+        "data": {
+          "satisfaction": 3,
+          "receipt": [
+            {
+              "name": "receipt.png",
+              "type": "image/png",
+              "content": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          ]
+        },
+        "partial": false
+      },
+      {
+        "id": "66666666-0000-4000-8000-a00000000015",
+        "submittedAt": "2026-04-02T12:00:00.000Z",
+        "data": {
+          "satisfaction": 1,
+          "receipt": "dxsimage:99999999-0000-4000-8000-a00000000002.png"
+        },
+        "partial": false
+      }
+    ]
+  },
+  "completions": {
+    "22222222-0000-4000-8000-a00000000001": {
+      "client-0001": {
+        "partial": true
+      }
+    },
+    "22222222-0000-4000-8000-a00000000004": {
+      "client-0002": {
+        "partial": true
+      }
+    }
+  },
+  "legacyViews": {
+    "22222222-0000-4000-8000-a00000000001": {
+      "summary": {
+        "elements": [
+          {
+            "name": "satisfaction",
+            "isPublic": true
+          },
+          {
+            "name": "receipt",
+            "isPublic": false
+          }
+        ]
+      },
+      "table": {
+        "locale": "",
+        "elements": [
+          {
+            "name": "satisfaction",
+            "displayName": "How satisfied are you?",
+            "isVisible": true,
+            "isPublic": true
+          },
+          {
+            "name": "receipt",
+            "displayName": "Upload your receipt",
+            "isVisible": true,
+            "isPublic": false
+          }
+        ],
+        "pageSize": 10
+      }
+    }
+  },
+  "privateResultQuestions": {
+    "22222222-0000-4000-8000-a00000000001": [
+      "receipt"
+    ]
+  }
+}

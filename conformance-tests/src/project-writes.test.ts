@@ -13,7 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { GUID, call, codeOf, as, cleanUp } from "./harness.js";
+import { GUID, call, codeOf, as, cleanUp, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { admin, member, outsider } = fixtureUsers;
@@ -244,9 +244,12 @@ describe("createProject", () => {
     expect(signedOut.status).toBe(401);
     expect(await codeOf(signedOut)).toBe("unauthenticated");
 
-    const noCsrf = await create(withoutCsrf(adam), { name: uniqueName("no csrf") });
-    expect(noCsrf.status).toBe(403);
-    expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const noCsrf = await create(withoutCsrf(adam), { name: uniqueName("no csrf") });
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
   });
 });
 
@@ -409,9 +412,12 @@ describe("deleteProject", () => {
     expect(longId.status).toBe(400);
     expect(await codeOf(longId)).toBe("bad-request");
 
-    const noCsrf = await remove(withoutCsrf(adam), project.id);
-    expect(noCsrf.status).toBe(403);
-    expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const noCsrf = await remove(withoutCsrf(adam), project.id);
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
     expect((await get(adam, project.id)).status).toBe(200);
   });
 });

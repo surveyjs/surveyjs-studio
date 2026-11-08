@@ -14,6 +14,7 @@ import { SELF_HOSTED_SHELL, renderAnonymousPage } from "../shell/registry";
 import { ReadOnlyBanner } from "../shell/ReadOnlyBanner";
 import { PageHeader } from "../surveyList/PageHeader";
 import { applySurveyJSLicense } from "../surveyjs/license";
+import { LazySandboxBanner } from "../sandboxLazy";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   loader: async ({ context }) => {
@@ -36,6 +37,8 @@ function RootLayout() {
   return (
     <>
       {config.readOnly && <ReadOnlyBanner />}
+      {/* Inline, so the bundler removes the sandbox banner from the normal build. */}
+      {import.meta.env.MODE === "sandbox" && <LazySandboxBanner />}
       <Outlet />
     </>
   );

@@ -8,6 +8,9 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      "**/dist-sandbox/**",
+      // msw's own file, copied unchanged (worker-file.test.ts)
+      "web/sandbox-public/mockServiceWorker.js",
       "**/coverage/**",
       "**/test-results/**",
       "**/playwright-report/**",

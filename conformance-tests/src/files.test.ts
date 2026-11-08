@@ -10,7 +10,7 @@
  * created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { call, codeOf, upload, as, cleanUp } from "./harness.js";
+import { call, codeOf, upload, as, cleanUp, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -143,6 +143,7 @@ describe("uploadSurveyAsset and downloadFile", () => {
   });
 
   it("decides the type from the bytes, not the declared type or name", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox types a file by its extension, not by its bytes");
     const headers = await as(ctx, admin);
     const surveyId = await createdSurvey(headers);
 
@@ -221,9 +222,12 @@ describe("uploadSurveyAsset and downloadFile", () => {
 
     expect((await uploadTo(surveyId, undefined, form())).status).toBe(401);
 
-    const noCsrf = await uploadTo(surveyId, { cookie: adminHeaders.cookie ?? "" }, form());
-    expect(noCsrf.status).toBe(403);
-    expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const noCsrf = await uploadTo(surveyId, { cookie: adminHeaders.cookie ?? "" }, form());
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
 
     const forbidden = await uploadTo(fixture.engineeringRetro, await as(ctx, owner), form());
     expect(forbidden.status).toBe(403);
