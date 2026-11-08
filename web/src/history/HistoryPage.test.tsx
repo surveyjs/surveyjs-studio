@@ -137,6 +137,17 @@ describe("the history page", () => {
     expect(within(item).queryByRole("alert")).toBeNull();
   });
 
+  it("gives the sandbox's reason when an older entry kept no JSON, without asking to try again", async () => {
+    server.use(historyEntryHandler({}, undefined, ["e3"]));
+    open({ "": { ...first, nextCursor: null } });
+    fireEvent.click(await firstToggle());
+
+    const item = screen.getAllByRole("listitem")[0]!;
+    expect((await within(item).findByRole("alert")).textContent).toBe(
+      "The demo keeps the JSON of the 20 newest saves of a survey.",
+    );
+  });
+
   it("says so when there are no edits", async () => {
     open({ "": { items: [], nextCursor: null } });
 

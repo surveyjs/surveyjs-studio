@@ -33,13 +33,6 @@ const UNSUPPORTED: readonly Unsupported[] = [
     path: "/admin/users/:userId/reset-link",
     before: "session",
   },
-  // History keeps no snapshots in the sandbox (ADR 0030), so there is no definition to give.
-  {
-    id: "getSurveyHistoryEntry",
-    method: "get",
-    path: "/surveys/:surveyId/history/:entryId",
-    before: "survey",
-  },
   {
     id: "exportResults",
     method: "get",

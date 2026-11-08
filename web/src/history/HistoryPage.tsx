@@ -6,6 +6,7 @@ import {
   historyInfiniteQueryOptions,
   type HistoryPage as HistoryPageData,
 } from "../api/content";
+import { ApiError } from "../api/client";
 import { surveyQueryOptions } from "../api/surveys";
 import clockIcon from "../shell/surveyjs-site/assets/site/Content/Images/Clock_12x12.svg";
 import { Icon } from "../shell/surveyjs-site/SiteIcon";
@@ -130,9 +131,14 @@ function EntryJson({ id, surveyId, entryId }: { id: string; surveyId: string; en
   }, [copied]);
 
   if (entry.isError) {
+    // The sandbox keeps the JSON of a survey's newest saves only and says so with a 501; trying
+    // again would not help there.
+    const problem = entry.error instanceof ApiError ? entry.error.problem : null;
     return (
       <p id={id} className="v2-class---paragraph" role="alert">
-        Could not load this version. Please try again.
+        {problem?.code === "not-implemented"
+          ? (problem.detail ?? "This version is not available here.")
+          : "Could not load this version. Please try again."}
       </p>
     );
   }

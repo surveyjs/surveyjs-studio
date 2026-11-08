@@ -156,8 +156,27 @@ test("a hidden and moved Summary item is kept per user and reset from Details", 
     await page.mouse.move(from.x + 5, from.y + from.height / 2);
     await page.mouse.down();
     await page.mouse.move(to.x + 20, to.y + 20, { steps: 20 });
+    // The grid (Muuri) applies pointer moves on animation frames and re-sorts after a 100 ms
+    // debounce, and only after the pointer moved more than 10 px; a release before that drops q3
+    // where it was (and still saves). So hold over q1, nudging the pointer 12 px back and forth,
+    // until q1 makes room.
+    let nudge = 0;
+    await expect
+      .poll(async () => {
+        nudge = 12 - nudge;
+        await page.mouse.move(to.x + 20 + nudge, to.y + 20 + nudge);
+        const box = await page.locator('[data-question="q1"]').boundingBox();
+        return box === null ? 0 : Math.hypot(box.x - to.x, box.y - to.y);
+      })
+      .toBeGreaterThan(10);
     await page.mouse.up();
-    await moved;
+    const saved = (await moved).request().postDataJSON() as {
+      elements: { name: string; visible?: boolean }[];
+    };
+    expect(saved.elements.filter((e) => e.visible !== false).map((e) => e.name)).toEqual([
+      "q3",
+      "q1",
+    ]);
 
     await page.reload();
     await expectSummaryItems(page, ["q3", "q1"]);

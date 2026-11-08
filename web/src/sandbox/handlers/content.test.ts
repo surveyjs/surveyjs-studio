@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { seed, setupSandbox, SURVEYS, USERS } from "./testing";
+import { HISTORY_SNAPSHOTS } from "./history";
+import { seed, setupSandbox, SURVEYS, USERS, type Sandbox } from "./testing";
 
 const put = (json: unknown, ifMatch?: string) => ({
   method: "PUT",
@@ -124,23 +125,84 @@ describe("survey definition", () => {
 });
 
 describe("definition saves and history", () => {
-  it("adds an entry without a snapshot, of the same size whatever the survey's size", async () => {
+  it("keeps the saved JSON on the newest entries only", async () => {
     const { call, ctx } = setupSandbox();
     const path = `/surveys/${SURVEYS.feedback}/definition`;
     const save = async (json: unknown) =>
       (await call(path, { ...put(json, "*"), user: USERS.owner })).status;
     const before = ctx.store.read().history[SURVEYS.feedback]!.length;
 
-    const big = { pages: [{ elements: [{ type: "comment", title: "x".repeat(50_000) }] }] };
-    expect(await save({ title: "Small" })).toBe(204);
-    expect(await save(big)).toBe(204);
+    for (let n = 1; n <= HISTORY_SNAPSHOTS + 2; n++) expect(await save({ n })).toBe(204);
 
-    const added = ctx.store.read().history[SURVEYS.feedback]!.slice(before);
-    expect(added).toHaveLength(2);
-    for (const entry of added) {
-      expect(Object.keys(entry).sort()).toEqual(["at", "id", "userId"]);
+    const entries = ctx.store.read().history[SURVEYS.feedback]!;
+    expect(entries).toHaveLength(before + HISTORY_SNAPSHOTS + 2);
+    const kept = entries.filter((entry) => entry.snapshot !== undefined);
+    expect(kept.map((entry) => entry.snapshot)).toEqual(
+      Array.from({ length: HISTORY_SNAPSHOTS }, (_, i) => ({ n: i + 3 })),
+    );
+  });
+});
+
+describe("GET /surveys/{id}/history/{entryId}", () => {
+  const entryPath = (surveyId: string, entryId: string) =>
+    `/surveys/${surveyId}/history/${entryId}`;
+  const listIds = async (call: Sandbox["call"], surveyId: string) =>
+    (
+      (await (await call(`/surveys/${surveyId}/history`, { user: USERS.owner })).json()) as {
+        items: { id: string }[];
+      }
+    ).items.map((item) => item.id);
+
+  it("gives the definition each save stored, and the seed's legacy entries", async () => {
+    const { call } = setupSandbox();
+    const definition = `/surveys/${SURVEYS.feedback}/definition`;
+    await call(definition, { ...put({ title: "One" }, "*"), user: USERS.owner });
+    await call(definition, { ...put({ title: "Two" }, "*"), user: USERS.owner });
+
+    const titles = [];
+    for (const id of await listIds(call, SURVEYS.feedback)) {
+      const response = await call(entryPath(SURVEYS.feedback, id.toUpperCase()), {
+        user: USERS.owner,
+      });
+      expect(response.status).toBe(200);
+      titles.push(((await response.json()) as { title: string }).title);
     }
-    expect(JSON.stringify(added[1]).length).toBe(JSON.stringify(added[0]).length);
+    expect(titles.slice(0, 2)).toEqual(["Two", "One"]);
+    // The two legacy entries share a time, so their order is the id tie-break.
+    expect(titles.slice(2).sort()).toEqual(["Customer feedback", "Customer feedback (draft)"]);
+  });
+
+  it("answers 404 for an unknown entry, an entry of another survey and an invisible survey", async () => {
+    const { call } = setupSandbox();
+    const [feedbackEntry] = await listIds(call, SURVEYS.feedback);
+    const unknown = "99999999-0000-4000-8000-a00000000099";
+    for (const [surveyId, entryId, user] of [
+      [SURVEYS.feedback, unknown, USERS.owner],
+      [SURVEYS.draft, feedbackEntry!, USERS.owner],
+      [SURVEYS.feedback, feedbackEntry!, USERS.member],
+    ] as const) {
+      const response = await call(entryPath(surveyId, entryId), { user });
+      expect(response.status, `${surveyId} ${entryId} ${user}`).toBe(404);
+      expect(await response.json()).toMatchObject({ code: "not-found" });
+    }
+    expect((await call(entryPath(SURVEYS.feedback, feedbackEntry!))).status).toBe(401);
+  });
+
+  it("answers 501 with the reason for an entry older than the newest ones", async () => {
+    const { call } = setupSandbox();
+    const definition = `/surveys/${SURVEYS.feedback}/definition`;
+    for (let n = 1; n <= HISTORY_SNAPSHOTS; n++) {
+      await call(definition, { ...put({ n }, "*"), user: USERS.owner });
+    }
+    const ids = await listIds(call, SURVEYS.feedback);
+    const oldest = await call(entryPath(SURVEYS.feedback, ids.at(-1)!), { user: USERS.owner });
+    expect(oldest.status).toBe(501);
+    expect(await oldest.json()).toMatchObject({
+      code: "not-implemented",
+      detail: `The demo keeps the JSON of the ${HISTORY_SNAPSHOTS} newest saves of a survey.`,
+    });
+    const newest = await call(entryPath(SURVEYS.feedback, ids[0]!), { user: USERS.owner });
+    expect(await newest.json()).toEqual({ n: HISTORY_SNAPSHOTS });
   });
 });
 

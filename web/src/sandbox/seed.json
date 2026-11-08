@@ -294,12 +294,52 @@
       {
         "id": "88888888-0000-4000-8000-a00000000001",
         "at": "2026-04-14T15:30:00.000Z",
-        "userId": null
+        "userId": null,
+        "snapshot": {
+          "title": "Customer feedback (draft)",
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "rating",
+                  "name": "satisfaction",
+                  "title": "How satisfied are you?"
+                },
+                {
+                  "type": "file",
+                  "name": "receipt",
+                  "title": "Upload your receipt"
+                }
+              ]
+            }
+          ]
+        }
       },
       {
         "id": "88888888-0000-4000-8000-a00000000002",
         "at": "2026-04-14T15:30:00.000Z",
-        "userId": null
+        "userId": null,
+        "snapshot": {
+          "title": "Customer feedback",
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "rating",
+                  "name": "satisfaction",
+                  "title": "How satisfied are you?"
+                },
+                {
+                  "type": "file",
+                  "name": "receipt",
+                  "title": "Upload your receipt"
+                }
+              ]
+            }
+          ]
+        }
       }
     ]
   },

@@ -84,10 +84,25 @@ export function historyHandler(
 export function historyEntryHandler(
   definitions: Record<string, Record<string, unknown>>,
   onRequest?: (entryId: string) => void,
+  /** Entries answered with the sandbox's 501 for an entry that kept no JSON. */
+  withoutJson: readonly string[] = [],
 ) {
   return http.get("/surveys/{surveyId}/history/{entryId}", ({ params, response }) => {
     onRequest?.(params.entryId);
     const definition = definitions[params.entryId];
+    if (withoutJson.includes(params.entryId)) {
+      // Not in the contract for this operation: the sandbox's answer (handlers/content.ts).
+      return HttpResponse.json(
+        {
+          type: "about:blank",
+          title: "Not implemented",
+          status: 501,
+          code: "not-implemented",
+          detail: "The demo keeps the JSON of the 20 newest saves of a survey.",
+        },
+        { status: 501, headers: { "Content-Type": "application/problem+json" } },
+      );
+    }
     return definition === undefined
       ? response(404).json(
           { type: "about:blank", title: "Not found", status: 404, code: "not-found" },
