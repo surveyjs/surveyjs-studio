@@ -4,7 +4,8 @@ The repository `surveyjs/surveyjs-studio` is private until the product owner swi
 public with it: every commit, every branch and every tag, and every past version of every file. This page records what
 was checked before the switch, what the scan found, and what to turn on in the GitHub settings afterwards.
 
-Date of the check: 2026-11-06. The check itself rewrote nothing and pushed nothing. The history was rewritten afterwards (see [History clean-up](#history-clean-up)).
+Date of the check: 2026-11-06, repeated on 2026-11-08 after the self-hosted steps were merged (see
+[The re-scan of 2026-11-08](#the-re-scan-of-2026-11-08)). The check itself rewrote nothing and pushed nothing. The history was rewritten afterwards (see [History clean-up](#history-clean-up)).
 
 ## The scan
 
@@ -55,6 +56,25 @@ example) also needs a re-baseline of the file.
 
 A real secret is never added to `.gitleaksignore`. If the scan finds one, rotate it first. Removing it from the
 history is a rewrite, and that is the product owner's decision.
+
+### The re-scan of 2026-11-08
+
+The eleven self-hosted step branches were merged into `master` (pull requests #1 to #11, merge commits) and then
+deleted, so `master` is the only branch. The scan was run again:
+
+| Item              | Value                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| Command           | `pnpm scan:secrets --all-refs`                                                                       |
+| Commits           | 429                                                                                                  |
+| Pull request refs | `refs/pull/1..11/head` were fetched and scanned as well: they hold no commit that is not on `master` |
+| Result            | `no leaks found`                                                                                     |
+
+The 39 commits added since the review of 2026-11-06 (the merges and six commits) were also searched line by line for
+email addresses, IP addresses, host names, credentials and the private site's names. Found: only the public
+`api.surveyjs.io` and `auth.surveyjs.io`, and the already reworded placeholders of
+`docs/architecture/legacy-data-layout.md`.
+
+The rewritten release candidate tags `v0.7.0-rc.1` to `rc.3` were never pushed. Their commits are on `master`.
 
 ## The review
 
