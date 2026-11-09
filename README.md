@@ -1,10 +1,11 @@
-# My Surveys
+# SurveyJS Studio (formerly My Surveys)
 
-My Surveys is the survey section of [surveyjs.io](https://surveyjs.io). You create surveys with
-Survey Creator, publish them, collect responses and look at the results. This repository is the
-SurveyJS team's rebuild of that section as a standalone application. It will run at
-`studio.surveyjs.io` and replace the old section. After that it will be open-sourced, with a
-free Docker image for running your own copy.
+SurveyJS Studio is the survey application of [surveyjs.io](https://surveyjs.io), known until now as its My Surveys
+section. You create surveys with Survey Creator, publish them, collect responses and look at the results. This
+repository is the SurveyJS team's rebuild of that section as a standalone application. It will run at
+`studio.surveyjs.io` and replace the old section. The same code also runs as a free Docker image for your own copy
+and as a public sandbox. The repository is ready to be open-sourced and is still private
+([Going public](docs/operations/going-public.md)).
 
 **Naming.** The repository is [`surveyjs/surveyjs-studio`](https://github.com/surveyjs/surveyjs-studio), and the
 image, the packages (`@surveyjs-studio/*`) and the hosting address (`studio.surveyjs.io`) use that name. The app's
@@ -24,29 +25,32 @@ the look ([idea.md §3.0](idea.md#30-deployment-modes-2026-10-19)). Pick yours:
 
 `studio.surveyjs.io` on the current surveyjs.io databases and Azure storage, with surveyjs.io sign-in. It replaces the
 old My Surveys section. **State:** Phase 1 is built and passed the compatibility smoke test on production on
-2026-10-23; hosting and the rollout are next ([plan.md](plan.md#progress)). Mode 1.3, on its own data, is
-[planned](plan-hosted.md). **Start:** [Running in production](#running-in-production) and
-[Operations](docs/operations.md). What the app does is in the [user guide](docs/user-guide/README.md).
+2026-10-23; hosting and the rollout are next ([plan.md](plan.md#progress)). The server scripts for that are in
+[`deploy/hetzner/`](deploy/hetzner/) ([Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)).
+Mode 1.3, on its own data, is [planned](plan-hosted.md). **Start:** [Running in production](#running-in-production)
+and [Operations](docs/operations.md). What the app does is in the [user guide](docs/user-guide/README.md).
 
 ### Self-hosted image (mode 2b)
 
 A free Docker image: one container with its own database, password accounts and "Powered by SurveyJS" branding.
-**State:** built and tested, published as a private test package. Pulling it needs Docker Hub access and the shipped licence key
-([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private after the repository goes public
+**State:** built and tested, published as a private test package. Publishing it on Docker Hub waits for push access
+there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
+after the repository goes public. All 11 steps of the self-hosted track are done
 ([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
 [Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
 
 ### Sandbox (mode 2a)
 
 A static site at <https://studio.demos.surveyjs.io> where anyone tries every feature on demo data kept in their
-browser. **State:** built; going live needs the product owner's one-time setup
-([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
+browser. **State:** built, with the Publish sandbox workflow ready; going live needs the product owner's one-time
+setup ([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
 ([the sandbox](#the-sandbox)).
 
 ### Custom development (mode 3)
 
 Your own fork with your own shell, database and sign-in (Google, GitHub, Facebook, surveyjs.io). It needs SurveyJS
-licences. **State:** documented. **Start:** [Customizing](docs/customizing/overview.md).
+licences. **State:** documented, with an example shell that CI builds and tests. **Start:**
+[Customizing](docs/customizing/overview.md).
 
 ### Development (mode 4)
 
@@ -140,35 +144,37 @@ The hosted image serves modes 1 and 4; its settings choose the mode. Build it wi
 `pnpm prod-like:up`, and run it behind an https reverse proxy. [Operations](docs/operations.md) has the details. The
 self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-hosting](docs/self-hosting.md)).
 
-| Mode      | Settings                                                                                                               | Ready                                    |
-| --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| 1.1       | `APP_EDITION=hosted`, `STORAGE_PROVIDER=azure-legacy` with the three `LEGACY_*` strings, sign-in at `auth.surveyjs.io` | Yes: from rollout step 1                 |
-| 1.2       | As 1.1, plus `ACCOUNT_WEBHOOK_SECRET`                                                                                  | Yes: from rollout step 4                 |
-| 1.3       | The hosted-migration track                                                                                             | Not yet                                  |
-| 2a, 2b, 3 | The self-hosted track; 2b is the self-hosted image ([Self-hosting](docs/self-hosting.md))                              | 2b built (a test package); 2a, 3 not yet |
-| 4         | In memory or on the local replica, with the dev sign-in or the mock OIDC server                                        | Yes ([Running the app](docs/running.md)) |
+| Mode | Settings                                                                                                               | Ready                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| 1.1  | `APP_EDITION=hosted`, `STORAGE_PROVIDER=azure-legacy` with the three `LEGACY_*` strings, sign-in at `auth.surveyjs.io` | Yes: from rollout step 1                 |
+| 1.2  | As 1.1, plus `ACCOUNT_WEBHOOK_SECRET`                                                                                  | Yes: from rollout step 4                 |
+| 1.3  | The hosted-migration track                                                                                             | Not yet                                  |
+| 2a   | The sandbox, a static site on the demos server ([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio))    | Built; waits for the one-time setup      |
+| 2b   | The self-hosted image ([Self-hosting](docs/self-hosting.md))                                                           | Built (a private test package)           |
+| 3    | Your own fork ([Customizing](docs/customizing/overview.md))                                                            | Documented                               |
+| 4    | In memory or on the local replica, with the dev sign-in or the mock OIDC server                                        | Yes ([Running the app](docs/running.md)) |
 
 - [Configuration by deployment mode](docs/operations.md#configuration-by-deployment-mode): every setting of each mode.
 - [Deployment](docs/operations.md#deployment), [monitoring](docs/operations.md#monitoring) and
   [read-only mode](docs/operations.md#read-only-mode).
 - [The rollout and rollback runbook](docs/operations.md#rollout-and-rollback-runbook), for the SurveyJS team and the
   surveyjs.io site team.
-
 - [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status): deploying a
   published image tag, the status and the rollback.
 
 ## Repository layout
 
-| Directory            | Package                              | Purpose                                                           |
-| -------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `contract/`          | `@surveyjs-studio/contract`          | `openapi.yaml`, generated TypeScript types, API reference build   |
-| `server/`            | `@surveyjs-studio/server`            | Fastify server; routes and validation are built from the contract |
-| `web/`               | `@surveyjs-studio/web`               | React app built with Vite                                         |
-| `conformance-tests/` | `@surveyjs-studio/conformance-tests` | HTTP suite that checks any server against the contract            |
-| `e2e/`               | `@surveyjs-studio/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)              |
-| `scripts/`           | (root)                               | Repository checks, for example `check:deps`                       |
-| `docker/`            |                                      | The legacy replica, the mock OIDC server, and the prod-like setup |
-| `docs/`              |                                      | Documentation                                                     |
+| Directory            | Package                              | Purpose                                                            |
+| -------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `contract/`          | `@surveyjs-studio/contract`          | `openapi.yaml`, generated TypeScript types, API reference build    |
+| `server/`            | `@surveyjs-studio/server`            | Fastify server; routes and validation are built from the contract  |
+| `web/`               | `@surveyjs-studio/web`               | React app built with Vite                                          |
+| `conformance-tests/` | `@surveyjs-studio/conformance-tests` | HTTP suite that checks any server against the contract             |
+| `e2e/`               | `@surveyjs-studio/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)               |
+| `scripts/`           | (root)                               | Repository checks, for example `check:deps`                        |
+| `docker/`            |                                      | The legacy replica, the mock OIDC server, and the prod-like setup  |
+| `deploy/`            |                                      | The Hetzner server scripts, the Compose examples, the sandbox host |
+| `docs/`              |                                      | Documentation                                                      |
 
 ## Scripts
 
@@ -227,8 +233,12 @@ Run from the repository root.
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                       |
 | `pnpm oauth-stub`                                                | The local stand-in for Google, GitHub, Facebook and surveyjs.io sign-in (port 5180; development and tests only)            |
 | `pnpm sandbox:seed`                                              | Writes `web/src/sandbox/seed.json` from the shared fixtures and `server/fixtures/sandbox.json`                             |
+| `pnpm sandbox:serve`                                             | Serves `web/dist-sandbox/` with the sandbox's nginx configuration in a container, as the demos server does (`--stop`)      |
+| `pnpm sandbox:wait`                                              | Waits until a sandbox host's `version.json` names a commit: `--url <url> --commit <sha>`                                   |
 | `pnpm e2e:password`                                              | Playwright password sign-in tests: the first admin, the forced change, the back-off (Chromium)                             |
+| `pnpm e2e:oauth`                                                 | Playwright OAuth sign-in tests: local accounts with GitHub and Google against the OAuth stub (Chromium)                    |
 | `pnpm e2e:sandbox`                                               | Playwright `@sandbox` specs on the sandbox build (Chromium)                                                                |
+| `pnpm e2e:sandbox:url`                                           | The same specs against a running sandbox host named by `E2E_SANDBOX_URL`; nothing is built or started                      |
 | `pnpm e2e:self-hosted`                                           | Playwright branding tests in the self-hosted shell: sign-in, My Surveys, editor, results, run page (Chromium)              |
 | `pnpm e2e:visual:self-hosted`                                    | Visual tests of the self-hosted shell against its own baselines (local only)                                               |
 | `pnpm e2e:postgres`                                              | Playwright tests on the `postgres` provider, every functional spec but the licence notices (Chromium; needs `postgres:up`) |
@@ -241,6 +251,9 @@ Run from the repository root.
 | `pnpm format:check`                                              | Prettier, check only                                                                                                       |
 | `pnpm lint:contract`                                             | Redocly lint of the contract, and a check that generated types are current                                                 |
 | `pnpm check:deps`                                                | Dependency rules (exact versions, SurveyJS versions equal)                                                                 |
+| `pnpm check:docs-links`                                          | Checks the relative links and heading anchors of the public docs                                                           |
+| `pnpm check:example-shell`                                       | Applies the example shell to a scratch copy of the repository, typechecks it and runs its test                             |
+| `pnpm scan:secrets`                                              | Gitleaks secrets scan: `--staged` in the pre-commit hook, `--all-refs` before going public                                 |
 
 ## Documentation
 
