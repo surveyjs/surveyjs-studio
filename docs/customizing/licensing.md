@@ -27,12 +27,11 @@ You can run the official self-hosted Docker image (mode 2b) free of charge, incl
 - Run the official image as supplied. You may configure it through documented settings, such as your instance name, logo, accent color, domain, and URLs.
 - Keep the **Powered by SurveyJS** attribution visible. The included key hides the license warning in Survey Creator and SurveyJS Dashboard, while Studio continues to display the Powered by SurveyJS attribution.
 
+To hide the **Powered by SurveyJS** attribution in the official image, set `SURVEYJS_LICENSE_KEY` to your own key under a license that permits white-label use, then set `BRANDING=off`.
+
 ## Custom builds
 
-You can clone, modify, and build the SurveyJS Studio application under MIT. You can evaluate the commercial SurveyJS libraries under their evaluation terms. For production use of Survey Creator or SurveyJS Dashboard in your own build (mode 3), you need an applicable [SurveyJS developer license](https://surveyjs.io/licensing) that covers those components, even if you keep the attribution visible.
-
-The included image key covers use of the commercial components in the official image under the [Docker Image Terms](../../DOCKER-IMAGE-TERMS.md). 
-To hide the attribution in the official image, supply your own SurveyJS key under a license that permits white-label use and set `BRANDING=off`.
+If you deploy Studio from a build you create from source, production use of Survey Creator or SurveyJS Dashboard requires a [SurveyJS developer license](https://surveyjs.io/licensing) that covers the components you use. This applies even if you package your build as a Docker image or keep the **Powered by SurveyJS** attribution visible.
 
 ## License keys and branding settings
 
