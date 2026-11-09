@@ -30,21 +30,26 @@ old My Surveys section. **State:** Phase 1 is built and passed the compatibility
 Mode 1.3, on its own data, is [planned](plan-hosted.md). **Start:** [Running in production](#running-in-production)
 and [Operations](docs/operations.md). What the app does is in the [user guide](docs/user-guide/README.md).
 
-### Self-hosted image (mode 2b)
-
-A free Docker image: one container with its own database, password accounts and "Powered by SurveyJS" branding.
-**State:** built and tested, published as a private test package. Publishing it on Docker Hub waits for push access
-there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
-after the repository goes public. All 11 steps of the self-hosted track are done
-([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
-[Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
-
 ### Sandbox (mode 2a)
 
 A static site at <https://studio.demos.surveyjs.io> where anyone tries every feature on demo data kept in their
 browser. **State:** built, with the Publish sandbox workflow ready; going live needs the product owner's one-time
 setup ([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
 ([the sandbox](#the-sandbox)).
+
+### Self-hosted image (mode 2b)
+
+The official self-hosted Docker image packages SurveyJS Studio as a ready-to-run
+application with its own database and local user accounts. It includes Survey
+Creator for form design, Form Library for form rendering, and SurveyJS Dashboard
+for results visualization. You can run the official image in production free
+of charge under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md).
+
+**State:** built and tested, published as a private test package. Publishing it on Docker Hub waits for push access
+there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
+after the repository goes public. All 11 steps of the self-hosted track are done
+([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
+[Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#license).
 
 ### Custom development (mode 3)
 
@@ -311,11 +316,22 @@ Run from the repository root.
   - [public endpoints](docs/api/public-endpoints.md) and [exporting results](docs/api/exporting-results.md).
 - For the surveyjs.io team: the [user API and the account-deleted webhook](docs/integrations/surveyjs-user-api.md) and the [redirect map for old My Surveys addresses](docs/operations/surveyjs-redirects.md).
 
-## Licence
+## License
 
-[MIT](LICENSE). Survey Creator, the Form Library and the Dashboard are separate SurveyJS products
-with their own licences. The app takes a SurveyJS licence key from configuration
-(`SURVEYJS_LICENSE_KEY`); no key is stored in the code.
+The SurveyJS Studio application source code is licensed under the
+[MIT License](LICENSE). Studio uses SurveyJS Form Library, which is also
+MIT-licensed, and two separately licensed commercial libraries, SurveyJS Survey Creator
+and SurveyJS Dashboard.
 
-Both images (the self-hosted one and the hosted one) include a notice of the third-party packages they contain and their licences, at
-`/app/THIRD_PARTY_NOTICES.md` in each image. It is generated when the image is built.
+You can run the official self-hosted Docker image in production free of charge
+under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md). Its included license key
+removes the commercial components' license warning. The **Powered by SurveyJS** attribution
+must remain visible under the free image terms.
+
+If you deploy your own build, production use of SurveyJS Survey Creator or SurveyJS
+Dashboard requires an applicable
+[SurveyJS developer license](https://surveyjs.io/licensing).
+
+See the [licensing guide](docs/customizing/licensing.md) for package-level
+details. Both images (the self-hosted one and the hosted one) include dependency notices at `/app/THIRD_PARTY_NOTICES.md`.
+It is generated when the image is built.
