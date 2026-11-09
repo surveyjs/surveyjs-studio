@@ -668,10 +668,12 @@ mode 1 configuration on the offline replica, signing in through the mock OIDC se
 uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
 before starting the other.
 
-| Command               | Does                                                                                                       |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `pnpm prod-like:up`   | Builds the image, starts it with the replica and the mock, waits until all are healthy, loads the fixtures |
-| `pnpm prod-like:down` | Stops the containers and **deletes their volumes**                                                         |
+| Command                 | Does                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm prod-like:up`     | Builds the image, starts it with the replica and the mock, waits until all are healthy, loads the fixtures |
+| `pnpm prod-like:up:e2e` | The same, with the settings `pnpm e2e:prod-like` needs (`docker/compose.prod-like.e2e.yaml`)               |
+| `pnpm e2e:prod-like`    | The Azurite mode's specs on Chromium against the running stack at <http://localhost:8080>                  |
+| `pnpm prod-like:down`   | Stops the containers and **deletes their volumes**                                                         |
 
 Open <http://localhost:8080> and sign in as `owner` on the mock's page
 ([users](#signing-in-through-the-mock-oidc-server)). The files:
@@ -680,7 +682,15 @@ Open <http://localhost:8080> and sign in as `owner` on the mock's page
   `docker/compose.azurite.yaml` (which stays as it is for Azurite mode) and adds `app`, the image;
 - [`docker/prod-like.env`](../docker/prod-like.env) is the app's settings: `APP_EDITION=hosted`,
   `STORAGE_PROVIDER=azure-legacy`, `ACCOUNT_NOTICES=surveyjs-licenses`, `IDENTITY_PROVIDER=surveyjs-oidc` with the
-  mock, `PUBLIC_BASE_URL=http://localhost:8080` and a local `SESSION_SECRET`. All values are local placeholders.
+  mock, `PUBLIC_BASE_URL=http://localhost:8080`, a local `SESSION_SECRET`, and `TRUST_PROXY` and `READ_ONLY` as on
+  the server. All values are local placeholders. Keep it in step with
+  [`deploy/hetzner/app.env.example`](../deploy/hetzner/app.env.example): the CI job `prod-like` starts the image with it;
+- [`docker/compose.prod-like.e2e.yaml`](../docker/compose.prod-like.e2e.yaml) is what the e2e run changes: no account
+  notices (the fixture owner's expired licence would cover the editor's bottom bar), the e2e file quota of 1 MB and
+  raised rate limits. `PROD_LIKE_IMAGE` names another image than `surveyjs-studio:local` (CI: `surveyjs-studio:ci`).
+
+To test the stack: `pnpm prod-like:up:e2e`, then `pnpm e2e:prod-like`. `pnpm e2e:visual` is separate (it runs its own
+server, on Windows only).
 
 **Why the app shares the mock's network.** openid-client checks that the issuer's metadata names the configured
 issuer, so the browser and the app must reach the mock at the same address, and the server allows an http issuer
@@ -959,6 +969,11 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
 - **`azurite`** (after `image`): `pnpm demo:azurite:up` (the legacy replica and the mock OIDC server, with the
   fixtures loaded), `test:providers:azurite`, `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`), and
   `e2e:azurite` on the image (`E2E_TARGET=image`; the `azure-legacy` server and the mock OIDC server, Chromium).
+- **`prod-like`** (after `image`): the image with production's settings (`docker/prod-like.env`, `NODE_ENV=production`)
+  on the replica and the mock OIDC server. It checks the start-up line (hosted, the surveyjs-site shell,
+  `azure-legacy`, production) and `/readyz`, restarts the app with `docker/compose.prod-like.e2e.yaml`, and runs
+  `e2e:prod-like` (the Azurite mode's specs, Chromium). The other jobs run the image in test or development mode, so
+  only this one sees the start-up checks refuse a production configuration.
 - **`postgres`** (after `image`): `pnpm postgres:up`, `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`,
   `test:conformance:s3`, `test:conformance:postgres` on the image, and `e2e:postgres` (the tsx server; Chromium, every
   functional spec but the licence notices; files in S3).
@@ -972,7 +987,8 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
 
 A job that runs browsers or containers uploads, on failure, its Playwright report and the app containers' logs as
 `playwright-report-<job>` and `docker-logs-<job>` (`.github/actions/failure-artifacts`). The `azurite` and `postgres`
-jobs always stop their containers (`pnpm demo:azurite:down`, `pnpm postgres:down`, `pnpm s3:down`).
+jobs always stop their containers (`pnpm demo:azurite:down`, `pnpm postgres:down`, `pnpm s3:down`), and so does the
+`prod-like` job (`pnpm prod-like:down`).
 
 The **`publish` job** runs after `ci`, only on a push to `master` and only when `ci` passed. It loads the image the
 `image` job built, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is

@@ -112,6 +112,7 @@ test("a double click on Complete sends one response", async ({ page, browserName
 test("a file answer is uploaded to the server and the response keeps its URL", async ({
   page,
   browserName,
+  baseURL,
 }) => {
   const survey = await adminSurvey(page, "File", browserName, FILE_DEFINITION);
   await withCleanup(page, [survey.id], async () => {
@@ -140,7 +141,10 @@ test("a file answer is uploaded to the server and the response keeps its URL", a
 
     const content = body.data.doc[0]?.content ?? "";
     expect(body.data.doc).toEqual([{ name: "doc.png", type: "image/png", content }]);
-    expect(content).toMatch(/^http:\/\/localhost:5173\/api\/v1\/public\/files\/[0-9a-f]{64}$/);
+    // The server's PUBLIC_BASE_URL is the browser's origin in every configuration (5173, or 8080 in
+    // prod-like mode).
+    const origin = new URL(baseURL ?? "").origin.replaceAll(".", "\\.");
+    expect(content).toMatch(new RegExp(`^${origin}/api/v1/public/files/[0-9a-f]{64}$`));
     const served = await page.request.get(content);
     expect(served.status()).toBe(200);
     expect(Buffer.compare(await served.body(), bytes)).toBe(0);

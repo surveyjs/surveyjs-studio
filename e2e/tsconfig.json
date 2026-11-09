@@ -6,6 +6,7 @@
     "image-target.d.mts",
     "playwright.config.ts",
     "playwright.azurite.config.ts",
+    "playwright.prod-like.config.ts",
     "playwright.visual.config.ts",
     "playwright.capture.config.ts",
     "playwright.self-hosted-visual.config.ts",

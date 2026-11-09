@@ -9,6 +9,7 @@ export declare const ports: {
   selfHostedVisualWeb: number;
   sandboxWeb: number;
   oauthStub: number;
+  prodLike: number;
 };
 export declare function functionalPorts(mode: {
   image: boolean;
