@@ -32,7 +32,12 @@ and [Operations](docs/operations.md). What the app does is in the [user guide](d
 
 ### Self-hosted image (mode 2b)
 
-A free Docker image: one container with its own database, password accounts and "Powered by SurveyJS" branding.
+The official self-hosted Docker image packages SurveyJS Studio as a ready-to-run
+application with its own database and local user accounts. It includes Survey
+Creator for form design, Form Library for form rendering, and SurveyJS Dashboard
+for results visualization. You can run the official image in production free
+of charge under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md).
+
 **State:** built and tested, published as a private test package. Publishing it on Docker Hub waits for push access
 there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
 after the repository goes public. All 11 steps of the self-hosted track are done
