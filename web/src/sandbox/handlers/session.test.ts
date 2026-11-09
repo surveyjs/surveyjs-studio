@@ -34,7 +34,7 @@ describe("GET /config", () => {
       surveyjsLicenseKey: null,
       readOnly: false,
       features: { embed: false, apiDocs: false, apiTokens: false },
-      branding: { name: "SurveyJS Studio demo", logoUrl: null, poweredBy: true },
+      branding: { name: "SurveyJS Studio Demo", logoUrl: null, poweredBy: true },
     });
     expect(config.branding.accentColor).toMatch(/^#[0-9a-f]{6}$/);
   });

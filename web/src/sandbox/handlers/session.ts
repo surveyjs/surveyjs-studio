@@ -44,7 +44,7 @@ export function sessionHandlers(ctx: HandlerContext) {
         },
         readOnly: false,
         branding: {
-          name: "SurveyJS Studio demo",
+          name: "SurveyJS Studio Demo",
           logoUrl: null,
           accentColor: "#19b394",
           termsUrl: null,
