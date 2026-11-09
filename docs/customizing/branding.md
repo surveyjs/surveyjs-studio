@@ -100,15 +100,16 @@ white (WCAG AA, 4.5:1); the header line keeps the colour as set.
 
 ## "Powered by SurveyJS" and the licence key
 
-The editor, the results dashboard and the PDF export are commercial SurveyJS components. They need a licence key in
-`SURVEYJS_LICENSE_KEY`. With a key, users see no licence banner; without one, the components show the SurveyJS banner
-about a missing licence and stay usable.
+SurveyJS Studio uses two commercial libraries, Survey Creator and SurveyJS Dashboard. These components can display a 
+license warning when no valid license key is present. The **Powered by SurveyJS** attribution is a separate part of
+the Studio interface.
 
-- **The free official image** comes with a SurveyJS key of its own (`SURVEYJS_IMAGE_LICENSE_KEY`) that is meant to be
-  used with "Powered by SurveyJS" shown. The app uses it when `SURVEYJS_LICENSE_KEY` is unset. Keep `BRANDING=on`, the
-  default.
-- **With your own SurveyJS licence**, set it in `SURVEYJS_LICENSE_KEY` and switch the mark off with `BRANDING=off`, to
-  white-label the instance.
+- **Free official image** &ndash; The image includes a key that removes the license
+  warning. Keep `BRANDING=on` to display the **Powered by SurveyJS** attribution
+  required by the [Docker Image Terms](../../DOCKER-IMAGE-TERMS.md).
+- **White-label deployment** &ndash; Set `SURVEYJS_LICENSE_KEY` to your own key under a
+  license that permits white-label use, then set `BRANDING=off` to hide the
+  attribution.
 
 `BRANDING=off` stops the server at start-up unless `SURVEYJS_LICENSE_KEY` is set to a key other than the image's:
 
