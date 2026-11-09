@@ -30,6 +30,13 @@ old My Surveys section. **State:** Phase 1 is built and passed the compatibility
 Mode 1.3, on its own data, is [planned](plan-hosted.md). **Start:** [Running in production](#running-in-production)
 and [Operations](docs/operations.md). What the app does is in the [user guide](docs/user-guide/README.md).
 
+### Sandbox (mode 2a)
+
+A static site at <https://studio.demos.surveyjs.io> where anyone tries every feature on demo data kept in their
+browser. **State:** built, with the Publish sandbox workflow ready; going live needs the product owner's one-time
+setup ([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
+([the sandbox](#the-sandbox)).
+
 ### Self-hosted image (mode 2b)
 
 The official self-hosted Docker image packages SurveyJS Studio as a ready-to-run
@@ -43,13 +50,6 @@ there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-imag
 after the repository goes public. All 11 steps of the self-hosted track are done
 ([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
 [Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
-
-### Sandbox (mode 2a)
-
-A static site at <https://studio.demos.surveyjs.io> where anyone tries every feature on demo data kept in their
-browser. **State:** built, with the Publish sandbox workflow ready; going live needs the product owner's one-time
-setup ([Operations](docs/operations.md#the-sandbox-studiodemossurveyjsio)). **Start:** `pnpm dev:sandbox`
-([the sandbox](#the-sandbox)).
 
 ### Custom development (mode 3)
 
