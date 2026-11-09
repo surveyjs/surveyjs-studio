@@ -1,4 +1,5 @@
 name: Deploy
+run-name: Deploy ${{ inputs.tag }}
 
 # A manual run (Actions › Deploy › Run workflow) tags an image "production". A server set up with
 # setup.sh --auto-update checks that tag every minute and deploys it with update.sh, which rolls back
