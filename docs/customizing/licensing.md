@@ -1,62 +1,52 @@
 # Licensing
 
-What you may do with this repository and the image, and which parts need a SurveyJS licence. The decisions are D2 and
-D20 in [the product idea](../../idea.md). For the binding terms, read
-[surveyjs.io/licensing](https://surveyjs.io/licensing). This page is a guide, not the licence.
+The SurveyJS Studio application source code, its dependencies, and the commercial components included in the official self-hosted Docker image are covered by separate terms. See the [MIT License](../../LICENSE), the [SurveyJS commercial licensing terms](https://surveyjs.io/licensing), and the [Docker Image Terms](../../DOCKER-IMAGE-TERMS.md).
 
-## The repository's code is MIT
+## Application source code
 
-The code written for this repository is under the MIT licence ([LICENSE](../../LICENSE)). You may clone it, change it
-and build on it.
+The SurveyJS Studio application source code is licensed under the [MIT License](../../LICENSE). You may copy, modify, build, and distribute that code under the MIT terms. Dependencies retain their own licenses.
 
-## The SurveyJS packages
+## SurveyJS packages
 
-The web app uses five SurveyJS packages, all at the same version. They have their own licences.
+The Studio web app uses five SurveyJS packages at the same version.
 
-| Package                | Licence    | What it is                         | When you need a licence                    |
-| ---------------------- | ---------- | ---------------------------------- | ------------------------------------------ |
-| `survey-core`          | MIT        | The Form Library's model           | Never                                      |
-| `survey-react-ui`      | MIT        | The Form Library's React renderer  | Never                                      |
-| `survey-creator-core`  | Commercial | The survey editor (Survey Creator) | In a build of your own (mode 3); see below |
-| `survey-creator-react` | Commercial | Survey Creator's React UI          | In a build of your own (mode 3); see below |
-| `survey-analytics`     | Commercial | The results Dashboard              | In a build of your own (mode 3); see below |
+| Package | License | Role in Studio |
+| --- | --- | --- |
+| `survey-core` | MIT | Form Library's form model and logic |
+| `survey-react-ui` | MIT | Form Library's React renderer |
+| `survey-creator-core` | Commercial | Survey Creator's form editor logic |
+| `survey-creator-react` | Commercial | Survey Creator's React interface |
+| `survey-analytics` | Commercial | SurveyJS Dashboard for results visualization |
 
-The app does not use the PDF Generator (`survey-pdf`). It is commercial too, so if you add it in a fork, it needs a
-licence of its own.
+Studio does not use SurveyJS PDF Generator (`survey-pdf`). If you add it to your own build, production use requires a SurveyJS license that covers PDF Generator.
 
-## The free image
+## Official self-hosted Docker image
 
-The free Docker image (mode 2b) is free for anyone, with no limit on users, surveys or responses. It includes the
-commercial components above, and you may use it with them (D2). Two conditions apply:
+You can run the official self-hosted Docker image (mode 2b) free of charge, including in production, under the [Docker Image Terms](../../DOCKER-IMAGE-TERMS.md). The free image terms place no limits on the number of users, surveys, or responses.
 
-- **You run the image as it is.** Configuration is allowed: the name, logo, colours, domain, URLs and limits. A change
-  to its code makes your instance mode 3 (D20).
-- **"Powered by SurveyJS" stays visible.** The image carries a SurveyJS key made for this use. It is valid only while
-  the branding shows. A paid SurveyJS licence removes the branding.
+- Run the official image as supplied. You may configure it through documented settings, such as your instance name, logo, accent color, domain, and URLs.
+- Keep the **Powered by SurveyJS** attribution visible. The included key hides the license warning in Survey Creator and SurveyJS Dashboard, while Studio continues to display the Powered by SurveyJS attribution.
 
-## Mode 3: your own fork
+## Custom builds
 
-If you change the code, for example with a shell of your own, you are building on the commercial components. Survey
-Creator and the Dashboard need a SurveyJS licence for that. Ask SurveyJS which licence fits your product, and read the
-terms at [surveyjs.io/licensing](https://surveyjs.io/licensing). A fork that keeps the free image's key and drops the
-branding is not covered by it.
+You can clone, modify, and build the SurveyJS Studio application under MIT. You can evaluate the commercial SurveyJS libraries under their evaluation terms. For production use of Survey Creator or SurveyJS Dashboard in your own build (mode 3), you need an applicable [SurveyJS developer license](https://surveyjs.io/licensing) that covers those components, even if you keep the attribution visible.
 
-## The licence key in the app
+The included image key covers use of the commercial components in the official image under the [Docker Image Terms](../../DOCKER-IMAGE-TERMS.md). 
+To hide the attribution in the official image, supply your own SurveyJS key under a license that permits white-label use and set `BRANDING=off`.
 
-| Setting                      | What it does                                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `SURVEYJS_LICENSE_KEY`       | Your own SurveyJS key. The browser gets it from `/config`, as any key in a web page is public. |
-| `SURVEYJS_IMAGE_LICENSE_KEY` | The image's own key, built into it. The app uses it when `SURVEYJS_LICENSE_KEY` is not set.    |
-| `BRANDING=on`                | The default: "Powered by SurveyJS" shows.                                                      |
-| `BRANDING=off`               | Hides the mark. The server refuses to start unless `SURVEYJS_LICENSE_KEY` is your own key.     |
+## License keys and branding settings
 
-The app does not read keys. The SurveyJS libraries check what a key allows, and that check is the real one. So
-`/config.branding` reports `poweredBy`, whether the mark shows, and not the `required` and `removable` flags the first
-spec described. [Branding](branding.md#powered-by-surveyjs-and-the-licence-key) has the settings and the start-up
-message. [ADR 0027](../adr/0027-branding-and-the-licence-key.md) has the reasons.
+| Setting | What it does |
+| --- | --- |
+| `SURVEYJS_LICENSE_KEY` | Supplies your own SurveyJS key. Studio passes the key to the browser through `/config`. |
+| `SURVEYJS_IMAGE_LICENSE_KEY` | Supplies the official image’s included key. Studio uses it when `SURVEYJS_LICENSE_KEY` is unset. |
+| `BRANDING=on` | Displays **Powered by SurveyJS**. This is the default. |
+| `BRANDING=off` | Hides **Powered by SurveyJS**. The server requires `SURVEYJS_LICENSE_KEY` to be set to a key different from the included image key before it starts with this setting. |
+
+Studio checks that a separate key is configured when you set `BRANDING=off`. The SurveyJS libraries validate the key. The `/config` response exposes `branding.poweredBy`, which tells the browser whether to display the **Powered by SurveyJS** attribution.
+
+See [Branding and the licence key](branding.md#powered-by-surveyjs-and-the-licence-key) for configuration examples and the startup error message. See [ADR 0027](../adr/0027-branding-and-the-licence-key.md) for the design decisions.
 
 ## Third-party notices
 
-The image lists the licences of the dependencies it ships in `/app/THIRD_PARTY_NOTICES.md`. The build writes it from
-the installed packages, so it matches the image. If you build your own image from a fork, the same build step writes
-the notice for your dependencies.
+Both the hosted and self-hosted images list the licenses of their bundled dependencies in `/app/THIRD_PARTY_NOTICES.md`. The build generates this file from the installed packages. If you build your own image from a fork, the same build step generates notices for the dependencies in your build.
