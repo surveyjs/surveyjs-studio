@@ -100,7 +100,7 @@ white (WCAG AA, 4.5:1); the header line keeps the colour as set.
 
 ## "Powered by SurveyJS" and the licence key
 
-SurveyJS Studio uses two commercial libraries, Survey Creator and SurveyJS Dashboard. These components can display a 
+SurveyJS Studio uses two commercial libraries, Survey Creator and SurveyJS Dashboard. These components can display a
 license warning when no valid license key is present. The **Powered by SurveyJS** attribution is a separate part of
 the Studio interface.
 

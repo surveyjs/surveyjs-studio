@@ -10,13 +10,13 @@ The SurveyJS Studio application source code is licensed under the [MIT License](
 
 The Studio web app uses five SurveyJS packages at the same version.
 
-| Package | License | Role in Studio |
-| --- | --- | --- |
-| `survey-core` | MIT | Form Library's form model and logic |
-| `survey-react-ui` | MIT | Form Library's React renderer |
-| `survey-creator-core` | Commercial | Survey Creator's form editor logic |
-| `survey-creator-react` | Commercial | Survey Creator's React interface |
-| `survey-analytics` | Commercial | SurveyJS Dashboard for results visualization |
+| Package                | License    | Role in Studio                               |
+| ---------------------- | ---------- | -------------------------------------------- |
+| `survey-core`          | MIT        | Form Library's form model and logic          |
+| `survey-react-ui`      | MIT        | Form Library's React renderer                |
+| `survey-creator-core`  | Commercial | Survey Creator's form editor logic           |
+| `survey-creator-react` | Commercial | Survey Creator's React interface             |
+| `survey-analytics`     | Commercial | SurveyJS Dashboard for results visualization |
 
 Studio does not use SurveyJS PDF Generator (`survey-pdf`). If you add it to your own build, production use requires a SurveyJS license that covers PDF Generator.
 
@@ -35,12 +35,12 @@ If you deploy Studio from a build you create from source, production use of Surv
 
 ## License keys and branding settings
 
-| Setting | What it does |
-| --- | --- |
-| `SURVEYJS_LICENSE_KEY` | Supplies your own SurveyJS key. Studio passes the key to the browser through `/config`. |
-| `SURVEYJS_IMAGE_LICENSE_KEY` | Supplies the official image’s included key. Studio uses it when `SURVEYJS_LICENSE_KEY` is unset. |
-| `BRANDING=on` | Displays **Powered by SurveyJS**. This is the default. |
-| `BRANDING=off` | Hides **Powered by SurveyJS**. The server requires `SURVEYJS_LICENSE_KEY` to be set to a key different from the included image key before it starts with this setting. |
+| Setting                      | What it does                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SURVEYJS_LICENSE_KEY`       | Supplies your own SurveyJS key. Studio passes the key to the browser through `/config`.                                                                                |
+| `SURVEYJS_IMAGE_LICENSE_KEY` | Supplies the official image’s included key. Studio uses it when `SURVEYJS_LICENSE_KEY` is unset.                                                                       |
+| `BRANDING=on`                | Displays **Powered by SurveyJS**. This is the default.                                                                                                                 |
+| `BRANDING=off`               | Hides **Powered by SurveyJS**. The server requires `SURVEYJS_LICENSE_KEY` to be set to a key different from the included image key before it starts with this setting. |
 
 Studio checks that a separate key is configured when you set `BRANDING=off`. The SurveyJS libraries validate the key. The `/config` response exposes `branding.poweredBy`, which tells the browser whether to display the **Powered by SurveyJS** attribution.
 

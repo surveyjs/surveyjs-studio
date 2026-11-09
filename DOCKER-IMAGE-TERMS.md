@@ -22,9 +22,9 @@ attribution remains visible.
 
 ## Custom builds and white-label deployments
 
-This grant covers the commercial components as included in the official image. 
-If you edit the Studio source code and build your own image, that's a custom build. 
-Production use of Survey Creator or SurveyJS Dashboard in that build requires an 
+This grant covers the commercial components as included in the official image.
+If you edit the Studio source code and build your own image, that's a custom build.
+Production use of Survey Creator or SurveyJS Dashboard in that build requires an
 applicable [SurveyJS developer license](https://surveyjs.io/licensing).
 To disable the attribution in the official image, supply a SurveyJS license
 key that permits white-label use.

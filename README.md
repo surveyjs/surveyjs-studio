@@ -49,7 +49,7 @@ of charge under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md).
 there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
 after the repository goes public. All 11 steps of the self-hosted track are done
 ([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
-[Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#licence).
+[Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#license).
 
 ### Custom development (mode 3)
 
@@ -325,7 +325,7 @@ and SurveyJS Dashboard.
 
 You can run the official self-hosted Docker image in production free of charge
 under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md). Its included license key
-removes the commercial components' license warning. The **Powered by SurveyJS** attribution 
+removes the commercial components' license warning. The **Powered by SurveyJS** attribution
 must remain visible under the free image terms.
 
 If you deploy your own build, production use of SurveyJS Survey Creator or SurveyJS
