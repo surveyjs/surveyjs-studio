@@ -39,7 +39,8 @@ services:
 
   app:
     build: ..
-    image: surveyjs-studio:local
+    # CI runs the image it built and tested (PROD_LIKE_IMAGE=surveyjs-studio:ci, with --no-build).
+    image: ${PROD_LIKE_IMAGE:-surveyjs-studio:local}
     env_file: prod-like.env
     network_mode: "service:mock-oidc"
     depends_on:

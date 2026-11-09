@@ -235,6 +235,7 @@ Run from the repository root.
 | `pnpm test:conformance:sandbox`                                  | The sandbox subset of the conformance suite against the mock handlers (`msw/node`, no server)                              |
 | `pnpm e2e`                                                       | Playwright tests in three browsers (starts server and web app)                                                             |
 | `pnpm e2e:azurite`                                               | Playwright tests on the replica and the mock OIDC server (needs `demo:azurite:up`)                                         |
+| `pnpm e2e:prod-like`                                             | The same tests on the production image with production's settings (needs `prod-like:up:e2e`)                               |
 | `pnpm e2e:sqlite`                                                | Playwright survey list, editor and history tests on the `sqlite` provider (Chromium)                                       |
 | `pnpm oauth-stub`                                                | The local stand-in for Google, GitHub, Facebook and surveyjs.io sign-in (port 5180; development and tests only)            |
 | `pnpm sandbox:seed`                                              | Writes `web/src/sandbox/seed.json` from the shared fixtures and `server/fixtures/sandbox.json`                             |

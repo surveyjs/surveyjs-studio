@@ -155,6 +155,72 @@ jobs:
         if: always()
         run: pnpm demo:azurite:down
 
+  # The production image with production's settings (mode 1: docker/prod-like.env, NODE_ENV=production),
+  # on the replica and the mock OIDC server. The other suites run the image in test or development
+  # mode, so only this job sees the start-up checks refuse a production configuration.
+  prod-like:
+    name: Prod-like (the image with production's settings)
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROD_LIKE_IMAGE: surveyjs-studio:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - uses: ./.github/actions/load-image
+
+      - name: Start the image with docker/prod-like.env as it is
+        run: docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --wait --no-build
+
+      - name: Check that it started in mode 1
+        run: |
+          line="$(docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml logs --no-log-prefix app | grep '"msg":"starting"' | tail -n 1)"
+          echo "$line"
+          for want in '"edition":"hosted"' '"shell":"surveyjs-site"' '"storageProvider":"azure-legacy"' \
+            '"userDirectory":"surveyjs-sql"' '"identityProvider":"surveyjs-oidc"' \
+            '"accountNotices":"surveyjs-licenses"' '"readOnly":false' '"nodeEnv":"production"'; do
+            [[ "$line" == *"$want"* ]] || { echo "::error::the starting line lacks $want"; exit 1; }
+          done
+
+      # /readyz answers 503 until the fixtures have created the replica's database.
+      - name: Load the fixtures, then check that the app is ready
+        run: |
+          pnpm legacy:load
+          curl -fsS http://localhost:8080/readyz
+
+      - name: Restart the app with the e2e settings (docker/compose.prod-like.e2e.yaml)
+        run: docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml -f docker/compose.prod-like.e2e.yaml up -d --wait --no-build app
+
+      # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
+      - name: Install Playwright browsers
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: chromium
+
+      - name: End-to-end tests (the Azurite mode's specs, on the prod-like stack)
+        run: pnpm e2e:prod-like
+
+      - name: Save the app's log
+        if: failure()
+        run: |
+          mkdir -p docker-logs
+          docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml logs app > docker-logs/prod-like-app.log 2>&1 || true
+
+      - if: failure()
+        uses: ./.github/actions/failure-artifacts
+        with:
+          name: prod-like
+
+      - name: Stop the prod-like stack
+        if: always()
+        run: pnpm prod-like:down
+
   postgres:
     name: PostgreSQL and S3 suites
     needs: image
@@ -371,7 +437,19 @@ jobs:
   # The one result to wait for: it fails when any job above failed, was cancelled or was skipped.
   ci:
     name: ci
-    needs: [checks, unit, image, azurite, postgres, e2e-image, e2e-modes, secrets, conformance-base]
+    needs:
+      [
+        checks,
+        unit,
+        image,
+        azurite,
+        prod-like,
+        postgres,
+        e2e-image,
+        e2e-modes,
+        secrets,
+        conformance-base,
+      ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

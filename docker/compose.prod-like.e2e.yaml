@@ -1,0 +1,14 @@
+# The settings `pnpm e2e:prod-like` needs on top of docker/compose.prod-like.yaml (start the stack with
+# `pnpm prod-like:up:e2e`). Everything else stays production's mode 1 configuration.
+# - ACCOUNT_NOTICES=none: the fixture owner's licence has expired, and the notice covers the editor's
+#   bottom bar. The notices have their own spec (notices.spec.ts, on the memory server).
+# - The file quota of 1 MB that the uploads spec expects, as in every e2e mode.
+# - The rate limits raised: one browser IP runs all the specs (the limits have server tests).
+services:
+  app:
+    environment:
+      ACCOUNT_NOTICES: none
+      LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "1048576"
+      SIGN_IN_RATE_LIMIT: "100000"
+      PUBLIC_RATE_LIMIT: "100000"
+      PUBLIC_FILE_RATE_LIMIT: "100000"

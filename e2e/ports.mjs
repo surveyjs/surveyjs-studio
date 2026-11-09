@@ -21,6 +21,8 @@ export const ports = {
   sandboxWeb: 5177,
   /** The OAuth stub of the oauth mode. */
   oauthStub: 5180,
+  /** The app of the prod-like stack (docker/compose.prod-like.yaml), which `pnpm e2e:prod-like` tests. */
+  prodLike: 8080,
 };
 
 /**

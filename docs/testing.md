@@ -27,6 +27,7 @@ surveyjs.io, and they run locally only. See [Visual parity](#visual-parity).
 | `pnpm test:conformance:user-api` | The conformance suite with the server on `USER_DIRECTORY=surveyjs-api`, against the user-API stub it starts (no Docker)                                         |
 | `pnpm e2e`                       | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
 | `pnpm e2e:azurite`               | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results, results-details, projects and xss specs in Azurite mode (needs Docker) |
+| `pnpm e2e:prod-like`             | The same specs against the production image with production's settings (`pnpm prod-like:up:e2e` first; needs Docker)                                            |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
