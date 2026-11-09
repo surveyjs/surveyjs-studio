@@ -316,11 +316,22 @@ Run from the repository root.
   - [public endpoints](docs/api/public-endpoints.md) and [exporting results](docs/api/exporting-results.md).
 - For the surveyjs.io team: the [user API and the account-deleted webhook](docs/integrations/surveyjs-user-api.md) and the [redirect map for old My Surveys addresses](docs/operations/surveyjs-redirects.md).
 
-## Licence
+## License
 
-[MIT](LICENSE). Survey Creator, the Form Library and the Dashboard are separate SurveyJS products
-with their own licences. The app takes a SurveyJS licence key from configuration
-(`SURVEYJS_LICENSE_KEY`); no key is stored in the code.
+The SurveyJS Studio application source code is licensed under the
+[MIT License](LICENSE). Studio uses SurveyJS Form Library, which is also
+MIT-licensed, and two separately licensed commercial libraries, SurveyJS Survey Creator
+and SurveyJS Dashboard.
 
-Both images (the self-hosted one and the hosted one) include a notice of the third-party packages they contain and their licences, at
-`/app/THIRD_PARTY_NOTICES.md` in each image. It is generated when the image is built.
+You can run the official self-hosted Docker image in production free of charge
+under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md). Its included license key
+removes the commercial components' license warning. The **Powered by SurveyJS** attribution 
+must remain visible under the free image terms.
+
+If you deploy your own build, production use of SurveyJS Survey Creator or SurveyJS
+Dashboard requires an applicable
+[SurveyJS developer license](https://surveyjs.io/licensing).
+
+See the [licensing guide](docs/customizing/licensing.md) for package-level
+details. Both images (the self-hosted one and the hosted one) include dependency notices at `/app/THIRD_PARTY_NOTICES.md`.
+It is generated when the image is built.
