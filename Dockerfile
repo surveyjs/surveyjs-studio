@@ -45,9 +45,11 @@ LABEL org.opencontainers.image.source="https://github.com/surveyjs/surveyjs-stud
 COPY --from=build /out/server /app/server
 COPY --from=build /src/web/dist /app/web
 COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
+COPY LICENSE /app/LICENSE
 
 # The free self-hosted image (mode 2b): build it with --target self-hosted.
 FROM app AS self-hosted
+COPY DOCKER-IMAGE-TERMS.md /app/DOCKER-IMAGE-TERMS.md
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 WEB_ROOT=/app/web \
     APP_EDITION=self-hosted APP_SHELL=self-hosted \
     STORAGE_PROVIDER=sqlite FILE_STORE=local AUTH_METHODS=password USER_DIRECTORY=local \
