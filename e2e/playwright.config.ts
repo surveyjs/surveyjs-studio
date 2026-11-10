@@ -392,6 +392,7 @@ const allButNotices = [
   "oauth.spec.ts",
   "sandbox.spec.ts",
   "sandbox-host.spec.ts",
+  "sandbox-tabs.spec.ts",
 ];
 
 // Sandbox mode's projects: the sandbox spec (and the host spec against a URL), or the user stories.
@@ -406,6 +407,7 @@ function sandboxProjects(): PlaywrightTestConfig["projects"] {
           "self-hosted.spec.ts",
           "oauth.spec.ts",
           "sandbox.spec.ts",
+          "sandbox-tabs.spec.ts",
           "sandbox-host.spec.ts",
         ],
         use: chromium,
@@ -413,7 +415,11 @@ function sandboxProjects(): PlaywrightTestConfig["projects"] {
     ];
   }
   return [
-    { name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium },
+    {
+      name: "sandbox-chromium",
+      testMatch: ["sandbox.spec.ts", "sandbox-tabs.spec.ts"],
+      use: chromium,
+    },
     ...(sandboxUrl
       ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
       : []),
@@ -512,6 +518,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: chromium,
                     },
@@ -523,6 +530,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: { ...devices["Desktop Firefox"], viewport },
                     },
@@ -534,6 +542,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: { ...devices["Desktop Safari"], viewport },
                     },

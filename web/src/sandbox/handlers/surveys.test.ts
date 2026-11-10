@@ -412,7 +412,7 @@ describe("POST /surveys/{id}/clones", () => {
       base64: "AAEC",
       createdAt: "2026-01-01T00:00:00.000Z",
     };
-    ctx.store.write((data) => {
+    await ctx.store.write((data) => {
       data.files.push({ ...file, id: fileId });
       data.files.push({ ...file, id: hex + "cd".repeat(16), kind: "respondent" });
       data.definitions[SURVEYS.draft] = { logo: `http://localhost/api/v1/public/files/${fileId}` };

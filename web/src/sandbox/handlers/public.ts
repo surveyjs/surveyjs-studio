@@ -181,7 +181,7 @@ export function publicHandlers(ctx: HandlerContext) {
 
         // One write: a replay, the one-response check and the new response see the same document.
         let result = "";
-        ctx.store.write((data) => {
+        await ctx.store.write((data) => {
           const survey = availableSurvey(data, params.surveyId);
           const keys = (data.idempotencyKeys[survey.id] ??= {});
           const known = key === null ? undefined : keys[key];

@@ -27,6 +27,7 @@ kept in step with the real server?
 | D8  | A generated seed           | `pnpm sandbox:seed` writes `web/src/sandbox/seed.json` from `legacyFixtureSeed()` and `withSeedInvitation`, restricted by the tag file `server/fixtures/sandbox.json`. A unit test regenerates it in memory and fails when the file is stale or larger than `seedBudgetKb`                                                                  |
 | D9  | `@sandbox` and the stories | `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI. Since 2026-11-10 the user-story specs run on the sandbox build too (`pnpm e2e:sandbox:stories`): `page.request` bypasses the page's service worker, so their set-up runs `fetch` in the page. What cannot apply skips itself with its reason                  |
 | D10 | Pages closing mid-request  | MSW answers from the page, so a `keepalive` request sent while a page closes (saving a results view on `pagehide`) may be lost. Documented, not fixed                                                                                                                                                                                       |
+| D11 | A cross-tab lock           | Each write holds the Web Lock `studio-sandbox:v1`. It first waits until this tab's copy of the document has the newest revision any tab recorded in IndexedDB. If that takes over 2 s, it stores nothing and answers `503`. Where an API is missing the lock does less, never something else (below)                                        |
 
 Settings live in `web/sandbox-public/sandbox.config.json`, served next to `index.html` and read at start-up. A missing
 or invalid file falls back to the defaults, with a console warning.
@@ -54,7 +55,28 @@ Details that follow:
 - **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an
   empty app. A start that does not settle within 20 seconds shows "The demo did not start in time…". Both have
   **Try again**, which reloads the page (2026-11-10).
-- **A stale or damaged document** (missing, an old `version`, unparsable) is replaced by the seed.
+- **A stale or damaged document** (missing, an old `version`, unparsable) is replaced by the seed. The seed is
+  stored holding the lock, and only if no other tab's document has arrived meanwhile.
+- **The cross-tab lock (D11, 2026-11-10).** Each tab reads its own copy of localStorage. The browser brings that copy
+  up to date a little after another tab writes, so two tabs could both write on top of the same old document, and the
+  later write would drop the earlier one. So:
+  - Every write and every Reset runs inside `navigator.locks.request("studio-sandbox:v1")`. No two writes of one
+    browser run at once, in one tab or in several (`web/src/sandbox/tab-lock.ts`).
+  - The document carries `revision`, its first key, and each write stores one more than it read. Holding the lock, a
+    write reads the newest revision from IndexedDB (database `studio-sandbox-tabs`). Every tab reads IndexedDB from
+    the same place, so it is never behind. While this tab's copy has an older revision, the write waits for the
+    `storage` event (and looks again every 50 ms). After the write it records its revision there, then lets go of the
+    lock.
+  - A write that waits more than 2 s for the lock, or for another tab's write to arrive, stores nothing. The answer is
+    `503` "Another tab is saving the demo data. Try again." (`StorageBusyError`). A timed-out wait also records the
+    revision this tab has, so a document replaced without the lock (a tab of an older build, the developer tools)
+    holds up one write only.
+  - No Web Locks: writes run at once, as before the lock, and the last write wins. No IndexedDB, or it fails: the
+    lock still keeps writes apart, but a write does not wait for another tab's to arrive. The browser refuses locks
+    (a sandboxed frame): the write runs without one. Web Locks and IndexedDB are in every browser the demo supports.
+  - Other tabs' screens are not refreshed: a page shows what it last fetched until its next request. The editor's
+    saves send `If-Match`, so a save over another tab's change is `412 edit-conflict`, not a silent overwrite.
+  - A `revision`-less document (stored before the lock) reads as revision 0. No data version bump is needed.
 - **`mockServiceWorker.js` is MSW's own file**, copied into `web/sandbox-public/`. `web/src/sandbox/worker-file.test.ts`
   checks that it is byte-equal to the installed `msw`'s, so an upgrade that forgets the copy fails.
 - **`msw` and `openapi-msw` are runtime dependencies of `web`** (same exact versions as before), because the sandbox
@@ -74,6 +96,10 @@ Details that follow:
   worker (D9). Doing it needed another way to create that data. Done on 2026-11-10 with a `fetch` in the page
   rather than through the UI ([Testing](../testing.md#the-user-stories-on-the-sandbox-build)).
 
+- **BroadcastChannel alone for the lock (D11).** A message saying "I wrote revision N" travels apart from the lock
+  and from the storage, so it can arrive after the next tab has the lock. It tells nothing a `storage` event does not.
+  IndexedDB gives the newest revision from one place; the `storage` event says when this tab's copy has it.
+
 ## Consequences
 
 - **Links work only in the same browser.** Data and the mock live in one browser's localStorage. A run link (`/s/<id>`)
@@ -86,10 +112,11 @@ Details that follow:
   exports (D7). The pages for them are hidden or absent (D4, D6).
 - **The storage can fill up.** The visitor sees the banner's message and **Reset demo data**. The banner clears its
   message once a later write is stored (say, after deleting surveys).
-- **An upload refused because the browser storage is full shows the per-survey file quota message** (the answer is
-  `413 quota-exceeded`), while the banner shows the full-storage text.
-- **There is no cross-tab lock.** Two tabs writing at nearly the same moment both start from the same document, and
-  only the last write is kept.
+- **An upload refused because the browser storage is full says so.** The answer is `413 quota-exceeded`, the code of
+  the survey's file quota, with the title "Browser storage is full" (`web/src/api/storage-full.ts`). The editor's
+  upload message tells the two apart by that title.
+- **Two tabs do not drop each other's writes** (D11). A write that would have to wait more than 2 s is refused with a
+  `503` instead. Without Web Locks the last write wins, as before.
 - **History keeps the JSON of a survey's 20 newest saves only** (2026-11-08, for [ADR 0032](0032-history-json-view.md)).
   The editor saves after nearly every change, so a copy per save would fill the 4 MB of browser storage in one editing
   session. Each entry is `{ id, at, userId, snapshot }`; a save drops `snapshot` from the survey's entries past the

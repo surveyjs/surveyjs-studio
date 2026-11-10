@@ -5,12 +5,14 @@ import styles from "./sandbox.module.css";
 import { RESET_FAILED_TEXT } from "./SandboxOutdated";
 import { sandboxStore } from "./start";
 import { setSessionCookie, STORAGE_WRITTEN_EVENT } from "./store";
+import { StorageBusyError } from "./tab-lock";
 
 export const DEMO_TEXT =
   "This is a demo. Your data stays in this browser, and other visitors don't see it.";
 export const FULL_TEXT = "Browser storage is full. Reset the demo data to continue.";
 export const OUTDATED_TEXT = "The demo was updated in another tab. Reload this page.";
 const CONFIRM_TEXT = "Reset all demo data? Your changes in this browser are lost.";
+const RESET_BUSY_TEXT = "Another tab is saving the demo data. Try the reset again.";
 const SELF_HOSTING_URL =
   "https://github.com/surveyjs/surveyjs-studio/blob/master/docs/self-hosting.md";
 const SOURCE_URL = "https://github.com/surveyjs/surveyjs-studio";
@@ -33,7 +35,7 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
   const [full, setFull] = useState(storageIsFull);
   const [outdated, setOutdated] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const bannerRef = useRef<HTMLElement>(null);
   const resetRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -86,17 +88,18 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
     };
   }, []);
 
-  const reset = () => {
+  const reset = async () => {
     try {
-      sandboxStore().reset();
-      setSessionCookie(null);
-      navigateTo("/sign-in");
-    } catch {
-      // The browser may refuse the write too; nothing is left to do but say so.
+      await sandboxStore().reset();
+    } catch (error) {
+      // The browser may refuse the write too (StorageFullError); then all that is left is to say so.
       setConfirming(false);
-      setFailed(true);
+      setFailed(error instanceof StorageBusyError ? RESET_BUSY_TEXT : RESET_FAILED_TEXT);
       setFocusNext("failed");
+      return;
     }
+    setSessionCookie(null);
+    navigateTo("/sign-in");
   };
 
   const ask = () => {
@@ -125,7 +128,12 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
       {confirming ? (
         <>
           <span>{CONFIRM_TEXT}</span>
-          <button ref={confirmRef} type="button" className={styles.bannerButton} onClick={reset}>
+          <button
+            ref={confirmRef}
+            type="button"
+            className={styles.bannerButton}
+            onClick={() => void reset()}
+          >
             Reset
           </button>
           <button type="button" className={styles.bannerButton} onClick={cancel}>
@@ -150,9 +158,9 @@ export function SandboxBanner({ compact = false }: { compact?: boolean }) {
           </button>
         </>
       )}
-      {failed && (
+      {failed !== null && (
         <span ref={failedRef} role="alert" tabIndex={-1}>
-          {RESET_FAILED_TEXT}
+          {failed}
         </span>
       )}
     </aside>

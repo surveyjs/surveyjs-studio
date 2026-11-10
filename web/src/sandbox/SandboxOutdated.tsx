@@ -1,22 +1,27 @@
 import { useState } from "react";
 
-/** Shown when a reset of the demo data throws (the browser refuses the write). */
+/** Shown when a reset of the demo data fails (the browser refused the write, or another tab kept the lock). */
 export const RESET_FAILED_TEXT =
-  "Could not reset the demo data. Clear this site's data in the browser and reload.";
+  "Could not reset the demo data. Try again, or clear this site's data in the browser and reload.";
 
 /**
  * Shown instead of the app when the stored demo data has another data version than this build's.
- * `onReset` throws when the reset fails: the page then says so and keeps the button.
+ * `onReset` resolves when the page reloads; a rejection (or a throw) is told on the page, which
+ * keeps the button.
  */
-export function SandboxOutdated({ onReset }: { onReset: () => void }) {
+export function SandboxOutdated({ onReset }: { onReset: () => Promise<void> | void }) {
   const [failed, setFailed] = useState(false);
-  const reset = () => {
+  const [busy, setBusy] = useState(false);
+  const reset = async () => {
+    setBusy(true);
+    setFailed(false);
     try {
-      onReset();
-      setFailed(false);
+      await onReset();
     } catch (error) {
       console.error("The demo data could not be reset.", error);
       setFailed(true);
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -35,7 +40,7 @@ export function SandboxOutdated({ onReset }: { onReset: () => void }) {
       </p>
       {/* Present from the start, so a screen reader announces the text when it appears. */}
       <p role="alert">{failed ? RESET_FAILED_TEXT : null}</p>
-      <button type="button" onClick={reset}>
+      <button type="button" disabled={busy} onClick={() => void reset()}>
         Reset to continue
       </button>
     </div>

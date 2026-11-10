@@ -19,7 +19,7 @@ import { http } from "./http";
 import { decodeHistoryCursor, encodeHistoryCursor, type HistoryPosition } from "./paging";
 import { addHistoryEntry, HISTORY_SNAPSHOTS, historyOrder } from "./history";
 import { guarded, notFound, ProblemError } from "./problems";
-import { modifiableSurvey, visibleSurvey } from "./surveys";
+import { modifiableSurvey, visibleSurvey } from "./survey-access";
 
 /** Asks proxies that compress responses to leave the ETag as sent (a rewritten tag never matches on save). */
 const NO_TRANSFORM = "no-transform";
@@ -126,7 +126,7 @@ export function contentHandlers(ctx: HandlerContext) {
         if (!ifMatchAllows(header, await versionOf(read.current))) throw editConflict();
         const version = await versionOf(body);
         // The write re-checks the document: a save from another tab since the read is a conflict.
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, surveyId);
           if (!same(data[store][survey.id], read.current)) throw editConflict();
           const savedAt = ctx.now().toISOString();

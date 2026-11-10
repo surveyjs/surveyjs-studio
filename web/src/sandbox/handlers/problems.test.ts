@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SandboxOutdatedError, StorageFullError } from "../store";
+import { StorageBusyError } from "../tab-lock";
 import {
   guarded,
   notFound,
@@ -56,6 +57,19 @@ describe("an outdated demo", () => {
     expect((await response.json()).title).toBe(
       "The demo was updated in another tab. Reload this page.",
     );
+  });
+});
+
+describe("a storage another tab keeps busy", () => {
+  it("answers 503, which the visitor may send again", async () => {
+    const response = await guarded(() => Promise.reject(new StorageBusyError()));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      type: "https://studio.surveyjs.io/problems/internal-error",
+      title: "Another tab is saving the demo data. Try again.",
+      status: 503,
+      code: "internal-error",
+    });
   });
 });
 

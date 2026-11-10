@@ -33,16 +33,22 @@ const readTags = (): Tags => {
   return { version, users: list("users"), surveys: list("surveys"), projects: list("projects") };
 };
 
+/**
+ * Code-point order: the same on every machine. `localeCompare` depends on the locale, so two
+ * machines could write different files (web/src/sandbox/handlers/common.ts `compare` is the same).
+ */
+export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** The entries of a by-survey-id map whose key is tagged, in id order. */
 const bySurvey = <T>(map: Record<string, T> | undefined, surveys: Set<string>): Record<string, T> =>
   Object.fromEntries(
     Object.entries(map ?? {})
       .filter(([id]) => surveys.has(id.toLowerCase()))
-      .sort(([a], [b]) => a.localeCompare(b)),
+      .sort(([a], [b]) => byCodePoint(a, b)),
   );
 
 const byId = <T extends { id: string }>(items: readonly T[]): T[] =>
-  [...items].sort((a, b) => a.id.localeCompare(b.id));
+  [...items].sort((a, b) => byCodePoint(a.id, b.id));
 
 export async function sandboxSeed(): Promise<SandboxSeed> {
   const tags = readTags();
@@ -76,7 +82,7 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
     })),
     memberships: keptMemberships
       .map((m) => ({ userId: m.userId, projectId: m.projectId, role: m.role }))
-      .sort((a, b) => a.projectId.localeCompare(b.projectId) || a.userId.localeCompare(b.userId)),
+      .sort((a, b) => byCodePoint(a.projectId, b.projectId) || byCodePoint(a.userId, b.userId)),
     invitations: keptInvitations.map((i) => ({
       projectId: i.projectId,
       email: i.email,

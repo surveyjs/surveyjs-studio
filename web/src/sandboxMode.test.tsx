@@ -126,7 +126,7 @@ describe("a session that ends in another tab", () => {
     await screen.findByRole("button", { name: "Sign Out" });
 
     // What another tab's Reset does: the data is the seed again and the cookie is gone.
-    store.reset();
+    await store.reset();
     document.cookie = "msid=; path=/; max-age=0";
     // Without the cookie, the mock answers 401 to everything, the current user included.
     server.use(
@@ -169,7 +169,7 @@ describe("the current user's 401 in the sandbox", () => {
     await screen.findByRole("button", { name: "Sign Out" });
 
     // What another tab's Reset does, then the window-focus refetch of the current user.
-    store.reset();
+    await store.reset();
     document.cookie = "msid=; path=/; max-age=0";
     server.use(unauthenticatedHandler());
     await queryClient.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);

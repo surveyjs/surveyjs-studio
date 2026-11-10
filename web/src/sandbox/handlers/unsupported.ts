@@ -7,7 +7,7 @@ import { http as mswHttp } from "msw";
 import { requireSession, view } from "./common";
 import type { HandlerContext } from "./context";
 import { notImplemented, guarded } from "./problems";
-import { visibleSurvey } from "./surveys";
+import { visibleSurvey } from "./survey-access";
 
 interface Unsupported {
   readonly id: string;

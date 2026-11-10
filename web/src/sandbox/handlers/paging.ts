@@ -118,23 +118,49 @@ export function decodeProjectCursor(value: string): NamePosition {
   return canonical(value, position, encodeProjectCursor(position));
 }
 
-export function encodeMembersCursor(position: NamePosition, projectId: string): string {
-  return encode({
-    v: VERSION,
-    k: "members",
-    p: projectId.toLowerCase(),
-    n: position.name.toLowerCase(),
-    i: position.id,
-  });
+/** A place among the pending members, which come after every active one (by email). */
+export interface PendingPosition {
+  /** The invited email, lower-case. */
+  readonly email: string;
 }
 
+/** A place in the member list order: the active members (name, id), then the pending ones. */
+export type MemberPosition = NamePosition | PendingPosition;
+
+/** `{"v":1,"k":"members","p":<project>,"n":<name>,"i":<id>}`, or `"e":<email>` for a pending one. */
+export function encodeMembersCursor(position: MemberPosition, projectId: string): string {
+  const p = projectId.toLowerCase();
+  return encode(
+    "email" in position
+      ? { v: VERSION, k: "members", p, e: position.email.toLowerCase() }
+      : { v: VERSION, k: "members", p, n: position.name.toLowerCase(), i: position.id },
+  );
+}
+
+/**
+ * Before the pending position had its own field, it was this name (the highest code point and the
+ * email) with the zero id. Such a cursor still reads as that pending position (cursor.ts).
+ */
+const OLD_PENDING_NAME = String.fromCodePoint(0x10ffff);
+const OLD_PENDING_ID = "00000000-0000-0000-0000-000000000000";
+
 /** `400 bad-request` for anything but a canonical cursor of this project's members. */
-export function decodeMembersCursor(value: string, projectId: string): NamePosition {
-  const { v, k, p, n, i } = decode(value);
+export function decodeMembersCursor(value: string, projectId: string): MemberPosition {
+  const { v, k, p, n, i, e } = decode(value);
   if (v !== VERSION || k !== "members" || p !== projectId.toLowerCase()) throw invalidCursor();
+  if (e !== undefined) {
+    if (typeof e !== "string" || e === "") throw invalidCursor();
+    const pending = { email: e.toLowerCase() };
+    return canonical(value, pending, encodeMembersCursor(pending, projectId));
+  }
   if (typeof n !== "string" || !isId(i)) throw invalidCursor();
   const position = { name: n.toLowerCase(), id: i.toLowerCase() };
-  return canonical(value, position, encodeMembersCursor(position, projectId));
+  canonical(value, position, encodeMembersCursor(position, projectId));
+  if (position.id === OLD_PENDING_ID && position.name.startsWith(OLD_PENDING_NAME)) {
+    const email = position.name.slice(OLD_PENDING_NAME.length);
+    if (email !== "") return { email };
+  }
+  return position;
 }
 
 export interface ResponsePosition {

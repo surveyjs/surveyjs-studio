@@ -7,7 +7,7 @@ import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { guarded } from "./problems";
 import { responseOrder, responsePage } from "./public";
-import { modifiableSurvey, visibleSurvey } from "./surveys";
+import { modifiableSurvey, visibleSurvey } from "./survey-access";
 
 export function resultsHandlers(ctx: HandlerContext) {
   return [
@@ -46,16 +46,18 @@ export function resultsHandlers(ctx: HandlerContext) {
       ),
     ),
 
-    // Every response, completion marker and respondent file; the editor's assets stay.
+    // Every response, completion marker, idempotency key and respondent file; the editor's assets stay.
     http.delete("/surveys/{surveyId}/results", ({ params, cookies }) =>
-      guarded(() => {
-        mutate(ctx, cookies, (data, user) => {
+      guarded(async () => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           data.files = data.files.filter(
             (file) => !(file.surveyId === survey.id && file.kind === "respondent"),
           );
           delete data.responses[survey.id];
           delete data.completions[survey.id];
+          // A key points at a response that is gone; keeping it would only take up storage.
+          delete data.idempotencyKeys[survey.id];
         });
         return new HttpResponse(null, { status: 204 });
       }),

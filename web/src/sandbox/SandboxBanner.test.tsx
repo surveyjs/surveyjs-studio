@@ -1,24 +1,42 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "../navigation";
 import { OUTDATED_EVENT, STORAGE_FULL_EVENT } from "./handlers/problems";
 import { SandboxBanner } from "./SandboxBanner";
+import { RESET_FAILED_TEXT } from "./SandboxOutdated";
 import seedJson from "./seed.json";
 import type { SandboxSeed } from "./seed-types";
 import { DEFAULT_SETTINGS } from "./settings";
-import { createSandboxStore, memoryStorage, type SandboxStore } from "./store";
+import {
+  createSandboxStore,
+  memoryStorage,
+  StorageFullError,
+  type KeyValueStorage,
+  type SandboxStore,
+} from "./store";
+import { StorageBusyError } from "./tab-lock";
 
 vi.mock("../navigation", () => ({ navigateTo: vi.fn() }));
 let store: SandboxStore;
 vi.mock("./start", () => ({ sandboxStore: () => store }));
 
 const seed = seedJson as unknown as SandboxSeed;
-const make = (storageLimitKb = DEFAULT_SETTINGS.storageLimitKb) =>
+const make = (
+  storageLimitKb = DEFAULT_SETTINGS.storageLimitKb,
+  storage: KeyValueStorage = memoryStorage(),
+) =>
   createSandboxStore({
-    storage: memoryStorage(),
+    storage,
     seed,
     settings: { ...DEFAULT_SETTINGS, storageLimitKb },
   });
+
+/** A store whose document is already at a 1 KB limit. */
+async function fullStore(): Promise<{ store: SandboxStore; storage: KeyValueStorage }> {
+  const storage = memoryStorage();
+  await make(undefined, storage).write(() => {});
+  return { store: make(1, storage), storage };
+}
 
 const DEMO = "This is a demo. Your data stays in this browser, and other visitors don't see it.";
 const FULL = "Browser storage is full. Reset the demo data to continue.";
@@ -87,8 +105,8 @@ describe("SandboxBanner", () => {
     expect(screen.getByRole("button", { name: "Reset demo data" })).toBeTruthy();
   });
 
-  it("reseeds, clears the session and reloads at sign-in on Reset", () => {
-    store.write((data) => {
+  it("reseeds, clears the session and reloads at sign-in on Reset", async () => {
+    await store.write((data) => {
       data.surveys[0]!.name = "Changed";
     });
     render(<SandboxBanner />);
@@ -96,26 +114,37 @@ describe("SandboxBanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
+    await waitFor(() => expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/sign-in"));
     expect(store.read().surveys[0]!.name).toBe(seed.surveys[0]!.name);
     expect(document.cookie).not.toContain("msid=u1");
-    expect(navigateTo).toHaveBeenCalledExactlyOnceWith("/sign-in");
   });
 
-  it("shows a message instead of crashing when the reset fails", () => {
-    vi.spyOn(store, "reset").mockImplementation(() => {
-      throw new DOMException("denied", "SecurityError");
-    });
+  it("shows a message instead of crashing when the reset fails", async () => {
+    vi.spyOn(store, "reset").mockRejectedValue(new StorageFullError());
     render(<SandboxBanner />);
 
     fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    const message = screen.getByText(
-      "Could not reset the demo data. Clear this site's data in the browser and reload.",
-    );
+    const message = await screen.findByText(RESET_FAILED_TEXT);
     expect(message.getAttribute("role")).toBe("alert");
     expect(message.closest("aside")!.querySelector("[role=alert] [role=alert]")).toBeNull();
-    expect(document.activeElement).toBe(message);
+    // The focus moves in an effect after the message renders.
+    await waitFor(() => expect(document.activeElement).toBe(message));
+    expect(navigateTo).not.toHaveBeenCalled();
+    expect(document.cookie).toContain("msid=u1");
+  });
+
+  it("asks to try again when another tab keeps the storage busy", async () => {
+    vi.spyOn(store, "reset").mockRejectedValue(new StorageBusyError());
+    render(<SandboxBanner />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(
+      await screen.findByText("Another tab is saving the demo data. Try the reset again."),
+    ).toBeTruthy();
     expect(navigateTo).not.toHaveBeenCalled();
   });
 
@@ -144,9 +173,8 @@ describe("SandboxBanner", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Reset demo data" }));
   });
 
-  it("shows the full-storage text when the storage is full at the start", () => {
-    store = make(1);
-    store.read();
+  it("shows the full-storage text when the storage is full at the start", async () => {
+    ({ store } = await fullStore());
     render(<SandboxBanner />);
 
     expect(screen.getByText(FULL)).toBeTruthy();
@@ -179,15 +207,15 @@ describe("SandboxBanner", () => {
     expect(screen.getByText(FULL)).toBeTruthy();
   });
 
-  it("clears the full-storage text after the next write is stored", () => {
-    store = make(1);
-    store.read();
+  it("clears the full-storage text after the next write is stored", async () => {
+    const full = await fullStore();
+    store = full.store;
     render(<SandboxBanner />);
     expect(screen.getByText(FULL)).toBeTruthy();
 
-    store = make();
-    act(() => {
-      store.write((data) => data);
+    store = make(undefined, full.storage);
+    await act(async () => {
+      await store.write((data) => data);
     });
 
     expect(screen.queryByText(FULL)).toBeNull();

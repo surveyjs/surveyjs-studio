@@ -579,7 +579,9 @@ Open <http://localhost:5173>: the sandbox starts on **Pick an account**. Port 51
 
 Everything the sandbox stores is under one key, `studio-sandbox:v1`. To start again, use **Reset demo data** in the
 banner, or remove that key in the browser's developer tools. The app's other keys (the theme, the cookie consent)
-are not touched by Reset.
+are not touched by Reset. The cross-tab lock keeps the newest revision in the IndexedDB database
+`studio-sandbox-tabs` ([ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md) D11). After you remove the key by
+hand, the first write may wait 2 s and answer `503`; the next one goes ahead.
 
 ### Adding a handler when the contract gains an operation
 

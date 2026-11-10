@@ -23,8 +23,9 @@ if (import.meta.env.MODE === "sandbox") {
     ({ booted } = await bootSandbox({
       root: target,
       start: startSandbox,
-      reset: () => {
-        sandboxStore().reset();
+      // Rejects with a typed error when the reset is refused; SandboxOutdated says so.
+      reset: async () => {
+        await sandboxStore().reset();
         setSessionCookie(null);
       },
     }));

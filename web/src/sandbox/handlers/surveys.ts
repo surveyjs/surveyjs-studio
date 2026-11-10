@@ -1,29 +1,25 @@
-// Mirrors the survey operations of the server: server/src/surveys/service.ts (the rules),
-// access.ts (404 then 403), permissions.ts (who may see and modify), patch.ts and
-// domain/survey-changes.ts (merge-patch and a new record), json.ts (the Survey JSON) and
-// providers/ordering.ts (the list order). The sandbox code does not import server/src.
+// Mirrors the survey operations of the server: server/src/surveys/service.ts (the rules), patch.ts
+// and domain/survey-changes.ts (merge-patch) and providers/ordering.ts (the list order). Who may see
+// and modify a survey is in survey-access.ts, the records in survey-records.ts and the input checks
+// in survey-input.ts. The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
-import type { SandboxMembership, SandboxSurvey, SandboxUser } from "../seed-types";
+import type { SandboxSurvey, SandboxUser } from "../seed-types";
 import type { SandboxData, SandboxFile } from "../store";
 import {
   checkName,
-  checkPathId,
   checkProjectId,
   compare,
   failOn,
-  isRecord,
   lower,
   mutate,
-  parseLimit,
   readJson,
   requireSession,
   requiredObject,
-  sameId,
   view,
 } from "./common";
 import { newFileId, type HandlerContext } from "./context";
 import { http } from "./http";
-import { cloneName, MAX_NAME_UNITS, nextNewSurveyName } from "./naming";
+import { cloneName, nextNewSurveyName } from "./naming";
 import { addHistoryEntry } from "./history";
 import {
   decodeSurveyCursor,
@@ -31,223 +27,28 @@ import {
   type SurveyList,
   type SurveyPosition,
 } from "./paging";
+import { guarded, notFound, ProblemError, type ProblemFieldError } from "./problems";
 import {
-  badRequest,
-  forbidden,
-  guarded,
-  notFound,
-  ProblemError,
-  validationFailed,
-  type ProblemFieldError,
-} from "./problems";
-
-const PERSONAL = "personal";
-
-// ---------------------------------------------------------------- access (permissions.ts, access.ts)
-
-/** The user's membership of a project, or null. */
-export function membershipOf(
-  data: SandboxData,
-  userId: string,
-  projectId: string,
-): SandboxMembership | null {
-  return (
-    data.memberships.find((m) => sameId(m.userId, userId) && sameId(m.projectId, projectId)) ?? null
-  );
-}
-
-/** The membership that counts for a survey: of its project, for a project survey. */
-function surveyMembership(
-  data: SandboxData,
-  user: SandboxUser,
-  survey: SandboxSurvey,
-): SandboxMembership | null {
-  return survey.owner.kind === "project"
-    ? membershipOf(data, user.id, survey.owner.projectId)
-    : null;
-}
-
-/** Personal: its owner. Project: any member. */
-export function canSee(
-  survey: SandboxSurvey,
-  user: SandboxUser,
-  membership: SandboxMembership | null,
-): boolean {
-  return survey.owner.kind === "personal"
-    ? sameId(survey.owner.userId, user.id)
-    : membership !== null && sameId(membership.projectId, survey.owner.projectId);
-}
-
-/** Personal: its owner. Project: a project admin, or the survey's creator. */
-export function canModify(
-  survey: SandboxSurvey,
-  user: SandboxUser,
-  membership: SandboxMembership | null,
-): boolean {
-  if (survey.owner.kind === "personal") return sameId(survey.owner.userId, user.id);
-  if (membership === null || !sameId(membership.projectId, survey.owner.projectId)) return false;
-  return (
-    membership.role === "admin" || (survey.creatorId !== null && sameId(survey.creatorId, user.id))
-  );
-}
-
-export interface FoundSurvey {
-  survey: SandboxSurvey;
-  membership: SandboxMembership | null;
-}
-
-/** The survey, 404 when unknown or invisible to the user (they look the same). */
-export function visibleSurvey(data: SandboxData, user: SandboxUser, id: string): FoundSurvey {
-  checkPathId(id, "surveyId");
-  const survey = data.surveys.find((candidate) => sameId(candidate.id, id));
-  if (!survey) throw notFound();
-  const membership = surveyMembership(data, user, survey);
-  if (!canSee(survey, user, membership)) throw notFound();
-  return { survey, membership };
-}
-
-/** `visibleSurvey`, and the user may modify it (403 otherwise). */
-export function modifiableSurvey(data: SandboxData, user: SandboxUser, id: string): FoundSurvey {
-  const found = visibleSurvey(data, user, id);
-  if (!canModify(found.survey, user, found.membership)) {
-    throw forbidden("You cannot modify this survey.");
-  }
-  return found;
-}
-
-// ---------------------------------------------------------------- shapes (json.ts)
-
-/** The contract `Survey` of a record; the private-question list only when `privateQuestions` is given. */
-export function surveyJson(
-  survey: SandboxSurvey,
-  canModifySurvey: boolean,
-  privateQuestions?: readonly string[],
-) {
-  return {
-    id: survey.id,
-    name: survey.name,
-    projectId: survey.owner.kind === "project" ? survey.owner.projectId : null,
-    published: survey.published,
-    archived: survey.archived,
-    createdAt: survey.createdAt,
-    updatedAt: survey.updatedAt,
-    postId: survey.postId,
-    resultId: survey.resultId,
-    permissions: { canModify: canModifySurvey },
-    settings: {
-      publicResults: survey.settings.publicResults,
-      storeRespondentIp: survey.settings.storeRespondentIp,
-      ...(privateQuestions && { privateResultQuestions: [...privateQuestions] }),
-    },
-  };
-}
-
-/** A new record with the legacy defaults: published, active, no settings (survey-changes.ts). */
-function newSurvey(
-  fields: Pick<SandboxSurvey, "id" | "name" | "owner" | "creatorId" | "postId" | "resultId"> & {
-    now: string;
-  },
-): SandboxSurvey {
-  const { now, ...rest } = fields;
-  return {
-    ...rest,
-    published: true,
-    archived: false,
-    createdAt: now,
-    updatedAt: now,
-    settings: { publicResults: false, storeRespondentIp: false, useCookies: false },
-  };
-}
-
-/** Removes everything that belongs to a survey (ADR 0010: children first; here, one write). */
-export function dropSurvey(data: SandboxData, surveyId: string): void {
-  const id = lower(surveyId);
-  data.surveys = data.surveys.filter((survey) => survey.id !== id);
-  for (const map of [
-    data.definitions,
-    data.themes,
-    data.history,
-    data.responses,
-    data.completions,
-    data.legacyViews,
-    data.privateResultQuestions,
-    data.idempotencyKeys,
-  ] as Record<string, unknown>[]) {
-    delete map[id];
-  }
-  for (const views of Object.values(data.savedViews)) delete views[id];
-  data.files = data.files.filter((file) => file.surveyId !== id);
-}
-
-// ---------------------------------------------------------------- validation
-
-function checkSettings(value: unknown, errors: ProblemFieldError[]): void {
-  if (!isRecord(value)) {
-    errors.push({ pointer: "/settings", detail: "must be object" });
-    return;
-  }
-  for (const key of ["publicResults", "storeRespondentIp"]) {
-    if (value[key] !== undefined && typeof value[key] !== "boolean") {
-      errors.push({ pointer: `/settings/${key}`, detail: "must be boolean" });
-    }
-  }
-  const names = value["privateResultQuestions"];
-  if (names === undefined) return;
-  const pointer = "/settings/privateResultQuestions";
-  if (!Array.isArray(names)) {
-    errors.push({ pointer, detail: "must be array" });
-  } else if (names.length > 1000) {
-    errors.push({ pointer, detail: "must NOT have more than 1000 items" });
-  } else {
-    names.forEach((name: unknown, index) => {
-      if (typeof name !== "string" || name.length === 0 || [...name].length > 256) {
-        errors.push({
-          pointer: `${pointer}/${index}`,
-          detail: "must be a string of 1 to 256 characters",
-        });
-      }
-    });
-    if (new Set(names).size !== names.length) {
-      errors.push({ pointer, detail: "must NOT have duplicate items" });
-    }
-  }
-}
-
-/** What the contract schema cannot check about a name: blank, or too long in UTF-16 units. */
-function nameProblem(name: unknown): ProblemError | null {
-  if (typeof name !== "string") return null;
-  const detail =
-    name.trim() === ""
-      ? "must not be blank"
-      : name.length > MAX_NAME_UNITS
-        ? `must NOT be longer than ${MAX_NAME_UNITS} UTF-16 code units`
-        : null;
-  return detail === null ? null : validationFailed([{ pointer: "/name", detail }]);
-}
-
-interface SurveyListQuery {
-  project: string;
-  archived: boolean;
-  limit: number;
-  cursor: string | undefined;
-}
-
-function parseListQuery(url: URL): SurveyListQuery {
-  const errors: ProblemFieldError[] = [];
-  const params = url.searchParams;
-  const archivedText = params.get("archived");
-  if (archivedText !== null && archivedText !== "true" && archivedText !== "false") {
-    errors.push({ pointer: "/archived", detail: "must be boolean" });
-  }
-  const limit = parseLimit(params, errors);
-  if (errors.length > 0) throw badRequest(undefined, errors);
-  return {
-    project: params.get("project") ?? PERSONAL,
-    archived: archivedText === "true",
-    limit,
-    cursor: params.get("cursor") ?? undefined,
-  };
-}
+  canModify,
+  membershipOf,
+  modifiableSurvey,
+  PERSONAL,
+  personalScope,
+  projectScope,
+  sameOwner,
+  surveyMembership,
+  targetScope,
+  visibleSurvey,
+  type Scope,
+} from "./survey-access";
+import { checkSettings, nameProblem, newSurveyFields, parseListQuery } from "./survey-input";
+import {
+  dropSurvey,
+  newSurvey,
+  privateQuestionsOf,
+  rewriteFileIds,
+  surveyJson,
+} from "./survey-records";
 
 // ---------------------------------------------------------------- ordering (ordering.ts)
 
@@ -262,52 +63,7 @@ function isAfter(survey: SandboxSurvey, position: SurveyPosition): boolean {
   return updated < at || (updated === at && survey.id > position.id);
 }
 
-// ---------------------------------------------------------------- service
-
-/** The scope a request names: its owner, the user's membership and the cursor key. */
-interface Scope {
-  owner: SandboxSurvey["owner"];
-  membership: SandboxMembership | null;
-  key: string;
-}
-
-const personalScope = (user: SandboxUser): Scope => ({
-  owner: { kind: "personal", userId: user.id },
-  membership: null,
-  key: PERSONAL,
-});
-
-const projectScope = (membership: SandboxMembership): Scope => ({
-  owner: { kind: "project", projectId: lower(membership.projectId) },
-  membership,
-  key: lower(membership.projectId),
-});
-
-const notMember = () => forbidden("You are not a member of this project.");
-
-/** The scope a `projectId` names: null is Personal; a project needs membership (403). */
-function targetScope(data: SandboxData, user: SandboxUser, projectId: string | null): Scope {
-  if (projectId === null) return personalScope(user);
-  const membership = membershipOf(data, user.id, projectId);
-  if (!membership) throw notMember();
-  return projectScope(membership);
-}
-
-const sameOwner = (a: SandboxSurvey["owner"], b: SandboxSurvey["owner"]): boolean =>
-  a.kind === "personal"
-    ? b.kind === "personal" && sameId(a.userId, b.userId)
-    : b.kind === "project" && sameId(a.projectId, b.projectId);
-
-const privateQuestionsOf = (data: SandboxData, surveyId: string): string[] => [
-  ...(data.privateResultQuestions[surveyId] ?? []),
-];
-
-/** The ids of the files in a text, replaced by their copies' ids (files/rewrite.ts). */
-function rewriteFileIds(text: string, ids: ReadonlyMap<string, string>): string {
-  let result = text;
-  for (const [oldId, newId] of ids) result = result.replaceAll(oldId, newId);
-  return result;
-}
+// ---------------------------------------------------------------- handlers
 
 export function surveyHandlers(ctx: HandlerContext) {
   const createdSurvey = (
@@ -365,21 +121,8 @@ export function surveyHandlers(ctx: HandlerContext) {
     http.post("/surveys", ({ request, cookies }) =>
       guarded(async () => {
         requireSession(ctx, cookies);
-        const raw = await readJson(request);
-        const body = raw === undefined ? {} : requiredObject(raw);
-        const errors: ProblemFieldError[] = [];
-        if (body["name"] !== undefined) checkName(body["name"], errors);
-        if (body["projectId"] !== undefined) checkProjectId(body["projectId"], errors);
-        const definition = body["definition"];
-        if (definition !== undefined && !isRecord(definition)) {
-          errors.push({ pointer: "/definition", detail: "must be object" });
-        }
-        failOn(errors);
-        const invalid = nameProblem(body["name"]);
-        if (invalid) throw invalid;
-        const name = body["name"] as string | undefined;
-        const projectId = body["projectId"] as string | null | undefined;
-        const created = mutate(ctx, cookies, (data, user) => {
+        const { name, projectId, definition } = newSurveyFields(await readJson(request), true);
+        const created = await mutate(ctx, cookies, (data, user) => {
           const scope =
             projectId === undefined || projectId === null
               ? personalScope(user)
@@ -395,7 +138,7 @@ export function surveyHandlers(ctx: HandlerContext) {
           const now = ctx.now().toISOString();
           const survey = createdSurvey(data, user, scope, surveyName, now);
           if (definition !== undefined) {
-            const stored = structuredClone(definition as Record<string, unknown>);
+            const stored = structuredClone(definition);
             data.definitions[survey.id] = stored;
             addHistoryEntry(
               data,
@@ -456,7 +199,7 @@ export function surveyHandlers(ctx: HandlerContext) {
             }
           | undefined;
 
-        const updated = mutate(ctx, cookies, (data, user) => {
+        const updated = await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           const target =
             patch["projectId"] === undefined
@@ -496,8 +239,8 @@ export function surveyHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/surveys/{surveyId}", ({ params, cookies }) =>
-      guarded(() => {
-        mutate(ctx, cookies, (data, user) => {
+      guarded(async () => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           if (!survey.archived) {
             throw new ProblemError({
@@ -515,18 +258,9 @@ export function surveyHandlers(ctx: HandlerContext) {
     http.post("/surveys/{surveyId}/clones", ({ params, request, cookies }) =>
       guarded(async () => {
         requireSession(ctx, cookies);
-        const raw = await readJson(request);
-        const body = raw === undefined ? {} : requiredObject(raw);
-        const errors: ProblemFieldError[] = [];
-        if (body["name"] !== undefined) checkName(body["name"], errors);
-        if (body["projectId"] !== undefined) checkProjectId(body["projectId"], errors);
-        failOn(errors);
-        const invalid = nameProblem(body["name"]);
-        if (invalid) throw invalid;
-        const name = body["name"] as string | undefined;
-        const projectId = body["projectId"] as string | null | undefined;
+        const { name, projectId } = newSurveyFields(await readJson(request), false);
 
-        const copy = mutate(ctx, cookies, (data, user) => {
+        const copy = await mutate(ctx, cookies, (data, user) => {
           const { survey: source, membership } = visibleSurvey(data, user, params.surveyId);
           // Without `projectId` the copy stays in the source's scope.
           const scope =

@@ -5,6 +5,7 @@ import seedJson from "./seed.json";
 import type { SandboxSeed } from "./seed-types";
 import { loadSandboxSettings } from "./settings";
 import { createSandboxStore, type SandboxStore } from "./store";
+import { browserWriteLock } from "./tab-lock";
 
 let store: SandboxStore | undefined;
 
@@ -15,7 +16,7 @@ export function sandboxStore(): SandboxStore {
 }
 
 /**
- * Starts the in-browser back-end: the store on localStorage (seeded on the first read) and the
+ * Starts the in-browser back-end: the store on localStorage (seeded on the first write) and the
  * mock handlers in a service worker. Resolves once the worker controls the page. Resolves
  * `"outdated"`, starting no worker, when the stored data has another data version: the caller
  * offers `sandboxStore().reset()`. The worker, its scope and the API it answers are below the base
@@ -27,6 +28,7 @@ export async function startSandbox(): Promise<"started" | "outdated"> {
     storage: window.localStorage,
     seed: seedJson as unknown as SandboxSeed,
     settings,
+    lock: browserWriteLock(),
   });
   if (store.status() === "outdated") return "outdated";
   const worker = setupWorker(

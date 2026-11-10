@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bootSandbox, START_TIMEOUT_TEXT, UNSUPPORTED_TEXT } from "./boot";
 import { RESET_FAILED_TEXT } from "./SandboxOutdated";
@@ -86,17 +86,18 @@ describe("bootSandbox", () => {
     expect(screen.getByRole("heading", { name: "This demo has been updated" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reset to continue" }));
     expect(reset).toHaveBeenCalledTimes(1);
-    expect(reload).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
   });
 
   it("says so, and does not reload, when the reset fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const reset = vi.fn(() => {
       throw new Error("QuotaExceededError");
     });
     const { reload } = await boot({ start: async () => "outdated", reset });
     fireEvent.click(screen.getByRole("button", { name: "Reset to continue" }));
     expect(reset).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(RESET_FAILED_TEXT)).toBeTruthy();
     expect(reload).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toBe(RESET_FAILED_TEXT);
   });
 });

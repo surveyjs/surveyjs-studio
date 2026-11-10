@@ -34,16 +34,17 @@ export function requireSession(ctx: HandlerContext, cookies: Record<string, stri
 
 /**
  * Applies `change` to the stored document and stores it in one write (nothing is stored when
- * `change` throws). `change` sees the document as it is at that moment, so a save made in another
- * tab between the request's reads and this write is not overwritten by a stale copy.
+ * `change` throws). `change` runs holding the cross-tab lock and sees the document as it is at that
+ * moment, so a save made in another tab between the request's reads and this write is not
+ * overwritten by a stale copy.
  */
-export function mutate<T>(
+export async function mutate<T>(
   ctx: HandlerContext,
   cookies: Record<string, string>,
   change: (data: SandboxData, user: SandboxUser) => T,
-): T {
+): Promise<T> {
   let result: T;
-  ctx.store.write((data) => {
+  await ctx.store.write((data) => {
     result = change(data, userOf(data, cookies));
   });
   return result!;

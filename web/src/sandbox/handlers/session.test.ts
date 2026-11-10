@@ -89,7 +89,7 @@ describe("GET /me", () => {
 
   it("answers 401 after a reset made the session's user disappear from the data", async () => {
     const { call, ctx } = setupSandbox();
-    ctx.store.write((data) => {
+    await ctx.store.write((data) => {
       data.users = data.users.filter((user) => user.id !== USERS.member);
     });
     expect((await call("/me", { user: USERS.member })).status).toBe(401);

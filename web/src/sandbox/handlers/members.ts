@@ -18,7 +18,12 @@ import {
 } from "./common";
 import type { HandlerContext } from "./context";
 import { http } from "./http";
-import { decodeMembersCursor, encodeMembersCursor, type NamePosition } from "./paging";
+import {
+  decodeMembersCursor,
+  encodeMembersCursor,
+  type MemberPosition,
+  type NamePosition,
+} from "./paging";
 import { accessProject, adminAccess, checkProjectPath } from "./projects";
 import {
   decideRemoval,
@@ -28,10 +33,6 @@ import {
   rowsOf,
 } from "./project-rules";
 import { guarded, notFound, ProblemError, type ProblemFieldError } from "./problems";
-
-/** Pending members come after every active one, by email; their cursor position sorts after any name. */
-const PENDING_NAME = String.fromCodePoint(0x10ffff);
-const PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 const alreadyInvited = () =>
   new ProblemError({
@@ -77,9 +78,9 @@ function checkEmail(value: unknown, pointer: string, errors: ProblemFieldError[]
 const isAfter = (position: NamePosition, after: NamePosition): boolean =>
   position.name > after.name || (position.name === after.name && position.id > after.id);
 
-interface Listed {
+interface Listed<P extends MemberPosition = MemberPosition> {
   json: ReturnType<typeof memberJson> | ReturnType<typeof pendingMemberJson>;
-  position: NamePosition;
+  position: P;
 }
 
 export function memberHandlers(ctx: HandlerContext) {
@@ -93,7 +94,7 @@ export function memberHandlers(ctx: HandlerContext) {
           const { project } = accessProject(data, user, params.projectId);
           const after = cursor === undefined ? undefined : decodeMembersCursor(cursor, project.id);
           // Members by display name ignoring case, then id; an orphan row is not shown (R11).
-          const members: Listed[] = data.memberships
+          const members: Listed<NamePosition>[] = data.memberships
             .filter((m) => sameId(m.projectId, project.id))
             .flatMap((m) => {
               const found = data.users.find((u) => sameId(u.id, m.userId));
@@ -115,15 +116,17 @@ export function memberHandlers(ctx: HandlerContext) {
                     : 0) ||
                 (a.position.id < b.position.id ? -1 : a.position.id > b.position.id ? 1 : 0),
             );
+          // Two phases (service.ts): the active members in (name, id) order, then the pending ones
+          // by email. A pending cursor skips every active member, whatever their names.
+          const active = members.filter(
+            (item) => after === undefined || ("name" in after && isAfter(item.position, after)),
+          );
           const pending: Listed[] = data.invitations
             .filter((i) => sameId(i.projectId, project.id))
+            .filter((i) => after === undefined || !("email" in after) || i.email > after.email)
             .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
-            .map((i) => ({
-              json: pendingMemberJson(i),
-              position: { name: `${PENDING_NAME}${i.email}`, id: PENDING_ID },
-            }));
-          const all = [...members, ...pending];
-          const rest = after ? all.filter((item) => isAfter(item.position, after)) : all;
+            .map((i) => ({ json: pendingMemberJson(i), position: { email: i.email } }));
+          const rest: Listed[] = [...active, ...pending];
           const items = rest.slice(0, limit);
           const last = items.at(-1);
           return HttpResponse.json({
@@ -152,7 +155,7 @@ export function memberHandlers(ctx: HandlerContext) {
         failOn(errors);
         const email = body["email"] as string;
         const role = (body["role"] ?? "user") as "admin" | "user";
-        const { member, location } = mutate(ctx, cookies, (data, user: SandboxUser) => {
+        const { member, location } = await mutate(ctx, cookies, (data, user: SandboxUser) => {
           const { project } = adminAccess(data, user, params.projectId);
           const base = `/api/v1/projects/${lower(project.id)}`;
           // Only admins get this far, so only they learn whether an address is registered.
@@ -210,7 +213,7 @@ export function memberHandlers(ctx: HandlerContext) {
         }
         failOn(errors);
         const role = body["role"] as "admin" | "user";
-        const changed = mutate(ctx, cookies, (data, user) => {
+        const changed = await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           const outcome = decideRoleChange(rowsOf(data, project.id), params.userId, role);
           if (outcome === "not-found") throw notFound();
@@ -227,11 +230,11 @@ export function memberHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/projects/{projectId}/members/{userId}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
         checkPathId(params.userId, "userId");
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           // Any member may leave; removing someone else takes an admin.
           const { project } = sameId(params.userId, user.id)
             ? accessProject(data, user, params.projectId)
@@ -252,13 +255,13 @@ export function memberHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/projects/{projectId}/invitations/{email}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
         const errors: ProblemFieldError[] = [];
         checkEmail(params.email, "/email", errors);
         failOn(errors);
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           const before = data.invitations.length;
           data.invitations = data.invitations.filter(

@@ -48,8 +48,11 @@ export interface BootOptions {
   readonly root: HTMLElement;
   /** `startSandbox` (start.ts). */
   readonly start: () => Promise<"started" | "outdated">;
-  /** Clears the demo data and the session; throws when the browser refuses. */
-  readonly reset: () => void;
+  /**
+   * Clears the demo data and the session. Rejects (or throws) when the browser refuses the write or
+   * another tab keeps the lock (store.ts).
+   */
+  readonly reset: () => Promise<void> | void;
   readonly reload?: () => void;
   readonly timeoutMs?: number;
 }
@@ -85,8 +88,8 @@ export async function bootSandbox({
   return render(
     root,
     <SandboxOutdated
-      onReset={() => {
-        reset();
+      onReset={async () => {
+        await reset();
         reload();
       }}
     />,
