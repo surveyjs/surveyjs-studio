@@ -116,6 +116,20 @@ describe("deleteResults", () => {
     ).toMatchObject({ completed: false });
   });
 
+  it("removes the survey's idempotency keys with its responses", async () => {
+    const { call, ctx } = setupSandbox();
+    const submitted = await call(`/public/surveys/${SURVEYS.feedback}/responses`, {
+      method: "POST",
+      json: { data: { satisfaction: 4 } },
+      headers: { "Idempotency-Key": "key-1" },
+    });
+    expect(submitted.status).toBe(201);
+    expect(ctx.store.read().idempotencyKeys[SURVEYS.feedback]).toBeDefined();
+    const response = await call(results(SURVEYS.feedback), { method: "DELETE", user: USERS.owner });
+    expect(response.status).toBe(204);
+    expect(ctx.store.read().idempotencyKeys[SURVEYS.feedback]).toBeUndefined();
+  });
+
   it("needs modify rights: 403 for a member who neither administers nor created it, 404 when invisible, 401 signed out", async () => {
     const { call } = setupSandbox();
     expect(

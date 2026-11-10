@@ -46,7 +46,7 @@ export function resultsHandlers(ctx: HandlerContext) {
       ),
     ),
 
-    // Every response, completion marker and respondent file; the editor's assets stay.
+    // Every response, completion marker, idempotency key and respondent file; the editor's assets stay.
     http.delete("/surveys/{surveyId}/results", ({ params, cookies }) =>
       guarded(() => {
         mutate(ctx, cookies, (data, user) => {
@@ -56,6 +56,8 @@ export function resultsHandlers(ctx: HandlerContext) {
           );
           delete data.responses[survey.id];
           delete data.completions[survey.id];
+          // A key points at a response that is gone; keeping it would only take up storage.
+          delete data.idempotencyKeys[survey.id];
         });
         return new HttpResponse(null, { status: 204 });
       }),
