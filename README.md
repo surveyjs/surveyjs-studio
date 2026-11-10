@@ -4,8 +4,9 @@ SurveyJS Studio is the survey application of [surveyjs.io](https://surveyjs.io),
 section. You create surveys with Survey Creator, publish them, collect responses and look at the results. This
 repository is the SurveyJS team's rebuild of that section as a standalone application. It will run at
 `studio.surveyjs.io` and replace the old section. The same code also runs as a free Docker image for your own copy
-and as a public sandbox. The repository is ready to be open-sourced and is still private
-([Going public](docs/operations/going-public.md)).
+and as a public sandbox. The repository is public; [Going public](docs/operations/going-public.md) records the review
+before the switch. Its Docker images are private packages on ghcr.io, and this README is their package page:
+see [The images on ghcr.io](#the-images-on-ghcrio).
 
 **Naming.** The repository is [`surveyjs/surveyjs-studio`](https://github.com/surveyjs/surveyjs-studio), and the
 image, the packages (`@surveyjs-studio/*`) and the hosting address (`studio.surveyjs.io`) use that name. The app's
@@ -47,7 +48,7 @@ of charge under the [Docker Image Terms](DOCKER-IMAGE-TERMS.md).
 
 **State:** built and tested, published as a private test package. Publishing it on Docker Hub waits for push access
 there and the shipped licence key ([ADR 0028](docs/adr/0028-the-self-hosted-image.md)); the packages stay private
-after the repository goes public. All 11 steps of the self-hosted track are done
+although the repository is public. All 11 steps of the self-hosted track are done
 ([plan-self-hosted.md](plan-self-hosted.md#progress)). **Start:** [Run it](#run-it) and
 [Self-hosting](docs/self-hosting.md). The image carries its [third-party notice](#license).
 
@@ -166,6 +167,28 @@ self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-h
   surveyjs.io site team.
 - [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status): deploying a
   published image tag, the status and the rollback.
+
+### The images on ghcr.io
+
+Two private packages hold the built images. GitHub shows this README on both package pages; each image's own
+description comes from its `org.opencontainers.image.*` labels in the [`Dockerfile`](Dockerfile).
+
+| Package                                            | Dockerfile target            | Pushed by                                                                                                         | Tags                                                               |
+| -------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `ghcr.io/surveyjs/surveyjs-studio`                 | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested            | The full commit id; `production`, moved by Actions › Deploy        |
+| `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks | `vX.Y.Z`, `vX.Y` and `latest`; a pre-release gets only its own tag |
+
+- **`surveyjs-studio`** is what studio.surveyjs.io runs: its server deploys `:production` within a minute or two, and
+  rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green `master`
+  commit ([Deployment](docs/operations.md#deployment),
+  [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)).
+- **`surveyjs-studio-selfhosted-test`** is the self-hosted image's test package until the image is published on Docker
+  Hub ([Releasing the self-hosted image](docs/operations.md#releasing-the-self-hosted-image),
+  [ADR 0028](docs/adr/0028-the-self-hosted-image.md)). Run it as in [Run it](#run-it) and
+  [Self-hosting](docs/self-hosting.md).
+- Pulling either needs `docker login ghcr.io` with a GitHub token that has `read:packages` and access to the package.
+- Both images carry the repository's `LICENSE` and the dependency notice `/app/THIRD_PARTY_NOTICES.md`; the
+  self-hosted image also carries `/app/DOCKER-IMAGE-TERMS.md` ([License](#license)).
 
 ## Repository layout
 

@@ -124,6 +124,8 @@ jobs:
 
       # The licence key goes in by name (--build-arg NAME reads the step's environment), never on
       # the command line. It is empty while the secret is unset.
+      # ghcr.io reads a multi-platform image's description from the index's annotations, not from
+      # the labels, so the self-hosted stage's description and licence labels are copied there.
       - name: Build and push linux/amd64 and linux/arm64
         id: push
         env:
@@ -135,6 +137,19 @@ jobs:
           while IFS= read -r tag; do
             [ -n "$tag" ] && args+=(--tag "$RELEASE_IMAGE:$tag")
           done <<< "$TAGS"
+          label() {
+            awk -v key="org.opencontainers.image.$1" '/^FROM /{stage=$NF}
+              stage=="self-hosted" && index($0, key "=\"") {
+                s=substr($0, index($0, key "=\"") + length(key) + 2); sub(/".*/, "", s); print s }' Dockerfile
+          }
+          for name in description licenses; do
+            value="$(label "$name")"
+            if [ -z "$value" ]; then
+              echo "::error::the self-hosted stage of the Dockerfile has no org.opencontainers.image.$name label"
+              exit 1
+            fi
+            args+=(--annotation "index:org.opencontainers.image.$name=$value")
+          done
           docker buildx build --target self-hosted --platform linux/amd64,linux/arm64 \
             --build-arg "VERSION=$VERSION" --build-arg SURVEYJS_IMAGE_LICENSE_KEY \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \

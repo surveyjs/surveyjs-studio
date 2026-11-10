@@ -58,6 +58,8 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 WEB_ROOT=/app/web \
 ARG SURVEYJS_IMAGE_LICENSE_KEY=
 ENV SURVEYJS_IMAGE_LICENSE_KEY=$SURVEYJS_IMAGE_LICENSE_KEY
 ARG VERSION=dev
+# Shown on the package page. The release copies the description and the licence into the
+# multi-platform index's annotations, where ghcr.io reads them (release.yml).
 LABEL org.opencontainers.image.title="SurveyJS Studio" \
       org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.description="SurveyJS Studio, self-hosted: create, host and analyze surveys on your own server." \
@@ -76,6 +78,10 @@ CMD ["node", "--import", "tsx", "src/main.ts"]
 # The hosted image (studio.surveyjs.io): keep this stage last, so a plain `docker build .` builds it.
 FROM app AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 WEB_ROOT=/app/web
+# Shown on the package page of ghcr.io/surveyjs/surveyjs-studio (with the repository's README).
+LABEL org.opencontainers.image.title="SurveyJS Studio (hosted)" \
+      org.opencontainers.image.description="SurveyJS Studio as it runs at studio.surveyjs.io: the server and the built web app, with no mode defaults; its settings choose the mode. Tagged by master commit id; :production is the deployed one." \
+      org.opencontainers.image.licenses="MIT"
 USER node
 WORKDIR /app/server
 EXPOSE 3000
