@@ -30,12 +30,12 @@ A custom shell is a code change in a fork (mode 3): register it in `web/src/shel
 Nothing in it comes from surveyjs.io but that mark: it loads none of the site's styles or fonts (system fonts only).
 Its code is in `web/src/shell/self-hosted/`:
 
-| File                    | What it holds                                                                                                                              |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SelfHostedShell.tsx`   | The frame (`SelfHostedFrame`), the shell of a signed-in page (`SelfHostedShell`) and the footer (`SelfHostedFooter`)                       |
-| `self-hosted.css`       | The frame's styles: readable global class names, `sh-*`                                                                                    |
-| `self-hosted-pages.css` | A neutral look for the app's pages inside the frame (My Surveys, Projects, the editor's bar, results, history, Users), scoped to `.sh-app` |
-| `accentText.ts`         | The text shade of the accent colour (WCAG AA on white)                                                                                     |
+| File                    | What it holds                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SelfHostedShell.tsx`   | The frame (`SelfHostedFrame`), the shell of a signed-in page (`SelfHostedShell`) and the footer (`SelfHostedFooter`)                                          |
+| `self-hosted.css`       | The frame's styles: readable global class names, `sh-*`                                                                                                       |
+| `self-hosted-pages.css` | A neutral look for the app's pages inside the frame (My Surveys, Projects, the editor's bar, results, history, Users, the account pages), scoped to `.sh-app` |
+| `accentText.ts`         | The text shade of the accent colour (WCAG AA on white)                                                                                                        |
 
 The classes, for restyling it in a fork or from another stylesheet:
 
@@ -51,11 +51,11 @@ The classes, for restyling it in a fork or from another stylesheet:
 | `sh-content`                                            | The page                                                                 |
 | `sh-footer`, `sh-footer__link`, `sh-footer__powered-by` | The footer and its links; `sh-footer--standalone` under a running survey |
 
-| Custom property                                                                                                    | Value                                                      |
-| ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `--sh-accent`                                                                                                      | `BRAND_ACCENT_COLOR`: lines and filled buttons             |
-| `--sh-accent-text`                                                                                                 | The accent darkened until it reads on white (4.5:1): links |
-| `--sh-text`, `--sh-muted`, `--sh-border`, `--sh-surface`, `--sh-subtle`, `--sh-danger`, `--sh-radius`, `--sh-font` | The neutral palette, radius and font, set on `.sh-app`     |
+| Custom property                                                                                                    | Value                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `--sh-accent`                                                                                                      | `BRAND_ACCENT_COLOR`: lines (the header line, the current tab, focus rings) and the border of Sign Out |
+| `--sh-accent-text`                                                                                                 | The accent darkened until it reads on white (4.5:1): links, the pages' buttons, Sign Out's text        |
+| `--sh-text`, `--sh-muted`, `--sh-border`, `--sh-surface`, `--sh-subtle`, `--sh-danger`, `--sh-radius`, `--sh-font` | The neutral palette, radius and font, set on `.sh-app`                                                 |
 
 The shell loads only with `APP_SHELL=self-hosted` (a lazy chunk), so its styles never reach the `surveyjs-site` look.
 Its look is pinned by its own visual tests (`pnpm e2e:visual:self-hosted`, [Testing](../testing.md)).
@@ -87,7 +87,8 @@ A wrong value stops the server at start-up with a message naming the variable.
 
 **Where the branding shows:** the header of every signed-in page (My Surveys, Projects, the editor, results, history,
 Users), the sign-in and set-password pages, the public results page, and the footer under a running survey. The run page
-shows no header: respondents see the survey and the footer.
+shows no header: respondents see the survey and the footer. Unless `BRANDING=off`, the survey also shows the Form
+Library's "Powered by SurveyJS" block under it, with its logo served by the app.
 
 The logo must be reachable over https, or served by the same site: the pages' Content-Security-Policy loads images from
 this site and https only. **My Surveys does not serve your logo file itself**: the server serves only the built web app.
@@ -95,8 +96,8 @@ A path such as `/brand/logo.svg` works when your reverse proxy serves that path 
 app, on the same origin); otherwise use an https URL. The shell loads no fonts or images of its own (the page styles and
 their fonts come with the app), so with the logo served by your proxy the instance makes no calls to other sites (S11).
 
-Text in the accent colour (links, Sign Out) uses a darker shade of it when the colour itself is too light to read on
-white (WCAG AA, 4.5:1); the header line keeps the colour as set.
+Links, Sign Out and the pages' buttons use a darker shade of the accent colour when the colour itself is too light to
+read on white (WCAG AA, 4.5:1). The lines keep the colour as set.
 
 ## "Powered by SurveyJS" and the licence key
 

@@ -34,8 +34,8 @@
 /* ---------------------------------------------------------------- Buttons
    The pages' buttons are anchors (SiteButton): outlined, or filled for a primary action. The
    native buttons of an <article> (the Users page) carry the site's classes for the surveyjs-site
-   shell, but keep their own look here (see "Users and the account forms" below); `:where()` adds
-   no weight. */
+   shell, but keep their own look here (see "Users and the account forms" below). The guard
+   `:where(:not(...))` adds no weight; the rules nested under it keep it. */
 
 .sh-app .v2-class---button:where(:not(.sh-content article button)) {
   display: inline-flex;
@@ -52,29 +52,38 @@
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+
+  &:hover {
+    background: var(--sh-subtle);
+  }
+
+  &[class*="-primary"] {
+    background: var(--sh-accent-text);
+    color: #fff;
+  }
+
+  &[class*="-primary"]:hover {
+    filter: brightness(1.1);
+  }
+
+  &[disabled] {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--sh-accent);
+    outline-offset: 2px;
+  }
 }
 
-.sh-app .v2-class---button:where(:not(.sh-content article button)):hover {
-  background: var(--sh-subtle);
-}
-
-.sh-app .v2-class---button[class*="-primary"]:where(:not(.sh-content article button)) {
-  background: var(--sh-accent-text);
-  color: #fff;
-}
-
-.sh-app .v2-class---button[class*="-primary"]:where(:not(.sh-content article button)):hover {
-  filter: brightness(1.1);
-}
-
-.sh-app .v2-class---button[disabled]:where(:not(.sh-content article button)),
 .sh-app .v2-class---button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
 }
 
-.sh-app .v2-class---button:where(:not(.sh-content article button)):focus-visible,
 .sh-app [role="button"]:focus-visible,
 .sh-app a:focus-visible {
   outline: 2px solid var(--sh-accent);
@@ -732,35 +741,37 @@
 }
 
 /* The account and Users pages sit in the site's page container (my-surveys.scss) for the
-   surveyjs-site shell; here .sh-content lays them out, so the plain shell's padding is dropped. */
-.sh-app .v2-class---my-surveys-page__container {
+   surveyjs-site shell, as My Surveys does. They put the page header straight in it (My Surveys wraps
+   it in its own header block), which tells them apart. Here .sh-content lays them out, so the plain
+   shell's padding is dropped. */
+.sh-app .v2-class---my-surveys-page__container:has(> .v2-class---header) {
   padding: 0;
-}
 
-/* The account forms' margins are for the other shells; here the paragraph after a form has its
-   own (below). */
-.sh-app .v2-class---my-surveys-page__container form {
-  margin: 0;
-}
+  /* The account forms' margins are for the other shells; here the paragraph after a form has its
+     own (below). */
+  & form {
+    margin: 0;
+  }
 
-/* The Users page's checkbox keeps the browser's colours (its module colours it for the other
-   shells). */
-.sh-app .sh-content input[type="checkbox"] {
-  accent-color: auto;
-}
+  /* The Users page's checkbox keeps the browser's colours (its module colours it for the other
+     shells). */
+  & input[type="checkbox"] {
+    accent-color: auto;
+  }
 
-.sh-app .sh-content table {
-  border-collapse: collapse;
-}
+  & table {
+    border-collapse: collapse;
+  }
 
-.sh-app .sh-content thead th {
-  color: var(--sh-muted);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-}
+  & thead th {
+    color: var(--sh-muted);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+  }
 
-.sh-app .sh-content form + .v2-class---paragraph {
-  margin-top: 12px;
-  color: var(--sh-muted);
+  & form + .v2-class---paragraph {
+    margin-top: 12px;
+    color: var(--sh-muted);
+  }
 }
