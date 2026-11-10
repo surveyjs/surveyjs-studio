@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sandboxSeed, seedJson } from "./generate.js";
+import { byCodePoint, sandboxSeed, seedJson } from "./generate.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const seedPath = resolve(root, "web/src/sandbox/seed.json");
@@ -88,5 +88,21 @@ describe("the sandbox seed", () => {
       "privateResultQuestions",
     ] as const)
       for (const k of Object.keys(seed[key])) expect(surveys.has(k)).toBe(true);
+  });
+
+  it("orders its lists by code point, whatever the machine's locale", async () => {
+    // localeCompare would put "a" before "B" and ignore or weigh "-" by the locale's rules.
+    expect(byCodePoint("B", "a")).toBeLessThan(0);
+    expect(byCodePoint("a", "a")).toBe(0);
+    expect(["b", "a-c", "B", "ab", "a"].sort(byCodePoint)).toEqual(["B", "a", "a-c", "ab", "b"]);
+    const seed = await sandboxSeed();
+    const ids = (items: { id: string }[]) => items.map((item) => item.id);
+    for (const list of [ids(seed.users), ids(seed.projects), ids(seed.surveys)]) {
+      expect(list).toEqual([...list].sort(byCodePoint));
+    }
+    for (const key of ["definitions", "responses"] as const) {
+      const keys = Object.keys(seed[key]);
+      expect(keys).toEqual([...keys].sort(byCodePoint));
+    }
   });
 });
