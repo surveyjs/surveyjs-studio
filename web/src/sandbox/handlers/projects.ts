@@ -18,7 +18,7 @@ import {
 } from "./common";
 import type { HandlerContext } from "./context";
 import { http } from "./http";
-import { membershipOf } from "./surveys";
+import { membershipOf } from "./survey-access";
 import { decodeProjectCursor, encodeProjectCursor, type NamePosition } from "./paging";
 import { ownerOf, projectJson, projectOrder, rowsOf, surveyReceiver } from "./project-rules";
 import {

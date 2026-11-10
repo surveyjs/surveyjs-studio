@@ -8,7 +8,7 @@ import { lower, mutate, readJson, requireSession, requiredObject, view } from ".
 import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { badRequest, guarded, ProblemError } from "./problems";
-import { visibleSurvey } from "./surveys";
+import { visibleSurvey } from "./survey-access";
 
 const viewNotFound = () =>
   new ProblemError({ code: "view-not-found", status: 404, title: "View not found" });

@@ -7,7 +7,7 @@ import type { HandlerContext } from "./context";
 import { http } from "./http";
 import { guarded } from "./problems";
 import { responseOrder, responsePage } from "./public";
-import { modifiableSurvey, visibleSurvey } from "./surveys";
+import { modifiableSurvey, visibleSurvey } from "./survey-access";
 
 export function resultsHandlers(ctx: HandlerContext) {
   return [

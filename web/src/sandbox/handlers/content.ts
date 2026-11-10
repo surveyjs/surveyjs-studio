@@ -19,7 +19,7 @@ import { http } from "./http";
 import { decodeHistoryCursor, encodeHistoryCursor, type HistoryPosition } from "./paging";
 import { addHistoryEntry, HISTORY_SNAPSHOTS, historyOrder } from "./history";
 import { guarded, notFound, ProblemError } from "./problems";
-import { modifiableSurvey, visibleSurvey } from "./surveys";
+import { modifiableSurvey, visibleSurvey } from "./survey-access";
 
 /** Asks proxies that compress responses to leave the ETag as sent (a rewritten tag never matches on save). */
 const NO_TRANSFORM = "no-transform";

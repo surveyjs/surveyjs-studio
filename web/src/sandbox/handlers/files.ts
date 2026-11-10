@@ -10,7 +10,7 @@ import { newFileId, type HandlerContext } from "./context";
 import { http } from "./http";
 import { checkMultipart, readFirstFile } from "./multipart";
 import { guarded, notFound, ProblemError, surveyNotAvailable, validationFailed } from "./problems";
-import { modifiableSurvey } from "./surveys";
+import { modifiableSurvey } from "./survey-access";
 
 /** The field an upload sends its file in. */
 const FILE_FIELD = "file";
