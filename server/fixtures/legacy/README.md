@@ -8,11 +8,21 @@ The spec asks for fixtures copied from the current storage. No storage copy was 
 Step 2, so these are written by hand from the layout document; confirming or extending them against
 a read-only storage copy is open (see [Open for later steps](../../../docs/architecture.md#open-for-later-steps)).
 
-They serve three jobs:
+They are the **shared seed** of every mode:
 
 - the memory provider can start from them (`MEMORY_SEED=legacy-fixtures`);
-- the shared provider suite (`server/src/providers/suite`) runs against them;
-- the local Azurite and SQL Server replica is loaded from them.
+- the SQL providers load them with `pnpm seed` (`server/src/cli/db.ts`; `pnpm seed:sqlite` and
+  `pnpm seed:postgres` for the demo databases);
+- the local Azurite and SQL Server replica is loaded from them (`pnpm legacy:load`);
+- the sandbox's browser seed (`web/src/sandbox/seed.json`) is generated from a subset of them by
+  `pnpm sandbox:seed`; the subset is listed in `server/fixtures/sandbox.json`;
+- the surveyjs.io user-API stub (`pnpm user-api:stub`) answers from their users and licences;
+- the shared provider suite (`server/src/providers/suite`) and the conformance suite run against them.
+
+Two seed entries are added in code, not here, and only where the user directory is local: the instance
+admin Ivy Instance (`server/src/providers/seed-instance-admin.ts`; the memory and SQL seeds) and a
+pending invitation to Marketing (`server/src/providers/seed-invitations.ts`; the memory and SQL seeds and
+the sandbox). The Azure replica and the provider suite have neither.
 
 ## Layout
 
@@ -45,6 +55,9 @@ They serve three jobs:
 2. Run `pnpm prettier --write server/fixtures` for the JSON files.
 3. The expected domain objects in `server/src/providers/suite/expected.ts` are **written by hand**,
    not computed from the mapping. Update them to match, or the provider suite fails.
-4. Run `pnpm test:unit`.
-5. The 1,500 results rows of "API created" are code, not a file: change `src/providers/azure-legacy/large-survey.ts`.
-   Its expectations in `expected.ts` stay hand-written.
+4. When a change touches a user, survey or project of the sandbox subset (`server/fixtures/sandbox.json`),
+   run `pnpm sandbox:seed` and bump the tag file's `version`, so a browser that stored the old seed finds it
+   outdated and offers a reset. A unit test fails while the committed `seed.json` is out of date.
+5. Run `pnpm test:unit`.
+6. The 1,500 results rows of "API created" are code, not a file: change
+   `server/src/providers/azure-legacy/large-survey.ts`. Its expectations in `expected.ts` stay hand-written.

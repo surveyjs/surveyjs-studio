@@ -12,14 +12,15 @@ under its project folder). Prettier skips `site/`, so the copies stay comparable
 
 ## What is copied
 
-| Copy                                         | Original                                           | Change                                                                                                          |
-| -------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `site/Content/Styles/**/*.scss` (31)         | the site's stylesheet folder (same relative paths) | None, except `cookies-popup.scss`: the close icon's `url('/Content/Images/…')` is now relative (`../Images/…`). |
-| `site/Content/Fonts/V2/*.woff2` (5)          | the site's V2 fonts folder                         | None.                                                                                                           |
-| `site/Content/Images/V2/Tour/Close16x16.svg` | the site's tour image folder (same name)           | None.                                                                                                           |
-| `site/Views/Shared/V2/_icons/**/*.svg` (52)  | the site's icon partials (same names)              | Extension changed to `.svg`; the leading byte-order mark removed. Each partial is one plain `<svg>`.            |
+| Copy                                         | Original                                           | Change                                                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `site/Content/Styles/**/*.scss` (38)         | the site's stylesheet folder (same relative paths) | None, except `cookies-popup.scss`: the close icon's `url('/Content/Images/…')` is now relative (`../Images/…`), and the changes listed with the steps below. |
+| `site/Content/Fonts/V2/*.woff2` (5)          | the site's V2 fonts folder                         | None.                                                                                                                                                        |
+| `site/Content/Images/V2/Tour/Close16x16.svg` | the site's tour image folder (same name)           | None.                                                                                                                                                        |
+| `site/Views/Shared/V2/_icons/**/*.svg` (57)  | the site's icon partials (same names)              | Extension changed to `.svg`; the leading byte-order mark removed. Each partial is one plain `<svg>`.                                                         |
 
-Step 4 (the My Surveys page) added these copies to the rows above:
+The counts are of the whole folder today. The steps below say which of these files each step added,
+and what uses them. Step 4 (the My Surveys page) added these copies to the rows above:
 
 | Copy                                                                                   | Used by                                                     |
 | -------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -118,61 +119,6 @@ with the row's menu (Step 5); the menu's entries are the pure function `surveyMe
 - "Move to Project" also lists "Personal Surveys" inside a project, as a clickable item (the site
   shows it only in Personal Surveys, marked and inert, so a survey cannot move back).
 
-## Which styles, and why not the whole stylesheet
-
-The site builds one stylesheet, `/Content/css.V2`, from the site's main stylesheet
-(`compilerconfig.json` and the site's web optimizer configuration). `app.scss` is not one indivisible file: it
-imports about 200 partials, most of them for the site's own pages (pricing, docs, account pages…).
-The shell's entry, `surveyjs-site.scss`, imports only the 37 partials that the top bar, the menus,
-the footer, the cookie banner, the licence dialogs, the My Surveys page and the History page use, in the order of
-`app.scss`: the design tokens (`sizes`, `media-breakpoints`, `text-styles`, `color-styles`,
-`effect-styles`), the base (`layout-styles`, `common-styles`, `mobile-menu`, `cookies-popup`), the
-components, the top-bar and footer styles, and `pages/my-surveys.scss`. Compiled, they are about
-127 KB of CSS (before minification), against about 940 KB for the whole site.
-
-The entry also holds three small additions next to the copies:
-
-- `@keyframes rotation`, which `loading.scss` uses: the site defines it in `pages/cart-page.scss`,
-  which the shell does not copy; the lines are copied from there.
-- The page's own `pageStyles` section of the site's My Surveys page (`main` as a flex column, an opaque
-  loading indicator), limited to pages that render the My Surveys article.
-- `#my-surveys-loading .v2-class---loading { display: block }`: `loading.scss` hides the indicator
-  and the site's page never unhides it; the app renders it only while a survey is created.
-
-The partials use Sass `@import`, which Dart Sass marks as deprecated; `web/vite.config.ts` silences
-that one warning.
-
-## Fonts
-
-All five families are under the SIL Open Font License 1.1 (OFL): they may be copied, embedded and
-redistributed with software, and the licence text travels with the files. Each directory holds one
-`OFL-<Family>.txt` per family, with that family's copyright line and the full licence.
-
-| Font                       | Files                                                     | Version | Copyright and licence                                                                                                                                        |
-| -------------------------- | --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Lato (Latin)               | `Fonts/V2/LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | 2.015   | © 2011-2015 tyPoland Łukasz Dziedzic, Reserved Font Name "Lato". `Fonts/V2/OFL-Lato.txt`.                                                                    |
-| DM Mono                    | `Fonts/V2/DMMono-Regular.woff2`                           | 1.000   | © 2020 The DM Mono Project Authors. `Fonts/V2/OFL-DMMono.txt`. Declared by the copied `fonts.scss`; the shell never uses it, so browsers do not download it. |
-| Open Sans (variable, wght) | `Fonts/Google/OpenSans-latin.woff2`, latin subset         | 3.003   | © 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans). `Fonts/Google/OFL-OpenSans.txt`.                                             |
-| Raleway (variable, wght)   | `Fonts/Google/Raleway-latin.woff2`, latin subset          | 4.026   | © 2010 The Raleway Project Authors (impallari@gmail.com), Reserved Font Name "Raleway". `Fonts/Google/OFL-Raleway.txt`.                                      |
-
-Lato and DM Mono are copies of the site's own files. Open Sans and Raleway are not in the legacy
-source: the site loads them from Google Fonts (in the site's page layout). The two files here are
-the unmodified latin-subset woff2 files that the Google Fonts CSS API serves for those families
-(`fonts.googleapis.com/css`, then `fonts.gstatic.com`), downloaded on 2026-10-20 (Step 13). The
-shell and the app declare them in `surveyjs-site.scss`, bundled by Vite, so they make no runtime
-call to Google. Open Sans is the `body` font of `common-styles.scss`; Raleway styles the results
-page headings. Letters outside the latin subset fall back to Helvetica Neue / Helvetica / Arial.
-Reserved Font Names: the files keep their original names and are not modified.
-
-## Left out on purpose
-
-- Third-party content the site loads at runtime: Google Tag Manager and the consent updates, the
-  Product Hunt badge image and the SourceForge badge script in the footer.
-- The live GitHub star count: the site's server asks the GitHub API; the shell shows the site's own
-  fallback value, `4.7k`.
-- The cart count: the site reads it from its own `/api/Cart/get`; the shell shows the empty cart.
-- The "logged in as another user" badge and the scroll-to-top button.
-
 Step 6 (the History page) copies one more file:
 
 | Copy                                  | Used by                                 | Original                                 |
@@ -196,13 +142,13 @@ h1.title.my-surveys-page__title`, and the entries in `div.mod-mt-50.mod-mb-50`. 
   Surveys" follows it. All of them are the app's own.
 
 The JSON view of a history entry ([ADR 0032](../../../../../docs/adr/0032-history-json-view.md)) copies these, from
-commit `(a site commit)` (none of them has changed since):
+the site as of 2026-10-30:
 
-| Copy                                                                                                                                                                                                                                                                                                                                                                                                       | Used by                          | Original                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `site/Content/Styles/components/footer-toolbar-item.scss`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button             | the same path under `wwwroot/`, imported where `app.scss` has it (after `forms/checkbox`). None changed                   |
-| `site/Views/Shared/V2/_icons/{24x24,20x20}/Copy-Code.svg`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button's two icons | `Views/Shared/V2/_icons/{24x24,20x20}the site's page markup` (`the site's page markup` → `.svg`, byte-order mark removed) |
-| The entry's `span.action-link` around the clock and the time; the block under it: the Copy JSON button (`V2/components/Footer-Toolbar-Item`: Type Button, not icon-only, its two icons in `circle-icon/Icon` boxes, Smedium and SSmedium, Primary), `div.svc-custom-embedded-tab__code-container` (with `user-select: text`) and `pre.source-code.source-code-embed > code.content-js.language-javascript` | `src/history/HistoryPage.tsx`    | `the site's page markup`                                                                                                  |
+| Copy                                                                                                                                                                                                                                                                                                                                                                                                       | Used by                          | Original                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `site/Content/Styles/components/footer-toolbar-item.scss`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button             | the same path on the site, imported where `app.scss` has it (after `forms/checkbox`). None changed                  |
+| `site/Views/Shared/V2/_icons/{24x24,20x20}/Copy-Code.svg`                                                                                                                                                                                                                                                                                                                                                  | the Copy JSON button's two icons | the site's icon partials `V2/_icons/{24x24,20x20}/Copy-Code` (extension changed to `.svg`, byte-order mark removed) |
+| The entry's `span.action-link` around the clock and the time; the block under it: the Copy JSON button (`V2/components/Footer-Toolbar-Item`: Type Button, not icon-only, its two icons in `circle-icon/Icon` boxes, Smedium and SSmedium, Primary), `div.svc-custom-embedded-tab__code-container` (with `user-select: text`) and `pre.source-code.source-code-embed > code.content-js.language-javascript` | `src/history/HistoryPage.tsx`    | the site's History page markup                                                                                      |
 
 Changes to them:
 
@@ -330,3 +276,61 @@ Changes to the markup:
   is named "Remove {name}". The inputs have an `aria-label`.
 - The summary's links (Rename, Remove, Leave Project) do not open or close the card.
 - The plus icons sit in a `span` (the site puts the partial's `<svg>` straight in the `div`).
+
+## Which styles, and why not the whole stylesheet
+
+The site builds one stylesheet, `/Content/css.V2`, from the site's main stylesheet
+(`compilerconfig.json` and the site's web optimizer configuration). `app.scss` is not one indivisible file: it
+imports about 200 partials, most of them for the site's own pages (pricing, docs, account pages…).
+The shell's entry, `surveyjs-site.scss`, imports only the 37 partials that the top bar, the menus,
+the footer, the cookie banner, the licence dialogs and the app's pages (My Surveys, History, Results and
+Projects) use, in the order of `app.scss`: `fonts.scss`, the design tokens (`sizes`, `media-breakpoints`,
+`text-styles`, `color-styles`, `effect-styles`), the base (`layout-styles`, `common-styles`, `mobile-menu`,
+`cookies-popup`), the components, the top-bar and footer styles, the three account-page partials of the
+Projects page, `pages/my-surveys.scss` and `pages/survey-results.scss`. Compiled, they are about 189 KB of
+CSS (before minification), against about 940 KB for the whole site. The 38th copy, `embedded-tab.scss`, is
+not in the entry: the Embed tab imports it, so it is in the Creator's chunk only.
+
+The entry also holds four small additions next to the copies:
+
+- The two `@font-face` rules of Open Sans and Raleway (see [Fonts](#fonts)).
+- `@keyframes rotation`, which `loading.scss` uses: the site defines it in `pages/cart-page.scss`,
+  which the shell does not copy; the lines are copied from there.
+- The page's own `pageStyles` section of the site's My Surveys page (`main` as a flex column, an opaque
+  loading indicator), limited to pages that render the My Surveys article.
+- `#my-surveys-loading .v2-class---loading { display: block }`: `loading.scss` hides the indicator
+  and the site's page never unhides it; the app renders it only while a survey is created.
+
+The partials use Sass `@import`, which Dart Sass marks as deprecated; `web/vite.config.ts` silences
+that one warning.
+
+## Fonts
+
+All five families are under the SIL Open Font License 1.1 (OFL): they may be copied, embedded and
+redistributed with software, and the licence text travels with the files. Each directory holds one
+`OFL-<Family>.txt` per family, with that family's copyright line and the full licence.
+
+| Font                       | Files                                                     | Version | Copyright and licence                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lato (Latin)               | `Fonts/V2/LatoLatin-{Regular,Medium,Semibold,Bold}.woff2` | 2.015   | © 2011-2015 tyPoland Łukasz Dziedzic, Reserved Font Name "Lato". `Fonts/V2/OFL-Lato.txt`.                                                                    |
+| DM Mono                    | `Fonts/V2/DMMono-Regular.woff2`                           | 1.000   | © 2020 The DM Mono Project Authors. `Fonts/V2/OFL-DMMono.txt`. Declared by the copied `fonts.scss`; the shell never uses it, so browsers do not download it. |
+| Open Sans (variable, wght) | `Fonts/Google/OpenSans-latin.woff2`, latin subset         | 3.003   | © 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans). `Fonts/Google/OFL-OpenSans.txt`.                                             |
+| Raleway (variable, wght)   | `Fonts/Google/Raleway-latin.woff2`, latin subset          | 4.026   | © 2010 The Raleway Project Authors (impallari@gmail.com), Reserved Font Name "Raleway". `Fonts/Google/OFL-Raleway.txt`.                                      |
+
+Lato and DM Mono are copies of the site's own files. Open Sans and Raleway are not in the legacy
+source: the site loads them from Google Fonts (in the site's page layout). The two files here are
+the unmodified latin-subset woff2 files that the Google Fonts CSS API serves for those families
+(`fonts.googleapis.com/css`, then `fonts.gstatic.com`), downloaded on 2026-10-20 (Step 13). The
+shell and the app declare them in `surveyjs-site.scss`, bundled by Vite, so they make no runtime
+call to Google. Open Sans is the `body` font of `common-styles.scss`; Raleway styles the results
+page headings. Letters outside the latin subset fall back to Helvetica Neue / Helvetica / Arial.
+Reserved Font Names: the files keep their original names and are not modified.
+
+## Left out on purpose
+
+- Third-party content the site loads at runtime: Google Tag Manager and the consent updates, the
+  Product Hunt badge image and the SourceForge badge script in the footer.
+- The live GitHub star count: the site's server asks the GitHub API; the shell shows the site's own
+  fallback value, `4.7k`.
+- The cart count: the site reads it from its own `/api/Cart/get`; the shell shows the empty cart.
+- The "logged in as another user" badge and the scroll-to-top button.
