@@ -368,9 +368,10 @@ surveyjs.io sign-in, while the old My Surveys section still runs.
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
 `OIDC_DISCOVERY` and `OIDC_SCOPES` (which fit `auth.surveyjs.io`), `API_DOCS` (off in production: the reference is
 in the repository), and `APP_SHELL` (`surveyjs-site`, the surveyjs.io look); the branding settings (`BRAND_*`,
-`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the self-hosted `self-hosted` shell and change nothing there. The accounts settings are [below](#configuring-accounts). Register
-`<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI and `<PUBLIC_BASE_URL>/` as its address after
-sign-out.
+`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the `self-hosted` shell and change nothing there. They are still
+checked: a wrong value, or `BRANDING=off` without a licence key of your own, stops the start-up. The accounts settings
+are [below](#configuring-accounts). Register `<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI and
+`<PUBLIC_BASE_URL>/` as its address after sign-out.
 
 An env file for mode 1.1, with placeholders:
 
