@@ -24,6 +24,7 @@ const REFUSED = [
   "updateUser",
   "deleteUser",
   "createUserResetLink",
+  "unlinkUserIdentity",
   "createProject",
   "updateProject",
   "deleteProject",

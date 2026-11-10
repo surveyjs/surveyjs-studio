@@ -295,13 +295,67 @@ export interface paths {
         put?: never;
         /**
          * Reset a user's password
-         * @description Instance admins only. Clears the user's password, ends their sessions within a
-         *     minute, makes their earlier links unusable, and returns a new one-time
-         *     set-password link, valid for 7 days: the only time it is shown. For an `invited`
-         *     user it is a new invitation link.
+         * @description Instance admins only. Clears the user's password, unlinks every linked sign-in
+         *     (Google, GitHub, Facebook, surveyjs.io), ends their sessions within a minute, makes
+         *     their earlier links unusable, and returns a new one-time set-password link, valid
+         *     for 7 days: the only time it is shown. For an `invited` user it is a new invitation
+         *     link. An OAuth2 sign-in with the account's verified email links again afterwards.
          */
         post: operations["createUserResetLink"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a user's linked sign-ins
+         * @description Instance admins only. The user's linked Google, GitHub, Facebook and surveyjs.io
+         *     identities, ordered by provider, then by when they were linked. Not paged: a user
+         *     has a few at most. `404` for an unknown user.
+         */
+        get: operations["listUserIdentities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/identities/{provider}/{subject}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+                provider: components["schemas"]["IdentityProvider"];
+                /** @description The identity's `subject`, URL-encoded. */
+                subject: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink one of a user's sign-ins
+         * @description Instance admins only. Removes the link, so that identity no longer signs in to the
+         *     account, and ends the user's sessions within a minute (one of them may come from
+         *     that identity). If the provider still gives the account's email as verified, the
+         *     next sign-in with it links it again: to keep someone out, disable the user.
+         *     `404` for an unknown user or an identity the user does not have.
+         */
+        delete: operations["unlinkUserIdentity"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1052,6 +1106,11 @@ export interface components {
          *       "displayName": "Alex",
          *       "instanceRole": "user",
          *       "status": "active",
+         *       "hasPassword": false,
+         *       "pendingLink": {
+         *         "purpose": "reset",
+         *         "expiresAt": "2026-11-06T09:00:00.000Z"
+         *       },
          *       "createdAt": "2026-10-29T10:00:00.000Z",
          *       "lastSignInAt": "2026-10-30T08:15:00.000Z"
          *     }
@@ -1067,9 +1126,44 @@ export interface components {
              * @enum {string}
              */
             status: "invited" | "active" | "disabled";
+            /** @description Whether the user has a password. `false` after a reset until they use the new link. */
+            hasPassword: boolean;
+            /** @description The user's set-password link that is not used and not expired: `invitation` for an invited user, `reset` after a reset, `setup` for the first admin. `null` when there is none (also when it expired). */
+            pendingLink: components["schemas"]["PendingLink"] | null;
             createdAt: components["schemas"]["Timestamp"];
             /** @description The last sign-in, with a password or an OAuth2 method; `null` before the first. */
             lastSignInAt: components["schemas"]["Timestamp"] | null;
+        };
+        /** @description A set-password link waiting to be used. The link itself is never shown again. */
+        PendingLink: {
+            /** @enum {string} */
+            purpose: "invitation" | "reset" | "setup";
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        /**
+         * @description The OAuth2 sign-in method an identity belongs to.
+         * @enum {string}
+         */
+        IdentityProvider: "surveyjs" | "google" | "github" | "facebook";
+        /**
+         * @description An identity at an OAuth2 provider that signs in to the account (ADR 0029).
+         * @example {
+         *       "provider": "github",
+         *       "subject": "583231",
+         *       "email": "alex@example.com",
+         *       "linkedAt": "2026-11-03T14:00:00.000Z"
+         *     }
+         */
+        LinkedIdentity: {
+            provider: components["schemas"]["IdentityProvider"];
+            /** @description The provider's stable id of the person. Pass it, URL-encoded, to `unlinkUserIdentity`. */
+            subject: string;
+            /** @description The email the provider gave when the identity was linked (lower-case); `null` when it gave none. */
+            email: string | null;
+            linkedAt: components["schemas"]["Timestamp"];
+        };
+        LinkedIdentityList: {
+            items: components["schemas"]["LinkedIdentity"][];
         };
         AdminUserPage: {
             items: components["schemas"]["AdminUser"][];
@@ -2185,6 +2279,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PasswordLink"];
                 };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    listUserIdentities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user's linked identities. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkedIdentityList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            501: components["responses"]["NotImplemented"];
+        };
+    };
+    unlinkUserIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+                provider: components["schemas"]["IdentityProvider"];
+                /** @description The identity's `subject`, URL-encoded. */
+                subject: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unlinked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];

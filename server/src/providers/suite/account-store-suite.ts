@@ -96,6 +96,61 @@ export function describeLocalAccountSuite(
       expect(await store.accounts.account(first.user.id)).toEqual(first);
     });
 
+    it("creates an account with its set-password link, and neither when the email is taken", async () => {
+      const tokenHash = `with-${randomUUID()}`;
+      const link = { tokenHash, purpose: "invitation" as const, createdAt: AT, expiresAt: LATER };
+      const invited = await store.accounts.createAccount(
+        newAccount({ status: "invited", passwordHash: null }),
+        { link },
+      );
+      expect((await store.accounts.pendingPasswordLinks(AT)).get(invited.user.id)).toEqual({
+        purpose: "invitation",
+        expiresAt: LATER,
+      });
+      // The second account fails: its link is not stored either.
+      const refused = `refused-${randomUUID()}`;
+      await expect(
+        store.accounts.createAccount(newAccount({ email: invited.user.email }), {
+          link: { ...link, tokenHash: refused },
+        }),
+      ).rejects.toThrow();
+      expect(await store.accounts.usePasswordLink(refused, AT, "$argon2id$x")).toBeNull();
+      expect(await store.accounts.usePasswordLink(tokenHash, AT, "$argon2id$set")).toEqual({
+        userId: invited.user.id,
+        epoch: 1,
+      });
+    });
+
+    it("lists each account's pending link: unused, not expired, the latest expiry", async () => {
+      const account = await store.accounts.createAccount(newAccount());
+      const none = await store.accounts.createAccount(newAccount());
+      const link = (tokenHash: string, expiresAt: string) =>
+        store.accounts.createPasswordLink({
+          tokenHash,
+          userId: account.user.id,
+          purpose: "reset",
+          createdAt: AT,
+          expiresAt,
+        });
+      await link(`soon-${randomUUID()}`, "2026-11-01T12:00:00.000Z");
+      await link(`later-${randomUUID()}`, LATER);
+      const used = `used-${randomUUID()}`;
+      await store.accounts.createPasswordLink({
+        tokenHash: used,
+        userId: none.user.id,
+        purpose: "reset",
+        createdAt: AT,
+        expiresAt: LATER,
+      });
+      await store.accounts.usePasswordLink(used, AT, "$argon2id$x");
+      const pending = await store.accounts.pendingPasswordLinks(AT);
+      expect(pending.get(account.user.id)).toEqual({ purpose: "reset", expiresAt: LATER });
+      expect(pending.has(none.user.id)).toBe(false);
+      // Once the later one has expired too, none is pending.
+      const after = await store.accounts.pendingPasswordLinks("2026-11-11T00:00:00.000Z");
+      expect(after.has(account.user.id)).toBe(false);
+    });
+
     it("sets a password: raises the epoch, sets the flag, activates an invited account", async () => {
       const invited = await store.accounts.createAccount(
         newAccount({ status: "invited", passwordHash: null }),
@@ -382,6 +437,83 @@ export function describeLocalAccountSuite(
       });
       expect(await store.accounts.deleteAccount(account.user.id)).toBe("deleted");
       expect(await store.accounts.accountByIdentity("facebook", subject)).toBeNull();
+    });
+
+    it("lists an account's identities by provider; unlinking one ends the sessions", async () => {
+      const account = await store.accounts.createAccount(newAccount());
+      const other = await store.accounts.createAccount(newAccount());
+      const identity = (provider: "google" | "github", subject: string, createdAt: string) => ({
+        provider,
+        subject,
+        userId: account.user.id.toUpperCase(),
+        email: "Ada@Example.com",
+        emailVerified: true,
+        createdAt,
+      });
+      // A subject is whatever text the provider gives, a slash included.
+      const google = identity("google", `g/${randomUUID()}`, LATER);
+      const github = identity("github", randomUUID(), AT);
+      await store.accounts.linkIdentity(google);
+      await store.accounts.linkIdentity(github);
+      await store.accounts.linkIdentity({
+        ...github,
+        subject: randomUUID(),
+        userId: other.user.id,
+      });
+      const stored = (link: typeof google) => ({
+        ...link,
+        userId: account.user.id,
+        email: "ada@example.com",
+      });
+      expect(await store.accounts.listIdentities(account.user.id.toUpperCase())).toEqual([
+        stored(github),
+        stored(google),
+      ]);
+      expect(await store.accounts.listIdentities(randomUUID())).toEqual([]);
+      expect(await store.accounts.listIdentities("not-a-guid")).toEqual([]);
+
+      expect(await store.accounts.unlinkIdentity(account.user.id, "google", google.subject)).toBe(
+        1,
+      );
+      expect(await store.accounts.accountByIdentity("google", google.subject)).toBeNull();
+      expect(await store.accounts.listIdentities(account.user.id)).toEqual([stored(github)]);
+      expect((await store.accounts.account(account.user.id))?.sessionEpoch).toBe(1);
+      // Gone already, or another account's: nothing changes.
+      expect(
+        await store.accounts.unlinkIdentity(account.user.id, "google", google.subject),
+      ).toBeNull();
+      expect(
+        await store.accounts.unlinkIdentity(other.user.id, "github", github.subject),
+      ).toBeNull();
+      expect(
+        await store.accounts.unlinkIdentity("not-a-guid", "github", github.subject),
+      ).toBeNull();
+      expect((await store.accounts.account(account.user.id))?.sessionEpoch).toBe(1);
+      expect((await store.accounts.account(other.user.id))?.sessionEpoch).toBe(0);
+    });
+
+    it("unlinks every identity with a reset", async () => {
+      const account = await store.accounts.createAccount(newAccount());
+      const subject = randomUUID();
+      await store.accounts.linkIdentity({
+        provider: "github",
+        subject,
+        userId: account.user.id,
+        email: account.user.email,
+        emailVerified: true,
+        createdAt: AT,
+      });
+      await store.accounts.resetPassword(account.user.id, {
+        tokenHash: `reset-${randomUUID()}`,
+        createdAt: AT,
+        expiresAt: LATER,
+      });
+      expect(await store.accounts.listIdentities(account.user.id)).toEqual([]);
+      expect(await store.accounts.accountByIdentity("github", subject)).toBeNull();
+      expect((await store.accounts.pendingPasswordLinks(AT)).get(account.user.id)).toEqual({
+        purpose: "reset",
+        expiresAt: LATER,
+      });
     });
 
     it("resets a password: no password, a new epoch, only the new link works", async () => {

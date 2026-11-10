@@ -378,6 +378,23 @@ export interface NewLocalAccount {
 
 export type PasswordLinkPurpose = "setup" | "invitation" | "reset";
 
+/** A set-password link as the store keeps it (only a hash of the token). */
+export interface NewPasswordLink {
+  readonly tokenHash: string;
+  readonly purpose: PasswordLinkPurpose;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+  /** ISO 8601 UTC. */
+  readonly expiresAt: string;
+}
+
+/** An account's unused set-password link that has not expired. */
+export interface PendingPasswordLink {
+  readonly purpose: PasswordLinkPurpose;
+  /** ISO 8601 UTC. */
+  readonly expiresAt: string;
+}
+
 /**
  * The accounts of the local user directory: what password sign-in, the session check and the
  * set-password links need. Ids and emails match case-insensitively.
@@ -386,8 +403,14 @@ export interface LocalAccountStore {
   countAccounts(): Promise<number>;
   /** Accounts with the instance role `admin` and the status `active`. */
   countActiveAdmins(): Promise<number>;
-  /** Rejects (nothing stored) when the id or the email is in use. */
-  createAccount(account: NewLocalAccount): Promise<LocalAccount>;
+  /**
+   * Rejects (nothing stored) when the id or the email is in use. With `link`, stores the account's
+   * set-password link in the same transaction: both are stored, or neither.
+   */
+  createAccount(
+    account: NewLocalAccount,
+    options?: { readonly link?: NewPasswordLink },
+  ): Promise<LocalAccount>;
   /** null for an unknown or non-GUID id. */
   account(id: string): Promise<LocalAccount | null>;
   /** null for an unknown email. */
@@ -404,12 +427,24 @@ export interface LocalAccountStore {
   accountByIdentity(provider: ExternalMethod, subject: string): Promise<LocalAccount | null>;
   /** Links the identity to an account; `taken` when that (provider, subject) is linked already, to anyone. */
   linkIdentity(link: IdentityLink): Promise<"linked" | "taken">;
+  /**
+   * The account's linked identities, ordered by provider, then link time, then subject. [] for an
+   * unknown or non-GUID id.
+   */
+  listIdentities(userId: string): Promise<IdentityLink[]>;
+  /**
+   * Unlinks one identity of the account and raises its session epoch, atomically (the account's
+   * sessions end: one of them may come from that identity). Returns the new epoch; null when the
+   * account has no such identity (nothing changes).
+   */
+  unlinkIdentity(userId: string, provider: ExternalMethod, subject: string): Promise<number | null>;
   /** Deletes the account with its links and identities, under the same rule. */
   deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
   /**
-   * An admin's reset, atomically: clears the password, raises the epoch, marks the account's
-   * unused links used, and stores the new link (`invitation` for an invited account, else
-   * `reset`). Returns the new epoch; null when there is no such account (nothing stored).
+   * An admin's reset, atomically: clears the password, unlinks every identity, raises the epoch,
+   * marks the account's unused links used, and stores the new link (`invitation` for an invited
+   * account, else `reset`). Returns the new epoch; null when there is no such account (nothing
+   * stored).
    */
   resetPassword(
     id: string,
@@ -426,6 +461,11 @@ export interface LocalAccountStore {
   ): Promise<number | null>;
   /** Notes a successful sign-in. */
   recordSignIn(id: string, at: string): Promise<void>;
+  /**
+   * Each account's unused link that has not expired at `at`, by user id (lower-case); the one that
+   * expires last when there are several.
+   */
+  pendingPasswordLinks(at: string): Promise<ReadonlyMap<string, PendingPasswordLink>>;
   /** Stores a set-password link by the hash of its token. */
   createPasswordLink(link: {
     readonly tokenHash: string;
