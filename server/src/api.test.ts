@@ -441,6 +441,44 @@ describe("/api/docs", () => {
     expect(res.body).toBe("<!doctype html><title>API</title>");
   });
 
+  describe("with NODE_ENV=production", () => {
+    const production = {
+      NODE_ENV: "production",
+      IDENTITY_PROVIDER: "surveyjs-oidc",
+      PUBLIC_BASE_URL: "https://surveys.example.com",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
+      OIDC_ISSUER_URL: "https://auth.example.com",
+      OIDC_CLIENT_ID: "client-id",
+      OIDC_CLIENT_SECRET: "oidc-Secret-Value-77",
+    };
+
+    /** The app as production runs it (no dev seed); /config and /api/docs. */
+    async function productionApp(env: Record<string, string>) {
+      const config = loadConfig({ ...production, ...env });
+      app = await buildApp(config, await createProviders(config), { apiDocsPath: docsFile });
+      const features = (await app.inject("/api/v1/config")).json<{
+        features: { apiDocs: boolean };
+      }>().features;
+      return { features, docs: await app.inject("/api/docs") };
+    }
+
+    it("serves the API reference and lists it in /config with API_DOCS=true", async () => {
+      const { features, docs } = await productionApp({ API_DOCS: "true" });
+      expect(features.apiDocs).toBe(true);
+      expect(docs.statusCode).toBe(200);
+      expect(docs.headers["content-type"]).toContain("text/html");
+      expect(docs.body).toBe("<!doctype html><title>API</title>");
+    });
+
+    it("keeps it off by default: a plain 404, and apiDocs false in /config", async () => {
+      const { features, docs } = await productionApp({});
+      expect(features.apiDocs).toBe(false);
+      expect(docs.statusCode).toBe(404);
+      expect(docs.json()).toMatchObject({ code: "not-found" });
+      expect(docs.json()).not.toHaveProperty("detail");
+    });
+  });
+
   it("answers 404 with a hint when the reference has not been built", async () => {
     const res = await (
       await start({ API_DOCS: "true" }, { apiDocsPath: join(dir, "missing.html") })

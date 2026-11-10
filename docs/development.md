@@ -528,7 +528,10 @@ and is started in the process by the unit tests, the conformance setup and Playw
   `NODE_ENV=production`), and `OIDC_ISSUER_URL=http://127.0.0.1:5180/surveyjs` for surveyjs.io.
 - **Secrets:** any client ID; the client secret of each provider is `stub-secret-<provider>`.
 - **The sign-in page** of each provider is a form with `sub`, `email` and `name` and an `email_verified` box
-  (checked), so one person can be several different identities. **Deny** answers as a user who refused.
+  (checked), so one person can be several different identities. A second box leaves the `email_verified` claim out
+  of the answers. **Deny** answers as a user who refused.
+- **Refusals** have each provider's own shape: a bad or reused code is `400 invalid_grant` at Google and surveyjs.io,
+  `200` with `error: bad_verification_code` at GitHub, and a Graph error with `code: 100` at Facebook.
 - **Settings for a trial** (with `pnpm dev:sqlite` and a `USER_DIRECTORY=local` as in [Password sign-in](#password-sign-in)):
   `AUTH_METHODS=password,github,google GITHUB_CLIENT_ID=demo-github GITHUB_CLIENT_SECRET=stub-secret-github GOOGLE_CLIENT_ID=demo-google GOOGLE_CLIENT_SECRET=stub-secret-google`.
   A walkthrough is the [Step 8 demo](demo/self-hosted-08.md).

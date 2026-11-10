@@ -47,7 +47,8 @@ sequenceDiagram
    `name`, optional `picture`).
 4. The directory is asked for the user `sub`. If it has the user, its display name and email win over
    the provider's. A **blocked** user gets `403 forbidden` and no session. An identity without an
-   email address gets `400 bad-request` and no session. A `picture` that is not an absolute http(s)
+   email address gets `400 bad-request` and no session. A browser goes to the refused page instead
+   ([below](#outcomes-of-the-two-sign-in-operations)). A `picture` that is not an absolute http(s)
    URL is dropped.
 5. The server sets `msid` and `msid_csrf`, clears that transaction cookie, and answers `302` to
    `PUBLIC_BASE_URL + returnTo`.
@@ -62,7 +63,8 @@ With a local user directory the callback does not look the user up by provider i
 [ADR 0029](../adr/0029-linking-identities-by-verified-email.md): a linked identity, else a verified email that names an
 account, else a new account for an invited email, an allowed domain or `OPEN_SIGN_UP=on`. A refused sign-in is a `302`
 to `PUBLIC_BASE_URL/sign-in/refused?reason=<not-invited|email-unverified|disabled>&provider=<method>`, with no session.
-With `READ_ONLY=true` a sign-in that would write answers `503 read-only`.
+With `READ_ONLY=true` a sign-in that would write is refused with the reason `read-only` (an API client's sign-in
+without `provider` gets `503 read-only`).
 
 A transaction cookie is single use: the callback clears it whatever the outcome. Open `login` again to
 retry. A transaction is valid for 10 minutes. Each sign-in has its own cookie, so sign-ins started in
@@ -78,14 +80,34 @@ answers `302` to `PUBLIC_BASE_URL/` instead of `400`.
 | `login`         | 400    | `bad-request`    | `returnTo` is not a path on this site                                                                                                   |
 | `login`         | 429    | `rate-limited`   | Too many requests (below)                                                                                                               |
 | `login`         | 500    | `internal-error` | The identity provider cannot be reached for discovery                                                                                   |
-| `loginCallback` | 302    |                  | Signed in; cookies are set. Or: no valid transaction, but already signed in (to `/`)                                                    |
+| `loginCallback` | 302    |                  | Signed in; cookies are set. Or: no valid transaction, but already signed in (to `/`). Or: refused, to `/sign-in/refused` (below)        |
 | `loginCallback` | 400    | `bad-request`    | No valid transaction cookie (missing, expired, tampered), `state` mismatch, the provider refuses the code, or the identity has no email |
 | `loginCallback` | 403    | `forbidden`      | The account is blocked. No session is created                                                                                           |
 | `loginCallback` | 429    | `rate-limited`   | Too many requests                                                                                                                       |
 | `loginCallback` | 500    | `internal-error` | The identity provider could not be reached, or rejected the server's client credentials                                                 |
 
-Every error is a [Problem Details](conventions.md#errors) body. The browser shows it as it is, because
-both operations are navigations, not `fetch` calls.
+Every error of `login` is a [Problem Details](conventions.md#errors) body. The browser shows it as it is,
+because `login` is a navigation, not a `fetch` call.
+
+The callback does not show a browser a problem. A request whose `Accept` header names `text/html` (every browser
+following a redirect sends one) goes to `PUBLIC_BASE_URL/sign-in/refused?reason=<reason>&provider=<method>` for every
+failure, with no session. `provider` is the method of the sign-in (`surveyjs` when it is the only method), or empty.
+
+| Reason             | When                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `expired`          | No valid transaction cookie (missing, expired, tampered) or a `state` mismatch                                          |
+| `cancelled`        | The provider sent `error=access_denied`                                                                                 |
+| `unavailable`      | The provider could not be reached, rejected the client credentials, or sent `server_error` or `temporarily_unavailable` |
+| `failed`           | The provider refused the code or sent another `error`, the method is no longer enabled, or the server failed            |
+| `disabled`         | The account is blocked or disabled                                                                                      |
+| `email-unverified` | The identity has no email, or (with a local directory) no verified one                                                  |
+| `not-invited`      | A local directory has no account for the identity, and the join rules make none                                         |
+| `read-only`        | `READ_ONLY=true`, and the sign-in would write                                                                           |
+
+A client that does not ask for HTML gets the problem answers in the table above. The exceptions go to the page for
+every client: a local directory's refusals (`not-invited`, `email-unverified`, `disabled`), and a sign-in started with
+`provider` that ends `cancelled`, `unavailable` or `read-only`. The server logs the method and the reason, never the
+email; the cause of `unavailable` and of a server fault is logged at `error` level.
 
 ## Password sign-in
 

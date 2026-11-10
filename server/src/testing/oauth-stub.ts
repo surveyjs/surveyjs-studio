@@ -27,8 +27,19 @@ interface Identity {
   readonly sub: string;
   readonly email: string;
   readonly name: string;
-  readonly emailVerified: boolean;
+  /** null: the answers leave `email_verified` (GitHub's `verified`) out. */
+  readonly emailVerified: boolean | null;
 }
+
+/** The form fields the stub reads itself; any other query parameter is echoed as hidden. */
+const OWN_FIELDS = new Set([
+  "sub",
+  "email",
+  "name",
+  "email_verified",
+  "omit_email_verified",
+  "deny",
+]);
 
 interface Code {
   readonly provider: ProviderId;
@@ -110,6 +121,42 @@ const html = (status: number, body: string): Reply => ({
 });
 const oauthError = (status: number, error: string): Reply => json(status, { error });
 
+/** The `email_verified` claim, or nothing when the form left it out. */
+const verifiedClaim = (verified: boolean | null) =>
+  verified === null ? {} : { email_verified: verified };
+
+/**
+ * A token request the provider refuses, in the provider's own shape: GitHub answers `200` with an
+ * `error` field, Facebook a Graph error object (code 100 for a bad code), the others OAuth 2.0.
+ */
+function tokenRefused(provider: ProviderId, reason: "code" | "client"): Reply {
+  if (provider === "github") {
+    const error = reason === "code" ? "bad_verification_code" : "incorrect_client_credentials";
+    return json(200, {
+      error,
+      error_description:
+        reason === "code"
+          ? "The code passed is incorrect or expired."
+          : "The client_id and/or client_secret passed are incorrect.",
+      error_uri: `https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors/#${error.replaceAll("_", "-")}`,
+    });
+  }
+  if (provider === "facebook") {
+    return json(400, {
+      error: {
+        message:
+          reason === "code"
+            ? "Invalid verification code format."
+            : "Error validating client secret.",
+        type: "OAuthException",
+        code: reason === "code" ? 100 : 1,
+        fbtrace_id: "stub",
+      },
+    });
+  }
+  return reason === "code" ? oauthError(400, "invalid_grant") : oauthError(401, "invalid_client");
+}
+
 async function readBody(request: IncomingMessage): Promise<string> {
   let body = "";
   for await (const chunk of request) body += String(chunk);
@@ -166,9 +213,8 @@ export async function startOAuthStub(
 
   function authorizeForm(provider: ProviderId, params: URLSearchParams): Reply {
     const { title, authorizePath } = providers[provider];
-    const prefilled = new Set(["sub", "email", "name"]);
     const hidden = [...params]
-      .filter(([key]) => !prefilled.has(key) && key !== "email_verified" && key !== "deny")
+      .filter(([key]) => !OWN_FIELDS.has(key))
       .map(
         ([key, value]) =>
           `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`,
@@ -189,6 +235,7 @@ ${text("sub")}
 ${text("email")}
 ${text("name")}
 <p><label><input type="checkbox" name="email_verified" checked> email_verified</label></p>
+<p><label><input type="checkbox" name="omit_email_verified"> leave email_verified out</label></p>
 <p><button type="submit" name="allow" value="1">Sign in</button> <button type="submit" name="deny" value="1">Deny</button></p>
 </form>
 </body>
@@ -230,7 +277,7 @@ ${text("name")}
         sub,
         email,
         name: (params.get("name") ?? "").trim(),
-        emailVerified: params.has("email_verified"),
+        emailVerified: params.has("omit_email_verified") ? null : params.has("email_verified"),
       },
       clientId: params.get("client_id") ?? "",
       redirectUri,
@@ -253,7 +300,7 @@ ${text("name")}
 
   function token(provider: ProviderId, request: IncomingMessage, form: URLSearchParams): Reply {
     const [clientId, secret] = clientSecret(request, form);
-    if (!safeEqual(secret, secretOf(provider))) return oauthError(401, "invalid_client");
+    if (!safeEqual(secret, secretOf(provider))) return tokenRefused(provider, "client");
     const codeValue = form.get("code") ?? "";
     const code = codes.get(codeValue);
     codes.delete(codeValue); // single use, whatever the outcome
@@ -266,7 +313,7 @@ ${text("name")}
       code.clientId === clientId &&
       form.get("redirect_uri") === code.redirectUri &&
       (challenge === null || s256(form.get("code_verifier") ?? "") === challenge);
-    if (!valid) return oauthError(400, "invalid_grant");
+    if (!valid) return tokenRefused(provider, "code");
 
     const accessToken = randomToken();
     accessTokens.set(accessToken, { provider, identity: code.identity });
@@ -286,7 +333,7 @@ ${text("name")}
         exp: now + TOKEN_TTL_S,
         ...(code.nonce !== null && { nonce: code.nonce }),
         email,
-        email_verified: emailVerified,
+        ...verifiedClaim(emailVerified),
         name,
       });
     }
@@ -323,9 +370,9 @@ ${text("name")}
     const { sub, email, name, emailVerified } = entry.identity;
     switch (path) {
       case "/google/userinfo":
-        return json(200, { sub, email, email_verified: emailVerified, name });
+        return json(200, { sub, email, ...verifiedClaim(emailVerified), name });
       case "/surveyjs/userinfo":
-        return json(200, { sub, email, email_verified: emailVerified, name });
+        return json(200, { sub, email, ...verifiedClaim(emailVerified), name });
       case "/github-api/user": {
         const login = (email.split("@")[0] || sub).replace(/[^A-Za-z0-9-]/g, "-");
         return json(200, {
@@ -336,7 +383,18 @@ ${text("name")}
         });
       }
       case "/github-api/user/emails":
-        return json(200, email === "" ? [] : [{ email, primary: true, verified: emailVerified }]);
+        return json(
+          200,
+          email === ""
+            ? []
+            : [
+                {
+                  email,
+                  primary: true,
+                  ...(emailVerified !== null && { verified: emailVerified }),
+                },
+              ],
+        );
       case "/facebook-graph/me": {
         const proof = url.searchParams.get("appsecret_proof") ?? "";
         const expected = createHmac("sha256", secretOf("facebook")).update(bearer).digest("hex");
@@ -345,7 +403,11 @@ ${text("name")}
             error: { message: "Invalid appsecret_proof", type: "OAuthException" },
           });
         }
-        return json(200, { id: sub, name, ...(email !== "" && emailVerified && { email }) });
+        return json(200, {
+          id: sub,
+          name,
+          ...(email !== "" && emailVerified === true && { email }),
+        });
       }
     }
     return null;

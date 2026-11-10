@@ -31,7 +31,8 @@ export interface Person {
   readonly sub?: string;
   readonly email?: string;
   readonly name?: string;
-  readonly verified?: boolean;
+  /** `omitted`: the provider's answers leave `email_verified` out. */
+  readonly verified?: boolean | "omitted";
 }
 
 /**
@@ -47,7 +48,8 @@ export async function authorizeAtStub(
   form.set("sub", person.sub ?? "u-42");
   form.set("email", person.email ?? "ada@example.com");
   form.set("name", person.name ?? "Ada Lovelace");
-  if (person.verified ?? true) form.set("email_verified", "on");
+  if (person.verified === "omitted") form.set("omit_email_verified", "on");
+  else if (person.verified ?? true) form.set("email_verified", "on");
   const response = await fetch(url.origin + url.pathname, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },

@@ -961,14 +961,17 @@ provider into the sealed transaction; the one callback finishes it with that pro
 `resolveExternalSignIn` (`auth/external-sign-in.ts`) turns the claims into an account in the order of D3: a linked
 identity (`user_identities`), else a verified email naming an account (the identity is linked, an `invited` account
 becomes `active`), else a new account when `decideJoin` (`auth/join-policy.ts`, pure) allows it, else a refusal. A
-`disabled` account is refused; a refusal redirects to the web page `/sign-in/refused`. Two sign-ins of the same new
+`disabled` account is refused; a refusal redirects to the web page `/sign-in/refused`. A browser (its `Accept` names
+`text/html`) goes there for every failure of the callback, with or without a provider button; another client gets the
+problem answers ([Authentication](api/authentication.md#outcomes-of-the-two-sign-in-operations)). Two sign-ins of the same new
 identity at once make one account: the store refuses the second link, and that sign-in starts over once. With
 `READ_ONLY=true` the steps that would write throw `503 read-only`.
 
 The `InvitationStore` (`providers/types.ts`; `invitations` is `null` unless the directory is local) holds
 `project_invitations`. `addMember` writes one for an unknown email, and the email's invitations are claimed (moved into
 `project_members`) after any successful sign-in of it: OAuth, `passwordLogin` and `setPasswordWithLink`.
-`listMembers` returns pending members after the real ones. The web app reads `authMethods` from `/config` for the
+`listMembers` returns pending members after the real ones, by email; its cursor says which of the two it points into,
+so the pages hold every row once whatever the names. The web app reads `authMethods` from `/config` for the
 buttons, and shows a `Pending` badge for a member whose `status` is `pending`.
 
 ### The instance admin
