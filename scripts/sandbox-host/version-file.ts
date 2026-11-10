@@ -1,21 +1,22 @@
-// The sandbox build's version.json: which commit and which seed data version are live. Only Node
-// built-ins and a minimal plugin type (the root has no vite): web's Docker build installs just the web workspace.
+// The sandbox build's version.json: which commit, which seed data version and which base path are
+// live. Only Node built-ins and a minimal plugin type (the root has no vite): web's Docker build
+// installs just the web workspace.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const REPO_ROOT = new URL("../../", import.meta.url);
 const SEED = new URL("web/src/sandbox/seed.json", REPO_ROOT);
 
-export function versionFileContent(commit: string, dataVersion: number): string {
-  return JSON.stringify({ commit, dataVersion }) + "\n";
+export function versionFileContent(commit: string, dataVersion: number, base: string): string {
+  return JSON.stringify({ commit, dataVersion, base }) + "\n";
 }
 
-/** SANDBOX_COMMIT if set, else the git head, else "unknown" (no git, no checkout). */
+/** SANDBOX_COMMIT if set, else the git head, else "unknown" (no git, no checkout). Trimmed. */
 export function resolveCommit(env: NodeJS.ProcessEnv, gitHead: () => string): string {
-  const fromEnv = env["SANDBOX_COMMIT"];
+  const fromEnv = env["SANDBOX_COMMIT"]?.trim();
   if (fromEnv) return fromEnv;
   try {
-    return gitHead();
+    return gitHead().trim() || "unknown";
   } catch {
     return "unknown";
   }
@@ -26,7 +27,7 @@ function gitHead(): string {
     cwd: REPO_ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-  }).trim();
+  });
 }
 
 /** The part of a Vite plugin this one uses; Vite's own `Plugin` accepts it. */
@@ -37,8 +38,22 @@ export interface VersionFilePlugin {
   }): void;
 }
 
-/** Emits /version.json: the commit and the seed's data version (a reset offer keys on it). */
-export function sandboxVersionPlugin(): VersionFilePlugin {
+export interface VersionFileOptions {
+  /** Vite's `base` (base-path.ts). */
+  readonly base: string;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly gitHead?: () => string;
+}
+
+/**
+ * Emits version.json: the commit, the seed's data version (a reset offer keys on it) and the base
+ * path the build was made for (`pnpm sandbox:serve` refuses a build for another base).
+ */
+export function sandboxVersionPlugin({
+  base,
+  env = process.env,
+  gitHead: head = gitHead,
+}: VersionFileOptions): VersionFilePlugin {
   return {
     name: "sandbox-version-file",
     generateBundle() {
@@ -46,7 +61,7 @@ export function sandboxVersionPlugin(): VersionFilePlugin {
       this.emitFile({
         type: "asset",
         fileName: "version.json",
-        source: versionFileContent(resolveCommit(process.env, gitHead), version),
+        source: versionFileContent(resolveCommit(env, head), version, base),
       });
     },
   };

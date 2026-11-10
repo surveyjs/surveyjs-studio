@@ -1,6 +1,7 @@
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { sandboxBase } from "../scripts/sandbox-host/base-path.ts";
 import { sandboxVersionPlugin } from "../scripts/sandbox-host/version-file.ts";
 import { securityHeaders } from "../server/src/web/security-headers.ts";
 
@@ -16,7 +17,8 @@ const apiProxy = {
 
 /**
  * R17: the SPA's security headers on `vite preview`; the proxied paths keep the server's own. The
- * dev server gets none: Vite dev injects inline scripts.
+ * dev server gets none: Vite dev injects inline scripts. Under a sub-path (`base`, the sandbox's
+ * `SANDBOX_BASE`) the headers are those of the app's path below it, so `/studio/s/x` is the run page.
  */
 function securityHeadersPlugin(proxy: Record<string, string>): Plugin {
   const proxied = Object.keys(proxy);
@@ -24,10 +26,12 @@ function securityHeadersPlugin(proxy: Record<string, string>): Plugin {
     name: "my-surveys-security-headers",
     configurePreviewServer(server) {
       const https = Boolean(server.config.preview.https);
+      const base = server.config.base;
       server.middlewares.use((req, res, next) => {
         const pathname = new URL(req.url ?? "/", "http://preview.invalid").pathname;
+        const appPath = pathname.startsWith(base) ? `/${pathname.slice(base.length)}` : pathname;
         if (!proxied.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
-          for (const [name, value] of Object.entries(securityHeaders(pathname, { https }))) {
+          for (const [name, value] of Object.entries(securityHeaders(appPath, { https }))) {
             res.setHeader(name, value);
           }
         }
@@ -71,13 +75,17 @@ export default defineConfig(({ mode }) => {
   // The sandbox build (D1): the app with an in-browser mock back-end, so nothing is proxied.
   const sandbox = mode === "sandbox";
   const proxy = sandbox ? {} : apiProxy;
+  // Where the sandbox lives on its host: `/` (the default) or a sub-path such as `/studio/`
+  // (`SANDBOX_BASE`). The normal build is always at the root: the server serves it there.
+  const base = sandbox ? sandboxBase(process.env) : "/";
   return {
+    base,
     // The router plugin must come before the React plugin.
     plugins: [
       tanstackRouter({ target: "react" }),
       react(),
       securityHeadersPlugin(proxy),
-      ...(sandbox ? [sandboxVersionPlugin()] : []),
+      ...(sandbox ? [sandboxVersionPlugin({ base })] : []),
     ],
     server: { port: 5173, strictPort: true, proxy },
     // Only the sandbox has a public directory (the worker script and its settings).

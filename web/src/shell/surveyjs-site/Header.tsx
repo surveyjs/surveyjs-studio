@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { underBase } from "../../basePath";
 import type { ShellAppLink } from "../types";
 import { AccountIcon, AccountMenu, AccountMenuItems, type AccountMenuProps } from "./AccountMenu";
 import {
@@ -238,7 +239,7 @@ function TopBarMenu(props: HeaderProps) {
               style="Accent"
               mode="Primary"
               size="X-Small"
-              href={MY_SURVEYS_URL}
+              href={underBase(MY_SURVEYS_URL)}
             />
           </li>
 

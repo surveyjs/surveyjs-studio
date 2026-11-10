@@ -27,6 +27,8 @@ const ANN = user(1, "Ann Admin");
 const BOB = user(2, "bob");
 const CARA = user(3, "Cara");
 const DAN = user(4, "Dan");
+/** A name in U+E000–U+FFFF: after any surrogate pair (U+10000 and up) in UTF-16 order. */
+const EVE = { ...user(5, "Eve"), displayName: "\uFFFD Eve" };
 /** A membership row whose user does not exist. */
 const ORPHAN_ID = "aaaaaaaa-0000-4000-8000-000000000009";
 
@@ -53,7 +55,7 @@ const S1 = survey(1, CARA.id, false);
 const S2 = survey(2, ANN.id, true);
 
 const seed: MemorySeed = {
-  users: [ANN, BOB, CARA, DAN],
+  users: [ANN, BOB, CARA, DAN, EVE],
   surveys: [S1, S2],
   projects: [
     { id: TEAM, name: "Team", creatorId: ANN.id, createdAt: "2025-01-01T00:00:00.000Z" },
@@ -390,6 +392,41 @@ describe("pending members", () => {
     const items = second.json<{ items: unknown[]; nextCursor: string | null }>();
     expect(items.items).toStrictEqual([pending("amy@example.test"), pending("zed@example.test")]);
     expect(items.nextCursor).toBeNull();
+  });
+
+  it("pages across the members and the invitations with any member name", async () => {
+    const { as } = await start("local");
+    const ann = await as(ANN);
+    await send("POST", `/projects/${TEAM}/members`, ann, { email: EVE.email });
+    for (const email of ["zed@example.test", "amy@example.test"]) {
+      await send("POST", `/projects/${TEAM}/members`, ann, { email });
+    }
+    const whole = [
+      member(ANN, "admin"),
+      member(BOB, "user"),
+      member(CARA, "user"),
+      member(EVE, "user"),
+      pending("amy@example.test"),
+      pending("zed@example.test"),
+    ];
+    expect((await send("GET", `/projects/${TEAM}/members`, ann)).json()).toStrictEqual({
+      items: whole,
+      nextCursor: null,
+    });
+    // Every page size puts a page boundary at Eve's row, or at an invitation's.
+    for (let limit = 1; limit <= whole.length; limit++) {
+      const walked: unknown[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = cursor === null ? "" : `&cursor=${cursor}`;
+        const page = await send("GET", `/projects/${TEAM}/members?limit=${limit}${query}`, ann);
+        expect(page.statusCode).toBe(200);
+        const body = page.json<{ items: unknown[]; nextCursor: string | null }>();
+        walked.push(...body.items);
+        cursor = body.nextCursor;
+      } while (cursor !== null && walked.length <= whole.length);
+      expect(walked, `limit=${limit}`).toStrictEqual(whole);
+    }
   });
 
   it("removes an invitation, once, for admins only", async () => {

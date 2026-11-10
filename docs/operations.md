@@ -175,7 +175,10 @@ browsers.
    `@sandbox` suites against it (`pnpm e2e:sandbox:url`) on Chromium.
 3. `publish` adds a commit to the **pointer branch** `sandbox`. Its only file, `COMMIT`, holds the tested commit's sha.
    The branch is not a copy of the source (the workflow's token may not push commits that change workflow files), so
-   its log is a history of deploys.
+   its log is a history of deploys. When the branch already names the commit and the live site already serves it,
+   `publish` pushes nothing. A push would start a rebuild of the same commit, and `smoke`, which passes its wait at
+   once, would test the site while it is being replaced. To rebuild the live commit anyway, run
+   `make up-surveyjs-studio-sandbox` on the demos server.
 4. The push reaches the demos server's webhook. whd runs `make up-surveyjs-studio-sandbox`, which reads `COMMIT`,
    fetches that commit with the read-only token and builds the site from source with nginx.
 5. `smoke` waits until the live `/version.json` names the commit (up to 30 minutes), then runs the same suites against
@@ -223,10 +226,28 @@ it, and the server rebuilds. The older ref must already have the scripts the wor
 
 ```sh
 curl -s https://studio.demos.surveyjs.io/version.json
-# {"commit":"<sha>","dataVersion":1}
+# {"commit":"<sha>","dataVersion":1,"base":"/"}
 ```
 
-`commit` is the source commit the build came from, and `dataVersion` is the seed's `version`.
+`commit` is the source commit the build came from, `dataVersion` is the seed's `version`, and `base` is the path the
+build is for. An older build has no `base`: it is for `/`.
+
+### Hosting under a sub-path
+
+The demo is at the root of its subdomain. Another host can put a build under a sub-path, such as
+`https://example.com/studio/`:
+
+1. Build for it: `SANDBOX_BASE=/studio/ pnpm build:sandbox`. The base is fixed at build time: a build for `/studio/`
+   works only there, and a build for `/` only at the root.
+2. Serve `web/dist-sandbox/` at `/studio/`. Answer any other path below it with `/studio/index.html` (the app's
+   pages are client-side routes), and send a missing file under `/studio/assets/` as a real 404.
+3. Send the same headers and cache rules as `deploy/sandbox/` ([ADR 0031](adr/0031-publishing-the-sandbox.md) D4,
+   D5), with each path under `/studio/`. In particular `frame-ancestors *` goes on `/studio/s/*` only. The repo's
+   nginx file is for the root and does not do this for you.
+4. Check: `curl -s https://example.com/studio/version.json` shows `"base":"/studio/"`.
+
+One sandbox per origin: the data (localStorage) and the session cookie belong to the origin, so two sandboxes under
+two paths of one origin would share them.
 
 ### Changing `sandbox.config.json` without a rebuild
 
@@ -368,9 +389,10 @@ surveyjs.io sign-in, while the old My Surveys section still runs.
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
 `OIDC_DISCOVERY` and `OIDC_SCOPES` (which fit `auth.surveyjs.io`), `API_DOCS` (off in production: the reference is
 in the repository), and `APP_SHELL` (`surveyjs-site`, the surveyjs.io look); the branding settings (`BRAND_*`,
-`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the self-hosted `self-hosted` shell and change nothing there. The accounts settings are [below](#configuring-accounts). Register
-`<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI and `<PUBLIC_BASE_URL>/` as its address after
-sign-out.
+`TERMS_URL`, `PRIVACY_URL`, `BRANDING`) belong to the `self-hosted` shell and change nothing there. They are still
+checked: a wrong value, or `BRANDING=off` without a licence key of your own, stops the start-up. The accounts settings
+are [below](#configuring-accounts). Register `<PUBLIC_BASE_URL>/api/v1/auth/callback` as the client's redirect URI and
+`<PUBLIC_BASE_URL>/` as its address after sign-out.
 
 An env file for mode 1.1, with placeholders:
 

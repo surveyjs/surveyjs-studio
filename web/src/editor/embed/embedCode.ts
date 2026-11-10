@@ -281,7 +281,7 @@ export function surveyEmbedCode(options: {
   readonly platform: EmbedPlatform;
   /** The SurveyJS version of the packages. */
   readonly version: string;
-  /** The origin of this service (`window.location.origin`). */
+  /** The address of this service: its origin and base path (basePath.ts `appRootUrl`). */
   readonly origin: string;
   readonly surveyId: string;
   readonly loadFromService: boolean;

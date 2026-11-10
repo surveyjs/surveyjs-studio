@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 import createQueryClient from "openapi-react-query";
 import type { components, paths } from "@surveyjs-studio/contract/types";
+import { BASE_PATH } from "../basePath";
 import { csrfMiddleware } from "./csrf";
 
 export type Problem = components["schemas"]["Problem"];
@@ -49,8 +50,11 @@ export function fitsKeepalive(json: string): boolean {
   return new TextEncoder().encode(json).length < KEEPALIVE_LIMIT_BYTES;
 }
 
-/** Where the API lives; the download links use it too. */
-export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+/**
+ * Where the API lives; the download links use it too. Below the base path: a sandbox built for a
+ * sub-path answers `/studio/api/v1` from its service worker.
+ */
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? `${BASE_PATH}/api/v1`;
 
 export const client = createClient<paths>({
   baseUrl: API_BASE_URL,

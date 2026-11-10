@@ -2,7 +2,13 @@ import type { Kysely, Selectable } from "kysely";
 import { decideAccountChange, nextStatus } from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
-import type { LocalAccount, LocalAccountStore, UserDirectory } from "../providers/types.js";
+import type {
+  IdentityLink,
+  LocalAccount,
+  LocalAccountStore,
+  PendingPasswordLink,
+  UserDirectory,
+} from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
 import type { DatabaseSchema, UsersTable } from "./schema.js";
 import { flagOf, isoOf } from "./values.js";
@@ -132,25 +138,44 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .executeTakeFirstOrThrow();
       return Number(row.n);
     },
-    createAccount: async (account) => {
+    createAccount: async (account, options = {}) => {
       const id = key(account.id);
       if (id === null) throw new Error("Account ids must be GUIDs");
-      await db
-        .insertInto("users")
-        .values({
-          id,
-          email: account.email.toLowerCase(),
-          display_name: account.displayName,
-          instance_role: account.instanceRole,
-          status: account.status,
-          password_hash: account.passwordHash,
-          must_change_password: account.mustChangePassword,
-          session_epoch: 0,
-          created_at: isoOf(account.createdAt),
-          last_sign_in_at: null,
-        })
-        .execute();
-      return accountOf((await byId(id))!);
+      const { link } = options;
+      // One transaction: a failure after the account leaves neither the account nor the link.
+      const row = await db.transaction().execute(async (trx) => {
+        const inserted = await trx
+          .insertInto("users")
+          .values({
+            id,
+            email: account.email.toLowerCase(),
+            display_name: account.displayName,
+            instance_role: account.instanceRole,
+            status: account.status,
+            password_hash: account.passwordHash,
+            must_change_password: account.mustChangePassword,
+            session_epoch: 0,
+            created_at: isoOf(account.createdAt),
+            last_sign_in_at: null,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        if (link) {
+          await trx
+            .insertInto("password_links")
+            .values({
+              token_hash: link.tokenHash,
+              user_id: id,
+              purpose: link.purpose,
+              created_at: isoOf(link.createdAt),
+              expires_at: isoOf(link.expiresAt),
+              used_at: null,
+            })
+            .execute();
+        }
+        return inserted;
+      });
+      return accountOf(row);
     },
     account: async (id) => {
       const row = await byId(id);
@@ -237,6 +262,52 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .executeTakeFirst();
       return inserted ? "linked" : "taken";
     },
+    listIdentities: async (id) => {
+      const userId = key(id);
+      if (userId === null) return [];
+      const rows = await db
+        .selectFrom("user_identities")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .execute();
+      const links = rows.map((row): IdentityLink => ({
+        provider: row.provider,
+        subject: row.subject,
+        userId: row.user_id,
+        email: row.email,
+        emailVerified: flagOf(row.email_verified),
+        createdAt: isoOf(row.created_at),
+      }));
+      // Sorted here, as listAccounts: SQL collations differ between the dialects.
+      const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return links.sort(
+        (a, b) =>
+          compare(a.provider, b.provider) ||
+          compare(a.createdAt, b.createdAt) ||
+          compare(a.subject, b.subject),
+      );
+    },
+    unlinkIdentity: async (id, provider, subject) => {
+      const userId = key(id);
+      if (userId === null) return null;
+      return db.transaction().execute(async (trx) => {
+        const removed = await trx
+          .deleteFrom("user_identities")
+          .where("user_id", "=", userId)
+          .where("provider", "=", provider)
+          .where("subject", "=", subject)
+          .returning("subject")
+          .executeTakeFirst();
+        if (!removed) return null;
+        const row = await trx
+          .updateTable("users")
+          .set((eb) => ({ session_epoch: eb("session_epoch", "+", 1) }))
+          .where("id", "=", userId)
+          .returning("session_epoch")
+          .executeTakeFirstOrThrow();
+        return Number(row.session_epoch);
+      });
+    },
     deleteAccount: async (id) => {
       const userId = key(id);
       if (userId === null) return "not-found";
@@ -267,6 +338,8 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
           .returning(["session_epoch", "status"])
           .executeTakeFirst();
         if (!row) return null;
+        // A reset leaves the new link as the only way in (ADR 0029).
+        await trx.deleteFrom("user_identities").where("user_id", "=", userId).execute();
         await trx
           .updateTable("password_links")
           .set({ used_at: isoOf(createdAt) })
@@ -300,6 +373,23 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .set({ last_sign_in_at: isoOf(at) })
         .where("id", "=", userId)
         .execute();
+    },
+    pendingPasswordLinks: async (at) => {
+      const rows = await db
+        .selectFrom("password_links")
+        .select(["user_id", "purpose", "expires_at"])
+        .where("used_at", "is", null)
+        .where("expires_at", ">", isoOf(at))
+        .execute();
+      const pending = new Map<string, PendingPasswordLink>();
+      for (const row of rows) {
+        const expiresAt = isoOf(row.expires_at);
+        const latest = pending.get(row.user_id);
+        if (!latest || expiresAt > latest.expiresAt) {
+          pending.set(row.user_id, { purpose: row.purpose, expiresAt });
+        }
+      }
+      return pending;
     },
     createPasswordLink: async ({ tokenHash, userId, purpose, createdAt, expiresAt }) => {
       await db

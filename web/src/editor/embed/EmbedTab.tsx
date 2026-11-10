@@ -6,6 +6,7 @@ import { Base, Version } from "survey-core";
 import { propertyGridCss, type ICreatorPlugin } from "survey-creator-core";
 import type { SurveyCreator } from "survey-creator-react";
 import { ReactElementFactory, SvgIcon } from "survey-react-ui";
+import { appRootUrl } from "../../basePath";
 import "../../shell/surveyjs-site/assets/site/Content/Styles/pages/create-free-survey/embedded-tab.scss";
 import {
   creatorEmbedCode,
@@ -183,7 +184,7 @@ function EmbedTab({ creator, model }: { creator: SurveyCreator; model: EmbedTabM
     : surveyEmbedCode({
         platform,
         version: Version,
-        origin: window.location.origin,
+        origin: appRootUrl(),
         surveyId: model.surveyId,
         loadFromService,
         definition,

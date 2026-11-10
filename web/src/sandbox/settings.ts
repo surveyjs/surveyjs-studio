@@ -14,15 +14,18 @@ export const DEFAULT_SETTINGS: SandboxSettings = {
 };
 
 async function fetchSettingsFile(): Promise<unknown> {
-  const response = await fetch("/sandbox.config.json", { cache: "no-store" });
+  // Next to index.html: below the base path of a sandbox on a sub-path.
+  const response = await fetch(`${import.meta.env.BASE_URL}sandbox.config.json`, {
+    cache: "no-store",
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
 
 /**
- * Reads `/sandbox.config.json`. Each setting must be a positive integer, else it falls back to its
- * default with a warning naming it. A missing file, a non-JSON body or a non-object falls back
- * entirely, with one warning. Unknown keys are ignored.
+ * Reads `sandbox.config.json`, next to `index.html`. Each setting must be a positive integer, else
+ * it falls back to its default with a warning naming it. A missing file, a non-JSON body or a
+ * non-object falls back entirely, with one warning. Unknown keys are ignored.
  */
 export async function loadSandboxSettings(
   fetchJson: () => Promise<unknown> = fetchSettingsFile,

@@ -23,9 +23,9 @@ kept in step with the real server?
 | D4  | Navigations are the app's  | The service worker never sees a page navigation. So in the sandbox build the private guard sends a 401 to `/sign-in`, `/sign-in` shows **Pick an account**, `logout` answers `redirectUrl: "/sign-in"`, and the export links are hidden                                                                                                     |
 | D5  | Files are same-origin URLs | Uploaded bytes are base64 in the document. `StoredFile.url` is `<origin>/api/v1/public/files/<fileId>`, answered by the mock with the server's headers, so `<img>`, `<video>` and the Dashboard load them through the worker                                                                                                                |
 | D6  | A local directory          | `/config` answers `shell: "self-hosted"`, `features: {embed: false, apiDocs: false, apiTokens: false}` and `authMethods: ["password"]`, so no code path offers a surveyjs.io redirect. `/me` has `hasPassword: false` and no `instanceRole`. `addMember` with an unknown email makes a pending member                                       |
-| D7  | What answers 501           | `login`, `loginCallback`, `passwordLogin`, `setPasswordWithLink`, `changeOwnPassword`, the five `/admin/users` operations, `exportResults`, `receiveAccountDeleted`, and a catch-all for any other `/api/v1/*` request. A unit test fails when the contract gains an operation that is neither handled nor listed                           |
+| D7  | What answers 501           | `login`, `loginCallback`, `passwordLogin`, `setPasswordWithLink`, `changeOwnPassword`, the seven `/admin/users` operations, `exportResults`, `receiveAccountDeleted`, and a catch-all for any other `/api/v1/*` request. A unit test fails when the contract gains an operation that is neither handled nor listed                          |
 | D8  | A generated seed           | `pnpm sandbox:seed` writes `web/src/sandbox/seed.json` from `legacyFixtureSeed()` and `withSeedInvitation`, restricted by the tag file `server/fixtures/sandbox.json`. A unit test regenerates it in memory and fails when the file is stale or larger than `seedBudgetKb`                                                                  |
-| D9  | `@sandbox` tests, for now  | The existing user-story specs create data through `page.request`, which bypasses a page's service worker. So `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI only. Running the existing specs on the sandbox build is a follow-up                                                                              |
+| D9  | `@sandbox` and the stories | `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI. Since 2026-11-10 the user-story specs run on the sandbox build too (`pnpm e2e:sandbox:stories`): `page.request` bypasses the page's service worker, so their set-up runs `fetch` in the page. What cannot apply skips itself with its reason                  |
 | D10 | Pages closing mid-request  | MSW answers from the page, so a `keepalive` request sent while a page closes (saving a results view on `pagehide`) may be lost. Documented, not fixed                                                                                                                                                                                       |
 | D11 | A cross-tab lock           | Each write holds the Web Lock `studio-sandbox:v1`. It first waits until this tab's copy of the document has the newest revision any tab recorded in IndexedDB. If that takes over 2 s, it stores nothing and answers `503`. Where an API is missing the lock does less, never something else (below)                                        |
 
@@ -49,8 +49,12 @@ Details that follow:
   constant alone is not removed by the bundler.
 - **A 401 sends the tab to the picker.** In the sandbox build a 401 from any query or mutation goes to `/sign-in`
   with the current path as `returnTo`, except the `/me` query on pages that are not private. This answers a Reset in
-  another tab, which removes the session. Other builds keep the open global-401 item.
-- **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an empty app.
+  another tab, which removes the session. Other builds keep the open global-401 item. (Later, the users' linked
+  sign-ins work made this the rule of every build, for private pages only: a 401 there makes the private guard ask
+  for the current user again, which sends the tab to sign-in.)
+- **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an
+  empty app. A start that does not settle within 20 seconds shows "The demo did not start in time…". Both have
+  **Try again**, which reloads the page (2026-11-10).
 - **A stale or damaged document** (missing, an old `version`, unparsable) is replaced by the seed. The seed is
   stored holding the lock, and only if no other tab's document has arrived meanwhile.
 - **The cross-tab lock (D11, 2026-11-10).** Each tab reads its own copy of localStorage. The browser brings that copy
@@ -89,7 +93,8 @@ Details that follow:
   and a way to keep visitors apart, and the data would not stay in the visitor's browser. The sandbox is a static
   site.
 - **Tagging the existing e2e specs `@sandbox` now.** They build their data through `page.request`, which skips the
-  worker (D9). Doing it needs a UI-only way to create that data. That is a follow-up.
+  worker (D9). Doing it needed another way to create that data. Done on 2026-11-10 with a `fetch` in the page
+  rather than through the UI ([Testing](../testing.md#the-user-stories-on-the-sandbox-build)).
 
 - **BroadcastChannel alone for the lock (D11).** A message saying "I wrote revision N" travels apart from the lock
   and from the storage, so it can arrive after the next tab has the lock. It tells nothing a `storage` event does not.

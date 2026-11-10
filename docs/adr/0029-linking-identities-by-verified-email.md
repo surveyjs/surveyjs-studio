@@ -1,7 +1,8 @@
 # ADR 0029: Linking identities by verified email
 
 Status: Accepted (self-hosted Step 8). The product owner confirmed D2's Facebook and surveyjs.io rules and D6 on
-2026-11-03 (see [Confirmed](#confirmed)).
+2026-11-03 (see [Confirmed](#confirmed)). Amended 2026-11-10: D9 to D11 (an instance admin sees and unlinks a
+user's identities; what a reset and a disable do to them).
 
 ## Context
 
@@ -25,7 +26,10 @@ account by signing in? Getting the first wrong lets someone take over an account
 | D5  | Settings                  | `GOOGLE_*`, `GITHUB_*` and `FACEBOOK_*` (`CLIENT_ID` and `CLIENT_SECRET`), `SIGN_UP_DOMAINS`, `OPEN_SIGN_UP` (`on` or `off`, default `off`), and for development and tests `OAUTH_STUB_URL`, refused in production. surveyjs.io keeps `OIDC_*`                                                                                                                                                                                                                                                                |
 | D6  | One test stub             | A single stub on `node:http` and `node:crypto` serves all four providers. Unit tests, the conformance setup and Playwright start it in the process. There is no Docker, so it runs on Windows and in CI. The plan said mock-oauth2-server plus stubs in Compose (the product owner confirmed the change); the Azurite mode keeps its mock-oauth2-server                                                                                                                                                       |
 | D7  | Accounts from OAuth       | `instanceRole: "user"`, `status: "active"`, no password, no forced change. The display name is the provider's name, else the email. `getCurrentUser` has `hasPassword`, so the shell hides **Change password** for them                                                                                                                                                                                                                                                                                       |
-| D8  | Refusals                  | The callback redirects to `/sign-in/refused?reason=<reason>&provider=<method>`. Reasons: `not-invited`, `email-unverified`, `disabled`; for a sign-in started by a provider's button also `cancelled` (`error=access_denied`), `unavailable` (the provider cannot be reached) and `read-only`. The server logs the provider and the reason, never the email                                                                                                                                                   |
+| D8  | Refusals                  | The callback redirects to `/sign-in/refused?reason=<reason>&provider=<method>`. Reasons: `not-invited`, `email-unverified`, `disabled`; for a sign-in started by a provider's button also `cancelled` (`error=access_denied`), `unavailable` (the provider cannot be reached) and `read-only`. The server logs the provider and the reason, never the email. A browser now goes there for every failure ([Addendum](#addendum-every-failure-in-a-browser))                                                    |
+| D9  | Seeing and unlinking      | An instance admin lists a user's identities (`listUserIdentities`: provider, subject, the email given at linking, when) and unlinks one (`unlinkUserIdentity`). Unlinking raises the account's session epoch, so the user's sessions end: one of them may come from that identity. An identity whose provider still gives the account's email as verified links again at its next sign-in (D3 step 2); to keep a person out, the admin disables them                                                          |
+| D10 | A reset unlinks           | An admin's password reset also unlinks every identity of the account, in the same transaction. The new link is then the only way in the admin chose. A provider that still gives the account's verified email links again by D3 step 2; one whose email has moved on does not                                                                                                                                                                                                                                 |
+| D11 | A disable keeps them      | Disabling keeps the identities, and refuses them all: steps 1 and 2 of D3 refuse a `disabled` account, and the session check ends its sessions. Enabling the user lets them work again                                                                                                                                                                                                                                                                                                                        |
 
 Details that follow from the table:
 
@@ -62,7 +66,21 @@ Details that follow from the table:
   Enable only providers you trust to verify emails.
 - Invitations show to every project member as pending members and cost one table, `project_invitations` (migration
   0005, [data model](../architecture/data-model.md)).
-- Linking is one way: unlinking an identity is not built.
+- Until 2026-11-10 linking was one way. Now an instance admin can unlink (D9), and a reset unlinks (D10).
+
+### Why a reset unlinks (D10)
+
+An admin resets a password when a user forgot it, and when they think someone else got into the account. In the
+second case, keeping the identities would leave a way in the admin cannot see from the reset: an identity is found
+by its subject alone (D3 step 1), whatever email its provider gives now. A Google or GitHub account that was linked
+once, and later changed hands or changed its email, would keep signing in. Unlinking them all costs the real user
+little: their next sign-in with a provider that still gives the account's verified email links again by itself.
+
+| Alternative                                       | Why not                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Keep the identities at a reset                    | The reset would not end every way in: a linked identity whose provider email moved on keeps signing in       |
+| Block linking by email until the new link is used | A user who signs in only with Google or GitHub would need a password first; the email check already protects |
+| Unlink at a disable too                           | A disable is undone by Enable; the user would lose their sign-ins for nothing. A disable refuses them all    |
 
 ## Confirmed
 
@@ -72,3 +90,19 @@ The product owner confirmed these rules on 2026-11-03. They stand as written in 
 - **surveyjs.io:** an email counts as verified unless UserInfo says `email_verified: false`, because surveyjs.io
   confirms emails at registration.
 - **One test stub** (D6) replaces mock-oauth2-server and the Compose stubs the plan named.
+
+## Addendum (every failure in a browser)
+
+D8 sent only a provider button's failures to the refused page. Every other failure answered problem JSON, which a
+browser shows as raw text: another provider error such as `server_error`, and any failure of a sign-in started without
+`provider` (the hosted surveyjs.io sign-in, an `AUTH_METHODS=surveyjs` instance, the dev sign-in).
+
+Now a browser goes to the refused page for every failure at the callback. A browser is a request whose `Accept`
+header names `text/html`, as every browser sends when it follows a redirect. The new reasons are `expired` (no
+transaction in this browser, or it is over 10 minutes old) and `failed` (a bad or reused code, another provider error,
+or a fault of the server). A provider's `server_error` or `temporarily_unavailable` is `unavailable`. A blocked user of
+an external directory is `disabled`; an identity without an email is `email-unverified`. The server logs the method and
+the reason, and the cause of `unavailable` and of a server fault at `error` level.
+
+A client that does not ask for HTML keeps the problem answers of the contract (`400`, `403`, `500`, `503 read-only`),
+except a button's `cancelled`, `unavailable` and `read-only`, which go to the page as before.

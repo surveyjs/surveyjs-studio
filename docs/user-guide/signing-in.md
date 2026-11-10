@@ -63,8 +63,12 @@ Choose **Change password** in the account menu (in the plain shell: in the heade
 password**. The new password must differ from the current one.
 
 Changing the password ends your sessions **everywhere else**, within a minute. A page left open
-in another browser or device stops loading its data; reload it, and the **Sign in** page opens.
-The browser you changed it in stays signed in.
+in another browser or device goes to the **Sign in** page at its next request, and back to where
+it was once you have signed in. The browser you changed it in stays signed in.
+
+The same happens to any signed-in page whose session ends: you signed out in another tab, the
+session expired, or an instance admin disabled you, reset your password or unlinked the sign-in you
+used. Public pages (a survey's run page, public results) are not affected.
 
 ### The first sign-in of the first admin
 
@@ -195,9 +199,10 @@ deployment should have it reviewed (see [Architecture](../architecture.md#open-f
 
 | What you see                                                    | What to do                                                                |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| "The sign-in expired or was not started in this browser"        | Open the page you want again, and sign in again. Do not use an old link.  |
+| "The sign-in took too long, or it started in another browser"   | Open the page you want again, and sign in again. Do not use an old link.  |
 | "Too many sign-in attempts"                                     | Wait a minute, then try again.                                            |
-| "Sign-in is unavailable"                                        | The sign-in service did not answer. Try again later.                      |
+| "… could not be reached. Try again in a few minutes"            | The sign-in service did not answer. Try again later.                      |
+| "The sign-in … could not be completed"                          | Sign in again. If it happens again, ask your admin.                       |
 | You are sent to sign in again after a while                     | The 12 hours are over. Sign in again.                                     |
 | You signed in and still land on the sign-in page                | The browser blocks cookies for this site. Allow them, and try again.      |
 | "The email or the password is wrong."                           | Check both, and the keyboard layout. The password is case-sensitive.      |

@@ -1,4 +1,5 @@
 import type { Page, Request } from "@playwright/test";
+import { api } from "./support/api.js";
 import {
   creator,
   designerQuestions,
@@ -13,6 +14,7 @@ import {
 } from "./support/editor.js";
 import { signInAt } from "./support/sign-in.js";
 import { createSurveyViaApi, csrfHeaders } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test } from "./support/test.js";
 import {
   chooseFile,
@@ -75,21 +77,21 @@ test("an image chosen in the editor is uploaded, shown, saved, served, and remov
     const pages = definition["pages"] as { elements: { imageLink?: string }[] }[];
     expect(pages[0]?.elements[0]?.imageLink).toBe(url);
 
-    const served = await page.request.get(url);
+    const served = await api(page).get(url);
     expect(served.status()).toBe(200);
     expect(served.headers()["content-type"]).toBe("image/png");
     expect(Buffer.compare(await served.body(), PNG_1X1)).toBe(0);
 
     const headers = await csrfHeaders(page);
-    const archived = await page.request.patch(`/api/v1/surveys/${survey.id}`, {
+    const archived = await api(page).patch(`/api/v1/surveys/${survey.id}`, {
       headers: { ...headers, "Content-Type": "application/merge-patch+json" },
       data: { archived: true },
     });
     expect(archived.status()).toBe(200);
-    expect((await page.request.delete(`/api/v1/surveys/${survey.id}`, { headers })).status()).toBe(
+    expect((await api(page).delete(`/api/v1/surveys/${survey.id}`, { headers })).status()).toBe(
       204,
     );
-    expect((await page.request.get(url)).status()).toBe(404);
+    expect((await api(page).get(url)).status()).toBe(404);
   });
 });
 
@@ -102,6 +104,12 @@ test.describe("quota", () => {
     page,
     browserName,
   }) => {
+    test.skip(
+      sandboxMode,
+      notOnSandbox.design(
+        "its file quota is maxUploadKb, 200 KB, not the 1 MB this test sets on the server",
+      ),
+    );
     await signInAt(page, "/", "admin");
     const survey = await createSurveyViaApi(page, uniqueSurveyName("Quota", browserName));
     await withCleanup(page, [survey.id], async () => {

@@ -79,8 +79,13 @@ test("@sandbox-host built assets are cached for good, and a missing one is a 404
   expect(response.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
   expectSecurityHeaders(response);
 
+  // A 404 keeps the security headers (`always`) but is not cached for good: a file that a deploy adds
+  // later must not stay missing in a cache.
   const missing = await request.get("/assets/does-not-exist.js");
   expect(missing.status()).toBe(404);
+  expect(missing.headers()["cache-control"] ?? "").not.toContain("immutable");
+  expect(missing.headers()["content-security-policy"]).toMatch(/frame-ancestors 'none'$/);
+  expectSecurityHeaders(missing);
 });
 
 test("@sandbox-host the app starts under the policy without a violation", async ({ page }) => {

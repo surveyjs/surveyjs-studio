@@ -12,7 +12,7 @@ import {
   projectCard,
   uniqueProjectName,
 } from "./support/projects.js";
-import { accountTrigger, signInAt, users } from "./support/sign-in.js";
+import { accountTrigger, secondBrowser, signInAt, users } from "./support/sign-in.js";
 import {
   answerNextConfirm,
   createSurveyViaApi,
@@ -20,6 +20,7 @@ import {
   loadAllPages,
   surveysNamed,
 } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test, watchConsole } from "./support/test.js";
 
 // The Projects page (US 59, 61-67, 69). Runs in memory mode on three browsers and in Azurite mode on the
@@ -43,6 +44,12 @@ test.describe("create, add, promote, demote and remove", () => {
     page,
     browserName,
   }) => {
+    test.skip(
+      sandboxMode,
+      notOnSandbox.design(
+        "the self-hosted shell has no Account menu, and an unknown email makes a pending member (D6)",
+      ),
+    );
     const name = uniqueProjectName("Projects", browserName);
     await signInAt(page, "/", "admin");
     try {
@@ -119,10 +126,10 @@ test.describe("the last admin", () => {
 test("a member leaves a project (US 66)", async ({ page, browser, browserName }) => {
   await signInAt(page, "/", "admin");
   const project = await createProjectViaApi(page, uniqueProjectName("Leave", browserName));
-  const miaContext = await browser.newContext();
+  const miaBrowser = await secondBrowser(page, browser);
   try {
     await addMemberViaApi(page, project.id, users.member.email);
-    const mia = await miaContext.newPage();
+    const mia = miaBrowser.page;
     const checkConsole = watchConsole(mia);
     await signInAt(mia, "/projects", "member");
     const card = await openProjectCard(mia, project.name);
@@ -139,7 +146,7 @@ test("a member leaves a project (US 66)", async ({ page, browser, browserName })
     await expect(selector.getByRole("link", { name: project.name, exact: true })).toHaveCount(0);
     checkConsole();
   } finally {
-    await miaContext.close();
+    await miaBrowser.close();
     await deleteProjectViaApi(page, project.id);
   }
 });

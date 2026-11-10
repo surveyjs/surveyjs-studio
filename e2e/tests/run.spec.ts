@@ -1,4 +1,5 @@
 import type { Page, Request } from "@playwright/test";
+import { api } from "./support/api.js";
 import { putDefinitionViaApi, uniqueSurveyName, withCleanup } from "./support/editor.js";
 import {
   FILE_DEFINITION,
@@ -11,6 +12,7 @@ import {
 } from "./support/run.js";
 import { signInAt } from "./support/sign-in.js";
 import { createSurveyViaApi, openRowMenu, surveyRow } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test, watchConsole } from "./support/test.js";
 import { chooseFile, paddedPng } from "./support/uploads.js";
 
@@ -118,7 +120,8 @@ test("a file answer is uploaded to the server and the response keeps its URL", a
   await withCleanup(page, [survey.id], async () => {
     await publishViaApi(page, survey.id);
     await page.goto(`/s/${survey.id}`);
-    const bytes = paddedPng(300_000);
+    // The sandbox takes files up to maxUploadKb, 200 KB (web/sandbox-public/sandbox.config.json).
+    const bytes = paddedPng(sandboxMode ? 150_000 : 300_000);
 
     const uploaded = page.waitForResponse(
       (response) =>
@@ -145,7 +148,7 @@ test("a file answer is uploaded to the server and the response keeps its URL", a
     // prod-like mode).
     const origin = new URL(baseURL ?? "").origin.replaceAll(".", "\\.");
     expect(content).toMatch(new RegExp(`^${origin}/api/v1/public/files/[0-9a-f]{64}$`));
-    const served = await page.request.get(content);
+    const served = await api(page).get(content);
     expect(served.status()).toBe(200);
     expect(Buffer.compare(await served.body(), bytes)).toBe(0);
   });
@@ -172,6 +175,7 @@ test("a signed-out respondent loads the Form Library and no Creator or Dashboard
   browser,
   browserName,
 }) => {
+  test.skip(sandboxMode, notOnSandbox.oneBrowser);
   const survey = await adminSurvey(page, "Bundle", browserName, QUESTION_DEFINITION);
   await withCleanup(page, [survey.id], async () => {
     await publishViaApi(page, survey.id);

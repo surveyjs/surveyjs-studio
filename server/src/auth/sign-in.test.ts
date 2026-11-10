@@ -1,11 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, type BuildOptions } from "../app.js";
 import { loadConfig } from "../config.js";
 import { createProviders } from "../providers/index.js";
 import { blockedUser, ownerUser } from "../providers/suite/expected.js";
 import type { IdentityClaims, IdentityProvider } from "./identity.js";
 import { createDevIdentityProvider } from "./providers/dev.js";
+import { unavailable } from "./providers/sign-in-error.js";
 import { cookieValue, signIn, transactionOf } from "./testing.js";
 
 const devEnv = {
@@ -33,6 +34,7 @@ async function start(
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await app?.close();
   app = undefined;
 });
@@ -284,6 +286,82 @@ describe("login and callback", () => {
       avatarUrl: "https://idp.example/new.png",
       notices: [],
     });
+  });
+});
+
+describe("a browser's callback without a provider button that fails", () => {
+  /** What a browser sends when it follows a redirect: it asks for HTML first. */
+  const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
+  /** Starts a sign-in and opens its callback as a browser; `state` replaces the real one. */
+  async function browserCallback(server: FastifyInstance, state?: string) {
+    const login = transactionOf(await server.inject("/api/v1/auth/login"));
+    return server.inject({
+      url: `/api/v1/auth/callback?code=${ownerUser.id}&state=${state ?? login.state}`,
+      headers: { cookie: login.cookie, accept: BROWSER_ACCEPT },
+    });
+  }
+
+  /** The refused page for `reason` (no method: the dev sign-in), and no session. */
+  function expectRefused(res: Awaited<ReturnType<typeof browserCallback>>, reason: string) {
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe(
+      `http://localhost:5173/sign-in/refused?reason=${reason}&provider=`,
+    );
+    expect(cookieValue(res, "msid")).toBeUndefined();
+  }
+
+  it("sends an expired or foreign sign-in to the refused page (expired)", async () => {
+    expectRefused(await browserCallback(await start(), "wrong"), "expired");
+  });
+
+  it("sends a blocked user to the refused page (disabled)", async () => {
+    const server = await start(devEnv, { identity: fixedClaims({ sub: blockedUser.id }) });
+    expectRefused(await browserCallback(server), "disabled");
+  });
+
+  it("sends an identity without an email to the refused page (email-unverified)", async () => {
+    const server = await start(devEnv, { identity: fixedClaims({ sub: "new-user" }) });
+    expectRefused(await browserCallback(server), "email-unverified");
+  });
+
+  it("sends a provider fault to the refused page (unavailable) and logs it", async () => {
+    const lines: string[] = [];
+    const identity: IdentityProvider = {
+      ...fixedClaims({ sub: "x" }),
+      finishSignIn: () => Promise.reject(unavailable(new Error("issuer down"))),
+    };
+    const server = await start(devEnv, {
+      identity,
+      logStream: { write: (line) => lines.push(line) },
+    });
+    expectRefused(await browserCallback(server), "unavailable");
+    const logged = lines.map((line) => JSON.parse(line) as { level: number; msg: string });
+    expect(logged.find((line) => line.msg === "sign-in is unavailable")).toMatchObject({
+      level: 50,
+    });
+  });
+
+  it("sends a server fault to the refused page (failed) and logs it", async () => {
+    const lines: string[] = [];
+    const config = loadConfig(devEnv);
+    const providers = await createProviders(config);
+    vi.spyOn(providers.users, "signInUser").mockRejectedValue(new Error("directory down"));
+    app = await buildApp(config, providers, { logStream: { write: (line) => lines.push(line) } });
+    expectRefused(await browserCallback(app), "failed");
+    const logged = lines.map((line) => JSON.parse(line) as { level: number; msg: string });
+    expect(logged.find((line) => line.msg === "sign-in failed")).toMatchObject({ level: 50 });
+  });
+
+  it("keeps the problem answers for a client that does not ask for HTML", async () => {
+    const server = await start(devEnv, { identity: fixedClaims({ sub: "new-user" }) });
+    const { cookie, state } = transactionOf(await server.inject("/api/v1/auth/login"));
+    const res = await server.inject({
+      url: `/api/v1/auth/callback?code=x&state=${state}`,
+      headers: { cookie, accept: "application/json" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
   });
 });
 

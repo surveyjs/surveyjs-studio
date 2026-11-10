@@ -4,8 +4,10 @@
  * stylesheet. It loads no fonts or images of its own.
  *
  * Custom properties, set on .sh-app (and on a standalone footer) from /config.branding:
- *   --sh-accent       BRAND_ACCENT_COLOR: lines, buttons
- *   --sh-accent-text  the accent darkened until it reads on white (4.5:1): links
+ *   --sh-accent       BRAND_ACCENT_COLOR: lines (the header line, the current tab, focus rings) and
+ *                     the border of Sign Out
+ *   --sh-accent-text  the accent darkened until it reads on white (4.5:1): links, the pages' buttons,
+ *                     Sign Out's text
  */
 
 .sh-app {

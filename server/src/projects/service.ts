@@ -9,6 +9,7 @@ import {
   decodeProjectCursor,
   encodeMembersCursor,
   encodeProjectCursor,
+  type ActiveMemberPosition,
   type MemberPosition,
   type ProjectPosition,
 } from "../paging/cursor.js";
@@ -74,8 +75,8 @@ export interface ProjectsService {
   removeInvitation(user: RequestUser, projectId: string, email: string): Promise<void>;
 }
 
-/** A place in a (lower-cased name, id) list order: a project or a member position. */
-type Position = ProjectPosition | MemberPosition;
+/** A place in a (lower-cased name, id) list order: a project or an active member position. */
+type Position = ProjectPosition | ActiveMemberPosition;
 
 /** Whether `position` comes strictly after `after` in (name, id) order. */
 const isAfter = (position: Position, after: Position): boolean =>
@@ -83,17 +84,15 @@ const isAfter = (position: Position, after: Position): boolean =>
   (position.name === after.name && compare(position.id, after.id) > 0);
 
 /**
- * The first `limit` items strictly after the cursor's position (the list is whole and in order),
- * and the cursor of the next page.
+ * The first `limit` items of `rest` (the items after the cursor's position, in order), and the
+ * cursor of the next page.
  */
-function pageOf<T, P extends Position>(
-  all: readonly T[],
+function cut<T, P>(
+  rest: readonly T[],
   positionOf: (item: T) => P,
-  after: P | undefined,
   limit: number,
   encode: (position: P) => string,
 ): { items: T[]; nextCursor: string | null } {
-  const rest = after ? all.filter((item) => isAfter(positionOf(item), after)) : all;
   const items = rest.slice(0, limit);
   const last = items.at(-1);
   return {
@@ -102,22 +101,27 @@ function pageOf<T, P extends Position>(
   };
 }
 
+/** The page strictly after the cursor's position of a list that is whole and in order. */
+function pageOf<T, P extends Position>(
+  all: readonly T[],
+  positionOf: (item: T) => P,
+  after: P | undefined,
+  limit: number,
+  encode: (position: P) => string,
+): { items: T[]; nextCursor: string | null } {
+  const rest = after ? all.filter((item) => isAfter(positionOf(item), after)) : all;
+  return cut(rest, positionOf, limit, encode);
+}
+
 const projectPosition = ({ project }: ProjectMembership): ProjectPosition => ({
   name: project.name.toLowerCase(),
   id: project.id,
 });
 
-const memberPosition = ({ user }: ProjectMember): MemberPosition => ({
+const memberPosition = ({ user }: ProjectMember): ActiveMemberPosition => ({
   name: user.displayName.toLowerCase(),
   id: user.id,
 });
-
-/**
- * Pending members come after every active one in the member list, by email. Their cursor position
- * sorts after any display name (the highest code point) and carries the zero id.
- */
-const PENDING_NAME = String.fromCodePoint(0x10ffff);
-const PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 type Listed = { json: MemberJson; position: MemberPosition };
 
@@ -266,17 +270,21 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       // The project store returns every visible member in member list order; the service cuts the page.
       const members = await projects.listMembers(project.id);
       const pending = invitations ? await invitations.listInvitations(project.id) : [];
-      const all: Listed[] = [
-        ...members.map((m) => ({ json: memberJson(m), position: memberPosition(m) })),
-        ...pending.map((i) => ({
-          json: pendingMemberJson(i),
-          position: { name: `${PENDING_NAME}${i.email}`, id: PENDING_ID },
-        })),
-      ];
-      const page = pageOf(
-        all,
+      // Two phases: the active members in (name, id) order, then the pending ones by email (the
+      // store's order). A pending cursor skips every active member, whatever their names.
+      const active = members
+        .map((m) => ({ json: memberJson(m), position: memberPosition(m) }))
+        .filter(
+          ({ position }) => after === undefined || ("name" in after && isAfter(position, after)),
+        );
+      const invited = pending
+        .filter(
+          (i) => after === undefined || !("email" in after) || compare(i.email, after.email) > 0,
+        )
+        .map((i): Listed => ({ json: pendingMemberJson(i), position: { email: i.email } }));
+      const page = cut<Listed, MemberPosition>(
+        [...active, ...invited],
         (item) => item.position,
-        after,
         limit,
         (position) => encodeMembersCursor(position, project.id),
       );

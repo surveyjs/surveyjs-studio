@@ -27,6 +27,8 @@ const users: AdminUser[] = [
     displayName: currentUser.displayName,
     instanceRole: "admin",
     status: "active",
+    hasPassword: true,
+    pendingLink: null,
     createdAt: "2026-10-01T09:00:00.000Z",
     lastSignInAt: "2026-10-29T08:00:00.000Z",
   },
@@ -36,8 +38,48 @@ const users: AdminUser[] = [
     displayName: "Nina",
     instanceRole: "user",
     status: "invited",
+    hasPassword: false,
+    pendingLink: { purpose: "invitation", expiresAt: "2026-11-04T09:00:00.000Z" },
     createdAt: "2026-10-28T09:00:00.000Z",
     lastSignInAt: null,
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000004",
+    email: "rex@example.test",
+    displayName: "Rex",
+    instanceRole: "user",
+    status: "active",
+    hasPassword: false,
+    pendingLink: { purpose: "reset", expiresAt: "2026-11-05T09:00:00.000Z" },
+    createdAt: "2026-10-20T09:00:00.000Z",
+    lastSignInAt: "2026-10-27T08:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000005",
+    email: "ivo@example.test",
+    displayName: "Ivo",
+    instanceRole: "user",
+    status: "invited",
+    hasPassword: false,
+    pendingLink: null,
+    createdAt: "2026-10-01T09:00:00.000Z",
+    lastSignInAt: null,
+  },
+];
+
+/** Nina's linked sign-ins; the subject of the Google one needs URL-encoding. */
+const ninasSignIns = [
+  {
+    provider: "github" as const,
+    subject: "583231",
+    email: "nina@example.test",
+    linkedAt: "2026-10-30T08:00:00.000Z",
+  },
+  {
+    provider: "google" as const,
+    subject: "g/1 2",
+    email: null,
+    linkedAt: "2026-11-01T08:00:00.000Z",
   },
 ];
 
@@ -88,6 +130,21 @@ function adminHandlers() {
       await keep(request);
       return HttpResponse.json(link, { status: 201 });
     }),
+    mswHttp.get("*/api/v1/admin/users/:userId/identities", ({ params }) =>
+      HttpResponse.json({ items: params.userId === users[1]!.id ? ninasSignIns : [] }),
+    ),
+    mswHttp.delete(
+      "*/api/v1/admin/users/:userId/identities/:provider/:subject",
+      async ({ request }) => {
+        // The path as sent, still encoded.
+        requests.push({
+          method: request.method,
+          path: new URL(request.url).pathname.replace("/api/v1", ""),
+          body: null,
+        });
+        return new HttpResponse(null, { status: 204 });
+      },
+    ),
   ];
   return { handlers, requests };
 }
@@ -134,6 +191,143 @@ describe("the Users page", () => {
     const me = screen.getByRole("row", { name: /Olivia Owner/ });
     expect(within(me).getByText("Admin")).toBeTruthy();
     expect(within(me).getByText("Active")).toBeTruthy();
+    // A reset user whose link waits, and an invitation that expired: not just Active, Invited.
+    const rex = screen.getByRole("row", { name: /Rex/ });
+    expect(within(rex).getByText("Reset pending")).toBeTruthy();
+    const ivo = screen.getByRole("row", { name: /Ivo/ });
+    expect(within(ivo).getByText("Invited, link expired")).toBeTruthy();
+  });
+
+  it("shows a user's sign-ins, and unlinks one after a confirmation", async () => {
+    const { handlers, requests } = adminHandlers();
+    server.use(configHandler(passwordConfig), meHandler(instanceAdmin), ...handlers);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp("/admin/users");
+
+    const nina = await screen.findByRole("row", { name: /Nina/ });
+    const toggle = within(nina).getByRole("button", { name: "Sign-ins" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const signIns = document.getElementById(toggle.getAttribute("aria-controls") ?? "")!;
+    expect(await within(signIns).findByText("GitHub")).toBeTruthy();
+    expect(signIns.textContent).toContain("No password");
+    expect(signIns.textContent).toContain("nina@example.test, linked Oct 30, 2026");
+    expect(signIns.textContent).toContain("Google, linked Nov 1, 2026");
+
+    fireEvent.click(within(signIns).getByRole("button", { name: "Unlink Google" }));
+    expect(confirm).toHaveBeenCalledWith(
+      "Unlink the Google sign-in of Nina? It no longer signs in to their account, and they are signed out. If Google still gives their email as verified, signing in with it links it again: to keep them out, disable them.",
+    );
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toEqual({
+      method: "DELETE",
+      path: `/admin/users/${users[1]!.id}/identities/google/g%2F1%202`,
+      body: null,
+    });
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("GitHub")).toBeNull();
+  });
+
+  it("says when a user has no linked sign-in", async () => {
+    server.use(
+      configHandler(passwordConfig),
+      meHandler(instanceAdmin),
+      ...adminHandlers().handlers,
+    );
+    renderApp("/admin/users");
+    const me = await screen.findByRole("row", { name: /Olivia Owner/ });
+    fireEvent.click(within(me).getByRole("button", { name: "Sign-ins" }));
+    expect(
+      await screen.findByText("No linked Google, GitHub, Facebook or SurveyJS sign-in"),
+    ).toBeTruthy();
+    expect(screen.getByText("Password")).toBeTruthy();
+  });
+
+  it("warns about your own row: delete, disable and unlink sign you out; no own reset", async () => {
+    const { handlers, requests } = adminHandlers();
+    server.use(configHandler(passwordConfig), meHandler(instanceAdmin), ...handlers);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderApp("/admin/users");
+
+    const me = await screen.findByRole("row", { name: /Olivia Owner/ });
+    fireEvent.click(within(me).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(me).getByRole("button", { name: "Disable" }));
+    fireEvent.click(within(me).getByRole("button", { name: "Make user" }));
+    expect(confirm.mock.calls.map(([question]) => question)).toEqual([
+      "Delete your own account? Your personal surveys and results are erased, you leave every project, and you are signed out at once. You can't undo this.",
+      "Disable your own account? You are signed out at once and cannot sign in until another admin enables you.",
+      "Make yourself a user? You can no longer manage users and every project, and you leave this page.",
+    ]);
+    // The server refuses an admin's own reset, so the button is off.
+    const reset = within(me).getByRole("button", { name: "Reset password" });
+    expect((reset as HTMLButtonElement).disabled).toBe(true);
+    expect(reset.title).toBe("Change your own password in your account.");
+    expect(requests).toEqual([]);
+  });
+
+  it("disables a row's buttons while its request runs, and sends it once", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const patches: string[] = [];
+    server.use(
+      configHandler(passwordConfig),
+      meHandler(instanceAdmin),
+      mswHttp.patch("*/api/v1/admin/users/:userId", async ({ params }) => {
+        patches.push(String(params.userId));
+        await held;
+        return HttpResponse.json({ ...users[1]!, status: "disabled" });
+      }),
+      ...adminHandlers().handlers,
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp("/admin/users");
+
+    const nina = await screen.findByRole("row", { name: /Nina/ });
+    const disable = within(nina).getByRole("button", { name: "Disable" });
+    fireEvent.click(disable);
+    fireEvent.click(disable);
+    await waitFor(() => expect((disable as HTMLButtonElement).disabled).toBe(true));
+    for (const name of ["Make admin", "Reset password", "Delete"]) {
+      expect((within(nina).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    // Another row is not held up.
+    const rex = screen.getByRole("row", { name: /Rex/ });
+    expect(
+      (within(rex).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    release();
+    await waitFor(() => expect((disable as HTMLButtonElement).disabled).toBe(false));
+    expect(patches).toEqual([users[1]!.id]);
+  });
+
+  it("selects the link to copy by hand where the page may not copy it (plain HTTP)", async () => {
+    server.use(
+      configHandler(passwordConfig),
+      meHandler(instanceAdmin),
+      ...adminHandlers().handlers,
+    );
+    // Outside a secure context there is no clipboard.
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp("/admin/users");
+
+    const nina = await screen.findByRole("row", { name: /Nina/ });
+    fireEvent.click(within(nina).getByRole("button", { name: "Reset password" }));
+    const shown = await screen.findByRole("status");
+    fireEvent.click(within(shown).getByRole("button", { name: "Copy link" }));
+    expect(
+      await within(shown).findByText(/The link is selected: press Ctrl\+C, or ⌘C on a Mac/),
+    ).toBeTruthy();
+    const input = within(shown).getByLabelText<HTMLInputElement>("Set-password link");
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(link.url.length);
+    expect(within(shown).queryByText("Copied.")).toBeNull();
   });
 
   it("creates a user and shows the link once, with a copy button", async () => {
@@ -177,6 +371,10 @@ describe("the Users page", () => {
     fireEvent.click(within(nina).getByRole("button", { name: "Delete" }));
     expect(confirm).toHaveBeenCalledWith(
       "Delete Nina? Their personal surveys and results are erased, and they leave every project.",
+    );
+    fireEvent.click(within(nina).getByRole("button", { name: "Reset password" }));
+    expect(confirm).toHaveBeenLastCalledWith(
+      "Reset the password of Nina? Their password and linked sign-ins stop working, they are signed out, and you get a new link for them.",
     );
     expect(requests).toEqual([]);
   });

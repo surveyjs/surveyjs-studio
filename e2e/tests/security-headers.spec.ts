@@ -1,4 +1,5 @@
 import { routeBrandImage } from "./support/run.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test } from "./support/test.js";
 
 // The web app's security headers (R17, ADR 0019) as `vite preview` sends them, the server's on a
@@ -25,6 +26,7 @@ test("the run page may be framed by any site", async ({ page }) => {
 });
 
 test("an API answer through the preview keeps the server's own policy", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.server("the API server's own headers"));
   const response = await page.request.get("/api/v1/config");
   expect(response.status()).toBe(200);
   expect(response.headers()["content-security-policy"]).toBe(

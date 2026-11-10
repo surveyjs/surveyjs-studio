@@ -19,6 +19,20 @@ afterEach(async () => {
   stub = undefined;
 });
 
+/** Records the status and body of each answer to the token request from now on. */
+function tokenAnswers(): { status: number; body: unknown }[] {
+  const answers: { status: number; body: unknown }[] = [];
+  const real = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const response = await real(input, init);
+    if (String(input).endsWith("/login/oauth/access_token")) {
+      answers.push({ status: response.status, body: await response.clone().json() });
+    }
+    return response;
+  });
+  return answers;
+}
+
 async function provider(secret = "stub-secret-github") {
   stub ??= await startOAuthStub();
   return createGithubIdentityProvider({
@@ -84,14 +98,16 @@ describe("GitHub identity provider", () => {
     expect(claims.name).toBe("grace");
   });
 
-  it("answers 400 for a code the provider rejects", async () => {
+  it("answers 400 for a code GitHub rejects with 200 and bad_verification_code", async () => {
     const github = await provider();
     const callback = await authorizeAtStub(github);
     callback.searchParams.set("code", "not-a-code");
+    const answers = tokenAnswers();
     await expect(github.finishSignIn(callback, transaction)).rejects.toMatchObject({
       status: 400,
       title: "Sign-in failed",
     });
+    expect(answers).toMatchObject([{ status: 200, body: { error: "bad_verification_code" } }]);
   });
 
   it("answers 400 for a reused code and for a denied sign-in", async () => {
@@ -154,11 +170,15 @@ describe("GitHub identity provider", () => {
     expect((await github.finishSignIn(callback, transaction)).sub).toBe("583231");
   });
 
-  it("answers 500 when the client secret is rejected", async () => {
+  it("answers 500 when the client secret is rejected (200 and incorrect_client_credentials)", async () => {
     const github = await provider("wrong-secret");
     const callback = await authorizeAtStub(github);
+    const answers = tokenAnswers();
     await expect(github.finishSignIn(callback, transaction)).rejects.toMatchObject({
       status: 500,
     });
+    expect(answers).toMatchObject([
+      { status: 200, body: { error: "incorrect_client_credentials" } },
+    ]);
   });
 });

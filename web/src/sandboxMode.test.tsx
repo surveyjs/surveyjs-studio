@@ -128,7 +128,9 @@ describe("a session that ends in another tab", () => {
     // What another tab's Reset does: the data is the seed again and the cookie is gone.
     await store.reset();
     document.cookie = "msid=; path=/; max-age=0";
+    // Without the cookie, the mock answers 401 to everything, the current user included.
     server.use(
+      unauthenticatedHandler(),
       mswHttp.get("*/api/v1/surveys", () =>
         HttpResponse.json(
           { type: "about:blank", title: "Sign in required", status: 401, code: "unauthenticated" },

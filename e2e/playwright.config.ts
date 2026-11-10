@@ -6,6 +6,7 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 import { appVariables, stripAppVariables } from "./app-variables.mjs";
 import { imageTag, isImageTarget } from "./image-target.mjs";
 import { ports } from "./ports.mjs";
+import { sandboxBasePath } from "./sandbox-base.mjs";
 import { firstAdmin } from "./tests/support/password.js";
 import { brand } from "./tests/support/self-hosted.js";
 
@@ -44,7 +45,9 @@ stripAppVariables(process.env);
 //   passwords and the dev sign-in; the self-hosted spec, on Chromium.
 // - sandbox (E2E_MODE=sandbox, `pnpm e2e:sandbox`): the sandbox build of the web app (its in-browser
 //   mock back-end on localStorage) behind `vite preview --mode sandbox`; no API server; the sandbox
-//   spec, on Chromium.
+//   spec, on Chromium. `pnpm e2e:sandbox:subpath` (playwright.sandbox-subpath.config.ts) runs it on
+//   a build for a sub-path. With E2E_SANDBOX_STORIES=1 (`pnpm e2e:sandbox:stories`): the user-story
+//   specs in its place.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
 const postgres = process.env["E2E_MODE"] === "postgres";
@@ -56,6 +59,20 @@ const sandbox = process.env["E2E_MODE"] === "sandbox";
 // build, such as `pnpm sandbox:serve` or the published demo. No server starts, and the host spec
 // (headers and caching: only a real host answers it) runs too.
 const sandboxUrl = sandbox ? process.env["E2E_SANDBOX_URL"] : undefined;
+// The sandbox's base path: SANDBOX_BASE (the build's, and `vite preview` serves the build there), or
+// the path of E2E_SANDBOX_URL. The specs read the normalised value (tests/support/test.ts), and
+// `baseURL` ends with it, so a spec's relative address (`sign-in`) is below it.
+const sandboxBase = !sandbox
+  ? "/"
+  : sandboxBasePath(sandboxUrl ? { SANDBOX_BASE: new URL(sandboxUrl).pathname } : process.env);
+if (sandbox) process.env["SANDBOX_BASE"] = sandboxBase;
+const sandboxOrigin = sandboxUrl
+  ? new URL(sandboxUrl).origin
+  : `http://localhost:${ports.sandboxWeb}`;
+// E2E_SANDBOX_STORIES (sandbox mode; `pnpm e2e:sandbox:stories`): the user-story specs on the
+// sandbox build, in place of the sandbox spec. Their API set-up runs in the page
+// (tests/support/api.ts); what cannot apply to the sandbox skips itself with the reason.
+const sandboxStories = sandbox && process.env["E2E_SANDBOX_STORIES"] === "1";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
@@ -378,6 +395,37 @@ const allButNotices = [
   "sandbox-tabs.spec.ts",
 ];
 
+// Sandbox mode's projects: the sandbox spec (and the host spec against a URL), or the user stories.
+function sandboxProjects(): PlaywrightTestConfig["projects"] {
+  if (sandboxStories) {
+    // Every user-story spec; the other modes' own specs are left out.
+    return [
+      {
+        name: "sandbox-stories-chromium",
+        testIgnore: [
+          "password.spec.ts",
+          "self-hosted.spec.ts",
+          "oauth.spec.ts",
+          "sandbox.spec.ts",
+          "sandbox-tabs.spec.ts",
+          "sandbox-host.spec.ts",
+        ],
+        use: chromium,
+      },
+    ];
+  }
+  return [
+    {
+      name: "sandbox-chromium",
+      testMatch: ["sandbox.spec.ts", "sandbox-tabs.spec.ts"],
+      use: chromium,
+    },
+    ...(sandboxUrl
+      ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
+      : []),
+  ];
+}
+
 export default defineConfig({
   testDir: "tests",
   fullyParallel: true,
@@ -387,22 +435,13 @@ export default defineConfig({
   reporter: process.env["CI"] ? [["line"], ["html", { open: "never" }]] : "list",
   // A fixed locale and time zone, so the list's dates read the same on every machine.
   use: {
-    baseURL: sandboxUrl ?? `http://localhost:${sandbox ? ports.sandboxWeb : ports.web}`,
+    baseURL: sandbox ? `${sandboxOrigin}${sandboxBase}` : `http://localhost:${ports.web}`,
     trace: "retain-on-failure",
     locale: "en-US",
     timezoneId: "UTC",
   },
   projects: sandbox
-    ? [
-        {
-          name: "sandbox-chromium",
-          testMatch: ["sandbox.spec.ts", "sandbox-tabs.spec.ts"],
-          use: chromium,
-        },
-        ...(sandboxUrl
-          ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
-          : []),
-      ]
+    ? sandboxProjects()
     : oauth
       ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
       : selfHosted
@@ -514,7 +553,7 @@ export default defineConfig({
       ? [
           {
             command: `pnpm --filter @surveyjs-studio/web exec vite preview --mode sandbox --port ${ports.sandboxWeb} --strictPort`,
-            url: `http://localhost:${ports.sandboxWeb}/`,
+            url: `http://localhost:${ports.sandboxWeb}${sandboxBase}`,
             reuseExistingServer: false,
             timeout: 60_000,
           },

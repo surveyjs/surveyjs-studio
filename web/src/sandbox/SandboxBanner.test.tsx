@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "../navigation";
 import { OUTDATED_EVENT, STORAGE_FULL_EVENT } from "./handlers/problems";
 import { SandboxBanner } from "./SandboxBanner";
+import { RESET_FAILED_TEXT } from "./SandboxOutdated";
 import seedJson from "./seed.json";
 import type { SandboxSeed } from "./seed-types";
 import { DEFAULT_SETTINGS } from "./settings";
@@ -125,9 +126,7 @@ describe("SandboxBanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset demo data" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    const message = await screen.findByText(
-      "Could not reset the demo data. Clear this site's data in the browser and reload.",
-    );
+    const message = await screen.findByText(RESET_FAILED_TEXT);
     expect(message.getAttribute("role")).toBe("alert");
     expect(message.closest("aside")!.querySelector("[role=alert] [role=alert]")).toBeNull();
     // The focus moves in an effect after the message renders.

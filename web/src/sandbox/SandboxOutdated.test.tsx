@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { SandboxOutdated } from "./SandboxOutdated";
+import { RESET_FAILED_TEXT, SandboxOutdated } from "./SandboxOutdated";
 import { StorageFullError } from "./store";
 
 describe("SandboxOutdated", () => {
@@ -15,17 +15,28 @@ describe("SandboxOutdated", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reset to continue" }));
     expect(onReset).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert").textContent).toBe("");
+  });
+
+  it("says so, and keeps the button, when the reset throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const onReset = vi.fn(() => {
+      throw new Error("SecurityError");
+    });
+    render(<SandboxOutdated onReset={onReset} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset to continue" }));
+    expect(await screen.findByText(RESET_FAILED_TEXT)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset to continue" })).toBeTruthy();
   });
 
   it("says so when the reset is refused, and lets the visitor try again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const onReset = vi.fn(() => Promise.reject(new StorageFullError()));
     render(<SandboxOutdated onReset={onReset} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Reset to continue" }));
 
-    const message = await screen.findByText(
-      "Could not reset the demo data. Try again, or clear this site's data in the browser and reload.",
-    );
+    const message = await screen.findByText(RESET_FAILED_TEXT);
     expect(message.getAttribute("role")).toBe("alert");
     const button = screen.getByRole("button", { name: "Reset to continue" });
     expect((button as HTMLButtonElement).disabled).toBe(false);

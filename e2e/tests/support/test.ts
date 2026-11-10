@@ -14,8 +14,9 @@ interface ConsoleError {
  */
 export interface ExpectedErrorResponse {
   /**
-   * The URL path, without the query. A pattern matches paths that hold an id only known at run
-   * time (a survey the test creates); it must match the whole path (anchor it with `^…$`).
+   * The URL path, without the query and below a sandbox's base path (`APP_BASE`). A pattern
+   * matches paths that hold an id only known at run time (a survey the test creates); it must
+   * match the whole path (anchor it with `^…$`).
    */
   readonly path: string | RegExp;
   readonly status: number;
@@ -30,6 +31,19 @@ const ME_401: ExpectedErrorResponse = { path: "/api/v1/me", status: 401 };
 const pathMatches = (item: ExpectedErrorResponse, path: string) =>
   typeof item.path === "string" ? item.path === path : item.path.test(path);
 
+/** Error answers the tests' own requests got, per page (see `expectErrorResponse`). */
+const requestedErrors = new WeakMap<Page, ExpectedErrorResponse[]>();
+
+/**
+ * Expects one more error answer on the page: a test's own request sent from the page (the
+ * sandbox's `api(page)`), which the browser logs as the app's requests.
+ */
+export function expectErrorResponse(page: Page, item: ExpectedErrorResponse): void {
+  const list = requestedErrors.get(page) ?? [];
+  list.push(item);
+  requestedErrors.set(page, list);
+}
+
 /**
  * Watches one page's console and page errors, as the shared `test` does for `page`; the returned
  * function checks what was seen so far. For a second page a test opens itself (another browser
@@ -41,16 +55,11 @@ export function watchConsole(
   expectedErrorResponses: readonly ExpectedErrorResponse[] = [],
   { allowCspViolations = false }: { readonly allowCspViolations?: boolean } = {},
 ): () => void {
-  const expected = [ME_401, ...expectedErrorResponses];
   const consoleErrors: ConsoleError[] = [];
   const pageErrors: string[] = [];
-  const observed = new Map<ExpectedErrorResponse, number>();
+  const responses: { path: string; status: number }[] = [];
   page.on("response", (response) => {
-    const path = new URL(response.url()).pathname;
-    const match = expected.find(
-      (item) => pathMatches(item, path) && item.status === response.status(),
-    );
-    if (match) observed.set(match, (observed.get(match) ?? 0) + 1);
+    responses.push({ path: appPathOf(response.url()), status: response.status() });
   });
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -60,10 +69,17 @@ export function watchConsole(
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   return () => {
+    const expected = [ME_401, ...expectedErrorResponses, ...(requestedErrors.get(page) ?? [])];
+    const observed = new Map<ExpectedErrorResponse, number>();
+    for (const { path, status } of responses) {
+      const match = expected.find((item) => pathMatches(item, path) && item.status === status);
+      if (match) observed.set(match, (observed.get(match) ?? 0) + 1);
+    }
     const matchOf = (error: ConsoleError) =>
       expected.find(
         (item) =>
-          error.text.includes(`status of ${item.status}`) && pathMatches(item, pathOf(error.url)),
+          error.text.includes(`status of ${item.status}`) &&
+          pathMatches(item, appPathOf(error.url)),
       );
     const isFaviconCsp = (error: ConsoleError) =>
       error.text.includes("Content-Security-Policy") && error.text.includes("/favicon.ico");
@@ -117,10 +133,19 @@ export const test = base.extend<{
 
 export { expect };
 
-function pathOf(url: string): string {
+/**
+ * The base path of a sandbox built for a sub-path (`SANDBOX_BASE`, `pnpm e2e:sandbox:subpath`),
+ * without the trailing slash; `""` at the root.
+ */
+const APP_BASE = (process.env["SANDBOX_BASE"] ?? "").replace(/\/+$/, "");
+
+/** A URL's path as the app names it, below the base path: `/api/v1/me` for `/studio/api/v1/me`. */
+function appPathOf(url: string): string {
+  let path: string;
   try {
-    return new URL(url).pathname;
+    path = new URL(url).pathname;
   } catch {
     return "";
   }
+  return APP_BASE && path.startsWith(`${APP_BASE}/`) ? path.slice(APP_BASE.length) : path;
 }

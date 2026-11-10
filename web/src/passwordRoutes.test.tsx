@@ -229,6 +229,18 @@ describe("the refused sign-in page", () => {
       "This instance is read-only for maintenance, so first sign-ins are paused. Try again later.",
     ],
     [
+      "?reason=expired",
+      "The sign-in took too long, or it started in another browser. Sign in again.",
+    ],
+    [
+      "?reason=failed&provider=surveyjs",
+      "The sign-in with SurveyJS could not be completed. Sign in again, or choose another way.",
+    ],
+    [
+      "?reason=failed&provider=",
+      "The sign-in could not be completed. Sign in again, or choose another way.",
+    ],
+    [
       "?reason=cancelled&provider=nope",
       "You cancelled the sign-in. Sign in again, or choose another way.",
     ],

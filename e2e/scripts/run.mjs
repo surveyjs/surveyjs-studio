@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { stripAppVariables } from "../app-variables.mjs";
 import { isImageTarget } from "../image-target.mjs";
 import { functionalPorts, usesAzuriteConfig, usesSqlConfig } from "../ports.mjs";
+import { SANDBOX_SUBPATH, usesSandboxSubpathConfig } from "../sandbox-base.mjs";
 import { requireFreePorts } from "./ports.mjs";
 
 const env = stripAppVariables({ ...process.env });
@@ -24,7 +25,9 @@ try {
 // The mode's config sets E2E_MODE only once Playwright loads it, so the config name counts too.
 const sandbox =
   env["E2E_MODE"] === "sandbox" ||
-  process.argv.slice(2).some((a) => /playwright\.sandbox\.config/.test(a));
+  process.argv.slice(2).some((a) => /playwright\.sandbox(-subpath|-stories)?\.config/.test(a));
+// `pnpm e2e:sandbox:subpath`: the build is for the sub-path its config serves (SANDBOX_BASE).
+if (usesSandboxSubpathConfig(process.argv.slice(2))) env["SANDBOX_BASE"] = SANDBOX_SUBPATH;
 // E2E_SANDBOX_URL names a running host of the sandbox build: nothing is built or started.
 const externalSandbox = sandbox && !!env["E2E_SANDBOX_URL"];
 // Playwright never reuses a server: a taken port stops the run here, before the build.
