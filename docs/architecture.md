@@ -1543,7 +1543,10 @@ workers and site storage…". Shared files reach sandbox UI only through `web/sr
 **The store.** One document under `studio-sandbox:v1` (`web/src/sandbox/store.ts`): the seed's collections plus the
 files (base64). Each request reads it, and a change is written back in one `setItem`. A missing, old or unparsable
 document is replaced by the seed. A write the browser refuses, or a document at `storageLimitKb`, answers
-`413 quota-exceeded` ("Browser storage is full") and fires `sandbox:storage-full`, which the banner shows.
+`413 quota-exceeded` ("Browser storage is full") and fires `sandbox:storage-full`, which the banner shows. A write
+holds a cross-tab Web Lock and waits until this tab's copy of the document has the newest revision another tab stored
+(`web/src/sandbox/tab-lock.ts`, [ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md) D11), so two tabs do not drop
+each other's writes.
 
 **The handlers.** `web/src/sandbox/handlers/`, one file per area, built by `createSandboxHandlers`. They mirror the
 server's rules in their own modules and do not import `server/src`. The operations the demo does not offer

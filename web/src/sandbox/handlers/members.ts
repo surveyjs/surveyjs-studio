@@ -152,7 +152,7 @@ export function memberHandlers(ctx: HandlerContext) {
         failOn(errors);
         const email = body["email"] as string;
         const role = (body["role"] ?? "user") as "admin" | "user";
-        const { member, location } = mutate(ctx, cookies, (data, user: SandboxUser) => {
+        const { member, location } = await mutate(ctx, cookies, (data, user: SandboxUser) => {
           const { project } = adminAccess(data, user, params.projectId);
           const base = `/api/v1/projects/${lower(project.id)}`;
           // Only admins get this far, so only they learn whether an address is registered.
@@ -210,7 +210,7 @@ export function memberHandlers(ctx: HandlerContext) {
         }
         failOn(errors);
         const role = body["role"] as "admin" | "user";
-        const changed = mutate(ctx, cookies, (data, user) => {
+        const changed = await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           const outcome = decideRoleChange(rowsOf(data, project.id), params.userId, role);
           if (outcome === "not-found") throw notFound();
@@ -227,11 +227,11 @@ export function memberHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/projects/{projectId}/members/{userId}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
         checkPathId(params.userId, "userId");
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           // Any member may leave; removing someone else takes an admin.
           const { project } = sameId(params.userId, user.id)
             ? accessProject(data, user, params.projectId)
@@ -252,13 +252,13 @@ export function memberHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/projects/{projectId}/invitations/{email}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
         const errors: ProblemFieldError[] = [];
         checkEmail(params.email, "/email", errors);
         failOn(errors);
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           const before = data.invitations.length;
           data.invitations = data.invitations.filter(

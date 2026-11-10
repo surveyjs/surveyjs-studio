@@ -187,7 +187,7 @@ export function fileHandlers(ctx: HandlerContext) {
           });
         }
         const base64 = toBase64(part.bytes);
-        const file = mutate(ctx, cookies, (data, user) => {
+        const file = await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           // Checked again at the write: an upload in another tab may have used the quota.
           if (part.bytes.length > left(data, survey.id)) throw quotaExceeded(quota);
@@ -229,7 +229,7 @@ export function fileHandlers(ctx: HandlerContext) {
         const base64 = toBase64(part.bytes);
         let stored!: SandboxFile;
         // Checked again at the write: a survey unpublished or deleted meanwhile keeps no file.
-        ctx.store.write((data) => {
+        await ctx.store.write((data) => {
           const survey = available(data);
           stored = {
             id: newFileId(survey.id),

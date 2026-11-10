@@ -24,8 +24,9 @@ if (import.meta.env.MODE === "sandbox") {
       createRoot(outdatedRoot).render(
         <StrictMode>
           <SandboxOutdated
-            onReset={() => {
-              sandboxStore().reset();
+            onReset={async () => {
+              // Rejects with a typed error when the reset is refused; SandboxOutdated says so.
+              await sandboxStore().reset();
               setSessionCookie(null);
               location.reload();
             }}

@@ -48,8 +48,8 @@ export function resultsHandlers(ctx: HandlerContext) {
 
     // Every response, completion marker, idempotency key and respondent file; the editor's assets stay.
     http.delete("/surveys/{surveyId}/results", ({ params, cookies }) =>
-      guarded(() => {
-        mutate(ctx, cookies, (data, user) => {
+      guarded(async () => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           data.files = data.files.filter(
             (file) => !(file.surveyId === survey.id && file.kind === "respondent"),

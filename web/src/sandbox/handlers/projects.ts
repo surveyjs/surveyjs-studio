@@ -127,7 +127,7 @@ export function projectHandlers(ctx: HandlerContext) {
           checkName(body["name"], errors);
         }
         failOn(errors);
-        const created = mutate(ctx, cookies, (data, user) => {
+        const created = await mutate(ctx, cookies, (data, user) => {
           const project: SandboxProject = {
             id: lower(ctx.newId()),
             name: body["name"] as string,
@@ -169,7 +169,7 @@ export function projectHandlers(ctx: HandlerContext) {
         }
         if (patch["name"] !== undefined) checkName(patch["name"], errors);
         failOn(errors);
-        const renamed = mutate(ctx, cookies, (data, user) => {
+        const renamed = await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           // A patch without a name (only unknown members) changes nothing.
           if (typeof patch["name"] === "string") project.name = patch["name"];
@@ -180,10 +180,10 @@ export function projectHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/projects/{projectId}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         checkProjectPath(params.projectId);
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { project } = adminAccess(data, user, params.projectId);
           const visible = rowsOf(data, project.id)
             .filter((row) => row.userExists)

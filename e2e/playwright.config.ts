@@ -375,6 +375,7 @@ const allButNotices = [
   "oauth.spec.ts",
   "sandbox.spec.ts",
   "sandbox-host.spec.ts",
+  "sandbox-tabs.spec.ts",
 ];
 
 export default defineConfig({
@@ -393,7 +394,11 @@ export default defineConfig({
   },
   projects: sandbox
     ? [
-        { name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium },
+        {
+          name: "sandbox-chromium",
+          testMatch: ["sandbox.spec.ts", "sandbox-tabs.spec.ts"],
+          use: chromium,
+        },
         ...(sandboxUrl
           ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
           : []),
@@ -474,6 +479,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: chromium,
                     },
@@ -485,6 +491,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: { ...devices["Desktop Firefox"], viewport },
                     },
@@ -496,6 +503,7 @@ export default defineConfig({
                         "oauth.spec.ts",
                         "sandbox.spec.ts",
                         "sandbox-host.spec.ts",
+                        "sandbox-tabs.spec.ts",
                       ],
                       use: { ...devices["Desktop Safari"], viewport },
                     },

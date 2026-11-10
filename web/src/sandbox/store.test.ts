@@ -45,23 +45,33 @@ describe("sandbox store", () => {
     expect(data.version).toBe(1);
     expect(data.surveys).toEqual(seed.surveys);
     expect(data.files).toEqual([]);
-    expect(storage.getItem(STORAGE_KEY)).not.toBeNull();
+    // Stored holding the lock; without one (here) at once.
+    expect(storage.getItem(STORAGE_KEY)).toMatch(/^\{"revision":1,/);
   });
 
-  it("keeps a write across a reload", () => {
+  it("keeps a write across a reload", async () => {
     const storage = memoryStorage();
-    make(storage).write(rename("Changed"));
+    await make(storage).write(rename("Changed"));
     expect(make(storage).read().surveys[0]?.name).toBe("Changed");
   });
 
-  it("shows one store's write to another on the same storage", () => {
+  it("counts the writes in revision, first in the stored text", async () => {
+    const storage = memoryStorage();
+    const store = make(storage);
+    expect((await store.write(() => {})).revision).toBe(1);
+    expect((await store.write((d) => ({ ...d, revision: 99, surveys: [] }))).revision).toBe(2);
+    expect(storage.getItem(STORAGE_KEY)).toMatch(/^\{"revision":2,/);
+    expect(store.read().revision).toBe(2);
+  });
+
+  it("shows one store's write to another on the same storage", async () => {
     const storage = memoryStorage();
     const a = make(storage);
     const b = make(storage);
     a.read();
-    a.write(rename("From A"));
+    await a.write(rename("From A"));
     expect(b.read().surveys[0]?.name).toBe("From A");
-    b.write((d) => {
+    await b.write((d) => {
       d.projects[0]!.name = "From B";
     });
     const after = a.read();
@@ -73,12 +83,12 @@ describe("sandbox store", () => {
     ["unparsable JSON", "{"],
     ["a missing collection", JSON.stringify({ version: 1, users: [] })],
     ["a non-object", "null"],
-  ])("reseeds a stored document with %s", (_name, stored) => {
+  ])("reseeds a stored document with %s", async (_name, stored) => {
     const storage = memoryStorage();
     storage.setItem(STORAGE_KEY, stored);
     const data = make(storage).read();
     expect(data.surveys).toEqual(seed.surveys);
-    expect(make(storage).read().version).toBe(1);
+    expect(make(storage).status()).toBe("current");
   });
 
   describe("the data version", () => {
@@ -101,16 +111,16 @@ describe("sandbox store", () => {
       expect(store.status()).toBe("current");
     });
 
-    it("is outdated for another version, which is neither read, written nor overwritten", () => {
+    it("is outdated for another version, which is neither read, written nor overwritten", async () => {
       const storage = memoryStorage();
       const text = stored(0);
       storage.setItem(STORAGE_KEY, text);
       const store = make(storage);
       expect(store.status()).toBe("outdated");
       expect(() => store.read()).toThrow(SandboxOutdatedError);
-      expect(() => store.write(() => {})).toThrow(SandboxOutdatedError);
+      await expect(store.write(() => {})).rejects.toThrow(SandboxOutdatedError);
       expect(storage.getItem(STORAGE_KEY)).toBe(text);
-      store.reset();
+      await store.reset();
       expect(store.status()).toBe("current");
     });
 
@@ -121,23 +131,60 @@ describe("sandbox store", () => {
     });
   });
 
-  it("refuses a write that reaches the limit and leaves the document unchanged", () => {
+  it("refuses a write that reaches the limit and leaves the document unchanged", async () => {
     const storage = memoryStorage();
     const store = make(storage);
-    store.read();
+    await store.write(() => {});
     const before = storage.getItem(STORAGE_KEY);
     const small = make(storage, store.usedKb() + 1);
-    expect(() =>
+    await expect(
       small.write((d) => {
         d.files.push(file("x".repeat(4096)));
       }),
-    ).toThrow(StorageFullError);
+    ).rejects.toThrow(StorageFullError);
     expect(storage.getItem(STORAGE_KEY)).toBe(before);
     expect(small.read().files).toEqual([]);
     expect(small.isFull()).toBe(false);
   });
 
-  it("refuses a write when the browser throws QuotaExceededError", () => {
+  describe("the limit, exactly", () => {
+    // One UTF-16 code unit more is 2 bytes: 2 / 1024 KB.
+    const UNIT_KB = 2 / 1024;
+
+    async function stored(): Promise<{ storage: KeyValueStorage; kb: number }> {
+      const storage = memoryStorage();
+      const store = make(storage);
+      await store.write(() => {});
+      return { storage, kb: store.usedKb() };
+    }
+
+    const copyOf = (storage: KeyValueStorage): KeyValueStorage => {
+      const copy = memoryStorage();
+      copy.setItem(STORAGE_KEY, storage.getItem(STORAGE_KEY)!);
+      return copy;
+    };
+
+    it("isFull is true at the limit and above it, false below it", async () => {
+      const { storage, kb } = await stored();
+      expect(make(storage, kb).isFull()).toBe(true);
+      expect(make(storage, kb - UNIT_KB).isFull()).toBe(true);
+      expect(make(storage, kb + UNIT_KB).isFull()).toBe(false);
+    });
+
+    it("refuses a write whose result is exactly at the limit, and stores one a unit below it", async () => {
+      const { storage, kb } = await stored();
+      // The same write on a copy gives the size the next document has.
+      const copy = copyOf(storage);
+      await make(copy, Infinity).write(() => {});
+      const nextKb = make(copy).usedKb();
+      await expect(make(storage, nextKb).write(() => {})).rejects.toThrow(StorageFullError);
+      expect(make(storage).usedKb()).toBe(kb);
+      await make(storage, nextKb + UNIT_KB).write(() => {});
+      expect(make(storage).usedKb()).toBe(nextKb);
+    });
+  });
+
+  it("refuses a write when the browser throws QuotaExceededError", async () => {
     const inner = memoryStorage();
     let failing = false;
     const storage: KeyValueStorage = {
@@ -149,60 +196,82 @@ describe("sandbox store", () => {
       },
     };
     const store = make(storage);
-    store.read();
+    await store.write(() => {});
     const before = inner.getItem(STORAGE_KEY);
     failing = true;
-    expect(() => store.write(rename("X"))).toThrow(StorageFullError);
+    await expect(store.write(rename("X"))).rejects.toThrow(StorageFullError);
     expect(inner.getItem(STORAGE_KEY)).toBe(before);
     expect(store.read().surveys[0]?.name).toBe(seed.surveys[0]?.name);
   });
 
-  it("leaves the stored document untouched when change throws", () => {
+  it("leaves the stored document untouched when change throws", async () => {
     const storage = memoryStorage();
     const store = make(storage);
-    store.read();
+    await store.write(() => {});
     const before = storage.getItem(STORAGE_KEY);
-    expect(() =>
+    await expect(
       store.write((d) => {
         d.surveys.length = 0;
         throw new Error("boom");
       }),
-    ).toThrow("boom");
+    ).rejects.toThrow("boom");
     expect(storage.getItem(STORAGE_KEY)).toBe(before);
   });
 
-  it("uses the value change returns", () => {
+  it("uses the value change returns", async () => {
     const store = make();
-    const result = store.write((d) => ({ ...d, surveys: [] }));
+    const result = await store.write((d) => ({ ...d, surveys: [] }));
     expect(result.surveys).toEqual([]);
     expect(store.read().surveys).toEqual([]);
   });
 
-  it("counts the serialised size (UTF-16 units x 2) in KB", () => {
+  it("counts the serialised size (UTF-16 units x 2) in KB", async () => {
     const storage = memoryStorage();
     const store = make(storage);
+    expect(store.usedKb()).toBe(0);
     store.read();
     expect(store.usedKb()).toBe(((storage.getItem(STORAGE_KEY) ?? "").length * 2) / 1024);
   });
 
-  it("resets to the seed and leaves the app's own keys alone (D2)", () => {
+  it("resets to the seed and leaves the app's own keys alone (D2)", async () => {
     const storage = memoryStorage();
     storage.setItem("my-surveys.client-id", "cid");
     storage.setItem("OnlineEditorSurveyCreatorThemeV3", "{}");
     const a = make(storage);
-    a.write(rename("Changed"));
-    a.reset();
+    await a.write(rename("Changed"));
+    await a.reset();
     expect(a.read().surveys).toEqual(seed.surveys);
+    expect(a.read().revision).toBe(2);
     expect(storage.getItem("my-surveys.client-id")).toBe("cid");
     expect(storage.getItem("OnlineEditorSurveyCreatorThemeV3")).toBe("{}");
   });
 
-  it("shows the seed to another store after a reset (Review Focus 5)", () => {
+  it("rejects a reset the browser refuses with StorageFullError, not the raw error", async () => {
+    const inner = memoryStorage();
+    const denied = new DOMException("denied", "SecurityError");
+    const storage: KeyValueStorage = {
+      getItem: (k) => inner.getItem(k),
+      removeItem: (k) => inner.removeItem(k),
+      setItem: () => {
+        throw denied;
+      },
+    };
+    const failure = await make(storage)
+      .reset()
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(StorageFullError);
+    expect((failure as Error).cause).toBe(denied);
+  });
+
+  it("shows the seed to another store after a reset (Review Focus 5)", async () => {
     const storage = memoryStorage();
     const a = make(storage);
     const b = make(storage);
-    b.write(rename("Changed"));
-    a.reset();
+    await b.write(rename("Changed"));
+    await a.reset();
     expect(b.read().surveys[0]?.name).toBe(seed.surveys[0]?.name);
   });
 });

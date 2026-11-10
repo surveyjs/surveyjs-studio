@@ -5,6 +5,7 @@
 import { HttpResponse } from "msw";
 import { STORAGE_FULL_TITLE } from "../../api/storage-full";
 import { SandboxOutdatedError, StorageFullError } from "../store";
+import { StorageBusyError } from "../tab-lock";
 
 export const PROBLEM_TYPE_BASE = "https://studio.surveyjs.io/problems/";
 export const PROBLEM_CONTENT_TYPE = "application/problem+json";
@@ -97,7 +98,8 @@ export const OUTDATED_EVENT = "sandbox:outdated";
 /**
  * Runs `answer` and turns what it throws into the server's answers: a `ProblemError` is its
  * Problem, a `StorageFullError` is `413 quota-exceeded` (and fires `sandbox:storage-full` on
- * `window` when there is one), a `SandboxOutdatedError` is `503` (and fires `sandbox:outdated`), anything else is `500 internal-error`.
+ * `window` when there is one), a `SandboxOutdatedError` is `503` (and fires `sandbox:outdated`), a
+ * `StorageBusyError` is `503` (send it again), anything else is `500 internal-error`.
  */
 export async function guarded(answer: () => Promise<Response> | Response): Promise<Response> {
   try {
@@ -120,6 +122,14 @@ export async function guarded(answer: () => Promise<Response> | Response): Promi
         code: "internal-error",
         status: 503,
         title: "The demo was updated in another tab. Reload this page.",
+      });
+    }
+    if (error instanceof StorageBusyError) {
+      // Nothing was stored; the same request may simply be sent again.
+      return problemResponse({
+        code: "internal-error",
+        status: 503,
+        title: "Another tab is saving the demo data. Try again.",
       });
     }
     console.error("sandbox handler failed", error);

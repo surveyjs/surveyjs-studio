@@ -75,7 +75,7 @@ describe("getResultStats", () => {
 describe("deleteResults", () => {
   it("removes the responses, markers and respondent files but not the editor's assets", async () => {
     const { call, ctx } = setupSandbox();
-    ctx.store.write((data) => {
+    await ctx.store.write((data) => {
       data.files.push(
         {
           id: "a".repeat(64),

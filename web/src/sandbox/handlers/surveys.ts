@@ -122,7 +122,7 @@ export function surveyHandlers(ctx: HandlerContext) {
       guarded(async () => {
         requireSession(ctx, cookies);
         const { name, projectId, definition } = newSurveyFields(await readJson(request), true);
-        const created = mutate(ctx, cookies, (data, user) => {
+        const created = await mutate(ctx, cookies, (data, user) => {
           const scope =
             projectId === undefined || projectId === null
               ? personalScope(user)
@@ -199,7 +199,7 @@ export function surveyHandlers(ctx: HandlerContext) {
             }
           | undefined;
 
-        const updated = mutate(ctx, cookies, (data, user) => {
+        const updated = await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           const target =
             patch["projectId"] === undefined
@@ -239,8 +239,8 @@ export function surveyHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/surveys/{surveyId}", ({ params, cookies }) =>
-      guarded(() => {
-        mutate(ctx, cookies, (data, user) => {
+      guarded(async () => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, params.surveyId);
           if (!survey.archived) {
             throw new ProblemError({
@@ -260,7 +260,7 @@ export function surveyHandlers(ctx: HandlerContext) {
         requireSession(ctx, cookies);
         const { name, projectId } = newSurveyFields(await readJson(request), false);
 
-        const copy = mutate(ctx, cookies, (data, user) => {
+        const copy = await mutate(ctx, cookies, (data, user) => {
           const { survey: source, membership } = visibleSurvey(data, user, params.surveyId);
           // Without `projectId` the copy stays in the source's scope.
           const scope =

@@ -47,7 +47,7 @@ export function viewHandlers(ctx: HandlerContext) {
         requireSession(ctx, cookies);
         const name = viewName(params.view);
         const state = requiredObject(await readJson(request));
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
           const byUser = (data.savedViews[lower(user.id)] ??= {});
           (byUser[survey.id] ??= {})[name] = structuredClone(state);
@@ -57,10 +57,10 @@ export function viewHandlers(ctx: HandlerContext) {
     ),
 
     http.delete("/surveys/{surveyId}/views/{view}", ({ params, cookies }) =>
-      guarded(() => {
+      guarded(async () => {
         requireSession(ctx, cookies);
         const name = viewName(params.view);
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
           const byUser = (data.savedViews[lower(user.id)] ??= {});
           (byUser[survey.id] ??= {})[name] = null;

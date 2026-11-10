@@ -126,7 +126,7 @@ export function contentHandlers(ctx: HandlerContext) {
         if (!ifMatchAllows(header, await versionOf(read.current))) throw editConflict();
         const version = await versionOf(body);
         // The write re-checks the document: a save from another tab since the read is a conflict.
-        mutate(ctx, cookies, (data, user) => {
+        await mutate(ctx, cookies, (data, user) => {
           const { survey } = modifiableSurvey(data, user, surveyId);
           if (!same(data[store][survey.id], read.current)) throw editConflict();
           const savedAt = ctx.now().toISOString();
