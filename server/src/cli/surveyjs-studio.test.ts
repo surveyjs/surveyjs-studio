@@ -47,7 +47,15 @@ describe("surveyjs-studio command", () => {
     const result = capture();
     expect(await run(["--help"], result.io, { env: {} })).toBe(0);
     expect(result.out).toContain("Usage: surveyjs-studio <command>");
-    for (const command of ["backup", "restore", "migrate", "status", "seed", "s3-bucket"]) {
+    for (const command of [
+      "backup",
+      "restore",
+      "migrate",
+      "status",
+      "seed",
+      "s3-bucket",
+      "rebase-urls",
+    ]) {
       expect(result.out).toContain(`  ${command}`);
     }
   });
@@ -56,6 +64,14 @@ describe("surveyjs-studio command", () => {
     const result = capture();
     expect(await run(["s3-bucket", "create", "Not_A_Bucket"], result.io, { env: {} })).toBe(2);
     expect(result.err).toContain("Not a bucket name: Not_A_Bucket");
+  });
+
+  it("passes rebase-urls on", async () => {
+    const result = capture();
+    expect(await run(["rebase-urls", "--from", "http://a.example"], result.io, { env: {} })).toBe(
+      2,
+    );
+    expect(result.err).toContain("--from and --to are both needed");
   });
 
   it("passes backup on", async () => {

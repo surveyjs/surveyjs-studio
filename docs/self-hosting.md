@@ -8,14 +8,14 @@ the settings you set, running behind an https proxy, PostgreSQL and S3, backups,
 has `read:packages`). From a clone of the repository, `pnpm image:build:self-hosted` builds the same image as
 `surveyjs-studio:self-hosted`. The commands below write `<image>` for either.
 
-| Item    | Value                                                                                          |
-| ------- | ---------------------------------------------------------------------------------------------- |
-| Port    | `8080`                                                                                         |
-| Data    | the volume `/data`: the SQLite database, uploaded files, the session secret and local backups  |
-| User    | `node`, uid 1000 (never root)                                                                  |
-| Health  | `GET /healthz` (the process runs; the image's health check), `GET /readyz` (the stores answer) |
-| Tags    | `vX.Y.Z`, `vX.Y` (the latest patch of a minor version) and `latest`; platforms amd64 and arm64 |
-| Command | `surveyjs-studio`: `backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`               |
+| Item    | Value                                                                                           |
+| ------- | ----------------------------------------------------------------------------------------------- |
+| Port    | `8080`                                                                                          |
+| Data    | the volume `/data`: the SQLite database, uploaded files, the session secret and local backups   |
+| User    | `node`, uid 1000 (never root)                                                                   |
+| Health  | `GET /healthz` (the process runs; the image's health check), `GET /readyz` (the stores answer)  |
+| Tags    | `vX.Y.Z`, `vX.Y` (the latest patch of a minor version) and `latest`; platforms amd64 and arm64  |
+| Command | `surveyjs-studio`: `backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`, `rebase-urls` |
 
 The container keeps no state: everything lives in `/data` (or in your PostgreSQL and S3). Removing the container and
 running it again loses nothing.
@@ -45,7 +45,8 @@ Then create the first administrator, in one of two ways:
 Open <http://localhost:8080> and sign in. On a real server, set `PUBLIC_BASE_URL` too ([below](#behind-a-reverse-proxy)):
 until you do, the setup and set-password links, the sign-out redirect and the addresses stored for uploaded files say
 `localhost`, and the log warns `PUBLIC_BASE_URL is http://localhost:8080: …` at every start. Set it before anyone uploads a
-file: files uploaded under a wrong address stay broken after you fix it.
+file: a file's address is stored in the survey when it is uploaded. If files were uploaded under a wrong address,
+[point them at the new one](#changing-the-address) after you fix it.
 
 **A host folder instead of a volume.** A named volume (as above) needs nothing. A host folder (`-v /srv/surveyjs:/data`)
 must be writable by uid 1000: `sudo chown 1000:1000 /srv/surveyjs`. Otherwise, while `SESSION_SECRET` is unset (the image
@@ -114,6 +115,26 @@ surveys.example.com {
 	reverse_proxy 127.0.0.1:8080
 }
 ```
+
+## Changing the address
+
+A file's address is stored with the survey: the editor writes `<PUBLIC_BASE_URL>/api/v1/public/files/<id>` into the
+survey's definition or theme, and a respondent's upload goes into the response. Changing `PUBLIC_BASE_URL` does not
+change those addresses, so after a move to a new address, rewrite them once:
+
+1. Stop the server, and make a backup ([Backups](#backups)).
+2. Count what would change. This writes nothing:
+
+   ```sh
+   docker run --rm -v surveyjs-studio:/data <image>      surveyjs-studio rebase-urls --from http://localhost:8080 --to https://surveys.example.com
+   ```
+
+3. Run it again with `--yes` to write the changes, then start the server with the new `PUBLIC_BASE_URL`.
+
+Only the text `<old address>/api/v1/public/files/` changes, in definitions, themes, history and responses; links to
+other pages stay. A rewritten definition or theme gets a new version, so an editor left open on it must reload before
+it saves. With PostgreSQL, pass the same database settings as the server (`--env-file` or `-e`). A page that copied a
+file's old address elsewhere (an embed on another site, a downloaded export) is not changed.
 
 ## PostgreSQL
 

@@ -19,7 +19,7 @@ key the image will ship with (spec open question 1).
 **D1. A separate build target.** `docker build --target self-hosted` is the 2b image. It shares the build stages with
 the hosted image; only its last stage differs: the 2b defaults (`APP_SHELL=self-hosted`, `STORAGE_PROVIDER=sqlite`,
 `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`), port 8080, `VOLUME /data`, the user `node`
-(uid 1000), and the `surveyjs-studio` command (`backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`). The
+(uid 1000), and the `surveyjs-studio` command (`backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`, and later `rebase-urls`). The
 hosted `runtime` stage stays last, so `docker build .` gives the same image as before: settings, port 3000 and the
 `ghcr.io/surveyjs/surveyjs-studio:<sha>` tags.
 
