@@ -1,10 +1,12 @@
 name: Release
 
-# A tag vX.Y.Z (or vX.Y.Z-pre) pushes the self-hosted image for linux/amd64 and linux/arm64 to
-# RELEASE_IMAGE: vX.Y.Z, vX.Y and latest (a pre-release pushes only its own tag). Before the push,
-# the image checks and the e2e suites run on the amd64 image (self-hosted-image.yml); after it, the
-# arm64 image must start under QEMU and the amd64 image must pass a vulnerability scan. A failure
-# after the push leaves the tags in place: delete them by hand (docs/operations.md).
+# A tag vX.Y.Z (or vX.Y.Z-pre) publishes the self-hosted image for linux/amd64 and linux/arm64 to
+# RELEASE_IMAGE as vX.Y.Z and vX.Y, and as latest when the tagged commit is on master (a
+# pre-release gets only its own tag). Before the build, the image checks and the e2e suites run on
+# the amd64 image (self-hosted-image.yml). The build pushes by digest only, with no tag; the arm64
+# image must then start under QEMU and the amd64 image must pass a vulnerability scan, and only
+# after both does the last job put the tags on that digest. A failed run tags nothing: it leaves an
+# untagged version in the package (docs/operations.md).
 on:
   push:
     tags: ["v*"]
@@ -33,7 +35,7 @@ jobs:
       tags: ${{ steps.tags.outputs.tags }}
       previous-image: ${{ steps.tags.outputs.previous-image }}
     steps:
-      # Every tag, for the previous release.
+      # Every tag, for the previous release, and origin/master, for latest.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -54,21 +56,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      # The highest earlier release that has an image: a git tag whose release failed before the
-      # push, or whose image was deleted by hand, has none and is skipped.
+      # The highest earlier release that has an image: a git tag whose release failed, or whose
+      # image was deleted by hand, has none and is skipped. Any other registry error fails the job,
+      # so that a registry outage cannot skip the upgrade check.
       - name: The image tags and the previous release
         id: tags
         run: |
           tags="$(pnpm --silent release:tags "$GITHUB_REF")"
+          candidates="$(pnpm --silent release:tags --previous "$GITHUB_REF_NAME")"
           previous=""
           while IFS= read -r candidate; do
             [ -n "$candidate" ] || continue
-            if docker buildx imagetools inspect "$RELEASE_IMAGE:$candidate" > /dev/null 2>&1; then
+            if output="$(docker buildx imagetools inspect "$RELEASE_IMAGE:$candidate" 2>&1)"; then
               previous="$candidate"
               break
             fi
-            echo "No image for $candidate: skipped"
-          done < <(pnpm --silent release:tags --previous "$GITHUB_REF_NAME")
+            if printf '%s' "$output" | grep -qiE '(: not found|manifest unknown)'; then
+              echo "No image for $candidate: skipped"
+              continue
+            fi
+            echo "::error::could not read $RELEASE_IMAGE:$candidate from the registry: $output"
+            exit 1
+          done <<< "$candidates"
           {
             echo "version=$GITHUB_REF_NAME"
             echo "tags<<EOF"
@@ -96,15 +105,17 @@ jobs:
       image-tag: ${{ needs.tags.outputs.version }}
       previous-image: ${{ needs.tags.outputs.previous-image }}
 
-  # Builds both platforms with the release's licence key and pushes them. It runs a third-party
-  # scanner only after the push, on the pushed image.
-  publish:
+  # Builds both platforms with the release's licence key and pushes them by digest, with no tag.
+  # It runs nothing but docker: the third-party scanner runs in `verify`, without packages: write.
+  build:
     needs: [tags, checks]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -126,17 +137,13 @@ jobs:
       # the command line. It is empty while the secret is unset.
       # ghcr.io reads a multi-platform image's description from the index's annotations, not from
       # the labels, so the self-hosted stage's description and licence labels are copied there.
-      - name: Build and push linux/amd64 and linux/arm64
+      - name: Build and push linux/amd64 and linux/arm64 by digest
         id: push
         env:
           SURVEYJS_IMAGE_LICENSE_KEY: ${{ secrets.SURVEYJS_IMAGE_LICENSE_KEY }}
           VERSION: ${{ needs.tags.outputs.version }}
-          TAGS: ${{ needs.tags.outputs.tags }}
         run: |
           args=()
-          while IFS= read -r tag; do
-            [ -n "$tag" ] && args+=(--tag "$RELEASE_IMAGE:$tag")
-          done <<< "$TAGS"
           label() {
             awk -v key="org.opencontainers.image.$1" '/^FROM /{stage=$NF}
               stage=="self-hosted" && index($0, key "=\"") {
@@ -154,19 +161,46 @@ jobs:
             --build-arg "VERSION=$VERSION" --build-arg SURVEYJS_IMAGE_LICENSE_KEY \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --sbom=true --provenance=mode=max --metadata-file build-metadata.json \
-            "${args[@]}" --push .
+            --output "type=image,name=$RELEASE_IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+            "${args[@]}" .
           digest="$(jq -r '."containerimage.digest"' build-metadata.json)"
+          if ! printf '%s' "$digest" | grep -qE '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::the build printed no image digest: ${digest:-none}"
+            exit 1
+          fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          {
-            echo "Pushed $RELEASE_IMAGE@$digest as:"
-            echo
-            while IFS= read -r tag; do [ -n "$tag" ] && echo "- \`$RELEASE_IMAGE:$tag\`"; done <<< "$TAGS"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed $RELEASE_IMAGE@$digest (no tag yet)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+  # The pushed digest, before any tag names it. packages: read only: the scanner is a third-party
+  # action.
+  verify:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DIGEST: ${{ needs.build.outputs.digest }}
+    steps:
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       # The x86 suites never run the arm64 image: it must at least start and answer /healthz.
       - name: Smoke-run the arm64 image (QEMU)
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+        id: smoke
         run: |
           docker run -d --name release-smoke-arm64 --platform linux/arm64 -p 127.0.0.1:8080:8080 "$RELEASE_IMAGE@$DIGEST"
           for _ in $(seq 1 90); do
@@ -185,9 +219,8 @@ jobs:
       # By the amd64 image's own digest, not the index's: the smoke run has stored the index digest
       # for the arm64 image, and Docker will not repoint it ("cannot overwrite digest").
       - name: Pull the pushed linux/amd64 image for the scan
-        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+        id: pull
+        if: ${{ !cancelled() }}
         run: |
           amd64="$(docker buildx imagetools inspect "$RELEASE_IMAGE@$DIGEST" --format '{{json .Manifest}}' \
             | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest')"
@@ -199,9 +232,7 @@ jobs:
           docker tag "$RELEASE_IMAGE@$amd64" surveyjs-studio:release-amd64
 
       - name: Save the SBOM
-        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+        if: ${{ !cancelled() }}
         run: docker buildx imagetools inspect "$RELEASE_IMAGE@$DIGEST" --format '{{ json .SBOM }}' > sbom.json
 
       - name: Sign out of ghcr.io
@@ -210,7 +241,7 @@ jobs:
 
       # Fails on a critical vulnerability that has a fix. It runs even when the smoke run failed.
       - name: Scan the linux/amd64 image
-        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.pull.outcome == 'success' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: surveyjs-studio:release-amd64
@@ -230,3 +261,50 @@ jobs:
             sbom.json
           if-no-files-found: ignore
           retention-days: 90
+
+  # Only after the smoke run and the scan passed: every tag names the verified digest. It runs
+  # nothing but docker.
+  tag:
+    needs: [tags, build, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # One source and no new annotations: imagetools copies the index as it is, so each tag must
+      # then name the same digest. The check catches a tool that rebuilt it.
+      - name: Tag the verified digest
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          TAGS: ${{ needs.tags.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args+=(--tag "$RELEASE_IMAGE:$tag")
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$RELEASE_IMAGE@$DIGEST"
+          {
+            echo "Tagged $RELEASE_IMAGE@$DIGEST as:"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            tagged="$(docker buildx imagetools inspect "$RELEASE_IMAGE:$tag" --format '{{json .Manifest}}' | jq -r .digest)"
+            if [ "$tagged" != "$DIGEST" ]; then
+              echo "::error::$RELEASE_IMAGE:$tag names $tagged, not the verified $DIGEST"
+              exit 1
+            fi
+            echo "- \`$RELEASE_IMAGE:$tag\`" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$TAGS"
+
+      - name: Sign out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io

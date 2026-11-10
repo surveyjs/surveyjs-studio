@@ -20,17 +20,19 @@ function compare(a: Version, b: Version): number {
 }
 
 /**
- * The image tags for a git ref: `refs/tags/v1.2.3` gives `v1.2.3`, `v1.2` and `latest`; a
- * pre-release (`v1.2.3-rc.1`) gives only itself. Any other ref gives null.
+ * The image tags for a git ref: `refs/tags/v1.2.3` gives `v1.2.3`, `v1.2` and, when the tagged
+ * commit is on `master`, `latest`; a pre-release (`v1.2.3-rc.1`) gives only itself. Any other ref
+ * gives null.
  */
-export function releaseTags(ref: string): string[] | null {
+export function releaseTags(ref: string, options: { onMaster: boolean }): string[] | null {
   const prefix = "refs/tags/";
   if (!ref.startsWith(prefix)) return null;
   const tag = ref.slice(prefix.length);
   const version = parse(tag);
   if (!version) return null;
   if (version.preRelease !== undefined) return [tag];
-  return [tag, `v${version.major}.${version.minor}`, "latest"];
+  const minor = `v${version.major}.${version.minor}`;
+  return options.onMaster ? [tag, minor, "latest"] : [tag, minor];
 }
 
 /**

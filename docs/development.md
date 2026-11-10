@@ -1005,7 +1005,7 @@ it uploads the Playwright report and `docker-logs/` (`self-hosted-playwright-rep
 `publish` does not wait for it: nothing publishes the self-hosted image on a push.
 
 **`.github/workflows/release.yml`** runs on a `v*` tag only: the same reusable workflow with the upgrade from the
-previous release, then the multi-platform push, the arm64 smoke run and the scan
+previous release, then the multi-platform push by digest, the arm64 smoke run and the scan, and only then the tags
 ([Operations › Releasing the self-hosted image](operations.md#releasing-the-self-hosted-image)).
 
 The visual parity tests do not run in CI: the baselines are Windows renders of surveyjs.io, captured by a person (see

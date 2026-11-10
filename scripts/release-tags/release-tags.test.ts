@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import { previousRelease, previousReleases, releaseTags } from "./release-tags.js";
 
 describe("releaseTags", () => {
-  it("moves the minor line and latest for a release", () => {
-    expect(releaseTags("refs/tags/v1.2.3")).toEqual(["v1.2.3", "v1.2", "latest"]);
+  it("moves the minor line and latest for a release on master", () => {
+    expect(releaseTags("refs/tags/v1.2.3", { onMaster: true })).toEqual([
+      "v1.2.3",
+      "v1.2",
+      "latest",
+    ]);
+  });
+
+  it("moves the minor line but not latest for a release off master", () => {
+    expect(releaseTags("refs/tags/v1.2.3", { onMaster: false })).toEqual(["v1.2.3", "v1.2"]);
   });
 
   it("moves no other tag for a pre-release", () => {
-    expect(releaseTags("refs/tags/v1.2.3-rc.1")).toEqual(["v1.2.3-rc.1"]);
+    expect(releaseTags("refs/tags/v1.2.3-rc.1", { onMaster: true })).toEqual(["v1.2.3-rc.1"]);
   });
 
   it.each([
@@ -18,7 +26,7 @@ describe("releaseTags", () => {
     "refs/tags/v1.2.3.4",
     "",
   ])("returns null for %j", (ref) => {
-    expect(releaseTags(ref)).toBeNull();
+    expect(releaseTags(ref, { onMaster: true })).toBeNull();
   });
 });
 

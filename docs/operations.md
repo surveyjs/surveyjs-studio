@@ -123,14 +123,19 @@ git tag v1.2.3 <commit> && git push origin v1.2.3
 
 The push starts `.github/workflows/release.yml`:
 
-1. **`tags`**: the image tags (`scripts/release-tags`): `v1.2.3`, `v1.2` and `latest`; a pre-release gets only its own
-   tag. Any other `v*` tag fails the run here. It also finds the previous release: the highest earlier release that has an image in `RELEASE_IMAGE`.
+1. **`tags`**: the image tags (`scripts/release-tags`): `v1.2.3`, `v1.2`, and `latest` when the tagged commit is on
+   `master` (a patch tagged on another branch moves `v1.2` but not `latest`); a pre-release gets only its own tag. Any
+   other `v*` tag fails the run here. It also finds the previous release: the highest earlier release that has an image
+   in `RELEASE_IMAGE`. A release with no image there is skipped; any other registry error fails the run, so an outage
+   cannot skip the upgrade check.
 2. **`checks`**: `.github/workflows/self-hosted-image.yml`, as in CI: the amd64 image, the image checks (with the upgrade
    from the previous release, pulled from `RELEASE_IMAGE`) and the e2e suites on the image.
-3. **`publish`**: builds linux/amd64 and linux/arm64 with an SBOM and provenance, and pushes every tag to
-   `RELEASE_IMAGE`. Then the arm64 image must answer `/healthz` within 90 s under QEMU, and the amd64 image must pass a
-   vulnerability scan (Grype: no critical vulnerability that has a fix). The scan report and the SBOM are the run's
-   artifacts; the tags and the digest are in its summary.
+3. **`build`**: builds linux/amd64 and linux/arm64 with an SBOM and provenance, and pushes them to `RELEASE_IMAGE` by
+   digest, with no tag. The digest is in the run's summary.
+4. **`verify`**: on that digest, the arm64 image must answer `/healthz` within 90 s under QEMU, and the amd64 image must
+   pass a vulnerability scan (Grype: no critical vulnerability that has a fix). The scan report and the SBOM are the
+   run's artifacts. This job has `packages: read` only, because the scanner is a third-party action.
+5. **`tag`**: only after `verify` passed, puts every tag on the verified digest and checks that each one names it.
 
 **Where it goes.** `RELEASE_IMAGE` (the workflow's `env`) is `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test`, a
 private test package, until Docker Hub access and the shipped licence key exist
@@ -140,17 +145,21 @@ private test package, until Docker Hub access and the shipped licence key exist
 `SURVEYJS_IMAGE_LICENSE_KEY`. The build reads it from the environment by name; it is never on a command line. While the
 secret is unset the image has no key, and the SurveyJS components show their licence notice.
 
-**A bad release.** If the smoke run or the scan fails, the tags are already pushed and the run is red. Delete the
-release by hand: on GitHub, open the package, find the version that carries the tags, and delete it. `latest` and
-`vX.Y` then name nothing until the next release; to point them back, run
-`docker buildx imagetools create --tag <RELEASE_IMAGE>:latest <RELEASE_IMAGE>:<previous tag>` (the same for `vX.Y`).
-Fix the problem and release a new patch version; never push a tag `vX.Y.Z` twice. This is safe while the package is a
-private test package with no users (ADR 0028).
+**A bad release.** If the smoke run or the scan fails, no tag moves: `latest` and `vX.Y` still name the previous
+release, and nobody can pull the new version by its tag. The pushed digest stays in the package as an untagged
+version; delete it on GitHub (open the package, find the untagged version with the digest from the run's summary)
+or leave it. Fix the problem and release a new patch version; never push a tag `vX.Y.Z` twice.
 
-A release whose `checks` job fails pushes nothing, and a deleted release has no image either. Both leave a git tag
-without an image. The next release skips it: its `tags` job takes the highest earlier release that
-`docker buildx imagetools inspect` finds in `RELEASE_IMAGE`, and the upgrade check is skipped when none is found.
-When `checks` fails before the push, fix the problem and push a new version tag; never push the same tag again.
+If `tag` fails part way (a registry error), some tags may already name the new digest. Run the job again: tagging the
+same digest is safe to repeat.
+
+A release whose `checks` or `verify` job fails leaves a git tag without an image tag. The next release skips it: its
+`tags` job takes the highest earlier release that `docker buildx imagetools inspect` finds in `RELEASE_IMAGE`, and the
+upgrade check is skipped when none is found.
+
+A release that was published and then turns out bad is deleted by hand: on GitHub, open the package, find the version
+that carries the tags, and delete it. `latest` and `vX.Y` then name nothing until the next release; to point them back,
+run `docker buildx imagetools create --tag <RELEASE_IMAGE>:latest <RELEASE_IMAGE>:<previous tag>` (the same for `vX.Y`).
 
 ## The sandbox (studio.demos.surveyjs.io)
 
