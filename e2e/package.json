@@ -16,6 +16,7 @@
     "test:self-hosted": "node scripts/run.mjs --config playwright.self-hosted.config.ts",
     "test:sandbox": "node scripts/run.mjs --config playwright.sandbox.config.ts",
     "test:sandbox:url": "node scripts/run.mjs --config playwright.sandbox.config.ts",
+    "test:sandbox:subpath": "node scripts/run.mjs --config playwright.sandbox-subpath.config.ts",
     "test:prod-like": "playwright test --config playwright.prod-like.config.ts"
   },
   "devDependencies": {

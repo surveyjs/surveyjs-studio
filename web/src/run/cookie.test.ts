@@ -40,6 +40,12 @@ describe("completedBeforeCookie", () => {
     );
   });
 
+  it("is scoped to the run pages under the base path of a sandbox on a sub-path", () => {
+    expect(completedBeforeCookie(SURVEY_ID, "/studio")).toBe(
+      `${SURVEY_ID}=true; path=/studio/s; expires=Fri, 31 Dec 9999 23:59:59 GMT`,
+    );
+  });
+
   it("writes a mapped name, which carries no attributes", () => {
     const cookie = completedBeforeCookie(runCookieName("msid_csrf=x; path=/; a", SURVEY_ID));
 

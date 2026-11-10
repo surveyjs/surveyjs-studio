@@ -82,7 +82,38 @@ describe("parseWaitArgs", () => {
     });
   });
 
+  it("reads --flag=value as well as --flag value", () => {
+    expect(
+      parseWaitArgs([
+        "--url=https://example.test",
+        "--commit",
+        "abc",
+        "--timeout-min=2",
+        "--interval-s=5",
+      ]),
+    ).toEqual({
+      url: "https://example.test",
+      commit: "abc",
+      timeoutMs: 2 * 60_000,
+      intervalMs: 5_000,
+    });
+  });
+
+  it("keeps an = inside the value", () => {
+    expect(parseWaitArgs(["--url=https://example.test/?a=b", "--commit=abc"]).url).toBe(
+      "https://example.test/?a=b",
+    );
+  });
+
+  it("trims the commit", () => {
+    expect(parseWaitArgs(["--url", "https://example.test", "--commit", " abc\n"]).commit).toBe(
+      "abc",
+    );
+  });
+
   it.each([
+    [["--timeout-min="]],
+    [["--bogus=1"]],
     [["--timeout-min", "abc"]],
     [["--timeout-min", "0"]],
     [["--interval-s", "-5"]],

@@ -27,6 +27,7 @@ import {
   type ThemeTabPlugin,
 } from "survey-creator-core";
 import { SurveyCreator } from "survey-creator-react";
+import { underBase } from "../basePath";
 import obfuscatedDownloadIcon from "../shell/surveyjs-site/assets/icons/editor/obf-download.svg?raw";
 import angularIcon from "../shell/surveyjs-site/assets/icons/editor/v1/angular.svg?raw";
 import copyIconV1 from "../shell/surveyjs-site/assets/icons/editor/v1/copy.svg?raw";
@@ -279,7 +280,7 @@ export function addSiteToolbarItemsAndTabs(
       enabled: new ComputedUpdater(() => !creator.survey.isEmpty),
       title: "Click here to run this survey...",
       showTitle: false,
-      action: () => openInNewTab(`/s/${encodeURIComponent(context.surveyId)}`),
+      action: () => openInNewTab(underBase(`/s/${encodeURIComponent(context.surveyId)}`)),
     }),
   );
   if (context.embed) addEmbedTabs(creator, context.surveyId);

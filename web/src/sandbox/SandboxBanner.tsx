@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { navigateTo } from "../navigation";
 import { OUTDATED_EVENT, STORAGE_FULL_EVENT } from "./handlers/problems";
 import styles from "./sandbox.module.css";
+import { RESET_FAILED_TEXT } from "./SandboxOutdated";
 import { sandboxStore } from "./start";
 import { setSessionCookie, STORAGE_WRITTEN_EVENT } from "./store";
 
@@ -10,8 +11,6 @@ export const DEMO_TEXT =
 export const FULL_TEXT = "Browser storage is full. Reset the demo data to continue.";
 export const OUTDATED_TEXT = "The demo was updated in another tab. Reload this page.";
 const CONFIRM_TEXT = "Reset all demo data? Your changes in this browser are lost.";
-const RESET_FAILED_TEXT =
-  "Could not reset the demo data. Clear this site's data in the browser and reload.";
 const SELF_HOSTING_URL =
   "https://github.com/surveyjs/surveyjs-studio/blob/master/docs/self-hosting.md";
 const SOURCE_URL = "https://github.com/surveyjs/surveyjs-studio";

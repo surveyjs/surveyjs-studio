@@ -410,6 +410,10 @@ jobs:
       - name: End-to-end tests (sandbox mode)
         run: pnpm e2e:sandbox
 
+      # The same build for the sub-path /studio/ (SANDBOX_BASE), served only there: no request may leave it.
+      - name: End-to-end tests (sandbox on a sub-path)
+        run: pnpm e2e:sandbox:subpath
+
       - if: failure()
         uses: ./.github/actions/failure-artifacts
         with:

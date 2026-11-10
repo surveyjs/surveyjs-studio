@@ -52,8 +52,9 @@ and **Source code**, and the button **Reset demo data**.
    My Surveys lists `Demo renamed`.
 3. Open a **private window** (Ctrl+Shift+N) at <http://localhost:5173> and pick **Olivia Owner**.
    - **Check:** the list shows **Customer feedback**, not `Demo renamed`. The private window has its own storage, so it
-     starts from the seed. (A private window of Firefox blocks service workers: the page then says "This demo needs a
-     browser with service workers and site storage…". Use Chrome or Edge for this step.)
+     starts from the seed. (A browser that blocks service workers in a private window, as older Firefox versions did,
+     shows "This demo needs a browser with service workers and site storage…" instead. Chrome and Edge run the demo
+     there; for Firefox this is not checked.)
 4. Close the private window.
 
 ## 3. Publish, run in a new tab, submit, see the response (checklist 3)

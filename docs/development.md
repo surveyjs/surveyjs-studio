@@ -613,20 +613,29 @@ Operators: [Operations › The sandbox](operations.md#the-sandbox-studiodemossur
 - **The licence key.** `VITE_SANDBOX_LICENSE_KEY` is read at build time and baked into the bundle. The sandbox's
   `/config` answers it as `surveyjsLicenseKey`; empty or unset answers `null` and the licence notice shows. Put it in
   your shell or an untracked env file, never in the repository.
-- **`version.json`.** `pnpm build:sandbox` writes `web/dist-sandbox/version.json` = `{"commit", "dataVersion"}`. The
-  commit is `SANDBOX_COMMIT` when set, else `git rev-parse HEAD`, else `unknown`. `dataVersion` is the seed's
-  `version`.
+- **`version.json`.** `pnpm build:sandbox` writes `web/dist-sandbox/version.json` =
+  `{"commit", "dataVersion", "base"}`. The commit is `SANDBOX_COMMIT` when set, else `git rev-parse HEAD`, else
+  `unknown`, trimmed. `dataVersion` is the seed's `version`. `base` is the base path the build is for.
+- **A sub-path.** `SANDBOX_BASE=/studio/ pnpm build:sandbox` builds the sandbox for `https://<host>/studio/`. The
+  default is `/`, the root. `studio`, `/studio` and `/studio/` all mean `/studio/`; anything but a plain path fails
+  the build. In Git Bash on Windows write `SANDBOX_BASE=studio`: Git Bash turns a value that starts with `/` into a
+  Windows path. The same variable works for `pnpm dev:sandbox`. The base is fixed at build time, so one build serves
+  one path ([ADR 0031](adr/0031-publishing-the-sandbox.md), D11). `pnpm sandbox:serve` serves the root only: it
+  refuses a build for a sub-path.
 - **The data version.** `version` in `server/fixtures/sandbox.json` is the version of the stored document. Raise it
   whenever the seed's content or the document's format changes, then run `pnpm sandbox:seed` and commit `seed.json`.
   A returning visitor whose stored `version` differs sees **This demo has been updated** and **Reset to continue**.
   A request from another tab that finds such a document answers `503`.
 - **The production server locally.** After `pnpm build:sandbox`, `pnpm sandbox:serve [--port 8080]` serves
-  `web/dist-sandbox` with `deploy/sandbox/nginx.conf` in `nginx:1.30-alpine` (Docker needed) and prints the URL;
-  `pnpm sandbox:serve --stop` removes it. Check headers with `curl -sI <url>/`.
+  `web/dist-sandbox` with `deploy/sandbox/nginx.conf` in `nginx:1.30-alpine` (Docker needed). It prints the URL once
+  the shell, the worker and `version.json` answer 200 twice in a row, on 127.0.0.1 and on ::1 (a browser may use
+  either for `localhost`). On a failure it prints one line that says what went wrong. `pnpm sandbox:serve --stop`
+  removes the container. Check headers with `curl -sI <url>/`.
 - **The suites against a URL.** `E2E_SANDBOX_URL=<url> pnpm e2e:sandbox:url` runs the `sandbox-chromium` and
   `sandbox-host` Playwright projects against a running site (the `sandbox-host` project checks the headers, the cache
   rules and `version.json`). The Publish sandbox workflow uses it twice: on its own nginx and on the live site.
-  `pnpm sandbox:wait --url <url> --commit <sha> --timeout-min N` waits until `/version.json` names the commit.
+  `pnpm sandbox:wait --url <url> --commit <sha> --timeout-min N` waits until `/version.json` names the commit. It
+  takes `--flag=value` too, and returns at once when the commit is already live.
 
 ## Production data mode
 
