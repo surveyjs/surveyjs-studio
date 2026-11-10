@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import { runBackup, runRestore } from "./backup.js";
 import type { CliEnv, CliIo } from "./common.js";
 import { run as runDb } from "./db.js";
+import { run as runRebaseUrls } from "./rebase-urls.js";
 import { run as runS3Bucket } from "./s3-bucket.js";
 
 export const USAGE = `Usage: surveyjs-studio <command> [options]
@@ -17,6 +18,8 @@ Commands:
   status                          List the applied and the pending database migrations
   seed                            Migrate, then load the shared seed (the golden fixtures)
   s3-bucket create|remove <name>  Create or remove a bucket on an S3 server
+  rebase-urls --from <url> --to <url> [--yes]
+                                  Point stored file URLs at a new PUBLIC_BASE_URL
 
 Run surveyjs-studio <command> --help for a command's options.
 
@@ -47,6 +50,8 @@ export async function run(
     case "status":
     case "seed":
       return runDb([command, ...rest], io, deps);
+    case "rebase-urls":
+      return runRebaseUrls(rest, io, deps);
     case "s3-bucket":
       return runS3Bucket(rest, io, { ...(deps.env ?? process.env) });
     case undefined:
