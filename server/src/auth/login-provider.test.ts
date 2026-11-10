@@ -57,7 +57,8 @@ interface Person {
   readonly sub: string;
   readonly email: string;
   readonly name?: string;
-  readonly verified?: boolean;
+  /** `omitted`: the provider's answers leave `email_verified` out. */
+  readonly verified?: boolean | "omitted";
 }
 
 /**
@@ -79,7 +80,8 @@ async function authorizeAtStub(
   form.set("sub", person.sub);
   form.set("email", person.email);
   form.set("name", person.name ?? "Ada");
-  if (person.verified ?? true) form.set("email_verified", "on");
+  if (person.verified === "omitted") form.set("omit_email_verified", "on");
+  else if (person.verified ?? true) form.set("email_verified", "on");
   if (deny) form.set("deny", "1");
   const authorize = await fetch(`${stub?.url}${authorizePath}`, {
     method: "POST",
@@ -93,9 +95,15 @@ async function authorizeAtStub(
   };
 }
 
-/** Opens the callback the stub sent the browser to. */
-const callbackOf = (server: FastifyInstance, { back, cookie }: { back: URL; cookie: string }) =>
-  server.inject({ url: back.pathname + back.search, headers: { cookie } });
+/** What a browser sends when it follows a redirect: it asks for HTML first. */
+const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
+/** Opens the callback the stub sent the browser to; `accept` as an API client sends it. */
+const callbackOf = (
+  server: FastifyInstance,
+  { back, cookie }: { back: URL; cookie: string },
+  accept = "*/*",
+) => server.inject({ url: back.pathname + back.search, headers: { cookie, accept } });
 
 /** Signs in with GitHub at the stub as `person`; the callback's response. */
 async function signInWithGithub(server: FastifyInstance, person: Person) {
@@ -287,6 +295,32 @@ describe("the callback with the local directory", () => {
     }
   });
 
+  it("never links by an email Google sent without email_verified (ADR 0029)", async () => {
+    const { server, providers } = await start({
+      AUTH_METHODS: "password,google",
+      GOOGLE_CLIENT_ID: "g-client",
+      GOOGLE_CLIENT_SECRET: "stub-secret-google",
+      OPEN_SIGN_UP: "on",
+    });
+    const accounts = providers.accounts;
+    if (!accounts) throw new Error("no local accounts");
+    const kay = await accounts.createAccount(newAccount("kay@example.com"));
+    const callback = await callbackOf(
+      server,
+      await authorizeAtStub(
+        server,
+        { sub: "g-50", email: "kay@example.com", verified: "omitted" },
+        { query: "?provider=google", authorizePath: "/google/authorize" },
+      ),
+    );
+    expect(String(callback.headers.location)).toBe(
+      `${PUBLIC_BASE_URL}/sign-in/refused?reason=email-unverified&provider=google`,
+    );
+    expect(cookieValue(callback, "msid")).toBeUndefined();
+    expect(await accounts.accountByIdentity("google", "g-50")).toBeNull();
+    expect((await accounts.account(kay.user.id))?.lastSignInAt).toBeNull();
+  });
+
   it("signs in to the local account: its id and epoch, and the session check passes", async () => {
     const { server, config, providers } = await start({ AUTH_METHODS: "password,github" });
     const accounts = providers.accounts;
@@ -454,17 +488,92 @@ describe("the callback with the local directory", () => {
   });
 });
 
+/** The response is the refused page for `reason`, with no session and the transaction cleared. */
+function expectRefused(callback: LightMyRequestResponse, reason: string, provider = "github") {
+  expect(callback.statusCode).toBe(302);
+  expect(String(callback.headers.location)).toBe(
+    `${PUBLIC_BASE_URL}/sign-in/refused?reason=${reason}&provider=${provider}`,
+  );
+  expect(cookieValue(callback, "msid")).toBeUndefined();
+  expect(cookieValue(callback, "msid_csrf")).toBeUndefined();
+  expect(callback.cookies.find((c) => c.name.startsWith("msid_auth_"))?.value).toBe("");
+}
+
+/** The answer with the provider's `error` in place of the code. */
+function withError(answer: { back: URL; cookie: string }, error: string) {
+  const back = new URL(answer.back);
+  back.searchParams.delete("code");
+  back.searchParams.set("error", error);
+  return { back, cookie: answer.cookie };
+}
+
+/** The response is a problem answer with `status`, and no session. */
+function expectProblem(callback: LightMyRequestResponse, status: number) {
+  expect(callback.statusCode).toBe(status);
+  expect(callback.headers["content-type"]).toContain("application/problem+json");
+  expect(cookieValue(callback, "msid")).toBeUndefined();
+}
+
 describe("a provider button's sign-in that fails at the callback", () => {
-  /** The response is the refused page for `reason`, with no session and the transaction cleared. */
-  function expectRefused(callback: LightMyRequestResponse, reason: string) {
-    expect(callback.statusCode).toBe(302);
+  it.each([
+    ["server_error", "unavailable"],
+    ["temporarily_unavailable", "unavailable"],
+    ["invalid_scope", "failed"],
+  ])("sends error=%s to the refused page in a browser (%s)", async (error, reason) => {
+    const lines: string[] = [];
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" }, lines);
+    const answer = await authorizeAtStub(server, { sub: "23", email: "kit@example.com" });
+    expectRefused(await callbackOf(server, withError(answer, error), BROWSER_ACCEPT), reason);
+    const logged = lines.map(
+      (line) => JSON.parse(line) as { level: number; msg: string; reason?: string },
+    );
+    if (reason === "unavailable") {
+      expect(logged.find((line) => line.msg === "sign-in is unavailable")).toMatchObject({
+        level: 50,
+        provider: "github",
+        providerError: error,
+      });
+    } else {
+      expect(logged.find((line) => line.msg === "sign-in refused")).toMatchObject({
+        level: 30,
+        provider: "github",
+        reason,
+      });
+    }
+  });
+
+  it("keeps the 400 of a provider error other than access_denied for an API client", async () => {
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
+    const answer = await authorizeAtStub(server, { sub: "24", email: "lee@example.com" });
+    expectProblem(await callbackOf(server, withError(answer, "server_error")), 400);
+  });
+
+  it("sends a code the provider rejects to the refused page in a browser (failed)", async () => {
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
+    const answer = await authorizeAtStub(server, { sub: "25", email: "max@example.com" });
+    answer.back.searchParams.set("code", "not-a-code");
+    expectRefused(await callbackOf(server, answer, BROWSER_ACCEPT), "failed");
+  });
+
+  it("keeps the 400 of a code the provider rejects for an API client", async () => {
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
+    const answer = await authorizeAtStub(server, { sub: "26", email: "ned@example.com" });
+    answer.back.searchParams.set("code", "not-a-code");
+    expectProblem(await callbackOf(server, answer), 400);
+  });
+
+  it("sends an expired sign-in to the refused page in a browser (expired)", async () => {
+    const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
+    const answer = await authorizeAtStub(server, { sub: "27", email: "oz@example.com" });
+    const callback = await server.inject({
+      url: answer.back.pathname + answer.back.search,
+      headers: { accept: BROWSER_ACCEPT },
+    });
     expect(String(callback.headers.location)).toBe(
-      `${PUBLIC_BASE_URL}/sign-in/refused?reason=${reason}&provider=github`,
+      `${PUBLIC_BASE_URL}/sign-in/refused?reason=expired&provider=`,
     );
     expect(cookieValue(callback, "msid")).toBeUndefined();
-    expect(cookieValue(callback, "msid_csrf")).toBeUndefined();
-    expect(callback.cookies.find((c) => c.name.startsWith("msid_auth_"))?.value).toBe("");
-  }
+  });
 
   it("sends a sign-in cancelled at the provider to the refused page", async () => {
     const { server } = await start({ AUTH_METHODS: "password,github", OPEN_SIGN_UP: "on" });
@@ -495,7 +604,7 @@ describe("a provider button's sign-in that fails at the callback", () => {
     expect(all).not.toContain("ida@example.com");
   });
 
-  it("keeps the problem answers of a sign-in without a provider: surveyjs.io alone", async () => {
+  it("keeps the problem answers of a sign-in without a provider for an API client", async () => {
     stub = await startOAuthStub();
     const config = loadConfig({
       NODE_ENV: "test",
@@ -526,5 +635,75 @@ describe("a provider button's sign-in that fails at the callback", () => {
     expect(unreachable.headers["content-type"]).toContain("application/problem+json");
     expect(unreachable.json()).toMatchObject({ title: "Sign-in is unavailable" });
     expect(cookieValue(unreachable, "msid")).toBeUndefined();
+  });
+});
+
+describe("a browser's sign-in without a provider button: surveyjs.io alone", () => {
+  const hosted = { query: "", authorizePath: "/surveyjs/authorize" };
+  const surveyjsOnly = {
+    AUTH_METHODS: "surveyjs",
+    OIDC_ISSUER_URL: "STUB/surveyjs",
+    OIDC_CLIENT_ID: "s-client",
+    OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    ADMIN_EMAIL: "root@example.com",
+  };
+
+  /** The hosted edition's setup: no local directory, surveyjs.io the primary sign-in. */
+  async function startHosted(lines?: string[]): Promise<FastifyInstance> {
+    stub = await startOAuthStub();
+    const config = loadConfig({
+      NODE_ENV: "test",
+      PUBLIC_BASE_URL,
+      AUTH_METHODS: "surveyjs",
+      OIDC_ISSUER_URL: `${stub.url}/surveyjs`,
+      OIDC_CLIENT_ID: "s-client",
+      OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    });
+    app = await buildApp(
+      config,
+      await createProviders(config),
+      lines ? { logStream: { write: (line) => lines.push(line) } } : {},
+    );
+    return app;
+  }
+
+  it("sends a sign-in cancelled at surveyjs.io to the refused page (cancelled)", async () => {
+    const server = await startHosted();
+    const answer = await authorizeAtStub(
+      server,
+      { sub: "28", email: "pat@example.com" },
+      { ...hosted, deny: true },
+    );
+    expectRefused(await callbackOf(server, answer, BROWSER_ACCEPT), "cancelled", "surveyjs");
+  });
+
+  it("sends a surveyjs.io that cannot be reached to the refused page and logs it", async () => {
+    const lines: string[] = [];
+    const server = await startHosted(lines);
+    const answer = await authorizeAtStub(server, { sub: "29", email: "quin@example.com" }, hosted);
+    await stub?.close();
+    stub = undefined;
+    expectRefused(await callbackOf(server, answer, BROWSER_ACCEPT), "unavailable", "surveyjs");
+    const logged = lines
+      .map((line) => JSON.parse(line) as { level: number; msg: string; provider?: string })
+      .find((line) => line.msg === "sign-in is unavailable");
+    expect(logged).toMatchObject({ level: 50, provider: "surveyjs" });
+    expect(lines.join("\n")).not.toContain("quin@example.com");
+  });
+
+  it("READ_ONLY=true with local accounts: the refused page for a browser, 503 for an API client", async () => {
+    const { server, providers } = await start({ ...surveyjsOnly, READ_ONLY: "true" });
+    // Its first sign-in would link the identity: a write.
+    await providers.accounts?.createAccount(newAccount("uma@example.com"));
+    const person = { sub: "s-31", email: "uma@example.com" };
+    const browser = await callbackOf(
+      server,
+      await authorizeAtStub(server, person, hosted),
+      BROWSER_ACCEPT,
+    );
+    expectRefused(browser, "read-only", "surveyjs");
+    const client = await callbackOf(server, await authorizeAtStub(server, person, hosted));
+    expectProblem(client, 503);
+    expect(client.json()).toMatchObject({ code: "read-only" });
   });
 });

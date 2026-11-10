@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { api } from "./api.js";
 import { csrfHeaders } from "./survey-list.js";
 import { expect, type ExpectedErrorResponse } from "./test.js";
 
@@ -24,7 +25,7 @@ export async function createProjectViaApi(
   page: Page,
   name: string,
 ): Promise<{ id: string; name: string }> {
-  const response = await page.request.post("/api/v1/projects", {
+  const response = await api(page).post("/api/v1/projects", {
     headers: await csrfHeaders(page),
     data: { name },
   });
@@ -39,7 +40,7 @@ export async function addMemberViaApi(
   email: string,
   role: "user" | "admin" = "user",
 ): Promise<void> {
-  const response = await page.request.post(`/api/v1/projects/${projectId}/members`, {
+  const response = await api(page).post(`/api/v1/projects/${projectId}/members`, {
     headers: await csrfHeaders(page),
     data: { email, role },
   });
@@ -48,7 +49,7 @@ export async function addMemberViaApi(
 
 /** Deletes a project the test created; a project that is already gone is fine. */
 export async function deleteProjectViaApi(page: Page, projectId: string): Promise<void> {
-  const response = await page.request.delete(`/api/v1/projects/${projectId}`, {
+  const response = await api(page).delete(`/api/v1/projects/${projectId}`, {
     headers: await csrfHeaders(page),
   });
   expect([204, 404]).toContain(response.status());
@@ -59,7 +60,7 @@ export async function findProjectIdViaApi(page: Page, name: string): Promise<str
   let cursor: string | null = null;
   do {
     const next = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
-    const response = await page.request.get(`/api/v1/projects?limit=200${next}`);
+    const response = await api(page).get(`/api/v1/projects?limit=200${next}`);
     expect(response.status()).toBe(200);
     const body = (await response.json()) as {
       items: { id: string; name: string }[];

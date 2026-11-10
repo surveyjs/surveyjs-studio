@@ -25,7 +25,7 @@ kept in step with the real server?
 | D6  | A local directory          | `/config` answers `shell: "self-hosted"`, `features: {embed: false, apiDocs: false, apiTokens: false}` and `authMethods: ["password"]`, so no code path offers a surveyjs.io redirect. `/me` has `hasPassword: false` and no `instanceRole`. `addMember` with an unknown email makes a pending member                                       |
 | D7  | What answers 501           | `login`, `loginCallback`, `passwordLogin`, `setPasswordWithLink`, `changeOwnPassword`, the seven `/admin/users` operations, `exportResults`, `receiveAccountDeleted`, and a catch-all for any other `/api/v1/*` request. A unit test fails when the contract gains an operation that is neither handled nor listed                          |
 | D8  | A generated seed           | `pnpm sandbox:seed` writes `web/src/sandbox/seed.json` from `legacyFixtureSeed()` and `withSeedInvitation`, restricted by the tag file `server/fixtures/sandbox.json`. A unit test regenerates it in memory and fails when the file is stale or larger than `seedBudgetKb`                                                                  |
-| D9  | `@sandbox` tests, for now  | The existing user-story specs create data through `page.request`, which bypasses a page's service worker. So `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI only. Running the existing specs on the sandbox build is a follow-up                                                                              |
+| D9  | `@sandbox` and the stories | `e2e/tests/sandbox.spec.ts` covers the plan's sandbox stories through the UI. Since 2026-11-10 the user-story specs run on the sandbox build too (`pnpm e2e:sandbox:stories`): `page.request` bypasses the page's service worker, so their set-up runs `fetch` in the page. What cannot apply skips itself with its reason                  |
 | D10 | Pages closing mid-request  | MSW answers from the page, so a `keepalive` request sent while a page closes (saving a results view on `pagehide`) may be lost. Documented, not fixed                                                                                                                                                                                       |
 
 Settings live in `web/sandbox-public/sandbox.config.json`, served next to `index.html` and read at start-up. A missing
@@ -69,7 +69,8 @@ Details that follow:
   and a way to keep visitors apart, and the data would not stay in the visitor's browser. The sandbox is a static
   site.
 - **Tagging the existing e2e specs `@sandbox` now.** They build their data through `page.request`, which skips the
-  worker (D9). Doing it needs a UI-only way to create that data. That is a follow-up.
+  worker (D9). Doing it needed another way to create that data. Done on 2026-11-10 with a `fetch` in the page
+  rather than through the UI ([Testing](../testing.md#the-user-stories-on-the-sandbox-build)).
 
 ## Consequences
 

@@ -1,4 +1,5 @@
 import { accountTrigger, expectSignInPage, signInAt, users } from "./support/sign-in.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test } from "./support/test.js";
 
 test("an anonymous visit to a private page goes to sign-in, not an error page", async ({
@@ -23,6 +24,7 @@ test("a deep link survives sign-in", async ({ page }) => {
 });
 
 test("Sign Out ends the session and the next visit asks to sign in again", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.shell);
   await signInAt(page);
   await accountTrigger(page).hover();
   const signOut = page.locator("header.v2-class---top-bar").first().getByRole("button", {
@@ -40,6 +42,7 @@ test("Sign Out after the session expired still ends the provider's session", asy
   page,
   context,
 }) => {
+  test.skip(sandboxMode, notOnSandbox.shell);
   await signInAt(page);
   // The browser drops msid and msid_csrf when they expire; the header still shows the user.
   await context.clearCookies();

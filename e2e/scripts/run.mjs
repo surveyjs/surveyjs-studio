@@ -24,7 +24,7 @@ try {
 // The mode's config sets E2E_MODE only once Playwright loads it, so the config name counts too.
 const sandbox =
   env["E2E_MODE"] === "sandbox" ||
-  process.argv.slice(2).some((a) => /playwright\.sandbox\.config/.test(a));
+  process.argv.slice(2).some((a) => /playwright\.sandbox(-stories)?\.config/.test(a));
 // E2E_SANDBOX_URL names a running host of the sandbox build: nothing is built or started.
 const externalSandbox = sandbox && !!env["E2E_SANDBOX_URL"];
 // Playwright never reuses a server: a taken port stops the run here, before the build.

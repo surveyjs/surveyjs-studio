@@ -16,13 +16,14 @@ import {
   uniqueSurveyName,
   withCleanup,
 } from "./support/editor.js";
-import { signInAt } from "./support/sign-in.js";
+import { secondBrowser, signInAt } from "./support/sign-in.js";
 import {
   answerNextConfirm,
   createSurveyViaApi,
   getSurveyViaApi,
   surveyRow,
 } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test, watchConsole } from "./support/test.js";
 
 // The editor page (US 16, 27-30, 33-36). Runs in memory mode on three browsers and in Azurite mode
@@ -172,9 +173,9 @@ test.describe("two editors on one survey", () => {
     browser,
     browserName,
   }) => {
-    // First editor: its own context, signed in as the admin too.
-    const firstContext = await browser.newContext();
-    const first = await firstContext.newPage();
+    // First editor: its own browser (on the sandbox, a tab), signed in as the admin too.
+    const firstBrowser = await secondBrowser(page, browser);
+    const first = firstBrowser.page;
     const checkFirstConsole = watchConsole(first);
     await answerCookieBanner(first);
     await signInAt(first, "/", "admin");
@@ -211,7 +212,7 @@ test.describe("two editors on one survey", () => {
       });
       checkFirstConsole();
     } finally {
-      await firstContext.close();
+      await firstBrowser.close();
     }
   });
 });
@@ -304,6 +305,7 @@ test("the Embed Survey tab can load the survey from this service", async ({
   browserName,
   baseURL,
 }) => {
+  test.skip(sandboxMode, notOnSandbox.design("the Embed Survey tab is off (D6)"));
   await signInAt(page, "/", "admin");
   const survey = await createSurveyViaApi(page, uniqueSurveyName("Editor", browserName));
   await withCleanup(page, [survey.id], async () => {

@@ -199,9 +199,10 @@ deployment should have it reviewed (see [Architecture](../architecture.md#open-f
 
 | What you see                                                    | What to do                                                                |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| "The sign-in expired or was not started in this browser"        | Open the page you want again, and sign in again. Do not use an old link.  |
+| "The sign-in took too long, or it started in another browser"   | Open the page you want again, and sign in again. Do not use an old link.  |
 | "Too many sign-in attempts"                                     | Wait a minute, then try again.                                            |
-| "Sign-in is unavailable"                                        | The sign-in service did not answer. Try again later.                      |
+| "… could not be reached. Try again in a few minutes"            | The sign-in service did not answer. Try again later.                      |
+| "The sign-in … could not be completed"                          | Sign in again. If it happens again, ask your admin.                       |
 | You are sent to sign in again after a while                     | The 12 hours are over. Sign in again.                                     |
 | You signed in and still land on the sign-in page                | The browser blocks cookies for this site. Allow them, and try again.      |
 | "The email or the password is wrong."                           | Check both, and the keyboard layout. The password is case-sensitive.      |
