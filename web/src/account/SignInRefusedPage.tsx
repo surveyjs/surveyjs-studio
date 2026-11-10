@@ -22,6 +22,12 @@ function refusalText(reason: string | undefined, provider: string | undefined): 
   }
   if (reason === "read-only")
     return "This instance is read-only for maintenance, so first sign-ins are paused. Try again later.";
+  if (reason === "expired")
+    return "The sign-in took too long, or it started in another browser. Sign in again.";
+  if (reason === "failed") {
+    const at = name === undefined ? "" : ` with ${name}`;
+    return `The sign-in${at} could not be completed. Sign in again, or choose another way.`;
+  }
   return NOT_INVITED;
 }
 

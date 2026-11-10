@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Page, Request } from "@playwright/test";
+import { api } from "./support/api.js";
 import { putDefinitionViaApi, uniqueSurveyName, withCleanup } from "./support/editor.js";
 import {
   CHART_DEFINITION,
@@ -19,6 +20,7 @@ import {
 import { FILE_DEFINITION, publishViaApi, routeBrandImage } from "./support/run.js";
 import { signInAt } from "./support/sign-in.js";
 import { answerNextConfirm, createSurveyViaApi } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test, watchConsole } from "./support/test.js";
 import { chooseFile, paddedPng } from "./support/uploads.js";
 
@@ -88,6 +90,7 @@ function isSettingsSaved(
 }
 
 test("the Details tab shows the total and the first and last response times", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
   await signInAt(page, `/surveys/${LARGE_SURVEY}/results?tab=details`);
   await expect(statLine(page, "Total responses:")).toHaveText("1500");
   // Locale formats differ by engine, so the expected text is formatted in the browser.
@@ -112,6 +115,7 @@ test("an empty survey shows no times and no Delete Results", async ({ page, brow
 });
 
 test("all results download as JSON and as CSV", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
   const writes = recordViewWrites(page);
   await signInAt(page, `/surveys/${LARGE_SURVEY}/results?tab=details`);
   await expect(statLine(page, "Total responses:")).toHaveText("1500");
@@ -138,6 +142,7 @@ test("Grant Access opens the results to signed-out visitors and Disable Access c
   browser,
   browserName,
 }) => {
+  test.skip(sandboxMode, notOnSandbox.oneBrowser);
   const survey = await adminSurvey(page, "Public results", browserName, CHART_DEFINITION);
   await withCleanup(page, [survey.id], async () => {
     for (const data of RESPONSES) await submitViaApi(page, survey.id, data);
@@ -206,6 +211,7 @@ test("Grant Access opens the results to signed-out visitors and Disable Access c
 });
 
 test("saving the respondent IP adds the IPAddress column", async ({ page, browserName }) => {
+  test.skip(sandboxMode, notOnSandbox.design("it captures no respondent IP"));
   const survey = await adminSurvey(page, "IP capture", browserName, CHART_DEFINITION);
   await withCleanup(page, [survey.id], async () => {
     await page.goto(`/surveys/${survey.id}/results?tab=details`);
@@ -249,7 +255,7 @@ test("Delete Results removes the responses and their file links", async ({ page,
     await expect(link).toHaveCount(1, { timeout: 30_000 });
     const href = (await link.getAttribute("href")) ?? "";
     expect(href).not.toBe("");
-    expect((await page.request.get(href)).status()).toBe(200);
+    expect((await api(page).get(href)).status()).toBe(200);
 
     await openResultsTab(page, "Details");
     await expect(statLine(page, "Total responses:")).toHaveText("1");
@@ -267,6 +273,6 @@ test("Delete Results removes the responses and their file links", async ({ page,
 
     await openResultsTab(page, "Table");
     await expect(page.locator(".tabulator-row")).toHaveCount(0);
-    expect((await page.request.get(href)).status()).toBe(404);
+    expect((await api(page).get(href)).status()).toBe(404);
   });
 });

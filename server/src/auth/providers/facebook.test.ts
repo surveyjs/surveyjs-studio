@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startOAuthStub, type OAuthStub } from "../../testing/oauth-stub.js";
 import { FACEBOOK_GRAPH_VERSION, facebookEndpoints, googleIssuer } from "./endpoints.js";
 import { createFacebookIdentityProvider } from "./facebook.js";
@@ -13,9 +13,24 @@ import {
 
 let stub: OAuthStub | undefined;
 afterEach(async () => {
+  vi.restoreAllMocks();
   await stub?.close();
   stub = undefined;
 });
+
+/** Records the status and body of each answer to the code exchange from now on. */
+function tokenAnswers(): { status: number; body: unknown }[] {
+  const answers: { status: number; body: unknown }[] = [];
+  const real = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const response = await real(input, init);
+    if (new URL(String(input)).pathname.endsWith("/oauth/access_token")) {
+      answers.push({ status: response.status, body: await response.clone().json() });
+    }
+    return response;
+  });
+  return answers;
+}
 
 async function provider(secret = "stub-secret-facebook") {
   stub ??= await startOAuthStub();
@@ -75,14 +90,18 @@ describe("Facebook identity provider", () => {
     expect(claims.emailVerified).toBe(false);
   });
 
-  it("answers 400 for a bad code and for a denied sign-in", async () => {
+  it("answers 400 for a bad code (Graph error code 100) and for a denied sign-in", async () => {
     const facebook = await provider();
     const callback = await authorizeAtStub(facebook);
     callback.searchParams.set("code", "not-a-code");
+    const answers = tokenAnswers();
     await expect(facebook.finishSignIn(callback, transaction)).rejects.toMatchObject({
       status: 400,
       title: "Sign-in failed",
     });
+    expect(answers).toMatchObject([
+      { status: 400, body: { error: { type: "OAuthException", code: 100 } } },
+    ]);
     const denied = new URL(`${CALLBACK_URL}?error=access_denied&state=state-1`);
     await expect(facebook.finishSignIn(denied, transaction)).rejects.toMatchObject({ status: 400 });
   });
@@ -99,11 +118,13 @@ describe("Facebook identity provider", () => {
     expect(logged).not.toContain(callback.searchParams.get("code"));
   });
 
-  it("answers 500 when the client secret is rejected", async () => {
+  it("answers 500 when the client secret is rejected (a Graph error of another code)", async () => {
     const facebook = await provider("wrong-secret");
     const callback = await authorizeAtStub(facebook);
+    const answers = tokenAnswers();
     await expect(facebook.finishSignIn(callback, transaction)).rejects.toMatchObject({
       status: 500,
     });
+    expect(answers).toMatchObject([{ status: 400, body: { error: { code: 1 } } }]);
   });
 });

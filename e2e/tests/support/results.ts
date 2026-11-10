@@ -1,4 +1,5 @@
 import type { Locator, Page, Request, Response } from "@playwright/test";
+import { api } from "./api.js";
 import { expect, type ExpectedErrorResponse } from "./test.js";
 
 /** "API created": Olivia's survey with 1,500 generated responses. Read only. */
@@ -35,7 +36,7 @@ export async function submitViaApi(
   surveyId: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  const response = await page.request.post(`/api/v1/public/surveys/${surveyId}/responses`, {
+  const response = await api(page).post(`/api/v1/public/surveys/${surveyId}/responses`, {
     data: { data },
   });
   expect(response.status()).toBe(201);

@@ -25,7 +25,7 @@ try {
 // The mode's config sets E2E_MODE only once Playwright loads it, so the config name counts too.
 const sandbox =
   env["E2E_MODE"] === "sandbox" ||
-  process.argv.slice(2).some((a) => /playwright\.sandbox(-subpath)?\.config/.test(a));
+  process.argv.slice(2).some((a) => /playwright\.sandbox(-subpath|-stories)?\.config/.test(a));
 // `pnpm e2e:sandbox:subpath`: the build is for the sub-path its config serves (SANDBOX_BASE).
 if (usesSandboxSubpathConfig(process.argv.slice(2))) env["SANDBOX_BASE"] = SANDBOX_SUBPATH;
 // E2E_SANDBOX_URL names a running host of the sandbox build: nothing is built or started.

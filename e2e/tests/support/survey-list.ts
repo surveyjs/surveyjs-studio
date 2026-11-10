@@ -1,4 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
+import { api } from "./api.js";
+import { sandboxMode } from "./sandbox.js";
 import { expect } from "./test.js";
 
 /** The rows of the My Surveys list, in display order. */
@@ -133,8 +135,12 @@ export interface ApiSurvey {
   readonly archived: boolean;
 }
 
-/** The CSRF header the API wants on writes, from the signed-in context's cookie. */
+/**
+ * The CSRF header the API wants on writes, from the signed-in context's cookie. The sandbox has
+ * no CSRF token (ADR 0030, D3), so none.
+ */
 export async function csrfHeaders(page: Page): Promise<Record<string, string>> {
+  if (sandboxMode) return {};
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "msid_csrf");
   expect(csrf).toBeDefined();
   return { "X-CSRF-Token": decodeURIComponent(csrf?.value ?? "") };
@@ -146,7 +152,7 @@ export async function createSurveyViaApi(
   name: string,
   projectId: string | null = null,
 ): Promise<ApiSurvey> {
-  const response = await page.request.post("/api/v1/surveys", {
+  const response = await api(page).post("/api/v1/surveys", {
     headers: await csrfHeaders(page),
     data: { name, projectId },
   });
@@ -156,7 +162,7 @@ export async function createSurveyViaApi(
 
 /** The survey with this id, or null. */
 export async function getSurveyViaApi(page: Page, id: string): Promise<ApiSurvey | null> {
-  const response = await page.request.get(`/api/v1/surveys/${id}`);
+  const response = await api(page).get(`/api/v1/surveys/${id}`);
   return response.status() === 200 ? ((await response.json()) as ApiSurvey) : null;
 }
 
@@ -172,7 +178,7 @@ export async function findSurveysViaApi(
     let cursor: string | null = null;
     do {
       const next = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
-      const response = await page.request.get(
+      const response = await api(page).get(
         `/api/v1/surveys?project=${scope}&archived=${archived}&limit=200${next}`,
       );
       expect(response.status()).toBe(200);
@@ -187,9 +193,9 @@ export async function findSurveysViaApi(
 /** Archives and deletes a survey the test created; a survey that is already gone is fine. */
 export async function discardSurveyViaApi(page: Page, id: string): Promise<void> {
   const headers = await csrfHeaders(page);
-  await page.request.patch(`/api/v1/surveys/${id}`, {
+  await api(page).patch(`/api/v1/surveys/${id}`, {
     headers: { ...headers, "Content-Type": "application/merge-patch+json" },
     data: { archived: true },
   });
-  await page.request.delete(`/api/v1/surveys/${id}`, { headers });
+  await api(page).delete(`/api/v1/surveys/${id}`, { headers });
 }

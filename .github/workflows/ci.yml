@@ -414,6 +414,10 @@ jobs:
       - name: End-to-end tests (sandbox on a sub-path)
         run: pnpm e2e:sandbox:subpath
 
+      # The user-story specs on the same build; their API set-up runs in the page, so the mock answers it.
+      - name: End-to-end tests (user stories on the sandbox)
+        run: pnpm e2e:sandbox:stories
+
       - if: failure()
         uses: ./.github/actions/failure-artifacts
         with:

@@ -51,6 +51,15 @@ describe("Google as an OpenID provider", () => {
     expect(unverified.emailVerified).toBe(false);
   });
 
+  it("reads an email without the email_verified claim as unverified", async () => {
+    const provider = await google();
+    const claims = await provider.finishSignIn(
+      await authorizeAtStub(provider, { verified: "omitted" }),
+      transaction,
+    );
+    expect(claims).toMatchObject({ sub: "u-42", email: "ada@example.com", emailVerified: false });
+  });
+
   it("answers 400 when the nonce does not match the transaction", async () => {
     const provider = await google();
     const callback = await authorizeAtStub(provider);

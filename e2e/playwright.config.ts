@@ -46,7 +46,8 @@ stripAppVariables(process.env);
 // - sandbox (E2E_MODE=sandbox, `pnpm e2e:sandbox`): the sandbox build of the web app (its in-browser
 //   mock back-end on localStorage) behind `vite preview --mode sandbox`; no API server; the sandbox
 //   spec, on Chromium. `pnpm e2e:sandbox:subpath` (playwright.sandbox-subpath.config.ts) runs it on
-//   a build for a sub-path.
+//   a build for a sub-path. With E2E_SANDBOX_STORIES=1 (`pnpm e2e:sandbox:stories`): the user-story
+//   specs in its place.
 const azurite = process.env["E2E_MODE"] === "azurite";
 const sqlite = process.env["E2E_MODE"] === "sqlite";
 const postgres = process.env["E2E_MODE"] === "postgres";
@@ -68,6 +69,10 @@ if (sandbox) process.env["SANDBOX_BASE"] = sandboxBase;
 const sandboxOrigin = sandboxUrl
   ? new URL(sandboxUrl).origin
   : `http://localhost:${ports.sandboxWeb}`;
+// E2E_SANDBOX_STORIES (sandbox mode; `pnpm e2e:sandbox:stories`): the user-story specs on the
+// sandbox build, in place of the sandbox spec. Their API set-up runs in the page
+// (tests/support/api.ts); what cannot apply to the sandbox skips itself with the reason.
+const sandboxStories = sandbox && process.env["E2E_SANDBOX_STORIES"] === "1";
 
 // Two targets: the source (default; tsx server and `vite preview`) or the production image
 // (E2E_TARGET=image, CI only: see e2e/image-target.mjs and the webServers below). The image target
@@ -389,6 +394,32 @@ const allButNotices = [
   "sandbox-host.spec.ts",
 ];
 
+// Sandbox mode's projects: the sandbox spec (and the host spec against a URL), or the user stories.
+function sandboxProjects(): PlaywrightTestConfig["projects"] {
+  if (sandboxStories) {
+    // Every user-story spec; the other modes' own specs are left out.
+    return [
+      {
+        name: "sandbox-stories-chromium",
+        testIgnore: [
+          "password.spec.ts",
+          "self-hosted.spec.ts",
+          "oauth.spec.ts",
+          "sandbox.spec.ts",
+          "sandbox-host.spec.ts",
+        ],
+        use: chromium,
+      },
+    ];
+  }
+  return [
+    { name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium },
+    ...(sandboxUrl
+      ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
+      : []),
+  ];
+}
+
 export default defineConfig({
   testDir: "tests",
   fullyParallel: true,
@@ -404,12 +435,7 @@ export default defineConfig({
     timezoneId: "UTC",
   },
   projects: sandbox
-    ? [
-        { name: "sandbox-chromium", testMatch: ["sandbox.spec.ts"], use: chromium },
-        ...(sandboxUrl
-          ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
-          : []),
-      ]
+    ? sandboxProjects()
     : oauth
       ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
       : selfHosted

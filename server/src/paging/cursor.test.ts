@@ -304,6 +304,23 @@ describe("members cursors", () => {
     expect(decodeMembersCursor(encodeMembersCursor(named, MARKETING), MARKETING)).toEqual(named);
   });
 
+  it("round-trip a pending member's position: the email, lower-cased", () => {
+    const cursor = encodeMembersCursor({ email: "Amy@Example.test" }, MARKETING);
+    expect(cursor).toBe(raw({ v: 1, k: "members", p: MARKETING, e: "amy@example.test" }));
+    expect(decodeMembersCursor(cursor, MARKETING)).toEqual({ email: "amy@example.test" });
+  });
+
+  it("read a pending cursor of the old form (the highest code point, the zero id) as pending", () => {
+    const old = raw({
+      v: 1,
+      k: "members",
+      p: MARKETING,
+      n: `${String.fromCodePoint(0x10ffff)}amy@example.test`,
+      i: "00000000-0000-0000-0000-000000000000",
+    });
+    expect(decodeMembersCursor(old, MARKETING)).toEqual({ email: "amy@example.test" });
+  });
+
   it.each([
     ["another project's cursor", encodeMembersCursor(member, ENGINEERING)],
     ["a project cursor", encodeProjectCursor({ name: "marketing", id: MARKETING })],
@@ -322,6 +339,10 @@ describe("members cursors", () => {
     ["padding", `${raw({ ...membersPayload, n: "ab" })}=`],
     ["non-canonical trailing bits", nonCanonical(membersPayload)],
     ["a value over 1024 characters", raw({ ...membersPayload, n: "n".repeat(1024) })],
+    ["an empty email", raw({ v: 1, k: "members", p: MARKETING, e: "" })],
+    ["an email that is not a string", raw({ v: 1, k: "members", p: MARKETING, e: 5 })],
+    ["an email that is not lower-case", raw({ v: 1, k: "members", p: MARKETING, e: "A@x.test" })],
+    ["an email and a name", raw({ ...membersPayload, e: "a@x.test" })],
   ])("reject %s", (_name, cursor) => {
     expectInvalid(() => decodeMembersCursor(cursor, MARKETING));
   });

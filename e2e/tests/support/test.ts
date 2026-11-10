@@ -31,6 +31,19 @@ const ME_401: ExpectedErrorResponse = { path: "/api/v1/me", status: 401 };
 const pathMatches = (item: ExpectedErrorResponse, path: string) =>
   typeof item.path === "string" ? item.path === path : item.path.test(path);
 
+/** Error answers the tests' own requests got, per page (see `expectErrorResponse`). */
+const requestedErrors = new WeakMap<Page, ExpectedErrorResponse[]>();
+
+/**
+ * Expects one more error answer on the page: a test's own request sent from the page (the
+ * sandbox's `api(page)`), which the browser logs as the app's requests.
+ */
+export function expectErrorResponse(page: Page, item: ExpectedErrorResponse): void {
+  const list = requestedErrors.get(page) ?? [];
+  list.push(item);
+  requestedErrors.set(page, list);
+}
+
 /**
  * Watches one page's console and page errors, as the shared `test` does for `page`; the returned
  * function checks what was seen so far. For a second page a test opens itself (another browser
@@ -42,16 +55,11 @@ export function watchConsole(
   expectedErrorResponses: readonly ExpectedErrorResponse[] = [],
   { allowCspViolations = false }: { readonly allowCspViolations?: boolean } = {},
 ): () => void {
-  const expected = [ME_401, ...expectedErrorResponses];
   const consoleErrors: ConsoleError[] = [];
   const pageErrors: string[] = [];
-  const observed = new Map<ExpectedErrorResponse, number>();
+  const responses: { path: string; status: number }[] = [];
   page.on("response", (response) => {
-    const path = appPathOf(response.url());
-    const match = expected.find(
-      (item) => pathMatches(item, path) && item.status === response.status(),
-    );
-    if (match) observed.set(match, (observed.get(match) ?? 0) + 1);
+    responses.push({ path: appPathOf(response.url()), status: response.status() });
   });
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -61,6 +69,12 @@ export function watchConsole(
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   return () => {
+    const expected = [ME_401, ...expectedErrorResponses, ...(requestedErrors.get(page) ?? [])];
+    const observed = new Map<ExpectedErrorResponse, number>();
+    for (const { path, status } of responses) {
+      const match = expected.find((item) => pathMatches(item, path) && item.status === status);
+      if (match) observed.set(match, (observed.get(match) ?? 0) + 1);
+    }
     const matchOf = (error: ConsoleError) =>
       expected.find(
         (item) =>
