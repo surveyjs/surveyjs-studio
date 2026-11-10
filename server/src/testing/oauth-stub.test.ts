@@ -21,37 +21,67 @@ async function start(): Promise<string> {
   return stub.url;
 }
 
+/** A token answer: its status and (part of) its JSON body. */
+interface Answer {
+  readonly status: number;
+  readonly body: Json;
+}
+
 interface Flow {
   readonly provider: string;
   readonly title: string;
   readonly authorizePath: string;
   readonly tokenPath: string;
+  /** The provider's answer to a bad, reused or expired code. */
+  readonly badCode: Answer;
+  /** The provider's answer to a wrong client secret. */
+  readonly badClient: Answer;
 }
+
+/** The OAuth 2.0 answers (RFC 6749 section 5.2) of Google and surveyjs.io. */
+const oauth2 = {
+  badCode: { status: 400, body: { error: "invalid_grant" } },
+  badClient: { status: 401, body: { error: "invalid_client" } },
+};
 
 const google: Flow = {
   provider: "google",
   title: "Google",
   authorizePath: "/google/authorize",
   tokenPath: "/google/token",
+  ...oauth2,
 };
 const surveyjs: Flow = {
   provider: "surveyjs",
   title: "surveyjs.io",
   authorizePath: "/surveyjs/authorize",
   tokenPath: "/surveyjs/token",
+  ...oauth2,
 };
+/** GitHub answers 200 with an `error` field. */
 const github: Flow = {
   provider: "github",
   title: "GitHub",
   authorizePath: "/github/login/oauth/authorize",
   tokenPath: "/github/login/oauth/access_token",
+  badCode: { status: 200, body: { error: "bad_verification_code" } },
+  badClient: { status: 200, body: { error: "incorrect_client_credentials" } },
 };
+/** Facebook answers with a Graph API error object. */
 const facebook: Flow = {
   provider: "facebook",
   title: "Facebook",
   authorizePath: "/facebook/dialog/oauth",
   tokenPath: "/facebook-graph/oauth/access_token",
+  badCode: { status: 400, body: { error: { type: "OAuthException", code: 100 } } },
+  badClient: { status: 400, body: { error: { type: "OAuthException", code: 1 } } },
 };
+
+/** The response is `answer`. */
+async function expectAnswer(response: Response, answer: Answer): Promise<void> {
+  expect(response.status).toBe(answer.status);
+  expect((await response.json()) as Json).toMatchObject(answer.body);
+}
 
 const identity = { sub: "u-42", email: "ada@example.com", name: "Ada Lovelace" };
 
@@ -124,6 +154,7 @@ describe.each([google, surveyjs, github, facebook])("$provider: sign-in flow", (
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).toMatch(/name="email_verified"[^>]*checked/);
+    expect(html).toMatch(/type="checkbox" name="omit_email_verified">/);
   });
 
   it("gives a code with the state, exchanges it once, and refuses a reuse", async () => {
@@ -138,9 +169,7 @@ describe.each([google, surveyjs, github, facebook])("$provider: sign-in flow", (
     expect(token.status).toBe(200);
     expect((await token.json()) as Json).toMatchObject({ access_token: expect.any(String) });
 
-    const again = await exchange(base, flow, code);
-    expect(again.status).toBe(400);
-    expect((await again.json()) as Json).toMatchObject({ error: "invalid_grant" });
+    await expectAnswer(await exchange(base, flow, code), flow.badCode);
   });
 
   it("refuses a wrong PKCE verifier and a wrong client secret", async () => {
@@ -148,14 +177,12 @@ describe.each([google, surveyjs, github, facebook])("$provider: sign-in flow", (
     const bad = await exchange(base, flow, await codeOf(base, flow), {
       code_verifier: "w".repeat(48),
     });
-    expect(bad.status).toBe(400);
-    expect((await bad.json()) as Json).toMatchObject({ error: "invalid_grant" });
+    await expectAnswer(bad, flow.badCode);
 
     const wrongSecret = await exchange(base, flow, await codeOf(base, flow), {
       client_secret: "nope",
     });
-    expect(wrongSecret.status).toBe(401);
-    expect((await wrongSecret.json()) as Json).toMatchObject({ error: "invalid_client" });
+    await expectAnswer(wrongSecret, flow.badClient);
   });
 
   it("refuses another redirect_uri and another client id", async () => {
@@ -163,9 +190,9 @@ describe.each([google, surveyjs, github, facebook])("$provider: sign-in flow", (
     const other = await exchange(base, flow, await codeOf(base, flow), {
       redirect_uri: "http://x/y",
     });
-    expect(other.status).toBe(400);
+    await expectAnswer(other, flow.badCode);
     const client = await exchange(base, flow, await codeOf(base, flow), { client_id: "other" });
-    expect(client.status).toBe(400);
+    await expectAnswer(client, flow.badCode);
   });
 
   it("redirects with access_denied when the deny button is used", async () => {
@@ -180,7 +207,7 @@ describe.each([google, surveyjs, github, facebook])("$provider: sign-in flow", (
     const base = await start();
     const code = await codeOf(base, flow);
     vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
-    expect((await exchange(base, flow, code)).status).toBe(400);
+    await expectAnswer(await exchange(base, flow, code), flow.badCode);
   });
 });
 
@@ -246,6 +273,26 @@ describe("Google", () => {
   it("refuses a userinfo call without a valid bearer token", async () => {
     const base = await start();
     expect((await fetch(`${base}/google/userinfo`)).status).toBe(401);
+  });
+
+  it("leaves email_verified out of the ID token and UserInfo when the form says so", async () => {
+    const base = await start();
+    const target = await authorize(base, google, {}, { ...identity, omit_email_verified: "on" });
+    const token = (await (
+      await exchange(base, google, target.searchParams.get("code")!)
+    ).json()) as Json;
+    const payload = (token.id_token as string).split(".")[1] ?? "";
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
+    expect(claims).toMatchObject({ sub: "u-42", email: "ada@example.com" });
+    expect(claims).not.toHaveProperty("email_verified");
+    const info = await fetch(`${base}/google/userinfo`, {
+      headers: { authorization: `Bearer ${token.access_token}` },
+    });
+    expect((await info.json()) as Json).toEqual({
+      sub: "u-42",
+      email: "ada@example.com",
+      name: "Ada Lovelace",
+    });
   });
 });
 

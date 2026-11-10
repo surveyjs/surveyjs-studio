@@ -137,8 +137,20 @@ paths:
         A sign-in started by `login?provider=<method>` also goes to that page when it
         fails at the callback: `cancelled` when the provider sends `error=access_denied`
         (the person said no), `unavailable` when the provider cannot be reached or
-        answers unexpectedly. A sign-in started without `provider` (surveyjs.io alone,
-        the dev sign-in) answers these as problems: `400`, `500` and `503 read-only`.
+        answers unexpectedly.
+
+        A browser (a request whose `Accept` names `text/html`) goes to that page for
+        every failure, whether or not the sign-in was started with `provider`. Besides
+        the reasons above: `expired` when the browser has no valid transaction for the
+        `state`, `failed` for a bad or reused code, another provider `error` or a server
+        fault, `unavailable` also for a provider's `server_error` or
+        `temporarily_unavailable`, `disabled` for a blocked account and
+        `email-unverified` for an identity without an email. `provider` is the method
+        of the sign-in (`surveyjs` when it is the only method), or empty.
+
+        A client that does not ask for HTML gets the problem answers below for a
+        sign-in started without `provider` (surveyjs.io alone, the dev sign-in), and for
+        a bad code or another provider `error`: `400`, `403`, `500` and `503 read-only`.
       security: []
       parameters:
         - name: code

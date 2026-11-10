@@ -17,4 +17,6 @@ regexes = [
   '''bXktc3VydmV5cy1sb2NhbC1kZW1vLXdlYmhvb2sta2V5''',
   # The conformance reference webhook secret (base64 of "my-surveys-conformance-webhook-key").
   '''whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==''',
+  # The placeholder session secret of the tests (hex digits 0-f twice; docs/operations/going-public.md).
+  '''0123456789abcdef0123456789abcdef''',
 ]

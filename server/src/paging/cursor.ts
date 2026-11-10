@@ -9,7 +9,8 @@ import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../provi
  *   scope is `personal` or the lower-case project id. A cursor belongs to one list (scope and archived).
  * - Projects: `{"v":1,"k":"projects","n":<lower-cased name>,"i":<id>}`.
  * - Members: `{"v":1,"k":"members","p":<project id, lower-case>,"n":<lower-cased display name>,
- *   "i":<user id>}`. A cursor belongs to one project.
+ *   "i":<user id>}`, or `{"v":1,"k":"members","p":<project id>,"e":<invited email, lower-case>}`
+ *   for a pending member. A cursor belongs to one project.
  * - History: `{"v":1,"k":"history","u":<at>,"i":<entry id>}`.
  * - Results: `{"v":1,"k":"results","s":<survey id, lower-case>,"u":<submittedAt>,"i":<response id>}`.
  *   A cursor belongs to one survey.
@@ -32,12 +33,21 @@ export interface ProjectPosition {
   readonly id: string;
 }
 
-/** A place in the member list order (display name ignoring case, then user id). */
-export interface MemberPosition {
+/** A place among the members of the member list (display name ignoring case, then user id). */
+export interface ActiveMemberPosition {
   /** The display name, lower-cased. */
   readonly name: string;
   readonly id: string;
 }
+
+/** A place among the pending members, which come after every active one (by email). */
+export interface PendingMemberPosition {
+  /** The invited email, lower-case. */
+  readonly email: string;
+}
+
+/** A place in the member list order: the active members, then the pending ones. */
+export type MemberPosition = ActiveMemberPosition | PendingMemberPosition;
 
 const VERSION = 1;
 const MAX_CURSOR_LENGTH = 1024;
@@ -170,29 +180,49 @@ export function decodeUsersCursor(value: string): UserPosition {
   return canonical(value, position, encodeUsersCursor(position));
 }
 
-const membersPayload = (position: MemberPosition, projectId: string) => ({
-  v: VERSION,
-  k: "members",
-  p: projectId.toLowerCase(),
-  n: position.name.toLowerCase(),
-  i: position.id,
-});
+const membersPayload = (position: MemberPosition, projectId: string) =>
+  "email" in position
+    ? { v: VERSION, k: "members", p: projectId.toLowerCase(), e: position.email.toLowerCase() }
+    : {
+        v: VERSION,
+        k: "members",
+        p: projectId.toLowerCase(),
+        n: position.name.toLowerCase(),
+        i: position.id,
+      };
 
-/** The name is lower-cased, as the member list order compares it. */
+/** The name and the email are lower-cased, as the member list order compares them. */
 export function encodeMembersCursor(position: MemberPosition, projectId: string): string {
   return encode(membersPayload(position, projectId));
 }
+
+/**
+ * Before the pending position had its own field, it was this name (the highest code point and the
+ * email) with the zero id. A cursor given out then still reads as that pending position.
+ */
+const OLD_PENDING_NAME = String.fromCodePoint(0x10ffff);
+const OLD_PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
  * The position of a members cursor of `projectId`. Throws `400 bad-request` ("Invalid cursor.") for
  * anything else, including a cursor of another project.
  */
 export function decodeMembersCursor(value: string, projectId: string): MemberPosition {
-  const { v, k, p, n, i } = decode(value);
+  const { v, k, p, n, i, e } = decode(value);
   if (v !== VERSION || k !== "members" || p !== projectId.toLowerCase()) throw invalidCursor();
+  if (e !== undefined) {
+    if (typeof e !== "string" || e === "") throw invalidCursor();
+    const pending = { email: e.toLowerCase() };
+    return canonical(value, pending, encodeMembersCursor(pending, projectId));
+  }
   if (typeof n !== "string" || !isId(i)) throw invalidCursor();
   const position = { name: n.toLowerCase(), id: i.toLowerCase() };
-  return canonical(value, position, encodeMembersCursor(position, projectId));
+  canonical(value, position, encodeMembersCursor(position, projectId));
+  if (position.id === OLD_PENDING_ID && position.name.startsWith(OLD_PENDING_NAME)) {
+    const email = position.name.slice(OLD_PENDING_NAME.length);
+    if (email !== "") return { email };
+  }
+  return position;
 }
 
 const historyPayload = (position: HistoryPosition) => ({
