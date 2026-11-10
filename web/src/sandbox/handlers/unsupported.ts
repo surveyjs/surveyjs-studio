@@ -34,6 +34,18 @@ const UNSUPPORTED: readonly Unsupported[] = [
     before: "session",
   },
   {
+    id: "listUserIdentities",
+    method: "get",
+    path: "/admin/users/:userId/identities",
+    before: "session",
+  },
+  {
+    id: "unlinkUserIdentity",
+    method: "delete",
+    path: "/admin/users/:userId/identities/:provider/:subject",
+    before: "session",
+  },
+  {
     id: "exportResults",
     method: "get",
     path: "/surveys/:surveyId/results/export",

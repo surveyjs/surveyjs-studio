@@ -1,10 +1,16 @@
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { EraseAccount } from "../accounts/erasure.js";
 import { buildApp } from "../app.js";
+import type { RequestUser } from "../auth/authenticate.js";
 import { CSRF_COOKIE, SESSION_COOKIE } from "../auth/cookies.js";
+import { createSessionCheck } from "../auth/session-check.js";
 import { loadConfig } from "../config.js";
 import { createProviders } from "../providers/index.js";
+import { createMemoryLocalAccounts } from "../providers/memory-accounts.js";
 import { PROJECT_A_ID } from "../providers/suite/expected.js";
+import type { LocalAccountStore } from "../providers/types.js";
+import { createAdminService } from "./service.js";
 
 const ADMIN_EMAIL = "first-admin@example.com";
 const ADMIN_PASSWORD = "first admin password";
@@ -54,7 +60,8 @@ describe("the instance admin's user management", () => {
       ADMIN_EMAIL,
       ADMIN_PASSWORD,
     });
-    const app = await buildApp(config, await createProviders(config), { now: () => now });
+    const providers = await createProviders(config);
+    const app = await buildApp(config, providers, { now: () => now });
     apps.push(app);
     const login = (email: string, password: string) =>
       app.inject({
@@ -105,6 +112,7 @@ describe("the instance admin's user management", () => {
     };
     return {
       app,
+      accounts: providers.accounts!,
       admin,
       login,
       as,
@@ -133,6 +141,8 @@ describe("the instance admin's user management", () => {
       displayName: "Nina",
       instanceRole: "user",
       status: "invited",
+      hasPassword: false,
+      pendingLink: { purpose: "invitation", expiresAt: "2026-11-05T10:00:00.000Z" },
       lastSignInAt: null,
       createdAt: "2026-10-29T10:00:00.000Z",
     });
@@ -243,6 +253,8 @@ describe("the instance admin's user management", () => {
       ["PATCH", `/admin/users/${target}`, { status: "disabled" }],
       ["DELETE", `/admin/users/${target}`, undefined],
       ["POST", `/admin/users/${target}/reset-link`, undefined],
+      ["GET", `/admin/users/${target}/identities`, undefined],
+      ["DELETE", `/admin/users/${target}/identities/github/1`, undefined],
     ] as const) {
       const refusedWrite = await as(session, method, url, payload);
       expect(refusedWrite.statusCode).toBe(403);
@@ -298,10 +310,20 @@ describe("the instance admin's user management", () => {
     ).toBe(200);
   });
 
-  it("resets a password: the session and the old password end, the new link works", async () => {
-    const { admin, as, login, setPassword, newUser } = await start();
+  it("resets a password: the session, the old password and the linked sign-ins end", async () => {
+    const { admin, as, accounts, login, setPassword, newUser } = await start();
     const { id, email, session } = await newUser("Rex");
+    await accounts.linkIdentity({
+      provider: "github",
+      subject: "rex-at-github",
+      userId: id,
+      email,
+      emailVerified: true,
+      createdAt: "2026-10-29T10:00:00.000Z",
+    });
     const reset = await as(admin, "POST", `/admin/users/${id}/reset-link`);
+    expect(await accounts.accountByIdentity("github", "rex-at-github")).toBeNull();
+    expect((await as(admin, "GET", `/admin/users/${id}/identities`)).json()).toEqual({ items: [] });
     expect(reset.statusCode).toBe(201);
     const link = reset.json<{ url: string; expiresAt: string }>();
     expect(link.url).toMatch(/\/set-password\?token=[A-Za-z0-9_-]{22}$/);
@@ -329,6 +351,104 @@ describe("the instance admin's user management", () => {
     expect((await as(admin, "DELETE", `/admin/users/${id}`)).statusCode).toBe(404);
   });
 
+  it("refuses an admin's reset of their own password, which would end the session", async () => {
+    const { admin, as } = await start();
+    const me = (await as(admin, "GET", "/me")).json<{ id: string }>();
+    const refused = await as(admin, "POST", `/admin/users/${me.id.toUpperCase()}/reset-link`);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: "forbidden",
+      detail:
+        "You cannot reset your own password. Change it in your account, or ask another admin.",
+    });
+    expect((await as(admin, "GET", "/me")).statusCode).toBe(200);
+  });
+
+  it("shows whether a user has a password and a pending link: a reset user is not just active", async () => {
+    const { admin, as, login, newUser, advance } = await start();
+    const { id } = await newUser("Ria");
+    const ria = async (session = admin) =>
+      (await as(session, "GET", "/admin/users?limit=200"))
+        .json<{ items: { id: string }[] }>()
+        .items.find((user) => user.id === id);
+    expect(await ria()).toMatchObject({ status: "active", hasPassword: true, pendingLink: null });
+
+    const reset = await as(admin, "POST", `/admin/users/${id}/reset-link`);
+    const pending = {
+      status: "active",
+      hasPassword: false,
+      pendingLink: { purpose: "reset", expiresAt: reset.json<{ expiresAt: string }>().expiresAt },
+    };
+    expect(await ria()).toMatchObject(pending);
+    // The other answers that carry the user show it too.
+    const patched = await as(admin, "PATCH", `/admin/users/${id}`, { instanceRole: "user" });
+    expect(patched.json()).toMatchObject(pending);
+
+    advance(7 * DAY + 1);
+    // The admin's session has expired meanwhile: a new one.
+    const later = sessionOf(await login(ADMIN_EMAIL, "the admin's own password"));
+    expect(await ria(later)).toMatchObject({ hasPassword: false, pendingLink: null });
+  });
+
+  it("lists a user's linked sign-ins, and unlinks one: it no longer signs in, sessions end", async () => {
+    const { admin, as, accounts, newUser } = await start();
+    const { id, email, session } = await newUser("Lin");
+    const other = await newUser("Ola");
+    const linkedAt = "2026-10-30T08:00:00.000Z";
+    const link = (provider: "github" | "google", subject: string, userId = id) =>
+      accounts.linkIdentity({
+        provider,
+        subject,
+        userId,
+        email: provider === "github" ? email.toUpperCase() : null,
+        emailVerified: provider === "github",
+        createdAt: linkedAt,
+      });
+    // A subject with a slash and a space reaches the server URL-encoded.
+    const odd = "g/1 2";
+    await link("google", odd);
+    await link("github", "583231");
+    await link("github", "ola-at-github", other.id);
+
+    const listed = await as(admin, "GET", `/admin/users/${id}/identities`);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual({
+      items: [
+        { provider: "github", subject: "583231", email, linkedAt },
+        { provider: "google", subject: odd, email: null, linkedAt },
+      ],
+    });
+
+    const unlink = (userId: string, provider: string, subject: string) =>
+      as(
+        admin,
+        "DELETE",
+        `/admin/users/${userId}/identities/${provider}/${encodeURIComponent(subject)}`,
+      );
+    expect((await unlink(id, "google", odd)).statusCode).toBe(204);
+    expect(await accounts.accountByIdentity("google", odd)).toBeNull();
+    expect((await as(session, "GET", "/me")).statusCode).toBe(401);
+    expect(
+      (await as(admin, "GET", `/admin/users/${id}/identities`)).json<{ items: unknown[] }>().items,
+    ).toHaveLength(1);
+
+    // Gone already, another user's, an unknown user: 404, and nothing else changes.
+    for (const refused of [
+      await unlink(id, "google", odd),
+      await unlink(id, "github", "ola-at-github"),
+      await unlink(crypto.randomUUID(), "github", "583231"),
+    ]) {
+      expect(refused.statusCode).toBe(404);
+      expect(refused.json()).toMatchObject({ code: "not-found" });
+    }
+    expect((await accounts.accountByIdentity("github", "ola-at-github"))?.user.id).toBe(other.id);
+    expect((await as(other.session, "GET", "/me")).statusCode).toBe(200);
+    expect(
+      (await as(admin, "GET", `/admin/users/${crypto.randomUUID()}/identities`)).statusCode,
+    ).toBe(404);
+    expect((await unlink(id, "twitter", "1")).statusCode).toBe(400);
+  });
+
   it("lets an instance admin see and manage every project", async () => {
     const { admin, as, newUser } = await start();
     const mine = await as(admin, "GET", "/projects");
@@ -349,5 +469,100 @@ describe("the instance admin's user management", () => {
     const { session } = await newUser("Ned");
     expect((await as(session, "GET", "/projects?scope=all")).statusCode).toBe(403);
     expect((await as(session, "GET", `/projects/${PROJECT_A_ID}`)).statusCode).toBe(404);
+  });
+});
+
+describe("the admin service's writes", () => {
+  const instanceAdmin: RequestUser = {
+    id: "11111111-0000-4000-8000-a00000000007",
+    displayName: "Ivy",
+    email: "ivy@example.com",
+    avatarUrl: null,
+    instanceRole: "admin",
+  };
+
+  /** A service over memory accounts with two active admins and one user, Una. */
+  async function serviceWith(eraseAccount: EraseAccount, wrap = (a: LocalAccountStore) => a) {
+    const { accounts } = createMemoryLocalAccounts();
+    const make = (id: string, email: string, instanceRole: "admin" | "user") =>
+      accounts.createAccount({
+        id,
+        email,
+        displayName: email,
+        instanceRole,
+        status: "active",
+        passwordHash: "$argon2id$x",
+        mustChangePassword: false,
+        createdAt: "2026-10-29T10:00:00.000Z",
+      });
+    await make(instanceAdmin.id, instanceAdmin.email, "admin");
+    await make(crypto.randomUUID(), "second-admin@example.com", "admin");
+    const una = await make(crypto.randomUUID(), "una@example.com", "user");
+    const store = wrap(accounts);
+    const service = createAdminService({
+      publicBaseUrl: "https://studio.example.com",
+      accounts: store,
+      sessionCheck: createSessionCheck({ accounts: store }),
+      eraseAccount,
+    });
+    return { accounts, service, una };
+  }
+
+  const summary = (userId: string) => ({
+    userId,
+    surveysDeleted: 0,
+    projectsLeft: 0,
+    projectsDeleted: 0,
+    adminsPromoted: 0,
+  });
+
+  it("disables the account before it erases the user's data", async () => {
+    const seen: string[] = [];
+    const { accounts, service, una } = await serviceWith(async (userId) => {
+      seen.push((await accounts.account(userId))?.status ?? "gone");
+      return summary(userId);
+    });
+    await service.delete(instanceAdmin, una.user.id);
+    expect(seen).toEqual(["disabled"]);
+    expect(await accounts.account(una.user.id)).toBeNull();
+  });
+
+  it("leaves the account disabled, its sessions ended, when the erasure fails", async () => {
+    const { accounts, service, una } = await serviceWith(() =>
+      Promise.reject(new Error("the store is down")),
+    );
+    await expect(service.delete(instanceAdmin, una.user.id)).rejects.toThrow("the store is down");
+    expect(await accounts.account(una.user.id)).toMatchObject({
+      status: "disabled",
+      sessionEpoch: 1,
+    });
+  });
+
+  it("erases nothing of the last active admin", async () => {
+    const erase = vi.fn((userId: string) => Promise.resolve(summary(userId)));
+    const { accounts, service } = await serviceWith(erase);
+    const second = await accounts.accountByEmail("second-admin@example.com");
+    await accounts.updateAccount(second!.user.id, { status: "disabled" });
+    await expect(service.delete(instanceAdmin, instanceAdmin.id)).rejects.toMatchObject({
+      code: "last-instance-admin",
+    });
+    expect(erase).not.toHaveBeenCalled();
+    expect(await accounts.account(instanceAdmin.id)).toMatchObject({ status: "active" });
+  });
+
+  it("creates a user and the invitation link in one write", async () => {
+    const createPasswordLink = vi.fn(() => Promise.reject(new Error("a second write")));
+    const { accounts, service } = await serviceWith(
+      (userId) => Promise.resolve(summary(userId)),
+      (store) => ({ ...store, createPasswordLink }),
+    );
+    const created = await service.create(instanceAdmin, {
+      email: "nia@example.com",
+      displayName: "Nia",
+    });
+    expect(createPasswordLink).not.toHaveBeenCalled();
+    expect(
+      (await accounts.pendingPasswordLinks("2026-10-29T10:00:00.000Z")).get(created.user.id),
+    ).toEqual({ purpose: "invitation", expiresAt: created.link.expiresAt });
   });
 });

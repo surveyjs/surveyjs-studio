@@ -5,5 +5,9 @@ export const Route = createLazyFileRoute("/_private/admin/users")({ component: U
 
 function Users() {
   const { user } = Route.useRouteContext();
-  return user.instanceRole === "admin" ? <UsersPage /> : <UsersNotAllowed />;
+  return user.instanceRole === "admin" ? (
+    <UsersPage currentUserId={user.id} />
+  ) : (
+    <UsersNotAllowed />
+  );
 }

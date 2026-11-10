@@ -123,13 +123,26 @@ test.describe.serial("the first admin", () => {
     await page.reload();
     await expect(unaRow).toContainText("Active");
 
-    // A reset ends her session and her password; the new link works.
+    // Her sign-ins: the password, nothing linked.
+    await unaRow.getByRole("button", { name: "Sign-ins" }).click();
+    await expect(
+      page.getByText("No linked Google, GitHub, Facebook or SurveyJS sign-in"),
+    ).toBeVisible();
+    await unaRow.getByRole("button", { name: "Sign-ins" }).click();
+
+    // A reset ends her session and her password; until she uses the new link, it is pending.
     await unaRow.getByRole("button", { name: "Reset password" }).click();
     const reset = await shownLink(page);
-    await una.reload();
+    await expect(unaRow).toContainText("Reset pending");
+    // Her open page goes to sign-in at its next request, without a reload: here the refetch when
+    // she comes back to the tab.
+    await una.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
     await expectSignInPage(una);
+    await expect(una).toHaveURL(/\/sign-in\?returnTo=/);
     await setPasswordWith(una, reset, UNA_NEW_PASSWORD);
     await expect(unaTrigger(una)).toBeVisible({ timeout: 30_000 });
+    await page.reload();
+    await expect(unaRow).toContainText("Active");
 
     // Disabled, she is signed out and cannot sign in; enabled, she can again.
     await unaRow.getByRole("button", { name: "Disable" }).click();

@@ -282,6 +282,49 @@ describe.skipIf(oauth === null || firstAdmin === null)("OAuth2 sign-in (local di
     await expectRefused(await oauthSignIn(baseUrl, "github", person), "disabled", "github");
   });
 
+  it("the instance admin lists a user's linked sign-ins and unlinks one: it no longer signs in", async (ctx) => {
+    const person = { sub: unique("sub"), email: `${unique("unlink")}@${signUpDomain}` };
+    const me = await signedInAs(await oauthSignIn(baseUrl, "github", person));
+    // The provider gives another email now: only the link still leads to the account.
+    const moved = { ...person, email: `${unique("moved")}@elsewhere.example` };
+    const session = await oauthSignIn(baseUrl, "github", moved);
+    expect((await signedInAs(session)).id).toBe(me.id);
+
+    const admin = await as(ctx, instanceAdmin);
+    const listed = await call("GET", "/admin/users/{userId}/identities", {
+      path: `/admin/users/${me.id}/identities`,
+      headers: admin,
+    });
+    expect(listed.status).toBe(200);
+    const { items } = (await listed.json()) as { items: { subject: string }[] };
+    // GitHub's subject is its numeric user id, which the stub derives from `sub`.
+    expect(items).toEqual([
+      {
+        provider: "github",
+        subject: expect.any(String) as unknown,
+        email: person.email,
+        linkedAt: expect.any(String) as unknown,
+      },
+    ]);
+
+    const subject = items[0]?.subject ?? "";
+    const path = `/admin/users/${me.id}/identities/github/${encodeURIComponent(subject)}`;
+    const unlinked = await call("DELETE", "/admin/users/{userId}/identities/{provider}/{subject}", {
+      path,
+      headers: admin,
+    });
+    expect(unlinked.status).toBe(204);
+    // The session the identity made has ended, and the identity reaches no account now.
+    const after = await call("GET", "/me", { headers: { cookie: session.jar.header() } });
+    expect(after.status).toBe(401);
+    await expectRefused(await oauthSignIn(baseUrl, "github", moved), "not-invited", "github");
+    const again = await call("DELETE", "/admin/users/{userId}/identities/{provider}/{subject}", {
+      path,
+      headers: admin,
+    });
+    expect(again.status).toBe(404);
+  });
+
   it("makes one account when the same new identity signs in twice at once (Review Focus 5)", async (ctx) => {
     const person = { sub: unique("sub"), email: `${unique("twice")}@${signUpDomain}` };
     const authorized = await Promise.all([
