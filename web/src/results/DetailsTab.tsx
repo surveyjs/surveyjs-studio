@@ -4,6 +4,7 @@ import { API_BASE_URL } from "../api/client";
 import { resultStatsQueryOptions, useDeleteResults } from "../api/results";
 import { useUpdateSurvey, type Survey } from "../api/surveys";
 import type { ViewName } from "../api/views";
+import { appRootUrl } from "../basePath";
 import { deleteConfirmed, responseTime, settingToggle, type DetailsSetting } from "./details";
 import { exportResultsUrl, publicResultsUrl } from "./downloadUrl";
 
@@ -164,7 +165,7 @@ function SettingToggle({ survey, setting }: { survey: Survey; setting: DetailsSe
           <>
             <a
               className="action-link"
-              href={publicResultsUrl(window.location.origin, survey.id)}
+              href={publicResultsUrl(appRootUrl(), survey.id)}
               target="_blank"
               rel="noopener noreferrer"
             >

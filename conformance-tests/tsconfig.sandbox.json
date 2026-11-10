@@ -1,12 +1,16 @@
-// src/sandbox-setup.ts imports the web's sandbox modules, which use bundler resolution and the DOM
-// types; tsconfig.json leaves it out.
+// The files that import the web's sandbox modules (src/sandbox-*.ts; tsconfig.json leaves them out),
+// type-checked with the web's own options (bundler resolution, the DOM types, JSX) and Vite's
+// `import.meta.env` types (web/src/vite-env.d.ts), as web/tsconfig.json checks those modules. A
+// file that imports them under another name fails tsconfig.json (NodeNext wants file extensions),
+// so none goes unchecked.
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["src/sandbox-setup.ts", "sandbox-env.d.ts"]
+  "include": ["src/sandbox-*.ts", "../web/src/vite-env.d.ts"]
 }

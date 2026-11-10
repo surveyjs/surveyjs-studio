@@ -4,9 +4,11 @@
   "include": [
     "app-variables.d.mts",
     "image-target.d.mts",
+    "sandbox-base.d.mts",
     "playwright.config.ts",
     "playwright.azurite.config.ts",
     "playwright.prod-like.config.ts",
+    "playwright.sandbox-subpath.config.ts",
     "playwright.visual.config.ts",
     "playwright.capture.config.ts",
     "playwright.self-hosted-visual.config.ts",

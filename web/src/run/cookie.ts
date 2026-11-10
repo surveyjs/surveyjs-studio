@@ -1,3 +1,5 @@
+import { BASE_PATH } from "../basePath";
+
 /** An RFC 6265 cookie-name token: no separators, white space, `=`, `;` or non-ASCII characters. */
 const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
@@ -32,9 +34,13 @@ export function runCookieName(limitCookie: string, surveyId: string): string {
  * name that is not a token.
  *
  * Scoped to the run pages (`path=/s`, read at `/s/{id}`), the same scope as the library's own write,
- * which has no `path` and so gets the page's default path, `/s`.
+ * which has no `path` and so gets the page's default path, `/s`. Under a base path (a sandbox on a
+ * sub-path, basePath.ts) both are `/studio/s`.
  */
-export function completedBeforeCookie(cookieName: string): string | null {
+export function completedBeforeCookie(
+  cookieName: string,
+  basePath: string = BASE_PATH,
+): string | null {
   if (!TOKEN.test(cookieName)) return null;
-  return `${cookieName}=true; path=/s; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+  return `${cookieName}=true; path=${basePath}/s; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
 }

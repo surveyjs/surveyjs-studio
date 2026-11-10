@@ -51,7 +51,9 @@ Details that follow:
   another tab, which removes the session. Other builds keep the open global-401 item. (Later, the users' linked
   sign-ins work made this the rule of every build, for private pages only: a 401 there makes the private guard ask
   for the current user again, which sends the tab to sign-in.)
-- **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an empty app.
+- **A worker that cannot start** shows "This demo needs a browser with service workers and site storage…" instead of an
+  empty app. A start that does not settle within 20 seconds shows "The demo did not start in time…". Both have
+  **Try again**, which reloads the page (2026-11-10).
 - **A stale or damaged document** (missing, an old `version`, unparsable) is replaced by the seed.
 - **`mockServiceWorker.js` is MSW's own file**, copied into `web/sandbox-public/`. `web/src/sandbox/worker-file.test.ts`
   checks that it is byte-equal to the installed `msw`'s, so an upgrade that forgets the copy fails.

@@ -1544,8 +1544,16 @@ id, and `src/sandbox/` is not in its manifest.
 
 **The worker.** `main.tsx` boots the sandbox before it renders: it reads `sandbox.config.json` (a missing or invalid
 file means the defaults and a console warning), opens the store, and starts the worker with the handlers
-(`web/src/sandbox/start.ts`). If the worker cannot start, the page shows "This demo needs a browser with service
-workers and site storage…". Shared files reach sandbox UI only through `web/src/sandboxLazy.tsx`, behind the same inline test.
+(`web/src/sandbox/start.ts`, through `web/src/sandbox/boot.tsx`). If the worker cannot start, the page shows "This
+demo needs a browser with service workers and site storage…"; if the start does not settle within 20 seconds, "The
+demo did not start in time…". Both have **Try again**, which reloads. A failed **Reset to continue** says so and keeps
+the button. Shared files reach sandbox UI only through `web/src/sandboxLazy.tsx`, behind the same inline test.
+
+**The base path.** A sandbox build can live under a sub-path (`SANDBOX_BASE=/studio/`, Vite's `base`). The assets,
+the router's `basepath`, the worker's URL and scope, `sandbox.config.json` and the API the worker answers
+(`/studio/api/v1`) all follow it. `web/src/basePath.ts` puts an app path under it for a plain `href`, `window.open`
+or `location.assign` (`navigateTo`); the router's own links add it themselves. The normal build is always at the
+root.
 
 **The store.** One document under `studio-sandbox:v1` (`web/src/sandbox/store.ts`): the seed's collections plus the
 files (base64). Each request reads it, and a change is written back in one `setItem`. A missing, old or unparsable

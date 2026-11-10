@@ -79,7 +79,9 @@ jobs:
           name: sandbox-test
 
   # Adds a commit naming the tested commit to the sandbox branch. This is the step the environment
-  # can gate. The push is a plain fast-forward.
+  # can gate. The push is a plain fast-forward. When the branch already names the commit and the
+  # live site already serves it, nothing is pushed: a push would start a rebuild of the same commit,
+  # and the smoke tests, which pass the wait at once, would run while the site is being replaced.
   publish:
     name: Move the sandbox branch
     needs: test
@@ -106,6 +108,13 @@ jobs:
         run: |
           parent=""
           if git fetch --depth=1 origin sandbox; then parent=$(git rev-parse FETCH_HEAD); fi
+          named=""
+          if [ -n "$parent" ]; then named=$(git show "$parent:COMMIT" 2>/dev/null || true); fi
+          live=$(curl -fsS --max-time 20 https://studio.demos.surveyjs.io/version.json | jq -r '.commit // empty' || true)
+          if [ "$named" = "$SHA" ] && [ "$live" = "$SHA" ]; then
+            echo "The sandbox branch already names $SHA and the live site serves it: nothing to push" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           blob=$(printf '%s\n' "$SHA" | git hash-object -w --stdin)
           tree=$(printf '100644 blob %s\tCOMMIT\n' "$blob" | git mktree)
           commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -m "sandbox: publish $SHA")
@@ -133,6 +142,8 @@ jobs:
         with:
           browser: chromium
 
+      # Passes at once when the commit is already live; the publish job then pushed nothing, so no
+      # rebuild replaces the site during the tests.
       - name: Wait for the live site to show the commit
         env:
           SHA: ${{ needs.test.outputs.sha }}

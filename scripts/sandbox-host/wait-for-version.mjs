@@ -1,7 +1,7 @@
 // `pnpm sandbox:wait --url <url> --commit <sha> [--timeout-min 30] [--interval-s 15]`: waits until
 // <url>/version.json names the commit, that is, until the demos server has rebuilt the sandbox
-// branch and serves it. Exit code 0 on a match, 1 on a timeout, 2 on bad arguments (the message
-// is on stderr).
+// branch and serves it. `--flag=value` works too. Exit code 0 on a match, 1 on a timeout, 2 on bad
+// arguments (the message is on stderr).
 import { pathToFileURL } from "node:url";
 
 /**
@@ -72,23 +72,26 @@ export async function waitForVersion({
 const USAGE = "usage: sandbox:wait --url <url> --commit <sha> [--timeout-min 30] [--interval-s 15]";
 
 /**
- * Reads the CLI arguments; throws an Error with the reason for a missing, unknown or invalid one.
+ * Reads the CLI arguments, as `--flag value` or `--flag=value`; throws an Error with the reason for
+ * a missing, unknown or invalid one.
  * @param {string[]} args
  * @returns {{ url: string, commit: string, timeoutMs: number, intervalMs: number }}
  */
 export function parseWaitArgs(args) {
   /** @type {Record<string, string>} */
   const values = {};
-  for (let i = 0; i < args.length; i += 2) {
-    const flag = /** @type {string} */ (args[i]);
-    const value = args[i + 1];
+  for (let i = 0; i < args.length; i++) {
+    const arg = /** @type {string} */ (args[i]);
+    const equals = arg.indexOf("=");
+    const flag = equals > 0 ? arg.slice(0, equals) : arg;
     if (!["--url", "--commit", "--timeout-min", "--interval-s"].includes(flag)) {
       throw new Error(`unknown argument ${flag}\n${USAGE}`);
     }
-    if (value === undefined || value.startsWith("--")) {
+    const value = equals > 0 ? arg.slice(equals + 1) : args[++i];
+    if (value === undefined || value.trim() === "" || value.startsWith("--")) {
       throw new Error(`${flag} needs a value\n${USAGE}`);
     }
-    values[flag] = value;
+    values[flag] = value.trim();
   }
   const { "--url": url, "--commit": commit } = values;
   if (!url || !commit) throw new Error(`--url and --commit are required\n${USAGE}`);

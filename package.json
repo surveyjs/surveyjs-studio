@@ -40,6 +40,7 @@
     "e2e:sandbox": "pnpm --filter @surveyjs-studio/e2e test:sandbox",
     "e2e:sandbox:stories": "pnpm --filter @surveyjs-studio/e2e test:sandbox:stories",
     "e2e:sandbox:url": "pnpm --filter @surveyjs-studio/e2e test:sandbox:url",
+    "e2e:sandbox:subpath": "pnpm --filter @surveyjs-studio/e2e test:sandbox:subpath",
     "e2e:prod-like": "pnpm --filter @surveyjs-studio/e2e test:prod-like",
     "e2e:visual": "pnpm --filter @surveyjs-studio/e2e test:visual",
     "e2e:visual:self-hosted": "pnpm --filter @surveyjs-studio/e2e test:visual:self-hosted",

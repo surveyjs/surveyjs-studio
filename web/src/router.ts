@@ -9,6 +9,8 @@ export function createAppRouter(queryClient: QueryClient, history?: RouterHistor
     routeTree,
     context: { queryClient },
     defaultPreload: "intent",
+    // `/` but in a sandbox built for a sub-path (basePath.ts); routes and links are below it.
+    basepath: import.meta.env.BASE_URL,
     history,
   });
   // A session can end while a signed-in page is open: signed out in another tab, expired, or

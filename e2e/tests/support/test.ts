@@ -14,8 +14,9 @@ interface ConsoleError {
  */
 export interface ExpectedErrorResponse {
   /**
-   * The URL path, without the query. A pattern matches paths that hold an id only known at run
-   * time (a survey the test creates); it must match the whole path (anchor it with `^…$`).
+   * The URL path, without the query and below a sandbox's base path (`APP_BASE`). A pattern
+   * matches paths that hold an id only known at run time (a survey the test creates); it must
+   * match the whole path (anchor it with `^…$`).
    */
   readonly path: string | RegExp;
   readonly status: number;
@@ -58,7 +59,7 @@ export function watchConsole(
   const pageErrors: string[] = [];
   const responses: { path: string; status: number }[] = [];
   page.on("response", (response) => {
-    responses.push({ path: new URL(response.url()).pathname, status: response.status() });
+    responses.push({ path: appPathOf(response.url()), status: response.status() });
   });
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -77,7 +78,8 @@ export function watchConsole(
     const matchOf = (error: ConsoleError) =>
       expected.find(
         (item) =>
-          error.text.includes(`status of ${item.status}`) && pathMatches(item, pathOf(error.url)),
+          error.text.includes(`status of ${item.status}`) &&
+          pathMatches(item, appPathOf(error.url)),
       );
     const isFaviconCsp = (error: ConsoleError) =>
       error.text.includes("Content-Security-Policy") && error.text.includes("/favicon.ico");
@@ -131,10 +133,19 @@ export const test = base.extend<{
 
 export { expect };
 
-function pathOf(url: string): string {
+/**
+ * The base path of a sandbox built for a sub-path (`SANDBOX_BASE`, `pnpm e2e:sandbox:subpath`),
+ * without the trailing slash; `""` at the root.
+ */
+const APP_BASE = (process.env["SANDBOX_BASE"] ?? "").replace(/\/+$/, "");
+
+/** A URL's path as the app names it, below the base path: `/api/v1/me` for `/studio/api/v1/me`. */
+function appPathOf(url: string): string {
+  let path: string;
   try {
-    return new URL(url).pathname;
+    path = new URL(url).pathname;
   } catch {
     return "";
   }
+  return APP_BASE && path.startsWith(`${APP_BASE}/`) ? path.slice(APP_BASE.length) : path;
 }

@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import type { components } from "@surveyjs-studio/contract/types";
 import { useSignOut } from "../api/session";
+import { underBase } from "../basePath";
 import { renderShell } from "./registry";
 
 type AppConfig = components["schemas"]["AppConfig"];
@@ -28,18 +29,22 @@ export function PrivateShell({
     signingOut: pending,
     signOutError: error,
     // The shells render without the router: they get the link and a function that follows it.
-    projectsLink: { href: "/projects", navigate: () => void navigate({ to: "/projects" }) },
-    homeLink: { href: "/", navigate: () => void navigate({ to: "/" }) },
+    // The `href` is for the browser (a new tab), so under the base path; `navigate` is the router's.
+    projectsLink: {
+      href: underBase("/projects"),
+      navigate: () => void navigate({ to: "/projects" }),
+    },
+    homeLink: { href: underBase("/"), navigate: () => void navigate({ to: "/" }) },
     ...(config.authMethods.includes("password") &&
       user.hasPassword !== false && {
         changePasswordLink: {
-          href: "/change-password",
+          href: underBase("/change-password"),
           navigate: () => void navigate({ to: "/change-password" }),
         },
       }),
     ...(user.instanceRole === "admin" && {
       usersLink: {
-        href: "/admin/users",
+        href: underBase("/admin/users"),
         navigate: () => void navigate({ to: "/admin/users" }),
       },
     }),

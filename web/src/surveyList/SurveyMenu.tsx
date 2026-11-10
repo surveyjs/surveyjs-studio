@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { flushSync } from "react-dom";
 import type { Project } from "../api/projects";
 import type { Survey } from "../api/surveys";
+import { underBase } from "../basePath";
 import { MENU_LABELS, moveTargets, surveyMenuItems, type MenuEntry } from "./menuItems";
 import type { SurveyAction } from "./useSurveyActions";
 
@@ -85,7 +86,7 @@ export function SurveyMenu({
           <li key={entry.id} className={ITEM}>
             <a
               className={ITEM_LINK}
-              href={`/s/${survey.id}`}
+              href={underBase(`/s/${survey.id}`)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={close}
