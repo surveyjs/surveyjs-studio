@@ -27,7 +27,7 @@ import { Icon } from "./SiteIcon";
  * The site's GitHub star count is fetched from the GitHub API on the server. My Surveys makes no
  * such call: it shows the site's own fallback value (`GitHubStarsProvider`).
  */
-const GITHUB_STARS = "4.7k";
+const GITHUB_STARS = "4.9k";
 
 export type MobileMenu = "main" | "account";
 

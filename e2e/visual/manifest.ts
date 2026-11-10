@@ -79,7 +79,7 @@ export const HEADER_NORMALIZATIONS: readonly Normalization[] = [
   {
     live: 'a[href="https://github.com/surveyjs/survey-library"] .v2-class---top-menu-item__text',
     app: 'a[href="https://github.com/surveyjs/survey-library"] .v2-class---top-menu-item__text',
-    text: "4.7k",
+    text: "4.9k",
     reason: "the star count changes daily",
     category: "live-data",
   },

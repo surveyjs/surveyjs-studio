@@ -331,6 +331,6 @@ Reserved Font Names: the files keep their original names and are not modified.
 - Third-party content the site loads at runtime: Google Tag Manager and the consent updates, the
   Product Hunt badge image and the SourceForge badge script in the footer.
 - The live GitHub star count: the site's server asks the GitHub API; the shell shows the site's own
-  fallback value, `4.7k`.
+  fallback value, `4.9k`.
 - The cart count: the site reads it from its own `/api/Cart/get`; the shell shows the empty cart.
 - The "logged in as another user" badge and the scroll-to-top button.
