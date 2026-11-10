@@ -173,10 +173,10 @@ self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-h
 Two private packages hold the built images. GitHub shows this README on both package pages; each image's own
 description comes from its `org.opencontainers.image.*` labels in the [`Dockerfile`](Dockerfile).
 
-| Package                                            | Dockerfile target            | Pushed by                                                                                                         | Tags                                                               |
-| -------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `ghcr.io/surveyjs/surveyjs-studio`                 | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested            | The full commit id; `production`, moved by Actions › Deploy        |
-| `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks | `vX.Y.Z`, `vX.Y` and `latest`; a pre-release gets only its own tag |
+| Package                                            | Dockerfile target            | Pushed by                                                                                                                                          | Tags                                                                               |
+| -------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `ghcr.io/surveyjs/surveyjs-studio`                 | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
+| `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
 
 - **`surveyjs-studio`** is what studio.surveyjs.io runs: its server deploys `:production` within a minute or two, and
   rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green `master`

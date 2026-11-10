@@ -25,7 +25,8 @@ hosted `runtime` stage stays last, so `docker build .` gives the same image as b
 
 **D2. A private test package.** Until Docker Hub access and the shipped key exist, a `v*` tag pushes to
 `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` only, with `GITHUB_TOKEN`. One workflow variable, `RELEASE_IMAGE`
-in `release.yml`, names the target. A bad test release is deleted by hand.
+in `release.yml`, names the target. The release pushes by digest and tags only after the arm64 smoke run and the scan
+pass, so a failed release moves no tag.
 
 **D3. The session secret on the volume.** `SESSION_SECRET_FILE` (the image sets `/data/session-secret`): when
 `SESSION_SECRET` is unset, the server reads the file, or creates it once with a random secret (mode `0600`, written
