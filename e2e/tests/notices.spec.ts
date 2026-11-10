@@ -1,5 +1,8 @@
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { signInAt } from "./support/sign-in.js";
 import { expect, test } from "./support/test.js";
+
+test.skip(sandboxMode, notOnSandbox.server("the licence notice (ACCOUNT_NOTICES)"));
 
 // Runs against the second server (ACCOUNT_NOTICES=license-expired) behind its own preview.
 test.use({ baseURL: "http://localhost:5174" });

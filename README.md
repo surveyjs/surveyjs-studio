@@ -267,6 +267,7 @@ Run from the repository root.
 | `pnpm e2e:password`                                              | Playwright password sign-in tests: the first admin, the forced change, the back-off (Chromium)                             |
 | `pnpm e2e:oauth`                                                 | Playwright OAuth sign-in tests: local accounts with GitHub and Google against the OAuth stub (Chromium)                    |
 | `pnpm e2e:sandbox`                                               | Playwright `@sandbox` specs on the sandbox build (Chromium)                                                                |
+| `pnpm e2e:sandbox:stories`                                       | The user-story specs on the sandbox build (Chromium); what cannot apply there is skipped with its reason                   |
 | `pnpm e2e:sandbox:url`                                           | The same specs against a running sandbox host named by `E2E_SANDBOX_URL`; nothing is built or started                      |
 | `pnpm e2e:self-hosted`                                           | Playwright branding tests in the self-hosted shell: sign-in, My Surveys, editor, results, run page (Chromium)              |
 | `pnpm e2e:visual:self-hosted`                                    | Visual tests of the self-hosted shell against its own baselines (local only)                                               |

@@ -1,4 +1,6 @@
 import type { Locator, Page, Response } from "@playwright/test";
+import { api } from "./api.js";
+import { sandboxMode } from "./sandbox.js";
 import { csrfHeaders, discardSurveyViaApi } from "./survey-list.js";
 import { expect } from "./test.js";
 
@@ -15,7 +17,10 @@ export function uniqueSurveyName(prefix: string, browserName: string): string {
   return `${prefix} ${browserName} ${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Runs `body`, then removes the surveys with these ids (archive, then delete). */
+/**
+ * Runs `body`, then removes the surveys with these ids (archive, then delete). On the sandbox each
+ * test starts from the seed in a browser context of its own, so nothing is left to remove.
+ */
 export async function withCleanup(
   page: Page,
   ids: readonly string[],
@@ -24,7 +29,7 @@ export async function withCleanup(
   try {
     await body();
   } finally {
-    for (const id of ids) await discardSurveyViaApi(page, id);
+    if (!sandboxMode) for (const id of ids) await discardSurveyViaApi(page, id);
   }
 }
 
@@ -125,7 +130,7 @@ export async function getDocumentViaApi(
   surveyId: string,
   kind: DocumentKind,
 ): Promise<ApiDocument> {
-  const response = await page.request.get(`/api/v1/surveys/${surveyId}/${kind}`);
+  const response = await api(page).get(`/api/v1/surveys/${surveyId}/${kind}`);
   expect(response.status()).toBe(200);
   const etag = response.headers()["etag"];
   expect(etag).toBeTruthy();
@@ -139,7 +144,7 @@ export async function putDefinitionViaApi(
   definition: Record<string, unknown>,
 ): Promise<void> {
   const { etag } = await getDocumentViaApi(page, surveyId, "definition");
-  const response = await page.request.put(`/api/v1/surveys/${surveyId}/definition`, {
+  const response = await api(page).put(`/api/v1/surveys/${surveyId}/definition`, {
     headers: { ...(await csrfHeaders(page)), "If-Match": etag },
     data: definition,
   });

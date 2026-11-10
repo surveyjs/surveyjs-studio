@@ -55,6 +55,7 @@ the SQLite ones, which need nothing:
 | `pnpm e2e:self-hosted`           | Playwright self-hosted spec in self-hosted mode (SQLite, `APP_SHELL=self-hosted` with a brand, local accounts, the dev sign-in): the header's navigation, the branding on sign-in, My Surveys, the editor, results, the public results and the run page, no surveyjs.io styles, no Embed tabs, `/api/docs` 404; on Chromium                                                                        |
 | `pnpm test:conformance:sandbox`  | The sandbox's mock handlers under `msw/node`, no server: 13 conformance files, from surveys to members; a test that cannot apply is skipped with its reason                                                                                                                                                                                                                                        |
 | `pnpm e2e:sandbox`               | Playwright `@sandbox` spec (Chromium) on the sandbox build, served by `vite preview --mode sandbox` on port 5177: the editor and a reload, the member's view, run in a new tab with no request to another site, Reset demo data, a second browser context ([ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md) D9)                                                                             |
+| `pnpm e2e:sandbox:stories`       | The user-story specs on the same sandbox build (Chromium, port 5177). Their API set-up runs in the page, so the mock answers it; a test that cannot apply to the sandbox is skipped with its reason ([below](#the-user-stories-on-the-sandbox-build))                                                                                                                                              |
 | `pnpm e2e:visual:self-hosted`    | The self-hosted shell's look against this repository's baselines ([below](#visual-tests-of-the-self-hosted-shell)); local only                                                                                                                                                                                                                                                                     |
 | `pnpm e2e:postgres`              | Every functional Playwright spec but the licence notices in PostgreSQL mode (a new database `surveyjs_studio_e2e` and bucket `surveyjs-studio-e2e` per run; needs `postgres:up` and `s3:up`), on Chromium                                                                                                                                                                                          |
 
@@ -711,6 +712,53 @@ WebKit are left to CI.
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
 actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
 memory-mode servers first; the runner names a port that is taken). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
+
+### The user stories on the sandbox build
+
+`pnpm e2e:sandbox:stories` runs the user-story specs on the sandbox build (mode 2a), on Chromium. It builds
+`web/dist-sandbox/` and serves it with `vite preview --mode sandbox` on port 5177, as `pnpm e2e:sandbox` does. The
+config is `e2e/playwright.sandbox-stories.config.ts` (`E2E_MODE=sandbox`, `E2E_SANDBOX_STORIES=1`); the project is
+`sandbox-stories-chromium`. The other modes' own specs (password, oauth, self-hosted, sandbox, sandbox-host) are
+left out.
+
+**Set-up goes through the page.** A request from Playwright's `page.request` never reaches the page's service
+worker, so on the sandbox it would miss the mock. The specs call the API through `api(page)`
+(`e2e/tests/support/api.ts`), which has the same `get`, `post`, `put`, `patch` and `delete`:
+
+- On a server it is `page.request`.
+- On the sandbox it runs `fetch` in the page, so the worker answers it. JSON, text, bytes and multipart bodies
+  cross into the page; the answer comes back with its status, headers and bytes. The page must be open on the
+  app, as it is after `signInAt`. It waits until the worker controls the page.
+- Chromium logs an error answer of such a `fetch` as a console error. `api(page)` tells the console guard to
+  expect it (`expectErrorResponse` in `test.ts`).
+
+Other helpers know the sandbox too:
+
+- `signInAt` picks the account on **Pick an account**. The sandbox's tabs share one session cookie, so a page
+  that is already signed in as the user is left as it is, and one signed in as someone else signs out first.
+- `secondBrowser(page, browser)` opens a page for a second person, or the same person in a second browser. On a
+  server it is a new browser context; on the sandbox it is a new tab, because the data stays in one browser.
+- `csrfHeaders` sends no token (D3), and `withCleanup` removes nothing: each test starts from the seed in its own
+  browser context.
+
+A few tests adapt their data. The sandbox seed has no "API created" (survey a08), so the survey list's newest
+survey is "Customer feedback". The self-hosted shell titles My Surveys with the instance's name. The run spec's
+file answer is 150 KB, under the sandbox's `maxUploadKb` (200 KB).
+
+**What does not run on the sandbox.** A spec or test that cannot apply says so with
+`test.skip(sandboxMode, notOnSandbox.…)` (`e2e/tests/support/sandbox.ts`), so the report lists it with its reason:
+
+| Reason                                                 | Specs and tests                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The seed leaves out survey a08 and its 1,500 responses | `results.spec.ts`: the Summary of 1,500 responses, the Table of 1,500 responses, the Dashboard's lazy loading, a stranger; `results-details.spec.ts`: the Details totals, the JSON and CSV export                                                                                    |
+| The seed leaves out survey a09, the XSS fixture        | `xss.spec.ts`                                                                                                                                                                                                                                                                        |
+| It checks the surveyjs-site shell                      | `shell.spec.ts`; `sign-in.spec.ts`: the two Sign Out tests (the Account menu)                                                                                                                                                                                                        |
+| It needs a server                                      | `notices.spec.ts` (the second server's licence notice); `security-headers.spec.ts`: the API server's own policy                                                                                                                                                                      |
+| A signed-out visitor needs another browser             | `results-details.spec.ts`: Grant Access; `run.spec.ts`: the signed-out respondent's bundles                                                                                                                                                                                          |
+| The sandbox works differently by design (ADR 0030)     | `results-details.spec.ts`: the respondent IP (none is captured); `uploads.spec.ts`: the quota (200 KB, not 1 MB); `projects.spec.ts`: the admin's project story (no Account menu, and an unknown email makes a pending member, D6); `editor.spec.ts`: the Embed Survey tab (off, D6) |
+
+No test is marked as a known failure: every story that runs passes. When one fails because of a sandbox bug, mark
+it `test.fail(sandboxMode, "<the bug>")` and list it here, so CI stays green and the fix shows.
 
 ### The end-to-end suites on the production image
 

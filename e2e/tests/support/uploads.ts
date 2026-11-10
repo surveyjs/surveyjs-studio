@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { test, type FileChooser, type Locator, type Page } from "@playwright/test";
+import { api } from "./api.js";
 import { csrfHeaders } from "./survey-list.js";
 import { expect } from "./test.js";
 
@@ -37,7 +38,7 @@ export async function uploadViaApi(
   bytes: Buffer,
   name: string,
 ): Promise<{ id: string; url: string }> {
-  const response = await page.request.post(`/api/v1/surveys/${surveyId}/assets`, {
+  const response = await api(page).post(`/api/v1/surveys/${surveyId}/assets`, {
     headers: await csrfHeaders(page),
     multipart: { file: { name, mimeType: "image/png", buffer: bytes } },
   });

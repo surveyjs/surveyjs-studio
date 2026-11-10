@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { createProjectViaApi, deleteProjectViaApi, uniqueProjectName } from "./support/projects.js";
+import { sandboxMode } from "./support/sandbox.js";
 import { signInAt } from "./support/sign-in.js";
 import {
   expectSurveyRow,
@@ -20,6 +21,14 @@ import { expect, test, watchConsole } from "./support/test.js";
 const MARKETING = "55555555-0000-4000-8000-a00000000001";
 const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const UNKNOWN_PROJECT = "99999999-9999-4999-8999-999999999999";
+// The owner's active surveys, newest first, as the list prints them: name, created, updated. The
+// sandbox seed leaves out API created (survey a08, with its 1,500 responses).
+const OWNER_ACTIVE = [
+  ["API created", "5/30/2026", "6/1/2026"],
+  ["Customer feedback", "3/13/2026", "4/14/2026"],
+  ["Draft idea", "2/1/2026", "2/2/2026"],
+].filter(([name]) => !sandboxMode || name !== "API created") as [string, string, string][];
+const NEWEST = OWNER_ACTIVE[0]![0];
 
 function activeArchivedSwitch(page: Page) {
   return page.getByRole("checkbox", { name: "Active Archived" });
@@ -54,9 +63,9 @@ test("the owner's active list shows their surveys, newest first, without archive
   await signInAt(page);
 
   const rows = surveyRows(page);
-  await expectSurveyRow(rows.nth(0), "API created", "5/30/2026", "6/1/2026");
-  await expectSurveyRow(rows.nth(1), "Customer feedback", "3/13/2026", "4/14/2026");
-  await expectSurveyRow(rows.nth(2), "Draft idea", "2/1/2026", "2/2/2026");
+  for (const [index, row] of OWNER_ACTIVE.entries()) {
+    await expectSurveyRow(rows.nth(index), ...row);
+  }
   await expect(surveysNamed(page, "Old poll")).toHaveCount(0);
 });
 
@@ -65,11 +74,12 @@ test("the page is titled My Surveys and offers Create a Survey and each row's me
 }) => {
   await signInAt(page);
 
-  await expect(page).toHaveTitle("My Surveys");
+  // The self-hosted shell, which the sandbox runs, titles the page with the instance's name.
+  await expect(page).toHaveTitle(sandboxMode ? "SurveyJS Studio Demo" : "My Surveys");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("My Surveys");
   await expect(createButton(page)).toBeVisible();
   const first = surveyRows(page).first();
-  await expectSurveyRow(first, "API created", "5/30/2026", "6/1/2026");
+  await expectSurveyRow(first, ...OWNER_ACTIVE[0]!);
   // The "…" trigger shows while the row is hovered.
   await first.hover();
   await expect(menuTrigger(first)).toBeVisible();
@@ -79,7 +89,7 @@ test("the Archived view lists archived surveys, survives a reload and Back retur
   page,
 }) => {
   await signInAt(page);
-  await expect(surveyNames(page).first()).toHaveText("API created");
+  await expect(surveyNames(page).first()).toHaveText(NEWEST);
 
   await toggleActiveArchived(page);
   await expect(page).toHaveURL(/[?&]archived=true(&|$)/);
@@ -94,7 +104,7 @@ test("the Archived view lists archived surveys, survives a reload and Back retur
 
   await page.goBack();
   await expect(page).toHaveURL("/?project=personal");
-  await expect(surveyNames(page).first()).toHaveText("API created");
+  await expect(surveyNames(page).first()).toHaveText(NEWEST);
   await expect(activeArchivedSwitch(page)).not.toBeChecked();
   await expect(createButton(page)).toBeVisible();
 });
@@ -126,7 +136,7 @@ test("the project selector switches between a project's lists and Personal Surve
   await chooseProject(page, "Personal Surveys");
   await expect(page).toHaveURL("/?project=personal");
   await expect(projectSelector(page).getByRole("button")).toHaveText("Personal Surveys");
-  await expect(surveyNames(page).first()).toHaveText("API created");
+  await expect(surveyNames(page).first()).toHaveText(NEWEST);
 });
 
 test("the project selector lists Personal Surveys and the user's projects, the current one marked", async ({
@@ -183,7 +193,7 @@ test("My Surveys opens the list the user looked at last, and Back still returns"
   await page.goBack();
   await expect(page).toHaveURL("/?project=personal");
   await expect(projectSelector(page).getByRole("button")).toHaveText("Personal Surveys");
-  await expect(surveyNames(page).first()).toHaveText("API created");
+  await expect(surveyNames(page).first()).toHaveText(NEWEST);
   await page.goto("/");
   await expect(page).toHaveURL("/?project=personal");
   await expect(projectSelector(page).getByRole("button")).toHaveText("Personal Surveys");
@@ -243,7 +253,7 @@ test.describe("an unknown project in the URL", () => {
 
     await expect(page).toHaveURL("/?project=personal");
     await expect(projectSelector(page).getByRole("button")).toHaveText("Personal Surveys");
-    await expect(surveyNames(page).first()).toHaveText("API created");
+    await expect(surveyNames(page).first()).toHaveText(NEWEST);
   });
 });
 

@@ -981,7 +981,8 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
   the image (memory provider, dev sign-in).
 - **`e2e-modes`:** on Chromium with the tsx server, `e2e:sqlite` (its SQLite file on the host; files on local disk),
   `e2e:password` (password sign-in on the app's page), `e2e:oauth` (GitHub and Google sign-in against the stub) and
-  `e2e:self-hosted` (the self-hosted shell with a brand); then `e2e:sandbox` (the sandbox build on `vite preview`).
+  `e2e:self-hosted` (the self-hosted shell with a brand); then `e2e:sandbox` (the sandbox build on `vite preview`) and `e2e:sandbox:stories` (the user-story
+  specs on that build, [Testing](testing.md#the-user-stories-on-the-sandbox-build)).
 - **`ci`:** passes only when every job above passed, and fails when any failed, was cancelled or was skipped. It is
   the one result to wait for.
 
