@@ -541,6 +541,7 @@ const upgrade: Check = async (run, { image, previous }) => {
   await run.waitReady(old);
   const created = await run.flowOnHost(old, ["bootstrap-and-create"]);
   const surveyId = String(created["surveyId"]);
+  const wide = await run.flowOnHost(old, ["create-wide"]);
   const stopped = await docker(["stop", old.name], { timeoutMs: 60_000 });
   if (stopped.code !== 0) failed("docker stop", stopped);
   await run.remove(old.name);
@@ -552,6 +553,7 @@ const upgrade: Check = async (run, { image, previous }) => {
   });
   await run.waitReady(current);
   await run.flowOnHost(current, ["verify", surveyId]);
+  await run.flowOnHost(current, ["verify-wide", JSON.stringify(wide)]);
   const status = await run.studio(current, ["status"]);
   if (status.code !== 0) failed("surveyjs-studio status", status);
   if (!/^Pending: none$/m.test(status.stdout)) {
