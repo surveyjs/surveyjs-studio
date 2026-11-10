@@ -77,6 +77,39 @@ describe("cursors", () => {
     invalid(() => decodeResultsCursor(encodeResultsCursor({ submittedAt: AT, id: ID }, ID), "x"));
   });
 
+  describe("members cursors (server/src/paging/cursor.ts)", () => {
+    const P = "55555555-0000-4000-8000-a00000000001";
+    /** base64url of the UTF-8 JSON (`btoa` alone takes Latin-1 only). */
+    const raw = (payload: unknown) =>
+      base64url(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(payload))));
+
+    it("round-trip a pending member's position: the email, lower-cased", () => {
+      const cursor = encodeMembersCursor({ email: "Amy@Example.test" }, P);
+      expect(cursor).toBe(raw({ v: 1, k: "members", p: P, e: "amy@example.test" }));
+      expect(decodeMembersCursor(cursor, P)).toEqual({ email: "amy@example.test" });
+    });
+
+    it("read a pending cursor of the old form (the highest code point, the zero id) as pending", () => {
+      const old = raw({
+        v: 1,
+        k: "members",
+        p: P,
+        n: `${String.fromCodePoint(0x10ffff)}amy@example.test`,
+        i: "00000000-0000-0000-0000-000000000000",
+      });
+      expect(decodeMembersCursor(old, P)).toEqual({ email: "amy@example.test" });
+    });
+
+    it.each([
+      ["an empty email", { v: 1, k: "members", p: P, e: "" }],
+      ["an email that is not a string", { v: 1, k: "members", p: P, e: 5 }],
+      ["an email that is not lower-case", { v: 1, k: "members", p: P, e: "A@x.test" }],
+      ["an email and a name", { v: 1, k: "members", p: P, n: "a", i: ID, e: "a@x.test" }],
+    ])("reject %s", (_name, payload) => {
+      invalid(() => decodeMembersCursor(raw(payload), P));
+    });
+  });
+
   it("reject anything that is not the canonical encoding", () => {
     const payload = { v: 1, k: "history", u: AT, i: ID };
     const good = base64url(JSON.stringify(payload));

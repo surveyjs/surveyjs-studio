@@ -75,6 +75,50 @@ describe("GET /projects/{projectId}/members", () => {
     }
   });
 
+  it("pages across the members and the invitations with any member name (server PR #22)", async () => {
+    const { call, ctx } = setupSandbox();
+    // A name in U+E000 to U+FFFF sorts after any surrogate pair (U+10000 and up) in UTF-16 order,
+    // so a cursor position "after every name" made of U+10FFFF did not come after this one.
+    const eve = "11111111-0000-4000-8000-a00000000099";
+    await ctx.store.write((data) => {
+      data.users.push({
+        id: eve,
+        email: "eve@example.com",
+        displayName: `${String.fromCharCode(0xfffd)} Eve`,
+        blocked: false,
+      });
+      data.memberships.push({ userId: eve, projectId: PROJECTS.marketing, role: "user" });
+    });
+    for (const email of ["zed@example.com", "amy@example.com"]) {
+      expect((await call(`${M}/members`, post({ email }, USERS.owner))).status).toBe(201);
+    }
+    const whole = [
+      "admin@example.com",
+      "member@example.com",
+      "owner@example.com",
+      "eve@example.com",
+      "amy@example.com",
+      "invited@example.com",
+      "zed@example.com",
+    ];
+    const all: Page = await (await call(`${M}/members`, { user: USERS.owner })).json();
+    expect(all.items.map((m) => m.email)).toEqual(whole);
+    // Every page size puts a page boundary at Eve's row, or at an invitation's.
+    for (let limit = 1; limit <= whole.length; limit++) {
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = `?limit=${limit}${cursor ? `&cursor=${cursor}` : ""}`;
+        const response = await call(`${M}/members${query}`, { user: USERS.owner });
+        expect(response.status).toBe(200);
+        const page: Page = await response.json();
+        walked.push(...page.items.map((m) => m.email));
+        cursor = page.nextCursor;
+      } while (cursor && walked.length <= whole.length);
+      expect(walked, `limit=${limit}`).toEqual(whole);
+    }
+  });
+
   it("answers 404 to a non-member and for an unknown project, 401 signed out", async () => {
     const { call } = setupSandbox();
     expect((await call(`${M}/members`, { user: USERS.outsider })).status).toBe(404);
