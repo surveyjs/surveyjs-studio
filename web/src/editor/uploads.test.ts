@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Problem } from "../api/client";
 import type { StoredFile } from "../api/files";
+import { STORAGE_FULL_TITLE } from "../api/storage-full";
 import {
   createUploadHandler,
   formatBytes,
@@ -43,6 +44,19 @@ describe("formatBytes", () => {
 });
 
 describe("uploadErrorMessage", () => {
+  it("tells a full browser storage (the sandbox's 413) apart from the survey's file quota", () => {
+    const full = new ApiError({
+      type: "https://studio.surveyjs.io/problems/quota-exceeded",
+      title: STORAGE_FULL_TITLE,
+      status: 413,
+      code: "quota-exceeded",
+    });
+    expect(uploadErrorMessage(full, MAX)).toBe(
+      "The browser's storage is full. This file was not uploaded.",
+    );
+    expect(uploadErrorMessage(problem(413, "quota-exceeded"), MAX)).toBe(QUOTA);
+  });
+
   it.each([
     [
       "the quota, with the formatted limit",

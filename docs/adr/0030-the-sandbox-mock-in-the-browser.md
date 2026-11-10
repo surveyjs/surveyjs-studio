@@ -81,8 +81,9 @@ Details that follow:
   exports (D7). The pages for them are hidden or absent (D4, D6).
 - **The storage can fill up.** The visitor sees the banner's message and **Reset demo data**. The banner clears its
   message once a later write is stored (say, after deleting surveys).
-- **An upload refused because the browser storage is full shows the per-survey file quota message** (the answer is
-  `413 quota-exceeded`), while the banner shows the full-storage text.
+- **An upload refused because the browser storage is full says so.** The answer is `413 quota-exceeded`, the code of
+  the survey's file quota, with the title "Browser storage is full" (`web/src/api/storage-full.ts`). The editor's
+  upload message tells the two apart by that title.
 - **There is no cross-tab lock.** Two tabs writing at nearly the same moment both start from the same document, and
   only the last write is kept.
 - **History keeps the JSON of a survey's 20 newest saves only** (2026-11-08, for [ADR 0032](0032-history-json-view.md)).

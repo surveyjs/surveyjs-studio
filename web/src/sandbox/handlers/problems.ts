@@ -3,6 +3,7 @@
 // `detail` and `errors`. The sandbox code does not import server/src; the conformance subset checks
 // that the two agree. Codes are the `Problem.code` enum of contract/openapi.yaml.
 import { HttpResponse } from "msw";
+import { STORAGE_FULL_TITLE } from "../../api/storage-full";
 import { SandboxOutdatedError, StorageFullError } from "../store";
 
 export const PROBLEM_TYPE_BASE = "https://studio.surveyjs.io/problems/";
@@ -108,7 +109,8 @@ export async function guarded(answer: () => Promise<Response> | Response): Promi
       return problemResponse({
         code: "quota-exceeded",
         status: 413,
-        title: "Browser storage is full",
+        // The editor's upload message tells this title apart from the survey's file quota.
+        title: STORAGE_FULL_TITLE,
       });
     }
     if (error instanceof SandboxOutdatedError) {

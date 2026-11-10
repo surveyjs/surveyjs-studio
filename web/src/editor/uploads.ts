@@ -2,6 +2,7 @@
 // assets. No Creator or React code here: `creatorSetup.ts` connects this to `onUploadFile`.
 import { ApiError, type Problem } from "../api/client";
 import type { StoredFile } from "../api/files";
+import { STORAGE_FULL_TITLE } from "../api/storage-full";
 
 const KB = 1024;
 const MB = 1024 * 1024;
@@ -32,11 +33,18 @@ const messagesByCode: Readonly<Partial<Record<Problem["code"], string>>> = {
 
 const TRY_AGAIN = "The file was not uploaded. Please try again.";
 
+/** The sandbox's answer when the browser storage is full: the same code as the file quota. */
+const STORAGE_FULL = "The browser's storage is full. This file was not uploaded.";
+
 /** What to tell the user when an upload failed with `error`. */
 export function uploadErrorMessage(error: unknown, maxAssetBytesPerSurvey: number): string {
   if (!(error instanceof ApiError)) return TRY_AGAIN;
   const { code } = error.problem;
-  if (code === "quota-exceeded") return quotaMessage(maxAssetBytesPerSurvey);
+  if (code === "quota-exceeded") {
+    return error.problem.title === STORAGE_FULL_TITLE
+      ? STORAGE_FULL
+      : quotaMessage(maxAssetBytesPerSurvey);
+  }
   return messagesByCode[code] ?? TRY_AGAIN;
 }
 
