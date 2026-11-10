@@ -2,5 +2,5 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
   "include": ["src", "vitest.config.ts"],
-  "exclude": ["src/sandbox-setup.ts"]
+  "exclude": ["src/sandbox-*.ts"]
 }
