@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
+import { api } from "./support/api.js";
 import { signInAt } from "./support/sign-in.js";
-import { loadAllPages, loadMoreButton, surveyRows } from "./support/survey-list.js";
+import { csrfHeaders, loadAllPages, loadMoreButton, surveyRows } from "./support/survey-list.js";
 import { expect, test } from "./support/test.js";
 
 // Memory mode only (it writes many surveys). Engineering is a scope tests may write to; the other
@@ -13,7 +14,7 @@ const PAGE_SIZE = 50;
 const MARGIN = 10;
 
 async function activeEngineeringSurveyCount(page: Page): Promise<number> {
-  const response = await page.request.get(
+  const response = await api(page).get(
     `/api/v1/surveys?project=${ENGINEERING}&archived=false&limit=200`,
   );
   expect(response.status()).toBe(200);
@@ -23,12 +24,10 @@ async function activeEngineeringSurveyCount(page: Page): Promise<number> {
 
 /** Creates surveys in Engineering through the API until it holds more than one page. */
 async function fillEngineering(page: Page, browserName: string): Promise<void> {
-  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "msid_csrf");
-  expect(csrf).toBeDefined();
-  const headers = { "X-CSRF-Token": decodeURIComponent(csrf?.value ?? "") };
+  const headers = await csrfHeaders(page);
   const missing = PAGE_SIZE + MARGIN + 1 - (await activeEngineeringSurveyCount(page));
   for (let i = 1; i <= missing; i++) {
-    const response = await page.request.post("/api/v1/surveys", {
+    const response = await api(page).post("/api/v1/surveys", {
       headers,
       data: { name: `Paging ${browserName} ${i}`, projectId: ENGINEERING },
     });

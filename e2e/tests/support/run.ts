@@ -1,4 +1,5 @@
 import type { BrowserContext, Page } from "@playwright/test";
+import { api } from "./api.js";
 import { getDocumentViaApi } from "./editor.js";
 import { csrfHeaders } from "./survey-list.js";
 import { expect } from "./test.js";
@@ -22,7 +23,7 @@ export const FILE_DEFINITION = {
  * survey unpublish it.
  */
 export async function publishViaApi(page: Page, surveyId: string, published = true): Promise<void> {
-  const response = await page.request.patch(`/api/v1/surveys/${surveyId}`, {
+  const response = await api(page).patch(`/api/v1/surveys/${surveyId}`, {
     headers: { ...(await csrfHeaders(page)), "Content-Type": "application/merge-patch+json" },
     data: { published },
   });
@@ -36,7 +37,7 @@ export async function putThemeViaApi(
   theme: Record<string, unknown>,
 ): Promise<void> {
   const { etag } = await getDocumentViaApi(page, surveyId, "theme");
-  const response = await page.request.put(`/api/v1/surveys/${surveyId}/theme`, {
+  const response = await api(page).put(`/api/v1/surveys/${surveyId}/theme`, {
     headers: { ...(await csrfHeaders(page)), "If-Match": etag },
     data: theme,
   });
@@ -45,7 +46,7 @@ export async function putThemeViaApi(
 
 /** How many responses the survey has stored; the page must be signed in as someone who sees it. */
 export async function responseCount(page: Page, surveyId: string): Promise<number> {
-  const response = await page.request.get(`/api/v1/surveys/${surveyId}/results/stats`);
+  const response = await api(page).get(`/api/v1/surveys/${surveyId}/results/stats`);
   expect(response.status()).toBe(200);
   return ((await response.json()) as { count: number }).count;
 }

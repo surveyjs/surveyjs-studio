@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { creator, openEditor } from "./support/editor.js";
 import { routeBrandImage } from "./support/run.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { signInAt } from "./support/sign-in.js";
 import { surveyRow } from "./support/survey-list.js";
 import { expect, test } from "./support/test.js";
@@ -17,6 +18,8 @@ import { expect, test } from "./support/test.js";
 // survey's definition or theme is aborted and fails the test. Runs in memory mode on three
 // browsers and in Azurite mode. The cookie banner is pre-dismissed and the brand footer's image
 // host is routed locally, as in run.spec.ts.
+
+test.skip(sandboxMode, notOnSandbox.seed("survey a09, the XSS fixture"));
 
 const XSS_SURVEY_ID = "22222222-0000-4000-8000-a00000000009";
 const NAME = "XSS in question name <img src=x onerror=alert(1)>";

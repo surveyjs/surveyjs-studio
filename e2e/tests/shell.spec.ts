@@ -1,6 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expectSignInPage, signInAt } from "./support/sign-in.js";
 import { expect, test } from "./support/test.js";
+
+test.skip(sandboxMode, notOnSandbox.shell);
 
 /** Presses Tab until `target` has the focus, or fails after `limit` presses. */
 async function tabTo(page: Page, target: Locator, limit = 40) {

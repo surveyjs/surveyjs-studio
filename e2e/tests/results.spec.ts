@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Download, Page, Response } from "@playwright/test";
+import { api } from "./support/api.js";
 import { putDefinitionViaApi, uniqueSurveyName, withCleanup } from "./support/editor.js";
 import {
   CHART_DEFINITION,
@@ -24,6 +25,7 @@ import {
   openRowMenu,
   surveyRow,
 } from "./support/survey-list.js";
+import { notOnSandbox, sandboxMode } from "./support/sandbox.js";
 import { expect, test } from "./support/test.js";
 
 // The results page (US 46-49): the Summary and the Table over every response, saved layouts and
@@ -99,6 +101,7 @@ async function resetFromDetails(page: Page, surveyId: string, view: "summary" | 
 }
 
 test("the Summary counts every one of 1,500 responses", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
   const pages: Promise<{ items: unknown[]; nextCursor: string | null }>[] = [];
   page.on("response", (response: Response) => {
     if (new URL(response.url()).pathname === `/api/v1/surveys/${LARGE_SURVEY}/results`) {
@@ -128,7 +131,7 @@ test("the Summary counts every one of 1,500 responses", async ({ page }) => {
     `/api/v1/surveys/${LARGE_SURVEY}/views/summary`,
   );
   // Nothing was saved on the server.
-  const stored = await page.request.get(`/api/v1/surveys/${LARGE_SURVEY}/views/summary`);
+  const stored = await api(page).get(`/api/v1/surveys/${LARGE_SURVEY}/views/summary`);
   expect(stored.status()).toBe(404);
 });
 
@@ -190,6 +193,7 @@ test("a hidden and moved Summary item is kept per user and reset from Details", 
 });
 
 test("the Table pages through 1,500 responses and exports them all as CSV", async ({ page }) => {
+  test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
   await keepViewWritesInBrowser(page);
   const writes = recordViewWrites(page);
   await signInAt(page, `/surveys/${LARGE_SURVEY}/results?tab=table`);
@@ -274,6 +278,7 @@ test("surveyjs.io's saved layouts load without being saved again; the Table show
 test("the Dashboard loads only on the results page, and its table only on the Table tab", async ({
   page,
 }) => {
+  test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
   await keepViewWritesInBrowser(page);
   const writes = recordViewWrites(page);
   const requested: string[] = [];
@@ -316,6 +321,8 @@ test.describe("a stranger", () => {
   test.use({ expectedErrorResponses: [{ path: `/api/v1/surveys/${LARGE_SURVEY}`, status: 404 }] });
 
   test("sees that another user's survey is not available", async ({ page }) => {
+    // On the sandbox it would pass only because the survey is not there at all.
+    test.skip(sandboxMode, notOnSandbox.seed("survey a08, API created, and its 1,500 responses"));
     await signInAt(page, `/surveys/${LARGE_SURVEY}/results`, "outsider");
     await expect(page.getByText("This survey is not available.")).toBeVisible();
   });
