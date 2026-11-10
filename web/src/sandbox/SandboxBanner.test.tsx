@@ -130,7 +130,8 @@ describe("SandboxBanner", () => {
     );
     expect(message.getAttribute("role")).toBe("alert");
     expect(message.closest("aside")!.querySelector("[role=alert] [role=alert]")).toBeNull();
-    expect(document.activeElement).toBe(message);
+    // The focus moves in an effect after the message renders.
+    await waitFor(() => expect(document.activeElement).toBe(message));
     expect(navigateTo).not.toHaveBeenCalled();
     expect(document.cookie).toContain("msid=u1");
   });
