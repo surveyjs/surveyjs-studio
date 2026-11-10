@@ -6,21 +6,24 @@ import { publicUrl } from "../auth/identity.js";
 import { linkTokenHash } from "../auth/password-handlers.js";
 import type { SessionCheck } from "../auth/session-check.js";
 import type { Clock } from "../auth/session.js";
+import type { ExternalMethod } from "../config.js";
 import { AppError } from "../errors.js";
 import { decodeUsersCursor, encodeUsersCursor } from "../paging/cursor.js";
 import type {
   AccountChange,
+  IdentityLink,
   InstanceRole,
   LocalAccount,
   LocalAccountStore,
+  PendingPasswordLink,
 } from "../providers/types.js";
 import { notFound } from "../surveys/access.js";
-import { decideAccountChange } from "./rules.js";
 
 type AdminUser = components["schemas"]["AdminUser"];
 type AdminUserPage = components["schemas"]["AdminUserPage"];
 type PasswordLink = components["schemas"]["PasswordLink"];
 type CreatedUser = components["schemas"]["CreatedUser"];
+type LinkedIdentityList = components["schemas"]["LinkedIdentityList"];
 
 /** A set-password link works for 7 days (spec: Set-password links). */
 export const LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -45,16 +48,37 @@ export interface AdminService {
   update(user: RequestUser, userId: string, change: AccountChange): Promise<AdminUser>;
   delete(user: RequestUser, userId: string): Promise<void>;
   resetLink(user: RequestUser, userId: string): Promise<PasswordLink>;
+  listIdentities(user: RequestUser, userId: string): Promise<LinkedIdentityList>;
+  unlinkIdentity(
+    user: RequestUser,
+    userId: string,
+    provider: ExternalMethod,
+    subject: string,
+  ): Promise<void>;
 }
 
-const adminUserJson = (account: LocalAccount): AdminUser => ({
+const adminUserJson = (
+  account: LocalAccount,
+  pendingLink: PendingPasswordLink | undefined,
+): AdminUser => ({
   id: account.user.id,
   email: account.user.email,
   displayName: account.user.displayName,
   instanceRole: account.instanceRole,
   status: account.status,
+  hasPassword: account.passwordHash !== null,
+  pendingLink: pendingLink
+    ? { purpose: pendingLink.purpose, expiresAt: pendingLink.expiresAt }
+    : null,
   createdAt: account.createdAt,
   lastSignInAt: account.lastSignInAt,
+});
+
+const identityJson = (link: IdentityLink): LinkedIdentityList["items"][number] => ({
+  provider: link.provider,
+  subject: link.subject,
+  email: link.email,
+  linkedAt: link.createdAt,
 });
 
 const forbidden = (): AppError =>
@@ -71,6 +95,14 @@ const lastInstanceAdmin = (): AppError =>
     status: 409,
     title: "Last instance admin",
     detail: "The instance must keep at least one active admin.",
+  });
+
+const ownReset = (): AppError =>
+  new AppError({
+    code: "forbidden",
+    status: 403,
+    title: "Forbidden",
+    detail: "You cannot reset your own password. Change it in your account, or ask another admin.",
   });
 
 const emailTaken = (): AppError =>
@@ -104,11 +136,18 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
     };
   };
 
+  /** The account as the admin API shows it, with its pending link read now. */
+  const withPendingLink = async (account: LocalAccount): Promise<AdminUser> =>
+    adminUserJson(account, (await accounts.pendingPasswordLinks(nowIso())).get(account.user.id));
+
   return {
     async list(user, { limit, cursor }) {
       requireInstanceAdmin(user);
       const after = cursor === undefined ? undefined : decodeUsersCursor(cursor);
-      const all = await accounts.listAccounts();
+      const [all, pending] = await Promise.all([
+        accounts.listAccounts(),
+        accounts.pendingPasswordLinks(nowIso()),
+      ]);
       const rest = after
         ? all.filter(
             ({ user: { email, id } }) =>
@@ -118,7 +157,7 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
       const items = rest.slice(0, limit);
       const last = items.at(-1);
       return {
-        items: items.map(adminUserJson),
+        items: items.map((account) => adminUserJson(account, pending.get(account.user.id))),
         nextCursor:
           last !== undefined && rest.length > limit
             ? encodeUsersCursor({ email: last.user.email, id: last.user.id })
@@ -129,30 +168,30 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
     async create(user, { email, displayName, instanceRole = "user" }) {
       requireInstanceAdmin(user);
       if (await accounts.accountByEmail(email)) throw emailTaken();
+      const link = newLink();
+      const stored = { ...link.stored, purpose: "invitation" as const };
       let account: LocalAccount;
       try {
-        account = await accounts.createAccount({
-          id: randomUUID(),
-          email,
-          displayName,
-          instanceRole,
-          status: "invited",
-          passwordHash: null,
-          mustChangePassword: false,
-          createdAt: nowIso(),
-        });
+        // One write: the account and its link are stored together, or neither is.
+        account = await accounts.createAccount(
+          {
+            id: randomUUID(),
+            email,
+            displayName,
+            instanceRole,
+            status: "invited",
+            passwordHash: null,
+            mustChangePassword: false,
+            createdAt: nowIso(),
+          },
+          { link: stored },
+        );
       } catch (error) {
         // Created at the same time by another request: the email is taken now.
         if (await accounts.accountByEmail(email)) throw emailTaken();
         throw error;
       }
-      const link = newLink();
-      await accounts.createPasswordLink({
-        ...link.stored,
-        userId: account.user.id,
-        purpose: "invitation",
-      });
-      return { user: adminUserJson(account), link: link.json };
+      return { user: adminUserJson(account, stored), link: link.json };
     },
 
     async update(user, userId, change) {
@@ -162,32 +201,48 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
       if (result.outcome === "last-instance-admin") throw lastInstanceAdmin();
       // A disabled account or a changed role reaches the user's sessions at once on this server.
       sessionCheck.forget(result.account.user.id);
-      return adminUserJson(result.account);
+      return withPendingLink(result.account);
     },
 
     async delete(user, userId) {
       requireInstanceAdmin(user);
-      const account = await accounts.account(userId);
-      if (!account) throw notFound();
-      // Checked before the erasure, so the last admin's data is never erased; the store checks
-      // again when it deletes.
-      const activeAdmins = await accounts.countActiveAdmins();
-      if (decideAccountChange(account, null, activeAdmins) === "last-instance-admin") {
-        throw lastInstanceAdmin();
-      }
-      await eraseAccount(account.user.id, { now: nowIso() });
-      const outcome = await accounts.deleteAccount(account.user.id);
+      // First the account stops signing in: disabled, its sessions ended. The store applies the
+      // last-instance-admin rule atomically, so the last admin's data is never erased. Should the
+      // erasure fail, the account stays disabled and the delete can be tried again.
+      const disabled = await accounts.updateAccount(userId, { status: "disabled" });
+      if (disabled.outcome === "not-found") throw notFound();
+      if (disabled.outcome === "last-instance-admin") throw lastInstanceAdmin();
+      const { id } = disabled.account.user;
+      sessionCheck.forget(id);
+      await eraseAccount(id, { now: nowIso() });
+      const outcome = await accounts.deleteAccount(id);
       if (outcome === "last-instance-admin") throw lastInstanceAdmin();
-      sessionCheck.forget(account.user.id);
+      sessionCheck.forget(id);
     },
 
     async resetLink(user, userId) {
       requireInstanceAdmin(user);
+      // It would end the admin's own session at once, and with it the page that shows the link.
+      if (userId.toLowerCase() === user.id.toLowerCase()) throw ownReset();
       const link = newLink();
       const epoch = await accounts.resetPassword(userId, link.stored);
       if (epoch === null) throw notFound();
       sessionCheck.forget(userId);
       return link.json;
+    },
+
+    async listIdentities(user, userId) {
+      requireInstanceAdmin(user);
+      if (!(await accounts.account(userId))) throw notFound();
+      return { items: (await accounts.listIdentities(userId)).map(identityJson) };
+    },
+
+    async unlinkIdentity(user, userId, provider, subject) {
+      requireInstanceAdmin(user);
+      const epoch = await accounts.unlinkIdentity(userId, provider, subject);
+      if (epoch === null) throw notFound();
+      // The account's sessions end at once on this server (the epoch went up).
+      sessionCheck.forget(userId);
     },
   };
 }

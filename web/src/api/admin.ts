@@ -4,6 +4,7 @@ import { client, toApiError } from "./client";
 
 export type AdminUser = components["schemas"]["AdminUser"];
 export type PasswordLink = components["schemas"]["PasswordLink"];
+export type LinkedIdentity = components["schemas"]["LinkedIdentity"];
 type AdminUserCreate = components["schemas"]["AdminUserCreate"];
 type AdminUserPatch = components["schemas"]["AdminUserPatch"];
 
@@ -12,6 +13,7 @@ const MERGE_PATCH = { "Content-Type": "application/merge-patch+json" };
 
 export const adminKeys = {
   users: ["admin", "users"] as const,
+  identities: (userId: string) => ["admin", "users", userId, "identities"] as const,
 };
 
 /** Every user of the instance, as one array: follows `nextCursor` until the last page. */
@@ -33,7 +35,10 @@ export const usersQueryOptions = queryOptions({
   },
 });
 
-/** Each write reads the list again when it is done, also when it failed. */
+/**
+ * Each write reads the list again when it is done, also when it failed; the users' sign-ins too
+ * (their keys start with the list's).
+ */
 function useRefreshUsers() {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: adminKeys.users });
@@ -83,7 +88,7 @@ export function useDeleteUser() {
   });
 }
 
-/** Resets a user's password; the answer holds the new one-time link. */
+/** Resets a user's password; the answer holds the new one-time link. It unlinks their sign-ins too. */
 export function useResetLink() {
   const refresh = useRefreshUsers();
   return useMutation({
@@ -93,6 +98,35 @@ export function useResetLink() {
       });
       if (!response.ok || data === undefined) throw toApiError(error, response);
       return data;
+    },
+    onSettled: refresh,
+  });
+}
+
+/** A user's linked Google, GitHub, Facebook and surveyjs.io sign-ins. */
+export const identitiesQueryOptions = (userId: string) =>
+  queryOptions({
+    queryKey: adminKeys.identities(userId),
+    queryFn: async ({ signal }) => {
+      const { data, error, response } = await client.GET("/admin/users/{userId}/identities", {
+        params: { path: { userId } },
+        signal,
+      });
+      if (!response.ok || data === undefined) throw toApiError(error, response);
+      return data.items;
+    },
+  });
+
+/** Unlinks one of a user's sign-ins; their sessions end. */
+export function useUnlinkIdentity() {
+  const refresh = useRefreshUsers();
+  return useMutation({
+    mutationFn: async ({ userId, identity }: { userId: string; identity: LinkedIdentity }) => {
+      const { error, response } = await client.DELETE(
+        "/admin/users/{userId}/identities/{provider}/{subject}",
+        { params: { path: { userId, provider: identity.provider, subject: identity.subject } } },
+      );
+      if (!response.ok) throw toApiError(error, response);
     },
     onSettled: refresh,
   });

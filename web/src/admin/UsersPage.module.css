@@ -68,14 +68,67 @@
   vertical-align: top;
 }
 
+/* The user: the name, and the email under it (one column, so the actions fit on one line). */
+.name,
+.email {
+  display: block;
+}
+
+.email {
+  font-weight: 400;
+}
+
+/* A wrapper inside the cell: a flex cell would stop being a table cell, and its border would not
+   line up with the row's. */
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
+/* On a wide screen a row's actions stay on one line; the other columns wrap their text instead. */
+@media (min-width: 1200px) {
+  .actions {
+    flex-wrap: nowrap;
+  }
+}
+
 /* The site's buttons take the whole width on a phone (button.scss); a row's actions stay side by
-   side and wrap. */
-.actions button {
+   side and wrap only on a narrow screen. */
+.actions button,
+.signIn button {
   width: auto;
+  white-space: nowrap;
+}
+
+/* A user's sign-ins, under their row. */
+.signInsRow td {
+  background: #f7f7f7; /* $General--Backcolor-Dim */
+}
+
+.signIns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+
+.signInsLabel {
+  font-weight: 600;
+}
+
+.signInList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.signIn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

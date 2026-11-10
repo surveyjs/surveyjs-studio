@@ -468,10 +468,11 @@ paths:
       operationId: createUserResetLink
       summary: Reset a user's password
       description: |
-        Instance admins only. Clears the user's password, ends their sessions within a
-        minute, makes their earlier links unusable, and returns a new one-time
-        set-password link, valid for 7 days: the only time it is shown. For an `invited`
-        user it is a new invitation link.
+        Instance admins only. Clears the user's password, unlinks every linked sign-in
+        (Google, GitHub, Facebook, surveyjs.io), ends their sessions within a minute, makes
+        their earlier links unusable, and returns a new one-time set-password link, valid
+        for 7 days: the only time it is shown. For an `invited` user it is a new invitation
+        link. An OAuth2 sign-in with the account's verified email links again afterwards.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -481,6 +482,63 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PasswordLink' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /admin/users/{userId}/identities:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    get:
+      tags: [Admin]
+      operationId: listUserIdentities
+      summary: List a user's linked sign-ins
+      description: |
+        Instance admins only. The user's linked Google, GitHub, Facebook and surveyjs.io
+        identities, ordered by provider, then by when they were linked. Not paged: a user
+        has a few at most. `404` for an unknown user.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The user's linked identities.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkedIdentityList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /admin/users/{userId}/identities/{provider}/{subject}:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+      - name: provider
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/IdentityProvider' }
+      - name: subject
+        in: path
+        required: true
+        description: The identity's `subject`, URL-encoded.
+        schema: { type: string, minLength: 1, maxLength: 1024 }
+    delete:
+      tags: [Admin]
+      operationId: unlinkUserIdentity
+      summary: Unlink one of a user's sign-ins
+      description: |
+        Instance admins only. Removes the link, so that identity no longer signs in to the
+        account, and ends the user's sessions within a minute (one of them may come from
+        that identity). If the provider still gives the account's email as verified, the
+        next sign-in with it links it again: to keep someone out, disable the user.
+        `404` for an unknown user or an identity the user does not have.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204': { description: Unlinked. }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1929,7 +1987,18 @@ components:
     # ------------------------------------------------------------ Admin
     AdminUser:
       type: object
-      required: [id, email, displayName, instanceRole, status, createdAt, lastSignInAt]
+      required:
+        [
+          id,
+          email,
+          displayName,
+          instanceRole,
+          status,
+          hasPassword,
+          pendingLink,
+          createdAt,
+          lastSignInAt,
+        ]
       properties:
         id: { $ref: '#/components/schemas/Id' }
         email: { type: string, format: email }
@@ -1941,6 +2010,17 @@ components:
           description: >-
             `invited` until the user sets a password with their link, or an OAuth2 sign-in
             links an identity to the account.
+        hasPassword:
+          type: boolean
+          description: Whether the user has a password. `false` after a reset until they use the new link.
+        pendingLink:
+          description: >-
+            The user's set-password link that is not used and not expired: `invitation` for an
+            invited user, `reset` after a reset, `setup` for the first admin. `null` when there
+            is none (also when it expired).
+          oneOf:
+            - { $ref: '#/components/schemas/PendingLink' }
+            - { type: 'null' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         lastSignInAt:
           description: The last sign-in, with a password or an OAuth2 method; `null` before the first.
@@ -1953,8 +2033,48 @@ components:
           displayName: Alex
           instanceRole: user
           status: active
+          hasPassword: false
+          pendingLink: { purpose: reset, expiresAt: '2026-11-06T09:00:00.000Z' }
           createdAt: '2026-10-29T10:00:00.000Z'
           lastSignInAt: '2026-10-30T08:15:00.000Z'
+    PendingLink:
+      type: object
+      required: [purpose, expiresAt]
+      description: A set-password link waiting to be used. The link itself is never shown again.
+      properties:
+        purpose:
+          type: string
+          enum: [invitation, reset, setup]
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    IdentityProvider:
+      type: string
+      enum: [surveyjs, google, github, facebook]
+      description: The OAuth2 sign-in method an identity belongs to.
+    LinkedIdentity:
+      type: object
+      required: [provider, subject, email, linkedAt]
+      description: An identity at an OAuth2 provider that signs in to the account (ADR 0029).
+      properties:
+        provider: { $ref: '#/components/schemas/IdentityProvider' }
+        subject:
+          type: string
+          description: The provider's stable id of the person. Pass it, URL-encoded, to `unlinkUserIdentity`.
+        email:
+          description: The email the provider gave when the identity was linked (lower-case); `null` when it gave none.
+          oneOf:
+            - { type: string }
+            - { type: 'null' }
+        linkedAt: { $ref: '#/components/schemas/Timestamp' }
+      examples:
+        - provider: github
+          subject: '583231'
+          email: alex@example.com
+          linkedAt: '2026-11-03T14:00:00.000Z'
+    LinkedIdentityList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LinkedIdentity' } }
     AdminUserPage:
       type: object
       required: [items, nextCursor]

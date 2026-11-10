@@ -63,8 +63,12 @@ Choose **Change password** in the account menu (in the plain shell: in the heade
 password**. The new password must differ from the current one.
 
 Changing the password ends your sessions **everywhere else**, within a minute. A page left open
-in another browser or device stops loading its data; reload it, and the **Sign in** page opens.
-The browser you changed it in stays signed in.
+in another browser or device goes to the **Sign in** page at its next request, and back to where
+it was once you have signed in. The browser you changed it in stays signed in.
+
+The same happens to any signed-in page whose session ends: you signed out in another tab, the
+session expired, or an instance admin disabled you, reset your password or unlinked the sign-in you
+used. Public pages (a survey's run page, public results) are not affected.
 
 ### The first sign-in of the first admin
 

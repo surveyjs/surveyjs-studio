@@ -241,6 +241,52 @@ describe("the callback with the local directory", () => {
     expect(cookieValue(callback, "msid")).toBeUndefined();
   });
 
+  it("lets a user disabled by an admin in through none of their sign-ins, and ends the sessions", async () => {
+    const { server, providers } = await start({
+      AUTH_METHODS: "password,github,google,facebook",
+      GOOGLE_CLIENT_ID: "google-client",
+      GOOGLE_CLIENT_SECRET: "stub-secret-google",
+      FACEBOOK_CLIENT_ID: "fb-client",
+      FACEBOOK_CLIENT_SECRET: "stub-secret-facebook",
+    });
+    const accounts = providers.accounts;
+    if (!accounts) throw new Error("no local accounts");
+    const account = await accounts.createAccount(newAccount("dan@example.com"));
+    const dan = { sub: "dan-1", email: "dan@example.com" };
+    const viaGoogle = { query: "?provider=google", authorizePath: "/google/authorize" };
+    const viaFacebook = { query: "?provider=facebook", authorizePath: "/facebook/dialog/oauth" };
+    // Two identities linked by the verified email, each with a session.
+    const github = await signInWithGithub(server, dan);
+    const google = await callbackOf(server, await authorizeAtStub(server, dan, viaGoogle));
+    expect((await accounts.listIdentities(account.user.id)).map((link) => link.provider)).toEqual([
+      "github",
+      "google",
+    ]);
+
+    await accounts.updateAccount(account.user.id, { status: "disabled" });
+    // The linked identities, and a third provider with the same verified email: all refused.
+    const attempts = [
+      ["github", await signInWithGithub(server, dan)],
+      ["google", await callbackOf(server, await authorizeAtStub(server, dan, viaGoogle))],
+      ["facebook", await callbackOf(server, await authorizeAtStub(server, dan, viaFacebook))],
+    ] as const;
+    for (const [provider, callback] of attempts) {
+      expect(String(callback.headers.location)).toBe(
+        `${PUBLIC_BASE_URL}/sign-in/refused?reason=disabled&provider=${provider}`,
+      );
+      expect(cookieValue(callback, "msid")).toBeUndefined();
+    }
+    // Nothing new was linked, and the sessions from before have ended.
+    expect(await accounts.listIdentities(account.user.id)).toHaveLength(2);
+    for (const before of [github, google]) {
+      const me = await server.inject({
+        url: "/api/v1/me",
+        headers: { cookie: `msid=${cookieValue(before, "msid")}` },
+      });
+      expect(me.statusCode).toBe(401);
+    }
+  });
+
   it("signs in to the local account: its id and epoch, and the session check passes", async () => {
     const { server, config, providers } = await start({ AUTH_METHODS: "password,github" });
     const accounts = providers.accounts;

@@ -111,6 +111,14 @@ describe.skipIf(inject("passwordAdmin") === null)("the instance admin", () => {
         path: `/admin/users/${target}/reset-link`,
         headers: user,
       }),
+      call("GET", "/admin/users/{userId}/identities", {
+        path: `/admin/users/${target}/identities`,
+        headers: user,
+      }),
+      call("DELETE", "/admin/users/{userId}/identities/{provider}/{subject}", {
+        path: `/admin/users/${target}/identities/github/1`,
+        headers: user,
+      }),
     ];
     for (const refusedWrite of await Promise.all(writes)) {
       expect(refusedWrite.status).toBe(403);
@@ -179,6 +187,56 @@ describe.skipIf(inject("passwordAdmin") === null)("the instance admin", () => {
     expect(old.status).toBe(401);
     expect((await setPassword(tokenOf(link.url))).status).toBe(204);
     await signedIn(user.email);
+  });
+
+  it("listUsers shows the pending reset link, and hasPassword false until it is used", async (ctx) => {
+    const headers = await admin(ctx);
+    const user = await activeUser(headers, "pending");
+    const shown = async () => {
+      const response = await call("GET", "/admin/users", {
+        path: "/admin/users?limit=200",
+        headers,
+      });
+      const { items } = (await response.json()) as { items: { id: string }[] };
+      return items.find((item) => item.id === user.id);
+    };
+    expect(await shown()).toMatchObject({ hasPassword: true, pendingLink: null });
+    const reset = await call("POST", "/admin/users/{userId}/reset-link", {
+      path: `/admin/users/${user.id}/reset-link`,
+      headers,
+    });
+    const { url, expiresAt } = (await reset.json()) as { url: string; expiresAt: string };
+    expect(await shown()).toMatchObject({
+      status: "active",
+      hasPassword: false,
+      pendingLink: { purpose: "reset", expiresAt },
+    });
+    expect((await setPassword(tokenOf(url))).status).toBe(204);
+    expect(await shown()).toMatchObject({ hasPassword: true, pendingLink: null });
+  });
+
+  it("listUserIdentities: none for a password user; 404 for an unknown user or identity", async (ctx) => {
+    const headers = await admin(ctx);
+    const user = await activeUser(headers, "identities");
+    const listed = await call("GET", "/admin/users/{userId}/identities", {
+      path: `/admin/users/${user.id}/identities`,
+      headers,
+    });
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ items: [] });
+    const unknownUser = await call("GET", "/admin/users/{userId}/identities", {
+      path: `/admin/users/${randomUUID()}/identities`,
+      headers,
+    });
+    expect(unknownUser.status).toBe(404);
+    const unlink = await call("DELETE", "/admin/users/{userId}/identities/{provider}/{subject}", {
+      path: `/admin/users/${user.id}/identities/google/${encodeURIComponent("no/such one")}`,
+      headers,
+    });
+    expect(unlink.status).toBe(404);
+    expect(await codeOf(unlink)).toBe("not-found");
+    // Nothing happened: the user's session goes on.
+    expect((await call("GET", "/me", { headers: user.headers })).status).toBe(200);
   });
 
   it("deleteUser erases the user's data: their own project goes with them", async (ctx) => {

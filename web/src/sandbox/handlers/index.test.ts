@@ -108,6 +108,8 @@ describe("the contract's operations", () => {
         "updateUser",
         "deleteUser",
         "createUserResetLink",
+        "listUserIdentities",
+        "unlinkUserIdentity",
         "exportResults",
         "receiveAccountDeleted",
       ].sort(),

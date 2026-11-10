@@ -7,8 +7,12 @@ import type {
   LocalAccountStore,
   NewLocalAccount,
   PasswordLinkPurpose,
+  PendingPasswordLink,
   UserDirectory,
 } from "./types.js";
+
+/** Code-point order, as the SQL stores sort. */
+const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 interface StoredAccount extends Omit<LocalAccount, "user"> {
   readonly id: string;
@@ -114,11 +118,14 @@ export function createMemoryLocalAccounts(
   const accounts: LocalAccountStore = {
     countAccounts: () => Promise.resolve(byId.size),
     countActiveAdmins: () => Promise.resolve(activeAdmins()),
-    createAccount: (account: NewLocalAccount) => {
+    createAccount: (account: NewLocalAccount, options = {}) => {
       const id = account.id.toLowerCase();
       if (!GUID.test(id)) return Promise.reject(new Error("Account ids must be GUIDs"));
       if (byId.has(id) || findByEmail(account.email)) {
         return Promise.reject(new Error("An account with this id or email exists"));
+      }
+      if (options.link && links.has(options.link.tokenHash)) {
+        return Promise.reject(new Error("A link with this token exists"));
       }
       const stored: StoredAccount = {
         id,
@@ -133,6 +140,10 @@ export function createMemoryLocalAccounts(
         createdAt: account.createdAt,
       };
       byId.set(id, stored);
+      if (options.link) {
+        const { tokenHash, purpose, expiresAt } = options.link;
+        links.set(tokenHash, { userId: id, purpose, expiresAt, used: false });
+      }
       return Promise.resolve(accountOf(stored));
     },
     account: (id) => {
@@ -190,6 +201,26 @@ export function createMemoryLocalAccounts(
       });
       return Promise.resolve("linked" as const);
     },
+    listIdentities: (userId) => {
+      const found = find(userId);
+      if (!found) return Promise.resolve([]);
+      const order = (a: IdentityLink, b: IdentityLink) =>
+        compare(a.provider, b.provider) ||
+        compare(a.createdAt, b.createdAt) ||
+        compare(a.subject, b.subject);
+      return Promise.resolve(
+        [...identities.values()].filter((link) => link.userId === found.id).sort(order),
+      );
+    },
+    unlinkIdentity: (userId, provider, subject) => {
+      const found = find(userId);
+      const identity = identityKey(provider, subject);
+      if (!found || identities.get(identity)?.userId !== found.id) return Promise.resolve(null);
+      identities.delete(identity);
+      const updated: StoredAccount = { ...found, sessionEpoch: found.sessionEpoch + 1 };
+      byId.set(found.id, updated);
+      return Promise.resolve(updated.sessionEpoch);
+    },
     deleteAccount: (id) => {
       const found = find(id);
       if (!found) return Promise.resolve("not-found" as const);
@@ -207,6 +238,9 @@ export function createMemoryLocalAccounts(
       const found = find(id);
       if (!found) return Promise.resolve(null);
       for (const link of links.values()) if (link.userId === found.id) link.used = true;
+      for (const [identity, link] of identities) {
+        if (link.userId === found.id) identities.delete(identity);
+      }
       const purpose: PasswordLinkPurpose = found.status === "invited" ? "invitation" : "reset";
       links.set(tokenHash, { userId: found.id, purpose, expiresAt, used: false });
       const updated: StoredAccount = {
@@ -224,6 +258,17 @@ export function createMemoryLocalAccounts(
       const found = find(id);
       if (found) byId.set(found.id, { ...found, lastSignInAt: at });
       return Promise.resolve();
+    },
+    pendingPasswordLinks: (at) => {
+      const pending = new Map<string, PendingPasswordLink>();
+      for (const { userId, purpose, expiresAt, used } of links.values()) {
+        if (used || Date.parse(expiresAt) <= Date.parse(at)) continue;
+        const latest = pending.get(userId);
+        if (!latest || Date.parse(expiresAt) > Date.parse(latest.expiresAt)) {
+          pending.set(userId, { purpose, expiresAt });
+        }
+      }
+      return Promise.resolve(pending);
     },
     createPasswordLink: ({ tokenHash, userId, purpose, expiresAt }) => {
       links.set(tokenHash, { userId: userId.toLowerCase(), purpose, expiresAt, used: false });
