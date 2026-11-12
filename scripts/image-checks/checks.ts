@@ -485,6 +485,8 @@ const backup: Check = async (run, { image }) => {
   await run.waitReady(first);
   const created = await run.flowOnHost(first, ["bootstrap-and-create"]);
   const surveyId = String(created["surveyId"]);
+  // The wide data set too: the backup must carry every table and every stored file.
+  const wide = await run.flowOnHost(first, ["create-wide"]);
 
   const backedUp = await run.studio(first, ["backup", "--to", "/backups"]);
   if (backedUp.code !== 0) failed("surveyjs-studio backup", backedUp);
@@ -520,6 +522,7 @@ const backup: Check = async (run, { image }) => {
   });
   await run.waitReady(second);
   await run.flowOnHost(second, ["verify", surveyId]);
+  await run.flowOnHost(second, ["verify-wide", JSON.stringify(wide)]);
   return PASS;
 };
 
