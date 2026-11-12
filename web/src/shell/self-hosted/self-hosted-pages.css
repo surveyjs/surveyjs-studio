@@ -741,10 +741,9 @@
 }
 
 /* The account and Users pages sit in the site's page container (my-surveys.scss) for the
-   surveyjs-site shell, as My Surveys does. They put the page header straight in it (My Surveys wraps
-   it in its own header block), which tells them apart. Here .sh-content lays them out, so the plain
-   shell's padding is dropped. */
-.sh-app .v2-class---my-surveys-page__container:has(> .v2-class---header) {
+   surveyjs-site shell, as My Surveys does; `studio-form-page` (AccountForm.tsx) tells them apart.
+   Here .sh-content lays them out, so the plain shell's padding is dropped. */
+.sh-app .studio-form-page {
   padding: 0;
 
   /* The account forms' margins are for the other shells; here the paragraph after a form has its

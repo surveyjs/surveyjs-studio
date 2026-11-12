@@ -6,10 +6,20 @@ import styles from "./AccountForm.module.css";
  * margins and width in the surveyjs-site shell). The plain shell gets a readable layout from this
  * module; the self-hosted shell lays the page out itself.
  */
+/**
+ * The account pages' and the Users page's container, for a shell's stylesheet: a global class, as
+ * the CSS modules' names change with each build (self-hosted-pages.css).
+ */
+export const FORM_PAGE_CLASS = "studio-form-page";
+
 export function AccountPage({ children }: { children: ReactNode }) {
   return (
     <div className="v2-class---my-surveys-page">
-      <div className={`v2-class---my-surveys-page__container ${styles.container}`}>{children}</div>
+      <div
+        className={`v2-class---my-surveys-page__container ${FORM_PAGE_CLASS} ${styles.container}`}
+      >
+        {children}
+      </div>
     </div>
   );
 }
