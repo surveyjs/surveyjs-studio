@@ -8,8 +8,9 @@
  * offsetWidth" from a frame callback. Tabulator asks callers to wait for `tableBuilt`; the build
  * draws the table at the container's width anyway, so a redraw before it is skipped.
  *
- * Remove this once survey-analytics waits for the table to be built. When the library no longer
- * has `observeContainerResize`, this changes nothing.
+ * Reported as https://github.com/surveyjs/survey-analytics/issues/887. Remove this once
+ * survey-analytics waits for the table to be built. When the library no longer has
+ * `observeContainerResize`, this changes nothing.
  */
 
 interface TabulatorTable {
