@@ -177,7 +177,8 @@ of them blocks Step 13; each one is due by the point named in its _Answer by_: a
 - **Library versions.** Live Form Library and Creator run 3.2.2; the app ran 3.1.2. The live Dashboard version is not
   exposed (`states.json`). Differences inside them are accepted as `library`. **Answered (product owner, 2026-10-21):**
   all five `survey-*` packages move to 3.2.2, as live runs (Step 14). If the look changes against the baselines, the
-  product owner recaptures (`pnpm visual:capture`).
+  product owner recaptures (`pnpm visual:capture`). On 2026-11-12 the app moved to 3.2.5 while live stays at 3.2.2;
+  all 55 screens still pass, so nothing was recaptured.
 - **The `history` screen was skipped** (`skip` in the manifest, 2026-10-20). The live history page was empty for the
   dedicated account. **Answered (2026-10-21):** the cause was on surveyjs.io. Its history page did not list the saved
   points. The product owner fixed it in surveyjs.io commit `3389d6cd49` on `master` ("Fix empty survey editing history

@@ -76,7 +76,8 @@ async function exportAs(page: Page, caption: "CSV" | "Excel" | "PDF"): Promise<D
   const bar = page.locator(".sa-tabulator__downloads-bar");
   const download = page.waitForEvent("download", { timeout: 60_000 });
   await bar.getByRole("button", { name: "Export As..." }).click();
-  await bar.getByRole("option", { name: caption, exact: true }).click();
+  // Since survey-analytics 3.2.5 an option's accessible name is "Export as CSV"; its text stays "CSV".
+  await bar.getByRole("option", { name: `Export as ${caption}`, exact: true }).click();
   return download;
 }
 
