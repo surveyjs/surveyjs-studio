@@ -1,8 +1,8 @@
 # Implementation plan: hosted migration track (deployment mode 1.3)
 
-Status: draft · 2026-10-19
+Status: draft · 2026-10-19 · refreshed 2026-11-12 against what the self-hosted track built
 Implements: [spec-hosted.md](spec-hosted.md), within [idea.md](idea.md) (§3.0, D16–D22) and the contract [contract/openapi.yaml](contract/openapi.yaml).
-Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It runs at the same time as [plan-self-hosted.md](plan-self-hosted.md).
+Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It was planned to run beside [plan-self-hosted.md](plan-self-hosted.md); the self-hosted track finished first (all 11 steps merged by 2026-11-08), so this track starts on its results ([What the self-hosted track already built](#what-the-self-hosted-track-already-built)).
 
 ## How to use this plan
 
@@ -23,16 +23,41 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It run
 2. **Providers under test.** The conformance and provider suites run on memory, Azure legacy (Azurite) and, from Step 8, the chosen SQL provider. Token and partial-response operations run on every provider.
 3. **The compatibility suite** (`legacy-compat-tests`, from Step 5) is a fourth seam. It works like the conformance suite but checks legacy response shapes against golden files. Any step that touches result, survey or file behaviour keeps it green.
 4. **Operational steps** need people on the surveyjs.io side. Such steps list their **Inputs needed**, and their demo checklist is run with the SurveyJS team.
-5. **Contract edits** are coordinated with the self-hosted track: small PRs, rebased often. A contract change never mixes both tracks' operations.
+5. **Contract edits** stay small, one concern per PR. Any new UI is checked in both the `surveyjs-site` and `self-hosted` shells, and a hosted-only feature stays hidden in `self-hosted`.
+6. **Production data stays private.** The repository is public ([Going public](docs/operations/going-public.md)), and its history was cleaned of production figures. These never go into the repository, a PR, an issue or an Actions log:
+   - access logs, client IP addresses, user agents and origins of named integrators;
+   - counts and sizes measured on production or on a staging copy of it (`inspect:legacy --stats`, `migrate:hosted plan`, `verify`, rehearsal timings);
+   - replay and rehearsal reports, and golden responses recorded on production before they are reviewed.
+
+   They go to the private working location agreed with the SurveyJS team, outside this repository. The repository gets only what the decision needs: shares and orders of magnitude (for example "under 1 % of requests", "tens of GB"), the chosen thresholds, and pass or fail. A PR that rests on private data says so and names the file there, not its content. Tests use the fixtures and synthetic data only.
+
+## What the self-hosted track already built
+
+Checked against `master` on 2026-11-12. Each step below says what it reuses.
+
+| Piece                                                                                                                                                          | Where                                                                                           | Used by        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------- |
+| The logical schema; SQLite and PostgreSQL providers with plain-SQL migrations `0001`–`0005`                                                                    | `server/sql/`, [data-model.md](docs/architecture/data-model.md), ADRs 0023, 0024                | Steps 3, 4, 8  |
+| Local, S3-compatible and Azure file stores                                                                                                                     | [ADR 0025](docs/adr/0025-file-storage-for-the-sql-providers.md)                                 | Steps 5, 8, 9  |
+| `surveyjs.io` sign-in through OIDC beside Google, GitHub and Facebook, with linked identities                                                                  | `server/src/auth/providers/`, [ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md) | Step 2         |
+| The `local` directory, its join policy, and `project_invitations` (`addMember` with an unknown email, `removeInvitation`, turned into a membership at sign-in) | `USER_DIRECTORY=local`, migration `0005`                                                        | Step 2         |
+| The `partial` column on responses                                                                                                                              | migration `0002`                                                                                | Step 4         |
+| The `self-hosted` and `surveyjs-site` shells; `config.edition` (`hosted` or `self-hosted`)                                                                     | [ADR 0027](docs/adr/0027-branding-and-the-licence-key.md)                                       | Steps 2, 3, 10 |
+| `surveyjs-studio backup`, `restore`, `migrate`, `rebase-urls`                                                                                                  | [Self-hosting](docs/self-hosting.md)                                                            | Steps 8, 9     |
+| The hosted production server on Hetzner, with health-checked deploys and rollback by image tag                                                                 | [Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)                          | Steps 1, 7, 10 |
+
+**Not built,** although the self-hosted plan allowed for it: the `api_tokens` table (SH Step 2 left it to Step 3; [data-model.md › Planned](docs/architecture/data-model.md#planned)), the hosted-only tables, a `profiles` directory, CORS and bearer authentication.
 
 ## Cross-track dependencies
 
-| This plan                                 | Needs                                                                                          | From                                                                                                                                                 |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Step 8 (target provider readiness)        | The logical schema, the SQL provider for the chosen database, and the S3-compatible file store | SH Steps 1–3, if the choice in Step 1 is PostgreSQL and S3-compatible storage. Otherwise Step 8 builds the chosen provider against the same suites   |
-| Steps 3 and 4 (tokens, partial responses) | Storage on the SQL providers                                                                   | **The later of the two pieces adds the SQL side.** If SH Step 2 is merged first, Steps 3 and 4 add their SQL tables. If not, SH Step 2 includes them |
-| Step 2 (users from sign-in)               | The `UserDirectory` seam and the webhook; SQL storage for profiles and invitations             | plan.md Step 12; the SQL side follows the rule of Steps 3 and 4                                                                                      |
-| Step 10 (maintenance states)              | `READ_ONLY`                                                                                    | plan.md Step 14                                                                                                                                      |
+All met. The rule "the later of the two adds the SQL side" now means that this track adds every SQL table it needs, as migrations after `0005`.
+
+| This plan                                 | Needs                                                                                          | State                                                                                                 |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Step 8 (target provider readiness)        | The logical schema, the SQL provider for the chosen database, and the S3-compatible file store | Built for PostgreSQL and S3 (SH Steps 1–3). Another choice in Step 1 makes Step 8 build that provider |
+| Steps 3 and 4 (tokens, partial responses) | Storage on the SQL providers                                                                   | Step 3 adds `api_tokens`; Step 4 uses the existing `partial` column                                   |
+| Step 2 (users from sign-in)               | The `UserDirectory` seam and the webhook; SQL storage for users and invitations                | plan.md Step 12; `users`, `user_identities` and `project_invitations` from SH Steps 4 and 8           |
+| Step 10 (maintenance states)              | `READ_ONLY`                                                                                    | plan.md Step 14                                                                                       |
 
 ## Progress
 
@@ -63,11 +88,13 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - which legacy endpoints are really used;
 - where every legacy entity goes.
 
-**Inputs needed:**
+**Inputs needed** (all kept private, rule 6):
 
 - 30 days of `api.surveyjs.io` access logs, or per-endpoint statistics;
-- storage volumes (table and blob counts and sizes) from production;
-- the candidate Hetzner regions (Europe, USA) and the current Hetzner offer for PostgreSQL and object storage.
+- storage volumes (table and blob counts and sizes) from production, measured by the SurveyJS team with the `--stats` command this step builds;
+- the location of the production Hetzner server (chosen next to the Azure region of the stores, [Setting up a Hetzner server › The server](docs/operations/hetzner-server-setup.md#3-the-server)) and the current Hetzner offer for PostgreSQL and object storage there.
+
+**Can start without them:** the `--stats` command, the ADR's shortlist and criteria, and the mapping. The store choice, the scope decision and the window estimate wait for the inputs.
 
 **References**
 
@@ -78,18 +105,18 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Build**
 
 - **ADR "Hosted target stores":**
-  - the hosting: Hetzner, a European or a US region, with the GDPR basis for the choice;
+  - the hosting: Hetzner, in the production server's location unless the stores call for another, with the GDPR basis for the choice. The app already runs there in mode 1.1; after the cutover its stores should be in the same location, since every page makes several store calls;
   - the shortlist: databases (PostgreSQL managed or self-run on Hetzner, MySQL as a contrast) and file stores (Hetzner Object Storage, AWS S3, Cloudflare R2, Backblaze B2, self-run MinIO);
   - the criteria: data location and data-processing agreement, point-in-time restore, cost including egress, closeness to the app, provider already in the repository;
   - the choice, and how backups and point-in-time restore work with it (managed, or WAL archiving to object storage when PostgreSQL is self-run).
-- **`pnpm inspect:legacy --stats`:** read-only counts and sizes per entity, from a configured store. Used on the replica in CI and on production by the SurveyJS team.
-- **`docs/architecture/legacy-api-usage.md`:** requests per endpoint and per client type (user agent, origin), with the **scope decision** for the compatibility layer: kept, or `410`. Recorded in an ADR.
+- **`pnpm inspect:legacy --stats`:** read-only counts and sizes per entity, from a configured store. It extends today's `inspect:legacy`, which lists one user's surveys (`--user`). Used on the replica in CI and on production by the SurveyJS team; its production output stays private.
+- **`docs/architecture/legacy-api-usage.md`:** the share of requests per endpoint and per client type (Form Library version, server-side caller), with the **scope decision** for the compatibility layer: kept, or `410`. Recorded in an ADR. Shares and orders of magnitude only; no counts, addresses or integrator names (rule 6).
 - **`docs/architecture/hosted-migration-mapping.md`:**
   - every legacy entity and property, mapped to the logical schema;
   - the hosted-only tables;
   - the normalisation rules;
   - what is not migrated, and why.
-- **A window estimate** from the volumes: pre-copy duration, delta size per hour of changes.
+- **A window estimate** from the volumes: pre-copy duration, delta size per hour of changes. The calculation stays private; the ADR records the order of magnitude and whether it fits the one-hour target.
 
 **Tests**
 
@@ -103,6 +130,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 1. `pnpm inspect:legacy --stats` on the replica prints counts that match the fixtures.
 2. Reviewers agree with the store choice, the compatibility scope and the mapping. Every entity in `legacy-data-layout.md` §3 appears in the mapping.
+3. `pnpm scan:secrets` passes, and the new documents hold no production counts, addresses or integrator names.
 
 ---
 
@@ -121,32 +149,36 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - HS › Users; ADR 0022; ADR 0018 (the seam, the webhook, erasure).
 - H27.
 
+**Already built** (SH Steps 4 and 8): the `users`, `user_identities` and `project_invitations` tables; surveyjs.io sign-in through OIDC; `addMember` with an unknown email answering with a pending member, `removeInvitation`, and invitations turned into memberships at sign-in by any method; a `disabled` account refused at sign-in with its sessions ended ([ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md) D11).
+
 **Build**
 
-- **`blocked` from UserInfo.** The identity claims carry it; a blocked user gets the `403` "Account blocked", as with `surveyjs-sql`.
-- **The profile directory** (working name `profiles`) on the memory provider and the SQL providers:
-  - every sign-in writes the profile: id, email, display name, `blocked`, last sign-in;
-  - `getUser` and `findUserByEmail` read profiles;
+- **The hosted directory: a decision first, recorded in an ADR.** Either:
+  - **reuse `local`** with `AUTH_METHODS=surveyjs`, the join policy open to every surveyjs.io identity, and no passwords or instance admin in the `surveyjs-site` shell; or
+  - **a thin `profiles` directory** on the same tables, if `local` brings behaviour the hosted edition must not have.
+
+  Either way, on the memory provider and the SQL providers:
+  - every sign-in refreshes the user: email, display name, `blocked` (stored as `status` `disabled`, [data-model.md](docs/architecture/data-model.md)), last sign-in;
+  - `getUser` and `findUserByEmail` read these users;
   - `missingUsers` refuses, and `account:reconcile` says it is not available with this directory.
-- **Invitations.** Contract changes, with exact names and paths fixed in this step:
-  - `addMember` with an email that has no profile answers with a pending invitation instead of `user-not-found`;
-  - admins list and cancel a project's invitations;
-  - a sign-in whose email matches turns each invitation into a membership with its role.
+
+- **`blocked` from UserInfo.** The identity claims carry it; a blocked user gets the `403` "Account blocked", as with `surveyjs-sql`, and a user unblocked on the site works again at the next sign-in.
+- **Invitations in the hosted edition:** the existing operations, plus the pending list in the `surveyjs-site` shell's members page if it lacks it. No new contract operations unless the pending list needs one.
 - **Licence notices from the site.** In the hosted edition the web app's shell asks the site endpoint for the signed-in user. The server's `surveyjs-licenses` stays for `surveyjs-sql`.
 - **Profiles in the migration.** Step 9 exports a profile for every user the copied data names, from the site's `Users` table.
 - **Removing the user API client:** the `surveyjs-api` directory, its stub and conformance run, `USER_API_URL`, `USER_API_TOKEN` and the `user-api` readiness check. The API sections of the user API document go too.
 
 **Tests**
 
-- **Back-end unit:** the profile write at sign-in; invitation matching (email case, already a member, a cancelled invitation); `blocked`.
-- **Back-end e2e:** the provider suite for profiles and invitations on memory and SQL; the conformance suite for the invitation operations.
+- **Back-end unit:** the user refresh at sign-in; `blocked` and unblocked. Invitation matching is covered since SH Step 8; add cases only for what the hosted directory changes.
+- **Back-end e2e:** the provider suite for the hosted directory on memory and SQL; the conformance suite's invitation operations run with it.
 - **Front-end e2e:** inviting an unknown email, the pending list and cancelling; the licence notice from a stubbed site endpoint.
 
 **Documentation:** `docs/operations.md` (the directory settings), `docs/architecture.md` (profiles and invitations), the API reference, the user guide on projects and members, `docs/demo/hosted-02.md`.
 
 **Demo checklist**
 
-1. Locally on `profiles`, sign in as a new user. The profile is written, and the account menu shows the name.
+1. Locally on the hosted directory, sign in through the surveyjs.io stub as a new user. The profile is written, and the account menu shows the name.
 2. As a project admin, add an email nobody has signed in with. It is listed as pending. Sign in with that email: the project is there, with the invited role.
 3. On staging, block a test account in the site admin and sign in to the app with it: "Account blocked".
 4. On staging, the licence notice of a user with an expired licence comes from the site endpoint.
@@ -172,7 +204,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - **TokenStore:**
   - memory;
   - Azure legacy, as a new app-owned table that legacy code never reads;
-  - SQL, if SH Step 2 has merged (see Cross-track dependencies).
+  - SQL: the `api_tokens` table of [data-model.md › Planned](docs/architecture/data-model.md#planned), as the next migration for SQLite and PostgreSQL, moved to the built tables in that document.
 
   Only a hash is stored.
 
@@ -230,7 +262,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - the completion state becomes `partial`;
   - a later completed response for the same client ID makes it `completed`.
 
-  This is implemented on memory, on Azure legacy (writing `ispartialcompleted` as `Edm.Boolean`, as the legacy service did) and on SQL (see Cross-track dependencies).
+  This is implemented on memory, on Azure legacy (writing `ispartialcompleted` as `Edm.Boolean`, as the legacy service did) and on SQL. The SQL tables already have a `partial` column (migration `0002`); check what the SQL ResultStore does with it today before adding anything.
 
 - **Results:**
   - lists and exports include partial responses, marked;
@@ -263,7 +295,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 **Goal:** the legacy public endpoints and the legacy file URLs are answered by the app, with legacy-exact responses, on any provider.
 
-**Inputs needed:** golden responses recorded from the real `api.surveyjs.io` for a set of known test surveys on production, made by the SurveyJS team with a script from this step.
+**Inputs needed:** golden responses recorded from the real `api.surveyjs.io` for a set of known test surveys on production, made by the SurveyJS team with a script from this step. The surveys belong to a test account and hold made-up answers; the recordings are reviewed in the private location (rule 6) before any is committed, and ids, emails and addresses that are not the test account's are replaced.
 
 **References**
 
@@ -360,8 +392,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Inputs needed:**
 
 - the SurveyJS team's reverse proxy on `api.surveyjs.io`, or control of its DNS. The host serves only My Surveys, so the app takes the whole host;
-- an access-log sample;
-- the staging environment.
+- an access-log sample, kept private (rule 6);
+- the staging environment. The production app runs on the Hetzner server in mode 1.1 ([Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)); taking the host means `api.surveyjs.io` reaches that server too, which needs its Caddy site and certificate.
 
 **References**
 
@@ -390,7 +422,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 - **Back-end unit:** the JSON comparison rules (ordering, the date formats the legacy service emits).
 - **Back-end e2e:** replay of a recorded fixture log against two local servers (the app and a golden-file stub) produces the expected report.
-- **Staging:** the replay of the real sample, run manually, with its report attached to the PR.
+- **Staging:** the replay of the real sample, run manually. The report stays private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
 
 **Documentation:** the takeover runbook, `docs/operations.md` (legacy API monitoring), `docs/demo/hosted-07.md`.
 
@@ -413,7 +445,9 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Build**
 
 - **If the choice is not PostgreSQL with S3-compatible storage:** the chosen provider, built against the existing provider and conformance suites. The step grows by that work.
-- **Hosted-only tables as SQL migrations:**
+  **Already built** (SH Steps 1–3): the PostgreSQL provider, its migrations `0001`–`0005`, the S3-compatible file store, and `surveyjs-studio backup`/`restore`, which cover SQLite and local files only. A PostgreSQL deployment is backed up with the database's own tools ([Self-hosting › Backups](docs/self-hosting.md#backups)).
+
+- **Hosted-only tables as SQL migrations** after Step 3's:
   - `legacy_files`;
   - `legacy_access_keys`;
   - `survey_events`;
@@ -421,14 +455,13 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
   These are empty and unused in the self-hosted image.
 
-- **Tokens and partial responses on SQL,** if not added earlier (Cross-track dependencies).
-- **A scale check** on a synthetic data set the size of production (from the Step 1 estimate):
+- **A scale check** on a synthetic data set the size of production (from the Step 1 estimate; the generator takes the size as a parameter, so the real figures stay private):
   - list, page, export and statistics times on the largest surveys;
   - index fixes until they meet targets agreed in the step's ADR.
 - **Backup and restore** for the hosted stores, tested once with a restore into a scratch instance (H25):
   - point-in-time restore: managed, or WAL archiving to object storage when PostgreSQL runs on our own Hetzner servers (Step 1 ADR);
   - object-store versioning, or a scheduled copy where the store has no versioning.
-- **The hosted production profile on the new stores,** ready but not active.
+- **The hosted production profile on the new stores,** ready but not active: the settings in `deploy/hetzner/app.env.example`, `docker/prod-like.env` kept in step, and a `prod-like` CI variant on PostgreSQL and S3.
 
 **Tests**
 
@@ -470,7 +503,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - **Safety:**
   - every run reads the source only;
   - a dry run into a scratch target is the default unless `--target` is given;
-  - progress logs, and a machine-readable report.
+  - progress logs, and a machine-readable report; reports from production or a staging copy stay private (rule 6).
 - **Files:** editor images and respondent files go into the target file store, with `legacy_files` filled for the legacy names. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID.
 
 **Tests**
@@ -523,6 +556,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   7. post-checks.
 
   `pnpm cutover --rollback` restores the old configuration. Each step asks for confirmation and logs to a cutover record.
+
+- **Rollback on the server.** Today a deploy rolls back by image tag because the app has no database migrations ([Setting up a Hetzner server › Update, roll back, status](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)). On the target stores it has. The step decides how `update.sh` and the auto-update timer treat an image whose migrations ran (for example: migrations are only ever additive, so the previous image still runs), and documents it in that page.
 
 - **`docs/operations/legacy-azure-resources.md`:** every legacy resource the cutover leaves unused, for the SurveyJS team to remove when it chooses:
   - each storage account with its tables, blob containers and file shares;
@@ -580,9 +615,9 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 **Tests**
 
-- **Rehearsal:** the reports from `verify`, the compatibility suite and the Phase 1 user-story suites against the rehearsed target, attached to the PR.
+- **Rehearsal:** the reports from `verify`, the compatibility suite and the Phase 1 user-story suites against the rehearsed target. They stay private (rule 6); the PR states pass or fail and the window time against the limit.
 
-**Documentation:** the runbook, the rehearsal report, `docs/demo/hosted-11.md`.
+**Documentation:** the runbook (timings rounded), a rehearsal summary without production figures, `docs/demo/hosted-11.md`.
 
 **Demo checklist**
 
@@ -659,7 +694,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - **D18:** Steps 1, 5–11 (migration, compatibility layer, tokens before the cutover, IDs kept). Step 12 removes the legacy code, and the documents stay.
 - **D19:** nothing here; the site's redirects are in place since plan.md Step 14.
 - **D10 (revised):** Step 1 chooses the stores.
-- **D22:** the self-hosted track runs alongside; see Cross-track dependencies.
+- **D22:** planned to run beside the self-hosted track, which finished first; see [What the self-hosted track already built](#what-the-self-hosted-track-already-built).
 
 **Contract:**
 
@@ -669,7 +704,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ## Open points this plan depends on
 
-- The open questions of spec-hosted are answered (2026-10-19). Step 1 still needs the Hetzner region and store choice.
+- The open questions of spec-hosted are answered (2026-10-19). Step 1 still needs the store choice; the app's Hetzner location is set by the production server.
+- **A private location for production data** (rule 6), agreed with the SurveyJS team before Step 1 receives its inputs.
 - **The surveyjs.io side:**
   - the user API (Step 2);
   - logs and statistics (Step 1);
@@ -678,4 +714,4 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - removing the access key from the manage account page (cutover);
   - the staging copy (Step 11);
   - removing the legacy code after the cutover.
-- **The self-hosted track's SQL foundation** for Step 8.
+- **The self-hosted track's SQL foundation** for Step 8: built (2026-11-08).
