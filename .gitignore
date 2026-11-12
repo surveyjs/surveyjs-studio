@@ -1,5 +1,6 @@
 .claude/skills
 .agents/skills
+skills-lock.json
 *.temp.md
 node_modules/
 dist/
