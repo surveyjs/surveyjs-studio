@@ -14,6 +14,32 @@ allowBuilds:
   # sass only uses @parcel/watcher for its CLI --watch mode; Vite compiles without it.
   "@parcel/watcher": false
 
+# Security floors for transitive dependencies (Dependabot alerts, 2026-11-12). Each applies only to
+# the vulnerable versions; drop one when the packages that pull it in require the fixed version.
+overrides:
+  # MSAL Node's authorization code flow (GHSA-xcx6-jx8p-x3h5): msal-node 7.1.0 needs identity 4.14.1.
+  # Pulled in by mssql > tedious; the server never signs in with Azure AD.
+  "@azure/identity@<4.14.1": "4.14.1"
+  "@azure/identity>@azure/msal-node": "7.1.0"
+  # glob's AbortSignal bypass (GHSA-3g3m-2fjr-6pw4): 14.0.2 is what @fastify/static 10.1.9 takes.
+  # @fastify/static globs only for its own routes; the server registers it with `serve: false`.
+  "@fastify/static>glob": "14.0.2"
+  # Scheme and host confusion (GHSA-w74x-v6f9-j3xg and others), through ajv.
+  "fast-uri@>=3.0.0 <3.1.9": "3.1.9"
+  "fast-uri@>=4.0.0 <4.2.3": "4.2.3"
+  # Denial of service via globparts (GHSA-g3hv-75wg-m249), in eslint's config lookup (development).
+  "minimatch@>=7.0.0 <11.0.1": "11.0.1"
+  # Script and code injection in serialized output (GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj),
+  # through @tanstack/router-core.
+  "seroval@<1.6.11": "1.6.11"
+  "seroval-plugins@<1.6.11": "1.6.11"
+  # TLS validation, cache poisoning and denial of service (GHSA-2m5v-pch6-74hx and others), through
+  # jsdom (tests).
+  "undici@>=8.0.0 <8.12.2": "8.12.2"
+  # Memory exhaustion on oversized constrained collections (GHSA-mrhx-c7xc-m3w5), through
+  # @tanstack/router-generator (build); the server takes 4.6.6 directly.
+  "zod@>=4.0.0 <4.6.6": "4.6.6"
+
 peerDependencyRules:
   allowedVersions:
     # openapi-typescript declares typescript ^5 but works with 6 (it only uses the TS compiler API).
