@@ -55,11 +55,11 @@ values from anywhere, but it must behave as if it had them.
 
 To see the suite pass before you run it on your port, run the reference server's production image with the same
 settings. CI does exactly this (the `conformance-base` job). It needs Linux, because the container uses
-`--network host`. Build the image first with `docker build -t surveyjs-studio:ci .`.
+`--network host`. Build the image first with `docker build -t surveyjs-studio-hosted:ci .`.
 
 ```sh
 node --import tsx scripts/conformance/cli.ts reference-env --port 3000 --out ref.env
-docker run -d --name reference --network host --env-file ref.env -e NODE_ENV=development surveyjs-studio:ci
+docker run -d --name reference --network host --env-file ref.env -e NODE_ENV=development surveyjs-studio-hosted:ci
 ```
 
 `reference-env` writes the table above as `NAME=value` lines. `NODE_ENV=development` is needed because the image refuses

@@ -49,7 +49,7 @@ the values passed by name (`-e NAME`). It waits up to 60 s for `/readyz`.
 - It cannot be combined with `CONFORMANCE_BASE_URL`, `CONFORMANCE_PROVIDER=sqlite` (the container cannot see the
   run's database file) or `CONFORMANCE_AUTH=oauth` (that run starts two servers).
 
-CI builds `surveyjs-studio:ci` and runs `test:conformance:azurite` and `test:conformance:postgres` on it. See
+CI builds `surveyjs-studio-hosted:ci` and runs `test:conformance:azurite` and `test:conformance:postgres` on it. See
 [Testing](../docs/testing.md#the-conformance-suite-on-the-production-image).
 
 ## Run against another server

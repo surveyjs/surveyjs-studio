@@ -677,7 +677,7 @@ and Vite as `pnpm demo` does. Stop both with Ctrl+C.
 
 ## Prod-like mode
 
-Prod-like mode runs the **production image** (`surveyjs-studio:local`, see [Operations](operations.md#deployment)) in the
+Prod-like mode runs the **production image** (`surveyjs-studio-hosted:local`, see [Operations](operations.md#deployment)) in the
 mode 1 configuration on the offline replica, signing in through the mock OIDC server. Nothing real is touched. It
 uses the same host ports as [Azurite mode](#azurite-mode) (10000, 10002, 14333, 18080) plus **8080**, so stop one
 before starting the other.
@@ -701,7 +701,7 @@ Open <http://localhost:8080> and sign in as `owner` on the mock's page
   [`deploy/hetzner/app.env.example`](../deploy/hetzner/app.env.example): the CI job `prod-like` starts the image with it;
 - [`docker/compose.prod-like.e2e.yaml`](../docker/compose.prod-like.e2e.yaml) is what the e2e run changes: no account
   notices (the fixture owner's expired licence would cover the editor's bottom bar), the e2e file quota of 1 MB and
-  raised rate limits. `PROD_LIKE_IMAGE` names another image than `surveyjs-studio:local` (CI: `surveyjs-studio:ci`).
+  raised rate limits. `PROD_LIKE_IMAGE` names another image than `surveyjs-studio-hosted:local` (CI: `surveyjs-studio-hosted:ci`).
 
 To test the stack: `pnpm prod-like:up:e2e`, then `pnpm e2e:prod-like`. `pnpm e2e:visual` is separate (it runs its own
 server, on Windows only).
@@ -977,8 +977,8 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
   `test:conformance:sqlite` (a new SQLite file), `test:conformance:password` (SQLite, local accounts and password
   sign-in), `test:conformance:oauth` (the same with the OAuth stub) and `test:conformance:sandbox` (the sandbox
   handlers under `msw/node`).
-- **`image`:** `docker build -t surveyjs-studio:ci .`, the production image (labelled with the commit as
-  `org.opencontainers.image.revision`), saved as the `surveyjs-studio-image` artifact (kept one day). The jobs below
+- **`image`:** `docker build -t surveyjs-studio-hosted:ci .`, the production image (labelled with the commit as
+  `org.opencontainers.image.revision`), saved as the `surveyjs-studio-hosted-image` artifact (kept one day). The jobs below
   that test the image load it (`.github/actions/load-image`), so every suite runs on the same image.
 - **`azurite`** (after `image`): `pnpm demo:azurite:up` (the legacy replica and the mock OIDC server, with the
   fixtures loaded), `test:providers:azurite`, `test:conformance:azurite` on the image (`CONFORMANCE_IMAGE`), and
@@ -1006,7 +1006,7 @@ jobs always stop their containers (`pnpm demo:azurite:down`, `pnpm postgres:down
 `prod-like` job (`pnpm prod-like:down`).
 
 The **`publish` job** runs after `ci`, only on a push to `master` and only when `ci` passed. It loads the image the
-`image` job built, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio:<commit sha>`. It is
+`image` job built, checks that no `*.env*` file is in it, and pushes it as `ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>`. It is
 the only job with `packages: write`, and it runs no installed packages, only `docker`. The image's
 `org.opencontainers.image.source` label (in the `Dockerfile`) links the package to this repository, so it takes the
 repository's access rules.

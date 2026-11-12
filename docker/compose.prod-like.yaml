@@ -1,4 +1,4 @@
-# Prod-like mode: the production image (surveyjs-studio:local) in the mode 1 configuration
+# Prod-like mode: the production image (surveyjs-studio-hosted:local) in the mode 1 configuration
 # (docker/prod-like.env) on the offline replica of compose.azurite.yaml, signing in through the
 # mock OIDC server. Start with `pnpm prod-like:up`, open http://localhost:8080; stop and wipe with
 # `pnpm prod-like:down`. It uses the same host ports as Azurite mode, so stop one before the other.
@@ -39,8 +39,8 @@ services:
 
   app:
     build: ..
-    # CI runs the image it built and tested (PROD_LIKE_IMAGE=surveyjs-studio:ci, with --no-build).
-    image: ${PROD_LIKE_IMAGE:-surveyjs-studio:local}
+    # CI runs the image it built and tested (PROD_LIKE_IMAGE=surveyjs-studio-hosted:ci, with --no-build).
+    image: ${PROD_LIKE_IMAGE:-surveyjs-studio-hosted:local}
     env_file: prod-like.env
     network_mode: "service:mock-oidc"
     depends_on:

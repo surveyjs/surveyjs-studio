@@ -40,9 +40,9 @@ export function isImageTarget(env) {
   return target === "image";
 }
 
-/** The image under test: `E2E_IMAGE`, default `surveyjs-studio:ci` (built by `docker build -t surveyjs-studio:ci .`). */
+/** The image under test: `E2E_IMAGE`, default `surveyjs-studio-hosted:ci` (built by `docker build -t surveyjs-studio-hosted:ci .`). */
 export function imageTag(env) {
-  const tag = env["E2E_IMAGE"]?.trim() || "surveyjs-studio:ci";
+  const tag = env["E2E_IMAGE"]?.trim() || "surveyjs-studio-hosted:ci";
   if (!/^[\w][\w.\-/:@]*$/.test(tag)) throw new Error(`E2E_IMAGE is not an image name: "${tag}"`);
   return tag;
 }

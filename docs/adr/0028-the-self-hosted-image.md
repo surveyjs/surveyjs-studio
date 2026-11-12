@@ -1,6 +1,6 @@
 # 28. The self-hosted image
 
-Date: 2026-10-30
+Date: 2026-10-30. Amended 2026-11-12: the package names (D1, D2 and [Consequences](#consequences)).
 
 ## Status
 
@@ -21,12 +21,14 @@ the hosted image; only its last stage differs: the 2b defaults (`APP_SHELL=self-
 `FILE_STORE=local`, `AUTH_METHODS=password`, `USER_DIRECTORY=local`), port 8080, `VOLUME /data`, the user `node`
 (uid 1000), and the `surveyjs-studio` command (`backup`, `restore`, `migrate`, `status`, `seed`, `s3-bucket`, and later `rebase-urls`). The
 hosted `runtime` stage stays last, so `docker build .` gives the same image as before: settings, port 3000 and the
-`ghcr.io/surveyjs/surveyjs-studio:<sha>` tags.
+`<sha>` tags (in `ghcr.io/surveyjs/surveyjs-studio-hosted` since 2026-11-12; `surveyjs-studio` before).
 
 **D2. A private test package.** Until Docker Hub access and the shipped key exist, a `v*` tag pushes to
 `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` only, with `GITHUB_TOKEN`. One workflow variable, `RELEASE_IMAGE`
 in `release.yml`, names the target. The release pushes by digest and tags only after the arm64 smoke run and the scan
-pass, so a failed release moves no tag.
+pass, so a failed release moves no tag. **Amended 2026-11-12:** the target is `ghcr.io/surveyjs/surveyjs-studio`,
+still private, and the hosted image moved to `ghcr.io/surveyjs/surveyjs-studio-hosted`. The product's image has the
+product's name, the same on ghcr.io and later on Docker Hub; the internal deployment carries the suffix.
 
 **D3. The session secret on the volume.** `SESSION_SECRET_FILE` (the image sets `/data/session-secret`): when
 `SESSION_SECRET` is unset, the server reads the file, or creates it once with a random secret (mode `0600`, written
@@ -85,13 +87,13 @@ outbound network blocked.
 - **When Docker Hub access and the shipped licence key arrive:**
   - `RELEASE_IMAGE` changes to `surveyjs/surveyjs-studio` (Docker Hub, with a login step and its token as a secret),
     and a second push or `docker buildx imagetools create` mirrors the tags to `ghcr.io/surveyjs/surveyjs-studio`.
-  - That GHCR name is the hosted image's package today. Its tags are full commit ids and `production`, so `vX.Y.Z`,
-    `vX.Y` and `latest` do not collide by name, but one package would then hold two different images. Decide before
-    the mirror: rename the hosted package (e.g. `surveyjs-studio-hosted`, which changes `ci.yml`, `deploy.yml` and the
-    server's update script) or mirror the self-hosted image elsewhere.
-  - The default image of the Compose examples (`${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}`)
-    and the docs' image name change to the public one.
+  - **Done 2026-11-12:** that GHCR name was the hosted image's package, so one package would have held two different
+    images. The hosted image moved to `surveyjs-studio-hosted` (`ci.yml`, `deploy.yml`, `setup.sh`'s default and
+    the server's `IMAGE`), releases went to `ghcr.io/surveyjs/surveyjs-studio` at once, and the Compose examples'
+    default image became `ghcr.io/surveyjs/surveyjs-studio:latest`. The hosted commit-id tags left in
+    `surveyjs-studio` are deleted before that package is made public, and `surveyjs-studio-selfhosted-test` is
+    deleted.
+  - The default image of the Compose examples and the docs' image name change to `surveyjs/surveyjs-studio`.
   - The `SURVEYJS_IMAGE_LICENSE_KEY` secret is set; nothing in the code changes.
-  - The test package is deleted.
 - A downgrade is refused: an older image does not start on a database a newer version migrated. Going back means
   restoring the backup made before the upgrade.

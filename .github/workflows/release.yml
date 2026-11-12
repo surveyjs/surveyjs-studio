@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # A private test package until Docker Hub access and the shipped licence key exist (ADR 0028).
-  RELEASE_IMAGE: ghcr.io/surveyjs/surveyjs-studio-selfhosted-test
+  # Private on ghcr.io until Docker Hub access and the shipped licence key exist; then Docker Hub, mirrored here (ADR 0028).
+  RELEASE_IMAGE: ghcr.io/surveyjs/surveyjs-studio
 
 jobs:
   tags:

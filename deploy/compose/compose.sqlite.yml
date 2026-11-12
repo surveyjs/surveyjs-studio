@@ -4,7 +4,7 @@
 name: surveyjs-studio
 services:
   app:
-    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}
+    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio:latest}
     restart: unless-stopped
     ports:
       - "${SURVEYJS_STUDIO_PORT:-8080}:8080"

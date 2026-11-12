@@ -30,7 +30,7 @@ stop` keeps its data ([Running the app](../running.md#stopping-the-docker-servic
 pnpm prod-like:up
 ```
 
-It builds the image `surveyjs-studio:local`, starts it with the replica and the mock OIDC server in the mode 1
+It builds the image `surveyjs-studio-hosted:local`, starts it with the replica and the mock OIDC server in the mode 1
 configuration, waits until all are healthy and loads the fixtures. Open <http://localhost:8080> and type `owner` on
 the mock's sign-in page. The list, the editor, the run page, the results, the history and the projects work as in the
 earlier demos, from one origin: there is no Vite here.

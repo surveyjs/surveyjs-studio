@@ -436,7 +436,7 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /**
  * `CONFORMANCE_IMAGE=<tag>` runs the reference server as that image of the production build
- * (`docker build -t surveyjs-studio:ci .`) instead of tsx, with the same settings. It uses
+ * (`docker build -t surveyjs-studio-hosted:ci .`) instead of tsx, with the same settings. It uses
  * `docker run --network host`, so it works on Linux only (CI). Null when unset.
  */
 function imageTag(): string | null {

@@ -233,7 +233,7 @@ A port is accepted when this suite passes against it.
 ### The conformance suite on the production image
 
 With `CONFORMANCE_IMAGE` set to an image tag, the suite runs the reference server as that image instead of tsx, with
-the same settings. CI builds `surveyjs-studio:ci` and runs `pnpm test:conformance:azurite` this way. Details:
+the same settings. CI builds `surveyjs-studio-hosted:ci` and runs `pnpm test:conformance:azurite` this way. Details:
 
 - The container is `surveyjs-studio-conformance`, started with `docker run --network host` on a free port, so it reaches
   the replica and the mock OIDC server on the host's loopback ports. This works on **Linux only**; on Windows and
@@ -765,7 +765,7 @@ it `test.fail(sandboxMode, "<the bug>")` and list it here, so CI stays green and
 
 With `E2E_TARGET=image`, the suites run against an image instead of the tsx server and `vite preview`: memory and
 Azurite mode on the hosted image, SQLite, password and self-hosted mode on the self-hosted image. PostgreSQL mode
-has no image target. `E2E_IMAGE` names the image (default `surveyjs-studio:ci`, the hosted image; set
+has no image target. `E2E_IMAGE` names the image (default `surveyjs-studio-hosted:ci`, the hosted image; set
 `surveyjs-studio:self-hosted` for the self-hosted modes). The image serves the web app itself (`WEB_ROOT`), so
 `pnpm e2e` does not build it.
 
