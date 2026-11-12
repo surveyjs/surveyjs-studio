@@ -1,6 +1,6 @@
 // Checks the production build:
 // - the public run page (`/s/$surveyId`) loads the Form Library and its styles (the `survey-form`
-//   chunks) and no Creator, Ace or Dashboard code (spec: "The public run page never downloads
+//   chunks) and no Creator, Monaco or Dashboard code (spec: "The public run page never downloads
 //   Creator or Dashboard code");
 // - the results page (`/surveys/$surveyId/results`) reaches the Dashboard (`survey-dashboard`),
 //   its table (`survey-dashboard-table`) and the export libraries (`survey-dashboard-export`) only
@@ -21,7 +21,7 @@ const RUN_ROUTE = "src/routes/s/$surveyId.lazy.tsx";
 const RESULTS_ROUTE = "src/routes/_private/surveys/$surveyId/results.lazy.tsx";
 const PUBLIC_RESULTS_ROUTE = "src/routes/results/$surveyId.lazy.tsx";
 const FORBIDDEN =
-  /(^|\/)(survey-creator|SurveyEditor|worker-json)-|[/.-]ace[.-]|survey-analytics|dashboard/i;
+  /(^|\/)(survey-creator|SurveyEditor|editor\.worker|json\.worker)-|monaco-editor|survey-analytics|dashboard/i;
 const FORM_JS = /^assets\/survey-form-.*\.js$/;
 const FORM_CSS = /^assets\/survey-form-.*\.css$/;
 const DASHBOARD_CODE = /dashboard|survey-analytics|tabulator/i;
@@ -106,7 +106,7 @@ const runFiles = [...collect(RUN_ROUTE, true, collect(ENTRY, false))].sort();
 print(`The run page (${RUN_ROUTE}) can load:`, runFiles);
 const forbidden = runFiles.filter((file) => FORBIDDEN.test(file));
 if (forbidden.length > 0) {
-  problems.push(`Creator, Ace or Dashboard code on the run page: ${forbidden.join(", ")}`);
+  problems.push(`Creator, Monaco or Dashboard code on the run page: ${forbidden.join(", ")}`);
 }
 if (!runFiles.some((file) => FORM_JS.test(file))) problems.push("No survey-form-*.js chunk.");
 if (!runFiles.some((file) => FORM_CSS.test(file))) problems.push("No survey-form-*.css file.");

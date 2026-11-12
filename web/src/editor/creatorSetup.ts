@@ -1,12 +1,6 @@
 // The Survey Creator as surveyjs.io's editor page configures it (the site's editor page and
 // Scripts/editor.tsx): the option values are copied (D14), the code is our own. Only the Creator
 // chunk imports this module (see SurveyEditor.tsx).
-import ace from "ace-builds";
-import "ace-builds/src-noconflict/ext-searchbox";
-import "ace-builds/src-noconflict/ext-language_tools";
-import "ace-builds/src-noconflict/mode-json";
-import "ace-builds/src-noconflict/theme-clouds_midnight";
-import jsonWorkerUrl from "ace-builds/src-noconflict/worker-json?url";
 import {
   Action,
   ComputedUpdater,
@@ -18,7 +12,6 @@ import {
 import "survey-core/i18n";
 import SurveyTheme from "survey-core/themes";
 import {
-  AceJsonEditorModel,
   registerCreatorTheme,
   registerSurveyTheme,
   settings,
@@ -44,17 +37,12 @@ import helpIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/help.svg?r
 import publishIconV2 from "../shell/surveyjs-site/assets/icons/editor/v2/publish.svg?raw";
 import { wireAutoSave, type EditorDocuments, type EditorSaves } from "./creatorAutosave";
 import { addEmbedTabs } from "./embed/EmbedTab";
+import { followCreatorColorPalette, installMonaco } from "./monacoSetup";
 import { obfuscateSurvey } from "./obfuscate";
 import { createUploadHandler, type EditorUploads } from "./uploads";
 
 export type { EditorDocuments, EditorSaves, SaveRequest } from "./creatorAutosave";
 export type { EditorUploads } from "./uploads";
-
-declare global {
-  interface Window {
-    ace?: typeof ace;
-  }
-}
 
 /** Where surveyjs.io keeps the user's Creator UI theme (`editor.tsx`). */
 const CREATOR_THEME_KEY = "OnlineEditorSurveyCreatorThemeV3";
@@ -66,12 +54,7 @@ function configureOnce(): void {
   if (configured) return;
   configured = true;
 
-  // The JSON tab uses Ace when `window.ace` is there. Its modules are bundled above; the JSON
-  // worker is a separate file (Vite `?url`). The Creator sets Ace's JSON mode only when
-  // `aceBasePath` is set, so it points at the folder of the bundled files.
-  window.ace = ace;
-  ace.config.setModuleUrl("ace/mode/json_worker", jsonWorkerUrl);
-  AceJsonEditorModel.aceBasePath = jsonWorkerUrl.slice(0, jsonWorkerUrl.lastIndexOf("/") + 1);
+  installMonaco();
 
   // As on the site, the survey themes are registered both for the survey and as Creator themes.
   registerSurveyTheme(SurveyTheme);
@@ -327,6 +310,7 @@ export function createCreator(options: {
   applySavedCreatorTheme(creator);
   creator.onCreatorThemePropertyChanged.add(() => saveCreatorTheme(creator));
   creator.onCreatorThemeSelected.add(() => saveCreatorTheme(creator));
+  followCreatorColorPalette(creator);
 
   const { saves, uploads } = options;
   addSiteToolbarItemsAndTabs(creator, {

@@ -364,8 +364,9 @@ test("the survey list loads no Creator code; the editor does", async ({ page, br
   const requested: string[] = [];
   page.on("request", (request) => requested.push(request.url()));
   const creatorCode = (url: string) =>
-    /\/assets\/(survey-creator|SurveyEditor|worker-json)-[^/]*$/.test(new URL(url).pathname) ||
-    /ace-builds|[/.-]ace[.-]/.test(url);
+    /\/assets\/(survey-creator|SurveyEditor|editor\.worker|json\.worker)-[^/]*$/.test(
+      new URL(url).pathname,
+    ) || /monaco-editor/.test(url);
 
   // The pointer stays off the rows: hovering a row's link preloads the editor route.
   await signInAt(page, "/", "admin");
