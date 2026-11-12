@@ -5,14 +5,25 @@ import { PROVIDER_NAMES, isExternalMethod } from "./authMethods";
 const NOT_INVITED =
   "This instance is open to invited people only. Ask a project admin or the person who runs it to invite your email address, then sign in again.";
 
-function refusalText(reason: string | undefined, provider: string | undefined): string {
+/** The hosted edition's accounts are surveyjs.io's: SurveyJS blocks them, not an instance admin. */
+const HOSTED_BLOCKED =
+  "This surveyjs.io account is blocked. Contact SurveyJS support at support@surveyjs.io.";
+
+function refusalText(
+  reason: string | undefined,
+  provider: string | undefined,
+  hosted: boolean,
+): string {
   const name = isExternalMethod(provider) ? PROVIDER_NAMES[provider] : undefined;
   if (reason === "email-unverified") {
     const account = name ?? "sign-in";
     return `Your ${account} account didn't share a verified email address. Verify it with ${account}, or sign in another way.`;
   }
-  if (reason === "disabled")
-    return "This account is disabled. Ask the person who runs this instance.";
+  if (reason === "disabled") {
+    return hosted
+      ? HOSTED_BLOCKED
+      : "This account is disabled. Ask the person who runs this instance.";
+  }
   if (reason === "cancelled") {
     const at = name === undefined ? "" : ` at ${name}`;
     return `You cancelled the sign-in${at}. Sign in again, or choose another way.`;
@@ -35,14 +46,17 @@ function refusalText(reason: string | undefined, provider: string | undefined): 
 export function SignInRefusedPage({
   reason,
   provider,
+  hosted = false,
 }: {
   reason: string | undefined;
   provider: string | undefined;
+  /** The hosted edition (`/config` `edition`). */
+  hosted?: boolean;
 }) {
   return (
     <AccountPage>
       <PageHeader title="You can't sign in yet" />
-      <p className="v2-class---paragraph">{refusalText(reason, provider)}</p>
+      <p className="v2-class---paragraph">{refusalText(reason, provider, hosted)}</p>
       <p className="v2-class---paragraph">
         <a className="v2-class---paragraph-link" href="/sign-in">
           Back to sign in

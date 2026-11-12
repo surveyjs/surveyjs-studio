@@ -11,5 +11,8 @@ const rootRoute = getRouteApi("__root__");
 function SignInRefused() {
   const { reason, provider } = Route.useSearch();
   const config = rootRoute.useLoaderData();
-  return renderAnonymousPage(config, <SignInRefusedPage reason={reason} provider={provider} />);
+  return renderAnonymousPage(
+    config,
+    <SignInRefusedPage reason={reason} provider={provider} hosted={config.edition === "hosted"} />,
+  );
 }

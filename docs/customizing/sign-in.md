@@ -144,16 +144,16 @@ The server sends the browser to `/sign-in/refused?reason=…&provider=…`. The 
 links back to the **Sign in** page. The server logs the provider and the reason, never the email address. For
 `unavailable`, and for a `failed` that is the server's fault, it also logs the cause at `error` level.
 
-| Reason             | The page says                                                       | What to do                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `not-invited`      | This instance is open to invited people only.                       | Invite the email to a project, add its domain to `SIGN_UP_DOMAINS`, or create the user                                      |
-| `email-unverified` | Your account at the provider didn't share a verified email address. | The person verifies the email at the provider, or signs in another way                                                      |
-| `disabled`         | This account is disabled.                                           | An instance admin enables it on the **Users** page                                                                          |
-| `cancelled`        | You cancelled the sign-in at the provider.                          | The person pressed Cancel or Deny at the provider. They sign in again                                                       |
-| `unavailable`      | The provider could not be reached.                                  | It did not answer within 10 seconds, refused the client secret, or said it has trouble (`server_error`). See the server log |
-| `read-only`        | First sign-ins are paused while the instance is read-only.          | `READ_ONLY=true` ([Operations](../operations.md#read-only-mode)). Wait until it is off                                      |
-| `expired`          | The sign-in took too long, or it started in another browser.        | The sign-in took over 10 minutes, or cookies are blocked. Start again                                                       |
-| `failed`           | The sign-in could not be completed.                                 | The provider refused the code or sent another error, or the server failed. See the server log                               |
+| Reason             | The page says                                                                                     | What to do                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `not-invited`      | This instance is open to invited people only.                                                     | Invite the email to a project, add its domain to `SIGN_UP_DOMAINS`, or create the user                                      |
+| `email-unverified` | Your account at the provider didn't share a verified email address.                               | The person verifies the email at the provider, or signs in another way                                                      |
+| `disabled`         | This account is disabled. (Hosted: the surveyjs.io account is blocked; contact SurveyJS support.) | An instance admin enables it on the **Users** page. Hosted: SurveyJS unblocks the surveyjs.io account                       |
+| `cancelled`        | You cancelled the sign-in at the provider.                                                        | The person pressed Cancel or Deny at the provider. They sign in again                                                       |
+| `unavailable`      | The provider could not be reached.                                                                | It did not answer within 10 seconds, refused the client secret, or said it has trouble (`server_error`). See the server log |
+| `read-only`        | First sign-ins are paused while the instance is read-only.                                        | `READ_ONLY=true` ([Operations](../operations.md#read-only-mode)). Wait until it is off                                      |
+| `expired`          | The sign-in took too long, or it started in another browser.                                      | The sign-in took over 10 minutes, or cookies are blocked. Start again                                                       |
+| `failed`           | The sign-in could not be completed.                                                               | The provider refused the code or sent another error, or the server failed. See the server log                               |
 
 Every failure at the callback ends on this page, with `AUTH_METHODS=surveyjs` alone too. Only a client that does not
 ask for HTML gets the server's error answer ([Authentication](../api/authentication.md#outcomes-of-the-two-sign-in-operations)).

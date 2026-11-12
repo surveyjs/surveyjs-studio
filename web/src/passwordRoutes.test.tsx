@@ -251,6 +251,19 @@ describe("the refused sign-in page", () => {
     ["?reason=whatever", notInvited],
   ];
 
+  it("sends a blocked user of the hosted edition to SurveyJS support, not to an instance admin", async () => {
+    server.use(configHandler({ ...appConfig, edition: "hosted", authMethods: ["surveyjs"] }));
+
+    renderApp("/sign-in/refused?reason=disabled&provider=surveyjs");
+
+    expect(
+      await screen.findByText(
+        "This surveyjs.io account is blocked. Contact SurveyJS support at support@surveyjs.io.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/the person who runs this instance/)).toBeNull();
+  });
+
   it.each(expected)("explains %s", async (search, text) => {
     server.use(configHandler({ ...appConfig, authMethods: ["github"] }));
 
