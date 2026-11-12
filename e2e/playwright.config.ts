@@ -420,6 +420,21 @@ function sandboxProjects(): PlaywrightTestConfig["projects"] {
       testMatch: ["sandbox.spec.ts", "sandbox-tabs.spec.ts"],
       use: chromium,
     },
+    // The cross-tab lock rests on Web Locks and IndexedDB, which each engine implements itself.
+    // Not Firefox: in Playwright's Firefox a second tab of the sandbox reloads `/` over and over
+    // ("InvalidStateError", no source), on the published demo too, before the test writes anything.
+    ...(sandboxUrl
+      ? []
+      : [
+          {
+            name: "sandbox-tabs-webkit",
+            testMatch: ["sandbox-tabs.spec.ts"],
+            use: { ...devices["Desktop Safari"], viewport },
+            // After the Chromium tests, not beside them: on a busy machine another tab's write
+            // arrives late, and the lock answers 503 after its 2 s wait (by design).
+            dependencies: ["sandbox-chromium"],
+          },
+        ]),
     ...(sandboxUrl
       ? [{ name: "sandbox-host", testMatch: ["sandbox-host.spec.ts"], use: chromium }]
       : []),

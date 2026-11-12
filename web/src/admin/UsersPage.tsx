@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
-import { Field } from "../account/AccountForm";
+import { Field, FORM_PAGE_CLASS } from "../account/AccountForm";
 import { PROVIDER_NAMES } from "../account/authMethods";
 import {
   identitiesQueryOptions,
@@ -48,7 +48,7 @@ const date = (iso: string) =>
 
 // The site's page container, as My Surveys has (its margins and width in the surveyjs-site shell);
 // the plain shell's layout is this module's.
-const PAGE = `v2-class---my-surveys-page__container ${styles.container} ${styles.page}`;
+const PAGE = `v2-class---my-surveys-page__container ${FORM_PAGE_CLASS} ${styles.container} ${styles.page}`;
 
 // The site's button classes (button.scss), as the account forms use them.
 const PRIMARY = "v2-class---button v2-class---button--brand-primary v2-class---button--medium";

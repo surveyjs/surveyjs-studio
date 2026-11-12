@@ -1,4 +1,3 @@
-import type { Page } from "@playwright/test";
 import {
   addMemberViaApi,
   adminBadge,
@@ -10,6 +9,7 @@ import {
   memberRow,
   openProjectCard,
   projectCard,
+  projectSelector,
   uniqueProjectName,
 } from "./support/projects.js";
 import { accountTrigger, secondBrowser, signInAt, users } from "./support/sign-in.js";
@@ -32,10 +32,6 @@ import { expect, test, watchConsole } from "./support/test.js";
 const DELETE_PROJECT_CONFIRMATION =
   "Delete this project? Its surveys will move to the project owner's Personal Surveys, or to you if the owner has left.";
 const LEAVE_PROJECT_CONFIRMATION = "Leave this project? You will lose access to its surveys.";
-
-/** The project drop-down of the survey list (not the rows' "..." buttons). */
-const projectSelector = (page: Page) =>
-  page.locator(".v2-class---my-surveys-page__actions-container .v2-class---drop-down-button");
 
 test.describe("create, add, promote, demote and remove", () => {
   test.use({ expectedErrorResponses: [MEMBERS_404] });

@@ -390,6 +390,13 @@ jobs:
         with:
           browser: chromium
 
+      # The sandbox's two-tab test (the cross-tab lock) runs on WebKit too.
+      - name: Install Playwright WebKit
+        timeout-minutes: 17
+        uses: ./.github/actions/playwright
+        with:
+          browser: webkit
+
       # The tsx server: its SQLite file is on the host (no image target).
       - name: End-to-end tests (SQLite mode)
         run: pnpm e2e:sqlite

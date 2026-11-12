@@ -49,6 +49,7 @@ The classes, for restyling it in a fork or from another stylesheet:
 | `sh-button`                                             | The shell's buttons (Sign Out)                                           |
 | `sh-message`, `sh-message--error`                       | Account notices and a failed sign-out, above the page                    |
 | `sh-content`                                            | The page                                                                 |
+| `studio-form-page`                                      | The container of the account pages and the Users page                    |
 | `sh-footer`, `sh-footer__link`, `sh-footer__powered-by` | The footer and its links; `sh-footer--standalone` under a running survey |
 
 | Custom property                                                                                                    | Value                                                                                                  |
