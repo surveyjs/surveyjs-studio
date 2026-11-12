@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { api } from "./api.js";
 import { csrfHeaders } from "./survey-list.js";
-import { expect, type ExpectedErrorResponse } from "./test.js";
+import { expect, expectErrorResponse, type ExpectedErrorResponse } from "./test.js";
 
 /** A unique project name for one test in one browser. */
 export function uniqueProjectName(prefix: string, browserName: string): string {
@@ -13,6 +13,21 @@ export const MEMBERS_404: ExpectedErrorResponse = {
   path: /^\/api\/v1\/projects\/[0-9a-f-]+\/members$/,
   status: 404,
 };
+
+/**
+ * The survey list's project drop-down, after one more expected answer: opening it puts a menu item
+ * under the pointer, and the router preloads that project's list on hover. Tests in other workers
+ * sign in as the same users and delete their own projects, so the preload can ask for a project
+ * that is gone: `GET /api/v1/surveys?project=…` answers 404. The loader then falls back to Personal
+ * Surveys; only the browser's console line remains.
+ */
+export function projectSelector(page: Page): Locator {
+  expectErrorResponse(page, { path: "/api/v1/surveys", status: 404 });
+  // Not the rows' "…" buttons, which are drop-down buttons too.
+  return page.locator(
+    ".v2-class---my-surveys-page__actions-container .v2-class---drop-down-button",
+  );
+}
 
 /** The last admin demoting themselves answers 409 on their member resource. */
 export const MEMBER_409: ExpectedErrorResponse = {

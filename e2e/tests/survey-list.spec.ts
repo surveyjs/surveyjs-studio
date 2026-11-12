@@ -1,5 +1,10 @@
 import type { Page } from "@playwright/test";
-import { createProjectViaApi, deleteProjectViaApi, uniqueProjectName } from "./support/projects.js";
+import {
+  createProjectViaApi,
+  deleteProjectViaApi,
+  projectSelector,
+  uniqueProjectName,
+} from "./support/projects.js";
 import { sandboxMode } from "./support/sandbox.js";
 import { signInAt } from "./support/sign-in.js";
 import {
@@ -41,14 +46,6 @@ async function toggleActiveArchived(page: Page) {
 
 function createButton(page: Page) {
   return page.getByRole("button", { name: "Create a Survey" });
-}
-
-/** The project drop-down: its button shows the selected scope; its menu items are links. */
-function projectSelector(page: Page) {
-  // Not the rows' "…" buttons, which are drop-down buttons too.
-  return page.locator(
-    ".v2-class---my-surveys-page__actions-container .v2-class---drop-down-button",
-  );
 }
 
 async function chooseProject(page: Page, name: string) {
