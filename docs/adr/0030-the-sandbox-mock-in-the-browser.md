@@ -77,6 +77,9 @@ Details that follow:
   - Other tabs' screens are not refreshed: a page shows what it last fetched until its next request. The editor's
     saves send `If-Match`, so a save over another tab's change is `412 edit-conflict`, not a silent overwrite.
   - A `revision`-less document (stored before the lock) reads as revision 0. No data version bump is needed.
+  - Tested with two tabs on Chromium and WebKit (2026-11-12). Not on Firefox: in Playwright's Firefox a second tab
+    of the sandbox reloads `/` over and over (`InvalidStateError`, no source), the published demo too, so the test
+    cannot start there. Whether the release Firefox does the same is not checked yet.
 - **`mockServiceWorker.js` is MSW's own file**, copied into `web/sandbox-public/`. `web/src/sandbox/worker-file.test.ts`
   checks that it is byte-equal to the installed `msw`'s, so an upgrade that forgets the copy fails.
 - **`msw` and `openapi-msw` are runtime dependencies of `web`** (same exact versions as before), because the sandbox
