@@ -64,10 +64,11 @@ export async function routeBrandImage(target: Page | BrowserContext): Promise<vo
   );
 }
 
-/** Whether a requested URL is Survey Creator, Ace or Dashboard code (the run page loads none). */
+/** Whether a requested URL is Survey Creator, Monaco or Dashboard code (the run page loads none). */
 export function isCreatorOrDashboardCode(url: string): boolean {
   return (
-    /\/assets\/(survey-creator|SurveyEditor|worker-json)-[^/]*$/.test(new URL(url).pathname) ||
-    /ace-builds|[/.-]ace[.-]|survey-analytics|dashboard/i.test(url)
+    /\/assets\/(survey-creator|SurveyEditor|editor\.worker|json\.worker)-[^/]*$/.test(
+      new URL(url).pathname,
+    ) || /monaco-editor|survey-analytics|dashboard/i.test(url)
   );
 }

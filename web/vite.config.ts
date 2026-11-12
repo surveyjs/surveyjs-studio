@@ -41,10 +41,10 @@ function securityHeadersPlugin(proxy: Record<string, string>): Plugin {
   };
 }
 
-// The Survey Creator's packages and Ace, plus the survey-core part only the editor uses: the
+// The Survey Creator's packages and Monaco, plus the survey-core part only the editor uses: the
 // themes (the run page applies a survey's stored theme without them).
 const creatorModules =
-  /[\\/]node_modules[\\/](survey-creator-core|survey-creator-react|ace-builds)[\\/]|[\\/]node_modules[\\/]survey-core[\\/]fesm[\\/]themes[\\/]/;
+  /[\\/]node_modules[\\/](survey-creator-core|survey-creator-react|monaco-editor)[\\/]|[\\/]node_modules[\\/]survey-core[\\/]fesm[\\/]themes[\\/]/;
 // The Form Library's React UI and the survey styles: the run page (src/run/RunSurvey.tsx) and the
 // editor (src/editor/SurveyEditor.tsx) both use them.
 const surveyFormModules =
