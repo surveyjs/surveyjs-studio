@@ -228,8 +228,9 @@ The server reads the package from `IMAGE` in `/opt/surveyjs-studio/.env`. The ho
 ([ADR 0028](../adr/0028-the-self-hosted-image.md)); a server set up before that still pulls the old package, where
 Actions › Deploy no longer moves `production`. Move it once:
 
-1. **Copy the running image.** Run **Actions › Copy image tags** (`copy-image-tags.yml`). It copies the commit that
-   `production` names into the new package, as that commit id and as `production`, so the server can roll back to it.
+1. **The running image in the new package.** Done on 2026-11-12 by a one-off workflow (removed since): the commit that
+   `production` named, `90b924f`, is in the new package as its commit id and as `production`, so the server can roll
+   back to it. For a later move, copy it by hand with `docker buildx imagetools create --tag <new>:<tag> <old>:<tag>`.
 2. **The pull token.** The new package is private. A classic token with `read:packages` reads every package of the
    organisation, so the server's sign-in usually works as it is; check it with
    `sudo docker pull ghcr.io/surveyjs/surveyjs-studio-hosted:production`.
