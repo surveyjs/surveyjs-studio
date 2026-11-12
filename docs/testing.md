@@ -1048,8 +1048,8 @@ Each difference the team accepts instead of fixing is one row. The table matches
 `residual` entries of `e2e/visual/manifest.ts` one to one. One screen has a `maxDiffPixelRatio` above its kind's default:
 `projects-expanded` (0.015; `element` 0.01), because Firefox's live capture of 2026-10-22 draws the section 1 px lower
 than the one of 2026-10-20 (ADR 0020 › To confirm). Live
-Form Library and Creator run 3.2.2, as the app does since Step 14; the live Dashboard version is not exposed
-(`states.json`).
+Form Library and Creator run 3.2.2; the app ran 3.2.2 from Step 14 and runs 3.2.5 since 2026-11-12, with the 55 screens
+still passing. The live Dashboard version is not exposed (`states.json`).
 
 | Screen                                                                                                                                  | What                                                                                                                                               | Category  | Reason                                                                                                     |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |

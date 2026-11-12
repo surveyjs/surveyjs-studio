@@ -14,6 +14,15 @@ allowBuilds:
   # sass only uses @parcel/watcher for its CLI --watch mode; Vite compiles without it.
   "@parcel/watcher": false
 
+# The SurveyJS packages are taken as soon as they are released, without pnpm's minimum release age
+# (as in renovate.json): the app follows SurveyJS's own releases.
+minimumReleaseAgeExclude:
+  - survey-analytics
+  - survey-core
+  - survey-creator-core
+  - survey-creator-react
+  - survey-react-ui
+
 # Security floors for transitive dependencies (Dependabot alerts, 2026-11-12). Each applies only to
 # the vulnerable versions; drop one when the packages that pull it in require the fixed version.
 overrides:

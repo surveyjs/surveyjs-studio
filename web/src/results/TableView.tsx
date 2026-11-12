@@ -10,6 +10,10 @@ import { extraTableColumns, tableRows } from "./tableRows";
 import { type ElementsState, reconcileElementsState } from "./elementsState";
 import { withoutQuestions } from "./publicDefinition";
 import styles from "./results.module.css";
+import { guardRedrawUntilBuilt } from "./tabulatorRedrawGuard";
+
+// survey-analytics 3.2.5 can redraw a table Tabulator has not built yet (see the module).
+guardRedrawUntilBuilt(Tabulator.prototype);
 
 type TableViewState = Tabulator["state"];
 

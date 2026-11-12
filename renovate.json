@@ -9,10 +9,11 @@
   },
   "packageRules": [
     {
-      "description": "SurveyJS packages always move together",
+      "description": "SurveyJS packages always move together, as soon as they are released (no minimum release age: the app follows SurveyJS's own releases)",
       "groupName": "SurveyJS",
       "matchPackageNames": ["survey-*"],
-      "matchUpdateTypes": ["major", "minor", "patch"]
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "minimumReleaseAge": null
     },
     {
       "groupName": "all non-major dependencies",
