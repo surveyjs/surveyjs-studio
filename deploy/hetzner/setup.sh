@@ -13,7 +13,7 @@
 #                          installed as /etc/surveyjs-studio/app.env, root only. Delete PATH after.
 # Options:
 #   --domain NAME          the public host name (default studio.surveyjs.io)
-#   --image NAME           the image without tag (default ghcr.io/surveyjs/surveyjs-studio)
+#   --image NAME           the image without tag (default ghcr.io/surveyjs/surveyjs-studio-hosted)
 #   --ghcr-user NAME       sign in to ghcr.io as NAME; the token (read:packages) comes from
 #                          GHCR_TOKEN, the file named by GHCR_TOKEN_FILE, or a prompt
 #   --readyz-allow "IPS"   addresses (space separated) that may call /readyz, e.g. a monitor
@@ -39,7 +39,7 @@ REQUIRED_SETTINGS=(PUBLIC_BASE_URL SESSION_SECRET APP_EDITION STORAGE_PROVIDER
 TAG=""
 ENV_FILE=""
 DOMAIN=studio.surveyjs.io
-IMAGE=ghcr.io/surveyjs/surveyjs-studio
+IMAGE=ghcr.io/surveyjs/surveyjs-studio-hosted
 GHCR_USER=""
 READYZ_ALLOW=""
 RESTRICT_TO=""

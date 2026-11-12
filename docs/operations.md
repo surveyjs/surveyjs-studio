@@ -15,7 +15,7 @@ https in front of it.
 ## Deployment
 
 My Surveys ships as a Docker image: the server, which also serves the built web app. Build it from the repository
-root with `pnpm image:build` (`docker build -t surveyjs-studio:local .`). Try it locally with `pnpm prod-like:up`
+root with `pnpm image:build` (`docker build -t surveyjs-studio-hosted:local .`). Try it locally with `pnpm prod-like:up`
 ([prod-like mode](development.md#prod-like-mode)). The same image serves modes 1 and 4: only its settings differ
 ([below](#configuration-by-deployment-mode)).
 
@@ -63,7 +63,7 @@ this timeout; if its own limits are lower, it answers first, with its own page.
 
    ```sh
    docker run -d --name surveyjs-studio --restart unless-stopped \
-     --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio:<tag>
+     --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio-hosted:<tag>
    ```
 
 3. **The reverse proxy** terminates https for `PUBLIC_BASE_URL`, forwards every path to port 3000, sets
@@ -90,7 +90,7 @@ image tag, remove the container and run it again with the same command:
 docker stop --time 60 surveyjs-studio   # SIGTERM: requests in flight may finish; SIGKILL after 60 s
 docker rm surveyjs-studio
 docker run -d --name surveyjs-studio --restart unless-stopped \
-  --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio:<tag>
+  --env-file /etc/surveyjs-studio/app.env -p 127.0.0.1:3000:3000 surveyjs-studio-hosted:<tag>
 ```
 
 Then check the `starting` log line (`docker logs surveyjs-studio`; [Logs](#logs)): it shows the settings the process
@@ -99,10 +99,10 @@ migrations: the stores keep the legacy formats, so any earlier image runs on the
 is re-creating the container with the previous tag.
 
 **Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
-`ghcr.io/surveyjs/surveyjs-studio:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
+`ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
 There is no `latest` tag: a deployment names the commit it runs. The package is private, and stays private when the repository goes public;
-pulling it needs a GitHub token with `read:packages`. Docker Hub (`surveyjs/surveyjs-studio`) comes with the self-hosted
-track.
+pulling it needs a GitHub token with `read:packages`. The name without `-hosted`, `surveyjs-studio` (on ghcr.io, and
+later Docker Hub), is the self-hosted image ([below](#releasing-the-self-hosted-image)).
 
 **A server for it.** [Setting up a Hetzner server](operations/hetzner-server-setup.md) walks through the server and its
 firewall; then `deploy/hetzner/setup.sh` installs Docker and Caddy for https and starts the app, and
@@ -111,7 +111,7 @@ firewall; then `deploy/hetzner/setup.sh` installs Docker and Caddy for https and
 **No settings in the image.** `.dockerignore` keeps every `.env`, `*.env`, key and certificate file out of the build
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
 (`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
-`docker run --rm --entrypoint sh surveyjs-studio:<tag> -c 'find /app -name "*.env*"'`.
+`docker run --rm --entrypoint sh surveyjs-studio-hosted:<tag> -c 'find /app -name "*.env*"'`.
 
 ## Releasing the self-hosted image
 
@@ -137,9 +137,9 @@ The push starts `.github/workflows/release.yml`:
    run's artifacts. This job has `packages: read` only, because the scanner is a third-party action.
 5. **`tag`**: only after `verify` passed, puts every tag on the verified digest and checks that each one names it.
 
-**Where it goes.** `RELEASE_IMAGE` (the workflow's `env`) is `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test`, a
-private test package, until Docker Hub access and the shipped licence key exist
-([ADR 0028](adr/0028-the-self-hosted-image.md)).
+**Where it goes.** `RELEASE_IMAGE` (the workflow's `env`) is `ghcr.io/surveyjs/surveyjs-studio`, a
+private package, until Docker Hub access and the shipped licence key exist; then releases go to Docker Hub
+(`surveyjs/surveyjs-studio`) and are mirrored there ([ADR 0028](adr/0028-the-self-hosted-image.md)).
 
 **The licence key.** The repository secret `SURVEYJS_IMAGE_LICENSE_KEY` becomes the image's
 `SURVEYJS_IMAGE_LICENSE_KEY`. The build reads it from the environment by name; it is never on a command line. While the

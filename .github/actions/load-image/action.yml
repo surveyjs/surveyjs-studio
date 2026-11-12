@@ -1,13 +1,13 @@
 name: Load the production image
-description: Loads surveyjs-studio:ci, which the image job of this run built and uploaded.
+description: Loads surveyjs-studio-hosted:ci, which the image job of this run built and uploaded.
 runs:
   using: composite
   steps:
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
-        name: surveyjs-studio-image
+        name: surveyjs-studio-hosted-image
         path: ${{ runner.temp }}/image
 
     - name: Load the image
       shell: bash
-      run: gunzip -c "$RUNNER_TEMP/image/surveyjs-studio-image.tar.gz" | docker load
+      run: gunzip -c "$RUNNER_TEMP/image/surveyjs-studio-hosted-image.tar.gz" | docker load

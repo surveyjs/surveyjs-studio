@@ -51,7 +51,7 @@ first: `git restore --staged --worktree web/src/shell` and delete the new `examp
 ## 2. The conformance suite against the reference image
 
 [The porting guide](../customizing/porting.md#running-the-reference-image) runs the suite against the reference
-server's production image. On Linux it is exactly the guide's commands: build `surveyjs-studio:ci`, write the settings
+server's production image. On Linux it is exactly the guide's commands: build `surveyjs-studio-hosted:ci`, write the settings
 with `reference-env`, run the container with `--network host`, wait for `http://127.0.0.1:3000/readyz`, then:
 
 ```sh
@@ -119,7 +119,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --entrypoint head surveyjs-studio:self-hosted
 **Check:** the output starts with `# Third-party notices`, then the sentence "SurveyJS Studio includes the components
 below. Each entry gives the licence the package declares and the licence text it ships.", then the first entry,
 a heading with a package name and version, then `License: ...` and the start of its licence text. The same file is
-in the `surveyjs-studio:local` image.
+in the `surveyjs-studio-hosted:local` image.
 
 ## 6. The README
 

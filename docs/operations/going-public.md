@@ -142,14 +142,14 @@ Before a mirror push, delete any leftover backup refs under `refs/original/`, so
 
 Do these in **Settings** of the repository as soon as it is public.
 
-| Where                                           | What to turn on                                                                                                                                           |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code security → Secret scanning                 | Turn on **Secret scanning** and **Push protection**                                                                                                       |
-| Code security → Private vulnerability reporting | Turn on, so reporters can write to you privately                                                                                                          |
-| Code security → Dependabot                      | Turn on **Dependabot alerts**                                                                                                                             |
-| Actions → General → Fork pull request workflows | Choose **Require approval for all outside collaborators**                                                                                                 |
-| Branches → master branch protection             | Require the `ci` status check and block force pushes                                                                                                      |
-| Packages (the organisation's page)              | Check that `surveyjs-studio` and `surveyjs-studio-selfhosted-test` are still private. Making a repository public does not publish its packages, but check |
+| Where                                           | What to turn on                                                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code security → Secret scanning                 | Turn on **Secret scanning** and **Push protection**                                                                                              |
+| Code security → Private vulnerability reporting | Turn on, so reporters can write to you privately                                                                                                 |
+| Code security → Dependabot                      | Turn on **Dependabot alerts**                                                                                                                    |
+| Actions → General → Fork pull request workflows | Choose **Require approval for all outside collaborators**                                                                                        |
+| Branches → master branch protection             | Require the `ci` status check and block force pushes                                                                                             |
+| Packages (the organisation's page)              | Check that `surveyjs-studio` and `surveyjs-studio-hosted` are still private. Making a repository public does not publish its packages, but check |
 
 The `secrets` job stays in CI after the switch. Keep [`.gitleaksignore`](../../.gitleaksignore) short: every entry
 needs a reason in the comment above it.

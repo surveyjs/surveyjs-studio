@@ -74,7 +74,7 @@ docker run -d --name surveyjs-studio -p 8080:8080 -v surveyjs-studio:/data <imag
 
 `docker logs surveyjs-studio` shows a one-time link that creates the first administrator; then open
 <http://localhost:8080>. `<image>` is `surveyjs-studio:self-hosted` after `pnpm image:build:self-hosted`, or a release
-of the private test package `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` until the image is published.
+from the package `ghcr.io/surveyjs/surveyjs-studio` (private until the image is published).
 [Self-hosting](docs/self-hosting.md) covers the settings, an https proxy, PostgreSQL, S3, backups and upgrades.
 
 ## Quick start
@@ -173,19 +173,19 @@ self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-h
 Two private packages hold the built images. GitHub shows this README on both package pages; each image's own
 description comes from its `org.opencontainers.image.*` labels in the [`Dockerfile`](Dockerfile).
 
-| Package                                            | Dockerfile target            | Pushed by                                                                                                                                          | Tags                                                                               |
-| -------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `ghcr.io/surveyjs/surveyjs-studio`                 | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
-| `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
+| Package                                   | Dockerfile target            | Pushed by                                                                                                                                          | Tags                                                                               |
+| ----------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `ghcr.io/surveyjs/surveyjs-studio`        | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
+| `ghcr.io/surveyjs/surveyjs-studio-hosted` | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
 
-- **`surveyjs-studio`** is what studio.surveyjs.io runs: its server deploys `:production` within a minute or two, and
-  rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green `master`
-  commit ([Deployment](docs/operations.md#deployment),
-  [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)).
-- **`surveyjs-studio-selfhosted-test`** is the self-hosted image's test package until the image is published on Docker
-  Hub ([Releasing the self-hosted image](docs/operations.md#releasing-the-self-hosted-image),
+- **`surveyjs-studio`** is the self-hosted image, the one that will also be published on Docker Hub as
+  `surveyjs/surveyjs-studio` ([Releasing the self-hosted image](docs/operations.md#releasing-the-self-hosted-image),
   [ADR 0028](docs/adr/0028-the-self-hosted-image.md)). Run it as in [Run it](#run-it) and
   [Self-hosting](docs/self-hosting.md).
+- **`surveyjs-studio-hosted`** is what studio.surveyjs.io runs: its server deploys `:production` within a minute or
+  two, and rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green
+  `master` commit ([Deployment](docs/operations.md#deployment),
+  [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)).
 - Pulling either needs `docker login ghcr.io` with a GitHub token that has `read:packages` and access to the package.
 - Both images carry the repository's `LICENSE` and the dependency notice `/app/THIRD_PARTY_NOTICES.md`; the
   self-hosted image also carries `/app/DOCKER-IMAGE-TERMS.md` ([License](#license)).
@@ -229,7 +229,7 @@ Run from the repository root.
 | `pnpm seed`, `pnpm seed:sqlite`, `pnpm seed:postgres`            | Migrates the database, then loads the golden fixtures (seed surveys are replaced, others kept)                             |
 | `pnpm db:migrate`, `pnpm db:status`                              | Applies the pending migrations; lists the applied and pending ones                                                         |
 | `pnpm dev:prod-data`                                             | The app on the **real** surveyjs.io stores, signing in through a local sign-in server; settings in `server/.env`           |
-| `pnpm image:build`                                               | Builds the production image `surveyjs-studio:local` (needs Docker)                                                         |
+| `pnpm image:build`                                               | Builds the production image `surveyjs-studio-hosted:local` (needs Docker)                                                  |
 | `pnpm image:build:self-hosted`                                   | Builds the self-hosted image `surveyjs-studio:self-hosted` ([Self-hosting](docs/self-hosting.md))                          |
 | `pnpm image:checks`                                              | Checks a self-hosted image as an admin uses it: `--image <tag> [--previous <tag>] [--only <checks>]`                       |
 | `pnpm backup`, `pnpm restore`                                    | `surveyjs-studio backup` and `restore` in the repository (SQLite and local files)                                          |

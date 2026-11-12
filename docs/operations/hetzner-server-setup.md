@@ -5,7 +5,7 @@ on the surveyjs.io SQL database and Azure storage). The app's settings, the chec
 are in [Operations](../operations.md); this page covers the server around it.
 
 The server runs two containers with Docker Compose: the app, from the image CI publishes for each `master` commit
-(`ghcr.io/surveyjs/surveyjs-studio:<full commit id>`, [Operations › Deployment](../operations.md#deployment)), and
+(`ghcr.io/surveyjs/surveyjs-studio-hosted:<full commit id>`, [Operations › Deployment](../operations.md#deployment)), and
 Caddy, which serves https and forwards every request to the app. Two scripts in
 [`deploy/hetzner/`](../../deploy/hetzner/) do the work on the server:
 
@@ -104,18 +104,18 @@ It prints each step. At the end the app runs, healthy, and the script shows the 
 says `"readOnly":true`, `"storageProvider":"azure-legacy"` and the right `publicBaseUrl`. **Root sign-in is now off**:
 from here on, `ssh deploy@<server-ip>` and `sudo`.
 
-| Option                 | Default                            | Meaning                                                                          |
-| ---------------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
-| `--tag`                | (required on the first run)        | The image tag                                                                    |
-| `--env-file`           | (required on the first run)        | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root      |
-| `--domain`             | `studio.surveyjs.io`               | Must match `PUBLIC_BASE_URL`                                                     |
-| `--image`              | `ghcr.io/surveyjs/surveyjs-studio` | The image without its tag                                                        |
-| `--ghcr-user`          | none                               | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt   |
-| `--readyz-allow "IPS"` | none                               | A monitor's addresses that may call `/readyz` through Caddy                      |
-| `--restrict-to "IPS"`  | none                               | Serve only these addresses; others get `403` (rollout step 1, if wanted)         |
-| `--auto-update`        |                                    | Deploy what Actions › Deploy tags `production` ([below](#deploying-from-github)) |
-| `--deploy-user`        | `deploy`                           | The everyday user; `--no-deploy-user` skips it                                   |
-| `--no-ssh-hardening`   |                                    | Keep password and root sign-in over SSH                                          |
+| Option                 | Default                                   | Meaning                                                                          |
+| ---------------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `--tag`                | (required on the first run)               | The image tag                                                                    |
+| `--env-file`           | (required on the first run)               | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root      |
+| `--domain`             | `studio.surveyjs.io`                      | Must match `PUBLIC_BASE_URL`                                                     |
+| `--image`              | `ghcr.io/surveyjs/surveyjs-studio-hosted` | The image without its tag                                                        |
+| `--ghcr-user`          | none                                      | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt   |
+| `--readyz-allow "IPS"` | none                                      | A monitor's addresses that may call `/readyz` through Caddy                      |
+| `--restrict-to "IPS"`  | none                                      | Serve only these addresses; others get `403` (rollout step 1, if wanted)         |
+| `--auto-update`        |                                           | Deploy what Actions › Deploy tags `production` ([below](#deploying-from-github)) |
+| `--deploy-user`        | `deploy`                                  | The everyday user; `--no-deploy-user` skips it                                   |
+| `--no-ssh-hardening`   |                                           | Keep password and root sign-in over SSH                                          |
 
 **Running it again** is safe, also on a server set up by hand before: each step checks what is there. It rewrites
 `compose.yaml`, the `Caddyfile` and `.env` in `/opt/surveyjs-studio`, keeps `/etc/surveyjs-studio/app.env` unless
@@ -157,7 +157,7 @@ address the Azure firewall allows) and the switch to read-write.
 ## 6. Update, roll back, status
 
 The tag is the full commit id of a `master` commit whose CI passed: each push to `master` publishes
-`ghcr.io/surveyjs/surveyjs-studio:<full commit id>`, and so does a manual run (Actions › CI › Run workflow). Sign in
+`ghcr.io/surveyjs/surveyjs-studio-hosted:<full commit id>`, and so does a manual run (Actions › CI › Run workflow). Sign in
 with `ssh deploy@<server-ip>`, then:
 
 ```sh
@@ -180,7 +180,7 @@ old images:
 
 ```sh
 cd /opt/surveyjs-studio
-sudo docker pull ghcr.io/surveyjs/surveyjs-studio:<tag>
+sudo docker pull ghcr.io/surveyjs/surveyjs-studio-hosted:<tag>
 sudo sed -i 's/^TAG=.*/TAG=<tag>/' .env
 sudo docker compose up -d --remove-orphans
 sudo docker compose ps                  # wait for "healthy"
@@ -220,3 +220,29 @@ The server tries each commit once: it reads the commit id from the image's `org.
 and remembers it in `/opt/surveyjs-studio/.auto-seen`. So a commit that does not become healthy is rolled back and not
 tried again, and a tag deployed by hand with `sudo surveyjs-studio-update <tag>` stays until the next run of the
 workflow with another commit. To try the same commit again, deploy it by hand.
+
+### Moving to another image package
+
+The server reads the package from `IMAGE` in `/opt/surveyjs-studio/.env`. The hosted image moved from
+`ghcr.io/surveyjs/surveyjs-studio` to `ghcr.io/surveyjs/surveyjs-studio-hosted` on 2026-11-12
+([ADR 0028](../adr/0028-the-self-hosted-image.md)); a server set up before that still pulls the old package, where
+Actions › Deploy no longer moves `production`. Move it once:
+
+1. **Copy the running image.** Run **Actions › Copy image tags** (`copy-image-tags.yml`). It copies the commit that
+   `production` names into the new package, as that commit id and as `production`, so the server can roll back to it.
+2. **The pull token.** The new package is private. A classic token with `read:packages` reads every package of the
+   organisation, so the server's sign-in usually works as it is; check it with
+   `sudo docker pull ghcr.io/surveyjs/surveyjs-studio-hosted:production`.
+3. **Point the server at it**, with either `setup.sh` (run again with your usual options: its default `--image` is the
+   new package, and it writes `IMAGE` into `.env`) or by hand:
+
+   ```sh
+   sudo sed -i 's#^IMAGE=.*#IMAGE=ghcr.io/surveyjs/surveyjs-studio-hosted#' /opt/surveyjs-studio/.env
+   sudo surveyjs-studio-update "$(sudo sed -n 's/^TAG=//p' /opt/surveyjs-studio/.env)"   # re-create from the new name
+   sudo surveyjs-studio-update --status
+   ```
+
+4. **Deploy once from GitHub** (Actions › Deploy with a green `master` commit) and check that the server picks it up
+   ([above](#deploying-from-github)).
+5. **Clean up.** `update.sh` removes old images by the current `IMAGE` only: remove the old package's images with
+   `sudo docker images ghcr.io/surveyjs/surveyjs-studio` and `sudo docker rmi <image>:<tag>`.

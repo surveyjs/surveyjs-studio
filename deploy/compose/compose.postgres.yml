@@ -39,7 +39,7 @@ services:
 
   # Creates the bucket once, then exits. An existing bucket is fine.
   bucket:
-    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}
+    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio:latest}
     command: ["surveyjs-studio", "s3-bucket", "create", "surveyjs-studio-files"]
     restart: "no"
     depends_on:
@@ -52,7 +52,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
 
   app:
-    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest}
+    image: ${SURVEYJS_STUDIO_IMAGE:-ghcr.io/surveyjs/surveyjs-studio:latest}
     restart: unless-stopped
     ports:
       - "${SURVEYJS_STUDIO_PORT:-8080}:8080"

@@ -3,8 +3,8 @@
 For admins who run SurveyJS Studio on their own server with the free Docker image (mode 2b). It covers the first start,
 the settings you set, running behind an https proxy, PostgreSQL and S3, backups, upgrades and the Compose examples.
 
-**The image.** Until the image is published on Docker Hub, release builds go to a private test package,
-`ghcr.io/surveyjs/surveyjs-studio-selfhosted-test` (pulling it needs `docker login ghcr.io` with a GitHub token that
+**The image.** Release builds go to `ghcr.io/surveyjs/surveyjs-studio`, private until the image is published on
+Docker Hub as `surveyjs/surveyjs-studio` (until then, pulling it needs `docker login ghcr.io` with a GitHub token that
 has `read:packages`). From a clone of the repository, `pnpm image:build:self-hosted` builds the same image as
 `surveyjs-studio:self-hosted`. The commands below write `<image>` for either.
 
@@ -232,7 +232,7 @@ docker compose -f compose.sqlite.yml up -d
 Neither PostgreSQL nor RustFS is published on the host. `SURVEYJS_STUDIO_IMAGE` in `.env` picks another image (such as
 `surveyjs-studio:self-hosted`), and `SURVEYJS_STUDIO_PORT` another host port.
 
-The default image, `ghcr.io/surveyjs/surveyjs-studio-selfhosted-test:latest`, does not exist until the first release that
+The default image, `ghcr.io/surveyjs/surveyjs-studio:latest`, does not exist until the first release that
 is not a pre-release. Until then set `SURVEYJS_STUDIO_IMAGE`, for example to a `v0.7.0-rc.N` tag of that package.
 
 Change the `.env.example` administrator password before the first start: whoever signs in first with it gets the
