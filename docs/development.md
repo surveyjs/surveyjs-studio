@@ -968,7 +968,9 @@ To see the rule fail and recover, follow [the Step 1 demo](demo/step-01.md#6-dep
 ## CI
 
 `.github/workflows/ci.yml` runs on pushes to `master`, `step/**`, `self-hosted/**` and `hosted/**` and on pull requests, on
-`ubuntu-latest` (Docker is available there). Its jobs run side by side, each on its own runner, so no two suites share
+`ubuntu-24.04` (Docker is available there). The runner is pinned, not `ubuntu-latest`: when `ubuntu-latest` moved to
+26.04, WebKit there saved a download named `API created.json` as `API_created.json`, which the end-to-end tests
+compare exactly. Its jobs run side by side, each on its own runner, so no two suites share
 a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, the `.nvmrc` Node and
 `pnpm install --frozen-lockfile`):
 

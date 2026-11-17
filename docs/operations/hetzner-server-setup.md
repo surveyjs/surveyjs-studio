@@ -56,7 +56,7 @@ around `ufw`.
   Nuremberg; for East US, Ashburn). Every page makes several calls to the SQL database and the storage accounts, so
   the distance adds to each of them.
 - **Image:** Ubuntu 24.04.
-- **Type:** Shared vCPU, **x86** (Intel or AMD), 2 vCPU and 4 GB. Not Arm (CAX): CI runs on `ubuntu-latest`, so the
+- **Type:** Shared vCPU, **x86** (Intel or AMD), 2 vCPU and 4 GB. Not Arm (CAX): CI runs on x86 `ubuntu-24.04`, so the
   image is built for amd64 only, and `setup.sh` stops on another architecture.
 - **Networking:** public IPv4 and IPv6. Turn **off "auto delete"** for the IPv4 address: it then stays yours if the
   server is rebuilt, and the Azure firewall rules that list it keep working.
