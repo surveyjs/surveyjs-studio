@@ -32,7 +32,7 @@ jobs:
   # with the server's configuration.
   test:
     name: Test the sandbox build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
@@ -85,7 +85,7 @@ jobs:
   publish:
     name: Move the sandbox branch
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -125,7 +125,7 @@ jobs:
   smoke:
     name: Smoke-test the live site
     needs: [test, publish]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

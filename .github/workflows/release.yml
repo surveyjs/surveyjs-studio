@@ -24,7 +24,7 @@ env:
 
 jobs:
   tags:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # packages: read finds which earlier release is in the registry (below).
     permissions:
@@ -109,7 +109,7 @@ jobs:
   # It runs nothing but docker: the third-party scanner runs in `verify`, without packages: write.
   build:
     needs: [tags, checks]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -179,7 +179,7 @@ jobs:
   # action.
   verify:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -266,7 +266,7 @@ jobs:
   # nothing but docker.
   tag:
     needs: [tags, build, verify]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

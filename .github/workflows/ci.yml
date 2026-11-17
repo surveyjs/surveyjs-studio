@@ -20,7 +20,7 @@ concurrency:
 jobs:
   checks:
     name: Static checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,7 +52,7 @@ jobs:
 
   unit:
     name: Unit and in-process conformance tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,7 +86,7 @@ jobs:
   # on master, for the publish job.
   image:
     name: Production image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,7 +111,7 @@ jobs:
   azurite:
     name: Azure legacy suites (Azurite)
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -161,7 +161,7 @@ jobs:
   prod-like:
     name: Prod-like (the image with production's settings)
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       PROD_LIKE_IMAGE: surveyjs-studio-hosted:ci
@@ -224,7 +224,7 @@ jobs:
   postgres:
     name: PostgreSQL and S3 suites
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -285,7 +285,7 @@ jobs:
   conformance-base:
     name: Conformance tests against the image (--base)
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -337,7 +337,7 @@ jobs:
   e2e-image:
     name: End-to-end tests on the image (${{ matrix.browser }})
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -374,7 +374,7 @@ jobs:
   # The tsx server (or, for the sandbox, `vite preview`) on Chromium: no image and no services.
   e2e-modes:
     name: End-to-end tests (SQLite, password, OAuth, self-hosted, sandbox)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -436,7 +436,7 @@ jobs:
   # Reviewed findings are listed in .gitleaksignore; the record is docs/operations/going-public.md.
   secrets:
     name: Secrets scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -466,7 +466,7 @@ jobs:
         conformance-base,
       ]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every job passed
@@ -493,7 +493,7 @@ jobs:
   publish:
     needs: ci
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       packages: write
