@@ -108,9 +108,10 @@ half of the tab (only for users who can modify the survey).
 
 What a visitor sees:
 
-- The survey name as the heading, and two tabs, **Summary** and **Table**. There is no Details tab, no
-  download and no **Export As...** menu, and nothing can be changed. The page needs no sign-in and shows no
-  menu of this application.
+- The survey name as the heading, and two tabs, **Summary** and **Table**. The Table has the **Export As...**
+  menu (**CSV**, **Excel** and **PDF**), as on your own page; the file holds what the visitor's Table shows,
+  so it leaves out the private questions too. There is no Details tab and no download of all the data, and
+  nothing can be changed. The page needs no sign-in and shows no menu of this application.
 - **Every response**, not the first 1,000. A survey with many responses takes a moment to load. While it
   loads the page says "Loading the results…". If it cannot be loaded it says "The results could not be loaded.
   Check your connection and try again." with **Try again**.

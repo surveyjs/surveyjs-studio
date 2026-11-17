@@ -4,6 +4,7 @@ import { api } from "./support/api.js";
 import { putDefinitionViaApi, uniqueSurveyName, withCleanup } from "./support/editor.js";
 import {
   CHART_DEFINITION,
+  exportAs,
   FEEDBACK_SURVEY,
   isViewWrite,
   keepViewWritesInBrowser,
@@ -69,16 +70,6 @@ async function answeredSurvey(page: Page, prefix: string, browserName: string): 
 async function expectSummaryItems(page: Page, names: readonly string[]): Promise<void> {
   await expect(summaryItems(page).first()).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => summaryItemNames(page)).toEqual(names);
-}
-
-/** Picks an item of the table's "Export As..." menu and returns the download it starts. */
-async function exportAs(page: Page, caption: "CSV" | "Excel" | "PDF"): Promise<Download> {
-  const bar = page.locator(".sa-tabulator__downloads-bar");
-  const download = page.waitForEvent("download", { timeout: 60_000 });
-  await bar.getByRole("button", { name: "Export As..." }).click();
-  // Since survey-analytics 3.2.5 an option's accessible name is "Export as CSV"; its text stays "CSV".
-  await bar.getByRole("option", { name: `Export as ${caption}`, exact: true }).click();
-  return download;
 }
 
 /** The bytes of a finished download. */

@@ -108,7 +108,7 @@ dates.
 3. Open that address in a **private (incognito) window**, where you are not signed in. Expected: the page has no
    site header or menu; the heading is the survey name; two tabs, **Summary** and **Table**; the Summary shows a
    chart for each of the two questions; the Table shows two rows with the columns `question1`,
-   `question2` and **Submitted**, with no **Export As...** menu. There is no Details tab and nothing to change.
+   `question2` and **Submitted**, and the **Export As...** menu. There is no Details tab and nothing to change.
 4. Back in the signed-in window click **Disable Access**. The private window still shows the page. **Reload it**.
    Expected: **"These survey results are not available."** and nothing else.
 

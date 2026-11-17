@@ -1522,13 +1522,12 @@ It reads `publicResultsQueryOptions` once, then:
   `publicView` set, no saved state and no state callbacks (nothing is saved). The Summary leaves the private
   questions out of its question list. The Table is built from `withoutQuestions(definition, names)`
   (`publicDefinition.ts`): its column chooser offers every column of its survey and a column missing from its
-  state is built again, so the private questions must not be in the survey at all. The library has no option
-  to leave out the **Export As...** menu, so `TableView` removes its bar (`.sa-tabulator__downloads-bar`)
-  after `render`. The data already lacks the private answers: the server stripped them.
+  state is built again, so the private questions must not be in the survey at all. The Table keeps its
+  **Export As...** menu: a file holds the columns the Table shows, so it has no private answer and no address
+  either. The data already lacks the private answers: the server stripped them.
 - **Chunks.** `check-run-chunks.mjs` also checks the public route (`src/routes/results/$surveyId.lazy.tsx`): its
   static closure holds no file that matches `dashboard`, `survey-analytics` or `tabulator`, and its full
-  closure holds a `survey-dashboard-*` and a `survey-dashboard-table-*` chunk (no export chunk: the public
-  Table has no downloads).
+  closure holds a `survey-dashboard-*`, a `survey-dashboard-table-*` and a `survey-dashboard-export-*` chunk.
 
 ## The sandbox (Step 9)
 
