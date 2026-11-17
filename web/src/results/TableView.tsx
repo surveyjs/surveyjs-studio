@@ -69,7 +69,9 @@ export function TableView({
     const table = new Tabulator(
       survey,
       tableRows(responses, names),
-      { downloadButtons: publicView ? [] : ["pdf", "xlsx", "csv"] },
+      // The public Table offers the downloads too: it holds no private question and no address,
+      // so a file has nothing the page does not show.
+      { downloadButtons: ["pdf", "xlsx", "csv"] },
       extras as unknown as ConstructorParameters<typeof Tabulator>[3],
     );
     const defaults = defaultState(table, new Set(extras.map((column) => column.name)));
@@ -101,9 +103,6 @@ export function TableView({
 
     table.render(target);
     rendered = true;
-    // The library has no option to leave the "Export as" menu out: an empty `downloadButtons`
-    // list still builds it, so the public page removes it (render adds it synchronously).
-    if (publicView) target.querySelector(".sa-tabulator__downloads-bar")?.remove();
     if (stateCallback.current !== undefined) {
       table.onStateChanged.add((_, changed: ViewState) => stateCallback.current?.(changed));
     }

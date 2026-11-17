@@ -36,9 +36,8 @@ describe("the Table", () => {
     expect(container.querySelector(".sa-tabulator__downloads-bar")).not.toBeNull();
   });
 
-  it("offers no Export menu on the public page", () => {
+  it("offers the Export menu on the public page", () => {
     const { container } = renderTable(true);
-    expect(container.querySelector(".sa-tabulator__downloads-bar")).toBeNull();
-    expect(container.textContent).not.toContain("Export as");
+    expect(container.querySelector(".sa-tabulator__downloads-bar")).not.toBeNull();
   });
 });

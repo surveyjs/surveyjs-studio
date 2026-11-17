@@ -4,6 +4,7 @@ import { api } from "./support/api.js";
 import { putDefinitionViaApi, uniqueSurveyName, withCleanup } from "./support/editor.js";
 import {
   CHART_DEFINITION,
+  exportAs,
   isResultsDelete,
   isSettingsPatch,
   LARGE_SURVEY,
@@ -191,10 +192,18 @@ test("Grant Access opens the results to signed-out visitors and Disable Access c
       await expect(visitor.locator(".tabulator-row")).toHaveCount(3, { timeout: 30_000 });
       await expect(tableHeaders(visitor).filter({ hasText: "Colour" })).toHaveCount(1);
       await expect(tableHeaders(visitor).filter({ hasText: "Score" })).toHaveCount(1);
-      await expect(visitor.locator(".sa-tabulator__downloads-bar")).toHaveCount(0);
-      await expect(visitor.getByText("Export As...")).toHaveCount(0);
       await expect(tableHeaders(visitor).filter({ hasText: "Submitted" })).toHaveCount(1);
       await expect(tableHeaders(visitor).filter({ hasText: "Agree" })).toHaveCount(0);
+      // The visitor can export the Table; the file leaves the private question out too.
+      const exported = await exportAs(visitor, "CSV");
+      expect(exported.suggestedFilename()).toBe("results.csv");
+      const lines = (await readFile(await exported.path()))
+        .toString("utf8")
+        .split("\n")
+        .filter((line) => line.trim() !== "");
+      expect(lines).toHaveLength(RESPONSES.length + 1);
+      expect(lines[0]).toContain("Colour");
+      expect(lines[0]).not.toContain("Agree");
 
       // Disable Access closes the page.
       await openResultsTab(page, "Details");

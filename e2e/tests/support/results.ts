@@ -1,4 +1,4 @@
-import type { Locator, Page, Request, Response } from "@playwright/test";
+import type { Download, Locator, Page, Request, Response } from "@playwright/test";
 import { api } from "./api.js";
 import { expect, type ExpectedErrorResponse } from "./test.js";
 
@@ -128,4 +128,14 @@ export function isResultsDelete(response: Response, surveyId: string): boolean {
     new URL(response.url()).pathname === `/api/v1/surveys/${surveyId}/results` &&
     response.status() === 204
   );
+}
+
+/** Picks an item of the table's "Export As..." menu and returns the download it starts. */
+export async function exportAs(page: Page, caption: "CSV" | "Excel" | "PDF"): Promise<Download> {
+  const bar = page.locator(".sa-tabulator__downloads-bar");
+  const download = page.waitForEvent("download", { timeout: 60_000 });
+  await bar.getByRole("button", { name: "Export As..." }).click();
+  // Since survey-analytics 3.2.5 an option's accessible name is "Export as CSV"; its text stays "CSV".
+  await bar.getByRole("option", { name: `Export as ${caption}`, exact: true }).click();
+  return download;
 }

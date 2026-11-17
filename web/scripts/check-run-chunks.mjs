@@ -7,7 +7,7 @@
 //   through dynamic imports: the route's own chunk (fetched by a hover preload) imports none of
 //   them, and the table's chunk does not import the export libraries;
 // - the public results page (`/results/$surveyId`) is the same: no Dashboard code in the route's
-//   own chunks, the Dashboard and its table only through dynamic imports.
+//   own chunks, the Dashboard, its table and the export libraries only through dynamic imports.
 // - the normal build (any directory but a sandbox one) holds no sandbox code: no manifest entry under
 //   `src/sandbox/`, no chunk that mentions `mockServiceWorker`, no `mockServiceWorker.js` or `version.json` file.
 // Run by `pnpm build` after `vite build`; reads Vite's manifest (`build.manifest` in
@@ -150,6 +150,7 @@ print(`The public results page (${PUBLIC_RESULTS_ROUTE}) can load:`, publicAll);
 for (const [pattern, name] of [
   [DASHBOARD_JS, "survey-dashboard-*.js"],
   [DASHBOARD_TABLE_JS, "survey-dashboard-table-*.js"],
+  [DASHBOARD_EXPORT_JS, "survey-dashboard-export-*.js"],
 ]) {
   if (!publicAll.some((file) => pattern.test(file))) {
     problems.push(`The public results page has no ${name} chunk.`);
@@ -163,5 +164,5 @@ if (problems.length > 0) {
 console.log(
   "check-run-chunks: the run page loads the Form Library and no Creator or Dashboard code; " +
     "the results page loads the Dashboard, its table and the export libraries on demand; " +
-    "the public results page loads the Dashboard and its table on demand.",
+    "the public results page loads the Dashboard, its table and the export libraries on demand.",
 );
