@@ -43,3 +43,4 @@ and add each one to this index.
 | [0034](0034-legacy-api-scope.md)                           | The scope of the legacy API compatibility layer                                 | Superseded by 0035 |
 | [0035](0035-legacy-api-bridge.md)                          | A compatibility bridge in front of Studio's public API                          | Accepted           |
 | [0036](0036-history-snapshots-above-a-size-limit.md)       | History snapshots above a size limit go to the byte store                       | Accepted           |
+| [0037](0037-access-keys-and-api-tokens.md)                 | Access keys and API tokens                                                      | Accepted           |

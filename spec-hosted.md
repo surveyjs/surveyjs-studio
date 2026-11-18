@@ -152,6 +152,11 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### API tokens and CORS (H12–H14)
 
+> **Changed 2026-11-18 by [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md).** One credential list with two
+> kinds: the legacy access key (as today, revocable from Step 7, never created in Studio) and new `sjs_` API tokens
+> (one scope each, created and revoked by users). No bearer credential manages credentials, accounts, members or
+> projects, except that a credential may replace itself (`generateAccessKey`). A blocked owner's credentials stop.
+
 - The contract's `bearerAuth` loses its `x-phase: P1` marker.
 - **A token belongs to a scope:** a user's Personal space or one project.
   - In a project scope it can do what an admin of that project can do. Managing members and deleting the project are not included.
@@ -209,7 +214,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
   - today users see their key on the surveyjs.io manage account page;
   - before the cutover they are read from the site database through the Azure legacy provider;
   - at the cutover they are imported, hashed, into `legacy_access_keys`. The site removes the key from its manage account page in the same release;
-  - no new keys are issued. The API tokens page shows a user's legacy key as "legacy access key, created …", with **Revoke**;
+  - no new keys are issued. The API tokens page shows a user's legacy key as "legacy access key, created …", with **Revoke**. **Changed 2026-11-18 by [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md):** users create new `sjs_` tokens, which also work as access keys through the bridge; Revoke on the legacy key appears from Step 7;
   - the value cannot be shown after the cutover. The announcement tells integrators to copy their key from the manage account page beforehand if they need it.
 - **The new API's rules still apply:** rate limits on the public paths, idempotent submission, the respondent-file and response size limits, and IP capture only when the survey's setting is on.
 

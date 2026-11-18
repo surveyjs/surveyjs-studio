@@ -188,13 +188,13 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ## Step 3: API tokens, legacy access keys and CORS
 
-**Goal:** integrators can call the new API from their servers with a per-scope token, and from browsers through CORS. A legacy access key works as a token, so the bridge ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)) can pass it through. Tokens work before the cutover.
+**Goal:** integrators can call the new API from their servers with a per-scope token, and from browsers through CORS. A legacy access key works as a token, so the bridge ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)) can pass it through. Tokens work before the cutover. The design is [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md): one credential list, legacy keys and new `sjs_` tokens.
 
 Studio's public API is what the bridge calls, so it must cover everything the old API can do before the cutover (ADR 0035, point 4). That coverage is built with the bridge, action by action, in Steps 5 and 6; this step builds the authentication it rests on.
 
 **References**
 
-- HS › API tokens and CORS; idea §6.2 B7; contract `bearerAuth` (`x-phase: P1`); ADR 0035.
+- HS › API tokens and CORS; idea §6.2 B7; contract `bearerAuth` (`x-phase: P1`); ADR 0035; ADR 0037.
 - H12, H13, H14; H15 (revoking a legacy key, moved here from Step 6).
 
 **Build**
@@ -211,7 +211,9 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   Only a hash is stored.
 
 - **Authentication:**
-  - a bearer token resolves to the user and scope;
+  - a bearer value starting with `sjs_` is an API token, any other a legacy key (ADR 0037, point 1); it resolves to the user and scope;
+  - no bearer credential manages credentials, the account, project members or projects; the one exception is replacing the credential the request carries (for the bridge's `generateAccessKey`);
+  - a blocked or disabled owner's credentials get `401`;
   - the permissions are those in the spec;
   - CSRF does not apply to bearer requests;
   - the last-used time is updated, at most once a minute.
@@ -219,7 +221,7 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   - a bearer value in the legacy key format is checked as the owner's Personal-and-projects key, with the rights the old API gave it;
   - before the cutover the key is looked up in the site database through the Azure legacy provider; after it, against the hashes the migration copies into `legacy_access_keys` (Steps 8 and 9);
   - a wrong or revoked key gets `401`; the bridge turns it into the old API's answer.
-- **The legacy key on the API tokens page:** shown as "Legacy access key, created …" with **Revoke**. The old API's `generateAccessKey`, answered by the bridge, replaces it; the page offers no way to make a new one.
+- **The legacy key on the API tokens page:** shown as "Legacy access key". Until Step 7 the row links to the site's own "generate new key"; **Revoke** and its app-owned store are built behind a setting that Step 7 turns on (ADR 0037, point 4). The page offers no way to make a new legacy key: users create `sjs_` tokens instead.
 - **CORS:**
   - `/public/*` and bearer requests answer any origin without credentials;
   - cookie requests stay same-origin;
@@ -237,10 +239,12 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
     - a member who is not admin gets `403` when creating a project token;
     - bearer requests need no CSRF;
     - the CORS headers per request type;
-    - a legacy access key lists its owner's surveys; once revoked it gets `401`;
+    - a legacy access key lists its owner's surveys; with the Step 7 setting on, once revoked it gets `401`; with it off, the revoke operation is refused;
+    - a credential replaces itself through the bearer-only operation, and the old value gets `401`;
+    - a blocked owner's legacy key and tokens get `401`;
   - provider suite: the TokenStore; the legacy key lookup on Azurite.
 - **Front-end unit:** the tokens page's visibility rules; the one-time secret display.
-- **Front-end e2e:** create a token, use it with `fetch` from a page on another origin, revoke it, and the next call fails. The legacy key row appears and can be revoked.
+- **Front-end e2e:** create a token, use it with `fetch` from a page on another origin, revoke it, and the next call fails. The legacy key row appears; with the Step 7 setting on it can be revoked.
 
 **Documentation:** API guide "API tokens" and "Calling the API from a browser", the API reference (generated), user guide "API tokens", `docs/demo/hosted-03.md`.
 
