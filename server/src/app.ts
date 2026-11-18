@@ -17,6 +17,7 @@ import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { registerCors } from "./cors.js";
 import { createCredentialHandlers } from "./credentials/handlers.js";
 import { createOwnerCheck } from "./credentials/owner-check.js";
 import { createBearerResolver } from "./credentials/resolve.js";
@@ -140,6 +141,8 @@ export async function buildApp(
     }
     done(null, payload);
   });
+
+  registerCors(app);
 
   app.setErrorHandler((error, request, reply) => {
     if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
