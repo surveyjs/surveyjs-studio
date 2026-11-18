@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createEraseAccount } from "../accounts/erasure.js";
 import { LICENCE_EXPIRED } from "../notices/account-notices.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
+import { createMemoryCredentials } from "./memory-credentials.js";
 import { createMemoryProviders } from "./memory.js";
 import { describeProviderSuite } from "./suite/provider-suite.js";
+import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 
 describeProviderSuite("memory (legacy fixture seed)", async () =>
   createMemoryProviders(await legacyFixtureSeed()),
@@ -217,5 +219,32 @@ describe("memory provider account notices", () => {
     expect(() => createMemoryProviders(undefined, { accountNotices: "surveyjs-licenses" })).toThrow(
       /surveyjs-licenses needs STORAGE_PROVIDER=azure-legacy/,
     );
+  });
+});
+
+describeCredentialStoreSuite("memory", () => {
+  const memory = createMemoryCredentials();
+  return Promise.resolve({
+    store: memory.store,
+    seedsLegacyKeys: true,
+    seedLegacyKey: (userId, key) => {
+      memory.seedLegacyKey(userId, key);
+      return Promise.resolve();
+    },
+    close: () => Promise.resolve(),
+  });
+});
+
+describe("memory provider legacy access keys seed", () => {
+  it("serves the keys of the seed through credentials", async () => {
+    const userId = "eeeeeeee-0000-4000-8000-0000000000e9";
+    const { credentials } = createMemoryProviders({
+      users: [],
+      surveys: [],
+      projects: [],
+      memberships: [],
+      legacyAccessKeys: { [userId]: "abcdef0123456789" },
+    });
+    expect(await credentials.findLegacyKey("ABCDEF0123456789")).toEqual({ userId, revoked: false });
   });
 });

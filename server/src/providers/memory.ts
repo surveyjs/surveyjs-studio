@@ -37,6 +37,7 @@ import {
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryLocalAccounts } from "./memory-accounts.js";
+import { createMemoryCredentials } from "./memory-credentials.js";
 import { createMemoryInvitations } from "./memory-invitations.js";
 import { seedInstanceAdmin } from "./seed-instance-admin.js";
 import { createMemoryFileStore } from "./memory-files.js";
@@ -77,6 +78,8 @@ export interface MemorySeed {
   legacyViews?: Record<string, Partial<Record<ViewName, Record<string, unknown>>>>;
   /** The names of the questions hidden from public results, by survey id (Step 10). */
   privateResultQuestions?: Record<string, string[]>;
+  /** The legacy access key of a user, by user id. */
+  legacyAccessKeys?: Record<string, string>;
 }
 
 interface StoredHistoryEntry {
@@ -388,6 +391,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     files: createMemoryFileStore(),
     results: results.store,
     views: views.store,
+    credentials: createMemoryCredentials(seed?.legacyAccessKeys).store,
     users: local?.users ?? {
       kind: "external",
       getUser: (id) => {

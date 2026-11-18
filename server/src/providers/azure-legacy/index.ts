@@ -39,6 +39,7 @@ import type {
   SurveyPageQuery,
   SurveyPosition,
 } from "../types.js";
+import { notBuiltCredentials } from "../not-built-credentials.js";
 import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
@@ -814,6 +815,7 @@ export function createAzureLegacyProviders(
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
+    credentials: notBuiltCredentials("azure-legacy", 5),
 
     users: {
       kind: "external",

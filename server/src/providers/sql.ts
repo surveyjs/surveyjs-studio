@@ -13,6 +13,7 @@ import { createSqlViewStore } from "../sql/view-store.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import type { LegacyWarningLogger } from "./azure-legacy/index.js";
 import { createMemoryProviders, type MemorySeed } from "./memory.js";
+import { notBuiltCredentials } from "./not-built-credentials.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
 export interface SqlProviderOptions {
@@ -130,6 +131,7 @@ export function createSqlProviders(
     files: createSqlFileStore(database, options.bytes),
     results: createSqlResultStore(database),
     views: createSqlViewStore(database),
+    credentials: notBuiltCredentials("sql", 4),
     accounts: local?.accounts ?? null,
     invitations: local ? createSqlInvitationStore(database) : null,
     notices: fallback.notices,
