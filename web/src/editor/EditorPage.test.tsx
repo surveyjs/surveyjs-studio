@@ -99,7 +99,7 @@ describe("the editor page", () => {
     await openEditor(sampleSurvey, {
       ...appConfig,
       shell: "surveyjs-site",
-      features: { embed: true, apiDocs: true, apiTokens: true },
+      features: { embed: true, apiDocs: true, apiTokens: true, legacyKeyRevoke: false },
     });
     expect(editor.props!.embed).toBe(true);
   });
@@ -108,7 +108,7 @@ describe("the editor page", () => {
     await openEditor(sampleSurvey, {
       ...appConfig,
       shell: "self-hosted",
-      features: { embed: false, apiDocs: false, apiTokens: false },
+      features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
     });
     expect(editor.props!.embed).toBe(false);
   });

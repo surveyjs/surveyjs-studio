@@ -82,7 +82,7 @@ describe("getConfig", () => {
         privacyUrl: null,
         poweredBy: true,
       },
-      features: { embed: true, apiDocs: true, apiTokens: true },
+      features: { embed: true, apiDocs: true, apiTokens: true, legacyKeyRevoke: false },
     });
   });
 
@@ -135,7 +135,7 @@ describe("getConfig", () => {
         poweredBy: false,
       },
       // Outside the surveyjs-site shell (D21).
-      features: { embed: false, apiDocs: false, apiTokens: false },
+      features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
       // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
       links: {
         settings: "https://surveyjs.io/manage",
@@ -408,9 +408,9 @@ describe("contract coverage", () => {
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      // The webhook is called without a signature.
+      // The webhook is called without a signature; the bearer-only operation with a session.
       const accepted =
-        op.operationId === "receiveAccountDeleted"
+        op.operationId === "receiveAccountDeleted" || op.operationId === "replaceCurrentCredential"
           ? [401]
           : [200, 201, 204, 302, 400, 409, 422, 501];
       expect(accepted).toContain(res.statusCode);

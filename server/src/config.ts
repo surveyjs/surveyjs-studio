@@ -105,6 +105,7 @@ export interface FeaturesConfig {
   readonly embed: boolean;
   readonly apiDocs: boolean;
   readonly apiTokens: boolean;
+  readonly legacyKeyRevoke: boolean;
 }
 
 /** The shell that reproduces surveyjs.io: the only one with the Embed tab, API docs and tokens. */
@@ -867,6 +868,8 @@ export function loadConfig(
       embed: e.APP_SHELL === SITE_SHELL,
       apiDocs: apiDocsOf(e),
       apiTokens: e.APP_SHELL === SITE_SHELL,
+      // Hosted Step 3 task 8 replaces this constant with the LEGACY_KEY_REVOKE setting.
+      legacyKeyRevoke: false,
     }),
     storageProvider: e.STORAGE_PROVIDER,
     memorySeed: e.MEMORY_SEED,

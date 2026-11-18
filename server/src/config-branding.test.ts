@@ -159,12 +159,18 @@ describe("features by shell", () => {
       embed: true,
       apiDocs: true,
       apiTokens: true,
+      legacyKeyRevoke: false,
     });
   });
 
   it.each(["self-hosted", "plain", "acme"])("hides them in the %s shell", (shell) => {
     const config = load({ NODE_ENV: "test", APP_SHELL: shell });
-    expect(config.features).toEqual({ embed: false, apiDocs: false, apiTokens: false });
+    expect(config.features).toEqual({
+      embed: false,
+      apiDocs: false,
+      apiTokens: false,
+      legacyKeyRevoke: false,
+    });
     expect(config.apiDocs).toBe(false);
   });
 

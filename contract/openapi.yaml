@@ -37,7 +37,9 @@ info:
       - The web app uses the session cookie `msid`. Requests that change data
         (POST, PUT, PATCH, DELETE) must also send `X-CSRF-Token`, which echoes the
         value of the readable `msid_csrf` cookie (double-submit pattern).
-      - Bearer API tokens (`bearerAuth`) arrive in P1.
+      - API clients send an API token or a legacy access key as `Authorization: Bearer <value>`
+        (`bearerAuth`); a bearer request needs no CSRF token. Managing tokens and keys, changing the
+        account, creating or deleting a project and managing members stay with the signed-in session.
       - `/public/*` endpoints need no authentication.
     - **Idempotent submissions.** A respondent submission may carry an
       `Idempotency-Key` header. A repeated key returns the original result instead
@@ -58,6 +60,8 @@ tags:
     description: Runtime settings the front-end needs before it renders.
   - name: Admin
     description: The instance admin's user management (self-hosted, local accounts).
+  - name: API tokens
+    description: The user's credentials for API clients, API tokens and the legacy access key. Session only.
   - name: Projects
     description: Projects group surveys and are shared with members.
   - name: Members
@@ -341,6 +345,33 @@ paths:
               schema: { $ref: '#/components/schemas/CurrentUser' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/credential:
+    post:
+      tags: [Session]
+      operationId: replaceCurrentCredential
+      summary: Replace the credential of this request
+      description: |
+        Bearer only. The API token that signs the request is rotated: the old value stops working and a
+        new one, with the same name and scope, comes back (shown once). A legacy access key cannot be
+        replaced here (`409 legacy-key-replace-unavailable`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The new value.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [value]
+                properties:
+                  value: { type: string, description: 'The new credential value, shown once.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+
   # ----------------------------------------------------------------- Config
   /config:
     get:
@@ -355,6 +386,111 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AppConfig' }
+
+  # ------------------------------------------------------------- API tokens
+  /api-tokens:
+    get:
+      tags: [API tokens]
+      operationId: listApiTokens
+      summary: List API tokens
+      description: |
+        Without `project`: the caller's Personal tokens and their legacy access key, if they have
+        one. With `project`: the tokens of that project, for its admins (`403 forbidden` for other
+        members, `404` for a project the caller does not belong to); `legacyKey` is then `null`.
+        The values are never returned.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: A project ID. Omit for the caller's Personal tokens.
+          schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: The tokens, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiTokenList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+    post:
+      tags: [API tokens]
+      operationId: createApiToken
+      summary: Create an API token
+      description: |
+        A Personal token (`projectId: null`) acts on the caller's personal surveys. A project token
+        acts with a project admin's rights and needs a project the caller administers (`403 forbidden`
+        for other members, `404` for a project the caller does not belong to). The value is in the
+        answer only; it cannot be read again.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiTokenCreate' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiTokenCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /api-tokens/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+    delete:
+      tags: [API tokens]
+      operationId: revokeApiToken
+      summary: Revoke an API token
+      description: |
+        The owner revokes a Personal token; a project admin revokes a project token. The token stops
+        working at once. Anyone else gets `404`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204': { description: Revoked. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /api-tokens/legacy-key:
+    delete:
+      tags: [API tokens]
+      operationId: revokeLegacyAccessKey
+      summary: Revoke the legacy access key
+      description: |
+        Switches off the caller's legacy access key. `409 legacy-key-revoke-unavailable` while the
+        instance has not turned legacy key revocation on (`features.legacyKeyRevoke`); `404` when the
+        caller has no legacy key.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204': { description: Revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
 
   # --------------------------------------------------------------- Projects
   /admin/users:
@@ -591,7 +727,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -668,7 +803,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       responses:
         '204': { description: Deleted. }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -715,7 +849,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -754,7 +887,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -787,7 +919,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       responses:
         '204': { description: Removed. }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -814,7 +945,6 @@ paths:
       security:
         - cookieAuth: []
           csrfToken: []
-        - bearerAuth: []
       responses:
         '204': { description: Removed. }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -1686,8 +1816,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Per-project API token, sent as `Authorization Bearer <token>`.
-      x-phase: P1
+      description: 'An API token (`sjs_…`) or a legacy access key, as `Authorization: Bearer <value>`.'
 
   parameters:
     SurveyId:
@@ -1815,7 +1944,7 @@ components:
       description: |
         The request conflicts with the current state. Codes:
         `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
-        `last-instance-admin`.
+        `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -2251,11 +2380,83 @@ components:
       description: |
         What the shell offers. The Embed tab, the API docs and API tokens are shown only in the
         `surveyjs-site` shell; elsewhere `/api/docs` answers `404`.
-      required: [embed, apiDocs, apiTokens]
+      required: [embed, apiDocs, apiTokens, legacyKeyRevoke]
       properties:
         embed: { type: boolean, description: The editor's Embed Survey and Embed Creator tabs. }
         apiDocs: { type: boolean, description: The API reference at `/api/docs`. }
         apiTokens: { type: boolean, description: The API tokens page (hosted track). }
+        legacyKeyRevoke:
+          type: boolean
+          description: Whether a user can revoke their legacy access key in the API tokens page.
+
+    # --------------------------------------------------------- API tokens
+    ApiToken:
+      type: object
+      additionalProperties: false
+      required: [id, name, projectId, lastFour, createdAt, lastUsedAt, createdBy]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        projectId:
+          description: The project the token acts in, or `null` for a Personal token.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
+        lastFour: { type: string, minLength: 4, maxLength: 4, description: The last four characters of the value. }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the token was last used, to the minute; `null` if never.
+        createdBy:
+          type: object
+          additionalProperties: false
+          required: [id, displayName]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            displayName: { type: string }
+    LegacyAccessKey:
+      type: object
+      additionalProperties: false
+      required: [lastFour, revocable]
+      properties:
+        lastFour: { type: string, minLength: 4, maxLength: 4, description: The last four characters of the key. }
+        revocable:
+          type: boolean
+          description: Whether `DELETE /api-tokens/legacy-key` works on this instance (`features.legacyKeyRevoke`).
+    ApiTokenList:
+      type: object
+      additionalProperties: false
+      required: [legacyKey, tokens]
+      properties:
+        legacyKey:
+          description: The caller's legacy access key; always `null` when the list is of a project.
+          oneOf:
+            - { $ref: '#/components/schemas/LegacyAccessKey' }
+            - { type: 'null' }
+        tokens:
+          type: array
+          items: { $ref: '#/components/schemas/ApiToken' }
+    ApiTokenCreate:
+      type: object
+      additionalProperties: false
+      required: [name, projectId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        projectId:
+          description: A project the caller administers, or `null` for a Personal token.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
+    ApiTokenCreated:
+      type: object
+      additionalProperties: false
+      required: [token, value]
+      properties:
+        token: { $ref: '#/components/schemas/ApiToken' }
+        value:
+          type: string
+          description: The token value (`sjs_` and 43 characters). Shown once; only a hash is kept.
 
     # ----------------------------------------------------------- Projects
     ProjectRole:

@@ -51,7 +51,7 @@ describe("loadConfig", () => {
         privacyUrl: null,
         poweredBy: true,
       },
-      features: { embed: true, apiDocs: true, apiTokens: true },
+      features: { embed: true, apiDocs: true, apiTokens: true, legacyKeyRevoke: false },
       storageProvider: "memory",
       memorySeed: "empty",
       legacy: null,
