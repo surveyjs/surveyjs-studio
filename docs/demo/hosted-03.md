@@ -182,28 +182,23 @@ API=http://localhost:3000/api/v1
    the legacy `curl` of section 5 again, then the Personal one:
 
    ```sh
-   curl -s -o /dev/null -w "%{http_code}
+   curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $KEY" "$API/surveys"
+   curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOKEN" "$API/surveys"
    ```
 
-" -H "Authorization: Bearer $KEY" "$API/surveys"
-curl -s -o /dev/null -w "%{http_code}
-" -H "Authorization: Bearer $TOKEN" "$API/surveys"
-
-````
-
-- **Check:** the legacy row is gone, the first call prints `401` and the second `200`: revoking the key does not
-  touch tokens.
+   - **Check:** the legacy row is gone, the first call prints `401` and the second `200`: revoking the key does not
+     touch tokens.
 
 ## 7. A token replaces itself
 
 1. Rotate the Personal token of section 6 step 4:
 
-```sh
-curl -s -X POST -H "Authorization: Bearer $TOKEN" "$API/me/credential"
-````
+   ```sh
+   curl -s -X POST -H "Authorization: Bearer $TOKEN" "$API/me/credential"
+   ```
 
-- **Check:** `{"value":"sjs_…"}`, a new value. The old `$TOKEN` now gets `401` on `$API/surveys`; the new one
-  answers `200`.
+   - **Check:** `{"value":"sjs_…"}`, a new value. The old `$TOKEN` now gets `401` on `$API/surveys`; the new one
+     answers `200`.
 
 2. With a session instead of a bearer value the same operation is refused. In the browser console on
    <http://localhost:5173> (signed in as Olivia since section 6; read the cookie again, the earlier value is gone):
