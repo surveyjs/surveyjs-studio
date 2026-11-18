@@ -101,23 +101,26 @@ describe("azure-legacy token revoke and replace races (local replica)", () => {
     createdAt: "2026-11-01T10:00:00.000Z",
   });
 
-  /** The table, with `hook` run (once) before the first call of `method` that matches. */
+  /** The table, with `hook` run (once) before the `nth` call of `method` (a name or several) that matches. */
   function interleaved(
-    method: string,
+    method: string | string[],
     matches: (args: unknown[]) => boolean,
     hook: () => Promise<void>,
+    nth = 1,
   ): TableClient {
     const table = tableOf();
+    const methods = Array.isArray(method) ? method : [method];
     let done = false;
+    let seen = 0;
     return new Proxy(table, {
       get(target, property) {
         const value: unknown = Reflect.get(target, property);
         if (typeof value !== "function") return value;
         const fn = value as (...args: unknown[]) => unknown;
         // Only the watched method becomes async (listEntities returns an iterator, not a promise).
-        if (property !== method) return fn.bind(target);
+        if (typeof property !== "string" || !methods.includes(property)) return fn.bind(target);
         return async (...args: unknown[]) => {
-          if (property === method && !done && matches(args)) {
+          if (!done && matches(args) && ++seen === nth) {
             done = true;
             await hook();
           }
@@ -158,7 +161,7 @@ describe("azure-legacy token revoke and replace races (local replica)", () => {
     await plain.createApiToken(t, oldHash);
     const racing = createAzureCredentialStore({
       table: interleaved(
-        "upsertEntity",
+        ["upsertEntity", "updateEntity"],
         (args) => (args[0] as { partitionKey: string }).partitionKey === "id",
         async () => {
           expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
@@ -223,6 +226,63 @@ describe("azure-legacy token revoke and replace races (local replica)", () => {
       lastFour: "fin1",
     });
     expect(await plain.findApiToken(midHash)).toBeNull();
+  });
+
+  const idWrite = (args: unknown[]) => (args[0] as { partitionKey: string }).partitionKey === "id";
+  type Found = Awaited<ReturnType<ReturnType<typeof createAzureCredentialStore>["findApiToken"]>>;
+  const authenticates = (found: Found) => found !== null && found.revokedAt === null;
+
+  it("two replaces of one token: one wins, the loser's value never authenticates, a revoke reaches the winner", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const [oldHash, hashA, hashB] = [hashOf(), hashOf(), hashOf()];
+    await plain.createApiToken(t, oldHash);
+    let second: boolean | undefined;
+    const first = createAzureCredentialStore({
+      // Before the first replace names its pending hash, the second one runs to the end.
+      table: interleaved(["upsertEntity", "updateEntity"], idWrite, async () => {
+        second = await plain.replaceApiTokenHash(t.id, hashB, "bbbb");
+      }),
+      select,
+    });
+    const firstResult = await first.replaceApiTokenHash(t.id, hashA, "aaaa");
+    expect(second).toBe(true);
+    expect(firstResult).toBe(false);
+    expect(authenticates(await plain.findApiToken(oldHash))).toBe(false);
+    expect(authenticates(await plain.findApiToken(hashA))).toBe(false);
+    expect(authenticates(await plain.findApiToken(hashB))).toBe(true);
+    expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
+    expect(authenticates(await plain.findApiToken(hashB))).toBe(false);
+    expect(authenticates(await plain.findApiToken(hashA))).toBe(false);
+  });
+
+  it("a recovery replace racing a slow original leaves one live value that a revoke reaches", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const [oldHash, slowHash, recoveredHash] = [hashOf(), hashOf(), hashOf()];
+    await plain.createApiToken(t, oldHash);
+    let recovered: boolean | undefined;
+    const slow = createAzureCredentialStore({
+      // The slow replace has deleted the old record and is about to swap the id entry (its
+      // second write there); meanwhile a replace that sees the old record gone recovers.
+      table: interleaved(
+        ["upsertEntity", "updateEntity"],
+        idWrite,
+        async () => {
+          recovered = await plain.replaceApiTokenHash(t.id, recoveredHash, "rrrr");
+        },
+        2,
+      ),
+      select,
+    });
+    const slowResult = await slow.replaceApiTokenHash(t.id, slowHash, "ssss");
+    expect(recovered).toBe(true);
+    expect(slowResult).toBe(false);
+    expect(authenticates(await plain.findApiToken(oldHash))).toBe(false);
+    expect(authenticates(await plain.findApiToken(slowHash))).toBe(false);
+    expect(authenticates(await plain.findApiToken(recoveredHash))).toBe(true);
+    expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
+    expect(authenticates(await plain.findApiToken(recoveredHash))).toBe(false);
   });
 
   it("a bulk revoke that meets a concurrent replace still revokes the token under its new hash", async () => {
