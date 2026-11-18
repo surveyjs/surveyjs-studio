@@ -1,5 +1,4 @@
-import { hashCredential } from "../credentials/format.js";
-import { lastFour as lastFourOf } from "../credentials/format.js";
+import { hashCredential, lastFour as lastFourOf } from "../credentials/format.js";
 import type { ApiTokenRecord, CredentialStore } from "./types.js";
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
@@ -127,7 +126,7 @@ export function createMemoryCredentials(
         key ? { lastFour: key.lastFour, revoked: key.revokedHash === key.hash } : null,
       );
     },
-    revokeLegacyKey: (userId, _at) => {
+    revokeLegacyKey: (userId) => {
       const key = keys.get(lower(userId));
       if (!key) return Promise.resolve(false);
       key.revokedHash = key.hash;
