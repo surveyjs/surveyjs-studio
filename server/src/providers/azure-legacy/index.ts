@@ -39,11 +39,11 @@ import type {
   SurveyPageQuery,
   SurveyPosition,
 } from "../types.js";
-import { notBuiltCredentials } from "../not-built-credentials.js";
 import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
 import { createAzureResultStore } from "./results.js";
+import { createAzureCredentialStore } from "./credentials.js";
 import { createAzureViewStore } from "./views.js";
 import {
   UnmappableLegacyRowError,
@@ -64,6 +64,7 @@ import type {
   LegacyUserRow,
 } from "./rows.js";
 import {
+  API_TOKENS_TABLE,
   writeClonedSurvey,
   writeDefinitionSave,
   writeMemberAddition,
@@ -231,6 +232,19 @@ function sqlPool(connectionString: string): sql.ConnectionPool {
 function surveyEventsTable(connectionString: string): TableClient {
   try {
     return TableClient.fromConnectionString(connectionString, "surveys", {
+      allowInsecureConnection: isLocalStorageString(connectionString),
+    });
+  } catch {
+    throw new Error(
+      "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING is not a valid Azure Storage connection string",
+    );
+  }
+}
+
+/** Table `mysurveysapitokens` of the surveys account, ours: API tokens and revoked site keys. */
+function apiTokensTable(connectionString: string): TableClient {
+  try {
+    return TableClient.fromConnectionString(connectionString, API_TOKENS_TABLE, {
       allowInsecureConnection: isLocalStorageString(connectionString),
     });
   } catch {
@@ -815,7 +829,10 @@ export function createAzureLegacyProviders(
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
-    credentials: notBuiltCredentials("azure-legacy", 5),
+    credentials: createAzureCredentialStore({
+      table: apiTokensTable(legacy.surveysStorageConnectionString),
+      select,
+    }),
 
     users: {
       kind: "external",
