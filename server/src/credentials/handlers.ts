@@ -17,7 +17,7 @@ export function createCredentialHandlers(options: CredentialsServiceOptions): Ha
 
     createApiToken: async (request, reply) => {
       const created = await service.create(requireUser(request), request.body as ApiTokenCreate);
-      return reply.code(201).send(created);
+      return reply.code(201).header("cache-control", "no-store").send(created);
     },
 
     revokeApiToken: async (request, reply) => {
@@ -31,6 +31,9 @@ export function createCredentialHandlers(options: CredentialsServiceOptions): Ha
       return reply.code(204).send();
     },
 
-    replaceCurrentCredential: (request) => service.replaceCurrent(requireUser(request)),
+    replaceCurrentCredential: async (request, reply) => {
+      const replaced = await service.replaceCurrent(requireUser(request));
+      return reply.header("cache-control", "no-store").send(replaced);
+    },
   };
 }

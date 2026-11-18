@@ -5,7 +5,7 @@ import type { Security } from "../contract.js";
 import { hashCredential, lastFour, newApiTokenValue } from "../credentials/format.js";
 import { createOwnerCheck } from "../credentials/owner-check.js";
 import { createBearerResolver } from "../credentials/resolve.js";
-import type { User } from "../domain/types.js";
+import type { ProjectRecord, User } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { createMemoryCredentials } from "../providers/memory-credentials.js";
 import type { UserDirectory } from "../providers/types.js";
@@ -122,6 +122,7 @@ async function setup(): Promise<Setup> {
     now: clock,
     bearer: createBearerResolver({
       credentials: store,
+      projects: { getProject: (id) => Promise.resolve({ id } as ProjectRecord) },
       owners: createOwnerCheck({ users, accounts: null, now: clock }),
       now: clock,
     }),

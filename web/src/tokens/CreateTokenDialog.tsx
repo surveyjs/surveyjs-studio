@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { useCreateToken } from "../api/tokens";
 import { ButtonText, PRIMARY, SECONDARY } from "./buttons";
@@ -33,7 +33,16 @@ export function CreateTokenDialog({
   const [copied, setCopied] = useState<"no" | "yes" | "by-hand">("no");
   const input = useRef<HTMLInputElement>(null);
 
+  // The value field takes the focus when the value appears (the form's button that had it is gone),
+  // so Escape keeps reaching the dialog.
+  useEffect(() => {
+    if (value !== null) input.current?.focus();
+  }, [value]);
+
+  // While the request is pending the dialog cannot close: the value would be lost, with the token
+  // made and never shown.
   const close = () => {
+    if (create.isPending) return;
     setValue(null);
     create.reset();
     onClose();
@@ -132,7 +141,12 @@ export function CreateTokenDialog({
               <button type="submit" className={PRIMARY} disabled={create.isPending}>
                 <ButtonText>Create</ButtonText>
               </button>
-              <button type="button" className={SECONDARY} onClick={close}>
+              <button
+                type="button"
+                className={SECONDARY}
+                disabled={create.isPending}
+                onClick={close}
+              >
                 <ButtonText>Cancel</ButtonText>
               </button>
             </div>

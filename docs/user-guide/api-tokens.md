@@ -13,7 +13,7 @@ The page has a **Personal** section, then one section for each project where you
 admin sees no section for the project: only admins make and revoke a project's tokens.
 
 Each table lists **Name**, **Token** (only the last four characters), **Created**, **Last used** and **Actions**.
-"Last used" is accurate to the minute and empty until the token is used.
+"Last used" is accurate to the minute and shows "Never" until the token is used.
 
 ## Two kinds of token
 
@@ -38,7 +38,8 @@ My Surveys keeps no copy that can be shown again. Choose **Done** when you have 
 a token, revoke it and make a new one.
 
 Send the token in the `Authorization` header of each request: `Authorization: Bearer sjs_…`. Treat it like a
-password: anyone who has it can do what it allows.
+password: anyone who has it can do what it allows. Tokens and legacy keys keep working after you change your password; to stop
+them, revoke them.
 
 ## Revoke a token
 

@@ -325,6 +325,7 @@ export async function buildApp(
       // API tokens and legacy access keys (ADR 0037).
       bearer: createBearerResolver({
         credentials: providers.credentials,
+        projects: providers.projects,
         owners: createOwnerCheck({
           users: providers.users,
           accounts,

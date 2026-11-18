@@ -127,6 +127,13 @@ describe("createApiToken", () => {
     });
   });
 
+  it("answers a no-store response, as it carries the value", async () => {
+    const { send, as } = await start();
+    const res = await send("POST", "/api-tokens", await as(ANN), { name: "CI", projectId: null });
+    expect(res.statusCode).toBe(201);
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
   it("creates a project token for a project admin only: 403 for a member, 404 for others", async () => {
     const { as, send, create } = await start();
     const { token } = await create(ANN, TEAM.toUpperCase());
@@ -260,6 +267,7 @@ describe("listApiTokens", () => {
     expect((await send("GET", `/api-tokens?project=${OTHER}`, ivy)).statusCode).toBe(200);
     const created = await send("POST", "/api-tokens", ivy, { name: "CI", projectId: OTHER });
     expect(created.statusCode).toBe(201);
+    expect(created.headers["cache-control"]).toBe("no-store");
     expect((await send("GET", `/api-tokens?project=${randomUUID()}`, ivy)).statusCode).toBe(404);
   });
 });
@@ -293,6 +301,14 @@ describe("revokeApiToken", () => {
     for (const { value } of [personal, project, other]) {
       expect((await send("GET", "/surveys", bearer(value))).statusCode).toBe(200);
     }
+  });
+
+  it("lets an instance admin revoke a project token (R9)", async () => {
+    const { as, send, create } = await start({ userDirectory: "local" });
+    const { token, value } = await create(ANN, TEAM);
+    const res = await send("DELETE", `/api-tokens/${token.id}`, await as(seedInstanceAdmin));
+    expect(res.statusCode).toBe(204);
+    expect((await send("GET", "/surveys", bearer(value))).statusCode).toBe(401);
   });
 
   it("lets any admin of the project revoke its tokens, whoever made them", async () => {
@@ -346,6 +362,38 @@ describe("revokeLegacyAccessKey", () => {
   });
 });
 
+describe("getCurrentUser under a bearer credential", () => {
+  /** Every account has a licence notice. */
+  const wrap = (providers: ProviderSet): ProviderSet => ({
+    ...providers,
+    notices: {
+      noticesFor: () => Promise.resolve([{ code: "license-expired", message: "Expired." }]),
+    },
+  });
+
+  it("answers the profile only: no notices and no account flags", async () => {
+    const { as, send, create } = await start({ wrap, userDirectory: "local" });
+    const { value } = await create(ANN, TEAM);
+    const res = await send("GET", "/me", bearer(value));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      id: ANN.id,
+      displayName: "Ann",
+      email: ANN.email,
+      avatarUrl: null,
+    });
+    // The same account in a session still gets its notices.
+    const session = await send("GET", "/me", await as(ANN));
+    expect(session.json()).toMatchObject({ notices: [{ code: "license-expired" }] });
+  });
+
+  it("answers the profile only to a legacy key as well", async () => {
+    const { send } = await start({ wrap });
+    const res = await send("GET", "/me", bearer(ANN_KEY));
+    expect(res.json()).not.toHaveProperty("notices");
+  });
+});
+
 describe("replaceCurrentCredential", () => {
   it("rotates the token of the request: same id, name and scope, a new value", async () => {
     const { as, send, create } = await start();
@@ -354,6 +402,7 @@ describe("replaceCurrentCredential", () => {
     expect(res.statusCode).toBe(200);
     const next = res.json<{ value: string }>().value;
     expect(next).toMatch(/^sjs_[A-Za-z0-9_-]{43}$/);
+    expect(res.headers["cache-control"]).toBe("no-store");
     expect((await send("GET", "/surveys", bearer(value))).statusCode).toBe(401);
     expect((await send("GET", "/surveys", bearer(next))).statusCode).toBe(200);
     const listed = await send("GET", `/api-tokens?project=${TEAM}`, await as(ANN));

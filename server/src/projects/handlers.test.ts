@@ -567,9 +567,9 @@ describe("API token scopes", () => {
     expect((await send("DELETE", `/projects/${GONE}`, await as(ANN))).statusCode).toBe(204);
     // Revoked with the project.
     expect((await send("GET", "/projects", headers)).statusCode).toBe(401);
-    // One the deletion left unrevoked (a failed best-effort revocation) finds no project.
+    // One the deletion left unrevoked (a failed best-effort revocation) does not sign in at all.
     const left = await tokenOf(providers, ANN, GONE);
-    expect((await send("GET", "/projects", left)).json()).toMatchObject({ items: [] });
-    expect((await send("GET", `/projects/${GONE}`, left)).statusCode).toBe(404);
+    expect((await send("GET", "/projects", left)).statusCode).toBe(401);
+    expect((await send("GET", `/projects/${GONE}`, left)).statusCode).toBe(401);
   });
 });

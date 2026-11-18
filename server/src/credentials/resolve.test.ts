@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { User } from "../domain/types.js";
+import type { ProjectRecord, User } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { createMemoryCredentials } from "../providers/memory-credentials.js";
 import { createMemoryLocalAccounts } from "../providers/memory-accounts.js";
@@ -70,13 +70,18 @@ function setup(...users: User[]) {
   const dir = directory(...users);
   const { store, seedLegacyKey } = createMemoryCredentials();
   const warn = vi.fn();
+  /** The ids of the projects that exist. */
+  const projectIds = new Set<string>();
   const resolver = createBearerResolver({
     credentials: store,
+    projects: {
+      getProject: (id) => Promise.resolve(projectIds.has(id) ? ({ id } as ProjectRecord) : null),
+    },
     owners: createOwnerCheck({ users: dir.users, accounts: null, now: clock.now }),
     now: clock.now,
     log: { warn },
   });
-  return { clock, dir, store, seedLegacyKey, resolver, warn };
+  return { clock, dir, store, seedLegacyKey, resolver, warn, projectIds };
 }
 
 describe("createBearerResolver", () => {
@@ -98,11 +103,23 @@ describe("createBearerResolver", () => {
     // Project tokens belong to the project (ADR 0037): membership is not checked here.
     const owner = user();
     const projectId = randomUUID();
-    const { store, resolver } = setup(owner);
+    const { store, resolver, projectIds } = setup(owner);
+    projectIds.add(projectId);
     const token = await storeToken(store, owner.id, projectId);
     const resolved = await resolver.resolve(token.value);
     expect(resolved.id).toBe(owner.id);
     expect(resolved.scope).toEqual({ kind: "project", projectId });
+  });
+
+  it("refuses a project token whose project no longer exists, though it was never revoked", async () => {
+    const owner = user();
+    const projectId = randomUUID();
+    const { store, resolver, projectIds } = setup(owner);
+    projectIds.add(projectId);
+    const token = await storeToken(store, owner.id, projectId);
+    expect((await resolver.resolve(token.value)).id).toBe(owner.id);
+    projectIds.delete(projectId);
+    expect(await codeOf(resolver.resolve(token.value))).toBe("unauthenticated");
   });
 
   it("resolves a legacy key to its owner with the scope of everything, in any letter case", async () => {
@@ -158,6 +175,7 @@ describe("createBearerResolver", () => {
             revokedAt: "replaced",
           }),
       },
+      projects: { getProject: () => Promise.resolve(null) },
       owners: createOwnerCheck({ users: directory(owner).users, accounts: null }),
     });
     expect(await codeOf(marked.resolve(value))).toBe("unauthenticated");

@@ -16,3 +16,4 @@ create table api_tokens (
 );
 
 create index api_tokens_creator on api_tokens (creator_id, project_id);
+create index api_tokens_project on api_tokens (project_id);

@@ -24,7 +24,7 @@ describeLicenceNoticeSuite("azure-legacy (local replica)", (now) =>
   ),
 );
 
-// The suite's users are random ids, so the helper gives each seeded key a Users row of its own on
+// The suite's users are random ids, so the helper gives each seeded key a site user row of its own on
 // the replica (test code only: the replica config is local by construction, and the fixtures are
 // reloaded afterwards). Production code never writes the site's key.
 describeCredentialStoreSuite("azure-legacy (local replica)", async () => {

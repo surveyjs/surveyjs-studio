@@ -45,6 +45,8 @@ an account:
 A token or key that calls one of these operations gets `401 unauthenticated`, because the operation accepts a session
 only. A project token **can** list the project's members (`listMembers`); it cannot change them.
 
+API tokens and legacy keys keep working after a password change; to stop them, revoke them.
+
 One operation is for bearer requests only: [`replaceCurrentCredential`](#replacing-the-credential-of-a-request).
 
 ## Scopes

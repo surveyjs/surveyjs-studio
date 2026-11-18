@@ -143,6 +143,37 @@ describe("the API tokens page", () => {
     expect(document.body.innerHTML).not.toContain(VALUE);
   });
 
+  it("cannot be cancelled while the token is being made, and focuses the value when it appears", async () => {
+    renderTokens();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    server.use(
+      mswHttp.post("*/api/v1/api-tokens", async () => {
+        await gate;
+        return HttpResponse.json({ token: personalToken, value: VALUE }, { status: 201 });
+      }),
+    );
+    await screen.findByRole("heading", { name: "Personal" });
+    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create token" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "CI" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(
+        (within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+    fireEvent.keyDown(within(dialog).getByLabelText("Name"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+
+    release();
+    const field = (await screen.findByLabelText("Token")) as HTMLInputElement;
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    fireEvent.keyDown(field, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("offers Personal and the administered projects as scopes", async () => {
     renderTokens();
     await screen.findByRole("heading", { name: "Personal" });

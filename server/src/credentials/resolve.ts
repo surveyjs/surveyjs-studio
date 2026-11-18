@@ -1,7 +1,7 @@
 import type { BearerResolver, RequestUser } from "../auth/authenticate.js";
 import type { User } from "../domain/types.js";
 import { AppError } from "../errors.js";
-import type { CredentialStore } from "../providers/types.js";
+import type { CredentialStore, ProjectStore } from "../providers/types.js";
 import { credentialKind, hashCredential } from "./format.js";
 import type { OwnerCheck } from "./owner-check.js";
 
@@ -14,6 +14,8 @@ const API_TOKEN = /^sjs_[A-Za-z0-9_-]{43}$/;
 export interface BearerResolverOptions {
   readonly credentials: CredentialStore;
   readonly owners: OwnerCheck;
+  /** A project token authenticates only while its project exists. */
+  readonly projects: Pick<ProjectStore, "getProject">;
   readonly now?: () => number;
   /** Where a failed last-used write is reported; it never fails the request. */
   readonly log?: { warn(details: object, message: string): void };
@@ -37,7 +39,7 @@ const actingAs = (user: User) => ({
  * answer `401 unauthenticated`; the value is never logged or echoed.
  */
 export function createBearerResolver(options: BearerResolverOptions): BearerResolver {
-  const { credentials, owners } = options;
+  const { credentials, owners, projects } = options;
   const now = options.now ?? Date.now;
   /** When this process last wrote each token's last-used time. */
   const touched = new Map<string, number>();
@@ -67,6 +69,10 @@ export function createBearerResolver(options: BearerResolverOptions): BearerReso
         const token = await credentials.findApiToken(hashCredential(value, kind));
         // Any revocation mark, a date or not, stops the token.
         if (!token || token.revokedAt !== null) throw signedOut();
+        // A project's deletion revokes its tokens, but on Azure that is best effort (ADR 0037).
+        if (token.projectId !== null && !(await projects.getProject(token.projectId))) {
+          throw signedOut();
+        }
         const user = await owners.owner(token.creatorId);
         await touch(token.id);
         return {
