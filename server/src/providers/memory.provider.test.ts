@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createEraseAccount } from "../accounts/erasure.js";
 import { LICENCE_EXPIRED } from "../notices/account-notices.js";
@@ -231,6 +232,7 @@ describeCredentialStoreSuite("memory", () => {
       memory.seedLegacyKey(userId, key);
       return Promise.resolve();
     },
+    newProjectId: () => Promise.resolve(randomUUID()),
     close: () => Promise.resolve(),
   });
 });

@@ -8,6 +8,8 @@ export interface CredentialsUnderTest {
   /** False when the store has no legacy keys (the SQL store until hosted Step 8). */
   readonly seedsLegacyKeys: boolean;
   seedLegacyKey(userId: string, key: string): Promise<void>;
+  /** A project id a token may belong to: the SQL stores need a project row (foreign key). */
+  newProjectId(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -62,7 +64,7 @@ export function describeCredentialStoreSuite(
       const older = newToken({ creatorId, createdAt: "2026-11-01T10:00:00.000Z" });
       const newer = newToken({ creatorId, createdAt: "2026-11-01T11:00:00.000Z" });
       const revoked = newToken({ creatorId });
-      const inProject = newToken({ creatorId, projectId: randomUUID() });
+      const inProject = newToken({ creatorId, projectId: await under.newProjectId() });
       for (const t of [older, newer, revoked, inProject]) await store.createApiToken(t, hashOf());
       expect(await store.revokeApiToken(revoked.id, AT)).toBe(true);
       const listed = await store.listApiTokens({ creatorId });
@@ -71,13 +73,13 @@ export function describeCredentialStoreSuite(
     });
 
     it("lists a project's tokens, whoever created them", async () => {
-      const projectId = randomUUID();
+      const projectId = await under.newProjectId();
       const a = newToken({ projectId });
       const b = newToken({ projectId });
       const revoked = newToken({ projectId });
       for (const t of [a, b, revoked]) await store.createApiToken(t, hashOf());
       await store.revokeApiToken(revoked.id, AT);
-      await store.createApiToken(newToken({ projectId: randomUUID() }), hashOf());
+      await store.createApiToken(newToken({ projectId: await under.newProjectId() }), hashOf());
       const listed = await store.listApiTokens({ projectId });
       expect(listed.map((t) => t.id).sort()).toEqual([a.id, b.id].sort());
     });
@@ -135,7 +137,7 @@ export function describeCredentialStoreSuite(
       const creatorId = randomUUID();
       const other = newToken();
       const mine = newToken({ creatorId });
-      const inProject = newToken({ creatorId, projectId: randomUUID() });
+      const inProject = newToken({ creatorId, projectId: await under.newProjectId() });
       const already = newToken({ creatorId });
       const hashes = [hashOf(), hashOf(), hashOf(), hashOf()];
       await store.createApiToken(mine, hashes[0]!);
@@ -152,10 +154,10 @@ export function describeCredentialStoreSuite(
     });
 
     it("revokes every unrevoked token of a project and counts them", async () => {
-      const projectId = randomUUID();
+      const projectId = await under.newProjectId();
       const a = newToken({ projectId });
       const b = newToken({ projectId });
-      const elsewhere = newToken({ projectId: randomUUID() });
+      const elsewhere = newToken({ projectId: await under.newProjectId() });
       const personal = newToken({ creatorId: a.creatorId });
       const hashes = [hashOf(), hashOf(), hashOf(), hashOf()];
       await store.createApiToken(a, hashes[0]!);
