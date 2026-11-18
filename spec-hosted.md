@@ -181,6 +181,14 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### Compatibility layer (H5, H7–H10, H15, H30)
 
+> **Changed 2026-11-17 by [ADR 0035](docs/adr/0035-legacy-api-bridge.md).** The layer is a separate service, the
+> bridge, not a module of the app. It answers **every** action of the old API exactly, used or not, so nothing answers
+> `410` and the scope below no longer applies. It calls only Studio's public API, which covers everything the old API
+> can do; legacy access keys pass through as tokens; `getSurveyAndIsCompleted` and `image` are made to work; the cookie
+> sign-in is not carried over. The old API has no `post/page-number` route. The response-shape rules below still hold,
+> and so do the access-key rules, with one change: the old `generateAccessKey` keeps working and replaces the caller's
+> key. The text below is the original decision.
+
 - **A server module outside the contract** (`server/src/legacy-api/`). It is mounted only when `LEGACY_API=on` and served on the `api.surveyjs.io` host name. It is documented in `docs/api/legacy-compat.md` and is not part of the OpenAPI document or the conformance suite. A port of the back-end does not implement it.
 - **It is built on the provider interfaces**, so it runs on the Azure legacy provider before the cutover and on the SQL provider after it.
 - **Scope ("thin")** is set by the traffic measurement in Step 1:
@@ -207,7 +215,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### Routing `api.surveyjs.io` (H18, H19)
 
-- **The `api.surveyjs.io` host serves only My Surveys** (confirmed 2026-10-19), so the app takes over the whole host name.
+- **The `api.surveyjs.io` host serves only My Surveys** (confirmed 2026-10-19), so the app takes over the whole host name. **Corrected 2026-11-13:** the usage measurement found the site's demos and scheduled jobs on the same host ([ADR 0034](docs/adr/0034-legacy-api-scope.md) C6). They stay on the old service, so the switch is by path, or the site team moves them first. **Changed 2026-11-17 by [ADR 0035](docs/adr/0035-legacy-api-bridge.md):** the bridge takes the whole host and forwards those paths to the old service, so the switch is one DNS change, made by the SurveyJS team; the groups below do not apply.
 - **With a reverse proxy in front of the host,** paths move in groups:
   1. public reads;
   2. public writes;
@@ -311,7 +319,7 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
 
 ## Decisions on the open questions (2026-10-19)
 
-1. **`api.surveyjs.io` serves only My Surveys.** The app takes over the whole host (see Routing).
+1. **`api.surveyjs.io` serves only My Surveys.** The app takes over the whole host (see Routing). **Corrected 2026-11-13:** the site's demos and jobs share the host and stay on the old service ([ADR 0034](docs/adr/0034-legacy-api-scope.md)).
 2. **Access keys** are shown today on the surveyjs.io manage account page. After the cutover the app keeps hashes, the site stops showing keys, and the API tokens page offers **Revoke** only (see Compatibility layer).
 3. **Legacy deleted-result copies** are migrated and purged 30 days after the cutover. No new copies are made.
 4. **Hosting:** most likely Hetzner, in Europe or the USA. Step 1 chooses the region and the stores.
