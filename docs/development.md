@@ -848,7 +848,8 @@ pnpm inspect:legacy --env-file docker/azurite.env --user owner@example.com
 
 | Flag                   | Meaning                                                                           |
 | ---------------------- | --------------------------------------------------------------------------------- |
-| `--user <id or email>` | Required. A user GUID, or an email address                                        |
+| `--user <id or email>` | A user GUID, or an email address. It or `--stats` is required                     |
+| `--stats`              | Counts and sizes of the legacy stores instead ([below](#counts-and-sizes))        |
 | `--env-file <path>`    | Load variables from this file first. Variables already set in the environment win |
 | `--help`               | Print the usage and exit                                                          |
 
@@ -884,6 +885,40 @@ the least privilege it needs, since it only reads:
 - keep the env file **outside the repository**, or name it `.env.<something>`: only `.env` and
   `.env.*` are git-ignored (except `.env.example`). Never commit it, and delete it when you are
   done.
+
+### Counts and sizes
+
+`pnpm inspect:legacy --stats` measures the legacy stores for the hosted migration ([plan-hosted.md](../plan-hosted.md)
+Step 1): the store choice, the window estimate and the scale check rest on it.
+
+```sh
+pnpm inspect:legacy --stats --env-file docker/azurite.env
+```
+
+| Flag             | Meaning                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--json`         | Print the summary as JSON instead of text                                                                         |
+| `--result-bytes` | Also read every response's `result` and sum its length. That reads all response data, so it is slow on production |
+
+It reads the three `LEGACY_*` connection strings, not `STORAGE_PROVIDER`, and prints counts and sizes per kind of
+legacy data: the SQL records (surveys, themes, users, projects), the responses and other table data (rows per kind,
+and rows per table as p50, p90, p99 and max), and the stored blobs (count, bytes, bytes per blob, and for the history
+the entries per survey). What each kind is, and which kinds the migration moves, is in the legacy documentation
+(private location, plan-hosted.md rule 6). On the replica, compare the output with the counts the fixture loader prints
+([Demo: hosted Step 1](demo/hosted-01.md)).
+
+When both storage connection strings reach the same account, as on the replica, the account is read once and shown
+as `shared`. The file shares are not read: Azurite has no Files service. Take their used capacity from the Azure
+portal. A line now and then on standard error shows progress.
+
+The output holds counts and sizes only, never a name, id or value from the data. Measured on production it is still
+**private** (plan-hosted.md, rule 6): it goes to the private location, never into the repository, a PR or an
+Actions log. Credentials as for the inspector above, except that listing tables and containers needs an **account**
+SAS with the service resource type: `ss=bt`, `srt=sco`, `sp=rl`. It holds every blob name of one container in
+memory at a time.
+
+Exit codes: `0` success, `1` a store error (the message names the operation only), `2` a usage error, an
+unreadable env file or a missing connection string.
 
 ### Schema check
 
