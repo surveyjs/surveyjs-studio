@@ -8,7 +8,8 @@ import { securityHeaders } from "../server/src/web/security-headers.ts";
 // E2E_API_PROXY_TARGET points a second preview at another server (the e2e licence-notice run).
 const backend = process.env["E2E_API_PROXY_TARGET"] ?? "http://127.0.0.1:3000";
 const apiProxy = {
-  "/api": backend,
+  // A pattern, not the prefix "/api", which would also take the web app's own /api-tokens page.
+  "^/api(?:/|$)": backend,
   // The dev identity provider's "Sign in as…" page (IDENTITY_PROVIDER=dev only).
   "/__dev": backend,
   "/healthz": backend,
@@ -30,7 +31,11 @@ function securityHeadersPlugin(proxy: Record<string, string>): Plugin {
       server.middlewares.use((req, res, next) => {
         const pathname = new URL(req.url ?? "/", "http://preview.invalid").pathname;
         const appPath = pathname.startsWith(base) ? `/${pathname.slice(base.length)}` : pathname;
-        if (!proxied.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+        const isProxied = (prefix: string) =>
+          prefix.startsWith("^")
+            ? new RegExp(prefix).test(pathname)
+            : pathname === prefix || pathname.startsWith(`${prefix}/`);
+        if (!proxied.some(isProxied)) {
           for (const [name, value] of Object.entries(securityHeaders(appPath, { https }))) {
             res.setHeader(name, value);
           }
