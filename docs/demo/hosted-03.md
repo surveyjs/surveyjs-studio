@@ -38,16 +38,21 @@ API=http://localhost:3000/api/v1
 
    ```sh
    TOKEN=<the value you copied>
+   ```
+
+4. Reload the page.
+   - **Check:** the `Demo` token is in the table with its last four characters, its creator and date, and an empty
+     **Last used**; the value is nowhere on the page.
+5. Use the token:
+
+   ```sh
    curl -s -H "Authorization: Bearer $TOKEN" "$API/surveys"
    ```
 
    - **Check:** the answer lists Olivia's personal surveys: the same ones as **Your surveys** shows under Personal,
      with no project survey.
 
-4. Reload the page.
-   - **Check:** the `Demo` token is in the table with its last four characters, its creator and date, and an empty
-     **Last used**; the value is nowhere on the page.
-5. Run the `curl` again and reload the page.
+6. Reload the page.
    - **Check:** **Last used** has a time now.
 
 ## 2. A project token (checklist 2)
@@ -99,6 +104,8 @@ API=http://localhost:3000/api/v1
    ```sh
    npx --yes http-server -p 4000
    ```
+
+   or, without a download, `python -m http.server 4000`.
 
 2. Open <http://localhost:4000/> (a page that says 404 is fine), open the browser's console there, and run, with the
    id of a published survey of the demo:
@@ -169,25 +176,40 @@ API=http://localhost:3000/api/v1
 3. Stop the demo (Ctrl+C) and start it with the setting on: `LEGACY_KEY_REVOKE=true pnpm demo`. Sign in as Olivia Owner
    and open **API tokens**.
    - **Check:** the legacy row has **Revoke** now.
-4. Choose **Revoke** and confirm ("Revoke this key? Integrations that use it stop working."). Run the legacy `curl`
-   of section 5 again.
-   - **Check:** the row is gone and the call answers `401`. The tokens of sections 1 and 2 are not affected (the
-     demo's memory is empty after a restart; make a Personal token again to see that it still works).
+4. The restart emptied the demo's memory, so the tokens of sections 1 and 2 are gone. Make a new Personal token
+   (**Create token**, scope **Personal**) and set `TOKEN=<its value>` again.
+5. Choose **Revoke** on the legacy row and confirm ("Revoke this key? Integrations that use it stop working."). Run
+   the legacy `curl` of section 5 again, then the Personal one:
+
+   ```sh
+   curl -s -o /dev/null -w "%{http_code}
+   ```
+
+" -H "Authorization: Bearer $KEY" "$API/surveys"
+curl -s -o /dev/null -w "%{http_code}
+" -H "Authorization: Bearer $TOKEN" "$API/surveys"
+
+````
+
+- **Check:** the legacy row is gone, the first call prints `401` and the second `200`: revoking the key does not
+  touch tokens.
 
 ## 7. A token replaces itself
 
-1. Rotate the Personal token (make a new one first if you restarted the demo):
+1. Rotate the Personal token of section 6 step 4:
 
-   ```sh
-   curl -s -X POST -H "Authorization: Bearer $TOKEN" "$API/me/credential"
-   ```
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "$API/me/credential"
+````
 
-   - **Check:** `{"value":"sjs_…"}`, a new value. The old `$TOKEN` now gets `401` on `$API/surveys`; the new one
-     answers `200`.
+- **Check:** `{"value":"sjs_…"}`, a new value. The old `$TOKEN` now gets `401` on `$API/surveys`; the new one
+  answers `200`.
 
-2. With a session instead of a bearer value the same operation is refused:
+2. With a session instead of a bearer value the same operation is refused. In the browser console on
+   <http://localhost:5173> (signed in as Olivia since section 6; read the cookie again, the earlier value is gone):
 
    ```js
+   const csrf = document.cookie.match(/msid_csrf=([^;]+)/)[1];
    (await fetch("/api/v1/me/credential", { method: "POST", headers: { "X-CSRF-Token": csrf } }))
      .status;
    ```
