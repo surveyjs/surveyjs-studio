@@ -640,11 +640,7 @@ export interface ApiTokenRecord {
   readonly lastFour: string;
   readonly createdAt: string;
   readonly lastUsedAt: string | null;
-  /**
-   * Null for a usable token. Any other value means the token does not authenticate; consumers must
-   * test for null, not parse a date: a store may hold a non-date marker while it moves the token
-   * to a new hash.
-   */
+  /** Null for a usable token; when it was revoked otherwise (it then does not authenticate). */
   readonly revokedAt: string | null;
 }
 
@@ -667,7 +663,11 @@ export interface CredentialStore {
   ): Promise<ApiTokenRecord[]>;
   /** False when the token is unknown or already revoked (the first revocation time stays). */
   revokeApiToken(id: string, at: string): Promise<boolean>;
-  /** Swaps the stored hash and last four of an unrevoked token; false when there is none. */
+  /**
+   * Swaps the stored hash and last four of an unrevoked token. False when the token is unknown or
+   * revoked, also when a concurrent change left it revoked. Two concurrent replaces both succeed,
+   * one after the other: the last value wins and the earlier one no longer authenticates.
+   */
   replaceApiTokenHash(id: string, hash: string, lastFour: string): Promise<boolean>;
   touchApiToken(id: string, at: string): Promise<void>;
   /** Revokes every unrevoked token the user created, project tokens too; returns how many. */

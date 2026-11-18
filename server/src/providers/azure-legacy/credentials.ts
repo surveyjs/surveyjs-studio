@@ -1,4 +1,4 @@
-import type { TableClient } from "@azure/data-tables";
+import { odata, type TableClient } from "@azure/data-tables";
 import sql from "mssql";
 import { hashCredential, lastFour as lastFourOf } from "../../credentials/format.js";
 import type { ApiTokenRecord, CredentialStore } from "../types.js";
@@ -6,9 +6,11 @@ import { LegacyStoreError, statusOf } from "./errors.js";
 import { isGuid } from "./mapping.js";
 import {
   REVOKED_KEY_PARTITION,
-  TOKEN_PARTITION,
-  creatorPartition,
-  projectPartition,
+  TOKENS_PARTITION,
+  creatorIndex,
+  idRow,
+  projectIndex,
+  recordRow,
   writeApiTokenCreation,
   writeApiTokenHashReplacement,
   writeApiTokenRevocation,
@@ -39,7 +41,6 @@ const recordOf = (entity: TokenEntity): ApiTokenRecord => ({
   lastFour: entity.lastFour,
   createdAt: entity.createdAt,
   lastUsedAt: entity.lastUsedAt === "" ? null : entity.lastUsedAt,
-  // A record under hash replacement (REPLACING) does not authenticate yet.
   revokedAt: entity.revokedAt === "" ? null : entity.revokedAt,
 });
 
@@ -49,9 +50,9 @@ const newestFirst = (a: ApiTokenRecord, b: ApiTokenRecord): number =>
 
 /**
  * API tokens and the site's access keys (hosted Step 3, ADR 0037). Tokens live in a table of our
- * own in the surveys account (`token/{hash}` records, index entries by id, creator and project),
- * and revoked site keys as `legacyrevoked/{hash}` entries; the site's key itself is only read
- * from its users, never written. Reads here, writes in writes.ts.
+ * own in the surveys account, in one partition (records by hash, rows by id, creator and project
+ * indexes: see writes.ts), and revoked site keys as `legacyrevoked/{hash}` entries; the site's key
+ * itself is only read from its users, never written. Reads here, writes in writes.ts.
  */
 export function createAzureCredentialStore(options: {
   readonly table: TableClient;
@@ -79,27 +80,63 @@ export function createAzureCredentialStore(options: {
   }
 
   async function findApiToken(hash: string): Promise<ApiTokenRecord | null> {
-    const entity = await entityOf<TokenEntity>(TOKEN_PARTITION, hash, "api token lookup");
+    const entity = await entityOf<TokenEntity>(
+      TOKENS_PARTITION,
+      recordRow(hash),
+      "api token lookup",
+    );
     return entity ? recordOf(entity) : null;
   }
 
-  /** The hashes an index partition lists, with each entry's project (creator partitions only). */
-  async function indexed(
-    partition: string,
-  ): Promise<{ hash: string; projectId: string | undefined }[]> {
-    const found: { hash: string; projectId: string | undefined }[] = [];
+  interface IndexRow {
+    readonly id: string;
+    readonly hash: string;
+    /** Creator index rows only. */
+    readonly projectId?: string;
+  }
+
+  /** The rows of one list index: the row keys that start with `prefix` (built from a GUID). */
+  async function indexed(prefix: string): Promise<IndexRow[]> {
+    // The first key after every key with this prefix: its last character, one higher.
+    const end = prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
+    const found: IndexRow[] = [];
     try {
-      const entries = table.listEntities<{ hash: string; projectId?: string }>({
-        queryOptions: { filter: `PartitionKey eq '${partition}'` },
+      const rows = table.listEntities<IndexRow>({
+        queryOptions: {
+          filter: odata`PartitionKey eq ${TOKENS_PARTITION} and RowKey ge ${prefix} and RowKey lt ${end}`,
+        },
       });
-      for await (const entry of entries) {
-        found.push({ hash: entry.hash, projectId: entry.projectId });
-      }
+      for await (const row of rows) found.push(row);
     } catch (error) {
       if (statusOf(error) === 404) return [];
       throw new LegacyStoreError("api token list", error);
     }
     return found;
+  }
+
+  /**
+   * The token's record. An index row and the record it names change in one transaction, but this
+   * reads them apart: when a replace moved the record in between, the id row names its new hash.
+   */
+  async function currentRecord(row: IndexRow): Promise<ApiTokenRecord | null> {
+    let hash = row.hash;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const record = await findApiToken(hash);
+      if (record !== null) return record;
+      const entry = await entityOf<{ hash: string }>(
+        TOKENS_PARTITION,
+        idRow(row.id),
+        "api token list",
+      );
+      if (entry === undefined || entry.hash === hash) return null;
+      hash = entry.hash;
+    }
+    return null;
+  }
+
+  /** The token ids a list index holds. */
+  async function idsOf(prefix: string): Promise<string[]> {
+    return (await indexed(prefix)).map((row) => row.id);
   }
 
   /** The site user's key (lower case) and revocation state; null when the user has no key. */
@@ -128,28 +165,32 @@ export function createAzureCredentialStore(options: {
 
     async listApiTokens(scope) {
       const creator = "creatorId" in scope;
-      const entries = await indexed(
-        creator ? creatorPartition(scope.creatorId) : projectPartition(scope.projectId),
-      );
+      const owner = creator ? scope.creatorId : scope.projectId;
+      if (!isGuid(owner)) return [];
+      const rows = await indexed(creator ? creatorIndex(owner) : projectIndex(owner));
       const records = await Promise.all(
         // A creator's own list leaves out the project tokens the creator made.
-        entries
-          .filter((entry) => !creator || !entry.projectId)
-          .map((entry) => findApiToken(entry.hash)),
+        rows.filter((row) => !creator || !row.projectId).map(currentRecord),
       );
       return records
         .filter((record): record is ApiTokenRecord => record !== null && record.revokedAt === null)
         .sort(newestFirst);
     },
 
-    revokeApiToken: (id, at) => writeApiTokenRevocation(table, id, at),
+    // Token ids are GUIDs; any other id names no token (and could not be a row key).
+    revokeApiToken: (id, at) =>
+      isGuid(id) ? writeApiTokenRevocation(table, id, at) : Promise.resolve(false),
     replaceApiTokenHash: (id, hash, lastFour) =>
-      writeApiTokenHashReplacement(table, id, hash, lastFour),
-    touchApiToken: (id, at) => writeApiTokenUse(table, id, at),
-    revokeApiTokensOfCreator: (userId, at) =>
-      writeApiTokenRevocations(table, creatorPartition(userId), at),
-    revokeApiTokensOfProject: (projectId, at) =>
-      writeApiTokenRevocations(table, projectPartition(projectId), at),
+      isGuid(id) ? writeApiTokenHashReplacement(table, id, hash, lastFour) : Promise.resolve(false),
+    touchApiToken: (id, at) => (isGuid(id) ? writeApiTokenUse(table, id, at) : Promise.resolve()),
+    async revokeApiTokensOfCreator(userId, at) {
+      if (!isGuid(userId)) return 0;
+      return writeApiTokenRevocations(table, await idsOf(creatorIndex(userId)), at);
+    },
+    async revokeApiTokensOfProject(projectId, at) {
+      if (!isGuid(projectId)) return 0;
+      return writeApiTokenRevocations(table, await idsOf(projectIndex(projectId)), at);
+    },
 
     async findLegacyKey(value) {
       // The site keeps keys in lower case and the replica's collation ignores case; the exact

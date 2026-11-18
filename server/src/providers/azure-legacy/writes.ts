@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import type { Edm, TableClient, TableEntity, TableServiceClient } from "@azure/data-tables";
+import type {
+  Edm,
+  TableClient,
+  TableEntity,
+  TableServiceClient,
+  TransactionAction,
+} from "@azure/data-tables";
 import type {
   AppendBlobClient,
   BlobRequestConditions,
@@ -1665,16 +1671,31 @@ export async function writeMemberErasure(
 
 /** The app-owned table of the surveys account; created on the first write. */
 export const API_TOKENS_TABLE = "mysurveysapitokens";
-/** `token/{hash}`: the record. `id/{id}` holds the hash for lookups by id. */
-export const TOKEN_PARTITION = "token";
-export const TOKEN_ID_PARTITION = "id";
-/** `scope-{creatorId}/{id}` (every token of the creator) and `project-{projectId}/{id}` (index entries holding the hash). */
-export const creatorPartition = (creatorId: string): string => `scope-${creatorId.toLowerCase()}`;
-export const projectPartition = (projectId: string): string => `project-${projectId.toLowerCase()}`;
+/**
+ * Every API-token row lives in this one partition, so each change to a token is one entity-group
+ * transaction: all of its rows change together or none does, and a token is always either fully at
+ * its old hash or fully at its new one. Row keys (ids lower-case):
+ * - `hash-{hash}`: the record, which a bearer value is looked up by;
+ * - `id-{id}`: the token's current hash. Every write that changes the hash or `revokedAt` writes
+ *   this row too, guarded by the entity tag read before anything else, so these writes are ordered:
+ *   one that read an older state fails as a whole and starts again;
+ * - `creator-{creatorId}-{id}` (every token the user created, with its project) and
+ *   `project-{projectId}-{id}`: the list indexes, holding the token's id and current hash.
+ */
+export const TOKENS_PARTITION = "apitokens";
+export const recordRow = (hash: string): string => `hash-${hash}`;
+export const idRow = (id: string): string => `id-${id.toLowerCase()}`;
+/** The row-key prefixes of the list indexes; the token id follows. */
+export const creatorIndex = (creatorId: string): string => `creator-${creatorId.toLowerCase()}-`;
+export const projectIndex = (projectId: string): string => `project-${projectId.toLowerCase()}-`;
 /** `legacyrevoked/{hash of the key}`: a revoked site key (`userId`, `at`). */
 export const REVOKED_KEY_PARTITION = "legacyrevoked";
 
-const ETAG_RETRIES = 5;
+/**
+ * Attempts of a guarded write. An attempt fails only when another write to the same token got in
+ * after its reads, so with a few writers at once every one gets through within this many.
+ */
+const ETAG_RETRIES = 10;
 
 /** Runs `run`; when the table is missing, creates it and runs once more. */
 async function withTable<T>(table: TableClient, run: () => Promise<T>): Promise<T> {
@@ -1687,12 +1708,86 @@ async function withTable<T>(table: TableClient, run: () => Promise<T>): Promise<
   }
 }
 
-/** Create-or-replace of an index entry or record (idempotent, so a retry after a failure is safe). */
-async function putEntity(table: TableClient, entity: TableEntity): Promise<void> {
-  await withTable(table, () => table.upsertEntity(entity, "Replace"));
+/** The stored record of a token, at `hash-{hash}`. */
+interface TokenRecordRow {
+  readonly id: string;
+  readonly creatorId: string;
+  /** "" for a personal token. */
+  readonly projectId: string;
+  readonly name: string;
+  readonly lastFour: string;
+  readonly createdAt: string;
+  /** "" until first used. */
+  readonly lastUsedAt: string;
+  /** "" while the token authenticates. */
+  readonly revokedAt: string;
 }
 
-/** Stores the token: the record, then the entries that find it by id, creator and project. */
+/** The token row of this key, with its entity tag; null when it (or the table) is missing. */
+async function tokenRowOf<T extends object>(
+  table: TableClient,
+  rowKey: string,
+): Promise<(T & { etag: string }) | null> {
+  try {
+    return await table.getEntity<T>(TOKENS_PARTITION, rowKey);
+  } catch (error) {
+    if (statusOf(error) === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * The token's id row, then the record it names. Read in this order, a change that lands after the
+ * id row was read makes the guarded transaction fail, and one before it shows in the record.
+ * "unknown": no such token; "moved": replaced between the two reads.
+ */
+async function tokenOf(
+  table: TableClient,
+  id: string,
+): Promise<
+  | { readonly idTag: string; readonly hash: string; readonly record: TokenRecordRow }
+  | "unknown"
+  | "moved"
+> {
+  const entry = await tokenRowOf<{ hash: string }>(table, idRow(id));
+  if (entry === null) return "unknown";
+  const record = await tokenRowOf<TokenRecordRow>(table, recordRow(entry.hash));
+  if (record === null) return "moved";
+  return { idTag: entry.etag, hash: entry.hash, record };
+}
+
+/** Submits the transaction; false when a guard failed (412) or a row is gone (404). */
+async function committed(table: TableClient, actions: TransactionAction[]): Promise<boolean> {
+  try {
+    await table.submitTransaction(actions);
+    return true;
+  } catch (error) {
+    const status = statusOf(error);
+    if (status === 412 || status === 404) return false;
+    throw error;
+  }
+}
+
+/** The id row's write in a transaction, guarded by the entity tag read first. */
+const guardedIdRow = (id: string, hash: string, idTag: string): TransactionAction => [
+  "update",
+  { partitionKey: TOKENS_PARTITION, rowKey: idRow(id), hash },
+  "Replace",
+  { etag: idTag },
+];
+
+/** The index rows of a token, pointing at `hash`. */
+function indexRows(id: string, hash: string, creatorId: string, projectId: string): TableEntity[] {
+  const rows: TableEntity[] = [
+    { partitionKey: TOKENS_PARTITION, rowKey: creatorIndex(creatorId) + id, id, hash, projectId },
+  ];
+  if (projectId !== "") {
+    rows.push({ partitionKey: TOKENS_PARTITION, rowKey: projectIndex(projectId) + id, id, hash });
+  }
+  return rows;
+}
+
+/** Stores the token: the record, its id row and its index rows, in one transaction. */
 export async function writeApiTokenCreation(
   table: TableClient,
   token: Omit<ApiTokenRecord, "lastUsedAt" | "revokedAt">,
@@ -1701,108 +1796,51 @@ export async function writeApiTokenCreation(
   const id = token.id.toLowerCase();
   const creatorId = token.creatorId.toLowerCase();
   const projectId = token.projectId === null ? "" : token.projectId.toLowerCase();
+  const record: TokenRecordRow = {
+    id,
+    creatorId,
+    projectId,
+    name: token.name,
+    lastFour: token.lastFour,
+    createdAt: token.createdAt,
+    lastUsedAt: "",
+    revokedAt: "",
+  };
+  const actions: TransactionAction[] = [
+    ["create", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), ...record }],
+    ["create", { partitionKey: TOKENS_PARTITION, rowKey: idRow(id), hash }],
+    ...indexRows(id, hash, creatorId, projectId).map((row): TransactionAction => ["create", row]),
+  ];
   try {
-    await putEntity(table, {
-      partitionKey: TOKEN_PARTITION,
-      rowKey: hash,
-      id,
-      creatorId,
-      projectId,
-      name: token.name,
-      lastFour: token.lastFour,
-      createdAt: token.createdAt,
-      lastUsedAt: "",
-      revokedAt: "",
-    });
-    await putEntity(table, { partitionKey: TOKEN_ID_PARTITION, rowKey: id, hash });
-    await putEntity(table, {
-      partitionKey: creatorPartition(creatorId),
-      rowKey: id,
-      hash,
-      projectId,
-    });
-    if (projectId !== "") {
-      await putEntity(table, { partitionKey: projectPartition(projectId), rowKey: id, hash });
-    }
+    // A missing table fails the whole transaction (404): nothing was written.
+    await withTable(table, () => table.submitTransaction(actions));
   } catch (error) {
     throw new LegacyStoreError("api token create", error);
   }
 }
 
-/** The id entry: the token's current hash, and the hash a replacement in flight is moving to. */
-interface IdEntry {
-  readonly hash: string;
-  readonly pendingHash?: string;
-  readonly etag: string;
-}
-
-/** The id entry of the token with this id; null when there is none. */
-async function idEntryOf(table: TableClient, id: string): Promise<IdEntry | null> {
-  try {
-    return await table.getEntity<IdEntry>(TOKEN_ID_PARTITION, id.toLowerCase());
-  } catch (error) {
-    if (statusOf(error) === 404) return null;
-    throw error;
-  }
-}
-
 /**
- * `revokedAt` of a record whose hash replacement is under way. Any non-empty `revokedAt` means the
- * record does not authenticate; REPLACING is not a date, and a revocation may still claim it (it
- * then holds the revocation time). A crash can leave a record in REPLACING: it stays unusable, and
- * a later replacement by id recovers it (it becomes the source of the next replacement), while a
- * revocation by id claims it.
- */
-export const REPLACING = "replacing";
-
-const isOpen = (revokedAt: string): boolean => revokedAt === "" || revokedAt === REPLACING;
-
-type RevokeOutcome = "revoked" | "closed" | "missing" | "conflict";
-
-/** Sets `revokedAt` on one record, guarded by its entity tag. */
-async function revokeRecord(table: TableClient, hash: string, at: string): Promise<RevokeOutcome> {
-  let record;
-  try {
-    record = await table.getEntity<{ revokedAt: string }>(TOKEN_PARTITION, hash);
-  } catch (error) {
-    if (statusOf(error) === 404) return "missing";
-    throw error;
-  }
-  if (!isOpen(record.revokedAt)) return "closed";
-  try {
-    await table.updateEntity(
-      { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: at },
-      "Merge",
-      { etag: record.etag },
-    );
-    return "revoked";
-  } catch (error) {
-    if (statusOf(error) !== 412 && statusOf(error) !== 404) throw error;
-    return "conflict";
-  }
-}
-
-/**
- * Revokes the token with this id. Every attempt resolves the id to its current hash and, while a
- * replacement is in flight, to the pending one too, and revokes both: when this returns true no
- * hash of the token authenticates, whatever order a concurrent replacement writes in. False when
- * the token is unknown or already revoked.
+ * Revokes the token with this id: `revokedAt` on its record and a guarded write of its id row, in
+ * one transaction. True only when this call set `revokedAt`; false when the token is unknown or
+ * already revoked (the first revocation time stays). A replace that lands meanwhile makes the
+ * transaction fail; the next attempt revokes the token at its new hash.
  */
 async function revokeById(table: TableClient, id: string, at: string): Promise<boolean> {
   for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
-    const entry = await idEntryOf(table, id);
-    if (entry === null) return false;
-    const current = await revokeRecord(table, entry.hash, at);
-    const pending =
-      entry.pendingHash === undefined ? "closed" : await revokeRecord(table, entry.pendingHash, at);
-    if (current === "conflict" || pending === "conflict") continue;
-    if (current === "missing") {
-      // Swapped meanwhile (resolve again), or its replacement deleted it and holds the token.
-      const again = await idEntryOf(table, id);
-      if (again?.hash !== entry.hash || again.pendingHash !== entry.pendingHash) continue;
-      return pending === "revoked";
-    }
-    return current === "revoked";
+    const token = await tokenOf(table, id);
+    if (token === "unknown") return false;
+    if (token === "moved") continue;
+    if (token.record.revokedAt !== "") return false;
+    const done = await committed(table, [
+      [
+        "update",
+        { partitionKey: TOKENS_PARTITION, rowKey: recordRow(token.hash), revokedAt: at },
+        "Merge",
+      ],
+      // Unchanged content: the write orders this revocation before any later replace.
+      guardedIdRow(id, token.hash, token.idTag),
+    ]);
+    if (done) return true;
   }
   throw new Error("too many concurrent changes");
 }
@@ -1820,22 +1858,12 @@ export async function writeApiTokenRevocation(
   }
 }
 
-/** Revokes the tokens of one index partition; returns how many this call revoked. */
+/** Revokes the tokens with these ids (a list index's); returns how many this call revoked. */
 export async function writeApiTokenRevocations(
   table: TableClient,
-  partition: string,
+  ids: readonly string[],
   at: string,
 ): Promise<number> {
-  const ids: string[] = [];
-  try {
-    const entries = table.listEntities({
-      queryOptions: { filter: `PartitionKey eq '${partition}'` },
-    });
-    for await (const entry of entries) ids.push(entry.rowKey ?? "");
-  } catch (error) {
-    if (statusOf(error) === 404) return 0; // no table yet: nothing to revoke
-    throw new LegacyStoreError("api token revoke", error);
-  }
   try {
     let count = 0;
     for (const id of ids) if (await revokeById(table, id, at)) count++;
@@ -1845,35 +1873,14 @@ export async function writeApiTokenRevocations(
   }
 }
 
-/** Deletes a record; one that is already gone is fine. */
-async function deleteRecord(table: TableClient, hash: string, etag?: string): Promise<void> {
-  try {
-    await table.deleteEntity(TOKEN_PARTITION, hash, etag === undefined ? {} : { etag });
-  } catch (error) {
-    if (statusOf(error) !== 404) throw error;
-  }
-}
-
 /**
- * Gives an unrevoked token a new hash and last four; false when there is none, it got revoked, or
- * another replacement won (the caller may ask again).
- *
- * The old hash stops authenticating before anything points at the new one, a revocation reaches
- * both hashes while this runs (the id entry names the pending hash), and the id entry orders
- * concurrent replacements: it is written only with the entity tag that was read (to name the
- * pending hash) and the tag that write returned (to swap), so at most one replacement gets through
- * and a loser removes its own new record.
- * 1. read the id entry and the source record (the entry's hash; when that record is gone, the
- *    entry's pending hash, which a replacement that died after its delete left); refuse if revoked;
- * 2. write the new record as REPLACING;
- * 3. name it as `pendingHash` on the id entry, guarded by the tag read in 1;
- * 4. delete the source with its entity tag (412: re-read; revoked meanwhile means the new record
- *    is revoked with the same time and this answers false; gone means the entry's other record
- *    is tried, else the race is lost);
- * 5. swap the id entry to the new hash (guarded by the tag of 3), then the index entries;
- * 6. activate the new record only if it is still REPLACING.
- * A crash leaves the old hash dead and the new record unusable in REPLACING at worst; the source
- * of a later replacement is then that record.
+ * Moves an unrevoked token to a new hash and last four in one transaction: the old record goes,
+ * the new one (same id, name, scope, creator, creation and last use) comes, and the id row and
+ * index rows point at it. The id row's write is guarded, so a revoke or another replace that lands
+ * after this call's reads fails the transaction as a whole; the call then reads again. False when
+ * the token is unknown or revoked, then or by a concurrent revoke. Two concurrent replaces both
+ * succeed, one after the other; the later value wins. A `lastUsedAt` written between the reads and
+ * the transaction is lost (the record is copied as read).
  */
 export async function writeApiTokenHashReplacement(
   table: TableClient,
@@ -1881,131 +1888,42 @@ export async function writeApiTokenHashReplacement(
   hash: string,
   lastFour: string,
 ): Promise<boolean> {
-  type Stored = {
-    creatorId: string;
-    projectId: string;
-    name: string;
-    createdAt: string;
-    lastUsedAt: string;
-    revokedAt: string;
-  };
-  const recordOf = async (h: string) => {
-    try {
-      return await table.getEntity<Stored>(TOKEN_PARTITION, h);
-    } catch (error) {
-      if (statusOf(error) === 404) return null;
-      throw error;
-    }
-  };
-  /** The id entry write, guarded by an entity tag; undefined when another replacement got there. */
-  const writeIdEntry = async (
-    entity: { hash: string; pendingHash?: string },
-    etag: string,
-  ): Promise<string | undefined> => {
-    try {
-      const response = await table.updateEntity(
-        { partitionKey: TOKEN_ID_PARTITION, rowKey: id.toLowerCase(), ...entity },
-        "Replace",
-        { etag },
-      );
-      return response.etag;
-    } catch (error) {
-      if (statusOf(error) === 412 || statusOf(error) === 404) return undefined;
-      throw error;
-    }
-  };
+  const key = id.toLowerCase();
   try {
-    const key = id.toLowerCase();
-    const entry = await idEntryOf(table, key);
-    if (entry === null || entry.hash === hash || entry.pendingHash === hash) return false;
-    // The records this entry names, the live one first.
-    const candidates = [entry.hash, entry.pendingHash].filter((h): h is string => h !== undefined);
-    let sourceHash: string | undefined;
-    let source: Awaited<ReturnType<typeof recordOf>> | null = null;
-    while (source === null) {
-      sourceHash = candidates.shift();
-      if (sourceHash === undefined) return false;
-      source = await recordOf(sourceHash);
-    }
-    if (!isOpen(source.revokedAt)) return false;
-    await putEntity(table, {
-      partitionKey: TOKEN_PARTITION,
-      rowKey: hash,
-      id: key,
-      creatorId: source.creatorId,
-      projectId: source.projectId,
-      name: source.name,
-      lastFour,
-      createdAt: source.createdAt,
-      lastUsedAt: source.lastUsedAt,
-      revokedAt: REPLACING,
-    });
-    const lost = async (): Promise<false> => {
-      await deleteRecord(table, hash);
-      return false;
-    };
-    const pendingTag = await writeIdEntry({ hash: entry.hash, pendingHash: hash }, entry.etag);
-    if (pendingTag === undefined) return lost();
-    // The gate: the source goes only if nothing changed it since it was read.
-    let current: { etag: string; revokedAt: string } = source;
-    for (let attempt = 0; ; attempt++) {
-      if (attempt >= ETAG_RETRIES) throw new Error("too many concurrent changes");
-      let gone = false;
-      try {
-        await table.deleteEntity(TOKEN_PARTITION, sourceHash as string, { etag: current.etag });
-        break;
-      } catch (error) {
-        if (statusOf(error) === 404) gone = true;
-        else if (statusOf(error) !== 412) throw error;
-      }
-      const reread = gone ? null : await recordOf(sourceHash as string);
-      if (reread === null) {
-        // Another replacement took the source; continue from the record it left, if any.
-        let next: Awaited<ReturnType<typeof recordOf>> | null = null;
-        while (next === null) {
-          sourceHash = candidates.shift();
-          if (sourceHash === undefined) return lost();
-          next = await recordOf(sourceHash);
-        }
-        if (!isOpen(next.revokedAt)) return lost();
-        current = next;
-        continue;
-      }
-      current = reread;
-      if (!isOpen(reread.revokedAt)) {
-        // Revoked after the read: the new hash must not outlive it.
-        await revokeRecord(table, hash, reread.revokedAt);
-        await deleteRecord(table, sourceHash as string);
-        return false;
-      }
-    }
-    if ((await writeIdEntry({ hash }, pendingTag)) === undefined) return lost();
-    await putEntity(table, {
-      partitionKey: creatorPartition(source.creatorId),
-      rowKey: key,
-      hash,
-      projectId: source.projectId,
-    });
-    if (source.projectId !== "") {
-      await putEntity(table, {
-        partitionKey: projectPartition(source.projectId),
-        rowKey: key,
-        hash,
-      });
-    }
     for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
-      const fresh = await recordOf(hash);
-      if (fresh === null || fresh.revokedAt !== REPLACING) return false; // revoked meanwhile
-      try {
-        await table.updateEntity(
-          { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: "" },
-          "Merge",
-          { etag: fresh.etag },
-        );
-        return true;
-      } catch (error) {
-        if (statusOf(error) !== 412) throw error;
-      }
+      const token = await tokenOf(table, key);
+      if (token === "unknown") return false;
+      if (token === "moved") continue;
+      const { record } = token;
+      if (record.revokedAt !== "") return false;
+      const moved: TokenRecordRow = {
+        id: key,
+        creatorId: record.creatorId,
+        projectId: record.projectId,
+        name: record.name,
+        lastFour,
+        createdAt: record.createdAt,
+        lastUsedAt: record.lastUsedAt,
+        revokedAt: "",
+      };
+      const actions: TransactionAction[] =
+        token.hash === hash
+          ? // The same hash again: only the last four change (a row appears once per transaction).
+            [
+              [
+                "update",
+                { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), lastFour },
+                "Merge",
+              ],
+            ]
+          : [
+              ["delete", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(token.hash) }],
+              ["create", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), ...moved }],
+              ...indexRows(key, hash, record.creatorId, record.projectId).map(
+                (row): TransactionAction => ["upsert", row, "Replace"],
+              ),
+            ];
+      if (await committed(table, [...actions, guardedIdRow(key, hash, token.idTag)])) return true;
     }
     throw new Error("too many concurrent changes");
   } catch (error) {
@@ -2013,17 +1931,20 @@ export async function writeApiTokenHashReplacement(
   }
 }
 
-/** Sets `lastUsedAt`; an unknown token is ignored. */
+/**
+ * Sets `lastUsedAt` on the token's current record; an unknown token is ignored, and so is a record
+ * a concurrent replace has just moved (the use is then not recorded).
+ */
 export async function writeApiTokenUse(table: TableClient, id: string, at: string): Promise<void> {
   try {
-    const entry = await idEntryOf(table, id);
+    const entry = await tokenRowOf<{ hash: string }>(table, idRow(id));
     if (entry === null) return;
     await table.updateEntity(
-      { partitionKey: TOKEN_PARTITION, rowKey: entry.hash, lastUsedAt: at },
+      { partitionKey: TOKENS_PARTITION, rowKey: recordRow(entry.hash), lastUsedAt: at },
       "Merge",
     );
   } catch (error) {
-    if (statusOf(error) === 404) return;
+    if (statusOf(error) === 404 || statusOf(error) === 412) return;
     throw new LegacyStoreError("api token use", error);
   }
 }
