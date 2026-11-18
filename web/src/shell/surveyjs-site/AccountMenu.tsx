@@ -14,6 +14,8 @@ export interface AccountMenuItemsProps {
   licenceWarning?: boolean;
   /** The app's Projects page, listed after Settings (the site has no such item). */
   projectsLink?: ShellAppLink;
+  /** The app's API tokens page, after Projects (`features.apiTokens`). */
+  apiTokensLink?: ShellAppLink;
   /** The app's change-password page, after Projects (an instance with passwords). */
   changePasswordLink?: ShellAppLink;
   /** The app's Users page, after Projects (an instance admin). */
@@ -31,6 +33,7 @@ export function AccountMenuItems({
   signingOut,
   licenceWarning,
   projectsLink,
+  apiTokensLink,
   changePasswordLink,
   usersLink,
 }: AccountMenuItemsProps) {
@@ -53,6 +56,7 @@ export function AccountMenuItems({
         </div>
       )}
       {projectsLink && <AppMenuItem text="Projects" link={projectsLink} />}
+      {apiTokensLink && <AppMenuItem text="API tokens" link={apiTokensLink} />}
       {usersLink && <AppMenuItem text="Users" link={usersLink} />}
       {changePasswordLink && <AppMenuItem text="Change password" link={changePasswordLink} />}
       {helpDesk !== undefined && <DropDownMenuItem text="Help Desk" url={helpDesk} external />}

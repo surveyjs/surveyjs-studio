@@ -34,6 +34,12 @@ export function PrivateShell({
       href: underBase("/projects"),
       navigate: () => void navigate({ to: "/projects" }),
     },
+    ...(config.features.apiTokens && {
+      apiTokensLink: {
+        href: underBase("/api-tokens"),
+        navigate: () => void navigate({ to: "/api-tokens" }),
+      },
+    }),
     homeLink: { href: underBase("/"), navigate: () => void navigate({ to: "/" }) },
     ...(config.authMethods.includes("password") &&
       user.hasPassword !== false && {

@@ -23,6 +23,7 @@ export function SurveyjsSiteShell({
   signingOut,
   signOutError,
   projectsLink,
+  apiTokensLink,
   changePasswordLink,
   usersLink,
   children,
@@ -43,6 +44,7 @@ export function SurveyjsSiteShell({
         onSignOut={onSignOut}
         signingOut={signingOut}
         projectsLink={projectsLink}
+        apiTokensLink={apiTokensLink}
         changePasswordLink={changePasswordLink}
         usersLink={usersLink}
         licenceWarning={licence.notice !== undefined}
