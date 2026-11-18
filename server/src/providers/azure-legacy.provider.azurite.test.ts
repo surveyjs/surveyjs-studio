@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import sql from "mssql";
+import type { TableClient } from "@azure/data-tables";
 import { describe, expect, it } from "vitest";
+import { hashCredential } from "../credentials/format.js";
+import { localTableClient } from "../legacy/local-clients.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
+import { createAzureCredentialStore } from "./azure-legacy/credentials.js";
 import { createAzureLegacyProviders } from "./azure-legacy/index.js";
 import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 import { describeLicenceNoticeSuite } from "./suite/licence-notice-suite.js";
@@ -74,5 +78,120 @@ describe("azure-legacy access keys (local replica)", () => {
     } finally {
       await pool.close();
     }
+  });
+});
+
+describe("azure-legacy token revoke and replace races (local replica)", () => {
+  const config = replicaConfig();
+  const tableOf = () =>
+    localTableClient(
+      config.surveysStorageConnectionString,
+      "mysurveysapitokens",
+      "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING",
+    );
+  const select = () => Promise.reject(new Error("no SQL in these tests"));
+  const AT = "2026-11-02T10:00:00.000Z";
+  const hashOf = () => hashCredential(`sjs_${randomUUID()}`, "api-token");
+  const token = (creatorId: string, projectId: string | null = null) => ({
+    id: randomUUID(),
+    creatorId,
+    projectId,
+    name: "race",
+    lastFour: "abcd",
+    createdAt: "2026-11-01T10:00:00.000Z",
+  });
+
+  /** The table, with `hook` run (once) before the first call of `method` that matches. */
+  function interleaved(
+    method: string,
+    matches: (args: unknown[]) => boolean,
+    hook: () => Promise<void>,
+  ): TableClient {
+    const table = tableOf();
+    let done = false;
+    return new Proxy(table, {
+      get(target, property) {
+        const value: unknown = Reflect.get(target, property);
+        if (typeof value !== "function") return value;
+        const fn = value as (...args: unknown[]) => unknown;
+        // Only the watched method becomes async (listEntities returns an iterator, not a promise).
+        if (property !== method) return fn.bind(target);
+        return async (...args: unknown[]) => {
+          if (property === method && !done && matches(args)) {
+            done = true;
+            await hook();
+          }
+          return fn.apply(target, args);
+        };
+      },
+    });
+  }
+
+  it("a revoke landing between replace's read and its delete leaves no live token", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const oldHash = hashOf();
+    const newHash = hashOf();
+    await plain.createApiToken(t, oldHash);
+    const racing = createAzureCredentialStore({
+      table: interleaved(
+        "deleteEntity",
+        (args) => args[1] === oldHash,
+        async () => {
+          // The id entry already points at the new record, which this revoke claims.
+          expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
+        },
+      ),
+      select,
+    });
+    expect(await racing.replaceApiTokenHash(t.id, newHash, "new1")).toBe(false);
+    expect((await plain.findApiToken(newHash))?.revokedAt).not.toBeNull();
+    expect(await plain.findApiToken(oldHash)).toBeNull();
+    expect(await plain.listApiTokens({ creatorId: t.creatorId })).toEqual([]);
+  });
+
+  it("a revoke of the old hash landing before replace swaps the id entry revokes the new one too", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const oldHash = hashOf();
+    const newHash = hashOf();
+    await plain.createApiToken(t, oldHash);
+    const racing = createAzureCredentialStore({
+      table: interleaved(
+        "upsertEntity",
+        (args) => (args[0] as { partitionKey: string }).partitionKey === "id",
+        async () => {
+          expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
+        },
+      ),
+      select,
+    });
+    expect(await racing.replaceApiTokenHash(t.id, newHash, "new1")).toBe(false);
+    expect(await plain.findApiToken(newHash)).toMatchObject({ revokedAt: AT });
+    expect(await plain.findApiToken(oldHash)).toBeNull();
+  });
+
+  it("a bulk revoke that meets a concurrent replace still revokes the token under its new hash", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const creatorId = randomUUID();
+    const a = token(creatorId);
+    const b = token(creatorId, randomUUID());
+    const [hashA, hashB, newA] = [hashOf(), hashOf(), hashOf()];
+    await plain.createApiToken(a, hashA);
+    await plain.createApiToken(b, hashB);
+    const racing = createAzureCredentialStore({
+      table: interleaved(
+        "getEntity",
+        (args) => args[0] === "token" && args[1] === hashA,
+        async () => {
+          expect(await plain.replaceApiTokenHash(a.id, newA, "new1")).toBe(true);
+        },
+      ),
+      select,
+    });
+    expect(await racing.revokeApiTokensOfCreator(creatorId, AT)).toBe(2);
+    expect(await plain.findApiToken(newA)).toMatchObject({ revokedAt: AT });
+    expect(await plain.findApiToken(hashB)).toMatchObject({ revokedAt: AT });
+    expect(await plain.findApiToken(hashA)).toBeNull();
   });
 });

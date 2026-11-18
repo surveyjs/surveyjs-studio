@@ -39,6 +39,7 @@ const recordOf = (entity: TokenEntity): ApiTokenRecord => ({
   lastFour: entity.lastFour,
   createdAt: entity.createdAt,
   lastUsedAt: entity.lastUsedAt === "" ? null : entity.lastUsedAt,
+  // A record under hash replacement (REPLACING) does not authenticate yet.
   revokedAt: entity.revokedAt === "" ? null : entity.revokedAt,
 });
 

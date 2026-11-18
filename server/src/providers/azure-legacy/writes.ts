@@ -1741,19 +1741,30 @@ async function hashOfToken(table: TableClient, id: string): Promise<string | nul
 }
 
 /**
- * Sets `revokedAt` when it is empty, guarded by the entity tag so two revocations cannot both
- * win. False when the record is missing or already revoked.
+ * `revokedAt` of a record whose hash replacement is under way: it does not authenticate yet, and a
+ * revocation may still claim it. The replacement only activates a record that still has it.
  */
-async function revokeByHash(table: TableClient, hash: string, at: string): Promise<boolean> {
+export const REPLACING = "replacing";
+
+const isOpen = (revokedAt: string): boolean => revokedAt === "" || revokedAt === REPLACING;
+
+/**
+ * Revokes the token with this id: resolves the id to its current hash on every attempt and sets
+ * `revokedAt` guarded by the entity tag, so two revocations cannot both win and a hash swapped by a
+ * concurrent replacement is followed. False when the token is unknown or already revoked.
+ */
+async function revokeById(table: TableClient, id: string, at: string): Promise<boolean> {
   for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
+    const hash = await hashOfToken(table, id);
+    if (hash === null) return false;
     let record;
     try {
       record = await table.getEntity<{ revokedAt: string }>(TOKEN_PARTITION, hash);
     } catch (error) {
-      if (statusOf(error) === 404) return false;
+      if (statusOf(error) === 404) continue; // swapped or removed meanwhile: resolve again
       throw error;
     }
-    if (record.revokedAt) return false;
+    if (!isOpen(record.revokedAt)) return false;
     try {
       await table.updateEntity(
         { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: at },
@@ -1762,7 +1773,7 @@ async function revokeByHash(table: TableClient, hash: string, at: string): Promi
       );
       return true;
     } catch (error) {
-      if (statusOf(error) !== 412) throw error;
+      if (statusOf(error) !== 412 && statusOf(error) !== 404) throw error;
     }
   }
   throw new Error("too many concurrent changes");
@@ -1775,8 +1786,7 @@ export async function writeApiTokenRevocation(
   at: string,
 ): Promise<boolean> {
   try {
-    const hash = await hashOfToken(table, id);
-    return hash !== null && (await revokeByHash(table, hash, at));
+    return await revokeById(table, id, at);
   } catch (error) {
     throw new LegacyStoreError("api token revoke", error);
   }
@@ -1788,22 +1798,34 @@ export async function writeApiTokenRevocations(
   partition: string,
   at: string,
 ): Promise<number> {
+  const ids: string[] = [];
   try {
-    let count = 0;
-    const entries = table.listEntities<{ hash: string }>({
+    const entries = table.listEntities({
       queryOptions: { filter: `PartitionKey eq '${partition}'` },
     });
-    for await (const entry of entries) {
-      if (await revokeByHash(table, entry.hash, at)) count++;
-    }
+    for await (const entry of entries) ids.push(entry.rowKey ?? "");
+  } catch (error) {
+    if (statusOf(error) === 404) return 0; // no table yet: nothing to revoke
+    throw new LegacyStoreError("api token revoke", error);
+  }
+  try {
+    let count = 0;
+    for (const id of ids) if (await revokeById(table, id, at)) count++;
     return count;
   } catch (error) {
-    if (statusOf(error) === 404) return 0;
     throw new LegacyStoreError("api token revoke", error);
   }
 }
 
-/** Gives an unrevoked token a new hash and last four; false when there is none. */
+/**
+ * Gives an unrevoked token a new hash and last four; false when there is none or it got revoked.
+ *
+ * Order, so that a revocation landing at any point still wins: the new record is written as
+ * REPLACING (not usable), the id entry then points at it (later revocations resolve to it), the
+ * old record is deleted only if untouched since it was read (else it was revoked: the new record
+ * is revoked with the same time), and last the new record is activated only if it is still
+ * REPLACING.
+ */
 export async function writeApiTokenHashReplacement(
   table: TableClient,
   id: string,
@@ -1812,53 +1834,89 @@ export async function writeApiTokenHashReplacement(
 ): Promise<boolean> {
   try {
     const oldHash = await hashOfToken(table, id);
-    if (oldHash === null) return false;
-    let record;
+    if (oldHash === null || oldHash === hash) return false;
+    type Stored = {
+      creatorId: string;
+      projectId: string;
+      name: string;
+      createdAt: string;
+      lastUsedAt: string;
+      revokedAt: string;
+    };
+    let old;
     try {
-      record = await table.getEntity<{
-        creatorId: string;
-        projectId: string;
-        name: string;
-        createdAt: string;
-        lastUsedAt: string;
-        revokedAt: string;
-      }>(TOKEN_PARTITION, oldHash);
+      old = await table.getEntity<Stored>(TOKEN_PARTITION, oldHash);
     } catch (error) {
       if (statusOf(error) === 404) return false;
       throw error;
     }
-    if (record.revokedAt) return false;
+    if (!isOpen(old.revokedAt)) return false;
     const key = id.toLowerCase();
-    // New record first, then the entries, then the old record: a failure in between leaves a
-    // token that still works by one of its hashes, and a retry finishes the swap.
     await putEntity(table, {
       partitionKey: TOKEN_PARTITION,
       rowKey: hash,
       id: key,
-      creatorId: record.creatorId,
-      projectId: record.projectId,
-      name: record.name,
+      creatorId: old.creatorId,
+      projectId: old.projectId,
+      name: old.name,
       lastFour,
-      createdAt: record.createdAt,
-      lastUsedAt: record.lastUsedAt,
-      revokedAt: "",
+      createdAt: old.createdAt,
+      lastUsedAt: old.lastUsedAt,
+      revokedAt: REPLACING,
     });
     await putEntity(table, { partitionKey: TOKEN_ID_PARTITION, rowKey: key, hash });
     await putEntity(table, {
-      partitionKey: creatorPartition(record.creatorId),
+      partitionKey: creatorPartition(old.creatorId),
       rowKey: key,
       hash,
-      projectId: record.projectId,
+      projectId: old.projectId,
     });
-    if (record.projectId !== "") {
+    if (old.projectId !== "") {
       await putEntity(table, {
-        partitionKey: projectPartition(record.projectId),
+        partitionKey: projectPartition(old.projectId),
         rowKey: key,
         hash,
       });
     }
-    if (oldHash !== hash) await table.deleteEntity(TOKEN_PARTITION, oldHash);
-    return true;
+    // Remove the old record; a change since the read (a touch, or a revocation) fails the delete.
+    let current: { etag: string; revokedAt: string } = old;
+    for (let attempt = 0; ; attempt++) {
+      if (attempt >= ETAG_RETRIES) throw new Error("too many concurrent changes");
+      try {
+        await table.deleteEntity(TOKEN_PARTITION, oldHash, { etag: current.etag });
+        break;
+      } catch (error) {
+        if (statusOf(error) === 404) break;
+        if (statusOf(error) !== 412) throw error;
+      }
+      try {
+        current = await table.getEntity<Stored>(TOKEN_PARTITION, oldHash);
+      } catch (error) {
+        if (statusOf(error) === 404) break;
+        throw error;
+      }
+      if (!isOpen(current.revokedAt)) {
+        // Revoked on the old hash after the read: the new hash must not outlive it.
+        await revokeById(table, key, current.revokedAt);
+        await table.deleteEntity(TOKEN_PARTITION, oldHash);
+        return false;
+      }
+    }
+    for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
+      const fresh = await table.getEntity<Stored>(TOKEN_PARTITION, hash);
+      if (fresh.revokedAt !== REPLACING) return false; // revoked meanwhile
+      try {
+        await table.updateEntity(
+          { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: "" },
+          "Merge",
+          { etag: fresh.etag },
+        );
+        return true;
+      } catch (error) {
+        if (statusOf(error) !== 412) throw error;
+      }
+    }
+    throw new Error("too many concurrent changes");
   } catch (error) {
     throw new LegacyStoreError("api token hash replace", error);
   }
