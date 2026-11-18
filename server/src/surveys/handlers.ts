@@ -11,12 +11,23 @@ type SurveyCreate = components["schemas"]["SurveyCreate"];
 type SurveyPatch = components["schemas"]["SurveyPatch"];
 type SurveyClone = { name?: string; projectId?: string | null };
 
+/** Whether the request URL's query string has a `project` parameter (before contract defaults). */
+function namesProject(url: string): boolean {
+  const query = url.indexOf("?");
+  return query >= 0 && new URLSearchParams(url.slice(query + 1)).has("project");
+}
+
 /** The survey operations: list, create, get, update, delete and clone. Requests reach them validated by the contract. */
 export function createSurveyHandlers(options: SurveysServiceOptions): Handlers {
   const service = createSurveysService(options);
 
   return {
-    listSurveys: (request) => service.list(requireUser(request), request.query as SurveyListQuery),
+    listSurveys: (request) => {
+      const { project, ...query } = request.query as SurveyListQuery;
+      // Validation fills in `personal`; a project token lists its project when none is named.
+      const named = namesProject(request.url) && project !== undefined;
+      return service.list(requireUser(request), named ? { ...query, project } : query);
+    },
 
     createSurvey: async (request, reply) => {
       const survey = await service.create(

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { components } from "@surveyjs-studio/contract";
-import type { RequestUser } from "../auth/authenticate.js";
+import { scopeOf, type RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
+import { inScope, membershipIn } from "../credentials/scope.js";
 import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
@@ -32,8 +33,11 @@ export interface SurveysServiceOptions {
 
 /** The `listSurveys` query, after contract validation and defaults. */
 export interface SurveyListQuery {
-  /** `personal`, or a project id. */
-  readonly project: string;
+  /**
+   * `personal`, or a project id. Absent (not named in the request): the credential's own space, a
+   * project token's project and Personal otherwise.
+   */
+  readonly project?: string;
   readonly archived: boolean;
   readonly limit: number;
   readonly cursor?: string;
@@ -111,8 +115,10 @@ interface Scope {
   readonly key: string;
 }
 
+const personalOwner = (user: RequestUser): SurveyOwner => ({ kind: "personal", userId: user.id });
+
 const personalScope = (user: RequestUser): Scope => ({
-  owner: { kind: "personal", userId: user.id },
+  owner: personalOwner(user),
   membership: null,
   key: PERSONAL,
 });
@@ -127,6 +133,7 @@ const projectScope = (membership: ProjectMembership): Scope => ({
 export function createSurveysService(options: SurveysServiceOptions): SurveysService {
   const { surveys, projects, files, views, now = Date.now } = options;
   const { visible, modifiable } = createSurveyAccess({ surveys, projects });
+  const membershipOf = membershipIn(projects);
 
   /**
    * The survey's private-question list for an answer; undefined (and a warning with the survey id
@@ -145,23 +152,46 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
     }
   }
 
-  /** The scope a `projectId` names: null is the user's Personal scope; a project needs membership. */
+  /**
+   * The scope a `projectId` names: null is the user's Personal scope; a project needs membership
+   * (403). Outside the credential's scope either answers 404, as an unknown project.
+   */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
-    if (projectId === null) return personalScope(user);
-    const membership = await projects.getUserProject(user.id, projectId);
-    if (!membership) throw notMember();
+    const credential = scopeOf(user);
+    if (projectId === null) {
+      if (!inScope(credential, personalOwner(user))) throw notFound();
+      return personalScope(user);
+    }
+    const membership = await membershipOf(user, projectId);
+    if (!membership) throw credential.kind === "all" ? notMember() : notFound();
+    return projectScope(membership);
+  }
+
+  /** The scope used when a request names none: a project token's project, else Personal. */
+  async function ownScope(user: RequestUser): Promise<Scope> {
+    const credential = scopeOf(user);
+    if (credential.kind !== "project") return personalScope(user);
+    // The token's project is gone: as an unknown project.
+    const membership = await membershipOf(user, credential.projectId);
+    if (!membership) throw notFound();
+    return projectScope(membership);
+  }
+
+  /** The scope `listSurveys` names: `personal` or a project; anything out of reach answers 404. */
+  async function listedScope(user: RequestUser, project: string): Promise<Scope> {
+    if (project === PERSONAL) {
+      if (!inScope(scopeOf(user), personalOwner(user))) throw notFound();
+      return personalScope(user);
+    }
+    // An unknown id, text that is no id and a project of others all look the same.
+    const membership = await membershipOf(user, project);
+    if (!membership) throw notFound();
     return projectScope(membership);
   }
 
   return {
     async list(user, { project, archived, limit, cursor }) {
-      let scope = personalScope(user);
-      if (project !== PERSONAL) {
-        // An unknown id, text that is no id and a project of others all look the same.
-        const membership = await projects.getUserProject(user.id, project);
-        if (!membership) throw notFound();
-        scope = projectScope(membership);
-      }
+      const scope = project === undefined ? await ownScope(user) : await listedScope(user, project);
       const list: SurveyList = { scope: scope.key, archived };
       const page = await surveys.listSurveyPage({
         owner: scope.owner,
@@ -181,12 +211,8 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       const { name, projectId, definition } = body;
       const invalid = nameProblem(name);
       if (invalid) throw invalid;
-      let scope = personalScope(user);
-      if (projectId !== undefined && projectId !== null) {
-        const membership = await projects.getUserProject(user.id, projectId);
-        if (!membership) throw notMember();
-        scope = projectScope(membership);
-      }
+      const scope =
+        projectId === undefined ? await ownScope(user) : await targetScope(user, projectId);
       // As on surveyjs.io, the default name counts only the active surveys of the scope.
       const surveyName =
         name ??
@@ -241,9 +267,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       if (names !== undefined) await views.savePrivateQuestions(stored.id, names);
       // The rights follow the stored scope: a move changes the scope and the creator.
       const membership =
-        stored.owner.kind === "project"
-          ? await projects.getUserProject(user.id, stored.owner.projectId)
-          : null;
+        stored.owner.kind === "project" ? await membershipOf(user, stored.owner.projectId) : null;
       return surveyJson(
         stored,
         canModify(stored, user, membership),
