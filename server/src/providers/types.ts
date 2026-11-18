@@ -640,6 +640,11 @@ export interface ApiTokenRecord {
   readonly lastFour: string;
   readonly createdAt: string;
   readonly lastUsedAt: string | null;
+  /**
+   * Null for a usable token. Any other value means the token does not authenticate; consumers must
+   * test for null, not parse a date: a store may hold a non-date marker while it moves the token
+   * to a new hash.
+   */
   readonly revokedAt: string | null;
 }
 

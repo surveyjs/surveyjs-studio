@@ -171,6 +171,60 @@ describe("azure-legacy token revoke and replace races (local replica)", () => {
     expect(await plain.findApiToken(oldHash)).toBeNull();
   });
 
+  it("once a revoke returned true, the old hash is revoked too, whatever a replace in flight does next", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const oldHash = hashOf();
+    const newHash = hashOf();
+    await plain.createApiToken(t, oldHash);
+    let revoked = false;
+    let oldAfterRevoke: Awaited<ReturnType<typeof plain.findApiToken>> = null;
+    const racing = createAzureCredentialStore({
+      table: interleaved(
+        "deleteEntity",
+        (args) => args[1] === oldHash,
+        async () => {
+          // The new record is written and the old one not yet deleted.
+          revoked = await plain.revokeApiToken(t.id, AT);
+          oldAfterRevoke = await plain.findApiToken(oldHash);
+        },
+      ),
+      select,
+    });
+    expect(await racing.replaceApiTokenHash(t.id, newHash, "new1")).toBe(false);
+    expect(revoked).toBe(true);
+    expect(oldAfterRevoke).toMatchObject({ revokedAt: AT });
+    expect((await plain.findApiToken(newHash))?.revokedAt).not.toBeNull();
+    expect(await plain.listApiTokens({ creatorId: t.creatorId })).toEqual([]);
+  });
+
+  it("a replace recovers a token a crashed replace left in REPLACING", async () => {
+    const plain = createAzureCredentialStore({ table: tableOf(), select });
+    const t = token(randomUUID());
+    const [oldHash, midHash, finalHash] = [hashOf(), hashOf(), hashOf()];
+    await plain.createApiToken(t, oldHash);
+    const crashing = createAzureCredentialStore({
+      table: interleaved(
+        "upsertEntity",
+        (args) =>
+          (args[0] as { partitionKey: string }).partitionKey !== "token" &&
+          (args[0] as { hash?: string }).hash === midHash,
+        () => Promise.reject(new Error("process died after the delete")),
+      ),
+      select,
+    });
+    await expect(crashing.replaceApiTokenHash(t.id, midHash, "mid1")).rejects.toThrow();
+    // Old hash dead, the token unusable but not live under either hash.
+    expect(await plain.findApiToken(oldHash)).toBeNull();
+    expect((await plain.findApiToken(midHash))?.revokedAt).not.toBeNull();
+    expect(await plain.replaceApiTokenHash(t.id, finalHash, "fin1")).toBe(true);
+    expect(await plain.findApiToken(finalHash)).toMatchObject({
+      revokedAt: null,
+      lastFour: "fin1",
+    });
+    expect(await plain.findApiToken(midHash)).toBeNull();
+  });
+
   it("a bulk revoke that meets a concurrent replace still revokes the token under its new hash", async () => {
     const plain = createAzureCredentialStore({ table: tableOf(), select });
     const creatorId = randomUUID();

@@ -1729,11 +1729,16 @@ export async function writeApiTokenCreation(
   }
 }
 
-/** The hash of the token with this id; null when there is none. */
-async function hashOfToken(table: TableClient, id: string): Promise<string | null> {
+/** The id entry: the token's current hash, and the hash a replacement in flight is moving to. */
+interface IdEntry {
+  readonly hash: string;
+  readonly pendingHash?: string;
+}
+
+/** The id entry of the token with this id; null when there is none. */
+async function idEntryOf(table: TableClient, id: string): Promise<IdEntry | null> {
   try {
-    const entry = await table.getEntity<{ hash: string }>(TOKEN_ID_PARTITION, id.toLowerCase());
-    return entry.hash;
+    return await table.getEntity<IdEntry>(TOKEN_ID_PARTITION, id.toLowerCase());
   } catch (error) {
     if (statusOf(error) === 404) return null;
     throw error;
@@ -1741,40 +1746,62 @@ async function hashOfToken(table: TableClient, id: string): Promise<string | nul
 }
 
 /**
- * `revokedAt` of a record whose hash replacement is under way: it does not authenticate yet, and a
- * revocation may still claim it. The replacement only activates a record that still has it.
+ * `revokedAt` of a record whose hash replacement is under way. Any non-empty `revokedAt` means the
+ * record does not authenticate; REPLACING is not a date, and a revocation may still claim it (it
+ * then holds the revocation time). A crash can leave a record in REPLACING: it stays unusable, and
+ * a later replacement by id recovers it (it becomes the source of the next replacement), while a
+ * revocation by id claims it.
  */
 export const REPLACING = "replacing";
 
 const isOpen = (revokedAt: string): boolean => revokedAt === "" || revokedAt === REPLACING;
 
+type RevokeOutcome = "revoked" | "closed" | "missing" | "conflict";
+
+/** Sets `revokedAt` on one record, guarded by its entity tag. */
+async function revokeRecord(table: TableClient, hash: string, at: string): Promise<RevokeOutcome> {
+  let record;
+  try {
+    record = await table.getEntity<{ revokedAt: string }>(TOKEN_PARTITION, hash);
+  } catch (error) {
+    if (statusOf(error) === 404) return "missing";
+    throw error;
+  }
+  if (!isOpen(record.revokedAt)) return "closed";
+  try {
+    await table.updateEntity(
+      { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: at },
+      "Merge",
+      { etag: record.etag },
+    );
+    return "revoked";
+  } catch (error) {
+    if (statusOf(error) !== 412 && statusOf(error) !== 404) throw error;
+    return "conflict";
+  }
+}
+
 /**
- * Revokes the token with this id: resolves the id to its current hash on every attempt and sets
- * `revokedAt` guarded by the entity tag, so two revocations cannot both win and a hash swapped by a
- * concurrent replacement is followed. False when the token is unknown or already revoked.
+ * Revokes the token with this id. Every attempt resolves the id to its current hash and, while a
+ * replacement is in flight, to the pending one too, and revokes both: when this returns true no
+ * hash of the token authenticates, whatever order a concurrent replacement writes in. False when
+ * the token is unknown or already revoked.
  */
 async function revokeById(table: TableClient, id: string, at: string): Promise<boolean> {
   for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
-    const hash = await hashOfToken(table, id);
-    if (hash === null) return false;
-    let record;
-    try {
-      record = await table.getEntity<{ revokedAt: string }>(TOKEN_PARTITION, hash);
-    } catch (error) {
-      if (statusOf(error) === 404) continue; // swapped or removed meanwhile: resolve again
-      throw error;
+    const entry = await idEntryOf(table, id);
+    if (entry === null) return false;
+    const current = await revokeRecord(table, entry.hash, at);
+    const pending =
+      entry.pendingHash === undefined ? "closed" : await revokeRecord(table, entry.pendingHash, at);
+    if (current === "conflict" || pending === "conflict") continue;
+    if (current === "missing") {
+      // Swapped meanwhile (resolve again), or its replacement deleted it and holds the token.
+      const again = await idEntryOf(table, id);
+      if (again?.hash !== entry.hash || again.pendingHash !== entry.pendingHash) continue;
+      return pending === "revoked";
     }
-    if (!isOpen(record.revokedAt)) return false;
-    try {
-      await table.updateEntity(
-        { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: at },
-        "Merge",
-        { etag: record.etag },
-      );
-      return true;
-    } catch (error) {
-      if (statusOf(error) !== 412 && statusOf(error) !== 404) throw error;
-    }
+    return current === "revoked";
   }
   throw new Error("too many concurrent changes");
 }
@@ -1817,14 +1844,28 @@ export async function writeApiTokenRevocations(
   }
 }
 
+/** Deletes a record; one that is already gone is fine. */
+async function deleteRecord(table: TableClient, hash: string, etag?: string): Promise<void> {
+  try {
+    await table.deleteEntity(TOKEN_PARTITION, hash, etag === undefined ? {} : { etag });
+  } catch (error) {
+    if (statusOf(error) !== 404) throw error;
+  }
+}
+
 /**
  * Gives an unrevoked token a new hash and last four; false when there is none or it got revoked.
  *
- * Order, so that a revocation landing at any point still wins: the new record is written as
- * REPLACING (not usable), the id entry then points at it (later revocations resolve to it), the
- * old record is deleted only if untouched since it was read (else it was revoked: the new record
- * is revoked with the same time), and last the new record is activated only if it is still
- * REPLACING.
+ * The old hash stops authenticating before anything points at the new one, and a revocation
+ * reaches both hashes while this runs (the id entry names the pending hash):
+ * 1. read the source record and its entity tag; refuse when revoked;
+ * 2. write the new record as REPLACING, and name it as `pendingHash` on the id entry;
+ * 3. delete the source with its entity tag (412: re-read; revoked meanwhile means the new record
+ *    is revoked with the same time and this answers false);
+ * 4. point the index entries and last the id entry (clearing `pendingHash`) at the new hash;
+ * 5. activate the new record only if it is still REPLACING.
+ * A crash leaves the old hash dead and the new record in REPLACING at worst; the source of a later
+ * replacement is then that record.
  */
 export async function writeApiTokenHashReplacement(
   table: TableClient,
@@ -1832,79 +1873,90 @@ export async function writeApiTokenHashReplacement(
   hash: string,
   lastFour: string,
 ): Promise<boolean> {
-  try {
-    const oldHash = await hashOfToken(table, id);
-    if (oldHash === null || oldHash === hash) return false;
-    type Stored = {
-      creatorId: string;
-      projectId: string;
-      name: string;
-      createdAt: string;
-      lastUsedAt: string;
-      revokedAt: string;
-    };
-    let old;
+  type Stored = {
+    creatorId: string;
+    projectId: string;
+    name: string;
+    createdAt: string;
+    lastUsedAt: string;
+    revokedAt: string;
+  };
+  const recordOf = async (h: string) => {
     try {
-      old = await table.getEntity<Stored>(TOKEN_PARTITION, oldHash);
+      return await table.getEntity<Stored>(TOKEN_PARTITION, h);
     } catch (error) {
-      if (statusOf(error) === 404) return false;
+      if (statusOf(error) === 404) return null;
       throw error;
     }
-    if (!isOpen(old.revokedAt)) return false;
+  };
+  try {
     const key = id.toLowerCase();
+    const entry = await idEntryOf(table, key);
+    if (entry === null || entry.hash === hash || entry.pendingHash === hash) return false;
+    let sourceHash = entry.hash;
+    let source = await recordOf(sourceHash);
+    if (source === null && entry.pendingHash !== undefined) {
+      // A replacement that died after deleting the old record: continue from what it left.
+      sourceHash = entry.pendingHash;
+      source = await recordOf(sourceHash);
+    }
+    if (source === null || !isOpen(source.revokedAt)) return false;
     await putEntity(table, {
       partitionKey: TOKEN_PARTITION,
       rowKey: hash,
       id: key,
-      creatorId: old.creatorId,
-      projectId: old.projectId,
-      name: old.name,
+      creatorId: source.creatorId,
+      projectId: source.projectId,
+      name: source.name,
       lastFour,
-      createdAt: old.createdAt,
-      lastUsedAt: old.lastUsedAt,
+      createdAt: source.createdAt,
+      lastUsedAt: source.lastUsedAt,
       revokedAt: REPLACING,
     });
-    await putEntity(table, { partitionKey: TOKEN_ID_PARTITION, rowKey: key, hash });
     await putEntity(table, {
-      partitionKey: creatorPartition(old.creatorId),
+      partitionKey: TOKEN_ID_PARTITION,
       rowKey: key,
-      hash,
-      projectId: old.projectId,
+      hash: entry.hash,
+      pendingHash: hash,
     });
-    if (old.projectId !== "") {
-      await putEntity(table, {
-        partitionKey: projectPartition(old.projectId),
-        rowKey: key,
-        hash,
-      });
-    }
-    // Remove the old record; a change since the read (a touch, or a revocation) fails the delete.
-    let current: { etag: string; revokedAt: string } = old;
+    // The gate: the source goes only if nothing changed it since it was read.
+    let current: { etag: string; revokedAt: string } = source;
     for (let attempt = 0; ; attempt++) {
       if (attempt >= ETAG_RETRIES) throw new Error("too many concurrent changes");
       try {
-        await table.deleteEntity(TOKEN_PARTITION, oldHash, { etag: current.etag });
+        await table.deleteEntity(TOKEN_PARTITION, sourceHash, { etag: current.etag });
         break;
       } catch (error) {
         if (statusOf(error) === 404) break;
         if (statusOf(error) !== 412) throw error;
       }
-      try {
-        current = await table.getEntity<Stored>(TOKEN_PARTITION, oldHash);
-      } catch (error) {
-        if (statusOf(error) === 404) break;
-        throw error;
-      }
-      if (!isOpen(current.revokedAt)) {
-        // Revoked on the old hash after the read: the new hash must not outlive it.
-        await revokeById(table, key, current.revokedAt);
-        await table.deleteEntity(TOKEN_PARTITION, oldHash);
+      const reread = await recordOf(sourceHash);
+      if (reread === null) break;
+      current = reread;
+      if (!isOpen(reread.revokedAt)) {
+        // Revoked after the read: the new hash must not outlive it.
+        await revokeRecord(table, hash, reread.revokedAt);
+        await deleteRecord(table, sourceHash);
         return false;
       }
     }
+    await putEntity(table, {
+      partitionKey: creatorPartition(source.creatorId),
+      rowKey: key,
+      hash,
+      projectId: source.projectId,
+    });
+    if (source.projectId !== "") {
+      await putEntity(table, {
+        partitionKey: projectPartition(source.projectId),
+        rowKey: key,
+        hash,
+      });
+    }
+    await putEntity(table, { partitionKey: TOKEN_ID_PARTITION, rowKey: key, hash });
     for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
-      const fresh = await table.getEntity<Stored>(TOKEN_PARTITION, hash);
-      if (fresh.revokedAt !== REPLACING) return false; // revoked meanwhile
+      const fresh = await recordOf(hash);
+      if (fresh === null || fresh.revokedAt !== REPLACING) return false; // revoked meanwhile
       try {
         await table.updateEntity(
           { partitionKey: TOKEN_PARTITION, rowKey: hash, revokedAt: "" },
@@ -1925,10 +1977,10 @@ export async function writeApiTokenHashReplacement(
 /** Sets `lastUsedAt`; an unknown token is ignored. */
 export async function writeApiTokenUse(table: TableClient, id: string, at: string): Promise<void> {
   try {
-    const hash = await hashOfToken(table, id);
-    if (hash === null) return;
+    const entry = await idEntryOf(table, id);
+    if (entry === null) return;
     await table.updateEntity(
-      { partitionKey: TOKEN_PARTITION, rowKey: hash, lastUsedAt: at },
+      { partitionKey: TOKEN_PARTITION, rowKey: entry.hash, lastUsedAt: at },
       "Merge",
     );
   } catch (error) {
