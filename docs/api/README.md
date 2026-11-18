@@ -12,6 +12,8 @@ committed.
 - [Concurrent editing with ETags](concurrency.md): `ETag`, `If-Match`, `412` and `428`, with a `curl` loop.
 - [Authentication, sessions and CSRF](authentication.md): the sign-in flow, `returnTo`, the cookies,
   the CSRF header, sign-out and rate limiting.
+- [API tokens](api-tokens.md): bearer credentials, the token scopes, the legacy access key, replacing a credential and
+  calling the API from a browser (CORS).
 - [Uploads and files](uploads.md): editor uploads, the allowed types, the quota, the download headers and
   file ids.
 - [Public endpoints, rate limits and idempotency](public-endpoints.md): loading and answering a published
