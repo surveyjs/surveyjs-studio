@@ -390,6 +390,7 @@ function contractOperations(): ContractOperation[] {
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,
     entryId: feedbackHistoryIds[0] ?? "",
+    tokenId: OWNER_TOKEN.id,
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
@@ -419,6 +420,16 @@ const STORED_FILE = {
   createdAt: "2026-01-01T00:00:00.000Z",
 } as const;
 
+/** An API token of the owner the coverage test stores before `revokeApiToken`. */
+const OWNER_TOKEN = {
+  id: "aaaaaaaa-0000-4000-8000-0000000000a1",
+  creatorId: ownerUser.id,
+  projectId: null,
+  name: "Coverage",
+  lastFour: "abcd",
+  createdAt: "2026-01-01T00:00:00.000Z",
+} as const;
+
 /** A synthetic webhook secret (base64 of 24 bytes). */
 const COVERAGE_ENV = { ACCOUNT_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 1).toString("base64")}` };
 
@@ -439,6 +450,9 @@ describe("contract coverage", () => {
       const { server, headers } = await startSignedIn(COVERAGE_ENV);
       if (op.operationId === "downloadFile") {
         await providers?.files.putFile(STORED_FILE, Buffer.from([0]));
+      }
+      if (op.operationId === "revokeApiToken") {
+        await providers?.credentials.createApiToken(OWNER_TOKEN, "coverage-token-hash");
       }
       const res = await server.inject({
         method: op.method as "GET",

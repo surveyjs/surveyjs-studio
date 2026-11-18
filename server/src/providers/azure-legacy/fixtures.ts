@@ -355,6 +355,12 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
       );
     }
   }
+  // The site's per-user access key (`accesskey`), as the replica's users carry it.
+  const legacyAccessKeys: Record<string, string> = {};
+  for (const row of fixtures.rawSqlRows.Users ?? []) {
+    const key = optStr(row, "accesskey");
+    if (key !== null && key !== "") legacyAccessKeys[str(row, "id").toLowerCase()] = key;
+  }
   return {
     users: fixtures.users.map(userFromLegacy),
     surveys: fixtures.surveys.map((row) =>
@@ -386,5 +392,6 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     completions,
     legacyViews,
     privateResultQuestions,
+    legacyAccessKeys,
   };
 }

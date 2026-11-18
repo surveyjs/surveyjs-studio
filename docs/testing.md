@@ -464,6 +464,17 @@ invalid-signature`; a valid one for a body that is not an account event is `400`
 - **The read-only run**, `pnpm test:conformance:read-only`: only `read-only.test.ts`, with the reference server on
   memory and `READ_ONLY=true`. CI runs it after the in-memory run.
 
+### API tokens on the conformance server
+
+Hosted Step 3 adds `api-tokens.test.ts` ([ADR 0037](adr/0037-access-keys-and-api-tokens.md)): a token's value is
+shown once and never listed; a Personal token reaches the personal surveys, a project token its project only (`404`
+elsewhere); a member gets `403` and an outsider `404` for a project's tokens; no bearer credential manages tokens; a
+bearer write needs no CSRF token; a token replaces itself (the old value is then `401`); deleting the project or
+erasing the creator (in `account-deleted.test.ts`) revokes its tokens. The legacy-key cases use the fixture users'
+keys and skip on a server without legacy keys (the SQL providers). The memory run starts the server with
+`LEGACY_KEY_REVOKE=true` and revokes Oscar Outsider's key; the other runs keep it off and check `409
+legacy-key-revoke-unavailable`, since a revocation on the Azurite replica would outlast the run.
+
 ### Test data
 
 Tests that write (create, update, clone, move and delete surveys) do so in only a few scopes, and

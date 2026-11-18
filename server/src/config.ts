@@ -105,6 +105,7 @@ export interface FeaturesConfig {
   readonly embed: boolean;
   readonly apiDocs: boolean;
   readonly apiTokens: boolean;
+  /** `LEGACY_KEY_REVOKE`: a user can revoke their legacy access key (ADR 0037, from hosted Step 7). */
   readonly legacyKeyRevoke: boolean;
 }
 
@@ -394,6 +395,8 @@ const envSchema = z.object({
   // Checked for an index.html at start-up (registerWebApp), not here.
   WEB_ROOT: z.string().refine(isAbsolute, "must be an absolute path").optional(),
   READ_ONLY: z.enum(["true", "false"], { error: "must be true or false" }).optional(),
+  // ADR 0037: legacy access key Revoke, off until hosted Step 7 turns it on.
+  LEGACY_KEY_REVOKE: z.enum(["true", "false"], { error: "must be true or false" }).optional(),
   REQUEST_TIMEOUT_SECONDS: positiveInt.default(300),
   // Plain strings: a schema check here could echo a value in its message.
   LEGACY_SQL_CONNECTION_STRING: z.string().optional(),
@@ -868,8 +871,7 @@ export function loadConfig(
       embed: e.APP_SHELL === SITE_SHELL,
       apiDocs: apiDocsOf(e),
       apiTokens: e.APP_SHELL === SITE_SHELL,
-      // Hosted Step 3 task 8 replaces this constant with the LEGACY_KEY_REVOKE setting.
-      legacyKeyRevoke: false,
+      legacyKeyRevoke: e.LEGACY_KEY_REVOKE === "true",
     }),
     storageProvider: e.STORAGE_PROVIDER,
     memorySeed: e.MEMORY_SEED,

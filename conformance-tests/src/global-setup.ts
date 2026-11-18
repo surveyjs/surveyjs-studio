@@ -141,6 +141,7 @@ const appVariables = [
   "SHELL_LINKS",
   "WEB_ROOT",
   "READ_ONLY",
+  "LEGACY_KEY_REVOKE",
   "REQUEST_TIMEOUT_SECONDS",
 ];
 
@@ -179,8 +180,10 @@ function providerEnv(): Record<string, string> {
   const provider = conformanceProvider();
   if (provider === "sandbox") throw new Error("CONFORMANCE_PROVIDER=sandbox starts no server");
   if (provider === "memory") {
-    // The dev identity provider signs in as a user of the seed (see /__dev/sign-in).
-    return pick(REFERENCE_SETTINGS, PROVIDER_SETTINGS);
+    // The dev identity provider signs in as a user of the seed (see /__dev/sign-in). The memory
+    // store starts afresh each run, so the run that revokes a legacy access key is this one; a
+    // revocation on the Azurite replica would outlast the run.
+    return { ...pick(REFERENCE_SETTINGS, PROVIDER_SETTINGS), LEGACY_KEY_REVOKE: "true" };
   }
   if (provider === "sqlite" || provider === "postgres") {
     if (sqlDatabase === null) throw new Error("the SQL database is prepared in setup()");

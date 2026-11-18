@@ -66,6 +66,16 @@ export function createSqlCredentialStore(database: SqlDatabase): CredentialStore
         .executeTakeFirst();
       return row ? recordOf(row) : null;
     },
+    getApiToken: async (id) => {
+      const tokenId = key(id);
+      if (tokenId === null) return null;
+      const row = await db
+        .selectFrom("api_tokens")
+        .selectAll()
+        .where("id", "=", tokenId)
+        .executeTakeFirst();
+      return row ? recordOf(row) : null;
+    },
     listApiTokens: async (scope) => {
       const owner = "creatorId" in scope ? key(scope.creatorId) : key(scope.projectId);
       if (owner === null) return [];

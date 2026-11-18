@@ -44,6 +44,30 @@ describe("eraseAccount", () => {
     expect(await providers.projects.listUserProjects(USER.id)).toHaveLength(1);
   });
 
+  it("revokes every API token the user created, project tokens too, and no one else's", async () => {
+    const providers = seeded();
+    const OTHER_PROJECT = "eeeeeeee-0000-4000-8000-0000000000d6";
+    const tokens = [
+      { creatorId: USER.id, projectId: null },
+      // A project the user leaves (the project stays) and one deleted with the user.
+      { creatorId: USER.id, projectId: OTHER_PROJECT },
+      { creatorId: "eeeeeeee-0000-4000-8000-0000000000d7", projectId: null },
+    ].map((over, n) => ({
+      id: `eeeeeeee-0000-4000-8000-0000000000e${n}`,
+      name: "CI",
+      lastFour: "abcd",
+      createdAt: NOW,
+      ...over,
+    }));
+    for (const [n, token] of tokens.entries()) {
+      await providers.credentials.createApiToken(token, `hash-${n}`);
+    }
+    await createEraseAccount(providers)(USER.id, { now: NOW });
+    expect(await providers.credentials.findApiToken("hash-0")).toMatchObject({ revokedAt: NOW });
+    expect(await providers.credentials.findApiToken("hash-1")).toMatchObject({ revokedAt: NOW });
+    expect(await providers.credentials.findApiToken("hash-2")).toMatchObject({ revokedAt: null });
+  });
+
   it("logs one line with the summary's ids and counts only", async () => {
     const lines: { details: Readonly<Record<string, string | number>>; message: string }[] = [];
     const logger: ErasureLogger = { info: (details, message) => lines.push({ details, message }) };

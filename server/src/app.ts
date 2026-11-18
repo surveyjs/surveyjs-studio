@@ -17,6 +17,7 @@ import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { createCredentialHandlers } from "./credentials/handlers.js";
 import { createOwnerCheck } from "./credentials/owner-check.js";
 import { createBearerResolver } from "./credentials/resolve.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
@@ -205,7 +206,12 @@ export async function buildApp(
 
   // Account erasure: the account-deleted webhook and the instance admin's delete (S15).
   const eraseAccount = createEraseAccount(
-    { surveys: providers.surveys, projects: providers.projects, files: providers.files },
+    {
+      surveys: providers.surveys,
+      projects: providers.projects,
+      files: providers.files,
+      credentials: providers.credentials,
+    },
     app.log,
   );
 
@@ -294,6 +300,13 @@ export async function buildApp(
         publicBaseUrl: config.publicBaseUrl,
         maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
         maxFileBytes: config.limits.maxFileBytes,
+        ...(options.now && { now: options.now }),
+      }),
+      ...createCredentialHandlers({
+        credentials: providers.credentials,
+        users: providers.users,
+        projects: providers.projects,
+        legacyKeyRevoke: config.features.legacyKeyRevoke,
         ...(options.now && { now: options.now }),
       }),
       ...createAccountHandlers({

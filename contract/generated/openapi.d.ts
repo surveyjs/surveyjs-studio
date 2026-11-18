@@ -626,6 +626,8 @@ export interface paths {
          *     whose names are `New Survey N`. Without a `definition`, the survey starts
          *     from the default template. The default template is an empty survey (`{}`).
          *     A new survey is published: it runs at once, as on surveyjs.io.
+         *     Without `projectId` an API token creates in its own scope; a `projectId` outside that scope
+         *     answers `404`.
          */
         post: operations["createSurvey"];
         delete?: never;
@@ -1188,7 +1190,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -2922,7 +2924,11 @@ export interface operations {
     listSurveys: {
         parameters: {
             query?: {
-                /** @description `personal`, or the ID of a project the user belongs to. */
+                /**
+                 * @description `personal`, or the ID of a project the user belongs to. Absent: the caller's own space —
+                 *     Personal for sessions, legacy keys and Personal tokens; the token's project for a
+                 *     project token.
+                 */
                 project?: string;
                 /** @description `false` lists active surveys; `true` lists archived ones. */
                 archived?: boolean;
@@ -2977,6 +2983,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             503: components["responses"]["ReadOnly"];
         };

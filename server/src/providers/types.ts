@@ -657,6 +657,8 @@ export interface CredentialStore {
   ): Promise<void>;
   /** By the hash of the value; revoked tokens too (with `revokedAt`). */
   findApiToken(hash: string): Promise<ApiTokenRecord | null>;
+  /** By id (any letter case); revoked tokens too. Null for an unknown id or one that is not a GUID. */
+  getApiToken(id: string): Promise<ApiTokenRecord | null>;
   /** The scope's tokens that are not revoked, newest first (`createdAt` descending, then `id`). */
   listApiTokens(
     scope: { readonly creatorId: string } | { readonly projectId: string },

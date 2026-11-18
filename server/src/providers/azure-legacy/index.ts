@@ -768,6 +768,11 @@ export function createAzureLegacyProviders(
     await (await connected()).request().query("SELECT 1 AS ok");
   }
 
+  const credentials = createAzureCredentialStore({
+    table: apiTokensTable(legacy.surveysStorageConnectionString),
+    select,
+  });
+
   // Both probes are account-level calls. A least-privilege container SAS cannot make them, so
   // /readyz would stay at 503 with such credentials. A narrower probe is open for later, with
   // least-privilege credentials (docs/architecture.md, "Open for later steps").
@@ -829,10 +834,7 @@ export function createAzureLegacyProviders(
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),
 
     views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
-    credentials: createAzureCredentialStore({
-      table: apiTokensTable(legacy.surveysStorageConnectionString),
-      select,
-    }),
+    credentials,
 
     users: {
       kind: "external",
@@ -937,7 +939,19 @@ export function createAzureLegacyProviders(
 
       async deleteProject(projectId, { receiverId, now: at }) {
         if (!isGuid(projectId)) return null;
-        return writeProjectDeletion(writeTargets, projectId, receiverId, at);
+        const moved = await writeProjectDeletion(writeTargets, projectId, receiverId, at);
+        if (moved === null) return null;
+        // The project's API tokens go with it (ADR 0037). After the deletion, best effort: a token
+        // of a project that is gone reaches nothing anyway.
+        try {
+          await credentials.revokeApiTokensOfProject(projectId, at);
+        } catch (error) {
+          logger.warn(
+            { projectId: projectId.toLowerCase(), reason: safeErrorCategory(error) },
+            "Could not revoke the API tokens of a deleted project; the project is deleted.",
+          );
+        }
+        return moved;
       },
 
       async addMember(projectId, userId, role, { now: at }) {

@@ -68,6 +68,10 @@ export function createMemoryCredentials(
       const found = tokens.find((t) => t.hash === hash);
       return Promise.resolve(found ? { ...found.record } : null);
     },
+    getApiToken: (id) => {
+      const found = byId(id);
+      return Promise.resolve(found ? { ...found.record } : null);
+    },
     listApiTokens: (scope) => {
       const creator = "creatorId" in scope ? lower(scope.creatorId) : null;
       const project = "projectId" in scope ? lower(scope.projectId) : null;

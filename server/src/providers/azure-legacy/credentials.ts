@@ -163,6 +163,18 @@ export function createAzureCredentialStore(options: {
 
     findApiToken,
 
+    async getApiToken(id) {
+      // Token ids are GUIDs; any other id names no token (and could not be a row key).
+      if (!isGuid(id)) return null;
+      const tokenId = id.toLowerCase();
+      const entry = await entityOf<{ hash: string }>(
+        TOKENS_PARTITION,
+        idRow(tokenId),
+        "api token read",
+      );
+      return entry ? currentRecord({ id: tokenId, hash: entry.hash }) : null;
+    },
+
     async listApiTokens(scope) {
       const creator = "creatorId" in scope;
       const owner = creator ? scope.creatorId : scope.projectId;

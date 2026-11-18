@@ -963,8 +963,11 @@ paths:
       parameters:
         - name: project
           in: query
-          description: '`personal`, or the ID of a project the user belongs to.'
-          schema: { type: string, default: personal }
+          description: |
+            `personal`, or the ID of a project the user belongs to. Absent: the caller's own space —
+            Personal for sessions, legacy keys and Personal tokens; the token's project for a
+            project token.
+          schema: { type: string }
         - name: archived
           in: query
           description: '`false` lists active surveys; `true` lists archived ones.'
@@ -990,6 +993,8 @@ paths:
         whose names are `New Survey N`. Without a `definition`, the survey starts
         from the default template. The default template is an empty survey (`{}`).
         A new survey is published: it runs at once, as on surveyjs.io.
+        Without `projectId` an API token creates in its own scope; a `projectId` outside that scope
+        answers `404`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -1010,6 +1015,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '503': { $ref: '#/components/responses/ReadOnly' }
   /surveys/{surveyId}:
@@ -2114,6 +2120,8 @@ components:
             - link-invalid
             - email-taken
             - last-instance-admin
+            - legacy-key-revoke-unavailable
+            - legacy-key-replace-unavailable
             - internal-error
         errors:
           type: array

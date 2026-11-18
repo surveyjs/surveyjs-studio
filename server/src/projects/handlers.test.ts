@@ -548,11 +548,28 @@ describe("API token scopes", () => {
     });
   }
 
+  it("a token cannot list every project (scope=all), whatever its scope", async () => {
+    const { providers } = await start();
+    for (const projectId of [null, TEAM]) {
+      const res = await send(
+        "GET",
+        "/projects?scope=all",
+        await tokenOf(providers, ANN, projectId),
+      );
+      expect(res.statusCode, String(projectId)).toBe(403);
+      expect(res.json()).toMatchObject({ code: "forbidden" });
+    }
+  });
+
   it("a project token of a deleted project reaches nothing", async () => {
     const { providers, as } = await start();
     const headers = await tokenOf(providers, ANN, GONE);
     expect((await send("DELETE", `/projects/${GONE}`, await as(ANN))).statusCode).toBe(204);
-    expect((await send("GET", "/projects", headers)).json()).toMatchObject({ items: [] });
-    expect((await send("GET", `/projects/${GONE}`, headers)).statusCode).toBe(404);
+    // Revoked with the project.
+    expect((await send("GET", "/projects", headers)).statusCode).toBe(401);
+    // One the deletion left unrevoked (a failed best-effort revocation) finds no project.
+    const left = await tokenOf(providers, ANN, GONE);
+    expect((await send("GET", "/projects", left)).json()).toMatchObject({ items: [] });
+    expect((await send("GET", `/projects/${GONE}`, left)).statusCode).toBe(404);
   });
 });

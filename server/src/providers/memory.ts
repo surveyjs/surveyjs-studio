@@ -169,6 +169,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     ...(seed?.privateResultQuestions && { privateResultQuestions: seed.privateResultQuestions }),
   });
 
+  const credentials = createMemoryCredentials(seed?.legacyAccessKeys).store;
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
 
   /** Stores a new survey; throws on a duplicate id. */
@@ -391,7 +392,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     files: createMemoryFileStore(),
     results: results.store,
     views: views.store,
-    credentials: createMemoryCredentials(seed?.legacyAccessKeys).store,
+    credentials,
     users: local?.users ?? {
       kind: "external",
       getUser: (id) => {
@@ -480,7 +481,8 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         memberships = memberships.filter((m) => m.projectId !== key);
         invitations?.dropProject(key);
         projects.delete(key);
-        return Promise.resolve(moved.sort());
+        // The project's API tokens go with it (ADR 0037); the SQL stores' foreign key does this.
+        return credentials.revokeApiTokensOfProject(key, now).then(() => moved.sort());
       },
       addMember: (projectId, userId, role) => {
         const key = lower(projectId);

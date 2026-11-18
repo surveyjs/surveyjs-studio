@@ -1209,6 +1209,20 @@ describe("loadConfig", () => {
     });
   });
 
+  describe("LEGACY_KEY_REVOKE", () => {
+    it("is off by default and takes true or false", () => {
+      expect(loadConfig({}).features.legacyKeyRevoke).toBe(false);
+      expect(loadConfig({ LEGACY_KEY_REVOKE: "true" }).features.legacyKeyRevoke).toBe(true);
+      expect(loadConfig({ LEGACY_KEY_REVOKE: "false" }).features.legacyKeyRevoke).toBe(false);
+    });
+
+    it.each(["yes", "1", "TRUE", "on"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ LEGACY_KEY_REVOKE: value }))).toContain(
+        "LEGACY_KEY_REVOKE: must be true or false",
+      );
+    });
+  });
+
   describe("WEB_ROOT", () => {
     const absolute = resolve("web-root-for-tests");
 

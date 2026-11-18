@@ -713,6 +713,49 @@ describe("a project API token", () => {
     }
   });
 
+  it("answers 404 on the content, results, views and files of a survey out of its scope", async () => {
+    const { server, headers } = await startProject();
+    const boundary = "token-scope-boundary";
+    const form = Buffer.from(
+      `--${boundary}
+Content-Disposition: form-data; name="file"; filename="a.png"
+` +
+        `Content-Type: image/png
+
+png
+--${boundary}--
+`,
+    );
+    for (const id of [ownPersonal?.id, otherProjectSurvey?.id]) {
+      const requests = [
+        { method: "GET", url: `/api/v1/surveys/${id}/definition` },
+        { method: "GET", url: `/api/v1/surveys/${id}/theme` },
+        { method: "GET", url: `/api/v1/surveys/${id}/history` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results/stats` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results/export?format=json` },
+        { method: "GET", url: `/api/v1/surveys/${id}/views/summary` },
+        {
+          method: "POST",
+          url: `/api/v1/surveys/${id}/assets`,
+          headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+          payload: form,
+        },
+        // Cloning from a source out of scope, into the token's own project.
+        { method: "POST", url: `/api/v1/surveys/${id}/clones` },
+        { method: "POST", url: `/api/v1/surveys/${id}/clones`, payload: { projectId: PROJECT_ID } },
+      ] as const;
+      for (const request of requests) {
+        const res = await server.inject({
+          ...request,
+          headers: { ...headers, ...("headers" in request && request.headers) },
+        });
+        expect(res.statusCode, `${request.method} ${request.url}`).toBe(404);
+        expect(res.json()).toMatchObject({ code: "not-found" });
+      }
+    }
+  });
+
   it("creates and clones into its project only", async () => {
     const { server, headers } = await startProject();
     const created = await create(server, headers, { name: "By token" });

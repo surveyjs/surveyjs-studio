@@ -123,6 +123,7 @@ export async function run(
       surveys: providers.surveys,
       projects: providers.projects,
       files: providers.files,
+      credentials: providers.credentials,
     };
     io.out(formatPlan(user, await previewErasure(stores, userId)));
     if (!args.yes) {

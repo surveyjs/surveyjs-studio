@@ -59,6 +59,25 @@ export function describeCredentialStoreSuite(
       expect(await store.findApiToken(hashOf())).toBeNull();
     });
 
+    it("gets a token by id in any case, revoked ones too, and null for an unknown id", async () => {
+      const token = newToken({ projectId: await under.newProjectId() });
+      await store.createApiToken(token, hashOf());
+      const stored = { ...token, lastUsedAt: null, revokedAt: null };
+      expect(await store.getApiToken(token.id)).toEqual(stored);
+      expect(await store.getApiToken(token.id.toUpperCase())).toEqual(stored);
+      await store.revokeApiToken(token.id, AT);
+      expect(await store.getApiToken(token.id)).toEqual({ ...stored, revokedAt: AT });
+      expect(await store.getApiToken(randomUUID())).toBeNull();
+      expect(await store.getApiToken("legacy-key")).toBeNull();
+    });
+
+    it("gets a token by id after its hash was replaced", async () => {
+      const token = newToken();
+      await store.createApiToken(token, hashOf());
+      expect(await store.replaceApiTokenHash(token.id, hashOf(), "new3")).toBe(true);
+      expect(await store.getApiToken(token.id)).toMatchObject({ id: token.id, lastFour: "new3" });
+    });
+
     it("lists a creator's tokens newest first, without project tokens and revoked ones", async () => {
       const creatorId = randomUUID();
       const older = newToken({ creatorId, createdAt: "2026-11-01T10:00:00.000Z" });
