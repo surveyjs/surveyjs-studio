@@ -17,6 +17,8 @@ import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { createOwnerCheck } from "./credentials/owner-check.js";
+import { createBearerResolver } from "./credentials/resolve.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
@@ -304,6 +306,17 @@ export async function buildApp(
       sessionSecret: config.sessionSecret,
       ...(options.now && { now: options.now }),
       ...(local && { sessionCheck: local.sessionCheck }),
+      // API tokens and legacy access keys (ADR 0037).
+      bearer: createBearerResolver({
+        credentials: providers.credentials,
+        owners: createOwnerCheck({
+          users: providers.users,
+          accounts,
+          ...(options.now && { now: options.now }),
+        }),
+        ...(options.now && { now: options.now }),
+        log: app.log,
+      }),
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),

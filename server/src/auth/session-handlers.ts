@@ -304,8 +304,14 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         request.log.error({ err: error }, "account notices are unavailable");
       }
       const account = options.accounts ? await options.accounts.account(user.id) : null;
+      // The profile only: the request's scope and credential are not part of the user.
+      const { id, displayName, email, avatarUrl, instanceRole } = user;
       return {
-        ...user,
+        id,
+        displayName,
+        email,
+        avatarUrl,
+        ...(instanceRole && { instanceRole }),
         ...(account && {
           instanceRole: account.instanceRole,
           mustChangePassword: account.mustChangePassword,

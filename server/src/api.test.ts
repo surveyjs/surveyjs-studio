@@ -11,6 +11,7 @@ import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { hashCredential, lastFour, newApiTokenValue } from "./credentials/format.js";
 import { newFileId } from "./domain/file-id.js";
 import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
@@ -144,6 +145,43 @@ describe("getConfig", () => {
         status: "https://status.example.com/",
       },
     });
+  });
+});
+
+describe("bearer authentication", () => {
+  it("authenticates an API token without a cookie or CSRF token, and refuses an unknown one", async () => {
+    const server = await start();
+    const value = newApiTokenValue();
+    await providers!.credentials.createApiToken(
+      {
+        id: "7f1e8c52-3d4b-4a6e-9c1f-2b3a4c5d6e7f",
+        creatorId: ownerUser.id,
+        projectId: null,
+        name: "CI",
+        lastFour: lastFour(value),
+        createdAt: "2026-11-18T09:00:00.000Z",
+      },
+      hashCredential(value, "api-token"),
+    );
+    const authorization = `Bearer ${value}`;
+    const me = await server.inject({ url: "/api/v1/me", headers: { authorization } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ id: ownerUser.id });
+    expect(me.json()).not.toHaveProperty("scope");
+    expect(me.json()).not.toHaveProperty("credential");
+    const created = await server.inject({
+      method: "POST",
+      url: "/api/v1/surveys",
+      headers: { authorization },
+      payload: { name: "By token" },
+    });
+    expect(created.statusCode).toBe(201);
+    const unknown = await server.inject({
+      url: "/api/v1/surveys",
+      headers: { authorization: `Bearer ${newApiTokenValue()}` },
+    });
+    expect(unknown.statusCode).toBe(401);
+    expect(unknown.json()).toMatchObject({ code: "unauthenticated" });
   });
 });
 
