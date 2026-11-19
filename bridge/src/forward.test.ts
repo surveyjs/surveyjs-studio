@@ -1,7 +1,7 @@
-import { request as httpRequest, type ServerResponse } from "node:http";
+import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { gzipSync } from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { endToEndHeaders, originTarget } from "./forward.js";
+import { endToEndHeaders, originTarget, requestFraming } from "./forward.js";
 import {
   closedUrl,
   headerNames,
@@ -393,6 +393,98 @@ describe("hostile and malformed requests", () => {
     });
     expect(response.status).toBe(200);
     expect(legacy.requests[0]!.headers.cookie).toBe(cookie);
+  });
+
+  it("forwards a plain HTTP/1.0 request with the peer's address", async () => {
+    const { data } = await sendRaw(
+      bridge.url,
+      "GET /private/Surveys/nps HTTP/1.0\r\nX-Forwarded-For: 203.0.113.7\r\n\r\n",
+    );
+    expect(data.split("\r\n")[0]).toMatch(/^HTTP\/1\.[01] 200 OK$/);
+    expect(legacy.requests[0]!.headers["x-forwarded-for"]).toBe("203.0.113.7, 127.0.0.1");
+  });
+
+  // A request whose connection fails before it is forwarded (here: a second request Node's parser
+  // refuses) must never reach the old service with only the caller's own X-Forwarded-For.
+  it.each([
+    [
+      "POST HTTP/1.0 without a length, then a request",
+      `POST /pay HTTP/1.0\r\nHost: b\r\nX-Forwarded-For: 6.6.6.6\r\n\r\n${"GET /private/Service/checkPQueue?key=k HTTP/1.1\r\nHost: old\r\nX-Forwarded-For: 6.6.6.6\r\n\r\n"}`,
+    ],
+    [
+      "GET HTTP/1.1 Connection: close, then a request",
+      "GET /pay HTTP/1.1\r\nHost: b\r\nConnection: close\r\nX-Forwarded-For: 6.6.6.6\r\n\r\nGET /y HTTP/1.1\r\nHost: old\r\n\r\n",
+    ],
+    [
+      "GET HTTP/1.1, then a malformed request",
+      "GET /pay HTTP/1.1\r\nHost: b\r\nX-Forwarded-For: 6.6.6.6\r\n\r\nG\x01T / HTTP/1.1\r\n\r\n",
+    ],
+  ])("%s: no request reaches the old service without the peer's address", async (_, text) => {
+    for (let round = 0; round < 5; round++) {
+      // A warm connection to the old service, as in production.
+      await send(`${bridge.url}/private/Surveys/nps`);
+      await sendRaw(bridge.url, text);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(legacy.requests.length).toBeGreaterThanOrEqual(5);
+    for (const request of legacy.requests) {
+      expect(request.headers["x-forwarded-for"]).toMatch(/(^|, )127\.0\.0\.1$/);
+    }
+  });
+
+  it.each([
+    ["a malformed request line", "G\x01T / HTTP/1.1\r\nHost: b\r\n\r\n", "400 Bad Request"],
+    [
+      "headers over 32 KB",
+      `GET / HTTP/1.1\r\nHost: b\r\nCookie: ${"c".repeat(40 * 1024)}\r\n\r\n`,
+      "431 Request Header Fields Too Large",
+    ],
+  ])("answers %s Node refuses with an empty answer and closes", async (_, text, status) => {
+    const { data, timedOut } = await sendRaw(bridge.url, text);
+    expect(timedOut).toBe(false);
+    expect(data).toBe(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+    expect(legacy.requests).toEqual([]);
+  });
+
+  it("answers a transfer coding other than chunked with an empty 400", async () => {
+    const { data } = await sendRaw(
+      bridge.url,
+      "POST /private/Surveys/tempFiles HTTP/1.1\r\nHost: b\r\nTransfer-Encoding: gzip, chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
+    );
+    expect(data.split("\r\n")[0]).toBe("HTTP/1.1 400 Bad Request");
+    expect(data).toMatch(/content-length: 0/i);
+    expect(legacy.requests).toEqual([]);
+  });
+
+  it("forwards the length as a plain number", async () => {
+    const { data } = await sendRaw(
+      bridge.url,
+      "POST /private/Surveys/tempFiles HTTP/1.1\r\nHost: b\r\nContent-Length: 005\r\nConnection: close\r\n\r\nhello",
+    );
+    expect(data.split("\r\n")[0]).toBe("HTTP/1.1 200 OK");
+    expect(legacy.requests[0]!.headers["content-length"]).toBe("5");
+    expect(legacy.requests[0]!.body.toString()).toBe("hello");
+  });
+});
+
+describe("requestFraming", () => {
+  const framing = (headers: Record<string, string>) =>
+    requestFraming({ headers } as unknown as IncomingMessage);
+
+  it.each([
+    [{}, "none"],
+    [{ "content-length": "0" }, "0"],
+    [{ "content-length": "088" }, "88"],
+    [{ "content-length": "12345678901234567890" }, "12345678901234567890"],
+    [{ "content-length": "1, 1" }, "invalid"],
+    [{ "transfer-encoding": "chunked" }, "chunked"],
+    [{ "transfer-encoding": "Chunked" }, "chunked"],
+    [{ "transfer-encoding": "identity, chunked" }, "chunked"],
+    [{ "transfer-encoding": "gzip, chunked" }, "invalid"],
+    [{ "transfer-encoding": "chunked, chunked" }, "invalid"],
+    [{ "transfer-encoding": "gzip" }, "invalid"],
+  ])("%j → %s", (headers, expected) => {
+    expect(framing(headers)).toBe(expected);
   });
 });
 

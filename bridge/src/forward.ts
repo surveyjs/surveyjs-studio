@@ -74,6 +74,29 @@ export function originTarget(url: string | undefined): string | undefined {
   return rest.startsWith("/") ? rest : `/${rest}`;
 }
 
+/**
+ * How the request's body is framed, as Node's parser read it: `"chunked"`, its length as a plain
+ * decimal (`088` → `88`), `"none"`, or `"invalid"` for a transfer coding other than chunked,
+ * which the bridge does not pass on (empty `400`).
+ */
+export function requestFraming(req: IncomingMessage): "chunked" | "none" | "invalid" | string {
+  const te = req.headers["transfer-encoding"];
+  if (te !== undefined) {
+    const codings = te
+      .split(",")
+      .map((coding) => coding.trim().toLowerCase())
+      .filter((coding) => coding !== "");
+    const plain =
+      codings.length === 1
+        ? codings[0] === "chunked"
+        : codings.length === 2 && codings[0] === "identity" && codings[1] === "chunked";
+    return plain ? "chunked" : "invalid";
+  }
+  const length = req.headers["content-length"];
+  if (length === undefined) return "none";
+  return /^[0-9]+$/.test(length) ? BigInt(length).toString() : "invalid";
+}
+
 /** An IPv4 address mapped into IPv6 (`::ffff:192.0.2.1`) in its IPv4 form. */
 export function plainAddress(address: string | undefined): string {
   if (address === undefined) return "";
@@ -137,11 +160,13 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
         .join(", ");
       headers.unshift("Host", base.host);
       headers.push("X-Forwarded-For", forwardedFor);
-      if (req.headers["transfer-encoding"] !== undefined) {
-        headers.push("Transfer-Encoding", "chunked");
-      } else if (req.headers["content-length"] !== undefined) {
-        headers.push("Content-Length", req.headers["content-length"]);
+      const framing = requestFraming(req);
+      if (framing === "invalid") {
+        fail(res, cors, 400);
+        return;
       }
+      if (framing === "chunked") headers.push("Transfer-Encoding", "chunked");
+      else if (framing !== "none") headers.push("Content-Length", framing);
 
       let upstream: ReturnType<typeof send>;
       try {

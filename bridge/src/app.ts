@@ -1,5 +1,7 @@
 // The bridge (ADR 0035, ADR 0039): answers on the old API's host as the old API does, through
 // Studio's public API, and forwards everything else to the old service.
+import type { Socket } from "node:net";
+import type { Duplex } from "node:stream";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -29,12 +31,32 @@ export interface BridgeDeps {
   forwardTimeoutMs?: number;
 }
 
+/**
+ * Each connection's peer address, taken when it is accepted: a destroyed socket no longer knows
+ * it, and a request forwarded without it would carry only the caller's own X-Forwarded-For.
+ */
+const peers = new WeakMap<Socket, string>();
+
+/** The connection's peer, or `undefined` when it is unknown or no answer can be written any more. */
+function livePeer(request: FastifyRequest): string | undefined {
+  const socket = request.raw.socket;
+  if (socket.destroyed || !socket.writable) return undefined;
+  const peer = peers.get(socket);
+  return peer === undefined || peer === "" ? undefined : peer;
+}
+
 /** Hands the request to the old service; never throws (a failure is an empty 500). */
 function forward(forwarder: Forwarder, request: FastifyRequest, reply: FastifyReply): void {
   try {
     reply.hijack();
+    const peer = livePeer(request);
+    if (peer === undefined) {
+      // Nobody can receive an answer, and the chain would lack the caller's address.
+      reply.raw.destroy();
+      return;
+    }
     forwarder.forward(request.raw, reply.raw, {
-      peer: plainAddress(request.raw.socket.remoteAddress),
+      peer,
       cors: request.headers.origin !== undefined,
       log: request.log,
     });
@@ -44,6 +66,27 @@ function forward(forwarder: Forwarder, request: FastifyRequest, reply: FastifyRe
     if (res.headersSent || res.destroyed) res.destroy();
     else res.writeHead(500, { "content-length": "0" }).end();
   }
+}
+
+const STATUS_LINES = {
+  400: "HTTP/1.1 400 Bad Request",
+  408: "HTTP/1.1 408 Request Timeout",
+  431: "HTTP/1.1 431 Request Header Fields Too Large",
+} as const;
+
+/** An empty 400 (431 for headers over the limit, 408 for a request too slow), then close. */
+function answerClientError(error: Error & { code?: string }, socket: Duplex): void {
+  if (error.code === "ECONNRESET" || !socket.writable) {
+    socket.destroy();
+    return;
+  }
+  const status =
+    error.code === "HPE_HEADER_OVERFLOW"
+      ? 431
+      : error.code === "ERR_HTTP_REQUEST_TIMEOUT"
+        ? 408
+        : 400;
+  socket.end(`${STATUS_LINES[status]}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
 }
 
 /** Aborted when the caller goes away before its answer is complete: its Studio calls stop. */
@@ -72,6 +115,8 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     // A path the router cannot take (malformed escapes, an over-long segment) is not an action's.
     // forward() never throws: this handler runs outside Fastify's error handling.
     frameworkErrors: (_error, request, reply) => forward(forwarder, request, reply),
+    // A request Node's parser refuses: an empty answer, as the bridge's other errors.
+    clientErrorHandler: answerClientError,
     // A request (headers and body) must arrive within 5 minutes, Node's own default, which Fastify
     // turns off; long enough for a slow upload, and no connection waits forever.
     requestTimeout: 300_000,
@@ -84,9 +129,16 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     },
   });
 
+  app.server.on("connection", (socket: Socket) => {
+    peers.set(socket, plainAddress(socket.remoteAddress));
+  });
+
   app.decorateRequest("studio", {
     getter(this: FastifyRequest): StudioClient {
-      return studioClient(settings, plainAddress(this.ip), fetchImpl, callerGone.get(this.raw));
+      // Without trusted proxies the caller is the connection's peer, as taken on accept.
+      const caller =
+        settings.trustProxy.length > 0 ? plainAddress(this.ip) : (peers.get(this.raw.socket) ?? "");
+      return studioClient(settings, caller, fetchImpl, callerGone.get(this.raw));
     },
   });
 
@@ -100,6 +152,7 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     }
     const controller = new AbortController();
     callerGone.set(request.raw, controller.signal);
+    if (request.raw.socket.destroyed) controller.abort(new Error("the caller went away"));
     reply.raw.on("close", () => {
       if (!reply.raw.writableFinished) controller.abort(new Error("the caller went away"));
     });
@@ -107,6 +160,12 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   });
 
   app.setErrorHandler((error, request, reply) => {
+    // The caller left, which aborted its Studio calls: there is nobody to answer.
+    if (callerGone.get(request.raw)?.aborted === true || reply.raw.destroyed) {
+      request.log.debug({ err: error }, "the caller went away");
+      reply.hijack();
+      return;
+    }
     if (error instanceof StudioFailure) {
       if (error.status === 500) request.log.error({ err: error }, "Studio call failed");
       return sendEmpty(reply, error.status);

@@ -174,8 +174,9 @@ describe("when Studio is down or slow", () => {
     }
   });
 
-  it("stops the Studio call when the caller goes away", async () => {
+  it("stops the Studio call when the caller goes away, without logging an error", async () => {
     let abandonedAt: number | undefined;
+    const logs: string[] = [];
     const silent = await startStub((_request, res) => {
       res.on("close", () => (abandonedAt = Date.now()));
     });
@@ -183,6 +184,7 @@ describe("when Studio is down or slow", () => {
       bridge = await startBridge(
         { studioUrl: `${silent.url}/api/v1`, legacyUrl: legacy.url, studioTimeoutMs: 10_000 },
         registerTitle,
+        { logger: { level: "debug", stream: { write: (line: string) => logs.push(line) } } },
       );
       const { url } = bridge;
       const leftAt = await new Promise<number>((resolve) => {
@@ -203,6 +205,10 @@ describe("when Studio is down or slow", () => {
       }
       expect(abandonedAt).toBeDefined();
       expect(abandonedAt! - leftAt).toBeLessThan(1_000);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const entries = logs.map((line) => JSON.parse(line) as { level: number; msg: string });
+      expect(entries.filter((entry) => entry.level >= 50)).toEqual([]);
+      expect(entries.map((entry) => entry.msg)).toContain("the caller went away");
     } finally {
       await bridge?.close();
       bridge = undefined;
