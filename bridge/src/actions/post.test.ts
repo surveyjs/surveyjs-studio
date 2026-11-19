@@ -323,7 +323,8 @@ describe("post", () => {
   });
 
   it.each([
-    ["not JSON", "{q:1}"],
+    ["not JSON", "{q:"],
+    ["JSON with content after it", '{"q":1} x'],
     ["an array", "[1]"],
     ["a number", "5"],
   ])(
@@ -366,6 +367,48 @@ describe("post", () => {
     studio.override = (_request, res) => (res.writeHead(status).end(), true);
     const answer = await post(JSON.stringify({ postId: POST, surveyResult: "{}" }));
     expectEmpty(answer, status === 429 ? 429 : 500);
+  });
+
+  it("stores answers the old readers read leniently, as JSON", async () => {
+    const answer = await post(
+      JSON.stringify({ postId: POST, surveyResult: "{q: 1, 'a': 'b', /* c */ arr: [1, 2,],}" }),
+    );
+    expectEmpty(answer, 200);
+    expect(posted()[0]?.body).toEqual({ data: { q: 1, a: "b", arr: [1, 2] }, partial: false });
+  });
+
+  it("stores an answer named __proto__ as an ordinary answer", async () => {
+    await post(JSON.stringify({ postId: POST, surveyResult: '{"__proto__":{"x":1},"q":2}' }));
+    expect(studio.requests[0]?.body.toString()).toBe(
+      '{"data":{"__proto__":{"x":1},"q":2},"partial":false}',
+    );
+  });
+
+  it.each(["__proto__", "constructor", "toString"])(
+    "lists a validation error under the path %s",
+    async (name) => {
+      const answer = await post(`{"${name}":1 x}`);
+      expect(answer.status).toBe(400);
+      const body = JSON.parse(answer.body.toString()) as { errors: Record<string, unknown> };
+      expect(Object.keys(body.errors)).toEqual([name]);
+    },
+  );
+
+  it("answers an empty 413 for a body over 4 MiB", async () => {
+    const { data } = await sendRaw(
+      bridge.url,
+      "POST /public/Survey/post HTTP/1.1\r\nHost: b\r\nContent-Type: application/json\r\n" +
+        "Content-Length: 4194305\r\n\r\n{",
+    );
+    expect(data).toMatch(/^HTTP\/1\.1 413 /);
+    expect(studio.requests).toEqual([]);
+  });
+
+  it("reads a body of 4 MiB", async () => {
+    const answers = JSON.stringify({ q: "x".repeat(4 * 1024 * 1024 - 200) });
+    const body = JSON.stringify({ postId: POST, surveyResult: answers });
+    expect(Buffer.byteLength(body)).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expectEmpty(await post(body), 200);
   });
 
   it("answers an empty 413 for a body over the old host's 30,000,000 bytes", async () => {
@@ -462,6 +505,18 @@ describe("upload", () => {
       ]),
     );
     expectJsonString(answer, 200, `${prefix}${studio.storedFile.id}${extension}`);
+  });
+
+  it("takes a file over 4 MiB, the post limit", async () => {
+    const big = Buffer.alloc(5 * 1024 * 1024, 7);
+    const answer = await upload(
+      multipart([
+        { name: "postId", value: POST },
+        { name: "file", value: big, filename: "big.bin" },
+      ]),
+    );
+    expectJsonString(answer, 200, `dxsfile:${studio.storedFile.id}.bin`);
+    expect(studio.requests[0]!.body.length).toBeGreaterThan(big.length);
   });
 
   it("reads the postId field in any letter case", async () => {

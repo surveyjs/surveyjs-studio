@@ -20,10 +20,18 @@ export function oldRoute(
   methods: HTTPMethods[],
   names: string[],
   handler: RouteHandlerMethod,
-  options: { controller?: Controller } = {},
+  options: { controller?: Controller; bodyLimit?: number } = {},
 ): void {
+  const { bodyLimit } = options;
   for (const prefix of PREFIXES[options.controller ?? "public"]) {
-    for (const name of names) app.route({ method: methods, url: `${prefix}/${name}`, handler });
+    for (const name of names) {
+      app.route({
+        method: methods,
+        url: `${prefix}/${name}`,
+        handler,
+        ...(bodyLimit !== undefined && { bodyLimit }),
+      });
+    }
   }
 }
 

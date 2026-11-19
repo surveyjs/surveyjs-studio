@@ -25,8 +25,6 @@ declare module "fastify" {
 export interface BridgeDeps {
   /** For calls to Studio (tests). */
   fetch?: typeof fetch;
-  /** The clock (the `getSurvey` cache). */
-  now?: () => number;
   logger?: FastifyServerOptions["logger"];
   /** How long the old service may send nothing on a forwarded request (tests). */
   forwardTimeoutMs?: number;

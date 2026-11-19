@@ -4,7 +4,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { sendEmpty, sendJsonString, sendProblem, sendValidationProblem } from "../answers.js";
 import { EMPTY_GUID, parseGuid } from "../binding.js";
-import { bindJsonBody } from "../json-body.js";
+import { bindJsonBody, parseLenientJson } from "../json-body.js";
 import { oldRoute } from "../routes.js";
 import { unexpectedStatus } from "../studio.js";
 
@@ -46,16 +46,19 @@ function bodyBytes(request: FastifyRequest): Buffer {
   return Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
 }
 
-/** The answers in `surveyResult`: a JSON object, or `undefined` when it is not one. */
+/** The largest `post` body (bytes): far above any answer set Studio stores; larger is an empty 413. */
+export const MAX_POST_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The answers in `surveyResult`, read as the old API's readers read stored answers (its lenient
+ * JSON); `undefined` when they are not a JSON object.
+ */
 function answersOf(surveyResult: string): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(surveyResult);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  const parsed = parseLenientJson(surveyResult);
+  const value = parsed?.value;
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 /** `Path.GetExtension` of the old API: from the last dot of the last segment, `""` when it ends the name. */
@@ -68,51 +71,61 @@ function extensionOf(fileName: string): string {
 const IMAGE_EXTENSIONS = new Set(["jpeg", "jpg", "png", "bmp", "svg", "gif"]);
 
 export function registerPostActions(app: FastifyInstance): void {
-  oldRoute(app, ["POST"], ["post"], async (request, reply) => {
-    if (!isJson(mediaType(request))) return sendProblem(reply, 415);
-    const bytes = bodyBytes(request);
-    if (bytes.length === 0) {
-      return sendValidationProblem(reply, { "": ["A non-empty request body is required."] });
-    }
-    const { model, errors } = bindJsonBody(new TextDecoder().decode(bytes), POST_BODY);
-    if (Object.keys(errors).length > 0) return sendValidationProblem(reply, errors);
-    if (model === null) {
-      return sendValidationProblem(reply, { "": ["A non-empty request body is required."] });
-    }
+  oldRoute(
+    app,
+    ["POST"],
+    ["post"],
+    async (request, reply) => {
+      if (!isJson(mediaType(request))) return sendProblem(reply, 415);
+      const bytes = bodyBytes(request);
+      if (bytes.length === 0) {
+        return sendValidationProblem(reply, { "": ["A non-empty request body is required."] });
+      }
+      const { model, errors } = bindJsonBody(new TextDecoder().decode(bytes), POST_BODY);
+      if (Object.keys(errors).length > 0) return sendValidationProblem(reply, errors);
+      if (model === null) {
+        return sendValidationProblem(reply, { "": ["A non-empty request body is required."] });
+      }
 
-    const { postId = EMPTY_GUID, surveyResult, clientId, isPartialCompleted } = model;
-    if (surveyResult === undefined || surveyResult === null || surveyResult === "") {
-      return sendProblem(reply, 400);
-    }
-    if (postId === EMPTY_GUID) return sendJsonString(reply, 400, "Check parameter values.");
-    // The old API stored any text; its readers skipped what was not a JSON object.
-    const data = answersOf(surveyResult);
-    if (data === undefined) return sendEmpty(reply, 200);
-
-    const withClient = clientId !== undefined && clientId !== null && clientId !== "";
-    const { response } = await request.studio.POST("/public/posts/{postId}/responses", {
-      params: { path: { postId } },
-      body: {
-        data,
-        ...(withClient && { clientId }),
-        // Partial only with a client ID, as the old API stored it.
-        partial: withClient && isPartialCompleted === true,
-      },
-    });
-    switch (response.status) {
-      case 201:
+      const { postId = EMPTY_GUID, surveyResult, clientId, isPartialCompleted } = model;
+      if (surveyResult === undefined || surveyResult === null || surveyResult === "") {
+        return sendProblem(reply, 400);
+      }
+      if (postId === EMPTY_GUID) return sendJsonString(reply, 400, "Check parameter values.");
+      // The old API stored any text; its readers skipped what was not a JSON object. Nothing is
+      // stored here, so no marker is set, and an unknown post ID answers 200 too.
+      const data = answersOf(surveyResult);
+      if (data === undefined) {
+        request.log.warn({ postId }, "post: surveyResult is not a JSON object; nothing stored");
         return sendEmpty(reply, 200);
-      case 404:
-        return sendJsonString(reply, 400, "Check parameter values.");
-      case 413:
-        return sendJsonString(reply, 400, TOO_LARGE);
-      case 400:
-      case 422:
-        return sendJsonString(reply, 400, INVALID_INPUT);
-      default:
-        return unexpectedStatus(response);
-    }
-  });
+      }
+
+      const withClient = clientId !== undefined && clientId !== null && clientId !== "";
+      const { response } = await request.studio.POST("/public/posts/{postId}/responses", {
+        params: { path: { postId } },
+        body: {
+          data,
+          ...(withClient && { clientId }),
+          // Partial only with a client ID, as the old API stored it.
+          partial: withClient && isPartialCompleted === true,
+        },
+      });
+      switch (response.status) {
+        case 201:
+          return sendEmpty(reply, 200);
+        case 404:
+          return sendJsonString(reply, 400, "Check parameter values.");
+        case 413:
+          return sendJsonString(reply, 400, TOO_LARGE);
+        case 400:
+        case 422:
+          return sendJsonString(reply, 400, INVALID_INPUT);
+        default:
+          return unexpectedStatus(response);
+      }
+    },
+    { bodyLimit: MAX_POST_BYTES },
+  );
 
   oldRoute(app, ["POST"], ["upload"], async (request, reply) => {
     const type = mediaType(request);

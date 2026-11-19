@@ -69,7 +69,10 @@ async function respondentState(
   clientId: string,
 ): Promise<OldState> {
   const id = "surveyId" in key ? key.surveyId : key.resultId;
-  if (id === EMPTY_GUID || !isStudioClientId(clientId)) return "no";
+  // `.` and `..` are dot segments: a URL cannot carry them to Studio as a client ID.
+  if (id === EMPTY_GUID || !isStudioClientId(clientId) || clientId === "." || clientId === "..") {
+    return "no";
+  }
   const { data, response } =
     "surveyId" in key
       ? await request.studio.GET("/public/surveys/{surveyId}/respondents/{clientId}", {
@@ -99,8 +102,10 @@ export function registerSurveyActions(app: FastifyInstance, cache: SurveyCache):
     if (surveyId === undefined) return reply;
     const clientId = queryValue(request, "clientId") ?? "";
     if (clientId === "") return sendJsonString(reply, 400, "Check 'clientId' parameter");
-    const isCompleted = await respondentState(request, { surveyId }, clientId);
-    const survey = await definitionText(request, cache, surveyId);
+    const [isCompleted, survey] = await Promise.all([
+      respondentState(request, { surveyId }, clientId),
+      definitionText(request, cache, surveyId),
+    ]);
     if (survey === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
     // The old API parsed the definition as a JSON object and failed on anything else.
     if (!survey.startsWith("{")) return sendEmpty(reply, 500);

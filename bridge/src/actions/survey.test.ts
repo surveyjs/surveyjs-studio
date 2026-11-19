@@ -219,9 +219,10 @@ describe("getSurveyAndIsCompleted", () => {
     expect(answer.headers["content-type"]).toBe(JSON_UTF8);
     expect(JSON.parse(answer.body.toString())).toEqual({ survey: DEFINITION, isCompleted: old });
     expect(answer.body.toString().startsWith('{"survey":{')).toBe(true);
-    expect(studioPaths()).toEqual([
-      `GET /api/v1/public/surveys/${SURVEY}/respondents/client%201`,
+    // The two reads run in parallel.
+    expect(studioPaths().sort()).toEqual([
       `GET /api/v1/public/surveys/${SURVEY}/definition`,
+      `GET /api/v1/public/surveys/${SURVEY}/respondents/client%201`,
     ]);
   });
 
@@ -338,6 +339,16 @@ describe("isCompleted", () => {
     expect(answer.status).toBe(status);
     expect(answer.body.length).toBe(0);
   });
+
+  it.each([".", ".."])(
+    'answers "no" for the client ID %j, which a URL cannot carry, asking Studio nothing',
+    async (clientId) => {
+      studio.states.set(`${SURVEY}/${clientId}`, "completed");
+      const answer = await send(url(`resultId=${RESULT}&clientId=${clientId}`));
+      expect(answer.body.toString()).toBe('"no"');
+      expect(studio.requests).toEqual([]);
+    },
+  );
 
   it("answers in a route of any letter case under both prefixes", async () => {
     studio.states.set(`${SURVEY}/c1`, "completed");

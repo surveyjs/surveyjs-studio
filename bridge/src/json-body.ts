@@ -58,21 +58,22 @@ interface Container {
   index: number;
 }
 
-/** A reader or binding error, its message already carrying path, line and position. */
-class BindingError extends Error {
+/**
+ * A reader or binding error, its message already carrying path, line and position. Not an `Error`:
+ * a body can hold an error per property, and capturing a stack for each would cost more than the
+ * reading.
+ */
+class BindingError {
   constructor(
-    message: string,
+    readonly message: string,
     readonly path: string,
-  ) {
-    super(message);
-  }
+  ) {}
 }
 
 /** An error whose text the old API built from its own type names: the generic text instead. */
-class GenericError extends Error {
-  constructor(readonly path: string) {
-    super(GENERIC_INPUT_ERROR);
-  }
+class GenericError {
+  readonly message = GENERIC_INPUT_ERROR;
+  constructor(readonly path: string) {}
 }
 
 // .NET's char.IsWhiteSpace.
@@ -83,7 +84,22 @@ const PATH_SPECIAL = /[. '/"[\]()\t\n\r\f\b\\\u0085\u2028\u2029]/;
 const NUMBER_CHAR = /[-.0-9a-fA-FxX+]/;
 const SEPARATOR =
   /[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000,}\])/]/;
-const VALID_NUMBER = /^-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$/;
+// Unambiguous, so a long refused number is checked in linear time.
+const VALID_NUMBER = /^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$/;
+
+/** A character the old boolean parse trimmed: whitespace or NUL. */
+function isTrimmed(c: string): boolean {
+  return c.charCodeAt(0) === 0 || WHITESPACE.test(c);
+}
+
+/** The text without leading and trailing whitespace and NUL characters (a scan, linear time). */
+function trimWhitespaceAndNul(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isTrimmed(text[start]!)) start += 1;
+  while (end > start && isTrimmed(text[end - 1]!)) end -= 1;
+  return text.slice(start, end);
+}
 
 function escapePathName(name: string): string {
   // eslint-disable-next-line no-control-regex -- control characters are escaped in a path
@@ -110,7 +126,10 @@ class Reader {
   private current: Token = "None";
   value: string | boolean | null = null;
 
-  constructor(private readonly text: string) {}
+  constructor(
+    private readonly text: string,
+    private readonly maxDepth: number = MAX_DEPTH,
+  ) {}
 
   /** The current token (a method, so a check of it does not outlive the next read). */
   token(): Token {
@@ -207,8 +226,8 @@ class Reader {
     this.current = type === "object" ? "StartObject" : "StartArray";
     this.state = type === "object" ? "ObjectStart" : "ArrayStart";
     this.value = null;
-    if (this.stack.length > MAX_DEPTH) {
-      throw this.error(`The reader's MaxDepth of ${MAX_DEPTH} has been exceeded.`);
+    if (this.stack.length > this.maxDepth) {
+      throw this.error(`The reader's MaxDepth of ${this.maxDepth} has been exceeded.`);
     }
   }
 
@@ -250,8 +269,14 @@ class Reader {
         continue;
       }
       if (c !== "\\") {
-        value += c;
-        this.pos += 1;
+        // A run of ordinary characters at once.
+        const start = this.pos;
+        while (this.pos < this.text.length) {
+          const next = this.text[this.pos];
+          if (next === quote || next === "\\" || next === "\r" || next === "\n") break;
+          this.pos += 1;
+        }
+        value += this.text.slice(start, this.pos);
         continue;
       }
       this.pos += 1;
@@ -539,8 +564,7 @@ class Reader {
           const text = this.string();
           if (kind === "string") return this.setValue("String", text);
           if (text === "") return this.setValue("Null", null);
-          // eslint-disable-next-line no-control-regex -- the old parse trimmed NUL characters too
-          const trimmed = text.replace(/^[\s\u0000]+|[\s\u0000]+$/g, "").toLowerCase();
+          const trimmed = trimWhitespaceAndNul(text).toLowerCase();
           if (trimmed === "true" || trimmed === "false") {
             return this.setValue("Boolean", trimmed === "true");
           }
@@ -594,6 +618,15 @@ class Reader {
     }
   }
 
+  /** Whether only whitespace and comments are left. */
+  atEnd(): boolean {
+    for (;;) {
+      if (this.char === undefined) return true;
+      if (this.char === "/") this.comment();
+      else if (!this.eatSpace()) return false;
+    }
+  }
+
   /** Skips the current property's value, or the current container, as the old reader did. */
   skip(): void {
     if (this.current === "PropertyName") this.read();
@@ -604,15 +637,24 @@ class Reader {
   }
 }
 
+/** An integer's digits without a plus sign or leading zeros (`-0` is `0`); other text as it is. */
+function normalizedInteger(text: string): string {
+  const negative = text.startsWith("-");
+  const digits = negative ? text.slice(1) : text;
+  if (!/^[0-9]+$/.test(digits)) return text;
+  let first = 0;
+  while (first < digits.length - 1 && digits[first] === "0") first += 1;
+  const value = digits.slice(first);
+  return negative && value !== "0" ? `-${value}` : value;
+}
+
 /** How the old reader showed a value in "Error converting value …". */
 function shown(reader: Reader): string {
   switch (reader.token()) {
     case "String":
       return `"${String(reader.value)}"`;
     case "Integer":
-      return /^-?[0-9]+$/.test(String(reader.value))
-        ? BigInt(String(reader.value)).toString()
-        : String(reader.value);
+      return normalizedInteger(String(reader.value));
     case "Float":
       return String(Number(reader.value));
     case "Boolean":
@@ -660,7 +702,8 @@ export function bindJsonBody<P extends Record<string, PropertyKind>>(
   properties: P,
 ): BindResult<P> {
   const reader = new Reader(text);
-  const errors: Record<string, string[]> = {};
+  // No prototype: a path such as `__proto__` or `constructor` is an ordinary key.
+  const errors = Object.create(null) as Record<string, string[]>;
   const record = (error: unknown, member: string | null): void => {
     if (!(error instanceof BindingError) && !(error instanceof GenericError)) throw error;
     const key = errorKey(error.path, member);
@@ -710,4 +753,58 @@ export function bindJsonBody<P extends Record<string, PropertyKind>>(
     record(error, null);
   }
   return { model: model as BoundModel<P> | null, errors };
+}
+
+/** The depth the old readers of stored answers allowed. */
+const ANSWERS_MAX_DEPTH = 64;
+
+/** The value at the reader's current token, containers read to their end. */
+function valueAt(reader: Reader): unknown {
+  switch (reader.token()) {
+    case "StartObject": {
+      // No prototype: an answer named `__proto__` is an ordinary property.
+      const object = Object.create(null) as Record<string, unknown>;
+      for (;;) {
+        if (!reader.read()) throw reader.error("Unexpected end when reading JSON.");
+        if (reader.token() === "EndObject") return object;
+        const name = String(reader.value);
+        if (!reader.read()) throw reader.error("Unexpected end when reading JSON.");
+        object[name] = valueAt(reader);
+      }
+    }
+    case "StartArray": {
+      const array: unknown[] = [];
+      for (;;) {
+        if (!reader.read()) throw reader.error("Unexpected end when reading JSON.");
+        if (reader.token() === "EndArray") return array;
+        array.push(valueAt(reader));
+      }
+    }
+    case "Integer":
+    case "Float": {
+      const number = Number(reader.value);
+      return Number.isFinite(number) ? number : null;
+    }
+    case "String":
+    case "Boolean":
+      return reader.value;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Parses stored answers as the old API's readers did: the lenient syntax of its reader, depth up to
+ * 64, nothing but comments after the value. `undefined` when the text is not such JSON.
+ */
+export function parseLenientJson(text: string): { value: unknown } | undefined {
+  const reader = new Reader(text, ANSWERS_MAX_DEPTH);
+  try {
+    if (!reader.read()) return undefined;
+    const value = valueAt(reader);
+    return reader.atEnd() ? { value } : undefined;
+  } catch (error) {
+    if (error instanceof BindingError) return undefined;
+    throw error;
+  }
 }
