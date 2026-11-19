@@ -2,6 +2,7 @@
 // through Studio's `getQuestionSummary`, and `getSurveyPublicResults`, every public result through
 // Studio's `getPublicResults`, paged to the end and streamed as the pages come.
 import { Readable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { jsonContentType, sendJsonString, sendProblem } from "../answers.js";
 import { EMPTY_GUID, guidParameter, parseGuid } from "../binding.js";
@@ -14,7 +15,7 @@ import {
   questionResultEntries,
 } from "../dotnet-format.js";
 import { oldRoute, queryValue } from "../routes.js";
-import { unexpectedStatus } from "../studio.js";
+import { StudioFailure, unexpectedStatus } from "../studio.js";
 
 /** The old `getResult`'s response header (its answers, refusals included, but not its errors). */
 const CACHE_CONTROL = "private, max-age=3600, must-revalidate";
@@ -23,8 +24,11 @@ const CHECK_PARAMETERS = "Check parameter values.";
 /** The longest question name Studio takes, in characters (the contract's limit). */
 const MAX_QUESTION_NAME = 256;
 /**
- * The name asked for when the real one cannot reach Studio: its counts are not used, only the
- * survey's totals, which are the same for every name.
+ * The name asked for when the real one cannot reach Studio (longer than Studio takes, or a dot
+ * segment a URL cannot carry). The old API answered such a name as a question without answers,
+ * with the survey's totals; those totals are the same whatever name is asked for, so the bridge
+ * asks for this one and uses only them. Studio's request logs show these calls as
+ * `…/questions/_`.
  */
 const STAND_IN_NAME = "_";
 
@@ -135,6 +139,25 @@ function resultRow(item: ResultPage["items"][number], hidden: ReadonlySet<string
   return oldJson(row);
 }
 
+/** The wait for a later page without a `Retry-After`, and the longest one (seconds). */
+const DEFAULT_RETRY_WAIT_S = 60;
+const MAX_RETRY_WAIT_S = 120;
+
+/**
+ * How long to wait before reading a page again after Studio's `429`: its `Retry-After` (seconds,
+ * or an HTTP date), 60 s without one, at most 120 s.
+ */
+export function retryDelayMs(retryAfter: string | null, now = Date.now()): number {
+  let seconds = DEFAULT_RETRY_WAIT_S;
+  const text = retryAfter?.trim() ?? "";
+  if (/^[0-9]+$/.test(text)) seconds = Number(text);
+  else if (text !== "") {
+    const at = Date.parse(text);
+    if (!Number.isNaN(at)) seconds = Math.max(0, (at - now) / 1000);
+  }
+  return Math.min(seconds, MAX_RETRY_WAIT_S) * 1000;
+}
+
 /** The largest page Studio gives. */
 const PAGE_LIMIT = 1000;
 
@@ -175,6 +198,29 @@ async function getSurveyPublicResults(
   const firstPage = readPage(first.data);
   const hidden = new Set(firstPage.privateQuestions);
 
+  /**
+   * A page after the first. The answer has started, so Studio's rate limit (`429`) can no longer
+   * be passed on: the bridge waits as Studio asks and reads the page again, for as long as the
+   * caller stays; when the caller leaves, the wait ends and nothing more is read.
+   */
+  async function laterPage(cursor: string): Promise<ResultPage> {
+    for (;;) {
+      request.callerGone.throwIfAborted();
+      try {
+        const next = await fetchPage(cursor);
+        if (next.response.status !== 200 || next.data === undefined) {
+          return unexpectedStatus(next.response);
+        }
+        return readPage(next.data);
+      } catch (error) {
+        if (!(error instanceof StudioFailure) || error.status !== 429) throw error;
+        const waitMs = retryDelayMs(error.retryAfter);
+        request.log.info({ surveyId, waitMs }, "public results: Studio's rate limit, waiting");
+        await sleep(waitMs, undefined, { signal: request.callerGone });
+      }
+    }
+  }
+
   // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
   // answer has started cuts it off, as the old API's failures mid-stream did.
   async function* body(): AsyncGenerator<string> {
@@ -188,11 +234,7 @@ async function getSurveyPublicResults(
         written += page.items.length;
       }
       if (page.nextCursor === null) break;
-      const next = await fetchPage(page.nextCursor);
-      if (next.response.status !== 200 || next.data === undefined) {
-        return unexpectedStatus(next.response);
-      }
-      page = readPage(next.data);
+      page = await laterPage(page.nextCursor);
     }
     yield `],"ResultCount":${written}}`;
   }

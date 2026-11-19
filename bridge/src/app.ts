@@ -21,6 +21,8 @@ declare module "fastify" {
     readonly studio: StudioClient;
     /** As `studio`, for reading a file: its bytes may take `BRIDGE_FILE_TIMEOUT_MS` to stream. */
     readonly studioFiles: StudioClient;
+    /** Aborted when the caller goes away before its answer is complete. */
+    readonly callerGone: AbortSignal;
   }
 }
 
@@ -144,6 +146,11 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   app.decorateRequest("studio", {
     getter(this: FastifyRequest): StudioClient {
       return studioClient(settings, callerOf(this), fetchImpl, callerGone.get(this.raw));
+    },
+  });
+  app.decorateRequest("callerGone", {
+    getter(this: FastifyRequest): AbortSignal {
+      return callerGone.get(this.raw) ?? new AbortController().signal;
     },
   });
   app.decorateRequest("studioFiles", {

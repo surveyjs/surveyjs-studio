@@ -14,11 +14,17 @@ export class StudioFailure extends Error {
   constructor(
     readonly status: 429 | 500,
     message: string,
-    options?: ErrorOptions,
+    options?: ErrorOptions & {
+      /** A `429`'s `Retry-After` header as Studio sent it; `null` without one. */
+      retryAfter?: string | null;
+    },
   ) {
     super(message, options);
     this.name = "StudioFailure";
+    this.retryAfter = options?.retryAfter ?? null;
   }
+
+  readonly retryAfter: string | null;
 }
 
 /** For a status the action does not map to an old answer: an empty `500`. */
@@ -32,6 +38,47 @@ function abortAfter(controller: AbortController, ms: number): NodeJS.Timeout {
     () => controller.abort(new DOMException("The operation timed out.", "TimeoutError")),
     ms,
   ).unref();
+}
+
+/**
+ * The response with its body's deadline `timer` cleared once the body has been read to its end,
+ * has failed, or has been cancelled (the caller left), so no timer outlives the file it guards.
+ */
+export function withBodyDeadline(response: Response, timer: NodeJS.Timeout): Response {
+  const source = response.body;
+  if (source === null) {
+    clearTimeout(timer);
+    return response;
+  }
+  const reader = source.getReader();
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            clearTimeout(timer);
+            controller.close();
+          } else {
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          clearTimeout(timer);
+          controller.error(error);
+        }
+      },
+      cancel(reason) {
+        clearTimeout(timer);
+        return reader.cancel(reason);
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 /**
@@ -60,8 +107,8 @@ export function studioClient(
     try {
       const signal = AbortSignal.any([...signals, deadline.signal]);
       const response = await fetchImpl(new Request(request, { signal }));
-      abortAfter(deadline, bodyTimeoutMs);
-      return response;
+      clearTimeout(headersTimer);
+      return withBodyDeadline(response, abortAfter(deadline, bodyTimeoutMs));
     } finally {
       clearTimeout(headersTimer);
     }
@@ -78,6 +125,7 @@ export function studioClient(
       throw new StudioFailure(
         response.status === 429 ? 429 : 500,
         `Studio answered ${response.status}`,
+        { retryAfter: response.headers.get("retry-after") },
       );
     },
   });

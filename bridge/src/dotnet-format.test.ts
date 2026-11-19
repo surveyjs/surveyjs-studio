@@ -255,16 +255,27 @@ describe("parseDateArgument: from and till as the old API parsed them", () => {
     ["2024/01/02", "2024-01-02T00:00:00Z"],
     ["01/02/2024", "2024-01-02T00:00:00Z"],
     ["1/2/2024 13:00:00", "2024-01-02T13:00:00Z"],
+    ["Wed, 01 Apr 2026 10:00:00 GMT", "2026-04-01T10:00:00Z"],
+    ["wed, 1 apr 2026 10:00 utc", "2026-04-01T10:00:00Z"],
+    ["01 Apr 2026 10:00:00 GMT", "2026-04-01T10:00:00Z"],
+    ["01 Apr 2026 10:00:00", "2026-04-01T10:00:00Z"],
   ])("%j → %s", (text, rfc3339) => {
     expect(parseDateArgument(text)).toBe(rfc3339);
   });
 
-  it.each(["", "yesterday", "2024-13-01", "2024-02-30", "2024-01-01T25:00", "2024-01-01T10"])(
-    "%j is malformed: no bound",
-    (text) => {
-      expect(parseDateArgument(text)).toBeUndefined();
-    },
-  );
+  it.each([
+    "",
+    "yesterday",
+    "2024-13-01",
+    "2024-02-30",
+    "2024-01-01T25:00",
+    "2024-01-01T10",
+    "Tue, 01 Apr 2026 10:00:00 GMT",
+    "31 Feb 2026 10:00:00 GMT",
+    "01 Foo 2026 10:00:00 GMT",
+  ])("%j is malformed: no bound", (text) => {
+    expect(parseDateArgument(text)).toBeUndefined();
+  });
 });
 
 describe("contentDisposition: the old download header", () => {
@@ -287,6 +298,8 @@ describe("linear time on adversarial input (about 1 MB)", () => {
     expectFast(() => parseDateArgument(`2024-01-01${" ".repeat(mega)}x`));
     expectFast(() => parseDateArgument(`${"1".repeat(mega)}`));
     expectFast(() => parseDateArgument(`1/1/2024${" ".repeat(mega)}1:00${" ".repeat(mega)}x`));
+    expectFast(() => parseDateArgument(`Wed,${" ".repeat(mega)}01${" ".repeat(mega)}Apr x`));
+    expectFast(() => parseDateArgument(`01 Apr 2026 10:00:00${" ".repeat(mega)}x`));
   });
 
   it("parseOldDate and oldTime", () => {

@@ -3,6 +3,7 @@
 // `upload` answered (a Studio file ID with its extension, with or without the `dxsimage:` or
 // `dxsfile:` prefix) reads through Studio's `downloadFile`; any other through `getLegacyFile`.
 // The bytes stream through as Studio sends them, within `BRIDGE_FILE_TIMEOUT_MS`.
+import { validateHeaderValue } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -30,18 +31,22 @@ type Target =
   /** A name no file can have (a path, a dot segment, a space…): the old answer for no file. */
   | "unknown";
 
-/** The Studio file a name answered by `upload` names: 64 hex digits, then the original extension. */
-function studioFile(name: string): { fileId: string; name: string } | undefined {
+/** An extension after a Studio file ID: the legacy names' characters, no further dot. */
+const EXTENSION = /^\.[A-Za-z0-9_-]*$/;
+
+/**
+ * The Studio file a name answered by `upload` names: 64 hex digits, then the original extension.
+ * `"refused"` when the extension has any other character (it would reach a response header);
+ * `undefined` when the name is no such name.
+ */
+function studioFile(name: string): { fileId: string; name: string } | "refused" | undefined {
   const prefix = UPLOAD_PREFIXES.find((candidate) => name.startsWith(candidate));
   const rest = prefix === undefined ? name : name.slice(prefix.length);
   const fileId = rest.slice(0, 64);
   const extension = rest.slice(64);
   if (!STUDIO_FILE_ID.test(fileId)) return undefined;
-  // The extension `upload` kept: from the name's last dot, no path in it.
-  if (extension !== "" && (extension[0] !== "." || /[./\\]/.test(extension.slice(1)))) {
-    return undefined;
-  }
-  return { fileId, name: rest };
+  if (extension === "" || EXTENSION.test(extension)) return { fileId, name: rest };
+  return extension.startsWith(".") ? "refused" : undefined;
 }
 
 /**
@@ -86,16 +91,28 @@ async function sendFile(
           parseAs: "stream",
         });
   if (response.status === 404) return false;
+  const body = data as WebReadableStream<Uint8Array> | null | undefined;
   if (response.status !== 200) {
-    if (response.ok) await response.body?.cancel().catch(() => undefined);
+    if (response.ok) await body?.cancel().catch(() => undefined);
     return unexpectedStatus(response);
   }
-  reply.code(200).headers(headers(response));
-  const length = response.headers.get("content-length");
-  if (length !== null) reply.header("content-length", length);
+  let answer: Record<string, string>;
+  // Checked before anything is written: a header Node refuses would otherwise fail the answer
+  // once it has started, with the framework's own error text and Studio's stream left open.
+  try {
+    answer = headers(response);
+    const length = response.headers.get("content-length");
+    if (length !== null) answer["content-length"] = length;
+    for (const [name, value] of Object.entries(answer)) validateHeaderValue(name, value);
+  } catch (error) {
+    request.log.warn({ err: error }, "a file's header cannot be sent");
+    await body?.cancel().catch(() => undefined);
+    return sendEmpty(reply, 500);
+  }
+  reply.code(200).headers(answer);
   // An empty file comes without a body.
-  if (data === undefined || data === null) return reply.send(Buffer.alloc(0));
-  return reply.send(Readable.fromWeb(data as WebReadableStream<Uint8Array>));
+  if (body === undefined || body === null) return reply.send(Buffer.alloc(0));
+  return reply.send(Readable.fromWeb(body));
 }
 
 /** `image` and `file`: a respondent's file by `filePath`. */

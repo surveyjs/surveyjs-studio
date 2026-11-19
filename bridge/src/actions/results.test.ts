@@ -1,6 +1,7 @@
 import { get } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { send, startBridge, startStub, type RunningBridge, type Stub } from "../testing/http.js";
+import { retryDelayMs } from "./results.js";
 import { startFakeStudio, type FakeStudio } from "../testing/studio-stub.js";
 
 const RESULT = "9b7d3c1e-2f4a-4b6c-8d0e-1f2a3b4c5d6e";
@@ -406,5 +407,90 @@ describe("getSurveyPublicResults", () => {
     expect(answer.status).toBe(200);
     expect(answer.complete).toBe(false);
     expect(answer.body).toContain('{"Data":[{"satisfaction":4');
+  });
+});
+
+describe("getSurveyPublicResults under Studio's rate limit", () => {
+  const address = () => `${bridge.url}/private/Surveys/getSurveyPublicResults/${SURVEY}`;
+
+  beforeEach(() => {
+    studio.pageSize = 1;
+    studio.publicResults.set(SURVEY, {
+      items: Array.from({ length: 4 }, (_, i) => item(`2026-10-0${i + 1}T00:00:00Z`, { n: i + 1 })),
+    });
+  });
+
+  it("waits as a later page's 429 asks and completes the same answer", async () => {
+    let limited = 0;
+    studio.override = (request, res) => {
+      // Page 3 is limited once.
+      if (!request.url.includes("cursor=2") || limited > 0) return false;
+      limited += 1;
+      res.writeHead(429, { "retry-after": "1" }).end();
+      return true;
+    };
+    const started = Date.now();
+    const answer = await send(address());
+    expect(answer.status).toBe(200);
+    const body = JSON.parse(answer.body.toString()) as {
+      Data: { n: number }[];
+      ResultCount: number;
+    };
+    expect(body.Data.map((row) => row.n)).toEqual([1, 2, 3, 4]);
+    expect(body.ResultCount).toBe(4);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+    expect(studio.requests.filter((request) => request.url.includes("cursor=2"))).toHaveLength(2);
+  });
+
+  it("stops reading pages when the caller leaves during the wait", async () => {
+    studio.override = (request, res) => {
+      if (!request.url.includes("cursor=")) return false;
+      res.writeHead(429, { "retry-after": "1" }).end();
+      return true;
+    };
+    await new Promise<void>((resolve) => {
+      const request = get(address(), { agent: false }, (res) => {
+        res.once("data", () => {
+          // Leave once Studio has refused the second page and the bridge waits.
+          const check = setInterval(() => {
+            if (studio.requests.length >= 2) {
+              clearInterval(check);
+              request.destroy();
+              resolve();
+            }
+          }, 10);
+        });
+      });
+      request.on("error", () => undefined);
+    });
+    const seen = studio.requests.length;
+    await new Promise((resolve) => setTimeout(resolve, 1_600));
+    expect(studio.requests).toHaveLength(seen);
+  });
+
+  it("passes a 429 on the first page on as an empty 429, without waiting", async () => {
+    studio.override = (_request, res) => {
+      res.writeHead(429, { "retry-after": "30" }).end();
+      return true;
+    };
+    const started = Date.now();
+    expectEmpty(await send(address()), 429);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(studio.requests).toHaveLength(1);
+  });
+});
+
+describe("retryDelayMs", () => {
+  it.each([
+    ["5", 5_000],
+    [" 0 ", 0],
+    [null, 60_000],
+    ["", 60_000],
+    ["soon", 60_000],
+    ["600", 120_000],
+    ["Wed, 01 Apr 2026 10:00:30 GMT", 30_000],
+    ["Wed, 01 Apr 2026 09:00:00 GMT", 0],
+  ])("Retry-After %j → %d ms", (header, ms) => {
+    expect(retryDelayMs(header, Date.parse("2026-04-01T10:00:00Z"))).toBe(ms);
   });
 });

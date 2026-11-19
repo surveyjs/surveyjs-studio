@@ -326,3 +326,74 @@ describe("file reads stream with their own time limit (BRIDGE_FILE_TIMEOUT_MS)",
     expect(Date.now() - started).toBeLessThan(1_400);
   });
 });
+
+describe("file names and headers that cannot be sent", () => {
+  it.each([
+    ["a control character", `${FILE_ID}.a\r\nb`],
+    ["a space", `${FILE_ID}.a b`],
+    ["a further dot", `dxsfile:${FILE_ID}.tar.gz`],
+    ["a quote", `${FILE_ID}.p"ng`],
+  ])(
+    "answers a Studio file name whose extension has %s with an empty 500, without asking Studio",
+    async (_case, name) => {
+      for (const action of ["image", "file"]) {
+        const answer = await send(
+          `${bridge.url}/public/Survey/${action}?filePath=${encodeURIComponent(name)}`,
+        );
+        expectEmpty(answer, 500);
+      }
+      expect(studio.requests).toEqual([]);
+    },
+  );
+
+  it("answers a header Node refuses with an empty 500 and closes Studio's answer", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull: () => new Promise(() => undefined),
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    const odd = await startBridge(
+      { studioUrl: "http://studio.test/api/v1", legacyUrl: legacy.url },
+      undefined,
+      {
+        fetch: () =>
+          Promise.resolve(new Response(body, { headers: { "content-type": "image/\u0001png" } })),
+      },
+    );
+    try {
+      const answer = await send(`${odd.url}/public/Survey/image?filePath=${LEGACY}`);
+      expectEmpty(answer, 500);
+      expect(cancelled).toBe(true);
+    } finally {
+      await odd.close();
+    }
+  });
+
+  it("closes Studio's answer when the caller leaves in the middle of a file", async () => {
+    let closed = false;
+    studio.override = (_request, res) => {
+      res.on("close", () => (closed = true));
+      res.writeHead(200, { "content-type": "image/png", "content-length": "100000" }).write("1234");
+      return true;
+    };
+    await new Promise<void>((resolve, reject) => {
+      const request = get(
+        `${bridge.url}/public/Survey/image?filePath=${LEGACY}`,
+        { agent: false },
+        (res) => {
+          res.once("data", () => {
+            request.destroy();
+            resolve();
+          });
+        },
+      );
+      request.on("error", () => undefined);
+      request.on("timeout", reject);
+    });
+    const deadline = Date.now() + 2_000;
+    while (!closed && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
+    expect(closed).toBe(true);
+  });
+});

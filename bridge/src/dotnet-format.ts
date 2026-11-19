@@ -356,7 +356,8 @@ export function questionResultEntries(
 
 // `from`/`till` as the old API parsed them (the forms callers send): `yyyy-M-d` or `yyyy/M/d` or
 // `M/d/yyyy`, an optional time `H:mm[:ss[.fffffff]]` after `T` or spaces, and an optional `Z` or
-// offset. Unambiguous: each repetition is followed by something it cannot match.
+// offset; or an HTTP date (RFC_1123 below). Unambiguous: each repetition is followed by something
+// it cannot match.
 const DATE_ARGUMENT =
   /^(?:(\d{4})[-/](\d{1,2})[-/](\d{1,2})|(\d{1,2})\/(\d{1,2})\/(\d{4}))(?:(?:T|\s+)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?\s*(?:(Z)|([+-])(\d{2})(?::?(\d{2}))?)?$/i;
 
@@ -366,21 +367,60 @@ const DATE_ARGUMENT =
  * (it then applied no bound), or in a form the bridge does not read.
  */
 export function parseDateArgument(text: string): string | undefined {
-  const match = DATE_ARGUMENT.exec(text.trim());
-  if (match === null) return undefined;
+  const trimmed = text.trim();
+  const match = DATE_ARGUMENT.exec(trimmed);
+  if (match === null) return parseRfc1123(trimmed);
   const [, y1, m1, d1, m2, d2, y2, h = "0", mi = "0", s = "0", fraction = ""] = match;
   const [sign, zoneHour = "0", zoneMinute = "0"] = match.slice(12);
-  const year = Number(y1 ?? y2);
-  const month = Number(m1 ?? m2);
-  const day = Number(d1 ?? d2);
-  const [hour, minute, second] = [Number(h), Number(mi), Number(s)];
+  const offset =
+    sign === undefined ? 0 : (sign === "+" ? 1 : -1) * (Number(zoneHour) * 60 + Number(zoneMinute));
+  return utcArgument(
+    [Number(y1 ?? y2), Number(m1 ?? m2), Number(d1 ?? d2), Number(h), Number(mi), Number(s)],
+    fraction,
+    offset,
+  );
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// The HTTP date form (RFC 1123), `Wed, 01 Apr 2026 10:00:00 GMT`, the weekday optional. Each
+// repetition is followed by something it cannot match.
+const RFC_1123 =
+  /^(?:([a-z]{3}),\s*)?(\d{1,2})\s+([a-z]{3})\s+(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(?:GMT|UTC|Z)?$/i;
+
+/** An HTTP date as RFC 3339 in UTC; a weekday that does not match the date is refused, as the old API refused it. */
+function parseRfc1123(text: string): string | undefined {
+  const match = RFC_1123.exec(text);
+  if (match === null) return undefined;
+  const [, weekday, d, monthName = "", y, h, mi, s = "0"] = match;
+  const month = MONTHS.indexOf(monthName.toLowerCase()) + 1;
+  if (month === 0) return undefined;
+  const parts = [Number(y), month, Number(d), Number(h), Number(mi), Number(s)] as const;
+  const result = utcArgument(parts, "", 0);
+  if (result === undefined || weekday === undefined) return result;
+  const actual = new Date(epochMs(...parts)).getUTCDay();
+  return WEEKDAYS[actual] === weekday.toLowerCase() ? result : undefined;
+}
+
+/** A checked date and time, less `offsetMinutes`, as RFC 3339 in UTC; `undefined` when invalid. */
+function utcArgument(
+  [year, month, day, hour, minute, second]: readonly [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ],
+  fraction: string,
+  offsetMinutes: number,
+): string | undefined {
   if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
     return undefined;
   }
   if (hour > 23 || minute > 59 || second > 59) return undefined;
-  const offset =
-    sign === undefined ? 0 : (sign === "+" ? 1 : -1) * (Number(zoneHour) * 60 + Number(zoneMinute));
-  const ms = epochMs(year, month, day, hour, minute, second) - offset * 60_000;
+  const ms = epochMs(year, month, day, hour, minute, second) - offsetMinutes * 60_000;
   if (ms < MIN_MS || ms > MAX_MS) return undefined;
   const digits = fraction.slice(0, 7);
   const wall = isoWall({ ms, fraction: "0000000", kind: "utc" });

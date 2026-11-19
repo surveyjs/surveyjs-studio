@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sendJsonString } from "./answers.js";
 import { oldRoute, queryValue } from "./routes.js";
-import { studioClient, unexpectedStatus } from "./studio.js";
+import { studioClient, unexpectedStatus, withBodyDeadline } from "./studio.js";
 import {
   closedUrl,
   send,
@@ -268,5 +268,39 @@ describe("studioClient", () => {
     expect(data?.name).toBe("Hello");
     expect(seen[0]!.url).toBe("http://studio.test/api/v1/public/surveys/a%20b");
     expect(seen[0]!.headers.get("x-forwarded-for")).toBe("192.0.2.4");
+  });
+});
+
+describe("withBodyDeadline: a file body's timer ends with the body", () => {
+  const timer = (fired: { value: boolean }) => setTimeout(() => (fired.value = true), 50);
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 120));
+
+  it("clears the timer once the body has been read to its end", async () => {
+    const fired = { value: false };
+    const response = withBodyDeadline(new Response("abc", { status: 200 }), timer(fired));
+    expect(await response.text()).toBe("abc");
+    await pause();
+    expect(fired.value).toBe(false);
+  });
+
+  it("clears the timer when the body is cancelled", async () => {
+    const fired = { value: false };
+    const source = new ReadableStream({ pull: () => new Promise(() => undefined) });
+    const response = withBodyDeadline(new Response(source), timer(fired));
+    await response.body!.cancel();
+    await pause();
+    expect(fired.value).toBe(false);
+  });
+
+  it("clears the timer of an answer without a body, and keeps status and headers", async () => {
+    const fired = { value: false };
+    const response = withBodyDeadline(
+      new Response(null, { status: 404, headers: { "x-a": "1" } }),
+      timer(fired),
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-a")).toBe("1");
+    await pause();
+    expect(fired.value).toBe(false);
   });
 });
