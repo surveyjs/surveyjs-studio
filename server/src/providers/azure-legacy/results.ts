@@ -153,6 +153,10 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
       };
     },
 
+    hasPartial() {
+      return Promise.reject(new Error("hasPartial: not built yet (hosted Step 4, Task 5)"));
+    },
+
     async completion(survey, clientId) {
       const marker = await entityAt("completion read", markers(survey), clientId);
       if (marker === null) return "none";

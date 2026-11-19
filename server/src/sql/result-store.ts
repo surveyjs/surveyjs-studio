@@ -147,6 +147,8 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
         lastSubmittedAt: row.last === null ? null : isoOf(row.last),
       };
     },
+    hasPartial: () =>
+      Promise.reject(new Error("hasPartial: not built yet (hosted Step 4, Task 4)")),
     completion: async (survey, clientId): Promise<CompletionState> => {
       const row = await db
         .selectFrom("completion_markers")

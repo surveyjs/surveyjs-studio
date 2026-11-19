@@ -46,7 +46,10 @@ export interface SurveyPageQuery {
 export interface SurveyPage {
   /** At most `limit` items, in list order. May be shorter than `limit` even when more follow (skipped legacy rows). */
   readonly items: SurveyRecord[];
-  /** Position of the last row this page covered when more rows follow; null on the last page. */
+  /**
+   * First-row position of the last response returned when more follow; null on the last page.
+   * A response is a run of one client's rows read as one (ADR 0038).
+   */
   readonly next: SurveyPosition | null;
 }
 
@@ -92,7 +95,10 @@ export interface ResponsePage {
    * follow (legacy rows the domain cannot represent are skipped, never repeated).
    */
   readonly items: SurveyResponse[];
-  /** Position of the last row this page covered when more rows follow; null on the last page. */
+  /**
+   * First-row position of the last response returned when more follow; null on the last page.
+   * A response is a run of one client's rows read as one (ADR 0038).
+   */
   readonly next: ResponsePosition | null;
 }
 
@@ -157,27 +163,33 @@ export interface ResultStore {
   /**
    * Stores the response unless one with this id (case-insensitive) exists for the survey.
    * - absent: stores `{ id lower-case, submittedAt, data (a copy), clientId?, respondentIp?, partial:
-   *   false }`, then, when `clientId` is given, writes or overwrites that client's marker as complete;
-   *   -> "stored".
+   *   response.partial === true }`, then, when `clientId` is given, writes or overwrites that client's
+   *   marker (partial when the response is, else complete); -> "stored".
    * - present: the stored response is not changed; when `clientId` is given the client's marker is
-   *   (re)written as complete (repairs a marker lost to a failure after the row); -> "exists".
+   *   (re)written with the posted state (repairs a marker lost to a failure after the row); -> "exists".
    * Rejects (nothing written) when `id` is not a GUID. azure-legacy rejects with ResponseTooLargeError
    * (nothing written) when JSON.stringify(data) is longer than 32,768 UTF-16 code units.
    */
   appendResponse(survey: SurveyRecord, response: NewResponse): Promise<AppendOutcome>;
   /** Whether the survey has a response with this id (case-insensitive); false for a non-GUID id. */
   hasResponse(survey: SurveyRecord, id: string): Promise<boolean>;
-  /** Every stored response (fixture rows included), submittedAt ascending, then id ascending. */
+  /** Every stored row (fixture rows included, raw: runs are not folded), submittedAt ascending, then id ascending. */
   listResponses(survey: SurveyRecord): Promise<SurveyResponse[]>;
-  /** count = number of stored responses (no merging by client); first/last submittedAt; 0/null/null. */
+  /**
+   * count = number of complete rows (partial rows are not counted); first/last submittedAt of the
+   * complete rows; 0/null/null.
+   */
   stats(survey: SurveyRecord): Promise<ResultStatsRecord>;
+  /** Whether any client's marker of the survey is partial (an open partial run may exist). */
+  hasPartial(survey: SurveyRecord): Promise<boolean>;
   /** The client's marker; client ids match exactly (case-sensitive). */
   completion(survey: SurveyRecord, clientId: string): Promise<CompletionState>;
   /**
-   * One page of the survey's stored responses (fixture rows included) in submission order:
-   * submittedAt ascending (as instants), then id ascending (code-point order of lower-case ids),
-   * strictly after `after`. Rows of one client are not merged (R1). An unknown survey or one
-   * without responses gives `{ items: [], next: null }`.
+   * One page of the survey's responses (fixture rows included) in submission order. A response is
+   * a run of one client's rows (ADR 0038) placed at its first row: submittedAt ascending (as
+   * instants), then id ascending (code-point order of lower-case ids), strictly after `after`;
+   * `completedOnly` leaves out runs without a complete row. An unknown survey or one without
+   * responses gives `{ items: [], next: null }`.
    */
   listResponsePage(survey: SurveyRecord, query: ResponsePageQuery): Promise<ResponsePage>;
   /**

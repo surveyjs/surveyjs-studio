@@ -2,6 +2,12 @@ import { createSeededSqlProviders, scratchCredentials } from "./sql-suite-setup.
 import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 import { describeProviderSuite } from "./suite/provider-suite.js";
 
-describeProviderSuite("postgres (legacy fixture seed)", () => createSeededSqlProviders("postgres"));
+describeProviderSuite(
+  "postgres (legacy fixture seed)",
+  () => createSeededSqlProviders("postgres"),
+  {
+    foldsPartialRuns: false,
+  },
+);
 
 describeCredentialStoreSuite("postgres", () => scratchCredentials("postgres"));

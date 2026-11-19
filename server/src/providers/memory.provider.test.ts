@@ -8,8 +8,10 @@ import { createMemoryProviders } from "./memory.js";
 import { describeProviderSuite } from "./suite/provider-suite.js";
 import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 
-describeProviderSuite("memory (legacy fixture seed)", async () =>
-  createMemoryProviders(await legacyFixtureSeed()),
+describeProviderSuite(
+  "memory (legacy fixture seed)",
+  async () => createMemoryProviders(await legacyFixtureSeed()),
+  { foldsPartialRuns: true },
 );
 
 describe("memory provider with a user whose legacy email is NULL", () => {
