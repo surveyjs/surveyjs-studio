@@ -511,6 +511,10 @@ describe("upload", () => {
     ["trailing.", "dxsfile:", ""],
     ["dir.png/name", "dxsfile:", ""],
     [".gif", "dxsimage:", ".gif"],
+    ["report.my file", "dxsfile:", ""],
+    ["notes.t%xt", "dxsfile:", ""],
+    ["archive.tar~", "dxsfile:", ""],
+    ["photo.jp-g_2", "dxsfile:", ".jp-g_2"],
   ])("answers %s as %s with the extension %j", async (filename, prefix, extension) => {
     const answer = await upload(
       multipart([
@@ -519,6 +523,27 @@ describe("upload", () => {
       ]),
     );
     expectJsonString(answer, 200, `${prefix}${studio.storedFile.id}${extension}`);
+  });
+
+  it.each([
+    ["report.my file", "file", "dxsfile:", "application/octet-stream"],
+    ["photo.PNG", "image", "dxsimage:", "image/png"],
+  ])("answers a name for %s that %s reads back", async (filename, action, prefix, contentType) => {
+    studio.files.set(studio.storedFile.id, { contentType: "image/png", body: PNG });
+    const answer = await upload(
+      multipart([
+        { name: "postId", value: POST },
+        { name: "file", value: PNG, filename },
+      ]),
+    );
+    const name = JSON.parse(answer.body.toString()) as string;
+    expect(name.startsWith(`${prefix}${studio.storedFile.id}`)).toBe(true);
+    const read = await send(
+      `${bridge.url}/public/v1/Survey/${action}?filePath=${encodeURIComponent(name)}`,
+    );
+    expect(read.status).toBe(200);
+    expect(read.headers["content-type"]).toBe(contentType);
+    expect(read.body.equals(PNG)).toBe(true);
   });
 
   it("takes a file over 4 MiB, the post limit", async () => {

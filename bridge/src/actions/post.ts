@@ -68,6 +68,9 @@ function extensionOf(fileName: string): string {
   return dot < 0 || dot === name.length - 1 ? "" : name.slice(dot);
 }
 
+/** An extension `image` and `file` accept after a Studio file ID (actions/files.ts). */
+const READABLE_EXTENSION = /^\.[A-Za-z0-9_-]+$/;
+
 const IMAGE_EXTENSIONS = new Set(["jpeg", "jpg", "png", "bmp", "svg", "gif"]);
 
 export function registerPostActions(app: FastifyInstance): void {
@@ -168,7 +171,10 @@ export function registerPostActions(app: FastifyInstance): void {
     if (data !== undefined) {
       const extension = extensionOf(file.name);
       const kind = IMAGE_EXTENSIONS.has(extension.slice(1).toLowerCase()) ? "dxsimage" : "dxsfile";
-      return sendJsonString(reply, 200, `${kind}:${data.id}${extension}`);
+      // The name must read back through `image` and `file`, which take only these characters
+      // after the dot: any other extension is left out of the name (the file is stored as sent).
+      const kept = READABLE_EXTENSION.test(extension) ? extension : "";
+      return sendJsonString(reply, 200, `${kind}:${data.id}${kept}`);
     }
     switch (response.status) {
       case 404:
