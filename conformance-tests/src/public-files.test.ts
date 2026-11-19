@@ -18,6 +18,7 @@ import {
   cleanUp,
   newSurvey,
   ownSurvey,
+  sandbox,
 } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -248,9 +249,10 @@ describe("getLegacyFile", () => {
   /**
    * The Azure legacy provider reads these files from the legacy file shares, and Azurite has no
    * file service: the reference server runs there without a share reader, so every name is
-   * unknown. The provider suite reads the shares through a stub instead.
+   * unknown. The provider suite reads the shares through a stub instead. The sandbox has no legacy
+   * files either (they belong to a migrated deployment), so it answers 404 for every name.
    */
-  const sharesReadable = process.env.CONFORMANCE_PROVIDER?.trim() !== "azure-legacy";
+  const sharesReadable = !sandbox && process.env.CONFORMANCE_PROVIDER?.trim() !== "azure-legacy";
 
   /** Without cookies: sites reference these files from anywhere. `path` is sent as written. */
   const legacyFile = (path: string) =>

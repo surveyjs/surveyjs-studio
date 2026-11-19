@@ -4,12 +4,20 @@
 // base64 size. The type is decided by the file name's extension only (the spec: no file-type
 // detection beyond the extension). The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
+import type { SandboxSurvey } from "../seed-types";
 import type { SandboxData, SandboxFile } from "../store";
 import { checkPathId, mutate, requireSession, view } from "./common";
 import { newFileId, type HandlerContext } from "./context";
 import { http } from "./http";
 import { checkMultipart, readFirstFile } from "./multipart";
-import { guarded, notFound, ProblemError, surveyNotAvailable, validationFailed } from "./problems";
+import {
+  badRequest,
+  guarded,
+  notFound,
+  ProblemError,
+  surveyNotAvailable,
+  validationFailed,
+} from "./problems";
 import { modifiableSurvey } from "./survey-access";
 
 /** The field an upload sends its file in. */
@@ -158,6 +166,39 @@ export function fileHandlers(ctx: HandlerContext) {
   const quota = ctx.settings.maxUploadKb * KB;
   const maxFileBytes = ctx.settings.maxUploadKb * KB;
 
+  /** Stores the request's file for the survey `find` returns (S11 order); checked again at the write. */
+  async function uploadRespondentFile(
+    request: Request,
+    find: (data: SandboxData) => SandboxSurvey,
+  ): Promise<Response> {
+    find(ctx.store.read());
+    const part = await incomingFile(
+      request,
+      () => maxFileBytes,
+      () => fileTooLarge(maxFileBytes),
+    );
+    const name = fileNameOf(part.fileName);
+    const contentType = typeOfName(name) ?? "application/octet-stream";
+    const base64 = toBase64(part.bytes);
+    let stored!: SandboxFile;
+    // A survey unpublished or deleted meanwhile keeps no file.
+    await ctx.store.write((data) => {
+      const survey = find(data);
+      stored = {
+        id: newFileId(survey.id),
+        surveyId: survey.id,
+        kind: "respondent",
+        name,
+        contentType,
+        size: part.bytes.length,
+        base64,
+        createdAt: ctx.now().toISOString(),
+      };
+      data.files.push(stored);
+    });
+    return created(stored, ctx.origin);
+  }
+
   return [
     // R13 order: sign-in, survey (404, 403), quota used up, the file, its type.
     http.post("/surveys/{surveyId}/assets", ({ params, request, cookies }) =>
@@ -213,37 +254,43 @@ export function fileHandlers(ctx: HandlerContext) {
       guarded(async () => {
         checkMultipart(request);
         checkPathId(params.surveyId, "surveyId");
-        const available = (data: SandboxData) => {
+        return uploadRespondentFile(request, (data) => {
           const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
           if (!survey?.published) throw surveyNotAvailable();
           return survey;
-        };
-        available(ctx.store.read());
-        const part = await incomingFile(
-          request,
-          () => maxFileBytes,
-          () => fileTooLarge(maxFileBytes),
-        );
-        const name = fileNameOf(part.fileName);
-        const contentType = typeOfName(name) ?? "application/octet-stream";
-        const base64 = toBase64(part.bytes);
-        let stored!: SandboxFile;
-        // Checked again at the write: a survey unpublished or deleted meanwhile keeps no file.
-        await ctx.store.write((data) => {
-          const survey = available(data);
-          stored = {
-            id: newFileId(survey.id),
-            surveyId: survey.id,
-            kind: "respondent",
-            name,
-            contentType,
-            size: part.bytes.length,
-            base64,
-            createdAt: ctx.now().toISOString(),
-          };
-          data.files.push(stored);
         });
-        return created(stored, ctx.origin);
+      }),
+    ),
+
+    // As above, by post ID and whatever the publish state (service.ts `uploadResponseByPostId`).
+    http.post("/public/posts/{postId}/files", ({ params, request }) =>
+      guarded(async () => {
+        checkMultipart(request);
+        const postId = params.postId;
+        if (postId.length === 0 || [...postId].length > 200) {
+          throw badRequest(undefined, [
+            {
+              pointer: "/postId",
+              detail:
+                postId.length === 0
+                  ? "must NOT have fewer than 1 characters"
+                  : "must NOT have more than 200 characters",
+            },
+          ]);
+        }
+        return uploadRespondentFile(request, (data) => {
+          const survey = data.surveys.find((s) => s.postId === postId.toLowerCase());
+          if (!survey) throw surveyNotAvailable();
+          return survey;
+        });
+      }),
+    ),
+
+    // The sandbox keeps no legacy files (they belong to a migrated deployment), so every name is
+    // unknown: server/src/files/service.ts `downloadLegacy` answers the same without a share.
+    http.get("/public/legacy-files/{kind}/{name}", () =>
+      guarded(() => {
+        throw notFound();
       }),
     ),
 
