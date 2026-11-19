@@ -86,19 +86,25 @@ Index `survey_history_order` (`survey_id`, `at` desc, `id` desc) serves `listHis
 
 One row per stored response. Deleted with the survey (`on delete cascade`).
 
-| Column          | Type       | Notes                                                                          |
-| --------------- | ---------- | ------------------------------------------------------------------------------ |
-| `survey_id`     | GUID       | Foreign key to `surveys`                                                       |
-| `id`            | GUID       | Primary key with `survey_id`: the contract's response id                       |
-| `submitted_at`  | timestamp  |                                                                                |
-| `data`          | JSON       | The answers, a JSON object                                                     |
-| `client_id`     | text, null | 1–256 characters (contract `ClientId`), matched exactly                        |
-| `respondent_ip` | text, null | Only when the survey stores respondent addresses                               |
-| `partial`       | boolean    | Legacy partial rows; the app stores `false` (HM Step 4 adds partial responses) |
+| Column          | Type       | Notes                                                                              |
+| --------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `survey_id`     | GUID       | Foreign key to `surveys`                                                           |
+| `id`            | GUID       | Primary key with `survey_id`: the contract's response id                           |
+| `submitted_at`  | timestamp  |                                                                                    |
+| `data`          | JSON       | The answers, a JSON object                                                         |
+| `client_id`     | text, null | 1–256 characters (contract `ClientId`), matched exactly                            |
+| `respondent_ip` | text, null | Only when the survey stores respondent addresses                                   |
+| `partial`       | boolean    | A partial row (ADR 0038): written by the app, only for a response with a client id |
 
 Index `survey_responses_order` (`survey_id`, `submitted_at`, `id`) serves `listResponsePage` (keyed paging in
 submission order) and `stats`. `appendResponse` inserts with `on conflict do nothing` on the key, which makes a
-repeated response id `exists`, and writes the client's marker in the same transaction.
+repeated response id `exists`, and writes the client's marker (partial or complete) in the same transaction.
+
+Migration 0007 adds `survey_responses_partial_clients` (`survey_id`, `client_id`, where `partial`) to find the
+clients with a partial row, and `survey_responses_client` (`survey_id`, `client_id`, `submitted_at`, `id`, where
+`client_id` is not null) to read a client's rows in order. `listResponsePage` folds a client's rows into runs
+(`pageOfRuns`); `stats` counts complete rows only (`where partial = false`); `hasPartial` looks for a partial
+marker.
 
 ### `completion_markers` (0002)
 

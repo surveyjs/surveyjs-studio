@@ -6,7 +6,7 @@ describeProviderSuite(
   "postgres (legacy fixture seed)",
   () => createSeededSqlProviders("postgres"),
   {
-    foldsPartialRuns: false,
+    foldsPartialRuns: true,
   },
 );
 

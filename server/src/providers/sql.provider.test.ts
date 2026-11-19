@@ -3,7 +3,7 @@ import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js"
 import { describeProviderSuite } from "./suite/provider-suite.js";
 
 describeProviderSuite("sqlite (legacy fixture seed)", () => createSeededSqlProviders("sqlite"), {
-  foldsPartialRuns: false,
+  foldsPartialRuns: true,
 });
 
 describeCredentialStoreSuite("sqlite", () => scratchCredentials("sqlite"));

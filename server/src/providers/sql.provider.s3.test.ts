@@ -13,5 +13,5 @@ describeProviderSuite(
         remove: bucket.remove,
       };
     }),
-  { foldsPartialRuns: false },
+  { foldsPartialRuns: true },
 );
