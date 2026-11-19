@@ -1,6 +1,7 @@
 {
   "source": "derived",
   "description": "a JSON array as the body: the validation problem under \"\"",
+  "difference": "The old text named the old API's own request model type (a conversion error for the whole body); the bridge answers the framework's generic text under \"\" instead.",
   "request": {
     "method": "POST",
     "path": "/public/v1/Survey/post/",

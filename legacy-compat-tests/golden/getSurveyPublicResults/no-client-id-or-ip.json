@@ -12,7 +12,7 @@
     "posts": [
       {
         "surveyResult": "{\"satisfaction\":4}",
-        "clientId": "client-a"
+        "clientId": "client-public"
       }
     ]
   },

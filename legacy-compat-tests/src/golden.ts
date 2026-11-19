@@ -208,7 +208,7 @@ export function requestInit(request: GoldenRequest): RequestInit {
  * Placeholders for volatile parts, usable inside any expected string (header, text or JSON
  * string): `<guid>`, `<hex64>` (a Studio file ID), `<iso>` (a date and time without a zone, up to
  * 7 fractional digits; the golden adds `Z` where the answer has it) and `<any>`. The JSON string
- * `"<any>"` alone matches any JSON value (e.g. a ProblemDetails `traceId`).
+ * `"<any>"` matches any JSON string, and only a string (e.g. a ProblemDetails `traceId`).
  */
 const PLACEHOLDERS: Readonly<Record<string, string>> = {
   "<guid>": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
@@ -243,7 +243,6 @@ export interface Difference {
 }
 
 function compareJson(expected: unknown, actual: unknown, at: string, out: Difference[]): void {
-  if (expected === "<any>") return;
   if (typeof expected === "string") {
     if (typeof actual !== "string" || !matchesText(expected, actual)) {
       out.push({ at, expected, actual });

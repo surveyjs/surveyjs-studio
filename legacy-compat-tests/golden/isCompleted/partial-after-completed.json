@@ -6,11 +6,11 @@
     "posts": [
       {
         "surveyResult": "{\"satisfaction\":4}",
-        "clientId": "client-a"
+        "clientId": "client-completed-then-partial"
       },
       {
         "surveyResult": "{\"satisfaction\":5}",
-        "clientId": "client-a",
+        "clientId": "client-completed-then-partial",
         "isPartialCompleted": true
       }
     ]
@@ -20,7 +20,7 @@
     "path": "/public/v1/Survey/isCompleted",
     "query": {
       "resultId": "{{survey.resultId}}",
-      "clientId": "client-a"
+      "clientId": "client-completed-then-partial"
     }
   },
   "response": {

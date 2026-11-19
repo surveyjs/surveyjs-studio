@@ -24,7 +24,7 @@
 // derived golden file (only the places that differ, never a body). It refuses an `--out` inside
 // the repository.
 import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   answerAsGolden,
@@ -66,8 +66,12 @@ export interface RecordOptions {
   readonly log?: (line: string) => void;
 }
 
-/** The real path of `path` (the part that exists resolved, the rest appended). */
-function realPath(path: string): string {
+/**
+ * The real path of `path`: made absolute and normalised (`..` taken lexically), then the part
+ * that exists resolved through links and letter case, the rest appended. The script writes to this
+ * path, so what it checks is where it writes.
+ */
+export function realPath(path: string): string {
   let existing = resolve(path);
   const rest: string[] = [];
   while (!existsSync(existing)) {
@@ -82,8 +86,16 @@ function realPath(path: string): string {
 /** Whether `path` is the repository or inside it, after resolving links and letter case. */
 export function insideRepository(path: string): boolean {
   const relation = relative(realpathSync.native(REPOSITORY), realPath(path));
-  return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
+  // `..recordings` is a child named with two dots, not the parent.
+  const outside = relation === ".." || relation.startsWith(`..${sep}`) || isAbsolute(relation);
+  return !outside;
 }
+
+/**
+ * A failure whose message the script may print: written here, never taken from an answer, so no
+ * answer body can reach the output through it.
+ */
+class CaseError extends Error {}
 
 /** A fixture ID (the fixtures' scheme: the last group starts with `a`), with or without dashes. */
 const FIXTURE_ID = /[0-9a-f]{8}-?0000-?4000-?8000-?a[0-9a-f]{11}/gi;
@@ -171,7 +183,7 @@ async function setUp(
       headers: { "content-type": "application/json; charset=utf-8" },
       body: { json: { postId: survey.postId, ...post } },
     });
-    if (answer.status !== 200) throw new Error(`the setup post answered ${answer.status}`);
+    if (answer.status !== 200) throw new CaseError(`the setup post answered ${answer.status}`);
   }
   for (const upload of golden.setup?.uploads ?? []) {
     const answer = await call(base, {
@@ -189,17 +201,29 @@ async function setUp(
         ],
       },
     });
-    if (answer.status !== 200) throw new Error(`the setup upload answered ${answer.status}`);
-    const name = JSON.parse(answer.body.toString("utf8")) as string;
+    if (answer.status !== 200) throw new CaseError(`the setup upload answered ${answer.status}`);
+    let name: unknown;
+    try {
+      name = JSON.parse(answer.body.toString("utf8"));
+    } catch {
+      name = undefined;
+    }
+    if (typeof name !== "string") {
+      throw new CaseError("the setup upload's answer is not a JSON string");
+    }
     vars[upload.as] = name;
     vars[`${upload.as}.name`] = name.slice(name.indexOf(":") + 1);
   }
   return vars;
 }
 
-/** Records one case; returns the line to print. */
-async function recordCase(options: RecordOptions, { name, golden }: GoldenCase): Promise<string> {
-  const { base, surveys, out } = options;
+/** Records one case into `out` (already resolved); returns the line to print. */
+async function recordCase(
+  options: RecordOptions,
+  out: string,
+  { name, golden }: GoldenCase,
+): Promise<string> {
+  const { base, surveys } = options;
   const missing = unmappedIds(golden.request, surveys.ids);
   if (missing.length > 0)
     return `${name}: skipped (no test-account value for ${missing.join(", ")})`;
@@ -249,7 +273,8 @@ async function recordCase(options: RecordOptions, { name, golden }: GoldenCase):
 
 /** Records every selected case into `options.out`; returns how many differ or failed. */
 export async function record(options: RecordOptions): Promise<number> {
-  if (insideRepository(options.out)) {
+  const out = realPath(options.out);
+  if (insideRepository(out)) {
     throw new UsageError(
       "--out is inside the repository; recordings go to the private location (plan-hosted rule 6)",
     );
@@ -262,14 +287,19 @@ export async function record(options: RecordOptions): Promise<number> {
   let problems = 0;
   for (const goldenCase of cases) {
     try {
-      const line = await recordCase(options, goldenCase);
+      const line = await recordCase(options, out, goldenCase);
       if (line.includes(": skipped") === false && !line.endsWith("matches the derived golden")) {
         problems += 1;
       }
       log(line);
     } catch (error) {
       problems += 1;
-      log(`${goldenCase.name}: failed (${error instanceof Error ? error.message : String(error)})`);
+      // Only the script's own texts: another error's message could quote an answer.
+      const reason =
+        error instanceof CaseError
+          ? error.message
+          : `${error instanceof Error ? error.name : "error"} while calling --base`;
+      log(`${goldenCase.name}: failed (${reason})`);
     }
   }
   return problems;

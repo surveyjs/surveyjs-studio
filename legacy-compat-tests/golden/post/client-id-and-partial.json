@@ -14,7 +14,7 @@
       "json": {
         "postId": "{{survey.postId}}",
         "surveyResult": "{\"satisfaction\":4}",
-        "clientId": "client-a",
+        "clientId": "client-post-partial",
         "isPartialCompleted": true
       }
     }

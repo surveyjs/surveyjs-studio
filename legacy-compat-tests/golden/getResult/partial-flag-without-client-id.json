@@ -1,0 +1,29 @@
+{
+  "source": "derived",
+  "description": "a post with isPartialCompleted but no clientId counts as a complete response",
+  "setup": {
+    "survey": {},
+    "posts": [{ "surveyResult": "{\"satisfaction\":3}", "isPartialCompleted": true }]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/getResult",
+    "query": { "resultId": "{{survey.resultId}}", "name": "satisfaction" }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "AnswersCount": 1,
+        "QuestionResult": { "3": 1 },
+        "FirstResultAt": "<iso>",
+        "LastResultAt": "<iso>",
+        "ResultCount": 1
+      }
+    }
+  }
+}

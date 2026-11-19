@@ -15,7 +15,7 @@
       "json": {
         "postId": "{{survey.postId}}",
         "surveyResult": "[1,2]",
-        "clientId": "client-a"
+        "clientId": "client-not-an-object"
       }
     }
   },
