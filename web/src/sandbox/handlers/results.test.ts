@@ -58,7 +58,7 @@ describe("getResultStats", () => {
       await call(`${results(SURVEYS.feedback)}/stats`, { user: USERS.owner })
     ).json();
     expect(stats).toStrictEqual({
-      count: 5,
+      count: 4,
       firstSubmittedAt: "2026-04-01T08:00:00.500Z",
       lastSubmittedAt: "2026-04-01T12:00:00.000Z",
     });
@@ -143,6 +143,50 @@ describe("deleteResults", () => {
     const stats = await (
       await call(`${results(SURVEYS.campaign)}/stats`, { user: USERS.owner })
     ).json();
-    expect(stats.count).toBe(5);
+    expect(stats.count).toBe(4);
+  });
+});
+
+describe("partial responses", () => {
+  const SURVEY = SURVEYS.campaign;
+  const post = (call: ReturnType<typeof setupSandbox>["call"], body: object) =>
+    call(`/public/surveys/${SURVEY}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("folds a partial post and the complete one into one response; stats count complete rows", async () => {
+    const { call } = setupSandbox();
+    const list = async () =>
+      (await (await call(`${results(SURVEY)}?limit=50`, { user: USERS.owner })).json()).items;
+    const stats = async () =>
+      (await call(`${results(SURVEY)}/stats`, { user: USERS.owner })).json();
+    const before = (await list()).length;
+    const count = (await stats()).count;
+
+    expect((await post(call, { data: { a: 1 }, clientId: "p-1", partial: true })).status).toBe(201);
+    const open = await list();
+    expect(open).toHaveLength(before + 1);
+    expect(open.at(-1)).toMatchObject({ data: { a: 1 }, clientId: "p-1", partial: true });
+    expect((await stats()).count).toBe(count);
+    expect(await (await call(`/public/surveys/${SURVEY}?clientId=p-1`)).json()).toMatchObject({
+      completed: false,
+    });
+
+    expect((await post(call, { data: { b: 2 }, clientId: "p-1" })).status).toBe(201);
+    const done = await list();
+    expect(done).toHaveLength(before + 1);
+    expect(done.at(-1)).toMatchObject({ data: { a: 1, b: 2 }, clientId: "p-1" });
+    expect(done.at(-1)).not.toHaveProperty("partial");
+    expect((await stats()).count).toBe(count + 1);
+  });
+
+  it("stores a partial post without a client id as complete", async () => {
+    const { call } = setupSandbox();
+    await post(call, { data: { a: 1 }, partial: true });
+    const items = (await (await call(`${results(SURVEY)}?limit=50`, { user: USERS.owner })).json())
+      .items;
+    expect(items.at(-1)).not.toHaveProperty("partial");
   });
 });

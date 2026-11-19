@@ -15,6 +15,7 @@ import {
   RESULTS_PAGE,
 } from "./common";
 import type { HandlerContext } from "./context";
+import { responseOfRun, foldRuns } from "../runs";
 import { privateKeysOf, withoutKeys } from "./definition";
 import { http } from "./http";
 import { decodeResultsCursor, encodeResultsCursor } from "./paging";
@@ -82,17 +83,22 @@ export function isAfterResponse(
   return at > after || (at === after && response.id > position.id.toLowerCase());
 }
 
-/** A page of the survey's responses in `responseOrder`, and the cursor of the next one. */
+/**
+ * A page of the survey's responses in `responseOrder`, and the cursor of the next one. Each run
+ * reads as one response placed at its first row (ADR 0038); `completedOnly` leaves open runs out.
+ */
 export function responsePage(
   data: SandboxData,
   surveyId: string,
   limit: number,
   cursor: string | undefined,
+  completedOnly = false,
 ): { items: SandboxResponse[]; nextCursor: string | null } {
   const after = cursor === undefined ? undefined : decodeResultsCursor(cursor, surveyId);
-  const matching = [...(data.responses[surveyId] ?? [])]
-    .sort(responseOrder)
-    .filter((response) => after === undefined || isAfterResponse(response, after));
+  const matching = foldRuns([...(data.responses[surveyId] ?? [])].sort(responseOrder))
+    .map(responseOfRun)
+    .filter((response) => after === undefined || isAfterResponse(response, after))
+    .filter((response) => !completedOnly || !response.partial);
   const items = matching.slice(0, limit);
   const last = items.at(-1);
   return {
@@ -198,6 +204,7 @@ export function publicHandlers(ctx: HandlerContext) {
               throw alreadyCompleted();
             }
           }
+          const isPartial = typeof clientId === "string" && body["partial"] === true;
           const id = known ?? ctx.newId();
           if (key !== null) keys[key] = id;
           (data.responses[survey.id] ??= []).push({
@@ -205,10 +212,10 @@ export function publicHandlers(ctx: HandlerContext) {
             submittedAt: ctx.now().toISOString(),
             data: structuredClone(answers),
             ...(typeof clientId === "string" && { clientId }),
-            partial: false,
+            partial: isPartial,
           });
           if (typeof clientId === "string") {
-            (data.completions[survey.id] ??= {})[clientId] = { partial: false };
+            (data.completions[survey.id] ??= {})[clientId] = { partial: isPartial };
           }
           result = id;
         });
@@ -224,7 +231,7 @@ export function publicHandlers(ctx: HandlerContext) {
         const data = ctx.store.read();
         const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
         if (!survey?.settings.publicResults) throw surveyNotAvailable();
-        const { items, nextCursor } = responsePage(data, survey.id, limit, cursor);
+        const { items, nextCursor } = responsePage(data, survey.id, limit, cursor, true);
         const definition = data.definitions[survey.id] ?? {};
         const privateQuestions = data.privateResultQuestions[survey.id] ?? [];
         const hidden = privateKeysOf(definition, privateQuestions);

@@ -18,7 +18,7 @@ guardRedrawUntilBuilt(Tabulator.prototype);
 type TableViewState = Tabulator["state"];
 
 /**
- * The default state with the table-only columns (Submitted, IPAddress) after the answer columns.
+ * The default state with the table-only columns (Submitted, IPAddress, Partial) after the answer columns.
  * The library sorts columns it adds from `columnsData` by their index in that list, which puts them
  * among the answer columns, so the page fixes their place itself.
  */
