@@ -42,6 +42,18 @@ export async function submitViaApi(
   expect(response.status()).toBe(201);
 }
 
+/** Posts a response of a client through the public API, `partial` saving progress (ADR 0038). */
+export async function submitClientResponseViaApi(
+  page: Page,
+  surveyId: string,
+  body: { data: Record<string, unknown>; clientId: string; partial?: boolean },
+): Promise<void> {
+  const response = await api(page).post(`/api/v1/public/surveys/${surveyId}/responses`, {
+    data: body,
+  });
+  expect(response.status()).toBe(201);
+}
+
 /** The Summary's question items, in document order. */
 export function summaryItems(page: Page): Locator {
   return page.locator("[data-question]");

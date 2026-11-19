@@ -156,7 +156,7 @@ describe("submitResponse respondent address", () => {
 });
 
 describe("submitResponse", () => {
-  it("stores a partial response as complete", async () => {
+  it("stores a partial response as complete when there is no client id", async () => {
     const { server, providers, publish } = await start();
     const survey = await publish({});
     const res = await submit(server, survey, {
@@ -166,6 +166,29 @@ describe("submitResponse", () => {
     });
     expect(res.statusCode).toBe(201);
     expect((await providers.results.listResponses(survey))[0]).toMatchObject({ partial: false });
+  });
+
+  it("stores a partial save of a client as a partial row and does not store lastPageIndex", async () => {
+    const { server, providers, publish } = await start();
+    const survey = await publish({});
+    const res = await submit(server, survey, {
+      data: { q1: "a" },
+      clientId: "c-1",
+      partial: true,
+      lastPageIndex: 2,
+    });
+    expect(res.statusCode).toBe(201);
+    const [row] = await providers.results.listResponses(survey);
+    expect(row).toMatchObject({ partial: true, clientId: "c-1" });
+    expect(row).not.toHaveProperty("lastPageIndex");
+    expect(await providers.results.completion(survey, "c-1")).toBe("partial");
+  });
+
+  it("refuses a negative lastPageIndex", async () => {
+    const { server, publish } = await start();
+    const survey = await publish({});
+    const res = await submit(server, survey, { data: {}, clientId: "c-1", lastPageIndex: -1 });
+    expect(res.statusCode).toBe(422);
   });
 
   it("answers 413 when the store cannot hold the answers", async () => {
@@ -380,7 +403,34 @@ describe("exportResults, deleteResults and getPublicResults", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["cache-control"]).toBe("no-store");
     const body = res.json<{ items: { data: Record<string, unknown> }[] }>();
-    expect(body.items).toHaveLength(5);
+    expect(body.items).toHaveLength(4);
     for (const item of body.items) expect(item.data).not.toHaveProperty("receipt");
+  });
+});
+
+describe("submitResponse partial saves", () => {
+  const limited = { pages: [], cookieName: "limit-test" };
+
+  it("lets a client with a partial marker post again, then refuses every post once complete", async () => {
+    const { server, publish } = await start();
+    const survey = await publish(limited);
+    const post = (extra: object) =>
+      submit(server, survey, { data: { q1: "a" }, clientId: "c-1", ...extra });
+    expect((await post({ partial: true })).statusCode).toBe(201);
+    expect((await post({ partial: true })).statusCode).toBe(201);
+    expect((await post({})).statusCode).toBe(201);
+    expect((await post({ partial: true })).statusCode).toBe(409);
+    expect((await post({})).statusCode).toBe(409);
+  });
+
+  it("stores one row and answers the same id for a retried partial post", async () => {
+    const { server, providers, publish } = await start();
+    const survey = await publish({});
+    const headers = { "idempotency-key": "retry-1" };
+    const body = { data: { q1: "a" }, clientId: "c-1", partial: true };
+    const first = await submit(server, survey, body, { headers });
+    const again = await submit(server, survey, body, { headers });
+    expect(again.json<{ id: string }>().id).toBe(first.json<{ id: string }>().id);
+    expect(await providers.results.listResponses(survey)).toHaveLength(1);
   });
 });

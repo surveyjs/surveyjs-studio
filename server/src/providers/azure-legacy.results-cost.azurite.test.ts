@@ -293,12 +293,17 @@ describe("azure-legacy results page reads (local replica)", () => {
     expect(all.map((response) => response.id)).toEqual(expected.map((row) => row.id));
   });
 
-  it("reads keys and times first, then the full rows of the page only", async () => {
+  it("reads keys, times, client ids and partial flags first, then the full rows of the page only", async () => {
     const pages = await walk(spiedTable(postName, 1000));
     expect(pages.flatMap((page) => page.ids)).toEqual(expected.map((row) => row.id));
     for (const page of pages) {
       const [first, ...full] = page.calls;
-      expect(first?.options?.queryOptions?.select).toEqual(["RowKey", "happendat"]);
+      expect(first?.options?.queryOptions?.select).toEqual([
+        "RowKey",
+        "happendat",
+        "clientid",
+        "ispartialcompleted",
+      ]);
       expect(full.length).toBeGreaterThan(0);
       for (const call of full) expect(call.options?.queryOptions?.select).toBeUndefined();
       // The page, the row after it, the rows of the boundary instants on either side (two more

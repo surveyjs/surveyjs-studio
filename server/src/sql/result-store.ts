@@ -1,6 +1,7 @@
 import type { Kysely, Selectable } from "kysely";
 import { GUID } from "../domain/guid.js";
 import type { CompletionState, SurveyResponse } from "../domain/types.js";
+import { pageOfRuns } from "../providers/runs.js";
 import type { ResponsePosition, ResultStore } from "../providers/types.js";
 import type { SqlDatabase, SqlDialectName } from "./database.js";
 import type { DatabaseSchema, SurveyResponsesTable } from "./schema.js";
@@ -90,6 +91,8 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
     appendResponse: async (survey, response) => {
       if (!GUID.test(response.id)) throw new Error("The response id is not a GUID");
       const surveyId = survey.id.toLowerCase();
+      // Without a client id there is no marker to be partial, and the row is stored as complete.
+      const partial = response.partial === true && response.clientId !== undefined;
       return db.transaction().execute(async (trx) => {
         const inserted = await trx
           .insertInto("survey_responses")
@@ -100,7 +103,7 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
             data: jsonText(database.dialect, response.data),
             client_id: response.clientId ?? null,
             respondent_ip: response.respondentIp ?? null,
-            partial: false,
+            partial,
           })
           .onConflict((oc) => oc.columns(["survey_id", "id"]).doNothing())
           .executeTakeFirst();
@@ -108,10 +111,8 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
         if (response.clientId !== undefined) {
           await trx
             .insertInto("completion_markers")
-            .values({ survey_id: surveyId, client_id: response.clientId, partial: false })
-            .onConflict((oc) =>
-              oc.columns(["survey_id", "client_id"]).doUpdateSet({ partial: false }),
-            )
+            .values({ survey_id: surveyId, client_id: response.clientId, partial })
+            .onConflict((oc) => oc.columns(["survey_id", "client_id"]).doUpdateSet({ partial }))
             .execute();
         }
         return (inserted.numInsertedOrUpdatedRows ?? 0n) > 0n ? "stored" : "exists";
@@ -140,12 +141,23 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
           eb.fn.max("submitted_at").as("last"),
         ])
         .where("survey_id", "=", survey.id.toLowerCase())
+        .where("partial", "=", false)
         .executeTakeFirstOrThrow();
       return {
         count: Number(row.count),
         firstSubmittedAt: row.first === null ? null : isoOf(row.first),
         lastSubmittedAt: row.last === null ? null : isoOf(row.last),
       };
+    },
+    hasPartial: async (survey) => {
+      const row = await db
+        .selectFrom("completion_markers")
+        .select("client_id")
+        .where("survey_id", "=", survey.id.toLowerCase())
+        .where("partial", "=", true)
+        .limit(1)
+        .executeTakeFirst();
+      return row !== undefined;
     },
     completion: async (survey, clientId): Promise<CompletionState> => {
       const row = await db
@@ -157,14 +169,33 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
       if (!row) return "none";
       return flagOf(row.partial) ? "partial" : "completed";
     },
-    listResponsePage: async (survey, { after, limit }) => {
-      const rows = await responsePageQuery(db, survey.id, after, limit + 1).execute();
-      const items = rows.slice(0, limit).map(responseOf);
-      const last = items.at(-1);
-      return {
-        items,
-        next: rows.length > limit && last ? { submittedAt: last.submittedAt, id: last.id } : null,
-      };
+    listResponsePage: async (survey, query) => {
+      const surveyId = survey.id.toLowerCase();
+      return pageOfRuns(
+        {
+          rowsAfter: async (after, limit) =>
+            (await responsePageQuery(db, surveyId, after, limit).execute()).map(responseOf),
+          // At most limit + 1 ids (limit is at most 1000), under both databases' parameter limits.
+          partialClientRows: async (clientIds) => {
+            if (clientIds.length === 0) return [];
+            const rows = await ofSurvey(surveyId)
+              .where("client_id", "in", clientIds)
+              .where("client_id", "in", (eb) =>
+                eb
+                  .selectFrom("survey_responses")
+                  .select("client_id")
+                  .where("survey_id", "=", surveyId)
+                  .where("partial", "=", true)
+                  .where("client_id", "in", clientIds),
+              )
+              .orderBy("submitted_at")
+              .orderBy("id")
+              .execute();
+            return rows.map(responseOf);
+          },
+        },
+        query,
+      );
     },
     deleteAll: async (survey) => {
       const surveyId = survey.id.toLowerCase();

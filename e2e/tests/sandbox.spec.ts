@@ -197,14 +197,14 @@ test("@sandbox a survey published in the sandbox runs in a new tab and its respo
   checkTabConsole();
   await tab.close();
 
-  // The results tab, refreshed: five seeded responses and the new one.
+  // The results tab, refreshed: four completed seeded responses (a fifth is partial) and the new one.
   await pickMenuItem(await openRowMenu(row), "View Results");
   await expect(page).toHaveURL(`surveys/${FEEDBACK_SURVEY}/results`);
   await openResultsTab(page, "Details");
-  await expect(page.getByText("Total responses: 6", { exact: true })).toBeVisible();
+  await expect(page.getByText("Total responses: 5", { exact: true })).toBeVisible();
   await page.reload();
   await openResultsTab(page, "Details");
-  await expect(page.getByText("Total responses: 6", { exact: true })).toBeVisible();
+  await expect(page.getByText("Total responses: 5", { exact: true })).toBeVisible();
 });
 
 test("@sandbox Reset demo data brings the seed back", async ({ page }) => {

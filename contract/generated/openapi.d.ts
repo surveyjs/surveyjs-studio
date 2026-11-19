@@ -841,8 +841,13 @@ export interface paths {
         };
         /**
          * List responses
-         * @description Every stored response, oldest first (by `submittedAt`, then `id`). Each stored
-         *     row is one item: responses that one client sent are not merged. The dashboard
+         * @description Every stored response, oldest first (by `submittedAt`, then `id`). The partial
+         *     saves of one client fold into one response with the answers merged in order
+         *     (later answers win) and `partial: true` until the client completes; a response
+         *     sent without `clientId` is never folded. A run of saves ends at the client's next
+         *     complete response: two complete answers from one client stay two responses, and a
+         *     partial save after completing starts a new response. A folded response keeps the
+         *     `id`, `submittedAt` and page position of its first save. The dashboard
          *     loads every page; there is no 1,000-response cap. For whole-dataset downloads
          *     use `GET /surveys/{surveyId}/results/export`.
          *
@@ -875,7 +880,12 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Response statistics */
+        /**
+         * Response statistics
+         * @description Counts completed responses only: `count`, `firstSubmittedAt` and `lastSubmittedAt`
+         *     describe completed responses, and the dates are the time each was completed.
+         *     Responses that are still partial are not counted.
+         */
         get: operations["getResultStats"];
         put?: never;
         post?: never;
@@ -1019,8 +1029,14 @@ export interface paths {
          *     since. Two first submissions of one client sent at the same moment may both be
          *     stored.
          *
-         *     `partial` and `lastPageIndex` are ignored in Phase 1: the response is stored
-         *     as complete. A server may refuse answers its storage cannot hold with
+         *     With `partial: true` and a `clientId`, the server stores the answers as a partial
+         *     save and marks the client as partial; the client can keep saving, and its saves
+         *     read as one response in the results until a post without `partial` completes it.
+         *     Without a `clientId`, `partial: true` has no client to resume, so the response is
+         *     stored as complete. A post without `partial` marks the client complete.
+         *     `lastPageIndex` is accepted and validated but not stored.
+         *
+         *     A server may refuse answers its storage cannot hold with
          *     `413 payload-too-large`, even below `limits.maxResponseBytes`.
          */
         post: operations["submitResponse"];
@@ -1104,7 +1120,7 @@ export interface paths {
          *     ("Grant Access"), whether or not the survey is published or archived; otherwise
          *     `404 survey-not-available`, the same answer as for an unknown survey.
          *
-         *     Every stored response, oldest first, paged as `listResults` (a cursor belongs to its
+         *     Every completed response, oldest first, paged as `listResults` (a cursor belongs to its
          *     survey). The cursor carries the last item's submission time and response id: it is opaque
          *     to clients, and response ids are random. Items carry `submittedAt` and `data` only: no id,
          *     client id or IP address. The answers and comments of the questions in `settings.privateResultQuestions` are left out;
@@ -1676,7 +1692,7 @@ export interface components {
             clientId?: string;
             /** @description Present only when `storeRespondentIp` was on at submission time. */
             respondentIp?: string;
-            /** @description A partial save from an older client. Not returned in Phase 1. */
+            /** @description A response whose client has saved progress but not completed; one client's saves read as one response. Present only when true. */
             partial?: boolean;
         };
         ResponsePage: {
@@ -1684,16 +1700,16 @@ export interface components {
             nextCursor: components["schemas"]["Cursor"];
         };
         ResultStats: {
-            /** @description Stored responses. */
+            /** @description Completed responses. */
             count: number;
             /**
              * Format: date-time
-             * @description `null` when there are none.
+             * @description When the earliest completed response was completed; `null` when there are none.
              */
             firstSubmittedAt: string | null;
             /**
              * Format: date-time
-             * @description `null` when there are none.
+             * @description When the latest completed response was completed; `null` when there are none.
              */
             lastSubmittedAt: string | null;
         };
@@ -1716,11 +1732,11 @@ export interface components {
             };
             clientId?: components["schemas"]["ClientId"];
             /**
-             * @description Save progress without completing. Ignored in Phase 1: the response is stored as complete.
+             * @description Save progress without completing. Needs a `clientId`; without one the response is stored as complete.
              * @default false
              */
             partial: boolean;
-            /** @description Page to resume on. Ignored in Phase 1. */
+            /** @description Page the client was on. Validated, not stored. */
             lastPageIndex?: number;
         };
         PublicResultPage: {

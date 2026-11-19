@@ -1086,6 +1086,100 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect(after.ispartialcompleted).toEqual({ type: "Boolean", value: "false" });
     });
 
+    it("writes a partial row and its marker with a Boolean true, a complete row without the flag", async () => {
+      const survey = await freshSurvey();
+      const partialId = randomUUID();
+      await append(survey, partialId, { clientId: "client-p1", partial: true });
+      const partialRow = await raw(rowsTable(survey), partialId);
+      expect(propertiesOf(partialRow)).toEqual(
+        [
+          "id",
+          "type",
+          "happendat",
+          "surveyid",
+          "postid",
+          "result",
+          "clientid",
+          "ispartialcompleted",
+        ].sort(),
+      );
+      expect(partialRow.ispartialcompleted).toEqual({ type: "Boolean", value: "true" });
+      const marker = await raw(markersTable(survey), "client-p1");
+      expect(propertiesOf(marker)).toEqual(["ispartialcompleted"]);
+      expect(marker.ispartialcompleted).toEqual({ type: "Boolean", value: "true" });
+      expect(await store().results.completion(survey, "client-p1")).toBe("partial");
+      expect(await store().results.hasPartial(survey)).toBe(true);
+
+      const completeId = randomUUID();
+      await append(survey, completeId, { clientId: "client-p1" });
+      const completeRow = await raw(rowsTable(survey), completeId);
+      expect(completeRow).not.toHaveProperty("ispartialcompleted");
+      expect((await raw(rowsTable(survey), partialId)).ispartialcompleted).toEqual({
+        type: "Boolean",
+        value: "true",
+      });
+      const after = await raw(markersTable(survey), "client-p1");
+      expect(after.ispartialcompleted).toEqual({ type: "Boolean", value: "false" });
+      expect(await store().results.hasPartial(survey)).toBe(false);
+
+      // Without a client id a partial post is stored as complete.
+      const lone = randomUUID();
+      await append(survey, lone, { partial: true });
+      expect(await raw(rowsTable(survey), lone)).not.toHaveProperty("ispartialcompleted");
+    });
+
+    it("reads a run from its rows that map when one of them cannot", async () => {
+      const survey = await freshSurvey();
+      const warned = warnings.length;
+      const at = (second: number) => new Date(Date.UTC(2026, 8, 10, 8, 0, second)).toISOString();
+      const [first, complete, lone] = [randomUUID(), randomUUID(), randomUUID()];
+      await append(survey, first, {
+        submittedAt: at(1),
+        data: { a: 1 },
+        clientId: "client-b1",
+        partial: true,
+      });
+      const broken = randomUUID();
+      await rowsTable(survey).createEntity({
+        partitionKey: "*",
+        rowKey: broken,
+        id: { type: "Guid", value: broken },
+        happendat: new Date(at(2)),
+        result: "not json",
+        clientid: "client-b1",
+        ispartialcompleted: true,
+      } as never);
+      // The complete row comes after the start of the run after the page, so after the page's
+      // time window: it is read by key, and an upper-case key (some legacy rows have one) must be
+      // read as stored.
+      await rowsTable(survey).createEntity({
+        partitionKey: "*",
+        rowKey: complete.toUpperCase(),
+        id: { type: "Guid", value: complete },
+        happendat: new Date(at(4)),
+        result: JSON.stringify({ c: 3 }),
+        clientid: "client-b1",
+      } as never);
+      await append(survey, lone, { submittedAt: at(3), data: { d: 4 } });
+
+      const page = await store().results.listResponsePage(survey, { limit: 1 });
+      expect(page.items).toStrictEqual([
+        {
+          id: first,
+          submittedAt: at(1),
+          data: { a: 1, c: 3 },
+          clientId: "client-b1",
+          partial: false,
+        },
+      ]);
+      expect(page.next).toEqual({ submittedAt: at(1), id: first });
+      const rest = await store().results.listResponsePage(survey, { limit: 1, after: page.next! });
+      expect(rest.items.map((item) => item.id)).toEqual([lone]);
+      expect(rest.next).toBeNull();
+      expect(warnings.length).toBeGreaterThan(warned);
+      warnings.length = warned; // the broken row was reported by id; later tests expect none
+    });
+
     it("round-trips a client id with a quote, an accent and spaces", async () => {
       const survey = await freshSurvey();
       const clientId = "o'Brien é  x";

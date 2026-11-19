@@ -61,8 +61,9 @@ used with `listMembers`, is `400 bad-request` ("Invalid cursor."). The server ch
   (a clock that is behind) shows up only on the next walk from the start.
 - **A cursor belongs to one survey.** Using a results cursor with another survey is `400 bad-request`
   ("Invalid cursor."). Start without a cursor for each survey.
-- **One stored row is one item.** The server does not merge the rows of one client into one response, and
-  `getResultStats` counts rows the same way. Nothing is dropped except a row the server cannot represent
+- **One item is one response.** The server folds a client's partial saves and the next complete response into one
+  item (a run; [Partial saves](public-endpoints.md#partial-saves)), and `getResultStats` counts completed responses.
+  Nothing is dropped except a row the server cannot represent
   (see the note about short pages above).
 - `limit` is 1 to 1000, default 500. The results page of the web app asks for 1000 at a time and walks to
   the end. There is no cap on the total (the old page stopped at 1,000 responses).

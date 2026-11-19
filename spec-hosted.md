@@ -177,6 +177,10 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### Partial responses (H6, H8)
 
+> **Changed 2026-11-19 by [ADR 0038](docs/adr/0038-partial-responses.md).** One client's partial saves read as one
+> response (a run of partial rows and the complete row after it), marked `partial` until it completes. Public results
+> and the Summary leave partial responses out, like the statistics.
+
 - The contract's `partial` and `lastPageIndex` (`x-phase: P1`) are implemented. A submission with `partial: true` is stored as a partial response, and the completion state becomes `partial`. This matches the legacy `ispartialcompleted` behaviour (`legacy-data-layout.md` §3.6–3.7).
 - **Results:**
   - lists and exports include partial responses, marked `partial: true`, as the legacy results page did;

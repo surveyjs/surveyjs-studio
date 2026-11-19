@@ -84,8 +84,8 @@ The body is `{ "data": { ... }, "clientId": "...", "partial": false, "lastPageIn
 required. The server stores the response and answers its `id`. The id is a GUID, as the old site's
 readers need.
 
-- `partial` and `lastPageIndex` are **ignored** until phase 2: the response is stored as a normal, complete
-  response.
+- `partial` and `lastPageIndex` are for forms that save progress: see [Partial saves](#partial-saves). Without
+  `partial: true` the response is stored as complete.
 - The server's clock sets the time (`submittedAt`). The server does not check `data` against the survey.
 - The respondent's address is stored only when the survey's `storeRespondentIp` setting is on
   ([below](#the-respondents-ip-address)).
@@ -107,6 +107,41 @@ A client that is not sure a request arrived sends it again with the same `Idempo
   client still answers `201`, not `409`.
 - Two different requests with the same key stored as one: the second one's data is dropped. A client
   that wants a new response sends a new key.
+
+## Partial saves
+
+A form that saves progress posts the whole answer set on every page, with the same `clientId` and `partial: true`, and
+posts the complete answers at the end without `partial`. Each post is stored as its own row; the results read a
+client's saves as one response ([ADR 0038](../adr/0038-partial-responses.md)).
+
+```sh
+curl -s -X POST "$API/public/surveys/$ID/responses" \
+  -H "Content-Type: application/json" \
+  -d '{"data":{"color":"Red"},"clientId":"demo-client","partial":true,"lastPageIndex":0}'
+```
+
+- **`partial: true` with a `clientId`** stores a partial save and marks the client as partial. The client can save
+  again as often as it likes. A post without `partial` stores the complete response and marks the client complete.
+- **`partial: true` without a `clientId`** has no client to resume, so the response is stored as a **complete** one,
+  as the old service did.
+- **`lastPageIndex`** must be a whole number of at least 0, or the post is `422 validation-failed`. It is **not
+  stored**: the old service kept no page number, and Studio's run page does not resume yet.
+- **`Idempotency-Key`** works as for any post: a retry of a partial save stores nothing and answers the same `id`.
+- **Limit to one response** refuses a client only after it has **completed** ([below](#one-response-per-respondent)):
+  a client with a partial marker may keep saving and may complete.
+
+How the results read these rows:
+
+- **A run is one response.** One client's rows, in the order they were stored (`submittedAt`, then `id`): one or more
+  partial saves followed by the next complete post, if there is one, are a **run**. The run reads as one response
+  with the `id` and `submittedAt` of its **first** save (so it keeps its place in the list while saves arrive), the
+  answers of all its rows merged in order (a later answer wins), the last `respondentIp` that was stored, and
+  `partial: true` until its complete post arrives. `partial` is returned only when true.
+- **A run ends at the complete post.** Two complete answers from one client stay **two** responses, and a partial save
+  after the client completed starts a new response.
+- **A post without a `clientId` is never folded.**
+- **Counts leave partial responses out.** `getResultStats` counts completed responses; `firstSubmittedAt` and `lastSubmittedAt` are the times responses were **completed**.
+- **The Summary and public results leave them out**; the Table, `listResults` and the exports show them, marked.
 
 ## One response per respondent
 
@@ -151,10 +186,10 @@ HTTP/1.1 409 Conflict
 Rules:
 
 - Every stored response that has a `clientId` writes the marker, with the limit on or off. `completed`
-  reads it: true when a marker exists and is not a partial one (a marker written by an old API client
-  with a partial response is `false`). Client ids match exactly, including case.
-- The `409` needs all three: the limit is on, a `clientId` is sent and it has completed. With the limit
-  off a client may submit again.
+  reads it: true when a marker exists and is not a partial one. A [partial save](#partial-saves) writes a partial
+  marker, so `completed` stays `false` until the client completes. Client ids match exactly, including case.
+- The `409` needs all three: the limit is on, a `clientId` is sent and it has completed, for a partial post too.
+  A client whose marker is partial may still post. With the limit off a client may submit again.
 - **A race can store two responses.** Two first submissions of one client sent at the same moment may
   both pass the check. The check and the write are not one atomic step.
 - It cannot stop a respondent who changes the client id, which anyone calling the API can.
@@ -260,6 +295,9 @@ read.
 curl -s -b cookies.txt "$API/surveys/$ID/results/stats"
 ```
 
+The numbers are of **completed** responses: a client's partial saves are not counted, and the two times are of
+completion.
+
 ```json
 {
   "count": 2,
@@ -268,8 +306,8 @@ curl -s -b cookies.txt "$API/surveys/$ID/results/stats"
 }
 ```
 
-`count` is the number of stored rows. Rows of one client are **not** merged: Step 9 decides the reading
-rules. A survey with no responses has `count` 0 and `null` times.
+`count` is the number of completed responses: a client's partial saves and its next complete post are one response, and
+a response that is still partial is not counted ([Partial saves](#partial-saves)). A survey with no responses has `count` 0 and `null` times.
 
 ## Public results
 
@@ -302,9 +340,10 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
   Grant Access off the answer is the same `404 survey-not-available` (the Problem shown
   [above](#who-can-run-a-survey)), so a caller cannot tell them apart. Turning Grant Access off closes the
   endpoint at once, because every call checks the setting.
-- **The page.** Every stored response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
+- **The page.** Every completed response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
   and `cursor`, with the cursor of [`listResults`](paging.md#results-oldest-first-one-survey). A cursor
-  belongs to its survey. Rows are not merged. Each page repeats the `survey` member, so a client can read it
+  belongs to its survey. Only completed responses are listed: a client's partial saves are left out, and a client's
+  complete answers stay separate. Each page repeats the `survey` member, so a client can read it
   from the first page.
 - **`survey`.** `id`, `name` (may be empty), the stored `definition` (so a Dashboard can draw the charts) and
   `privateQuestions`, the names of the questions left out (below). It has no theme and no permissions.
