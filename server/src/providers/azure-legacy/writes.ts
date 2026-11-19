@@ -391,9 +391,12 @@ async function createTableIfMissing(table: TableClient): Promise<void> {
 /**
  * Stores a response as the legacy post does (layout sections 3.6, 3.7 and 5.2): a row in
  * `post{postId}` (created when missing), then, for a response with a client id, that client's
- * marker in `SurveyCompletion{surveyId}` as complete. The row's key is the response id, so an id
- * that exists answers "exists" and leaves the row alone; the marker is still written, which repairs
- * one lost to a failure after the row. No audit row: the row is the event.
+ * marker in `SurveyCompletion{surveyId}`. A partial response with a client id (ADR 0038) gets
+ * `ispartialcompleted` true on the row and on the marker; any other response has no
+ * `ispartialcompleted` on the row and false on the marker (without a client id a partial response
+ * is stored as complete, as legacy did). The row's key is the response id, so an id that exists
+ * answers "exists" and leaves the row alone; the marker is still written with the posted state,
+ * which repairs one lost to a failure after the row. No audit row: the row is the event.
  *
  * Refuses (nothing written) an id that is not a GUID and answers that do not fit one table string.
  * Store failures reject with LegacyStoreError, which names the operation and driver code only.
@@ -411,6 +414,7 @@ export async function writeResponse(
   if (result.length > MAX_RESULT_LENGTH) {
     throw new ResponseTooLargeError(result.length, MAX_RESULT_LENGTH);
   }
+  const partial = response.partial === true && response.clientId !== undefined;
   const row: TableEntity<Record<string, unknown>> = {
     partitionKey: "*",
     rowKey: id,
@@ -423,6 +427,8 @@ export async function writeResponse(
     result,
     ...(response.clientId !== undefined && { clientid: response.clientId }),
     ...(response.respondentIp !== undefined && { ipaddress: response.respondentIp }),
+    // A JavaScript boolean is stored as Edm.Boolean; legacy writes the property on partial rows only.
+    ...(partial && { ispartialcompleted: true }),
   };
 
   let outcome: AppendOutcome = "stored";
@@ -437,7 +443,7 @@ export async function writeResponse(
     const marker: TableEntity<Record<string, unknown>> = {
       partitionKey: "*",
       rowKey: response.clientId,
-      ispartialcompleted: false,
+      ispartialcompleted: partial,
       ...(publishId !== null && { publishid: publishId }),
     };
     const table = targets.resultTable(`SurveyCompletion${surveyId.replaceAll("-", "")}`);

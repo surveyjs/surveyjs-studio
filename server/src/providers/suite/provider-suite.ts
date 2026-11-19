@@ -141,11 +141,6 @@ export interface ProviderSuiteOptions {
    * whose other stores are not built yet (the SQL providers until self-hosted Step 2).
    */
   readonly sections?: readonly ProviderSuiteSection[];
-  /**
-   * Whether the provider folds partial rows into runs (ADR 0038): the cases for that, and the
-   * counts that leave partial rows out, run only when true. Removed when every provider does.
-   */
-  readonly foldsPartialRuns: boolean;
   /** The provider's user directory kind; default `external`. */
   readonly userDirectoryKind?: UserDirectoryKind;
 }
@@ -157,7 +152,7 @@ export interface ProviderSuiteOptions {
 export function describeProviderSuite(
   name: string,
   create: () => Promise<ProviderSet>,
-  options: ProviderSuiteOptions,
+  options: ProviderSuiteOptions = {},
 ): void {
   const included = (section: ProviderSuiteSection): boolean =>
     options.sections === undefined || options.sections.includes(section);
@@ -1170,8 +1165,6 @@ export function describeProviderSuite(
           ...over,
         });
       const emptyStats = { count: 0, firstSubmittedAt: null, lastSubmittedAt: null };
-      /** Row 02 of fixtures 01 and 04 is an open partial run: not counted once folded. */
-      const fixtureCount = options.foldsPartialRuns ? 4 : 5;
 
       it("reads the fixture responses in order, with statistics and markers", async () => {
         expect(await providers.results.listResponses(surveyFeedback)).toStrictEqual(
@@ -1180,13 +1173,14 @@ export function describeProviderSuite(
         expect(await providers.results.listResponses(surveyCampaign)).toStrictEqual(
           campaignResponses,
         );
+        // Row 02 of fixtures 01 and 04 is an open partial run: not counted.
         expect(await providers.results.stats(surveyFeedback)).toEqual({
-          count: fixtureCount,
+          count: 4,
           firstSubmittedAt: "2026-04-01T08:00:00.500Z",
           lastSubmittedAt: "2026-04-01T12:00:00.000Z",
         });
         expect(await providers.results.stats(surveyCampaign)).toEqual({
-          count: fixtureCount,
+          count: 4,
           firstSubmittedAt: "2026-04-02T08:00:00.500Z",
           lastSubmittedAt: "2026-04-02T12:00:00.000Z",
         });
@@ -1376,7 +1370,6 @@ export function describeProviderSuite(
           append(survey, sid(n), { submittedAt: at(hour), ...client, ...over });
         const folded = (survey: SurveyRecord, query: ResponsePageQuery) =>
           providers.results.listResponsePage(survey, query);
-        const folds = it.runIf(options.foldsPartialRuns);
 
         it("lists the five responses of fixture 01, row 02 partial", async () => {
           expect(await folded(surveyFeedback, { limit: 10 })).toStrictEqual({
@@ -1386,7 +1379,7 @@ export function describeProviderSuite(
           expect(feedbackResponses[1]?.partial).toBe(true);
         });
 
-        folds("reads a run as one response", async () => {
+        it("reads a run as one response", async () => {
           const survey = await freshSurvey();
           await post(survey, 1, 10, { data: { a: 1, b: 1 }, partial: true });
           expect(await providers.results.completion(survey, "client-run")).toBe("partial");
@@ -1414,7 +1407,7 @@ export function describeProviderSuite(
           });
         });
 
-        folds("keeps a run on one page when a page ends in it", async () => {
+        it("keeps a run on one page when a page ends in it", async () => {
           const survey = await freshSurvey();
           await post(survey, 1, 10, { data: { a: 1 }, partial: true });
           await post(survey, 2, 11, { data: { b: 2 } });
@@ -1429,7 +1422,7 @@ export function describeProviderSuite(
           expect(second.next).toBeNull();
         });
 
-        folds("starts a new response when a client saves again after completing", async () => {
+        it("starts a new response when a client saves again after completing", async () => {
           const survey = await freshSurvey();
           await post(survey, 1, 10, { data: { a: 1 } });
           await post(survey, 2, 11, { data: { a: 2 }, partial: true });
@@ -1441,7 +1434,7 @@ export function describeProviderSuite(
           expect(await providers.results.completion(survey, "client-run")).toBe("partial");
         });
 
-        folds("leaves an open run out with completedOnly", async () => {
+        it("leaves an open run out with completedOnly", async () => {
           const survey = await freshSurvey();
           await post(survey, 1, 10, { partial: true });
           await append(survey, sid(2), { submittedAt: at(11) });
@@ -1451,7 +1444,7 @@ export function describeProviderSuite(
           expect(await ids(true)).toStrictEqual([sid(2)]);
         });
 
-        folds("tells whether a client's marker is partial", async () => {
+        it("tells whether a client's marker is partial", async () => {
           const survey = await freshSurvey();
           expect(await providers.results.hasPartial(survey)).toBe(false);
           await post(survey, 1, 10, { partial: true });
@@ -1460,7 +1453,7 @@ export function describeProviderSuite(
           expect(await providers.results.hasPartial(survey)).toBe(false);
         });
 
-        folds("writes the marker of an existing row with the posted state", async () => {
+        it("writes the marker of an existing row with the posted state", async () => {
           const survey = await freshSurvey();
           await post(survey, 1, 10, { partial: true });
           expect(await post(survey, 1, 10, {})).toBe("exists");

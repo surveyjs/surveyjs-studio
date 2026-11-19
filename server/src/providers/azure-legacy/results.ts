@@ -1,6 +1,7 @@
 import { odata, type TableClient, type TableEntityResult } from "@azure/data-tables";
-import type { SurveyRecord } from "../../domain/types.js";
-import { isAfterResponse, responseOrder } from "../ordering.js";
+import type { SurveyRecord, SurveyResponse } from "../../domain/types.js";
+import { responseOrder } from "../ordering.js";
+import { foldRuns, pageOfFoldedRuns, responseOfRun, type PlacedRow } from "../runs.js";
 import type { ResponsePosition, ResultStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { UnmappableLegacyRowError, isGuid, responseFromLegacy } from "./mapping.js";
@@ -74,8 +75,35 @@ function positionOf(id: string, happendat: Date): ResponsePosition {
   return { submittedAt: happendat.toISOString(), id: id.toLowerCase() };
 }
 
-/** Columns of the first read of a page: enough to place each row. */
-const POSITION_COLUMNS = ["RowKey", "happendat"];
+/** A row as folding needs it (ADR 0038), with its time for the reads of full rows. */
+interface PlacedLegacyRow extends PlacedRow {
+  /** As stored: keys are case-sensitive, so a point read needs it as it is. */
+  readonly rowKey: string;
+  readonly happendat: Date;
+}
+
+/**
+ * The row placed for folding. The client id and the partial flag are read as the mapping reads
+ * them (an empty or non-string `clientid` is no client; only a Boolean true is partial), so the
+ * runs folded here are the runs of the mapped rows.
+ */
+function placedForFolding(row: Record<string, unknown> & { rowKey?: string }): PlacedLegacyRow {
+  const { id, happendat } = placed(row);
+  const { clientid, ispartialcompleted } = row;
+  return {
+    ...positionOf(id, happendat),
+    rowKey: id,
+    happendat,
+    ...(typeof clientid === "string" && clientid !== "" && { clientId: clientid }),
+    partial: ispartialcompleted === true,
+  };
+}
+
+/** Columns of the first read of a page: enough to place each row and fold it into runs. */
+const POSITION_COLUMNS = ["RowKey", "id", "happendat", "clientid", "ispartialcompleted"];
+
+/** Point reads of a page's rows that come after its time window run this many at a time. */
+const POINT_READS_AT_ONCE = 32;
 
 export function createAzureResultStore(options: AzureResultStoreOptions): ResultStore {
   const { targets, publishIdOf, mapRows, now } = options;
@@ -121,6 +149,44 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
     }
   }
 
+  /**
+   * The full rows of `runs` (given in page order) by id, each as the mapping reads it; a row that
+   * is gone or cannot be read as a result row is missing (and reported by id). Rows inside the
+   * page's time window, from its first run's first row to its last run's first row, come in one
+   * filtered read, as in a survey without partial rows; rows of a run that continue after that
+   * window come by key.
+   */
+  async function fullRows(
+    table: TableClient,
+    runs: readonly PlacedLegacyRow[][],
+  ): Promise<Map<string, LegacyResultEntity>> {
+    const from = runs[0]?.[0];
+    const to = runs.at(-1)?.[0];
+    if (!from || !to) return new Map();
+    const members = runs.flat();
+    const wanted = new Set(members.map((row) => row.id));
+    // Stored times may have finer steps than a millisecond: take the whole millisecond.
+    const end = to.happendat.getTime();
+    const window = odata`happendat ge ${from.happendat} and happendat lt ${new Date(end + 1)}`;
+    // Only the page's rows; a row that cannot be placed was reported by the positions read.
+    const found = (await entitiesOf("response page", table, undefined, window)).filter(
+      (row) => isPlaced(row) && wanted.has(String(row.rowKey).toLowerCase()),
+    );
+
+    const later = members.filter((row) => row.happendat.getTime() > end).map((row) => row.rowKey);
+    for (let i = 0; i < later.length; i += POINT_READS_AT_ONCE) {
+      const read = await Promise.all(
+        later.slice(i, i + POINT_READS_AT_ONCE).map((key) => entityAt("response page", table, key)),
+      );
+      for (const row of read) {
+        const entity = row as TableEntityResult<Record<string, unknown>> | null;
+        if (entity !== null && isPlaced(entity)) found.push(entity);
+      }
+    }
+
+    return new Map(mapRows(found, legacyEntity).map((entity) => [entity.id.toLowerCase(), entity]));
+  }
+
   return {
     async appendResponse(survey, response) {
       const publishId = response.clientId === undefined ? null : await publishIdOf(survey.id);
@@ -138,23 +204,41 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
     },
 
     async stats(survey) {
-      const found = await entitiesOf("response statistics", rows(survey), ["happendat"]);
+      // Only complete rows count (ADR 0038): a partial row has `ispartialcompleted` true.
+      const found = await entitiesOf("response statistics", rows(survey), [
+        "happendat",
+        "ispartialcompleted",
+      ]);
+      let count = 0;
       let first: Date | null = null;
       let last: Date | null = null;
-      for (const { happendat } of found) {
+      for (const { happendat, ispartialcompleted } of found) {
+        if (ispartialcompleted === true) continue;
+        count += 1;
         if (!(happendat instanceof Date) || Number.isNaN(happendat.getTime())) continue;
         if (first === null || happendat < first) first = happendat;
         if (last === null || happendat > last) last = happendat;
       }
       return {
-        count: found.length,
+        count,
         firstSubmittedAt: first?.toISOString() ?? null,
         lastSubmittedAt: last?.toISOString() ?? null,
       };
     },
 
-    hasPartial() {
-      return Promise.reject(new Error("hasPartial: not built yet (hosted Step 4, Task 5)"));
+    async hasPartial(survey) {
+      // The iterator follows continuation tokens: a filtered page may come back empty.
+      try {
+        for await (const _marker of markers(survey).listEntities({
+          queryOptions: { filter: odata`ispartialcompleted eq ${true}`, select: ["RowKey"] },
+        })) {
+          return true;
+        }
+        return false;
+      } catch (error) {
+        if (statusOf(error) === 404) return false;
+        throw new LegacyStoreError("completion list", error);
+      }
     },
 
     async completion(survey, clientId) {
@@ -163,52 +247,49 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
       return marker.ispartialcompleted === true ? "partial" : "completed";
     },
 
-    async listResponsePage(survey, { after, limit }) {
-      // Rows before the cursor time are left out by the store; the cursor row itself and rows of
-      // the same instant are cut by position below. A row with an unexpected column type may or
-      // may not match the filter; either way it never reaches a page.
+    async listResponsePage(survey, query) {
+      const { limit, completedOnly = false } = query;
       const table = rows(survey);
-      const from = after && odata`happendat ge ${new Date(after.submittedAt)}`;
-      const isNext = (position: ResponsePosition) => !after || isAfterResponse(position, after);
 
-      // First the keys and times only, to place the rows; a row that cannot be placed is
-      // reported here and left out of the full reads.
-      const keys = await entitiesOf("response page", table, POSITION_COLUMNS, from);
-      const candidates = mapRows(keys, (row) => {
-        const { id, happendat } = placed(row);
-        return positionOf(id, happendat);
-      })
-        .filter(isNext)
-        .sort(responseOrder);
+      // First the position, client id and partial flag of every row: a row after the cursor may
+      // continue a run that starts before it (ADR 0038), so later pages read them all too. A row
+      // that cannot be placed is reported here and left out of the runs.
+      const keys = await entitiesOf("response page", table, POSITION_COLUMNS);
+      const runs = foldRuns(mapRows(keys, placedForFolding).sort(responseOrder));
 
-      // Then the full rows up to the instant of the row after the page: the same rows, in the
-      // same order, as a read of everything from the cursor on, cut at that instant. A row whose
-      // other columns cannot be mapped leaves a gap, so the window grows until the page and the
-      // row after it are full, or every placed row is in.
+      // Then the full rows of the page's runs. A row that cannot be mapped is left out of its
+      // run; a run with no row left leaves a gap, so the page grows until it and the run after it
+      // are full, or every run is in.
+      const found: { response: SurveyResponse; position: ResponsePosition }[] = [];
+      let taken = 0;
       let wanted = limit + 1;
       for (;;) {
-        const end = candidates[Math.min(wanted, candidates.length) - 1];
-        if (end === undefined) return { items: [], next: null };
-        // Stored times may have finer steps than a millisecond: take the whole millisecond.
-        const until = odata`happendat lt ${new Date(Date.parse(end.submittedAt) + 1)}`;
-        const filter = from ? `${from} and ${until}` : until;
-        const found = await entitiesOf("response page", table, undefined, filter);
-        const positioned = mapRows(found.filter(isPlaced), (row) => {
-          const entity = legacyEntity(row);
-          return { entity, position: positionOf(entity.id, entity.happendat) };
-        })
-          .filter(({ position }) => isNext(position))
-          .sort((a, b) => responseOrder(a.position, b.position));
-        if (positioned.length > limit || wanted >= candidates.length) {
-          const taken = positioned.slice(0, limit);
-          const last = taken.at(-1);
-          return {
-            items: mapRows(taken, ({ entity }) => responseFromLegacy(entity)),
-            next: positioned.length > taken.length && last ? last.position : null,
-          };
+        const page = pageOfFoldedRuns(runs, { ...query, limit: wanted });
+        const fresh = page.runs.slice(taken);
+        const full = await fullRows(table, fresh);
+        for (const run of fresh) {
+          const mapped = mapRows(
+            run.flatMap((row) => full.get(row.id) ?? []),
+            responseFromLegacy,
+          );
+          if (mapped.length === 0) continue;
+          const response = responseOfRun(mapped);
+          // Without its complete row (unmappable) the run reads as partial.
+          if (completedOnly && response.partial) continue;
+          const [first] = run as [PlacedLegacyRow];
+          found.push({ response, position: positionOf(first.id, first.happendat) });
         }
-        wanted += limit + 1 - positioned.length;
+        taken = page.runs.length;
+        if (found.length > limit || page.next === null) break;
+        wanted += limit + 1 - found.length;
       }
+      const items = found.slice(0, limit);
+      const last = items.at(-1);
+      return {
+        items: items.map(({ response }) => response),
+        // The run's first row, which the next page's runs start after, even when it is unmappable.
+        next: found.length > limit && last ? last.position : null,
+      };
     },
 
     deleteAll: (survey) => writeResultsDeletion(targets, survey, new Date(now()).toISOString()),

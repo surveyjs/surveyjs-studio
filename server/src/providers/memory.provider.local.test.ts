@@ -5,5 +5,5 @@ import { describeProviderSuite } from "./suite/provider-suite.js";
 describeProviderSuite(
   "memory with the local user directory (legacy fixture seed)",
   async () => createMemoryProviders(await legacyFixtureSeed(), { userDirectory: "local" }),
-  { userDirectoryKind: "local", foldsPartialRuns: true },
+  { userDirectoryKind: "local" },
 );
