@@ -36,6 +36,7 @@ app.log.info(
     legacyUrl: settings.legacyUrl,
     cacheEntries: settings.cacheEntries,
     studioTimeoutMs: settings.studioTimeoutMs,
+    fileTimeoutMs: settings.fileTimeoutMs,
     trustProxy: settings.trustProxy,
   },
   "starting",

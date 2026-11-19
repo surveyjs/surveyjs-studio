@@ -5,7 +5,9 @@ import type { FastifyError, FastifyInstance } from "fastify";
 import { sendEmpty } from "../answers.js";
 import type { BridgeSettings } from "../settings.js";
 import { SurveyCache } from "../survey-cache.js";
+import { registerFileActions } from "./files.js";
 import { registerPostActions } from "./post.js";
+import { registerResultActions } from "./results.js";
 import { registerSurveyActions } from "./survey.js";
 
 /** The old host's request body limit (bytes); a larger body is an empty 413. */
@@ -29,5 +31,7 @@ export function registerActions(app: FastifyInstance, settings: BridgeSettings):
     });
     registerSurveyActions(actions, cache);
     registerPostActions(actions);
+    registerResultActions(actions);
+    registerFileActions(actions);
   });
 }

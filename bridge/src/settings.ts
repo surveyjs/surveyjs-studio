@@ -15,6 +15,12 @@ export interface BridgeSettings {
   /** `BRIDGE_STUDIO_TIMEOUT_MS` (default 10000): a Studio call taking longer answers an empty 500. */
   readonly studioTimeoutMs: number;
   /**
+   * `BRIDGE_FILE_TIMEOUT_MS` (default 120000): how long a file's bytes (`image`, `file`,
+   * `files?name=`) may take to stream through once Studio has answered; a file still streaming
+   * then is cut off. Studio's headers must still come within `BRIDGE_STUDIO_TIMEOUT_MS`.
+   */
+  readonly fileTimeoutMs: number;
+  /**
    * `BRIDGE_TRUST_PROXY` (default none): addresses or CIDR ranges of proxies in front of the bridge
    * whose `X-Forwarded-For` names the caller. Empty: the caller is the socket's peer.
    */
@@ -81,6 +87,7 @@ export function loadSettings(env: Env): BridgeSettings {
   const cacheEntries = integer("BRIDGE_CACHE_ENTRIES", 10_000, 0, 10_000_000);
   const port = integer("BRIDGE_PORT", 3002, 1, 65_535);
   const studioTimeoutMs = integer("BRIDGE_STUDIO_TIMEOUT_MS", 10_000, 1, 600_000);
+  const fileTimeoutMs = integer("BRIDGE_FILE_TIMEOUT_MS", 120_000, 1, 3_600_000);
 
   const host = env.BRIDGE_HOST ?? "127.0.0.1";
   if (host === "") problems.push("BRIDGE_HOST must not be empty");
@@ -96,5 +103,14 @@ export function loadSettings(env: Env): BridgeSettings {
   }
 
   if (problems.length > 0) throw new SettingsError(problems);
-  return { studioUrl, legacyUrl, cacheEntries, port, host, studioTimeoutMs, trustProxy };
+  return {
+    studioUrl,
+    legacyUrl,
+    cacheEntries,
+    port,
+    host,
+    studioTimeoutMs,
+    fileTimeoutMs,
+    trustProxy,
+  };
 }

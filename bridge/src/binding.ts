@@ -1,6 +1,7 @@
 // Parameters as the old API bound them: GUIDs in every form it parsed, query parameters with its
 // validation texts, and the client IDs Studio can hold.
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { sendValidationProblem } from "./answers.js";
 import { queryValues } from "./routes.js";
 
 /** The GUID a missing parameter bound as; no survey has it. */
@@ -52,6 +53,20 @@ export function bindGuidQuery(request: FastifyRequest, name: string): GuidParame
   if (first.trim() === "") return { error: `The value '${attempted}' is invalid.` };
   const guid = parseGuid(first);
   return guid === null ? { error: `The value '${attempted}' is not valid.` } : { guid };
+}
+
+/** A GUID query parameter of a public action, or the old validation answer already sent (`undefined`). */
+export function guidParameter(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  name: string,
+): string | undefined {
+  const bound = bindGuidQuery(request, name);
+  if ("error" in bound) {
+    void sendValidationProblem(reply, { [name]: [bound.error] });
+    return undefined;
+  }
+  return bound.guid;
 }
 
 // eslint-disable-next-line no-control-regex -- the contract's pattern names control characters

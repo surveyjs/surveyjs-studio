@@ -1,9 +1,9 @@
 // The old API's survey reads (reference behaviour: ADR 0039): `getSurvey`, `getSurveyAndIsCompleted`
 // and `isCompleted`, through Studio's `getPublicDefinition`, `getRespondentState` and
 // `getRespondentStateByResultId`.
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { sendEmpty, sendJsonString, sendValidationProblem, jsonContentType } from "../answers.js";
-import { bindGuidQuery, EMPTY_GUID, isStudioClientId } from "../binding.js";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { sendEmpty, sendJsonString, jsonContentType } from "../answers.js";
+import { EMPTY_GUID, guidParameter, isStudioClientId } from "../binding.js";
 import { oldRoute, queryValue } from "../routes.js";
 import { unexpectedStatus } from "../studio.js";
 import type { SurveyCache } from "../survey-cache.js";
@@ -17,20 +17,6 @@ const OLD_STATES: Record<"none" | "partial" | "completed", OldState> = {
   partial: "partial",
   completed: "completed",
 };
-
-/** A GUID query parameter, or the old validation answer already sent (`undefined`). */
-function guidParameter(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  name: string,
-): string | undefined {
-  const bound = bindGuidQuery(request, name);
-  if ("error" in bound) {
-    void sendValidationProblem(reply, { [name]: [bound.error] });
-    return undefined;
-  }
-  return bound.guid;
-}
 
 /**
  * The survey's definition as JSON text, from the cache when Studio confirms it unchanged;

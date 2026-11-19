@@ -15,6 +15,7 @@ describe("loadSettings", () => {
       port: 3002,
       host: "127.0.0.1",
       studioTimeoutMs: 10_000,
+      fileTimeoutMs: 120_000,
       trustProxy: [],
     });
   });
@@ -27,6 +28,7 @@ describe("loadSettings", () => {
         BRIDGE_PORT: "8081",
         BRIDGE_HOST: "0.0.0.0",
         BRIDGE_STUDIO_TIMEOUT_MS: "2500",
+        BRIDGE_FILE_TIMEOUT_MS: "30000",
         BRIDGE_TRUST_PROXY: " 10.0.0.1, 172.16.0.0/12 ,::1",
       }),
     ).toEqual({
@@ -36,6 +38,7 @@ describe("loadSettings", () => {
       port: 8081,
       host: "0.0.0.0",
       studioTimeoutMs: 2500,
+      fileTimeoutMs: 30_000,
       trustProxy: ["10.0.0.1", "172.16.0.0/12", "::1"],
     });
   });
@@ -52,6 +55,8 @@ describe("loadSettings", () => {
     [{ ...REQUIRED, BRIDGE_PORT: "65536" }, "BRIDGE_PORT"],
     [{ ...REQUIRED, BRIDGE_HOST: "" }, "BRIDGE_HOST"],
     [{ ...REQUIRED, BRIDGE_STUDIO_TIMEOUT_MS: "0" }, "BRIDGE_STUDIO_TIMEOUT_MS"],
+    [{ ...REQUIRED, BRIDGE_FILE_TIMEOUT_MS: "0" }, "BRIDGE_FILE_TIMEOUT_MS"],
+    [{ ...REQUIRED, BRIDGE_FILE_TIMEOUT_MS: "3600001" }, "BRIDGE_FILE_TIMEOUT_MS"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.1,proxy.local" }, "BRIDGE_TRUST_PROXY"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.0/33" }, "BRIDGE_TRUST_PROXY"],
   ])("refuses %j (%s)", (env, name) => {

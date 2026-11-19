@@ -19,6 +19,8 @@ declare module "fastify" {
   interface FastifyRequest {
     /** Studio's public API on behalf of this request's caller. */
     readonly studio: StudioClient;
+    /** As `studio`, for reading a file: its bytes may take `BRIDGE_FILE_TIMEOUT_MS` to stream. */
+    readonly studioFiles: StudioClient;
   }
 }
 
@@ -134,12 +136,25 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     peers.set(socket, plainAddress(socket.remoteAddress));
   });
 
+  // Without trusted proxies the caller is the connection's peer, as taken on accept.
+  const callerOf = (request: FastifyRequest): string =>
+    settings.trustProxy.length > 0
+      ? plainAddress(request.ip)
+      : (peers.get(request.raw.socket) ?? "");
   app.decorateRequest("studio", {
     getter(this: FastifyRequest): StudioClient {
-      // Without trusted proxies the caller is the connection's peer, as taken on accept.
-      const caller =
-        settings.trustProxy.length > 0 ? plainAddress(this.ip) : (peers.get(this.raw.socket) ?? "");
-      return studioClient(settings, caller, fetchImpl, callerGone.get(this.raw));
+      return studioClient(settings, callerOf(this), fetchImpl, callerGone.get(this.raw));
+    },
+  });
+  app.decorateRequest("studioFiles", {
+    getter(this: FastifyRequest): StudioClient {
+      return studioClient(
+        settings,
+        callerOf(this),
+        fetchImpl,
+        callerGone.get(this.raw),
+        settings.fileTimeoutMs,
+      );
     },
   });
 

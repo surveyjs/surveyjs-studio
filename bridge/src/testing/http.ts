@@ -109,6 +109,7 @@ export const TEST_SETTINGS: Omit<BridgeSettings, "studioUrl" | "legacyUrl"> = {
   port: 0,
   host: "127.0.0.1",
   studioTimeoutMs: 2_000,
+  fileTimeoutMs: 5_000,
   trustProxy: [],
 };
 
