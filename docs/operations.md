@@ -19,12 +19,13 @@ root with `pnpm image:build` (`docker build -t surveyjs-studio-hosted:local .`).
 ([prod-like mode](development.md#prod-like-mode)). The same image serves modes 1 and 4: only its settings differ
 ([below](#configuration-by-deployment-mode)).
 
-The `Dockerfile` has two targets, built from the same stages ([ADR 0028](adr/0028-the-self-hosted-image.md)):
+The `Dockerfile` has three targets, built from the same stages ([ADR 0028](adr/0028-the-self-hosted-image.md)):
 
-| Target        | Build                                 | What it is                                                               |
-| ------------- | ------------------------------------- | ------------------------------------------------------------------------ |
-| `runtime`     | `docker build .` (the last stage)     | The hosted image: port 3000, no defaults; this section describes it      |
-| `self-hosted` | `docker build --target self-hosted .` | The free image (mode 2b): port 8080, SQLite on `/data`, password sign-in |
+| Target        | Build                                 | What it is                                                                     |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| `runtime`     | `docker build .` (the last stage)     | The hosted image: port 3000, no defaults; this section describes it            |
+| `self-hosted` | `docker build --target self-hosted .` | The free image (mode 2b): port 8080, SQLite on `/data`, password sign-in       |
+| `bridge`      | `docker build --target bridge .`      | The bridge for the old API's actions: port 3002 ([below](#running-the-bridge)) |
 
 The self-hosted image is for self-hosting admins: [Self-hosting](self-hosting.md). It is released from `v*` tags
 ([below](#releasing-the-self-hosted-image)).
@@ -112,6 +113,45 @@ firewall; then `deploy/hetzner/setup.sh` installs Docker and Caddy for https and
 (`pnpm check:deps` checks those lines), and the server package ships only `src` (without tests) and `fixtures`
 (`files` in `server/package.json`). Before pushing an image, check that this prints nothing:
 `docker run --rm --entrypoint sh surveyjs-studio-hosted:<tag> -c 'find /app -name "*.env*"'`.
+
+## Running the bridge
+
+The bridge ([ADR 0035](adr/0035-legacy-api-bridge.md), [ADR 0039](adr/0039-bridge-public-actions.md)) is a separate
+service, with an image target of its own. It answers the old API's public actions through Studio's public API and
+forwards every other path to the old service ([what it answers](api/legacy-compat.md)). It holds no store and no store
+credentials, so it needs no volume and no secret.
+
+```sh
+docker build --target bridge -t surveyjs-studio-bridge:local .
+docker run -d --name bridge -p 3002:3002 \
+  -e BRIDGE_STUDIO_URL=<Studio's API base URL, with /api/v1> \
+  -e BRIDGE_LEGACY_URL=<the old service's base URL, https> \
+  -e BRIDGE_TRUST_PROXY=<the reverse proxy's address> \
+  surveyjs-studio-bridge:local
+```
+
+| Item     | Value                                                                                                                                                          |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process  | `node --import tsx src/main.ts` in `/app/bridge`, as the user `node`                                                                                           |
+| Port     | `3002` (`BRIDGE_PORT`); the image listens on all addresses (`BRIDGE_HOST=0.0.0.0`). Put an https proxy in front of it                                          |
+| Settings | The `BRIDGE_*` variables in [the settings table](api/legacy-compat.md#settings). Two are required                                                              |
+| Logs     | JSON lines on standard output, level `info`                                                                                                                    |
+| Health   | None: the image has no `HEALTHCHECK`, because an address the bridge answered itself would differ from the old host. A probe can use a forwarded path (`GET /`) |
+
+- **Studio's `TRUST_PROXY` must list the bridge.** The bridge sends the caller's address in `X-Forwarded-For`, and Studio
+  uses it only from a trusted peer. Set Studio's `TRUST_PROXY` to the bridge's address, as the Studio container sees it
+  (see [Running the image](#running-the-image), step 4), or Studio's IP capture and per-address rate limits see the
+  bridge for every respondent.
+- **`BRIDGE_TRUST_PROXY` must list the reverse proxy in front of the bridge,** so the bridge knows the real caller. The
+  proxy's `X-Forwarded-For` is passed on unvalidated: list only a proxy that overwrites or appends the header.
+- **`BRIDGE_LEGACY_URL` should be an `https:` URL.** The forwarded requests carry the callers' headers.
+- **Studio's public limits apply to the bridge's calls.** Studio's `PUBLIC_RATE_LIMIT` (60 a minute per address and
+  operation by default) counts each respondent separately only through the address above. A very large public result set is
+  read one Studio page at a time, so it streams slowly.
+- **A change of settings or image: re-create the container,** as for Studio.
+- **Check it** with a request that needs no data: `curl -i <bridge>/public/Survey/getSurvey` answers `400` from the bridge
+  itself (no survey ID), and a path the bridge does not own, for example `curl -i <bridge>/`, shows the old service's answer.
+  To try it against a local Studio without Docker, follow [the Step 5 demo](demo/hosted-05.md).
 
 ## Releasing the self-hosted image
 

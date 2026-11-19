@@ -1,7 +1,7 @@
 # Public endpoints, rate limits and idempotency
 
 Five operations serve respondents, embeds and readers of shared results: the three of Step 8,
-`downloadFile` of Step 7 and `getPublicResults` of Step 10. They need **no session and no CSRF token**, so they are
+`downloadFile` of Step 7 and `getPublicResults` of Step 10. Seven more serve [the bridge](#operations-for-the-bridge). They need **no session and no CSRF token**, so they are
 rate limited. A sixth, `getResultStats`, needs a session and is listed because it is the way to count
 responses without loading them. The reasons for each rule are in
 [ADR 0014](../adr/0014-run-page-and-response-collection.md) (the run operations) and
@@ -370,6 +370,44 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
   filtered the columns only when an old column list existed, so the IP address and client id could leak. This
   endpoint always leaves them out and pages all rows. The old links (`/Results/Survey/<result id>`) are not served by the app: the surveyjs.io site redirects them to
   `/results/{id}` ([redirect map](../operations/surveyjs-redirects.md)).
+
+## Operations for the bridge
+
+Seven more unauthenticated operations, and two query parameters, serve [the bridge](legacy-compat.md), which answers the
+old API's public actions through them ([ADR 0039](../adr/0039-bridge-public-actions.md)). They are rate limited as the
+public operations above (`PUBLIC_RATE_LIMIT`, `PUBLIC_FILE_RATE_LIMIT` for the file reads) and work on every provider.
+They are addressed by the keys the old API used: a survey's post ID and result ID, and the legacy file names. A survey's
+answers and aggregates are reachable only through its result ID, and posting only through its post ID, as before.
+
+| Operation                      | Request                                                 | Answer                                                                                                         |
+| ------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `getPublicDefinition`          | `GET /public/surveys/{surveyId}/definition`             | `200` the working definition, with a strong `ETag` (`If-None-Match` gives `304`) and `Cache-Control: no-cache` |
+| `getRespondentState`           | `GET /public/surveys/{surveyId}/respondents/{clientId}` | `200` `{ "state": "none"                                                                                       | "partial" | "completed" }` |
+| `submitResponseByPostId`       | `POST /public/posts/{postId}/responses`                 | As `submitResponse`                                                                                            |
+| `uploadResponseFileByPostId`   | `POST /public/posts/{postId}/files`                     | As `uploadResponseFile`                                                                                        |
+| `getRespondentStateByResultId` | `GET /public/results/{resultId}/respondents/{clientId}` | As `getRespondentState`                                                                                        |
+| `getQuestionSummary`           | `GET /public/results/{resultId}/questions/{name}`       | `200` `{ answered, values: [{ value, count }], responseCount, firstSubmittedAt, lastSubmittedAt }`             |
+| `getLegacyFile`                | `GET /public/legacy-files/{kind}/{name}`                | `200` the file's bytes with `downloadFile`'s headers; `404` when unknown                                       |
+
+- **`getPublicDefinition`** is the read for surveys built for the old service: the **working definition** (what the editor
+  last saved), **whatever the publish state** and for archived surveys too. An unknown or deleted survey is `404`. A
+  survey whose definition was never saved answers `{}`.
+- **Posts by post ID** ignore the publish state and "Limit to one response", as the old API never refused a post. The
+  size and rate limits apply as for `submitResponse`. The completion markers follow [Partial saves](#partial-saves) on
+  every path: each post with a client ID sets that client's state to what it posted, so a partial save after completing
+  reads `partial` again.
+- **The respondent states** read the completion marker. A stored marker without a partial flag reads `completed`. The
+  client ID goes into the path percent-encoded and follows the rules of [Load a survey](#load-a-survey).
+- **`getQuestionSummary`** counts the answers under the question's name in the folded, completed responses only, never
+  metadata such as times or IDs. An array answer counts each element; an object answer counts each property as a
+  two-element array `[key, value]`; any other value counts as itself and keeps its JSON type, so `1` and `"1"` stay
+  apart. `answered` counts the responses that have the name, `null` included.
+- **`getLegacyFile`:** `kind` is `asset` (editor images) or `response` (respondent files). A name is one path segment of
+  letters, digits, `.`, `-` and `_` (at most 100 characters), matched as stored; any other name is `404` without a lookup.
+  The bytes are returned as stored, with the content type of the name's extension, or `application/octet-stream` without
+  one. A SQL provider looks the name up in its `legacy_files` table; the Azure legacy provider reads the old file shares
+  directly, read-only; the memory provider uses its seed.
+- **`getPublicResults`** gains `from` and `till` (date-times): only responses submitted after `from` and before `till`.
 
 ## Errors
 

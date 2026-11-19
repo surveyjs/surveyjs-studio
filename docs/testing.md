@@ -4,14 +4,16 @@ Tests check behaviour through a **seam**: HTTP, the browser, or the inputs and o
 function. They do not call internals or read private state. Test output must be clean: no
 warnings.
 
-## The three seams
+## The four seams
 
-| Seam               | Question it answers                             | Where                         | Status         |
-| ------------------ | ----------------------------------------------- | ----------------------------- | -------------- |
-| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/`          | Built (Step 1) |
-| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`                        | Built (Step 3) |
-| Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2) |
+| Seam               | Question it answers                             | Where                         | Status                |
+| ------------------ | ----------------------------------------------- | ----------------------------- | --------------------- |
+| HTTP conformance   | Does a server follow the contract?              | `conformance-tests/`          | Built (Step 1)        |
+| Browser end-to-end | Does the whole app work in a real browser?      | `e2e/`                        | Built (Step 3)        |
+| Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2)        |
+| Compatibility      | Does the bridge answer as the old API did?      | `legacy-compat-tests/`        | Built (hosted Step 5) |
 
+The bridge's own unit tests are the Vitest project `bridge` (`pnpm test:bridge`, also part of `pnpm test:unit`).
 Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 The visual parity specs (Step 13) use the browser seam: they compare screenshots of the app with screenshots of
@@ -24,6 +26,7 @@ surveyjs.io, and they run locally only. See [Visual parity](#visual-parity).
 | `pnpm test`                      | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                                  |
 | `pnpm test:unit`                 | Vitest projects: `scripts`, `contract`, `server`, `web` (the server project includes the SQLite provider suite and migrator tests, on temporary files)          |
 | `pnpm test:conformance`          | The conformance suite against a server it starts itself                                                                                                         |
+| `pnpm test:compat`               | The [compatibility suite](#the-compatibility-suite): the bridge in front of Studio on the memory provider, against golden files                                 |
 | `pnpm test:conformance:user-api` | The conformance suite with the server on `USER_DIRECTORY=surveyjs-api`, against the user-API stub it starts (no Docker)                                         |
 | `pnpm e2e`                       | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
 | `pnpm e2e:azurite`               | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results, results-details, projects and xss specs in Azurite mode (needs Docker) |
@@ -36,6 +39,7 @@ These need the Docker replica (see [Development](development.md#azurite-mode)); 
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test:providers:azurite`   | Four files against Azurite and SQL: the provider suite, the NULL-row tests, the survey, file and result write tests (create, update, clone, delete, definition and theme saves, files, response rows and completion markers) and the fixture loader tests |
 | `pnpm test:conformance:azurite` | The conformance suite against a server on the `azure-legacy` provider                                                                                                                                                                                     |
+| `pnpm test:compat:azurite`      | The [compatibility suite](#the-compatibility-suite) with Studio on the `azure-legacy` provider                                                                                                                                                            |
 
 These need PostgreSQL in Docker (`pnpm postgres:up`, see [Development](development.md#sqlite-and-postgresql-modes)), except
 the SQLite ones, which need nothing:
@@ -811,6 +815,101 @@ On the self-hosted image each mode has one container, `surveyjs-studio-e2e-<mode
 - A container left by an earlier run is removed before its server starts. The global teardown
   (`e2e/image-teardown.mjs`) saves each container's log to `docker-logs/<name>.log` and removes it. CI uploads
   `docker-logs/` on failure.
+
+## The compatibility suite
+
+`legacy-compat-tests/` checks the [bridge](api/legacy-compat.md) over HTTP, given only a base URL, against **golden
+files**: the old API's answers to a request, one file per case. It also runs Form Library v1 (`survey-core` 1.x, pinned
+in this package; `check:deps` and Renovate keep it on 1.x, outside the SurveyJS version rule) against the bridge from
+another origin, as pages built for the old service do. The design is [ADR 0039](adr/0039-bridge-public-actions.md)
+point 6.
+
+### Running it
+
+| Command                    | Runs                                                                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:compat`         | The suite on its own servers: a stub of the old service, Studio on the **memory** provider with the legacy fixtures, and the bridge in front of it, all on free ports |
+| `pnpm test:compat:azurite` | The same with Studio on the **azure-legacy** provider and the replica (needs Docker: `pnpm demo:azurite:up`); settings in `legacy-compat-tests/azure-legacy.env`      |
+
+The setup starts and stops everything itself; nothing needs port 3000. To run the suite against servers you started,
+set `COMPAT_BASE_URL` (the bridge's origin) and `COMPAT_STUDIO_URL` (Studio's `/api/v1` URL); nothing is started then.
+`COMPAT_PROVIDER` (`memory`, the default, or `azure-legacy`) says which provider the suite's own Studio uses.
+
+- **Studio's settings in the suite.** The bridge is Studio's only caller, so the public rate limits are far above what
+  the suite sends. `TRUST_PROXY` lists the bridge's loopback address, so Studio takes the caller from the bridge's
+  `X-Forwarded-For`, and the bridge trusts loopback so a test can send a caller address of its own. The response and file
+  limits are small (64 KiB), so the "too large" cases stay cheap.
+- **Azurite has no file service.** The Azure legacy provider reads the old file shares directly, so on Azurite its share
+  reader is not configured and `getLegacyFile` answers `404` for share names. Cases that need a share carry
+  `"providers": ["memory"]` and a `providersNote`, and are skipped there. Share reads are proven by the provider suite with
+  a stub ([Provider suite](#provider-suite)), not end to end, until a real storage account is used.
+- **Legacy files need file storage on the server.** The memory seed writes the legacy files' bytes only when `FILES_PATH`
+  or `FILE_STORE` is set; the suite sets it.
+
+### Golden files
+
+`legacy-compat-tests/golden/<action>/<case>.json`, one per case:
+
+| Member                       | Meaning                                                                                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                     | `derived` or `recorded`                                                                                                                                                                      |
+| `description`                | What the case shows                                                                                                                                                                          |
+| `difference`                 | Where the bridge differs from the old API on purpose, with how the old API answered; for the reviewers of recordings, not compared                                                           |
+| `providers`, `providersNote` | The providers the case can run on (default: all), with why when limited                                                                                                                      |
+| `setup`                      | State the case needs: a survey of its own (`survey.settings`), then `posts` (`surveyResult`, `clientId`, `isPartialCompleted`) and `uploads` made through the old actions                    |
+| `request`                    | `method`, `path` as sent (letter case, trailing slash and escapes kept), `query` (an object, or the raw string), `headers` and a `body`: `text`, `json`, `base64` or `multipart` parts       |
+| `response`                   | `status`, the `headers` callers depend on (lower-case names; `null` means absent) and a `body`: `null` for empty, `json` (compared as values; key order ignored), `text` or `base64` (exact) |
+
+- **Derived or recorded.** Golden files are **derived** from the old code and ADR 0039's differences until the SurveyJS
+  team's recordings replace them with **recorded** ones. A reviewed recording must match its derived file, or every
+  difference is fixed, or recorded in the file's `difference` note and in
+  [the list of differences](api/legacy-compat.md#differences-from-the-old-api), before the cutover.
+- **Variables.** `{{survey.surveyId}}`, `{{survey.postId}}` and `{{survey.resultId}}` name the case's own survey; an
+  upload's answer `dxsimage:x.png` sets `{{<as>}}` to the answer and `{{<as>.name}}` to `x.png`; `{{c*n}}` is the character
+  `c` repeated `n` times (large bodies without large files). A fixture's own IDs (`22222222-0000-4000-8000-a00000000001`
+  and so on) stand for the fixtures' surveys.
+- **Placeholders** for volatile parts, in any expected string (header, text or a JSON string): `<guid>`, `<hex64>` (a
+  Studio file ID), `<iso>` (a date and time without a zone, up to seven fractional digits; write the `Z` after it where
+  the answer has one) and `<any>` (anything). The JSON string `"<any>"` matches any JSON **string**, and only a string, for
+  example a problem's `traceId`.
+- **Fixture data only.** A golden file holds fixture values, never production data
+  ([plan-hosted](../plan-hosted.md#rules-that-apply-to-every-step) rule 6).
+
+### Recording against the old service
+
+For the SurveyJS team, who can reach the real old API. The script replays each case against it and writes what it
+answered, for review before anything is committed.
+
+```sh
+pnpm --filter @surveyjs-studio/legacy-compat-tests record -- \
+  --base <the old API's origin> --surveys <file> --out <folder> [--only <action>[/<case>]]
+```
+
+`--surveys` is a JSON file of the test account's values:
+
+```json
+{
+  "ids": { "<value in the golden files>": "<the test account's value>" },
+  "survey": { "surveyId": "…", "postId": "…", "resultId": "…" },
+  "cases": { "<action>/<case>": { "surveyId": "…", "postId": "…", "resultId": "…" } }
+}
+```
+
+- `ids` maps the fixtures' survey, post and result IDs and legacy file names to the test account's (in any letter case,
+  with or without dashes). A case whose request names a fixture ID without a value in `ids` is skipped.
+- `survey` is the test account's survey that the cases with a `setup` post and upload to. A recording reuses it across
+  cases, so cases that **count responses** need a survey without earlier responses: give those cases a survey of their own
+  under `cases`, as for a case that needs Grant Access or "Save Respondent IP" on, which the script cannot switch. Each
+  setup case uses a client ID of its own, so the marker answers do not depend on the order.
+- For each case the script replays the setup and the request against `--base`, maps the test account's values in the
+  answer back to the fixtures' and writes `<folder>/<action>/<case>.json` with `"source": "recorded"`. It prints each
+  case's name, status and whether the answer matches the derived file, naming only the places that differ, never a body.
+- **Where the output goes.** `--out` must be outside the repository (the script refuses a path inside it, resolving links
+  and `..`): use the private location agreed with the SurveyJS team. The recordings are reviewed there; ids, emails and
+  addresses that are not the test account's are replaced, and only then does a reviewed file replace the derived one in
+  `golden/`. The script prints no answer text; an error shows only its own message.
+- The test account's surveys hold made-up answers only. The suite's own test of the script (`record.test.ts`) runs it
+  against the bridge with fixture data.
 
 ## Image checks
 
