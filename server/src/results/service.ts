@@ -39,6 +39,8 @@ export interface ExportFile {
 export interface SubmitRequest {
   readonly data: Record<string, unknown>;
   readonly clientId?: string;
+  /** Save progress without completing; counts only with a `clientId`. */
+  readonly partial?: boolean;
   /** The Idempotency-Key header, when sent. */
   readonly idempotencyKey?: string;
   /** request.ip (already resolved through TRUST_PROXY). */
@@ -145,6 +147,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
           submittedAt: new Date(now()).toISOString(),
           data: request.data,
           ...(clientId !== undefined && { clientId }),
+          ...(clientId !== undefined && request.partial === true && { partial: true }),
           ...(survey.settings.storeRespondentIp && { respondentIp: respondentIp(request.ip) }),
         });
       } catch (error) {
@@ -181,6 +184,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         if (!definition) throw notFound();
         columns = csvColumns(definition.content, {
           storeRespondentIp: survey.settings.storeRespondentIp,
+          partial: await results.hasPartial(survey),
         });
       }
       const responses = await storedResponses(results, survey);
@@ -211,6 +215,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       const hidden = privateKeysOf(definition.content, privateQuestions);
       const { items, next } = await results.listResponsePage(survey, {
         limit: page.limit,
+        completedOnly: true,
         ...(after && { after }),
       });
       return {

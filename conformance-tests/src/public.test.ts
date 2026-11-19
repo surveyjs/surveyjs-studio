@@ -89,6 +89,15 @@ async function countOf(surveyId: string, headers: Headers): Promise<number> {
   return ((await response.json()) as { count: number }).count;
 }
 
+async function results(surveyId: string, headers: Headers): Promise<Record<string, unknown>[]> {
+  const response = await call("GET", "/surveys/{surveyId}/results", {
+    path: `/surveys/${surveyId}/results?limit=500`,
+    headers,
+  });
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { items: Record<string, unknown>[] }).items;
+}
+
 async function expectNotAvailable(response: Response): Promise<void> {
   expect(response.status).toBe(404);
   expect(await response.json()).toMatchObject(NOT_AVAILABLE);
@@ -257,13 +266,105 @@ describe("submitResponse", () => {
     expect(await (await load(surveyId, body.clientId)).json()).toMatchObject({ completed: true });
   });
 
-  it("stores a partial response as complete", async (ctx) => {
+  it("stores a partial response without a client id as complete", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const response = await submit(surveyId, { data: { q1: "a" }, partial: true });
+    expect(response.status).toBe(201);
+    expect(await countOf(surveyId, headers)).toBe(1);
+    const listed = await results(surveyId, headers);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).not.toHaveProperty("partial");
+  });
+
+  it("saves progress for a client and completes it with a later post", async (ctx) => {
     const headers = await as(ctx, admin);
     const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
     const clientId = `client-${randomUUID()}`;
-    const response = await submit(surveyId, { data: { q1: "a" }, clientId, partial: true });
-    expect(response.status).toBe(201);
+
+    const first = await submit(surveyId, {
+      data: { q1: "a" },
+      clientId,
+      partial: true,
+      lastPageIndex: 0,
+    });
+    expect(first.status).toBe(201);
+    const partialId = await idOf(first);
+    expect(await (await load(surveyId, clientId)).json()).toMatchObject({ completed: false });
+    expect(await countOf(surveyId, headers)).toBe(0);
+    expect(await results(surveyId, headers)).toMatchObject([
+      { id: partialId, clientId, data: { q1: "a" }, partial: true },
+    ]);
+    const exportedJson = await call("GET", "/surveys/{surveyId}/results/export", {
+      path: `/surveys/${surveyId}/results/export?format=json`,
+      headers,
+    });
+    if (!sandbox) {
+      expect(await exportedJson.json()).toMatchObject([{ id: partialId, partial: true }]);
+      const csv = await call("GET", "/surveys/{surveyId}/results/export", {
+        path: `/surveys/${surveyId}/results/export?format=csv`,
+        headers,
+      });
+      const lines = (await csv.text()).split("\r\n");
+      expect(lines[0]).toBe("Submitted,q1,ClientId,Partial");
+      expect(lines[1]).toMatch(/,a,.*,true$/);
+    }
+    const open = await call("GET", "/public/surveys/{surveyId}/results", {
+      path: `/public/surveys/${surveyId}/results`,
+    });
+    expect(open.status).toBe(404);
+
+    const done = await submit(surveyId, { data: { q1: "b" }, clientId });
+    expect(done.status).toBe(201);
     expect(await (await load(surveyId, clientId)).json()).toMatchObject({ completed: true });
+    expect(await countOf(surveyId, headers)).toBe(1);
+    const listed = await results(surveyId, headers);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: partialId, data: { q1: "b" } });
+    expect(listed[0]).not.toHaveProperty("partial");
+    if (!sandbox) {
+      const csv = await call("GET", "/surveys/{surveyId}/results/export", {
+        path: `/surveys/${surveyId}/results/export?format=csv`,
+        headers,
+      });
+      expect((await csv.text()).split("\r\n")[0]).toBe("Submitted,q1,ClientId");
+    }
+  });
+
+  it("refuses a negative lastPageIndex", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const response = await submit(surveyId, { data: {}, clientId: "c", lastPageIndex: -1 });
+    expect(response.status).toBe(422);
+    expect(await countOf(surveyId, headers)).toBe(0);
+  });
+
+  it("limits to one response only once the client has completed", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, {
+      definition: { ...ONE_QUESTION, cookieName: "limit-partial" },
+    });
+    const clientId = `client-${randomUUID()}`;
+    const post = (extra: object) => submit(surveyId, { data: { q1: "a" }, clientId, ...extra });
+    expect((await post({ partial: true })).status).toBe(201);
+    expect((await post({ partial: true })).status).toBe(201);
+    expect((await post({})).status).toBe(201);
+    const refusedPartial = await post({ partial: true });
+    expect(refusedPartial.status).toBe(409);
+    expect(await codeOf(refusedPartial)).toBe("already-completed");
+    expect((await post({})).status).toBe(409);
+  });
+
+  it("stores a partial post once per Idempotency-Key", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const body = { data: { q1: "a" }, clientId: `client-${randomUUID()}`, partial: true };
+    const key = randomUUID();
+    const first = await submit(surveyId, body, { key });
+    const replay = await submit(surveyId, body, { key });
+    expect(replay.status).toBe(201);
+    expect(await idOf(replay)).toBe(await idOf(first));
+    expect(await results(surveyId, headers)).toHaveLength(1);
   });
 
   it("refuses what it cannot store", async (ctx) => {
@@ -342,7 +443,7 @@ describe("getResultStats", () => {
     const response = await stats(fixture.customerFeedback, await as(ctx, owner));
     expect(response.status).toBe(200);
     expect(await response.json()).toStrictEqual({
-      count: 5,
+      count: 4,
       firstSubmittedAt: "2026-04-01T08:00:00.500Z",
       lastSubmittedAt: "2026-04-01T12:00:00.000Z",
     });

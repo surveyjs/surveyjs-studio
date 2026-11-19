@@ -77,7 +77,7 @@ describe("getPublicResults", () => {
         },
         privateQuestions: ["receipt"],
       },
-      items: [4, 2, 5, 3, 1].map((satisfaction) => ({
+      items: [4, 5, 3, 1].map((satisfaction) => ({
         submittedAt: expect.any(String) as string,
         data: { satisfaction },
       })),

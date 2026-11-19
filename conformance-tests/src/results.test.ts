@@ -100,7 +100,7 @@ describe("listResults", () => {
     expect(rest.nextCursor).toBeNull();
   });
 
-  it("returns the five legacy rows of the feedback survey one by one", async (ctx) => {
+  it("returns the five legacy rows of the feedback survey one by one, row two an open partial run", async (ctx) => {
     const olivia = await as(ctx, owner);
     const pages = await walk(FEEDBACK, 1, olivia);
     expect(pages).toHaveLength(5);
@@ -109,7 +109,10 @@ describe("listResults", () => {
       [1, 2, 3, 4, 5].map((n) => `66666666-0000-4000-8000-a0000000000${n}`),
     );
     expect(items[1]).toMatchObject({ clientId: "client-0001" });
-    expect(items[1]).not.toHaveProperty("partial");
+    expect(items[1]).toMatchObject({ partial: true });
+    for (const item of items.filter((_, index) => index !== 1)) {
+      expect(item).not.toHaveProperty("partial");
+    }
     expect(items[2]).toMatchObject({ respondentIp: "203.0.113.7" });
   });
 

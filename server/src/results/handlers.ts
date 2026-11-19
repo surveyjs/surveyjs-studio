@@ -18,11 +18,16 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
 
     submitResponse: async (request, reply) => {
       const { surveyId } = request.params as { surveyId: string };
-      const body = request.body as { data: Record<string, unknown>; clientId?: string };
+      const body = request.body as {
+        data: Record<string, unknown>;
+        clientId?: string;
+        partial?: boolean;
+      };
       const key = request.headers["idempotency-key"];
       const stored = await service.submit(surveyId, {
         data: body.data,
         ...(body.clientId !== undefined && { clientId: body.clientId }),
+        ...(body.partial === true && { partial: true }),
         ...(typeof key === "string" && { idempotencyKey: key }),
         ip: request.ip,
       });

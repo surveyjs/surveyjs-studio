@@ -35,11 +35,12 @@ export function csvRecord(values: readonly unknown[]): string {
 
 /**
  * The export's columns (R3): `Submitted`, `IPAddress` while the survey stores IP addresses, one per
- * question (and its comment) in definition order, then `ClientId`.
+ * question (and its comment) in definition order, then `ClientId`, then `Partial` when the survey
+ * has a partial response (`true` for a partial response, empty otherwise).
  */
 export function csvColumns(
   definition: SurveyDefinition,
-  options: { readonly storeRespondentIp: boolean },
+  options: { readonly storeRespondentIp: boolean; readonly partial?: boolean },
 ): CsvColumn[] {
   const suffix = commentSuffixOf(definition);
   const columns: CsvColumn[] = [{ header: "Submitted", value: (r) => r.submittedAt }];
@@ -55,6 +56,8 @@ export function csvColumns(
     }
   }
   columns.push({ header: "ClientId", value: (r) => r.clientId });
+  if (options.partial)
+    columns.push({ header: "Partial", value: (r) => (r.partial ? true : undefined) });
   return columns;
 }
 
