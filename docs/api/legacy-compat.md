@@ -33,19 +33,25 @@ where the old route had one.
 | `private/Surveys/files?name=`                 | GET    | `getLegacyFile` (editor files)                                 | The file's bytes, `application/octet-stream`                                 |
 | `private/Surveys/getSurveyPublicResults/{id}` | GET    | `getPublicResults` (every page, with `from` and `till`)        | `{ Data, ResultCount }`, streamed                                            |
 
-The operations the bridge calls are in the [public endpoints guide](public-endpoints.md#operations-for-the-bridge). The
-bridge adds no store and no credentials: it holds only the `getSurvey` cache.
+The operations the bridge calls are in the [public endpoints guide](public-endpoints.md#operations-for-the-bridge). They
+exist only in Studio's **hosted edition** (`APP_EDITION=hosted`): in front of any other Studio server, the actions above
+answer as for an unknown survey or file. The bridge adds no store and no credentials: it holds only the `getSurvey`
+cache.
 
 **`getSurvey` cache.** The bridge keeps each survey's definition with Studio's `ETag` and sends every request to Studio
 with `If-None-Match`. An edit in Studio shows on the next request, and a survey that did not change costs Studio a `304`.
+A revalidation Studio refuses for rate reasons (`429`) serves the cached copy, as a `304` would, so a caller that reads
+one survey very often (a scheduled job, a busy page behind one address) keeps getting it; without a cached copy the empty
+`429` stands. The same holds for the definition `getSurveyAndIsCompleted` reads.
 
 **Preflights.** An `OPTIONS` request with an `Origin` and an `Access-Control-Request-Method` header, to any path, is
 answered by the bridge with `204` and the old policy (any origin, the requested method and headers). Every answer the
 bridge makes itself carries `Access-Control-Allow-Origin: *` when the request had an `Origin`. Forwarded answers keep the
 old service's own CORS headers.
 
-**Errors.** Studio's `429` goes to the caller as `429` with an empty body. A network failure, a timeout, or a Studio
-status the action has no answer for becomes an empty `500`, as the old API's unhandled errors were. Every other Studio
+**Errors.** Studio's `429` goes to the caller as `429` with an empty body (but see the cache above). A network failure,
+a timeout, or a Studio status the action has no answer for becomes an empty `500`, as the old API's unhandled errors
+were. Every other Studio
 status maps to the old answer for that case (for example `400` with its text for an unknown result ID).
 
 ## What is forwarded
@@ -79,6 +85,7 @@ The bridge reads environment variables. A wrong value stops it at start with eve
 | `BRIDGE_PORT`              | `3002`      | The port to listen on (1 to 65,535)                                                                                                                                                                                                               |
 | `BRIDGE_HOST`              | `127.0.0.1` | The address to listen on. The image sets `0.0.0.0`                                                                                                                                                                                                |
 | `BRIDGE_STUDIO_TIMEOUT_MS` | `10000`     | A call to Studio taking longer, its answer's body included, is answered with an empty `500` (1 to 600,000)                                                                                                                                        |
+| `BRIDGE_MAX_UPLOAD_BYTES`  | `11534336`  | The largest `upload` body (1 to 30,000,000): Studio's default file limit of 10 MiB and 1 MiB for the form around it. A larger body is an empty `413`, unread. Raise it with Studio's `LIMIT_MAX_FILE_BYTES`                                       |
 | `BRIDGE_FILE_TIMEOUT_MS`   | `120000`    | How long a file's bytes (`image`, `file`, `files?name=`) may take to stream through once Studio has answered (1 to 3,600,000). Studio's headers must still come within `BRIDGE_STUDIO_TIMEOUT_MS`; a file still streaming at the limit is cut off |
 | `BRIDGE_TRUST_PROXY`       | none        | Comma-separated IP addresses or CIDR ranges of the reverse proxy in front of the bridge. Empty: the caller is the connection's peer. Set: the caller is the address that proxy's `X-Forwarded-For` names                                          |
 
@@ -87,10 +94,14 @@ differ from the old host, which answers every unknown `GET` with its start page.
 
 ## Operator notes
 
+- **Studio's edition.** The bridge needs a Studio server with `APP_EDITION=hosted`: only that edition routes the
+  operations it calls. Any other answers them `404`, so the actions answer as for unknown surveys and files.
 - **The caller's address.** The bridge sends one address in `X-Forwarded-For` to Studio, the caller's, so Studio's IP
   capture and per-address rate limits work per respondent. Studio takes it only from a trusted peer: Studio's
   `TRUST_PROXY` must list the bridge. And the bridge must know the real caller: behind a reverse proxy, set
-  `BRIDGE_TRUST_PROXY` to that proxy, or every respondent looks like the proxy.
+  `BRIDGE_TRUST_PROXY` to that proxy, or every respondent looks like the proxy. When the bridge cannot tell the address
+  (the connection is already gone), it sends no `X-Forwarded-For`, and Studio counts the call against the bridge's own
+  address.
 - **`BRIDGE_TRUST_PROXY` is trusted as set.** The trusted proxy's `X-Forwarded-For` is passed on unvalidated, to Studio
   (the resolved address) and to the old service (the whole chain). List only proxies that overwrite or append the header.
 - **Use `https:` for `BRIDGE_LEGACY_URL`** (see the table).
@@ -100,10 +111,18 @@ differ from the old host, which answers every unknown `GET` with its start page.
   half-closed connection) is not answered; Node's server closes such a connection. Ordinary clients do not do this.
 - **Slow connections.** The bridge cuts a request that has not finished after 5 minutes, so a hung connection can last
   that long.
-- **Body limits.** The bridge accepts up to 30,000,000 bytes in any action's body (as the old host did; empty `413`
-  above), and 4 MiB for `post` (empty `413` above). Studio refuses answers over its own limit
-  (`LIMIT_MAX_RESPONSE_BYTES`, 1 MiB by default) and files over `LIMIT_MAX_FILE_BYTES`, so a post between 1 and 4 MiB gets
-  Studio's refusal mapped to the old text, not `413`.
+- **Body limits.** The bridge accepts up to 30,000,000 bytes in an action's body (as the old host did; empty `413`
+  above), 4 MiB for `post` and `BRIDGE_MAX_UPLOAD_BYTES` (11,534,336 by default) for `upload` (empty `413` above,
+  before the body is read). Studio refuses answers over its own limit (`LIMIT_MAX_RESPONSE_BYTES`, 1 MiB by default) and
+  files over `LIMIT_MAX_FILE_BYTES`, so a post between 1 and 4 MiB gets Studio's refusal mapped to the old text, not
+  `413`. Keep `BRIDGE_MAX_UPLOAD_BYTES` about 1 MiB above `LIMIT_MAX_FILE_BYTES`.
+- **Uploads at once.** The bridge reads at most 8 `upload` requests at a time, each held in memory up to
+  `BRIDGE_MAX_UPLOAD_BYTES`; one more is answered with an empty `503` before its body is read, as the old host answered
+  when overloaded. A client retries it as any `503`.
+- **Slow public results and a proxy in front.** `getSurveyPublicResults` streams a large set slowly: on Studio's `429`
+  for a later page the bridge waits up to 120 seconds before the next page, sending nothing meanwhile (see
+  [below](#getsurveypublicresults)). A reverse proxy or CDN in front of the bridge needs a read-idle (response) timeout
+  above 120 seconds, or it cuts such a stream.
 - **File names.** A legacy file name is looked up only when it is one path segment of letters, digits, `.`, `-` and `_`
   (at most 100 characters); any other name is `404` without a lookup, and a segment of more than 1,024 characters is
   `404` as well.
@@ -131,6 +150,10 @@ files finds a `difference` note on each case that records one ([Testing](../test
 - **`getSurveyPublicResults`** returns completed responses only; the old API also returned partial saves.
   `HappendAt` and `InstanceId` are hidden only when the survey's `privateResultQuestions` names them (the old API also
   dropped them when a column layout existed and did not list them).
+- **`getSurveyPublicResults` and a saved column layout.** The old API also left out the answers of columns its saved
+  results layout marked non-public or hidden. Studio has no such layout: the bridge returns every answer except those of
+  the survey's private questions (`privateResultQuestions`), so a column the old layout hid shows. The migration tool
+  (hosted Step 9) maps those hidden columns into `privateResultQuestions`.
 - **A respondent of a "Limit to one response" survey** who completed and posts again through `post` is stored, with no
   `409`, and the completion marker follows the post. Posts by post ID ignore the publish state and the one-response
   setting, as the old API never refused a post.
@@ -161,6 +184,8 @@ files finds a `difference` note on each case that records one ([Testing](../test
   real limit is Studio's response size limit, which may differ. The old API had already stored the response when only
   its marker write failed; the bridge stores nothing.
 - A body larger than 4 MiB is an empty `413` (above).
+- **Studio in read-only mode** (`READ_ONLY=true`) refuses writes with `503`; the bridge answers `post` and `upload` with
+  an empty `500` then, as an unexpected Studio status.
 - **Validation texts.** The binder reproduces the old texts for the documented examples. Where the old text named the old
   API's own model type (a top-level array, string or number as the body) or was a long multi-line conversion text (an
   object or array given for `postId`), the bridge answers the framework's generic `The input was not valid.`. Not
@@ -172,7 +197,10 @@ files finds a `difference` note on each case that records one ([Testing](../test
 ### `upload`
 
 - Studio refuses an empty file (`415`; the old API stored it) and a file over `LIMIT_MAX_FILE_BYTES` (empty `413`; the old
-  API had only the host's 30,000,000-byte limit).
+  API had only the host's 30,000,000-byte limit). The bridge's own limit, `BRIDGE_MAX_UPLOAD_BYTES`, refuses a larger
+  body with an empty `413` before it is read: with the defaults, an upload of about 10 to 28.6 MB, which the old host
+  took, now gets `413`.
+- More than 8 uploads at once: the next one gets an empty `503` (see [Operator notes](#operator-notes)).
 - **The extension** of the uploaded name is kept only when it has letters, digits, `_` and `-`; any other extension is
   answered without one.
 - A malformed multipart body answers an empty `500`.
@@ -181,8 +209,8 @@ files finds a `difference` note on each case that records one ([Testing](../test
 
 ### `getResult`
 
-- Question names are matched exactly; the old API also matched the lower-case name and row properties such as `type` and
-  `happendat`.
+- Question names are matched exactly; the old API also matched the lower-case name and the stored row's own properties,
+  such as its type and its own submission time.
 - A top-level integer and an array element of the same value are merged; the old API kept them apart as two integer types.
 - An array element `["k","v"]` is read as a pair `[k, v]` (Studio cannot tell it from an object's property). The old API
   walked it as two values.
@@ -205,7 +233,8 @@ files finds a `difference` note on each case that records one ([Testing](../test
 - **A Studio failure before the stream starts** answers an empty `500`; the old private actions answered an empty `400`.
 - **Slow streaming of very large sets.** The bridge reads Studio's pages (1,000 responses) one request each, and
   Studio limits public operations per address (`PUBLIC_RATE_LIMIT`, 60 a minute by default). On a `429` for a later page
-  the bridge waits for `Retry-After` (60 seconds when absent, at most 120 seconds a wait) and goes on while the caller
+  the bridge waits for `Retry-After` (seconds or an HTTP date; 60 seconds when absent or neither, at least 1 and at most
+  120 seconds a wait) and goes on while the caller
   is connected. A very large set therefore streams slowly: about 60,000 responses a minute per caller by default. A `429`
   on the first page is passed to the caller, as for every action.
 

@@ -483,13 +483,19 @@ describe("getSurveyPublicResults under Studio's rate limit", () => {
 describe("retryDelayMs", () => {
   it.each([
     ["5", 5_000],
-    [" 0 ", 0],
+    ["0", 1_000],
+    [" 0 ", 1_000],
     [null, 60_000],
     ["", 60_000],
     ["soon", 60_000],
+    ["1.5", 60_000],
+    ["-3", 60_000],
+    ["2026-04-01T10:00:30Z", 60_000],
     ["600", 120_000],
     ["Wed, 01 Apr 2026 10:00:30 GMT", 30_000],
-    ["Wed, 01 Apr 2026 09:00:00 GMT", 0],
+    ["Wednesday, 01-Apr-26 10:00:20 GMT", 20_000],
+    ["Wed Apr  1 10:00:10 2026", 10_000],
+    ["Wed, 01 Apr 2026 09:00:00 GMT", 1_000],
   ])("Retry-After %j → %d ms", (header, ms) => {
     expect(retryDelayMs(header, Date.parse("2026-04-01T10:00:00Z"))).toBe(ms);
   });

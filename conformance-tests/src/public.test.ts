@@ -17,6 +17,8 @@ import {
   call,
   codeOf,
   as,
+  expectNotRouted,
+  hosted,
   newSurvey,
   ownSurvey,
   ownsServer,
@@ -519,7 +521,38 @@ function submitByPostId(
   });
 }
 
-describe("getPublicDefinition", () => {
+// The operations for surveys built for the old service (ADR 0039) exist in the hosted edition only.
+describe.skipIf(hosted)("the bridge's operations outside the hosted edition", () => {
+  it("names the edition the suite was given in /config", async () => {
+    const config = await call("GET", "/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("self-hosted");
+  });
+
+  it("answers 404 not-found as for an unknown path, for a survey that exists", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    await expectNotRouted(await definitionOf(surveyId));
+    await expectNotRouted(
+      await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+        path: `/public/surveys/${surveyId}/respondents/c`,
+      }),
+    );
+    await expectNotRouted(await stateByResultId(resultId, "c"));
+    await expectNotRouted(await summaryOf(resultId, "q1"));
+    await expectNotRouted(await submitByPostId(postId, { data: { q1: "a" } }));
+    expect(await countOf(surveyId, headers)).toBe(0);
+  });
+});
+
+describe.runIf(hosted)("the hosted edition", () => {
+  it("names the edition the suite was given in /config", async () => {
+    const config = await call("GET", "/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("hosted");
+  });
+});
+
+describe.runIf(hosted)("getPublicDefinition", () => {
   it("serves the working definition of any survey, with a strong ETag to revalidate", async (ctx) => {
     const headers = await as(ctx, admin);
     const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
@@ -570,7 +603,7 @@ describe("getPublicDefinition", () => {
   });
 });
 
-describe("getRespondentState", () => {
+describe.runIf(hosted)("getRespondentState", () => {
   it("follows the client's marker, by survey ID and by result ID", async (ctx) => {
     const headers = await as(ctx, admin);
     const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
@@ -620,7 +653,7 @@ function summaryOf(resultId: string, name: string): Promise<Response> {
   });
 }
 
-describe("getQuestionSummary", () => {
+describe.runIf(hosted)("getQuestionSummary", () => {
   it("counts the completed responses only, by result ID", async (ctx) => {
     const headers = await as(ctx, admin);
     const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
@@ -695,7 +728,7 @@ describe("getQuestionSummary", () => {
   });
 });
 
-describe("submitResponseByPostId", () => {
+describe.runIf(hosted)("submitResponseByPostId", () => {
   it("stores a response for an unpublished survey, once per Idempotency-Key", async (ctx) => {
     const headers = await as(ctx, admin);
     const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });

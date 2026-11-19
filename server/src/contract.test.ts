@@ -96,10 +96,10 @@ describe("loadContract", () => {
     expect(SurveyResponse.properties.partial).not.toHaveProperty("x-phase");
   });
 
-  it("declares the bridge's public operations as unauthenticated and rate limited", async () => {
+  it("declares the bridge's public operations as unauthenticated and hosted only", async () => {
     const contract = await loadContract(openapiPath);
     const appSource = await readFile(new URL("./app.ts", import.meta.url), "utf8");
-    const listed = /const PUBLIC_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
+    const listed = /const HOSTED_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
     const bridgeOperations = [
       "getPublicDefinition",
       "getRespondentState",

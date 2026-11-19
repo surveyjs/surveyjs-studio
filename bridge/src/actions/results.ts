@@ -139,23 +139,33 @@ function resultRow(item: ResultPage["items"][number], hidden: ReadonlySet<string
   return oldJson(row);
 }
 
-/** The wait for a later page without a `Retry-After`, and the longest one (seconds). */
+/** The wait for a later page without a usable `Retry-After`, and the shortest and longest (seconds). */
 const DEFAULT_RETRY_WAIT_S = 60;
+const MIN_RETRY_WAIT_S = 1;
 const MAX_RETRY_WAIT_S = 120;
+
+/** HTTP's three date forms (RFC 9110 section 5.6.7): IMF-fixdate, RFC 850 and asctime. */
+const HTTP_DATES = [
+  /^[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/,
+  /^[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/,
+  /^[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/,
+];
 
 /**
  * How long to wait before reading a page again after Studio's `429`: its `Retry-After` (seconds,
- * or an HTTP date), 60 s without one, at most 120 s.
+ * or an HTTP date), at least 1 s and at most 120 s; 60 s without one or for a value that is
+ * neither.
  */
 export function retryDelayMs(retryAfter: string | null, now = Date.now()): number {
   let seconds = DEFAULT_RETRY_WAIT_S;
   const text = retryAfter?.trim() ?? "";
   if (/^[0-9]+$/.test(text)) seconds = Number(text);
-  else if (text !== "") {
-    const at = Date.parse(text);
-    if (!Number.isNaN(at)) seconds = Math.max(0, (at - now) / 1000);
+  else if (HTTP_DATES.some((form) => form.test(text))) {
+    // asctime has no zone: it is GMT.
+    const at = Date.parse(text.endsWith("GMT") ? text : `${text} GMT`);
+    if (!Number.isNaN(at)) seconds = (at - now) / 1000;
   }
-  return Math.min(seconds, MAX_RETRY_WAIT_S) * 1000;
+  return Math.min(Math.max(seconds, MIN_RETRY_WAIT_S), MAX_RETRY_WAIT_S) * 1000;
 }
 
 /** The largest page Studio gives. */

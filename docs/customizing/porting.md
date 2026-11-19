@@ -45,6 +45,7 @@ values from anywhere, but it must behave as if it had them.
 | `TRUST_PROXY`                      | `127.0.0.1,::1`                                          | The rate-limit test sends its own `X-Forwarded-For` from loopback.  |
 | `PUBLIC_RATE_LIMIT`                | `300`                                                    | The suite reads public surveys many times from one address.         |
 | `PUBLIC_FILE_RATE_LIMIT`           | `10000`                                                  | The same for public files.                                          |
+| `PUBLIC_SUMMARY_RATE_LIMIT`        | `300`                                                    | The same for question summaries (hosted edition).                   |
 | `LIMIT_MAX_DOCUMENT_BYTES`         | `262144`                                                 | The `413` test reads the limit from `/config`, so it stays cheap.   |
 | `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` | `65536`                                                  | The quota tests read the limit from `/config`.                      |
 | `LIMIT_MAX_FILE_BYTES`             | `65536`                                                  | The file `413` test reads the limit from `/config`.                 |

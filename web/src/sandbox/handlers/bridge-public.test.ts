@@ -17,7 +17,7 @@ const byPost = (postId: string, body: unknown, headers: Record<string, string> =
 
 describe("getPublicDefinition", () => {
   it("serves the working definition of an unpublished survey with a strong ETag, and revalidates", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const path = `/public/surveys/${SURVEYS.oldPoll}/definition`;
     const first = await call(path);
     expect(first.status).toBe(200);
@@ -49,7 +49,7 @@ describe("getPublicDefinition", () => {
   });
 
   it("serves an archived survey and answers 404 for an unknown one", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     expect((await call(`/public/surveys/${SURVEYS.archivedCampaign}/definition`)).status).toBe(200);
     const unknown = await call("/public/surveys/nope/definition");
     expect(unknown.status).toBe(404);
@@ -59,7 +59,7 @@ describe("getPublicDefinition", () => {
 
 describe("getRespondentState", () => {
   it("reads the marker by survey ID and by result ID, percent-decoded", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const state = async (path: string) =>
       ((await (await call(path)).json()) as { state: string }).state;
     const id = encodeURIComponent("a b%");
@@ -74,7 +74,7 @@ describe("getRespondentState", () => {
   });
 
   it("answers 404 for an unknown survey or result ID and 400 for a long client ID", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     for (const path of [
       "/public/surveys/nope/respondents/c",
       "/public/results/nope/respondents/c",
@@ -91,7 +91,7 @@ describe("getRespondentState", () => {
 
 describe("submitResponseByPostId", () => {
   it("stores a response for an unpublished survey, once per Idempotency-Key", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const refused = submit(SURVEYS.oldPoll, { data: { q: 1 } });
     expect((await call(refused.path, refused.init)).status).toBe(404);
     const headers = { "Idempotency-Key": "k1" };
@@ -107,7 +107,7 @@ describe("submitResponseByPostId", () => {
   });
 
   it("stores a completed client's next post, and the marker follows it", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const body = { data: { satisfaction: 5 }, clientId: "limited-client" };
     const state = async () =>
       (
@@ -130,7 +130,7 @@ describe("submitResponseByPostId", () => {
   });
 
   it("answers 404 for an unknown post ID and 422 for a bad body", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const unknown = byPost("nope", { data: {} });
     const response = await call(unknown.path, unknown.init);
     expect(response.status).toBe(404);
@@ -142,7 +142,7 @@ describe("submitResponseByPostId", () => {
 
 describe("getQuestionSummary", () => {
   it("counts the completed responses only, by result ID", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const send = async (data: object, extra: object = {}) => {
       const request = byPost(post(2), { data, ...extra });
       expect((await call(request.path, request.init)).status).toBe(201);
@@ -175,7 +175,7 @@ describe("getQuestionSummary", () => {
   });
 
   it("answers an empty summary without responses, 404 for an unknown result ID and 400 for a long name", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const empty = await call(`/public/results/${result(3)}/questions/${encodeURIComponent("q 1")}`);
     expect(await empty.json()).toStrictEqual({
       answered: 0,
@@ -194,7 +194,7 @@ describe("getPublicResults from and till", () => {
   const path = `/public/surveys/${SURVEYS.feedback}/results`;
 
   it("keeps responses strictly between them, as instants, paging inside the range", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     const all = (await (await call(path)).json()) as { items: { submittedAt: string }[] };
     const times = all.items.map((item) => item.submittedAt);
     expect(times.length).toBeGreaterThanOrEqual(3);
@@ -215,7 +215,7 @@ describe("getPublicResults from and till", () => {
   });
 
   it("refuses a from or till that is not a date-time or that Date cannot read", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     for (const q of [
       "from=yesterday",
       "till=2026-04-01",
@@ -235,7 +235,7 @@ describe("getPublicResults from and till", () => {
 
 describe("getLegacyFile", () => {
   it("answers 404 not-found for every name: the sandbox keeps no legacy files", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     for (const path of ["asset/abc", "response/abc.png", "image/abc", "asset/..%2Fx"]) {
       const response = await call(`/public/legacy-files/${path}`);
       expect(response.status, path).toBe(404);

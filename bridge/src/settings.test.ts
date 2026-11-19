@@ -16,6 +16,7 @@ describe("loadSettings", () => {
       host: "127.0.0.1",
       studioTimeoutMs: 10_000,
       fileTimeoutMs: 120_000,
+      maxUploadBytes: 11_534_336,
       trustProxy: [],
     });
   });
@@ -29,6 +30,7 @@ describe("loadSettings", () => {
         BRIDGE_HOST: "0.0.0.0",
         BRIDGE_STUDIO_TIMEOUT_MS: "2500",
         BRIDGE_FILE_TIMEOUT_MS: "30000",
+        BRIDGE_MAX_UPLOAD_BYTES: "1048576",
         BRIDGE_TRUST_PROXY: " 10.0.0.1, 172.16.0.0/12 ,::1",
       }),
     ).toEqual({
@@ -39,6 +41,7 @@ describe("loadSettings", () => {
       host: "0.0.0.0",
       studioTimeoutMs: 2500,
       fileTimeoutMs: 30_000,
+      maxUploadBytes: 1_048_576,
       trustProxy: ["10.0.0.1", "172.16.0.0/12", "::1"],
     });
   });
@@ -57,6 +60,8 @@ describe("loadSettings", () => {
     [{ ...REQUIRED, BRIDGE_STUDIO_TIMEOUT_MS: "0" }, "BRIDGE_STUDIO_TIMEOUT_MS"],
     [{ ...REQUIRED, BRIDGE_FILE_TIMEOUT_MS: "0" }, "BRIDGE_FILE_TIMEOUT_MS"],
     [{ ...REQUIRED, BRIDGE_FILE_TIMEOUT_MS: "3600001" }, "BRIDGE_FILE_TIMEOUT_MS"],
+    [{ ...REQUIRED, BRIDGE_MAX_UPLOAD_BYTES: "0" }, "BRIDGE_MAX_UPLOAD_BYTES"],
+    [{ ...REQUIRED, BRIDGE_MAX_UPLOAD_BYTES: "30000001" }, "BRIDGE_MAX_UPLOAD_BYTES"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.1,proxy.local" }, "BRIDGE_TRUST_PROXY"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.0/33" }, "BRIDGE_TRUST_PROXY"],
   ])("refuses %j (%s)", (env, name) => {

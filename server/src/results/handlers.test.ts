@@ -44,13 +44,16 @@ async function start(
     logLines?: string[];
   } = {},
 ): Promise<Started> {
-  const config = loadConfig({
+  const loaded = loadConfig({
     NODE_ENV: "test",
     IDENTITY_PROVIDER: "dev",
     MEMORY_SEED: "legacy-fixtures",
     LOG_LEVEL: "info",
     ...options.env,
   });
+  // Hosted, which routes the bridge's operations (set after loading: the dev sign-in is refused
+  // with APP_EDITION=hosted). api.test.ts checks they are not routed elsewhere.
+  const config = { ...loaded, edition: "hosted" as const };
   const memory = await createProviders(config);
   const providers: ProviderSet = {
     ...memory,
@@ -463,6 +466,56 @@ describe("submitResponseByPostId", () => {
     expect(unknown.json()).toMatchObject({ code: "survey-not-available" });
     // The result ID is not the post ID.
     expect((await post(survey.resultId, body)).statusCode).toBe(404);
+  });
+});
+
+describe("getQuestionSummary", () => {
+  it("reuses a summary while the survey is unchanged and reads again after a new response", async () => {
+    let pages = 0;
+    const { server, publish } = await start({
+      results: (store) => ({
+        ...store,
+        listResponsePage: (survey, page) => {
+          pages += 1;
+          return store.listResponsePage(survey, page);
+        },
+      }),
+    });
+    const survey = await publish({ pages: [] });
+    const submit = (q: string) =>
+      server.inject({
+        method: "POST",
+        url: `/api/v1/public/surveys/${survey.id}/responses`,
+        payload: { data: { q } },
+      });
+    const summary = async (name = "q") => {
+      const res = await server.inject({
+        url: `/api/v1/public/results/${survey.resultId}/questions/${name}`,
+      });
+      expect(res.statusCode).toBe(200);
+      return res.json<{ answered: number; values: unknown[]; responseCount: number }>();
+    };
+    expect((await submit("a")).statusCode).toBe(201);
+    expect(await summary()).toMatchObject({ answered: 1, responseCount: 1 });
+    const scanned = pages;
+    expect(scanned).toBeGreaterThan(0);
+    expect(await summary()).toMatchObject({ answered: 1, responseCount: 1 });
+    expect(pages).toBe(scanned);
+    // Another question of the same survey is its own entry.
+    await summary("other");
+    expect(pages).toBeGreaterThan(scanned);
+    const before = pages;
+    expect((await submit("b")).statusCode).toBe(201);
+    expect(await summary()).toMatchObject({
+      answered: 2,
+      // Both stored at the test clock's one instant: in either order.
+      values: expect.arrayContaining([
+        { value: "a", count: 1 },
+        { value: "b", count: 1 },
+      ]) as unknown,
+      responseCount: 2,
+    });
+    expect(pages).toBeGreaterThan(before);
   });
 });
 

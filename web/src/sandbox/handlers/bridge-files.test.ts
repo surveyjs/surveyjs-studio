@@ -16,7 +16,7 @@ const OLD_POLL_POST = "33333333-0000-4000-8000-a00000000003";
 
 describe("uploadResponseFileByPostId", () => {
   it("stores a file for an unpublished survey and serves it; 404 for an unknown post ID", async () => {
-    const { call } = setupSandbox();
+    const { call } = setupSandbox({}, "hosted");
     // The survey's own route refuses an unpublished survey.
     expect((await upload(`/public/surveys/${SURVEYS.oldPoll}/files`, form(10))).status).toBe(404);
     const response = await upload(byPost(OLD_POLL_POST), form(10));
@@ -32,8 +32,38 @@ describe("uploadResponseFileByPostId", () => {
   });
 
   it("answers 422 for another field and 400 for a long post ID", async () => {
-    setupSandbox();
+    setupSandbox({}, "hosted");
     expect((await upload(byPost(OLD_POLL_POST), form(10, "a.png", "other"))).status).toBe(422);
     expect((await upload(byPost("p".repeat(201)), form(10))).status).toBe(400);
+  });
+});
+
+describe("outside the hosted edition (the sandbox's own)", () => {
+  it("answers 404 not-found for every operation for the old service's surveys, as an unknown path", async () => {
+    const { call } = setupSandbox();
+    const config = await call("/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("self-hosted");
+    const answers = [
+      await call(`/public/surveys/${SURVEYS.oldPoll}/definition`),
+      await call(`/public/surveys/${SURVEYS.oldPoll}/respondents/c`),
+      await call(`/public/results/44444444-0000-4000-8000-a00000000003/respondents/c`),
+      await call(`/public/results/44444444-0000-4000-8000-a00000000003/questions/q1`),
+      await call(`/public/posts/${OLD_POLL_POST}/responses`, {
+        method: "POST",
+        json: { data: { q1: "a" } },
+      }),
+      await upload(byPost(OLD_POLL_POST), form(10)),
+      await call("/public/legacy-files/asset/a.png"),
+    ];
+    for (const answer of answers) {
+      expect(answer.status).toBe(404);
+      expect(await answer.json()).toMatchObject({ code: "not-found", status: 404 });
+    }
+  });
+
+  it("names the hosted edition in /config when configured so", async () => {
+    const { call } = setupSandbox({}, "hosted");
+    const config = await call("/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("hosted");
   });
 });

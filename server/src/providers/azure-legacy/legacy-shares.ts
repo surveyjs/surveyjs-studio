@@ -36,7 +36,7 @@ export interface ShareRoot {
  * another one; a name not found in them reads as unknown.
  */
 const CASE_CHECK_PAGE = 100;
-const CASE_CHECK_PAGES = 10;
+const CASE_CHECK_PAGES = 2;
 
 /**
  * A reader over the given share roots; a share without a root holds nothing. Azure Files matches

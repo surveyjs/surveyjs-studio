@@ -532,6 +532,7 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   - progress logs, and a machine-readable report; reports from production or a staging copy stay private (rule 6).
 - **Files:** editor images and respondent files go into the target file store, with `legacy_files` filled for the legacy names. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID.
 - **History snapshots** go inline or to the byte store by the ADR 0036 limit, the object before its row, so a resumed `copy` is safe.
+- **Hidden public-results columns:** a survey's saved results layout that marks answer columns non-public or hidden is mapped into its `privateResultQuestions`, so `getSurveyPublicResults` through the bridge keeps leaving them out ([legacy-compat.md](docs/api/legacy-compat.md#which-responses-are-counted), Step 5).
 
 **Tests**
 

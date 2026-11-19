@@ -5,6 +5,7 @@ import { startFakeStudio, type FakeStudio } from "../testing/studio-stub.js";
 const SURVEY = "5af48e08-a0a5-44a5-83f4-1c90e8e98de1";
 const OTHER = "0f5c2a8e-1b2c-4d3e-8f90-123456789abc";
 const RESULT = "9b7d3c1e-2f4a-4b6c-8d0e-1f2a3b4c5d6e";
+const UNCACHED = "3c2b1a09-8f7e-4d6c-9b5a-0f1e2d3c4b5a";
 const DEFINITION = {
   title: "Feedback",
   pages: [{ name: "p1", elements: [{ type: "text", name: "q" }] }],
@@ -109,7 +110,8 @@ describe("getSurvey", () => {
 
   it.each([429, 500, 503])("answers Studio's %i as an empty 429 or 500", async (status) => {
     studio.override = (_request, res) => (res.writeHead(status).end("x"), true);
-    const answer = await send(url(`surveyId=${SURVEY}`));
+    // A survey the shared bridge has never cached: a cached one is served on 429 (below).
+    const answer = await send(url(`surveyId=${UNCACHED}`));
     expect(answer.status).toBe(status === 429 ? 429 : 500);
     expect(answer.body.length).toBe(0);
     expect(answer.headers["content-type"]).toBeUndefined();
@@ -150,6 +152,61 @@ describe("getSurvey", () => {
         '"v1"',
         '"v2"',
       ]);
+    });
+
+    it("serves its copy when Studio refuses the revalidation with 429, and refreshes after", async () => {
+      await send(url(`surveyId=${SURVEY}`));
+      studio.override = (_request, res) => (
+        res.writeHead(429, { "retry-after": "30" }).end(),
+        true
+      );
+      const limited = await send(url(`surveyId=${SURVEY}`));
+      expect(limited.status).toBe(200);
+      expect(limited.headers["content-type"]).toBe("application/json");
+      expect(JSON.parse(limited.body.toString())).toEqual(DEFINITION);
+      studio.override = undefined;
+      const edited = { ...DEFINITION, title: "Edited" };
+      studio.definitions.set(SURVEY, { definition: edited, etag: '"v2"' });
+      const after = await send(url(`surveyId=${SURVEY}`));
+      expect(JSON.parse(after.body.toString())).toEqual(edited);
+      expect(studio.requests.map((request) => request.headers["if-none-match"])).toEqual([
+        undefined,
+        '"v1"',
+        '"v1"',
+      ]);
+    });
+
+    it("answers an empty 429 when Studio refuses and it holds no copy", async () => {
+      studio.override = (_request, res) => (res.writeHead(429).end(), true);
+      const answer = await send(url(`surveyId=${SURVEY}`));
+      expect(answer.status).toBe(429);
+      expect(answer.body.length).toBe(0);
+    });
+
+    it("answers an empty 500, not its copy, when Studio fails otherwise", async () => {
+      await send(url(`surveyId=${SURVEY}`));
+      studio.override = (_request, res) => (res.writeHead(503).end(), true);
+      const answer = await send(url(`surveyId=${SURVEY}`));
+      expect(answer.status).toBe(500);
+      expect(answer.body.length).toBe(0);
+    });
+
+    it("serves its copy to getSurveyAndIsCompleted when the definition's revalidation gets 429", async () => {
+      studio.states.set(`${SURVEY}/c1`, "completed");
+      await send(url(`surveyId=${SURVEY}`));
+      studio.override = (request, res) => {
+        if (!request.url.endsWith("/definition")) return false;
+        res.writeHead(429).end();
+        return true;
+      };
+      const answer = await send(
+        `${fresh.url}/public/Survey/getSurveyAndIsCompleted?surveyId=${SURVEY}&clientId=c1`,
+      );
+      expect(answer.status).toBe(200);
+      expect(JSON.parse(answer.body.toString())).toEqual({
+        survey: DEFINITION,
+        isCompleted: "completed",
+      });
     });
 
     it("forgets a survey Studio no longer has", async () => {

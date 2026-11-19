@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { apiRoutes } from "./api.js";
 import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { hashCredential, lastFour, newApiTokenValue } from "./credentials/format.js";
 import { newFileId } from "./domain/file-id.js";
@@ -31,8 +31,11 @@ let providers: ProviderSet | undefined;
 async function start(
   env: Record<string, string> = {},
   options?: BuildOptions,
+  edition?: AppConfig["edition"],
 ): Promise<FastifyInstance> {
-  const config = loadConfig({ ...testEnv, ...env });
+  // The edition is set after loading: the dev sign-in the tests use is refused with APP_EDITION=hosted.
+  const loaded = loadConfig({ ...testEnv, ...env });
+  const config = edition === undefined ? loaded : { ...loaded, edition };
   providers = await createProviders(config);
   app = await buildApp(config, providers, options);
   return app;
@@ -44,11 +47,14 @@ afterEach(async () => {
 });
 
 /** A signed-in app and the request headers of the owner's browser (cookies and CSRF token). */
-async function startSignedIn(env: Record<string, string> = {}): Promise<{
+async function startSignedIn(
+  env: Record<string, string> = {},
+  edition?: AppConfig["edition"],
+): Promise<{
   server: FastifyInstance;
   headers: Record<string, string>;
 }> {
-  const instance = await start(env);
+  const instance = await start(env, undefined, edition);
   const { headers } = await signIn(instance, ownerUser.id);
   return { server: instance, headers };
 }
@@ -451,8 +457,9 @@ describe("contract coverage", () => {
   it.each(operations.map((op) => [op.operationId, op] as const))(
     "%s is routed under /api/v1",
     async (_id, op) => {
-      // With a webhook secret, so that the webhook is routed (without one it answers 404).
-      const { server, headers } = await startSignedIn(COVERAGE_ENV);
+      // With a webhook secret, so that the webhook is routed (without one it answers 404), and in
+      // the hosted edition, which routes the bridge's operations.
+      const { server, headers } = await startSignedIn(COVERAGE_ENV, "hosted");
       if (op.operationId === "downloadFile") {
         await providers?.files.putFile(STORED_FILE, Buffer.from([0]));
       }
@@ -473,7 +480,37 @@ describe("contract coverage", () => {
       expect(accepted).toContain(res.statusCode);
     },
   );
+
+  it.each(HOSTED_ONLY.map((id) => [id]))(
+    "%s answers 404 as an unknown path in the self-hosted edition, with no rate limit",
+    async (id) => {
+      const { server, headers } = await startSignedIn(COVERAGE_ENV, "self-hosted");
+      const op = operations.find((candidate) => candidate.operationId === id)!;
+      const res = await server.inject({
+        method: op.method as "GET",
+        url: `/api/v1${op.url}`,
+        headers,
+      });
+      const unknown = await server.inject({ url: "/api/v1/no-such-path", headers });
+      expect(res.statusCode).toBe(404);
+      expect(res.headers["content-type"]).toBe(unknown.headers["content-type"]);
+      expect(res.json()).toEqual(unknown.json());
+      expect(res.json()).toMatchObject({ code: "not-found", status: 404 });
+      expect(res.headers["x-ratelimit-limit"]).toBeUndefined();
+    },
+  );
 });
+
+/** The operations for surveys built for the old service: only the hosted edition routes them. */
+const HOSTED_ONLY = [
+  "getPublicDefinition",
+  "getRespondentState",
+  "getRespondentStateByResultId",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
+  "getQuestionSummary",
+  "getLegacyFile",
+];
 
 describe("/api/docs", () => {
   let dir: string;

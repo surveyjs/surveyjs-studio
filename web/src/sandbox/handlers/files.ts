@@ -7,7 +7,7 @@ import { HttpResponse } from "msw";
 import type { SandboxSurvey } from "../seed-types";
 import type { SandboxData, SandboxFile } from "../store";
 import { checkPathId, mutate, requireSession, view } from "./common";
-import { newFileId, type HandlerContext } from "./context";
+import { newFileId, requireHosted, type HandlerContext } from "./context";
 import { http } from "./http";
 import { checkMultipart, readFirstFile } from "./multipart";
 import {
@@ -265,6 +265,7 @@ export function fileHandlers(ctx: HandlerContext) {
     // As above, by post ID and whatever the publish state (service.ts `uploadResponseByPostId`).
     http.post("/public/posts/{postId}/files", ({ params, request }) =>
       guarded(async () => {
+        requireHosted(ctx);
         checkMultipart(request);
         const postId = params.postId;
         if (postId.length === 0 || [...postId].length > 200) {
@@ -290,6 +291,7 @@ export function fileHandlers(ctx: HandlerContext) {
     // unknown: server/src/files/service.ts `downloadLegacy` answers the same without a share.
     http.get("/public/legacy-files/{kind}/{name}", () =>
       guarded(() => {
+        requireHosted(ctx);
         throw notFound();
       }),
     ),

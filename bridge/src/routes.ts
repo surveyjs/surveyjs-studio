@@ -1,7 +1,13 @@
 // The old API's route table: each action under two prefixes, matched in any letter case and with
 // or without one trailing slash (the bridge's router options, app.ts). A path the table does not
 // hold, or a method an action does not take, is forwarded to the old service (forward.ts).
-import type { FastifyInstance, FastifyRequest, HTTPMethods, RouteHandlerMethod } from "fastify";
+import type {
+  FastifyInstance,
+  FastifyRequest,
+  HTTPMethods,
+  onRequestAsyncHookHandler,
+  RouteHandlerMethod,
+} from "fastify";
 
 export type Controller = "public" | "private";
 
@@ -20,9 +26,14 @@ export function oldRoute(
   methods: HTTPMethods[],
   names: string[],
   handler: RouteHandlerMethod,
-  options: { controller?: Controller; bodyLimit?: number } = {},
+  options: {
+    controller?: Controller;
+    bodyLimit?: number;
+    /** Runs before the body is read (e.g. to refuse a request without reading it). */
+    onRequest?: onRequestAsyncHookHandler;
+  } = {},
 ): void {
-  const { bodyLimit } = options;
+  const { bodyLimit, onRequest } = options;
   for (const prefix of PREFIXES[options.controller ?? "public"]) {
     for (const name of names) {
       app.route({
@@ -30,6 +41,7 @@ export function oldRoute(
         url: `${prefix}/${name}`,
         handler,
         ...(bodyLimit !== undefined && { bodyLimit }),
+        ...(onRequest !== undefined && { onRequest }),
       });
     }
   }

@@ -27,7 +27,7 @@ import {
   responseJson,
   storedResponses,
 } from "./export.js";
-import { summarizeQuestion } from "./question-summary.js";
+import { SummaryCache, summarizeQuestion } from "./question-summary.js";
 import { exportFileName, type ExportFormat } from "./export-format.js";
 import { limitCookieOf, publishedDefinition } from "./one-response.js";
 
@@ -156,9 +156,14 @@ function publicWindow(page: { from?: string; till?: string }): { from?: string; 
 }
 
 /** Loading a published survey, storing responses to it once, and counting them. */
+/** How many question summaries a server keeps (`getQuestionSummary`). */
+const SUMMARY_CACHE_ENTRIES = 100;
+
 export function createResultsService(options: ResultsServiceOptions): ResultsService {
   const { surveys, projects, results, files, views, now = Date.now } = options;
   const access = createSurveyAccess({ surveys, projects });
+  // Repeated anonymous calls on an unchanged survey do not read its responses again.
+  const summaries = new SummaryCache<QuestionSummaryJson>(SUMMARY_CACHE_ENTRIES);
 
   /** Stores a response to `survey`; `limitToOneResponse` off ignores the survey's one-response limit. */
   async function store(
@@ -258,17 +263,21 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
           after = page.next;
         }
       };
-      const [counts, stats] = await Promise.all([
-        summarizeQuestion(name, completed()),
-        results.stats(survey),
-      ]);
-      return {
+      // The stats are cheap: an unchanged count and last submission time reuse the summary.
+      const stats = await results.stats(survey);
+      const key = SummaryCache.key(survey.id, name, stats);
+      const cached = summaries.get(key);
+      if (cached !== undefined) return cached;
+      const counts = await summarizeQuestion(name, completed());
+      const summary: QuestionSummaryJson = {
         answered: counts.answered,
         values: counts.values,
         responseCount: stats.count,
         firstSubmittedAt: stats.firstSubmittedAt,
         lastSubmittedAt: stats.lastSubmittedAt,
       };
+      summaries.set(key, summary);
+      return summary;
     },
 
     async stats(user, surveyId) {

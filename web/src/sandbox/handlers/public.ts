@@ -14,7 +14,7 @@ import {
   requiredObject,
   RESULTS_PAGE,
 } from "./common";
-import type { HandlerContext } from "./context";
+import { requireHosted, type HandlerContext } from "./context";
 import { responseOfRun, foldRuns } from "../runs";
 import { formatEtag, ifNoneMatchHits, versionOf } from "./content";
 import { privateKeysOf, withoutKeys } from "./definition";
@@ -336,7 +336,10 @@ export function publicHandlers(ctx: HandlerContext) {
     // are ignored, and the survey is found by its post ID.
     http.post("/public/posts/{postId}/responses", ({ params, request }) =>
       submit(ctx, request, {
-        before: () => checkKeyParam(params.postId, "postId"),
+        before: () => {
+          requireHosted(ctx);
+          checkKeyParam(params.postId, "postId");
+        },
         find: (data) => surveyByKey(data, "postId", params.postId),
         limitToOneResponse: false,
       }),
@@ -346,6 +349,7 @@ export function publicHandlers(ctx: HandlerContext) {
     // `getPublicDefinition`): its version is the editor's ETag, so a save changes it.
     http.get("/public/surveys/{surveyId}/definition", ({ params, request }) =>
       guarded(async () => {
+        requireHosted(ctx);
         checkPathId(params.surveyId, "surveyId");
         const data = ctx.store.read();
         const survey = data.surveys.find(
@@ -365,6 +369,7 @@ export function publicHandlers(ctx: HandlerContext) {
 
     http.get("/public/surveys/{surveyId}/respondents/{clientId}", ({ params }) =>
       guarded(() => {
+        requireHosted(ctx);
         checkPathId(params.surveyId, "surveyId");
         checkClientIdParam(params.clientId);
         const data = ctx.store.read();
@@ -378,6 +383,7 @@ export function publicHandlers(ctx: HandlerContext) {
 
     http.get("/public/results/{resultId}/respondents/{clientId}", ({ params }) =>
       guarded(() => {
+        requireHosted(ctx);
         checkKeyParam(params.resultId, "resultId");
         checkClientIdParam(params.clientId);
         const data = ctx.store.read();
@@ -389,6 +395,7 @@ export function publicHandlers(ctx: HandlerContext) {
     // One question's answers over the completed, folded responses (service.ts `questionSummary`).
     http.get("/public/results/{resultId}/questions/{name}", ({ params }) =>
       guarded(() => {
+        requireHosted(ctx);
         checkKeyParam(params.resultId, "resultId");
         if (params.name.length === 0 || [...params.name].length > 256) {
           throw badRequest(undefined, [

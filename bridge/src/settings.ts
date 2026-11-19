@@ -21,6 +21,11 @@ export interface BridgeSettings {
    */
   readonly fileTimeoutMs: number;
   /**
+   * `BRIDGE_MAX_UPLOAD_BYTES` (default 11534336: Studio's default file limit of 10 MiB and 1 MiB
+   * for the form around it): the largest `upload` body; a larger one is an empty `413`.
+   */
+  readonly maxUploadBytes: number;
+  /**
    * `BRIDGE_TRUST_PROXY` (default none): addresses or CIDR ranges of proxies in front of the bridge
    * whose `X-Forwarded-For` names the caller. Empty: the caller is the socket's peer.
    */
@@ -88,6 +93,7 @@ export function loadSettings(env: Env): BridgeSettings {
   const port = integer("BRIDGE_PORT", 3002, 1, 65_535);
   const studioTimeoutMs = integer("BRIDGE_STUDIO_TIMEOUT_MS", 10_000, 1, 600_000);
   const fileTimeoutMs = integer("BRIDGE_FILE_TIMEOUT_MS", 120_000, 1, 3_600_000);
+  const maxUploadBytes = integer("BRIDGE_MAX_UPLOAD_BYTES", 11_534_336, 1, 30_000_000);
 
   const host = env.BRIDGE_HOST ?? "127.0.0.1";
   if (host === "") problems.push("BRIDGE_HOST must not be empty");
@@ -111,6 +117,7 @@ export function loadSettings(env: Env): BridgeSettings {
     host,
     studioTimeoutMs,
     fileTimeoutMs,
+    maxUploadBytes,
     trustProxy,
   };
 }

@@ -53,6 +53,19 @@ export interface BuildOptions {
   readonly logStream?: { write(line: string): void };
 }
 
+/**
+ * The operations for surveys built for the old service (ADR 0039), which the bridge calls: only in
+ * the hosted edition. Elsewhere they are not routes at all, and answer `404` as an unknown path.
+ */
+const HOSTED_OPERATIONS: readonly OperationId[] = [
+  "getPublicDefinition",
+  "getRespondentState",
+  "getRespondentStateByResultId",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
+  "getQuestionSummary",
+  "getLegacyFile",
+];
 /** The respondent's operations, limited by `PUBLIC_RATE_LIMIT` per client IP and minute. */
 const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getPublishedSurvey",
@@ -64,8 +77,6 @@ const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getRespondentStateByResultId",
   "submitResponseByPostId",
   "uploadResponseFileByPostId",
-  "getQuestionSummary",
-  "getLegacyFile",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = [
@@ -243,6 +254,11 @@ export async function buildApp(
     detail: (after) => `Too many requests. Try again in ${after}.`,
   };
   const fileLimit: RateLimit = { ...publicLimit, max: config.publicFileRateLimitPerMinute };
+  // Each call reads every completed response of the survey, unless its summary is cached.
+  const summaryLimit: RateLimit = { ...publicLimit, max: config.publicSummaryRateLimitPerMinute };
+  const omitted = config.edition === "hosted" ? [] : HOSTED_OPERATIONS;
+  const limited = (operations: readonly OperationId[]) =>
+    operations.filter((id) => !omitted.includes(id));
   await app.register(apiRoutes, {
     prefix: "/api/v1",
     contract,
@@ -350,9 +366,13 @@ export async function buildApp(
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
-      ...Object.fromEntries(PUBLIC_OPERATIONS.map((id) => [id, publicLimit])),
-      downloadFile: fileLimit,
+      ...Object.fromEntries(limited(PUBLIC_OPERATIONS).map((id) => [id, publicLimit])),
+      ...Object.fromEntries(
+        limited(["downloadFile", "getLegacyFile"]).map((id) => [id, fileLimit]),
+      ),
+      ...Object.fromEntries(limited(["getQuestionSummary"]).map((id) => [id, summaryLimit])),
     },
+    omittedOperations: omitted,
     // Survey documents may carry inline images: they get their own, larger limit.
     bodyLimits: {
       saveSurveyDefinition: config.limits.maxDocumentBytes,

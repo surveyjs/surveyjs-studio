@@ -168,10 +168,12 @@ export interface AppConfig {
   readonly signInRateLimitPerMinute: number;
   /** Peers (IP addresses or CIDR ranges) whose X-Forwarded-For is believed; empty trusts nobody. */
   readonly trustProxy: readonly string[];
-  /** Requests per client IP and minute for each of the three public operations. */
+  /** Requests per client IP and minute for each public operation without a limit of its own. */
   readonly publicRateLimitPerMinute: number;
-  /** Requests per client IP and minute for `downloadFile`. */
+  /** Requests per client IP and minute for `downloadFile` and `getLegacyFile`. */
   readonly publicFileRateLimitPerMinute: number;
+  /** Requests per client IP and minute for `getQuestionSummary`. */
+  readonly publicSummaryRateLimitPerMinute: number;
   readonly accountNotices: AccountNoticesSetting;
   /** `USER_DIRECTORY`, or its default for the storage provider (R7, R8). */
   readonly userDirectory: UserDirectorySetting;
@@ -385,6 +387,7 @@ const envSchema = z.object({
   TRUST_PROXY: trustProxy.default([]),
   PUBLIC_RATE_LIMIT: positiveInt.default(60),
   PUBLIC_FILE_RATE_LIMIT: positiveInt.default(600),
+  PUBLIC_SUMMARY_RATE_LIMIT: positiveInt.default(10),
   ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
   USER_DIRECTORY: z.enum(USER_DIRECTORIES).optional(),
   USER_API_URL: httpUrl.optional(),
@@ -917,6 +920,7 @@ export function loadConfig(
     trustProxy: Object.freeze([...e.TRUST_PROXY]),
     publicRateLimitPerMinute: e.PUBLIC_RATE_LIMIT,
     publicFileRateLimitPerMinute: e.PUBLIC_FILE_RATE_LIMIT,
+    publicSummaryRateLimitPerMinute: e.PUBLIC_SUMMARY_RATE_LIMIT,
     accountNotices: e.ACCOUNT_NOTICES,
     userDirectory:
       e.USER_DIRECTORY ?? (e.STORAGE_PROVIDER === "azure-legacy" ? "surveyjs-sql" : "memory"),

@@ -6,6 +6,7 @@ import { sendEmpty, sendJsonString, sendProblem, sendValidationProblem } from ".
 import { EMPTY_GUID, parseGuid } from "../binding.js";
 import { bindJsonBody, parseLenientJson } from "../json-body.js";
 import { oldRoute } from "../routes.js";
+import type { BridgeSettings } from "../settings.js";
 import { unexpectedStatus } from "../studio.js";
 
 const POST_BODY = {
@@ -73,7 +74,18 @@ const READABLE_EXTENSION = /^\.[A-Za-z0-9_-]+$/;
 
 const IMAGE_EXTENSIONS = new Set(["jpeg", "jpg", "png", "bmp", "svg", "gif"]);
 
-export function registerPostActions(app: FastifyInstance): void {
+/**
+ * How many `upload` requests the bridge reads at once; one more is refused before its body is read
+ * with an empty `503`, as the old host answered when overloaded. Each holds its body in memory (up
+ * to `BRIDGE_MAX_UPLOAD_BYTES`) and then the form parsed from it.
+ */
+export const MAX_CONCURRENT_UPLOADS = 8;
+
+export function registerPostActions(
+  app: FastifyInstance,
+  settings: Pick<BridgeSettings, "maxUploadBytes">,
+): void {
+  let uploads = 0;
   oldRoute(
     app,
     ["POST"],
@@ -130,63 +142,89 @@ export function registerPostActions(app: FastifyInstance): void {
     { bodyLimit: MAX_POST_BYTES },
   );
 
-  oldRoute(app, ["POST"], ["upload"], async (request, reply) => {
-    const type = mediaType(request);
-    if (type !== "multipart/form-data" && type !== "application/x-www-form-urlencoded") {
-      return sendProblem(reply, 415);
-    }
-    let form: FormData;
-    try {
-      form = await new Response(new Uint8Array(bodyBytes(request)), {
-        headers: { "content-type": request.headers["content-type"]! },
-      }).formData();
-    } catch (error) {
-      request.log.info({ err: error }, "unreadable form");
-      return sendEmpty(reply, 500);
-    }
-    // The first file part of any field name; a part with an empty file name is not a file.
-    let file: File | undefined;
-    let postIdField: string | undefined;
-    for (const [name, value] of form) {
-      if (file === undefined && typeof value !== "string" && value.name !== "") file = value;
-      if (
-        postIdField === undefined &&
-        name.toLowerCase() === "postid" &&
-        typeof value === "string"
-      ) {
-        postIdField = value;
-      }
-    }
-    if (file === undefined || postIdField === undefined) return sendProblem(reply, 415);
-    const postId = parseGuid(postIdField);
-    if (postId === null) return sendProblem(reply, 404);
-
-    const upload = new FormData();
-    upload.append("file", file, file.name);
-    const { data, response } = await request.studio.POST("/public/posts/{postId}/files", {
-      params: { path: { postId } },
-      body: upload as unknown as { file: string },
-      bodySerializer: (body) => body as unknown as FormData,
-    });
-    if (data !== undefined) {
-      const extension = extensionOf(file.name);
-      const kind = IMAGE_EXTENSIONS.has(extension.slice(1).toLowerCase()) ? "dxsimage" : "dxsfile";
-      // The name must read back through `image` and `file`, which take only these characters
-      // after the dot: any other extension is left out of the name (the file is stored as sent).
-      const kept = READABLE_EXTENSION.test(extension) ? extension : "";
-      return sendJsonString(reply, 200, `${kind}:${data.id}${kept}`);
-    }
-    switch (response.status) {
-      case 404:
-        return sendProblem(reply, 404);
-      case 413:
-        // The old host's own limit answered an empty 413.
-        return sendEmpty(reply, 413);
-      case 422:
-        // An empty file, which Studio does not store: the old answer for no file.
+  oldRoute(
+    app,
+    ["POST"],
+    ["upload"],
+    async (request, reply) => {
+      const type = mediaType(request);
+      if (type !== "multipart/form-data" && type !== "application/x-www-form-urlencoded") {
         return sendProblem(reply, 415);
-      default:
-        return unexpectedStatus(response);
-    }
-  });
+      }
+      let form: FormData;
+      try {
+        // A view of the body's bytes, not a copy.
+        const bytes = bodyBytes(request);
+        const view = new Uint8Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.length);
+        form = await new Response(view, {
+          headers: { "content-type": request.headers["content-type"]! },
+        }).formData();
+      } catch (error) {
+        request.log.info({ err: error }, "unreadable form");
+        return sendEmpty(reply, 500);
+      }
+      // The first file part of any field name; a part with an empty file name is not a file.
+      let file: File | undefined;
+      let postIdField: string | undefined;
+      for (const [name, value] of form) {
+        if (file === undefined && typeof value !== "string" && value.name !== "") file = value;
+        if (
+          postIdField === undefined &&
+          name.toLowerCase() === "postid" &&
+          typeof value === "string"
+        ) {
+          postIdField = value;
+        }
+      }
+      if (file === undefined || postIdField === undefined) return sendProblem(reply, 415);
+      const postId = parseGuid(postIdField);
+      if (postId === null) return sendProblem(reply, 404);
+
+      const upload = new FormData();
+      upload.append("file", file, file.name);
+      const { data, response } = await request.studio.POST("/public/posts/{postId}/files", {
+        params: { path: { postId } },
+        body: upload as unknown as { file: string },
+        bodySerializer: (body) => body as unknown as FormData,
+      });
+      if (data !== undefined) {
+        const extension = extensionOf(file.name);
+        const kind = IMAGE_EXTENSIONS.has(extension.slice(1).toLowerCase())
+          ? "dxsimage"
+          : "dxsfile";
+        // The name must read back through `image` and `file`, which take only these characters
+        // after the dot: any other extension is left out of the name (the file is stored as sent).
+        const kept = READABLE_EXTENSION.test(extension) ? extension : "";
+        return sendJsonString(reply, 200, `${kind}:${data.id}${kept}`);
+      }
+      switch (response.status) {
+        case 404:
+          return sendProblem(reply, 404);
+        case 413:
+          // The old host's own limit answered an empty 413.
+          return sendEmpty(reply, 413);
+        case 422:
+          // An empty file, which Studio does not store: the old answer for no file.
+          return sendProblem(reply, 415);
+        default:
+          return unexpectedStatus(response);
+      }
+    },
+    {
+      bodyLimit: settings.maxUploadBytes,
+      // Before the body is read: a refused upload is never buffered.
+      onRequest: async (request, reply) => {
+        if (uploads >= MAX_CONCURRENT_UPLOADS) {
+          request.log.warn("upload: too many uploads at once");
+          // Close the connection: the body the caller is still sending is not read.
+          return sendEmpty(reply.header("connection", "close"), 503);
+        }
+        uploads += 1;
+        reply.raw.once("close", () => {
+          uploads -= 1;
+        });
+        return undefined;
+      },
+    },
+  );
 }

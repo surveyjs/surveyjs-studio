@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SurveyResponse } from "../domain/types.js";
-import { summarizeQuestion } from "./question-summary.js";
+import { MAX_SUMMARY_VALUES, SummaryCache, summarizeQuestion } from "./question-summary.js";
 
 async function* of(...datas: Record<string, unknown>[]): AsyncGenerator<SurveyResponse> {
   let n = 0;
@@ -84,5 +84,39 @@ describe("summarizeQuestion", () => {
   it("keeps first-seen order", async () => {
     const result = await summary("q", { q: "b" }, { q: "a" }, { q: "b" });
     expect(result.values.map((v) => v.value)).toStrictEqual(["b", "a"]);
+  });
+});
+
+describe("the distinct-value cap", () => {
+  it(`lists at most ${MAX_SUMMARY_VALUES} values and still counts every answer`, async () => {
+    const datas = Array.from({ length: MAX_SUMMARY_VALUES + 5 }, (_, n) => ({ q: n }));
+    // A value listed before the cap keeps counting after it.
+    datas.push({ q: 0 });
+    const result = await summary("q", ...datas);
+    expect(result.answered).toBe(MAX_SUMMARY_VALUES + 6);
+    expect(result.values).toHaveLength(MAX_SUMMARY_VALUES);
+    expect(result.values[0]).toStrictEqual({ value: 0, count: 2 });
+    expect(result.values.at(-1)).toStrictEqual({ value: MAX_SUMMARY_VALUES - 1, count: 1 });
+  });
+});
+
+describe("SummaryCache", () => {
+  const stats = (count: number) => ({ count, lastSubmittedAt: `2026-01-0${count}T00:00:00.000Z` });
+
+  it("keys on the survey, the name and the survey's count and last submission", () => {
+    expect(SummaryCache.key("s", "q", stats(1))).not.toBe(SummaryCache.key("s", "q", stats(2)));
+    expect(SummaryCache.key("s", "q", stats(1))).not.toBe(SummaryCache.key("s", "r", stats(1)));
+    expect(SummaryCache.key("s", "q", stats(1))).toBe(SummaryCache.key("s", "q", stats(1)));
+  });
+
+  it("drops the least recently used entry first", () => {
+    const cache = new SummaryCache<number>(2);
+    cache.set("a", 1);
+    cache.set("b", 2);
+    expect(cache.get("a")).toBe(1);
+    cache.set("c", 3);
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("a")).toBe(1);
+    expect(cache.get("c")).toBe(3);
   });
 });

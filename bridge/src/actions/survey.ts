@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { sendEmpty, sendJsonString, jsonContentType } from "../answers.js";
 import { EMPTY_GUID, guidParameter, isStudioClientId } from "../binding.js";
 import { oldRoute, queryValue } from "../routes.js";
-import { unexpectedStatus } from "../studio.js";
+import { StudioFailure, unexpectedStatus } from "../studio.js";
 import type { SurveyCache } from "../survey-cache.js";
 
 const CHECK_PARAMETERS = "Check parameter values.";
@@ -19,8 +19,9 @@ const OLD_STATES: Record<"none" | "partial" | "completed", OldState> = {
 };
 
 /**
- * The survey's definition as JSON text, from the cache when Studio confirms it unchanged;
- * `undefined` when Studio has no such survey.
+ * The survey's definition as JSON text, from the cache when Studio confirms it unchanged or
+ * refuses the revalidation for rate reasons (`429`: a busy caller keeps its answer); `undefined`
+ * when Studio has no such survey.
  */
 async function definitionText(
   request: FastifyRequest,
@@ -29,12 +30,21 @@ async function definitionText(
 ): Promise<string | undefined> {
   if (surveyId === EMPTY_GUID) return undefined;
   const cached = cache.get(surveyId);
-  const { data, response } = await request.studio.GET("/public/surveys/{surveyId}/definition", {
-    params: {
-      path: { surveyId },
-      ...(cached !== undefined && { header: { "If-None-Match": cached.etag } }),
-    },
-  });
+  let read;
+  try {
+    read = await request.studio.GET("/public/surveys/{surveyId}/definition", {
+      params: {
+        path: { surveyId },
+        ...(cached !== undefined && { header: { "If-None-Match": cached.etag } }),
+      },
+    });
+  } catch (error) {
+    if (error instanceof StudioFailure && error.status === 429 && cached !== undefined) {
+      return cached.body;
+    }
+    throw error;
+  }
+  const { data, response } = read;
   if (response.status === 304 && cached !== undefined) return cached.body;
   if (response.status === 404) {
     cache.delete(surveyId);

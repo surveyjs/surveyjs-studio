@@ -835,7 +835,11 @@ The setup starts and stops everything itself; nothing needs port 3000. To run th
 set `COMPAT_BASE_URL` (the bridge's origin) and `COMPAT_STUDIO_URL` (Studio's `/api/v1` URL); nothing is started then.
 `COMPAT_PROVIDER` (`memory`, the default, or `azure-legacy`) says which provider the suite's own Studio uses.
 
-- **Studio's settings in the suite.** The bridge is Studio's only caller, so the public rate limits are far above what
+- **Studio's settings in the suite.** Studio runs as the hosted edition (`APP_EDITION=hosted`), the only one that routes
+  the operations the bridge calls. The hosted edition refuses the dev sign-in, so on the memory provider the suite signs
+  the owner in through the OAuth stub (`server/src/testing/oauth-stub.ts`, playing surveyjs.io), started with the
+  servers; on Azurite through the mock OIDC server. A child whose port another process took first (`EADDRINUSE`) is
+  started again on another port. The bridge is Studio's only caller, so the public rate limits are far above what
   the suite sends. `TRUST_PROXY` lists the bridge's loopback address, so Studio takes the caller from the bridge's
   `X-Forwarded-For`, and the bridge trusts loopback so a test can send a caller address of its own. The response and file
   limits are small (64 KiB), so the "too large" cases stay cheap.
@@ -1411,8 +1415,11 @@ they were written before `listResults` existed.
 `CONFORMANCE_PROVIDER` selects the provider for the server that the conformance suite starts:
 `memory` (default; every app variable is removed; the dev identity provider), `sqlite` or `postgres` (see below) or `azure-legacy` (the
 three `LEGACY_*` variables and the `OIDC_*` settings of the mock OIDC server are passed through, and
-the run fails if one is missing; sign-in goes through the mock). `pnpm test:conformance:azurite`
-sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The
+the run fails if one is missing; sign-in goes through the mock; `APP_EDITION=hosted`). `pnpm test:conformance:azurite`
+sets it from `conformance-tests/azure-legacy.env` after loading `docker/azurite.env`. The Azure legacy run is the
+hosted edition's, so it is the run that checks the operations for the bridge (hosted Step 5). Every other run is
+self-hosted (the dev sign-in is refused in the hosted edition) and checks that those operations answer `404 not-found`
+as unknown paths, the sandbox run included; the setup reads the edition from the server's `/config`. The
 survey and project tests run on the provider, so on Azurite they read the fixtures from the replica and
 create surveys in it (only in the scopes named in [Test data](#test-data)).
 

@@ -43,6 +43,13 @@ declare module "vitest" {
      * under msw/node (src/sandbox-setup.ts) and a session is the `msid` cookie, set without HTTP.
      */
     sandbox: boolean;
+    /**
+     * The server's edition, from its `/config` (the sandbox: its own, `self-hosted`). Only the
+     * hosted edition routes the operations for surveys built for the old service (ADR 0039);
+     * elsewhere they answer `404` as unknown paths, which public.test.ts and public-files.test.ts
+     * check instead.
+     */
+    edition: "hosted" | "self-hosted";
   }
 }
 
@@ -133,6 +140,7 @@ const appVariables = [
   "TRUST_PROXY",
   "PUBLIC_RATE_LIMIT",
   "PUBLIC_FILE_RATE_LIMIT",
+  "PUBLIC_SUMMARY_RATE_LIMIT",
   "ACCOUNT_NOTICES",
   "USER_DIRECTORY",
   "USER_API_URL",
@@ -193,7 +201,8 @@ function providerEnv(): Record<string, string> {
       ...sqlDatabase.env,
     };
   }
-  const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
+  // The hosted edition's configuration (mode 1): the run that checks the bridge's operations.
+  const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy", APP_EDITION: "hosted" };
   const missing: string[] = [];
   for (const name of [...legacyVariables, ...oidcVariables]) {
     const value = process.env[name];
@@ -644,6 +653,16 @@ ${output}`,
   return { baseUrl, stop };
 }
 
+/** The edition `/config` names: `hosted` or `self-hosted`. */
+async function editionOf(baseUrl: string): Promise<"hosted" | "self-hosted"> {
+  const response = await fetch(`${baseUrl}/api/v1/config`);
+  const { edition } = (await response.json()) as { edition?: unknown };
+  if (edition !== "hosted" && edition !== "self-hosted") {
+    throw new Error(`${baseUrl}/api/v1/config answered ${response.status} without an edition`);
+  }
+  return edition;
+}
+
 /**
  * Uses `CONFORMANCE_BASE_URL` if set; otherwise runs the reference server for the suite (as the
  * `CONFORMANCE_IMAGE` image when that is set).
@@ -666,6 +685,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
       throw new Error("CONFORMANCE_AUTH cannot be used with CONFORMANCE_BASE_URL");
     }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
+    project.provide("edition", await editionOf(external.replace(/\/+$/, "")));
     project.provide("ownsServer", false);
     project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
@@ -724,6 +744,12 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   }
   const [server, openSignUp] = servers;
   if (!server) throw new Error("the reference server did not start");
+  try {
+    project.provide("edition", await editionOf(server.baseUrl));
+  } catch (error) {
+    await stopAll();
+    throw error;
+  }
   project.provide("baseUrl", server.baseUrl);
   project.provide("ownsServer", true);
   project.provide("userDirectory", mode);
@@ -769,6 +795,8 @@ function provideSandbox(
     throw new Error(`CONFORMANCE_PROVIDER=sandbox cannot be used with ${refused.join(", ")}`);
   }
   project.provide("baseUrl", SANDBOX_ORIGIN);
+  // The sandbox's /config (web/src/sandbox/handlers/session.ts); public.test.ts checks it.
+  project.provide("edition", "self-hosted");
   project.provide("ownsServer", false);
   project.provide("userDirectory", "default");
   project.provide("webhookSecret", null);

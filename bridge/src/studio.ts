@@ -83,7 +83,8 @@ export function withBodyDeadline(response: Response, timer: NodeJS.Timeout): Res
 
 /**
  * A client for one caller: `callerIp` goes to Studio in `X-Forwarded-For` (Studio trusts it only
- * from the bridge, `TRUST_PROXY`). Each call, its answer's body included, must finish within
+ * from the bridge, `TRUST_PROXY`); an unknown address (`""`) sends no such header, so Studio
+ * counts the call against the bridge's own address. Each call, its answer's body included, must finish within
  * `studioTimeoutMs`, and stops when `callerGone` aborts. Studio's `429` and `5xx` throw a `StudioFailure`.
  *
  * With `bodyTimeoutMs` (file reads), only the answer's headers must come within `studioTimeoutMs`;
@@ -115,7 +116,7 @@ export function studioClient(
   };
   const client = createClient<paths>({
     baseUrl: settings.studioUrl,
-    headers: { "x-forwarded-for": callerIp },
+    ...(callerIp !== "" && { headers: { "x-forwarded-for": callerIp } }),
     fetch: send,
   });
   client.use({

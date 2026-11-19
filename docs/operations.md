@@ -138,6 +138,8 @@ docker run -d --name bridge -p 3002:3002 \
 | Logs     | JSON lines on standard output, level `info`                                                                                                                    |
 | Health   | None: the image has no `HEALTHCHECK`, because an address the bridge answered itself would differ from the old host. A probe can use a forwarded path (`GET /`) |
 
+- **Studio must be the hosted edition** (`APP_EDITION=hosted`). Only it routes the operations the bridge calls; any
+  other edition answers them `404`, so every action would answer as for an unknown survey or file.
 - **Studio's `TRUST_PROXY` must list the bridge.** The bridge sends the caller's address in `X-Forwarded-For`, and Studio
   uses it only from a trusted peer. Set Studio's `TRUST_PROXY` to the bridge's address, as the Studio container sees it
   (see [Running the image](#running-the-image), step 4), or Studio's IP capture and per-address rate limits see the
@@ -146,8 +148,12 @@ docker run -d --name bridge -p 3002:3002 \
   proxy's `X-Forwarded-For` is passed on unvalidated: list only a proxy that overwrites or appends the header.
 - **`BRIDGE_LEGACY_URL` should be an `https:` URL.** The forwarded requests carry the callers' headers.
 - **Studio's public limits apply to the bridge's calls.** Studio's `PUBLIC_RATE_LIMIT` (60 a minute per address and
-  operation by default) counts each respondent separately only through the address above. A very large public result set is
+  operation by default), `PUBLIC_FILE_RATE_LIMIT` for the legacy files and `PUBLIC_SUMMARY_RATE_LIMIT` (10 by default)
+  for `getResult` count each respondent separately only through the address above. A very large public result set is
   read one Studio page at a time, so it streams slowly.
+- **A proxy or CDN in front of the bridge needs a read-idle timeout above 120 seconds.** While Studio limits a large
+  `getSurveyPublicResults` stream, the bridge waits up to 120 seconds between pages and sends nothing meanwhile; a
+  shorter response or idle timeout cuts the stream.
 - **A change of settings or image: re-create the container,** as for Studio.
 - **Check it** with a request that needs no data: `curl -i <bridge>/public/Survey/getSurvey` answers `400` from the bridge
   itself (no survey ID), and a path the bridge does not own, for example `curl -i <bridge>/`, shows the old service's answer.

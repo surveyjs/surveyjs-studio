@@ -1,12 +1,14 @@
-// Starts what the suite talks to: Studio's server (memory, or the Azure legacy provider on the local
-// replica), the bridge in front of it, and a stub of the old service the bridge forwards to. With
-// COMPAT_BASE_URL and COMPAT_STUDIO_URL set, nothing is started: the suite runs against those.
+// Starts what the suite talks to: Studio's server in the hosted edition (memory, or the Azure legacy
+// provider on the local replica), the bridge in front of it, and a stub of the old service the
+// bridge forwards to. With COMPAT_BASE_URL and COMPAT_STUDIO_URL set, nothing is started: the suite
+// runs against those.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
 import { ENV_VARIABLES } from "../../server/src/config.js";
+import { startOAuthStub } from "../../server/src/testing/oauth-stub.js";
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -25,18 +27,21 @@ const READY_TIMEOUT_MS = 30_000;
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /**
- * Studio's settings. The bridge is Studio's only caller of the public operations here, so the
- * public rate limits are far above what the suite sends; `TRUST_PROXY` trusts the bridge (on
+ * Studio's settings. Only the hosted edition routes the operations the bridge calls (ADR 0039).
+ * The bridge is Studio's only caller of the public operations here, so the public rate limits are
+ * far above what the suite sends; `TRUST_PROXY` trusts the bridge (on
  * loopback), so Studio takes the caller from the bridge's `X-Forwarded-For`. The response and
  * file limits are small, so the "too large" cases stay cheap.
  */
 const STUDIO_SETTINGS: Readonly<Record<string, string>> = {
   NODE_ENV: "test",
+  APP_EDITION: "hosted",
   LOG_LEVEL: "warn",
   SIGN_IN_RATE_LIMIT: "100000",
   TRUST_PROXY: "127.0.0.1,::1",
   PUBLIC_RATE_LIMIT: "100000",
   PUBLIC_FILE_RATE_LIMIT: "100000",
+  PUBLIC_SUMMARY_RATE_LIMIT: "100000",
   LIMIT_MAX_RESPONSE_BYTES: "65536",
   LIMIT_MAX_FILE_BYTES: "65536",
 };
@@ -60,10 +65,26 @@ function compatProvider(): "memory" | "azure-legacy" {
   return value;
 }
 
-/** The storage settings of the provider: the legacy fixtures in memory, or the local replica. */
-function providerEnv(provider: "memory" | "azure-legacy"): Record<string, string> {
+/**
+ * The storage settings of the provider: the legacy fixtures in memory, or the local replica. The
+ * hosted edition refuses the dev sign-in, so in memory the owner signs in to Studio through the
+ * OAuth stub playing surveyjs.io (`oauthStubUrl`); on the replica through the mock OIDC server.
+ */
+function providerEnv(
+  provider: "memory" | "azure-legacy",
+  oauthStubUrl: string | null,
+): Record<string, string> {
   if (provider === "memory") {
-    return { STORAGE_PROVIDER: "memory", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" };
+    if (oauthStubUrl === null) throw new Error("the OAuth stub is started first");
+    return {
+      STORAGE_PROVIDER: "memory",
+      MEMORY_SEED: "legacy-fixtures",
+      IDENTITY_PROVIDER: "surveyjs-oidc",
+      OIDC_ISSUER_URL: `${oauthStubUrl}/surveyjs`,
+      OIDC_CLIENT_ID: "compat-surveyjs",
+      // The stub's documented test secret, not a real one.
+      OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    };
   }
   const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy" };
   const missing: string[] = [];
@@ -159,6 +180,36 @@ async function waitUntil(
   }
 }
 
+/** How many ports a child is tried on when another process takes its port first. */
+const PORT_ATTEMPTS = 3;
+
+/**
+ * Starts `script` on a free port and waits until `ready(origin)`. The port is free when chosen but
+ * may be taken before the child binds it: a child that fails with `EADDRINUSE` is started again
+ * on another port.
+ */
+async function startOnFreePort(
+  what: string,
+  script: string,
+  env: (port: number, origin: string) => NodeJS.ProcessEnv,
+  ready: (origin: string) => Promise<boolean>,
+  stops: (() => Promise<void> | void)[],
+): Promise<string> {
+  for (let attempt = 1; ; attempt += 1) {
+    const port = await freePort();
+    const origin = `http://127.0.0.1:${port}`;
+    const started = startNode(script, env(port, origin));
+    stops.push(() => killTree(started.child));
+    try {
+      await waitUntil(what, started, () => ready(origin));
+      return origin;
+    } catch (error) {
+      killTree(started.child);
+      if (attempt >= PORT_ATTEMPTS || !started.output().includes("EADDRINUSE")) throw error;
+    }
+  }
+}
+
 /**
  * The old service's stand-in: answers every request with `200` and a JSON echo of what reached
  * it (method, path and query as sent, the headers, the body in base64), marked with the header
@@ -214,42 +265,40 @@ export async function setup(project: TestProject): Promise<() => Promise<void>> 
   try {
     const stub = await startLegacyStub();
     stops.push(stub.close);
+    const oauthStub = provider === "memory" ? await startOAuthStub() : null;
+    if (oauthStub !== null) stops.push(() => oauthStub.close());
 
-    const studioPort = await freePort();
-    const studioOrigin = `http://127.0.0.1:${studioPort}`;
-    const studio = startNode("server/src/main.ts", {
-      ...cleanEnv(),
-      ...STUDIO_SETTINGS,
-      ...providerEnv(provider),
-      HOST: "127.0.0.1",
-      PORT: String(studioPort),
-      PUBLIC_BASE_URL: studioOrigin,
-    });
-    stops.push(() => killTree(studio.child));
-    await waitUntil(
+    const studioOrigin = await startOnFreePort(
       "Studio",
-      studio,
-      async () => (await fetch(`${studioOrigin}/readyz`)).status === 200,
+      "server/src/main.ts",
+      (port, origin) => ({
+        ...cleanEnv(),
+        ...STUDIO_SETTINGS,
+        ...providerEnv(provider, oauthStub?.url ?? null),
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        PUBLIC_BASE_URL: origin,
+      }),
+      async (origin) => (await fetch(`${origin}/readyz`)).status === 200,
+      stops,
     );
 
-    const bridgePort = await freePort();
-    const bridgeOrigin = `http://127.0.0.1:${bridgePort}`;
-    const bridge = startNode("bridge/src/main.ts", {
-      ...cleanEnv(),
-      BRIDGE_STUDIO_URL: `${studioOrigin}/api/v1`,
-      BRIDGE_LEGACY_URL: stub.url,
-      BRIDGE_HOST: "127.0.0.1",
-      BRIDGE_PORT: String(bridgePort),
-      // The suite stands in for a proxy on loopback: its X-Forwarded-For names the caller, so the
-      // IP-capture test can send a caller address of its own.
-      BRIDGE_TRUST_PROXY: "127.0.0.1,::1",
-    });
-    stops.push(() => killTree(bridge.child));
-    // Without a survey ID the bridge answers itself, without asking Studio.
-    await waitUntil(
+    const bridgeOrigin = await startOnFreePort(
       "The bridge",
-      bridge,
-      async () => (await fetch(`${bridgeOrigin}/public/Survey/getSurvey`)).status === 400,
+      "bridge/src/main.ts",
+      (port) => ({
+        ...cleanEnv(),
+        BRIDGE_STUDIO_URL: `${studioOrigin}/api/v1`,
+        BRIDGE_LEGACY_URL: stub.url,
+        BRIDGE_HOST: "127.0.0.1",
+        BRIDGE_PORT: String(port),
+        // The suite stands in for a proxy on loopback: its X-Forwarded-For names the caller, so the
+        // IP-capture test can send a caller address of its own.
+        BRIDGE_TRUST_PROXY: "127.0.0.1,::1",
+      }),
+      // Without a survey ID the bridge answers itself, without asking Studio.
+      async (origin) => (await fetch(`${origin}/public/Survey/getSurvey`)).status === 400,
+      stops,
     );
 
     project.provide("baseUrl", bridgeOrigin);

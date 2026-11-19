@@ -59,7 +59,8 @@ and the image's bytes.
 ### 2. What Studio's public API adds
 
 Clean operations, named for what they do; none is shaped like the old API. All are unauthenticated, rate limited as
-public operations, and implemented on the memory, SQL and Azure legacy providers.
+public operations (`getLegacyFile` as `downloadFile`, `getQuestionSummary` with a lower limit of its own), and
+implemented on the memory, SQL and Azure legacy providers. They exist in the hosted edition only (Consequences).
 
 | Operation                      | Path                                                    | What it does                                                                                                                                                                            |
 | ------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -92,9 +93,13 @@ by survey ID, as the old `getSurvey` and `getSurveyAndIsCompleted` are.
 - A workspace package `bridge/` and an image target of its own, in TypeScript on Fastify (case-insensitive routes,
   trailing slashes ignored). No store, no store credentials. It calls Studio through `openapi-fetch` typed with the
   contract's generated `paths`, so a breaking contract change fails its type check.
-- **Settings:** Studio's API base URL, the old service's base URL (for forwarding), the size of the `getSurvey` cache.
+- **Settings:** Studio's API base URL, the old service's base URL (for forwarding), the size of the `getSurvey` cache,
+  and the largest `upload` body (Studio's default file limit and 1 MiB; at most 8 uploads are read at once, one more
+  gets an empty `503`).
 - **`getSurvey` cache:** answers kept per survey with Studio's `ETag`; every request revalidates with `If-None-Match`,
-  so an edit shows at once and an unchanged survey costs Studio a `304`.
+  so an edit shows at once and an unchanged survey costs Studio a `304`. A revalidation Studio refuses for rate reasons
+  serves the cached copy, so a caller that reads one survey very often keeps getting it; without a copy the `429`
+  stands.
 - **Client address:** the bridge sends the caller's address in `X-Forwarded-For`. Studio trusts it only from the bridge
   (`TRUST_PROXY`), so IP capture and the per-IP rate limits work per respondent.
 - **Answers to posts** carry no `Idempotency-Key`, so a repeated old post stores a second response, as today.
@@ -150,14 +155,22 @@ by survey ID, as the old `getSurvey` and `getSurveyAndIsCompleted` are.
 
 - **Studio's contract** gains seven public operations and two query parameters; each has conformance tests on every
   provider and a handler in the web sandbox.
+- **Hosted edition only.** The seven operations read unpublished and archived definitions and post to unpublished
+  surveys, which only surveys built for the old service need. They are routes only when `APP_EDITION=hosted`; any other
+  server answers them `404`, as an unknown path, with no rate limit, and its publish rules are unchanged. `from` and
+  `till` on `getPublicResults` work everywhere. The conformance runs check the hosted behaviour where the server is
+  hosted (the Azure legacy run) and the `404` elsewhere, the web sandbox included; the provider and server tests cover
+  the SQL and memory stores.
 - **Migration `0008`** adds `legacy_files`; the Azure legacy provider gains a read-only file-share reader
   (`@azure/storage-file-share`).
 - **Differences from the old API:** the three in point 1; `getResult` counting completed responses folded by ADR 0038
   (the old code counts every row merged by client); `getSurveyPublicResults` returning completed responses only (the old
-  one also returned partial saves); `getSurvey` returning JSON rather than the stored bytes, and answering `200 {}` for a
+  one also returned partial saves, and left out the answer columns its saved results layout hid, which the migration maps
+  into `privateResultQuestions`); `getSurvey` returning JSON rather than the stored bytes, and answering `200 {}` for a
   survey whose definition was never saved (the old API answered `400`); uploads whose extension has characters outside
-  `[A-Za-z0-9_-]` answered without an extension; Studio's rate limits (`429`, and slow streaming of very large public
-  results); and incidental bytes. [`docs/api/legacy-compat.md`](../api/legacy-compat.md) holds the full list.
+  `[A-Za-z0-9_-]` answered without an extension; uploads above the bridge's upload limit (11,534,336 bytes by default,
+  where the old host took up to 30,000,000) answered with an empty `413`; Studio's rate limits (`429`, and slow
+  streaming of very large public results); and incidental bytes. [`docs/api/legacy-compat.md`](../api/legacy-compat.md) holds the full list.
 - **Step 6** adds the access-key actions and the results-layout reads (`getIsResultPublic`, `getResultPublicColumns`,
   `getPublicResultSummaryState`, `getPublicResultTableState`) on the same bridge.
 - **The recordings** may bring a round of small fixes before Step 7.

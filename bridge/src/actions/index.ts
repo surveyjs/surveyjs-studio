@@ -30,7 +30,7 @@ export function registerActions(app: FastifyInstance, settings: BridgeSettings):
       throw error;
     });
     registerSurveyActions(actions, cache);
-    registerPostActions(actions);
+    registerPostActions(actions, settings);
     registerResultActions(actions);
     registerFileActions(actions);
   });

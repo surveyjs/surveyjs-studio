@@ -79,13 +79,16 @@ async function start(
     env?: Record<string, string>;
   } = {},
 ) {
-  const config = loadConfig({
+  const loaded = loadConfig({
     NODE_ENV: "test",
     IDENTITY_PROVIDER: "dev",
     LIMIT_MAX_ASSET_BYTES_PER_SURVEY: String(QUOTA),
     LOG_LEVEL: "info",
     ...options.env,
   });
+  // Hosted, which routes the bridge's operations (set after loading: the dev sign-in is refused
+  // with APP_EDITION=hosted). api.test.ts checks they are not routed elsewhere.
+  const config = { ...loaded, edition: "hosted" as const };
   const memory = createMemoryProviders(seed);
   const providers: ProviderSet = {
     ...memory,

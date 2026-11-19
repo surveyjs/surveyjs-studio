@@ -1,6 +1,7 @@
 // Studio's own API, as the survey owner: the suite creates the surveys its state-changing cases
 // run on and reads back what the bridge stored. Signs in over HTTP as a browser would, through the
-// dev provider's "Sign in as…" page (memory) or the mock OIDC server's login form (Azurite).
+// OAuth stub's form (memory), the mock OIDC server's login form (Azurite) or the dev provider's
+// "Sign in as…" page (a server started with it).
 import { inject } from "vitest";
 
 /** Studio's API base URL, with `/api/v1`. */
@@ -48,11 +49,32 @@ function decodeEntities(text: string): string {
   return text.replace(/&(amp|lt|gt|quot|#39);/g, (entity) => entities[entity] ?? entity);
 }
 
-/** The callback URL: the dev page's link for the user, or the mock OIDC form posted as the user. */
+/**
+ * The callback URL: the dev page's link for the user, or the OAuth stub's or the mock OIDC
+ * server's form posted as the user.
+ */
 async function authorize(location: URL, userId: string): Promise<URL> {
   const page = await fetch(location, { redirect: "manual" });
   if (page.status !== 200) throw new Error(`the sign-in page answered ${page.status}`);
   const html = await page.text();
+  if (/<input\b[^>]*\bname="sub"/i.test(html)) {
+    // The OAuth stub (server/src/testing/oauth-stub.ts): its form posts the authorize parameters
+    // back with the subject, which is the fixture user's ID.
+    const form = new URLSearchParams(location.searchParams);
+    form.set("sub", userId);
+    form.set("allow", "1");
+    const login = await fetch(new URL(location.pathname, location), {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    const callback = login.headers.get("location");
+    if (login.status !== 302 || callback === null) {
+      throw new Error(`the OAuth stub's form answered ${login.status}`);
+    }
+    return new URL(callback);
+  }
   if (location.pathname === DEV_SIGN_IN_PATH) {
     const choice = [...html.matchAll(/href="([^"]*)"/g)]
       .map((match) => new URL(decodeEntities(match[1] ?? ""), location))

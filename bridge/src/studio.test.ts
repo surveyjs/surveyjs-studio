@@ -269,6 +269,20 @@ describe("studioClient", () => {
     expect(seen[0]!.url).toBe("http://studio.test/api/v1/public/surveys/a%20b");
     expect(seen[0]!.headers.get("x-forwarded-for")).toBe("192.0.2.4");
   });
+
+  it("sends no X-Forwarded-For when the caller's address is unknown", async () => {
+    const seen: Request[] = [];
+    const settings = { ...TEST_SETTINGS, studioUrl: "http://studio.test/api/v1/" };
+    const client = studioClient(settings, "", async (request) => {
+      seen.push(request);
+      return new Response(JSON.stringify(SURVEY), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    await client.GET("/public/surveys/{surveyId}", { params: { path: { surveyId: "a" } } });
+    expect(seen[0]!.headers.has("x-forwarded-for")).toBe(false);
+  });
 });
 
 describe("withBodyDeadline: a file body's timer ends with the body", () => {

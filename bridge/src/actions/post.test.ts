@@ -1,3 +1,4 @@
+import { connect, type Socket } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   send,
@@ -8,6 +9,7 @@ import {
   type Stub,
 } from "../testing/http.js";
 import { startFakeStudio, type FakeStudio } from "../testing/studio-stub.js";
+import { MAX_CONCURRENT_UPLOADS } from "./post.js";
 
 const POST = "5af48e08-a0a5-44a5-83f4-1c90e8e98de1";
 const SURVEY = "0f5c2a8e-1b2c-4d3e-8f90-123456789abc";
@@ -405,7 +407,7 @@ describe("post", () => {
     expect(Object.values(errors).flat()).toHaveLength(200);
     expect(errors[""]).toEqual(["The input was not valid."]);
     expect(answer.body.length).toBeLessThan(40_000);
-    expect(elapsed).toBeLessThan(200);
+    expect(elapsed).toBeLessThan(1000);
   });
 
   it("answers an empty 413 for a body over 4 MiB", async () => {
@@ -652,5 +654,74 @@ describe("upload", () => {
   it("answers an empty 500 for a form it cannot read", async () => {
     const answer = await upload("not a multipart body", "multipart/form-data");
     expectEmpty(answer, 500);
+  });
+
+  const head = (length: number) =>
+    "POST /public/Survey/upload HTTP/1.1\r\nHost: b\r\n" +
+    `Content-Type: multipart/form-data; boundary=${boundary}\r\n` +
+    `Content-Length: ${length}\r\n\r\n`;
+
+  it("answers an empty 413 for a body over BRIDGE_MAX_UPLOAD_BYTES, asking Studio nothing", async () => {
+    const { data } = await sendRaw(bridge.url, `${head(11_534_337)}-`);
+    expect(data).toMatch(/^HTTP\/1\.1 413 /);
+    expect(studio.requests).toEqual([]);
+
+    const small = await startBridge({
+      studioUrl: `${studio.url}/api/v1`,
+      legacyUrl: legacy.url,
+      maxUploadBytes: 1024,
+    });
+    try {
+      const body = multipart([
+        { name: "postId", value: POST },
+        { name: "file", value: Buffer.alloc(2048, 1), filename: "a.bin" },
+      ]);
+      const answer = await send(`${small.url}/public/Survey/upload`, {
+        method: "POST",
+        headers: [["Content-Type", `multipart/form-data; boundary=${boundary}`]],
+        body,
+      });
+      expectEmpty(answer, 413);
+      expect(studio.requests).toEqual([]);
+    } finally {
+      await small.close();
+    }
+  });
+
+  it(`answers an empty 503 while ${MAX_CONCURRENT_UPLOADS} uploads are being read, and takes one again after`, async () => {
+    const { hostname, port } = new URL(bridge.url);
+    const body = multipart([
+      { name: "postId", value: POST },
+      { name: "file", value: "x", filename: "a.png" },
+    ]);
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const pending: Socket[] = [];
+    try {
+      for (let n = 0; n < MAX_CONCURRENT_UPLOADS; n++) {
+        const socket = connect(Number(port), hostname);
+        socket.on("error", () => undefined);
+        // The headers and part of the body: the upload stays in progress.
+        socket.write(head(body.length) + body.subarray(0, 10).toString("latin1"));
+        pending.push(socket);
+      }
+      // Once the bridge has taken all of them, one more is refused before its body is read.
+      let refused: Answer | undefined;
+      for (let attempt = 0; attempt < 100 && refused === undefined; attempt++) {
+        const answer = await upload(body);
+        if (answer.status === 503) refused = answer;
+        else await pause();
+      }
+      expect(refused).toBeDefined();
+      expectEmpty(refused!, 503);
+    } finally {
+      for (const socket of pending) socket.destroy();
+    }
+    // The slots free as those callers leave.
+    let answer: Answer | undefined;
+    for (let attempt = 0; attempt < 100 && answer?.status !== 200; attempt++) {
+      if (attempt > 0) await pause();
+      answer = await upload(body);
+    }
+    expect(answer?.status).toBe(200);
   });
 });

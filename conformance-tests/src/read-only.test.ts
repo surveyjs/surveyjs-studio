@@ -12,7 +12,15 @@ import { randomUUID } from "node:crypto";
 import { openapiPath } from "@surveyjs-studio/contract";
 import { parse } from "yaml";
 import { describe, expect, inject, it } from "vitest";
-import { baseUrl, call, sessionHeaders, signedIn, upload } from "./harness.js";
+import {
+  baseUrl,
+  call,
+  HOSTED_OPERATIONS,
+  hosted,
+  sessionHeaders,
+  signedIn,
+  upload,
+} from "./harness.js";
 import type { SignInResult } from "./sign-in.js";
 import { signWebhook, webhookKey } from "./webhook.js";
 
@@ -55,7 +63,10 @@ function refusedOperations(): Operation[] {
 }
 
 const config = (await (await fetch(`${baseUrl}/api/v1/config`)).json()) as { readOnly?: unknown };
-const operations = refusedOperations();
+// Outside the hosted edition the operations for the old service's surveys are not routed at all.
+const operations = refusedOperations().filter(
+  (op) => hosted || !HOSTED_OPERATIONS.includes(op.operationId),
+);
 
 describe.runIf(config.readOnly === true)("READ_ONLY=true", () => {
   it("documents the refusal on the writes", () => {

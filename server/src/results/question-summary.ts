@@ -1,10 +1,16 @@
 import type { SurveyResponse } from "../domain/types.js";
 
+/**
+ * The most distinct values a summary lists. A value first seen after that is not listed, but its
+ * response still counts in `answered`, so one question cannot make a summary grow without bound.
+ */
+export const MAX_SUMMARY_VALUES = 10_000;
+
 /** One question's answers counted: the part of `QuestionSummary` that reads the responses. */
 export interface QuestionCounts {
   /** Responses that have the question's name, `null` included. */
   readonly answered: number;
-  /** Each distinct value with its count, in first-seen order. */
+  /** Each distinct value with its count, in first-seen order; at most `MAX_SUMMARY_VALUES`. */
   readonly values: { value: unknown; count: number }[];
 }
 
@@ -39,8 +45,45 @@ export async function summarizeQuestion(
       const key = canonical(value);
       const entry = counts.get(key);
       if (entry) entry.count += 1;
-      else counts.set(key, { value, count: 1 });
+      else if (counts.size < MAX_SUMMARY_VALUES) counts.set(key, { value, count: 1 });
     }
   }
   return { answered, values: [...counts.values()] };
+}
+
+/**
+ * The last summaries computed, least recently used first out once `maxEntries` are kept. A key
+ * names the survey's completed count and last submission time, so a new response makes it miss.
+ */
+export class SummaryCache<T> {
+  // A Map iterates in insertion order: re-inserting on use keeps the least recently used first.
+  private readonly entries = new Map<string, T>();
+
+  constructor(private readonly maxEntries: number) {}
+
+  static key(
+    surveyId: string,
+    name: string,
+    stats: { count: number; lastSubmittedAt: string | null },
+  ): string {
+    return JSON.stringify([surveyId, name, stats.count, stats.lastSubmittedAt]);
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (entry !== undefined) {
+      this.entries.delete(key);
+      this.entries.set(key, entry);
+    }
+    return entry;
+  }
+
+  set(key: string, entry: T): void {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    for (const oldest of this.entries.keys()) {
+      if (this.entries.size <= this.maxEntries) break;
+      this.entries.delete(oldest);
+    }
+  }
 }

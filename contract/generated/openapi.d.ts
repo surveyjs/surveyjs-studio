@@ -1124,6 +1124,9 @@ export interface paths {
          *     The definition is returned as JSON, not as the stored bytes. The response carries a strong
          *     `ETag` and `Cache-Control: no-cache`: a client keeps the answer and revalidates with
          *     `If-None-Match`, which answers `304` while the definition is unchanged.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         get: operations["getPublicDefinition"];
         put?: never;
@@ -1151,6 +1154,9 @@ export interface paths {
          *     (`completed`) the survey, from the client's completion marker. A marker stored without a
          *     partial flag reads `completed`. Reachable by survey ID, whatever the publish state. An
          *     unknown or deleted survey is `404 survey-not-available`.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         get: operations["getRespondentState"];
         put?: never;
@@ -1177,6 +1183,9 @@ export interface paths {
          * A respondent's state, by result ID
          * @description As `getRespondentState`, addressed by the survey's result ID, which the old service exposed
          *     for reading results. An unknown result ID is `404`.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         get: operations["getRespondentStateByResultId"];
         put?: never;
@@ -1208,6 +1217,9 @@ export interface paths {
          *     `404`. Size limits, rate limits, validation, `Idempotency-Key` and the `partial` rules are
          *     those of `submitResponse`; each post with a `clientId` sets that client's state to what it
          *     posted, so a partial save after completing reads `partial` again.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         post: operations["submitResponseByPostId"];
         delete?: never;
@@ -1233,6 +1245,9 @@ export interface paths {
          * @description As `uploadResponseFile`, addressed by the survey's post ID, whatever the survey's publish
          *     state. An unknown post ID is `404`. The file rules and limits are those of
          *     `uploadResponseFile`.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         post: operations["uploadResponseFileByPostId"];
         delete?: never;
@@ -1262,6 +1277,14 @@ export interface paths {
          *     counts as itself and keeps its JSON type, so `1` and `"1"` stay apart. `answered` counts
          *     the responses that have the name, `null` included. `responseCount` counts all completed
          *     responses. An unknown result ID is `404`.
+         *
+         *     At most 10,000 distinct values are listed: a value first seen after that is not listed, but
+         *     its response still counts in `answered`. A repeated call on a survey without new responses
+         *     may be answered from the server's cache of recent summaries. The operation has its own rate
+         *     limit (`PUBLIC_SUMMARY_RATE_LIMIT` on the reference server, 10 a minute by default).
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         get: operations["getQuestionSummary"];
         put?: never;
@@ -1299,7 +1322,10 @@ export interface paths {
          *     are returned as stored (a legacy file keeps any padding it has), with the content type
          *     from the name's extension, or `application/octet-stream` without one or for an extension
          *     it does not know, and the headers of `downloadFile`. An unknown name or kind is
-         *     `404 not-found`, as for `downloadFile`.
+         *     `404 not-found`, as for `downloadFile`. Rate limited as `downloadFile`.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
          */
         get: operations["getLegacyFile"];
         put?: never;

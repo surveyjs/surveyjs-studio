@@ -231,11 +231,12 @@ The `memory` provider has no limit besides the body. Both limits are read from `
 The public operations are limited **per client IP address, per operation, per minute** (a fixed window of 60
 seconds). Each operation has its own counter.
 
-| Operations                                                                       | Setting                  | Default per minute |
-| -------------------------------------------------------------------------------- | ------------------------ | ------------------ |
-| `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getPublicResults` | `PUBLIC_RATE_LIMIT`      | 60                 |
-| `downloadFile`                                                                   | `PUBLIC_FILE_RATE_LIMIT` | 600                |
-| `login`, `loginCallback`, `passwordLogin`                                        | `SIGN_IN_RATE_LIMIT`     | 30                 |
+| Operations                                                                       | Setting                   | Default per minute |
+| -------------------------------------------------------------------------------- | ------------------------- | ------------------ |
+| `getPublishedSurvey`, `submitResponse`, `uploadResponseFile`, `getPublicResults` | `PUBLIC_RATE_LIMIT`       | 60                 |
+| `downloadFile`                                                                   | `PUBLIC_FILE_RATE_LIMIT`  | 600                |
+| `login`, `loginCallback`, `passwordLogin`                                        | `SIGN_IN_RATE_LIMIT`      | 30                 |
+| The [operations for the bridge](#operations-for-the-bridge) (hosted edition)     | As listed in that section |                    |
 
 The check runs first, before the body is read, so a refused request costs the server little. A request over
 the limit answers `429` with `Retry-After` in seconds:
@@ -375,18 +376,32 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
 ## Operations for the bridge
 
 Seven more unauthenticated operations, and two query parameters, serve [the bridge](legacy-compat.md), which answers the
-old API's public actions through them ([ADR 0039](../adr/0039-bridge-public-actions.md)). They are rate limited as the
-public operations above (`PUBLIC_RATE_LIMIT`, `PUBLIC_FILE_RATE_LIMIT` for the file reads) and work on every provider.
+old API's public actions through them ([ADR 0039](../adr/0039-bridge-public-actions.md)). They work on every provider.
 They are addressed by the keys the old API used: a survey's post ID and result ID, and the legacy file names. A survey's
 answers and aggregates are reachable only through its result ID, and posting only through its post ID, as before.
+
+**Hosted edition only.** The seven operations exist only when `APP_EDITION=hosted`. On any other server they are not
+routes: each answers `404 not-found`, as an unknown path does, and has no rate limit. (They read unpublished and
+archived definitions and post to unpublished surveys, which only surveys built for the old service need.) `from` and
+`till` on `getPublicResults` work in every edition.
+
+**Rate limits**, per client IP address and minute, each operation with its own counter:
+
+| Operations                                                                                                                          | Setting                     | Default |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- |
+| `getPublicDefinition`, `getRespondentState`, `getRespondentStateByResultId`, `submitResponseByPostId`, `uploadResponseFileByPostId` | `PUBLIC_RATE_LIMIT`         | 60      |
+| `getLegacyFile`                                                                                                                     | `PUBLIC_FILE_RATE_LIMIT`    | 600     |
+| `getQuestionSummary`                                                                                                                | `PUBLIC_SUMMARY_RATE_LIMIT` | 10      |
+
+The operations:
 
 | Operation                      | Request                                                 | Answer                                                                                                         |
 | ------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `getPublicDefinition`          | `GET /public/surveys/{surveyId}/definition`             | `200` the working definition, with a strong `ETag` (`If-None-Match` gives `304`) and `Cache-Control: no-cache` |
-| `getRespondentState`           | `GET /public/surveys/{surveyId}/respondents/{clientId}` | `200` `{ "state" }`: `none`, `partial` or `completed`                                                          |
+| `getRespondentState`           | `GET /public/surveys/{surveyId}/respondents/{clientId}` | `200` `{ "state" }`: `none`, `partial` or `completed`; `404` for an unknown survey                             |
 | `submitResponseByPostId`       | `POST /public/posts/{postId}/responses`                 | As `submitResponse`                                                                                            |
 | `uploadResponseFileByPostId`   | `POST /public/posts/{postId}/files`                     | As `uploadResponseFile`                                                                                        |
-| `getRespondentStateByResultId` | `GET /public/results/{resultId}/respondents/{clientId}` | As `getRespondentState`                                                                                        |
+| `getRespondentStateByResultId` | `GET /public/results/{resultId}/respondents/{clientId}` | As `getRespondentState`; `404` for an unknown result ID                                                        |
 | `getQuestionSummary`           | `GET /public/results/{resultId}/questions/{name}`       | `200` `{ answered, values: [{ value, count }], responseCount, firstSubmittedAt, lastSubmittedAt }`             |
 | `getLegacyFile`                | `GET /public/legacy-files/{kind}/{name}`                | `200` the file's bytes with `downloadFile`'s headers; `404` when unknown                                       |
 
@@ -402,7 +417,11 @@ answers and aggregates are reachable only through its result ID, and posting onl
 - **`getQuestionSummary`** counts the answers under the question's name in the folded, completed responses only, never
   metadata such as times or IDs. An array answer counts each element; an object answer counts each property as a
   two-element array `[key, value]`; any other value counts as itself and keeps its JSON type, so `1` and `"1"` stay
-  apart. `answered` counts the responses that have the name, `null` included.
+  apart. `answered` counts the responses that have the name, `null` included. At most **10,000 distinct values** are
+  listed: a value first seen after that is not listed, but its response still counts in `answered`. Each call reads
+  every completed response of the survey, so the server keeps the last 100 summaries (by survey, question name, and
+  the survey's completed count and last submission time) and answers a repeated call on an unchanged survey from them;
+  a new response makes the next call read again. The operation has its own, lower rate limit (above).
 - **`getLegacyFile`:** `kind` is `asset` (editor images) or `response` (respondent files). A name is one path segment of
   letters, digits, `.`, `-` and `_` (at most 100 characters), matched as stored; any other name is `404` without a lookup.
   The bytes are returned as stored, with the content type of the name's extension, or `application/octet-stream` without

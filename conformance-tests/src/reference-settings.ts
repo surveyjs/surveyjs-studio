@@ -19,6 +19,7 @@ export const REFERENCE_SETTINGS: Readonly<Record<string, string>> = {
   // The suite reads public surveys many times from one IP; the limits are tested in the server tests.
   PUBLIC_RATE_LIMIT: "300",
   PUBLIC_FILE_RATE_LIMIT: "10000",
+  PUBLIC_SUMMARY_RATE_LIMIT: "300",
   // Small, so the 413 and quota tests stay cheap (they read the limits from /config).
   LIMIT_MAX_DOCUMENT_BYTES: "262144",
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",

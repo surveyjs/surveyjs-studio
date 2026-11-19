@@ -12,27 +12,40 @@ through the bridge and posts its answers, and the answers show in Studio. The de
 
 ## Before you start
 
-You need what [the self-hosted Step 1 demo](self-hosted-01.md#before-you-start) lists, `jq`, and a browser. Four ports
-must be free: **3000** (Studio), **5173** (the web app), **3002** (the bridge) and **3009** (the stub of the old service).
-Check them (nothing is printed when they are free):
+You need what [the self-hosted Step 1 demo](self-hosted-01.md#before-you-start) lists, `jq`, and a browser. Five ports
+must be free: **3000** (Studio), **5173** (the web app), **3002** (the bridge), **3009** (the stub of the old service)
+and **5180** (the sign-in stub). Check them (nothing is printed when they are free):
 
 ```sh
-netstat -ano | grep LISTEN | grep -E ':(3000|3002|3009|5173) '
+netstat -ano | grep LISTEN | grep -E ':(3000|3002|3009|5173|5180) '
 ```
 
 If 3000 is taken, stop what uses it. Set `BRIDGE_STUDIO_URL` before step 3 below only if you must move Studio
 (`PORT=<port> pnpm demo` and `BRIDGE_STUDIO_URL=http://127.0.0.1:<port>/api/v1 pnpm dev:bridge`, and set `API` below to the same
 port); the bridge's own port is `BRIDGE_PORT` the same way.
 
-Start four shells, from the repository root.
+Start five shells, from the repository root. Studio runs as the **hosted edition**: only it answers the operations the
+bridge calls (on a self-hosted server they answer `404`). The hosted edition refuses the demo's "Sign in as…" page, so
+you sign in through the local sign-in stub, which plays surveyjs.io.
 
-1. **Studio**, with the legacy fixture users and data (shell 1):
+1. **Studio**, with the legacy fixture users and data, in the hosted edition. First the sign-in stub (shell 5):
 
    ```sh
-   pnpm demo
+   pnpm oauth-stub
    ```
 
-   Open <http://localhost:5173> and sign in as **Olivia Owner**.
+   - **Check:** it prints its address, `http://127.0.0.1:5180`.
+
+   Then Studio (shell 1; PowerShell: set each variable with `$env:NAME = "value"` first, then run `pnpm demo`):
+
+   ```sh
+   APP_EDITION=hosted IDENTITY_PROVIDER=surveyjs-oidc OIDC_ISSUER_URL=http://127.0.0.1:5180/surveyjs \
+     OIDC_CLIENT_ID=demo OIDC_CLIENT_SECRET=stub-secret-surveyjs pnpm demo
+   ```
+
+   Open <http://localhost:5173> and sign in. The stub's form opens: enter Olivia Owner's ID,
+   `11111111-0000-4000-8000-a00000000001`, as `sub` and choose **Sign in**. (`stub-secret-surveyjs` is the stub's
+   documented test secret.)
 
 2. **A stub of the old service** (shell 2). It answers every request with what it received, so you can see what the
    bridge forwarded:
