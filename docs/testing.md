@@ -1255,8 +1255,8 @@ that the container is created by the first upload (a test uses a container name 
 `filesContainer` option), that a survey's files are deleted and no others, and that a clone with a rewrite
 stores the rewritten text equally in `surveyjson`, `surveytext` and the history point. For Step 8 it checks
 the result tables in the replica directly: `post{postId}` has exactly the legacy properties and Edm types
-(no `clientid` or `ipaddress` when not given, never `ispartialcompleted`), the marker has a Boolean
-`ispartialcompleted` false and gets `publishid` once the survey has one, a client id with a quote, an accent and
+(no `clientid` or `ipaddress` when not given, `ispartialcompleted` only on a partial row, as Boolean true), the marker has a Boolean
+`ispartialcompleted` with the posted value and gets `publishid` once the survey has one, a client id with a quote, an accent and
 spaces round-trips, **a result text of exactly 32,768 characters is stored and 32,769 is refused with
 `ResponseTooLargeError` and writes nothing**, the first row stays when an id comes again, no audit row is
 added, both tables are dropped with the survey, and a respondent file is stored with the kind `response`. For

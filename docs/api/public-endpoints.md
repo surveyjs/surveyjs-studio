@@ -115,7 +115,9 @@ posts the complete answers at the end without `partial`. Each post is stored as 
 client's saves as one response ([ADR 0038](../adr/0038-partial-responses.md)).
 
 ```sh
-curl -s -X POST -H "Content-Type: application/json"   -d '{"data":{"color":"Red"},"clientId":"demo-client","partial":true,"lastPageIndex":0}'   "$API/public/surveys/$ID/responses"
+curl -s -X POST "$API/public/surveys/$ID/responses" \
+  -H "Content-Type: application/json" \
+  -d '{"data":{"color":"Red"},"clientId":"demo-client","partial":true,"lastPageIndex":0}'
 ```
 
 - **`partial: true` with a `clientId`** stores a partial save and marks the client as partial. The client can save
@@ -293,6 +295,9 @@ read.
 curl -s -b cookies.txt "$API/surveys/$ID/results/stats"
 ```
 
+The numbers are of **completed** responses: a client's partial saves are not counted, and the two times are of
+completion.
+
 ```json
 {
   "count": 2,
@@ -335,9 +340,10 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
   Grant Access off the answer is the same `404 survey-not-available` (the Problem shown
   [above](#who-can-run-a-survey)), so a caller cannot tell them apart. Turning Grant Access off closes the
   endpoint at once, because every call checks the setting.
-- **The page.** Every stored response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
+- **The page.** Every completed response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
   and `cursor`, with the cursor of [`listResults`](paging.md#results-oldest-first-one-survey). A cursor
-  belongs to its survey. Rows are not merged. Each page repeats the `survey` member, so a client can read it
+  belongs to its survey. Only completed responses are listed: a client's partial saves are left out, and a client's
+  complete answers stay separate. Each page repeats the `survey` member, so a client can read it
   from the first page.
 - **`survey`.** `id`, `name` (may be empty), the stored `definition` (so a Dashboard can draw the charts) and
   `privateQuestions`, the names of the questions left out (below). It has no theme and no permissions.

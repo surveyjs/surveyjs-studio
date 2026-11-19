@@ -28,7 +28,7 @@ curl -s -b "msid=<cookie value>" -H "Accept: text/csv" "$API/surveys/$ID/results
 ```
 
 The file holds **every stored response, oldest first** (by `submittedAt`, then `id`, the order of
-`listResults`). There is no cap: the old page stopped at 1,000. Rows of one client are not merged. Reading
+`listResults`). There is no cap: the old page stopped at 1,000. One client's partial saves fold into one response (a run), which is marked `partial` until the client completes; two complete answers from one client stay two responses ([Partial saves](public-endpoints.md#partial-saves)). Reading
 needs no CSRF header.
 
 ### Choosing the format

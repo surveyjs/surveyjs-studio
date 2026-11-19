@@ -16,7 +16,7 @@ and add each one to this index.
 | [0007](0007-dev-identity-provider.md)                      | A development identity provider, outside the contract                           | Accepted           |
 | [0008](0008-surveyjs-auth-oauth2-userinfo.md)              | Sign in to auth.surveyjs.io as an OAuth 2.0 client, with identity from UserInfo | Accepted           |
 | [0009](0009-survey-permissions-follow-legacy.md)           | Survey permissions follow the legacy rules                                      | Accepted           |
-| [0010](0010-writing-to-the-legacy-stores.md)               | Writing to the legacy stores                                                    | Accepted           |
+| [0010](0010-writing-to-the-legacy-stores.md)               | Writing to the legacy stores (its partial-flag rule changed by 0038)            | Accepted           |
 | [0011](0011-survey-actions.md)                             | Survey actions: who may do what, and what each one changes                      | Accepted           |
 | [0012](0012-editor-content-and-history.md)                 | The editor, survey content and history (its "No JSON view" superseded by 0023)  | Accepted           |
 | [0013](0013-editor-uploads-and-files.md)                   | Editor uploads and file serving                                                 | Accepted           |

@@ -443,13 +443,13 @@ The run page on surveyjs.io never sends a client ID, so it never creates these r
 the site's run page
 
 **Implemented in Step 8.** Every response that carries a client id writes its marker with an upsert
-(`Replace`) at the row key `clientId`, with `ispartialcompleted` as `Edm.Boolean` (true after a partial save, false after a complete response) and `publishid` as
-`Edm.String` when the survey has one (read from `Surveys.publishid`). The table
+(`Replace`) at the row key `clientId`, with `ispartialcompleted` as `Edm.Boolean` (true after a partial save,
+false after a complete response) and `publishid` as `Edm.String` when the survey has one (read from `Surveys.publishid`). The table
 `SurveyCompletion{surveyId}` is created when it is missing. A response that is stored again under the same
 id writes the marker again at the store level (the HTTP service answers a keyed retry
 before it reaches the store, so only a race of identical requests gets there). A marker with `ispartialcompleted` true, whether
-written by an old API client or by a partial save, reads as `partial`, and "completed" for the run page is a marker that exists and
-is not partial. A client id that Azure refuses as a row key cannot be stored, so the contract's `ClientId`
+written by an old API client or by a partial save, reads as `partial`, and "completed" for the run page is a marker
+that exists and is not partial. A client id that Azure refuses as a row key cannot be stored, so the contract's `ClientId`
 refuses `/`, `\`, `#`, `?` and control characters up front. The run page of My Surveys, unlike the old one, sends a client
 id when "Limit to one response" is on, so it creates these rows.
 

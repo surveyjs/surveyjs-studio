@@ -27,8 +27,10 @@ KEY=access-key-1
 ```
 
 `access-key-1` is Olivia's legacy access key, which works as a bearer value
-([Step 3](hosted-03.md#5-a-legacy-access-key-checklist-5)). Every section starts a survey of its own, so no number
-below depends on an earlier section. The demo keeps its data in memory: stop it with Ctrl+C and start it again for a
+([Step 3](hosted-03.md#5-a-legacy-access-key-checklist-5)). Sections 1 and 6 each start a survey of their own. Sections 2 to 5 share
+one survey and one shell: section 2 starts it and sets `$ID`, `$A`, `$B` and the `post` helper, and sections 3, 4 and 5
+use them and the responses stored before. Run those four in order in the same shell. Section 6 starts another survey
+and redefines `post` to print status codes. The demo keeps its data in memory: stop it with Ctrl+C and start it again for a
 clean slate.
 
 ## 1. A partial save, then the complete response (checklist 1 and 2)
