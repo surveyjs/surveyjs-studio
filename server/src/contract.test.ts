@@ -83,12 +83,17 @@ describe("loadContract", () => {
 
   it("has no P1 marker on the partial response fields", async () => {
     const source = parse(await readFile(openapiPath, "utf8")) as {
-      components: { schemas: Record<string, { properties: Record<string, object> }> };
+      components: {
+        schemas: {
+          ResponseSubmission: { properties: { partial: object; lastPageIndex: object } };
+          SurveyResponse: { properties: { partial: object } };
+        };
+      };
     };
-    const schemas = source.components.schemas;
-    expect(schemas.ResponseSubmission.properties.partial).not.toHaveProperty("x-phase");
-    expect(schemas.ResponseSubmission.properties.lastPageIndex).not.toHaveProperty("x-phase");
-    expect(schemas.SurveyResponse.properties.partial).not.toHaveProperty("x-phase");
+    const { ResponseSubmission, SurveyResponse } = source.components.schemas;
+    expect(ResponseSubmission.properties.partial).not.toHaveProperty("x-phase");
+    expect(ResponseSubmission.properties.lastPageIndex).not.toHaveProperty("x-phase");
+    expect(SurveyResponse.properties.partial).not.toHaveProperty("x-phase");
   });
 
   it("reads a missing top-level security as public", async () => {
