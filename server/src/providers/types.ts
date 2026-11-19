@@ -243,6 +243,13 @@ export interface ViewStore {
 export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
+  /**
+   * The survey with this post ID or result ID (GUIDs, compared case-insensitively); null when
+   * none has it or the value is not a GUID. Archived surveys are found.
+   */
+  findSurveyByKey(
+    key: { readonly postId: string } | { readonly resultId: string },
+  ): Promise<SurveyRecord | null>;
   /** Archived included. Ordered by updatedAt descending, then id ascending. */
   listSurveys(owner: SurveyOwner): Promise<SurveyRecord[]>;
   /**

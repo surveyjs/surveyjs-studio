@@ -68,6 +68,7 @@ import {
   surveyApiCreated,
   surveyCampaign,
   surveyDraft,
+  surveyArchivedCampaign,
   surveyFeedback,
   surveyOldPoll,
   surveyRetro,
@@ -193,6 +194,44 @@ export function describeProviderSuite(
       it("matches ids case-insensitively and returns lower-case ids", async () => {
         const found = await providers.surveys.getSurvey(surveyFeedback.id.toUpperCase());
         expect(found).toEqual(surveyFeedback);
+      });
+    });
+
+    describeIn("surveys")("surveys.findSurveyByKey", () => {
+      it.each([
+        ["post", (s: SurveyRecord) => ({ postId: s.postId })],
+        ["result", (s: SurveyRecord) => ({ resultId: s.resultId })],
+      ] as const)("finds a survey by its %s ID", async (_name, keyOf) => {
+        expect(await providers.surveys.findSurveyByKey(keyOf(surveyFeedback))).toEqual(
+          surveyFeedback,
+        );
+      });
+
+      it("compares the ID case-insensitively", async () => {
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyFeedback.postId.toUpperCase() }),
+        ).toEqual(surveyFeedback);
+        expect(
+          await providers.surveys.findSurveyByKey({
+            resultId: surveyFeedback.resultId.toUpperCase(),
+          }),
+        ).toEqual(surveyFeedback);
+      });
+
+      it("finds an archived survey", async () => {
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyArchivedCampaign.postId }),
+        ).toEqual(surveyArchivedCampaign);
+      });
+
+      it("answers null for an unknown ID, a non-GUID and a key of the other kind", async () => {
+        expect(await providers.surveys.findSurveyByKey({ postId: UNKNOWN_ID })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ resultId: UNKNOWN_ID })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ postId: "not-a-guid" })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ resultId: "" })).toBeNull();
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyFeedback.resultId }),
+        ).toBeNull();
       });
     });
 

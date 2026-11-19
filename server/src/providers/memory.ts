@@ -275,6 +275,14 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         const found = findSurvey(id);
         return Promise.resolve(found ? copySurvey(found) : null);
       },
+      findSurveyByKey: (key) => {
+        const [field, value] =
+          "postId" in key
+            ? (["postId", key.postId] as const)
+            : (["resultId", key.resultId] as const);
+        const found = GUID.test(value) ? surveys.find((s) => s[field] === lower(value)) : undefined;
+        return Promise.resolve(found ? copySurvey(found) : null);
+      },
       listSurveys: (owner) =>
         Promise.resolve(
           surveys

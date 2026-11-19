@@ -786,6 +786,29 @@ export function createAzureLegacyProviders(
     surveys: {
       getSurvey,
 
+      async findSurveyByKey(key: { readonly postId: string } | { readonly resultId: string }) {
+        const [column, value] =
+          "postId" in key
+            ? (["postid", key.postId] as const)
+            : (["resultid", key.resultId] as const);
+        if (!isGuid(value)) return null;
+        const rows = await select<SurveyQueryRow>(
+          "survey key lookup",
+          `${SURVEY_SELECT} WHERE s.${column} = @key`,
+          (request) => request.input("key", sql.UniqueIdentifier, value),
+        );
+        const surveys = mapRows(rows, (row) =>
+          surveyFromLegacy(row, row.isproject === 1 ? "project" : "personal"),
+        );
+        if (rows.length > 1) {
+          throw new LegacyStoreError(
+            "survey key lookup",
+            new Error(`${rows.length} surveys share one ${column}`),
+          );
+        }
+        return surveys[0] ?? null;
+      },
+
       async listSurveys(owner: SurveyOwner) {
         const ownerId = ownerIdOf(owner);
         if (!isGuid(ownerId)) return [];
