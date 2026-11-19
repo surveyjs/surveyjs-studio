@@ -4,6 +4,7 @@ packages:
   - web
   - conformance-tests
   - e2e
+  - bridge
 
 allowBuilds:
   esbuild: true

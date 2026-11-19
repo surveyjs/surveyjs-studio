@@ -1,0 +1,24 @@
+{
+  "name": "@surveyjs-studio/bridge",
+  "private": true,
+  "type": "module",
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/testing"
+  ],
+  "scripts": {
+    "dev": "node --env-file=demo.env --watch --import tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "fastify": "5.12.6",
+    "openapi-fetch": "0.17.0",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@surveyjs-studio/contract": "workspace:*",
+    "@types/node": "24.19.0"
+  }
+}
