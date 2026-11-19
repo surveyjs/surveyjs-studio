@@ -67,6 +67,49 @@ const UNSUPPORTED: readonly Unsupported[] = [
     path: "/webhooks/account-deleted",
     before: "nothing",
   },
+  // The bridge's public operations: the demo handlers arrive with a later task of hosted Step 5.
+  {
+    id: "getPublicDefinition",
+    method: "get",
+    path: "/public/surveys/:surveyId/definition",
+    before: "nothing",
+  },
+  {
+    id: "getRespondentState",
+    method: "get",
+    path: "/public/surveys/:surveyId/respondents/:clientId",
+    before: "nothing",
+  },
+  {
+    id: "getRespondentStateByResultId",
+    method: "get",
+    path: "/public/results/:resultId/respondents/:clientId",
+    before: "nothing",
+  },
+  {
+    id: "submitResponseByPostId",
+    method: "post",
+    path: "/public/posts/:postId/responses",
+    before: "nothing",
+  },
+  {
+    id: "uploadResponseFileByPostId",
+    method: "post",
+    path: "/public/posts/:postId/files",
+    before: "nothing",
+  },
+  {
+    id: "getQuestionSummary",
+    method: "get",
+    path: "/public/results/:resultId/questions/:name",
+    before: "nothing",
+  },
+  {
+    id: "getLegacyFile",
+    method: "get",
+    path: "/public/legacy-files/:kind/:name",
+    before: "nothing",
+  },
 ];
 
 /** The operation ids of the contract the demo does not support. */

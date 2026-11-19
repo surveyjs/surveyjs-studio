@@ -48,6 +48,8 @@ const REFUSED = [
   "resetResultsView",
   "submitResponse",
   "uploadResponseFile",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
   "receiveAccountDeleted",
 ];
 

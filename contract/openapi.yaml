@@ -1730,6 +1730,245 @@ paths:
               schema: { type: string, contentMediaType: application/octet-stream }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/surveys/{surveyId}/definition:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+    get:
+      tags: [Public]
+      operationId: getPublicDefinition
+      summary: Read a survey's definition
+      description: |
+        The read for surveys built for the old service, which served a survey's definition
+        whatever its publish state: it returns the working definition (what the editor last saved),
+        for published, unpublished and archived surveys alike. An unknown or deleted survey is
+        `404 survey-not-available`. Reachable by survey ID, as the old service's `getSurvey` is.
+
+        The definition is returned as JSON, not as the stored bytes. The response carries a strong
+        `ETag` and `Cache-Control: no-cache`: a client keeps the answer and revalidates with
+        `If-None-Match`, which answers `304` while the definition is unchanged.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          description: The `ETag` of the copy the client holds.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The working definition.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+            Cache-Control:
+              description: 'Always `no-cache`: a cache revalidates before reuse.'
+              required: true
+              schema: { type: string, enum: [no-cache] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyDefinition' }
+        '304':
+          description: The definition is unchanged since the `ETag` in `If-None-Match`.
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/surveys/{surveyId}/respondents/{clientId}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - { $ref: '#/components/parameters/RespondentClientId' }
+    get:
+      tags: [Public]
+      operationId: getRespondentState
+      summary: A respondent's state
+      description: |
+        Tells whether the client has not started (`none`), saved progress (`partial`) or completed
+        (`completed`) the survey, from the client's completion marker. A marker stored without a
+        partial flag reads `completed`. Reachable by survey ID, whatever the publish state. An
+        unknown or deleted survey is `404 survey-not-available`.
+      security: []
+      responses:
+        '200':
+          description: The client's state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespondentState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/results/{resultId}/respondents/{clientId}:
+    parameters:
+      - { $ref: '#/components/parameters/ResultId' }
+      - { $ref: '#/components/parameters/RespondentClientId' }
+    get:
+      tags: [Public]
+      operationId: getRespondentStateByResultId
+      summary: A respondent's state, by result ID
+      description: |
+        As `getRespondentState`, addressed by the survey's result ID, which the old service exposed
+        for reading results. An unknown result ID is `404`.
+      security: []
+      responses:
+        '200':
+          description: The client's state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespondentState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/posts/{postId}/responses:
+    parameters:
+      - { $ref: '#/components/parameters/PostId' }
+    post:
+      tags: [Public]
+      operationId: submitResponseByPostId
+      summary: Submit a response by post ID
+      description: |
+        As `submitResponse`, addressed by the survey's post ID, as surveys built for the old
+        service post. It follows the old service's checks, not the run page's: it ignores the
+        survey's publish state and "Limit to one response", so there is no `409 already-completed`,
+        and a client that has completed and posts again is stored. An unknown post ID is
+        `404`. Size limits, rate limits, validation, `Idempotency-Key` and the `partial` rules are
+        those of `submitResponse`; each post with a `clientId` sets that client's state to what it
+        posted, so a partial save after completing reads `partial` again.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResponseSubmission' }
+      responses:
+        '201':
+          description: Stored, or already stored under this `Idempotency-Key` (same `id`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /public/posts/{postId}/files:
+    parameters:
+      - { $ref: '#/components/parameters/PostId' }
+    post:
+      tags: [Public]
+      operationId: uploadResponseFileByPostId
+      summary: Upload a respondent file by post ID
+      description: |
+        As `uploadResponseFile`, addressed by the survey's post ID, whatever the survey's publish
+        state. An unknown post ID is `404`. The file rules and limits are those of
+        `uploadResponseFile`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/FileUpload' }
+      responses:
+        '201':
+          description: Stored. `Location` is the file's download path.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /public/results/{resultId}/questions/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/ResultId' }
+      - name: name
+        in: path
+        required: true
+        description: The question's name.
+        schema: { type: string, minLength: 1, maxLength: 256 }
+    get:
+      tags: [Public]
+      operationId: getQuestionSummary
+      summary: Counts of one question's answers
+      description: |
+        Reachable by the survey's result ID. Counts the answers under the question's name over the
+        completed responses only, folded as in the results (a client's partial saves read as one
+        response), and never metadata such as times or IDs. An array answer counts each element; an
+        object answer counts each property as a two-element array `[key, value]`; any other value
+        counts as itself and keeps its JSON type, so `1` and `"1"` stay apart. `answered` counts
+        the responses that have the name, `null` included. `responseCount` counts all completed
+        responses. An unknown result ID is `404`.
+      security: []
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/legacy-files/{kind}/{name}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: '`asset` for images placed in the editor, `response` for files respondents uploaded.'
+        schema: { type: string, enum: [asset, response] }
+      - name: name
+        in: path
+        required: true
+        description: |
+          The file's name as the old service stored it, matched exactly (case included). A name is
+          one path segment of letters, digits, `.`, `-` and `_`; any other name is `404` without a
+          lookup.
+        schema: { type: string, minLength: 1, maxLength: 256 }
+    get:
+      tags: [Public]
+      operationId: getLegacyFile
+      summary: Download a file by its legacy name
+      description: |
+        Serves a file stored under the old service's name, which sites still reference. The bytes
+        are returned as stored (a legacy file keeps any padding it has), with the content type
+        from the name's extension, or `application/octet-stream` without one, and the headers of
+        `downloadFile`. An unknown name is `404 file-not-found`.
+      security: []
+      responses:
+        '200':
+          description: The file content.
+          headers:
+            Content-Disposition:
+              description: '`inline` for images, else `attachment`, with `filename` and `filename*`.'
+              required: true
+              schema: { type: string, pattern: '^(inline|attachment); ' }
+            Cache-Control:
+              description: Public, cacheable for up to an hour.
+              required: true
+              schema: { type: string }
+            X-Content-Type-Options:
+              description: Always `nosniff`; the served type matches the content.
+              required: true
+              schema: { type: string, enum: [nosniff] }
+            Content-Security-Policy:
+              description: A sandboxing policy, so a file opened directly runs no script.
+              required: true
+              schema: { type: string }
+            Cross-Origin-Resource-Policy:
+              description: Always `cross-origin`, so surveys embedded on other sites show the files.
+              required: true
+              schema: { type: string, enum: [cross-origin] }
+          content:
+            '*/*':
+              schema: { type: string, contentMediaType: application/octet-stream }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/results:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -1757,6 +1996,19 @@ paths:
           description: Page size, 1 to 1000.
           schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
         - { $ref: '#/components/parameters/Cursor' }
+        - name: from
+          in: query
+          description: |
+            Only responses submitted after this time: a response is kept when its `submittedAt` is
+            later than `from` (a response submitted exactly at `from` is left out).
+          schema: { type: string, format: date-time }
+        - name: till
+          in: query
+          description: |
+            Only responses submitted before this time: a response is kept when its `submittedAt` is
+            earlier than `till` (a response submitted exactly at `till` is left out). Combine with
+            `from` for a range.
+          schema: { type: string, format: date-time }
       responses:
         '200':
           description: A page of responses.
@@ -1883,6 +2135,25 @@ components:
       description: A client-generated unique key (UUID recommended). A repeated key for the same survey
         returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours.
       schema: { type: string, minLength: 1, maxLength: 128 }
+
+    ResultId:
+      name: resultId
+      in: path
+      required: true
+      description: The survey's result ID, which the old service exposed for reading its results.
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    PostId:
+      name: postId
+      in: path
+      required: true
+      description: The survey's post ID, which the old service exposed for posting responses.
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    RespondentClientId:
+      name: clientId
+      in: path
+      required: true
+      description: The respondent's client ID, percent-encoded in the path.
+      schema: { $ref: '#/components/schemas/ClientId' }
 
   headers:
     Location:
@@ -2785,6 +3056,41 @@ components:
       required: [count, firstSubmittedAt, lastSubmittedAt]
       properties:
         count: { type: integer, minimum: 0, description: Completed responses. }
+        firstSubmittedAt:
+          {
+            type: [string, 'null'],
+            format: date-time,
+            description: 'When the earliest completed response was completed; `null` when there are none.',
+          }
+        lastSubmittedAt:
+          {
+            type: [string, 'null'],
+            format: date-time,
+            description: 'When the latest completed response was completed; `null` when there are none.',
+          }
+    RespondentState:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, partial, completed]
+    QuestionSummary:
+      type: object
+      required: [answered, values, responseCount, firstSubmittedAt, lastSubmittedAt]
+      properties:
+        answered:
+          { type: integer, minimum: 0, description: "Completed responses that have the question's name, `null` included." }
+        values:
+          type: array
+          description: Each distinct value with its count.
+          items:
+            type: object
+            required: [value, count]
+            properties:
+              value: { description: Any JSON value. }
+              count: { type: integer, minimum: 1 }
+        responseCount: { type: integer, minimum: 0, description: Completed responses. }
         firstSubmittedAt:
           {
             type: [string, 'null'],

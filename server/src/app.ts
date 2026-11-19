@@ -59,6 +59,13 @@ const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "submitResponse",
   "uploadResponseFile",
   "getPublicResults",
+  "getPublicDefinition",
+  "getRespondentState",
+  "getRespondentStateByResultId",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
+  "getQuestionSummary",
+  "getLegacyFile",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = [

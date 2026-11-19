@@ -117,6 +117,14 @@ describe("the contract's operations", () => {
         "unlinkUserIdentity",
         "exportResults",
         "receiveAccountDeleted",
+        // Until the demo answers the bridge's public operations (a later task of hosted Step 5).
+        "getPublicDefinition",
+        "getRespondentState",
+        "getRespondentStateByResultId",
+        "submitResponseByPostId",
+        "uploadResponseFileByPostId",
+        "getQuestionSummary",
+        "getLegacyFile",
       ].sort(),
     );
   });

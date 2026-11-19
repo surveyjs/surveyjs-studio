@@ -1105,6 +1105,205 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/surveys/{surveyId}/definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a survey's definition
+         * @description The read for surveys built for the old service, which served a survey's definition
+         *     whatever its publish state: it returns the working definition (what the editor last saved),
+         *     for published, unpublished and archived surveys alike. An unknown or deleted survey is
+         *     `404 survey-not-available`. Reachable by survey ID, as the old service's `getSurvey` is.
+         *
+         *     The definition is returned as JSON, not as the stored bytes. The response carries a strong
+         *     `ETag` and `Cache-Control: no-cache`: a client keeps the answer and revalidates with
+         *     `If-None-Match`, which answers `304` while the definition is unchanged.
+         */
+        get: operations["getPublicDefinition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/surveys/{surveyId}/respondents/{clientId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description The respondent's client ID, percent-encoded in the path. */
+                clientId: components["parameters"]["RespondentClientId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A respondent's state
+         * @description Tells whether the client has not started (`none`), saved progress (`partial`) or completed
+         *     (`completed`) the survey, from the client's completion marker. A marker stored without a
+         *     partial flag reads `completed`. Reachable by survey ID, whatever the publish state. An
+         *     unknown or deleted survey is `404 survey-not-available`.
+         */
+        get: operations["getRespondentState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/results/{resultId}/respondents/{clientId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's result ID, which the old service exposed for reading its results. */
+                resultId: components["parameters"]["ResultId"];
+                /** @description The respondent's client ID, percent-encoded in the path. */
+                clientId: components["parameters"]["RespondentClientId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A respondent's state, by result ID
+         * @description As `getRespondentState`, addressed by the survey's result ID, which the old service exposed
+         *     for reading results. An unknown result ID is `404`.
+         */
+        get: operations["getRespondentStateByResultId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/posts/{postId}/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's post ID, which the old service exposed for posting responses. */
+                postId: components["parameters"]["PostId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a response by post ID
+         * @description As `submitResponse`, addressed by the survey's post ID, as surveys built for the old
+         *     service post. It follows the old service's checks, not the run page's: it ignores the
+         *     survey's publish state and "Limit to one response", so there is no `409 already-completed`,
+         *     and a client that has completed and posts again is stored. An unknown post ID is
+         *     `404`. Size limits, rate limits, validation, `Idempotency-Key` and the `partial` rules are
+         *     those of `submitResponse`; each post with a `clientId` sets that client's state to what it
+         *     posted, so a partial save after completing reads `partial` again.
+         */
+        post: operations["submitResponseByPostId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/posts/{postId}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's post ID, which the old service exposed for posting responses. */
+                postId: components["parameters"]["PostId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a respondent file by post ID
+         * @description As `uploadResponseFile`, addressed by the survey's post ID, whatever the survey's publish
+         *     state. An unknown post ID is `404`. The file rules and limits are those of
+         *     `uploadResponseFile`.
+         */
+        post: operations["uploadResponseFileByPostId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/results/{resultId}/questions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's result ID, which the old service exposed for reading its results. */
+                resultId: components["parameters"]["ResultId"];
+                /** @description The question's name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Counts of one question's answers
+         * @description Reachable by the survey's result ID. Counts the answers under the question's name over the
+         *     completed responses only, folded as in the results (a client's partial saves read as one
+         *     response), and never metadata such as times or IDs. An array answer counts each element; an
+         *     object answer counts each property as a two-element array `[key, value]`; any other value
+         *     counts as itself and keeps its JSON type, so `1` and `"1"` stay apart. `answered` counts
+         *     the responses that have the name, `null` included. `responseCount` counts all completed
+         *     responses. An unknown result ID is `404`.
+         */
+        get: operations["getQuestionSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/legacy-files/{kind}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `asset` for images placed in the editor, `response` for files respondents uploaded. */
+                kind: "asset" | "response";
+                /**
+                 * @description The file's name as the old service stored it, matched exactly (case included). A name is
+                 *     one path segment of letters, digits, `.`, `-` and `_`; any other name is `404` without a
+                 *     lookup.
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a file by its legacy name
+         * @description Serves a file stored under the old service's name, which sites still reference. The bytes
+         *     are returned as stored (a legacy file keeps any padding it has), with the content type
+         *     from the name's extension, or `application/octet-stream` without one, and the headers of
+         *     `downloadFile`. An unknown name is `404 file-not-found`.
+         */
+        get: operations["getLegacyFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/surveys/{surveyId}/results": {
         parameters: {
             query?: never;
@@ -1713,6 +1912,32 @@ export interface components {
              */
             lastSubmittedAt: string | null;
         };
+        RespondentState: {
+            /** @enum {string} */
+            state: "none" | "partial" | "completed";
+        };
+        QuestionSummary: {
+            /** @description Completed responses that have the question's name, `null` included. */
+            answered: number;
+            /** @description Each distinct value with its count. */
+            values: {
+                /** @description Any JSON value. */
+                value: unknown;
+                count: number;
+            }[];
+            /** @description Completed responses. */
+            responseCount: number;
+            /**
+             * Format: date-time
+             * @description When the earliest completed response was completed; `null` when there are none.
+             */
+            firstSubmittedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the latest completed response was completed; `null` when there are none.
+             */
+            lastSubmittedAt: string | null;
+        };
         /** @description Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`). */
         ViewState: {
             [key: string]: unknown;
@@ -2027,6 +2252,12 @@ export interface components {
         IfMatch: string;
         /** @description A client-generated unique key (UUID recommended). A repeated key for the same survey returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours. */
         IdempotencyKey: string;
+        /** @description The survey's result ID, which the old service exposed for reading its results. */
+        ResultId: string;
+        /** @description The survey's post ID, which the old service exposed for posting responses. */
+        PostId: string;
+        /** @description The respondent's client ID, percent-encoded in the path. */
+        RespondentClientId: components["schemas"]["ClientId"];
     };
     requestBodies: never;
     headers: {
@@ -3692,6 +3923,241 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    getPublicDefinition: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The `ETag` of the copy the client holds. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The working definition. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description Always `no-cache`: a cache revalidates before reuse. */
+                    "Cache-Control": "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveyDefinition"];
+                };
+            };
+            /** @description The definition is unchanged since the `ETag` in `If-None-Match`. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getRespondentState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description The respondent's client ID, percent-encoded in the path. */
+                clientId: components["parameters"]["RespondentClientId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The client's state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RespondentState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getRespondentStateByResultId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's result ID, which the old service exposed for reading its results. */
+                resultId: components["parameters"]["ResultId"];
+                /** @description The respondent's client ID, percent-encoded in the path. */
+                clientId: components["parameters"]["RespondentClientId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The client's state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RespondentState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    submitResponseByPostId: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A client-generated unique key (UUID recommended). A repeated key for the same survey returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The survey's post ID, which the old service exposed for posting responses. */
+                postId: components["parameters"]["PostId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResponseSubmission"];
+            };
+        };
+        responses: {
+            /** @description Stored, or already stored under this `Idempotency-Key` (same `id`). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    uploadResponseFileByPostId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's post ID, which the old service exposed for posting responses. */
+                postId: components["parameters"]["PostId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUpload"];
+            };
+        };
+        responses: {
+            /** @description Stored. `Location` is the file's download path. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredFile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    getQuestionSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The survey's result ID, which the old service exposed for reading its results. */
+                resultId: components["parameters"]["ResultId"];
+                /** @description The question's name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getLegacyFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `asset` for images placed in the editor, `response` for files respondents uploaded. */
+                kind: "asset" | "response";
+                /**
+                 * @description The file's name as the old service stored it, matched exactly (case included). A name is
+                 *     one path segment of letters, digits, `.`, `-` and `_`; any other name is `404` without a
+                 *     lookup.
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file content. */
+            200: {
+                headers: {
+                    /** @description `inline` for images, else `attachment`, with `filename` and `filename*`. */
+                    "Content-Disposition": string;
+                    /** @description Public, cacheable for up to an hour. */
+                    "Cache-Control": string;
+                    /** @description Always `nosniff`; the served type matches the content. */
+                    "X-Content-Type-Options": "nosniff";
+                    /** @description A sandboxing policy, so a file opened directly runs no script. */
+                    "Content-Security-Policy": string;
+                    /** @description Always `cross-origin`, so surveys embedded on other sites show the files. */
+                    "Cross-Origin-Resource-Policy": "cross-origin";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getPublicResults: {
         parameters: {
             query?: {
@@ -3699,6 +4165,17 @@ export interface operations {
                 limit?: number;
                 /** @description The `nextCursor` value from the previous page. */
                 cursor?: components["parameters"]["Cursor"];
+                /**
+                 * @description Only responses submitted after this time: a response is kept when its `submittedAt` is
+                 *     later than `from` (a response submitted exactly at `from` is left out).
+                 */
+                from?: string;
+                /**
+                 * @description Only responses submitted before this time: a response is kept when its `submittedAt` is
+                 *     earlier than `till` (a response submitted exactly at `till` is left out). Combine with
+                 *     `from` for a range.
+                 */
+                till?: string;
             };
             header?: never;
             path: {
