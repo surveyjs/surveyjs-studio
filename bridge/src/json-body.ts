@@ -26,6 +26,15 @@ export interface BindResult<P extends Record<string, PropertyKind>> {
 /** The text where the old API gave a message naming its own types. */
 export const GENERIC_INPUT_ERROR = "The input was not valid.";
 
+/**
+ * The old framework's limit on recorded errors (its default, 200): 199 errors, then one entry under
+ * `""` with the generic text, and nothing more.
+ */
+const MAX_ERRORS = 200;
+
+/** Thrown once the limit is reached: binding stops, as nothing more would be recorded. */
+class ErrorLimitReached {}
+
 const MAX_DEPTH = 32;
 
 type Token =
@@ -704,10 +713,16 @@ export function bindJsonBody<P extends Record<string, PropertyKind>>(
   const reader = new Reader(text);
   // No prototype: a path such as `__proto__` or `constructor` is an ordinary key.
   const errors = Object.create(null) as Record<string, string[]>;
+  let recorded = 0;
   const record = (error: unknown, member: string | null): void => {
     if (!(error instanceof BindingError) && !(error instanceof GenericError)) throw error;
+    if (recorded >= MAX_ERRORS - 1) {
+      (errors[""] ??= []).push(GENERIC_INPUT_ERROR);
+      throw new ErrorLimitReached();
+    }
     const key = errorKey(error.path, member);
     (errors[key] ??= []).push(error.message);
+    recorded += 1;
   };
   const names = Object.keys(properties);
   const match = (name: string): string | undefined =>
@@ -716,41 +731,45 @@ export function bindJsonBody<P extends Record<string, PropertyKind>>(
 
   let model: Record<string, unknown> | null = null;
   try {
-    if (!reader.read() || reader.token() === "Null" || reader.token() === "Undefined") {
-      return { model: null, errors };
-    }
-    if (reader.token() !== "StartObject") throw reader.generic();
-    model = {};
-    if (!reader.read()) throw reader.error("Unexpected end when reading JSON.");
-    let finished = false;
-    do {
-      if (reader.token() === "EndObject") {
-        finished = true;
-        break;
+    try {
+      if (!reader.read() || reader.token() === "Null" || reader.token() === "Undefined") {
+        return { model: null, errors };
       }
-      // Only property names and the object's end can follow in an object.
-      const member = String(reader.value);
-      try {
-        const known = match(member);
-        if (known === undefined) {
-          if (reader.read()) reader.skip();
-        } else if (properties[known] === "guid") {
-          model[known] = readGuid(reader, member);
-        } else {
-          reader.readAs(properties[known] === "string" ? "string" : "boolean");
-          if (reader.token() === "None") {
-            throw reader.error(`Unexpected end when setting ${member}'s value.`);
-          }
-          model[known] = reader.value;
+      if (reader.token() !== "StartObject") throw reader.generic();
+      model = {};
+      if (!reader.read()) throw reader.error("Unexpected end when reading JSON.");
+      let finished = false;
+      do {
+        if (reader.token() === "EndObject") {
+          finished = true;
+          break;
         }
-      } catch (error) {
-        record(error, member);
-        reader.skip();
-      }
-    } while (reader.read());
-    if (!finished) throw reader.error("Unexpected end when deserializing object.");
+        // Only property names and the object's end can follow in an object.
+        const member = String(reader.value);
+        try {
+          const known = match(member);
+          if (known === undefined) {
+            if (reader.read()) reader.skip();
+          } else if (properties[known] === "guid") {
+            model[known] = readGuid(reader, member);
+          } else {
+            reader.readAs(properties[known] === "string" ? "string" : "boolean");
+            if (reader.token() === "None") {
+              throw reader.error(`Unexpected end when setting ${member}'s value.`);
+            }
+            model[known] = reader.value;
+          }
+        } catch (error) {
+          record(error, member);
+          reader.skip();
+        }
+      } while (reader.read());
+      if (!finished) throw reader.error("Unexpected end when deserializing object.");
+    } catch (error) {
+      record(error, null);
+    }
   } catch (error) {
-    record(error, null);
+    if (!(error instanceof ErrorLimitReached)) throw error;
   }
   return { model: model as BoundModel<P> | null, errors };
 }

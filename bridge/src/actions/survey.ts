@@ -102,10 +102,15 @@ export function registerSurveyActions(app: FastifyInstance, cache: SurveyCache):
     if (surveyId === undefined) return reply;
     const clientId = queryValue(request, "clientId") ?? "";
     if (clientId === "") return sendJsonString(reply, 400, "Check 'clientId' parameter");
-    const [isCompleted, survey] = await Promise.all([
+    // Both reads at once; when both fail, the state read's failure answers, as it came first.
+    const [state, definition] = await Promise.allSettled([
       respondentState(request, { surveyId }, clientId),
       definitionText(request, cache, surveyId),
     ]);
+    if (state.status === "rejected") throw state.reason;
+    if (definition.status === "rejected") throw definition.reason;
+    const isCompleted = state.value;
+    const survey = definition.value;
     if (survey === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
     // The old API parsed the definition as a JSON object and failed on anything else.
     if (!survey.startsWith("{")) return sendEmpty(reply, 500);

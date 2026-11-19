@@ -394,6 +394,20 @@ describe("post", () => {
     },
   );
 
+  it("answers a 4 MiB body full of errors quickly, with at most 200 messages", async () => {
+    const item = '"isPartialCompleted":"no",';
+    const body = `{${item.repeat(Math.floor((4 * 1024 * 1024 - 10) / item.length))}"a":1}`;
+    const start = performance.now();
+    const answer = await post(body);
+    const elapsed = performance.now() - start;
+    expect(answer.status).toBe(400);
+    const { errors } = JSON.parse(answer.body.toString()) as { errors: Record<string, string[]> };
+    expect(Object.values(errors).flat()).toHaveLength(200);
+    expect(errors[""]).toEqual(["The input was not valid."]);
+    expect(answer.body.length).toBeLessThan(40_000);
+    expect(elapsed).toBeLessThan(200);
+  });
+
   it("answers an empty 413 for a body over 4 MiB", async () => {
     const { data } = await sendRaw(
       bridge.url,

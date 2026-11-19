@@ -214,3 +214,23 @@ describe("stored answers", () => {
     expect(parseLenientJson(nested(65))).toBeUndefined();
   });
 });
+
+describe("the error limit", () => {
+  const errors = (count: number) =>
+    bindJsonBody(`{${'"isPartialCompleted":"no",'.repeat(count)}"a":1}`, PROPERTIES).errors;
+
+  it("records 199 errors as they are", () => {
+    const result = errors(199);
+    expect(result.isPartialCompleted).toHaveLength(199);
+    expect(result[""]).toBeUndefined();
+  });
+
+  it("records 199 errors and then one generic entry under the body, as the old framework's default", () => {
+    for (const count of [200, 10_000]) {
+      const result = errors(count);
+      expect(result.isPartialCompleted).toHaveLength(199);
+      expect(result[""]).toEqual(["The input was not valid."]);
+      expect(Object.keys(result)).toHaveLength(2);
+    }
+  });
+});

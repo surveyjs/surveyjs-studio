@@ -270,6 +270,23 @@ describe("getSurveyAndIsCompleted", () => {
     expect(answer.body.length).toBe(0);
   });
 
+  it.each([
+    [429, 500, 429],
+    [500, 429, 500],
+  ])(
+    "answers the state read's failure when both reads fail (state %i, definition %i → %i)",
+    async (stateStatus, definitionStatus, expected) => {
+      studio.override = (request, res) => {
+        const status = request.url.endsWith("/definition") ? definitionStatus : stateStatus;
+        res.writeHead(status).end();
+        return true;
+      };
+      const answer = await send(url(`surveyId=${SURVEY}&clientId=c1`));
+      expect(answer.status).toBe(expected);
+      expect(answer.body.length).toBe(0);
+    },
+  );
+
   it("answers Studio's 429 as an empty 429", async () => {
     studio.override = (_request, res) => (res.writeHead(429).end(), true);
     const answer = await send(url(`surveyId=${SURVEY}&clientId=c1`));
