@@ -310,6 +310,10 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 ## Step 5: The bridge: public actions and legacy files
 
+> **Changed 2026-11-19 by [ADR 0039](docs/adr/0039-bridge-public-actions.md).** Exact where a caller can depend on
+> it, with three listed differences (two leaks fixed, no HTML sanitizer, unknown paths forwarded). Golden files are
+> derived from the old code now and replaced by recordings before Step 7. The results-layout reads move to Step 6.
+
 **Goal:** a separate service, the bridge ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)), answers the old API's public and unauthenticated actions exactly as `api.surveyjs.io` does, through Studio's public API only. Studio's public API gains what those actions need. The site's demos and jobs are forwarded to the old service.
 
 **Inputs needed:** golden responses recorded from the real `api.surveyjs.io` for a set of known test surveys on production, made by the SurveyJS team with a script from this step. The surveys belong to a test account and hold made-up answers; the recordings are reviewed in the private location (rule 6) before any is committed, and ids, emails and addresses that are not the test account's are replaced. The reference for an answer with no recording is the old API's code (legacy documentation).
