@@ -209,13 +209,17 @@ export async function createValidator(openapiPath: string): Promise<Validator> {
         const hasBody = (await response.clone().text()) !== "";
         return [...headerProblems, ...(hasBody ? [`status ${status} documents no body`] : [])];
       }
-      if (!mediaTypes.includes(contentType)) {
+      // The most specific documented entry: the type itself, else its range (`image/*`), else `*/*`.
+      // A response without a content type matches no range.
+      const ranges = contentType === "" ? [] : [`${contentType.split("/")[0] ?? ""}/*`, "*/*"];
+      const key = [contentType, ...ranges].find((type) => mediaTypes.includes(type));
+      if (key === undefined) {
         return [
           ...headerProblems,
           `content type "${contentType}" is not one of: ${mediaTypes.join(", ")}`,
         ];
       }
-      const entry = media[contentType];
+      const entry = media[key];
       const schema = isObject(entry) ? entry.schema : undefined;
       // Other media types (images, CSV, …) are checked by media type only.
       if (schema === undefined || !isJsonMediaType(contentType)) return headerProblems;

@@ -393,6 +393,9 @@ function contractOperations(): ContractOperation[] {
     fileId: STORED_FILE.id,
     entryId: feedbackHistoryIds[0] ?? "",
     tokenId: OWNER_TOKEN.id,
+    // The fixtures' legacy editor image (getLegacyFile); also a question name nothing answered.
+    kind: "asset",
+    name: "99999999-0000-4000-8000-a00000000001",
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];

@@ -49,8 +49,8 @@ export async function createSeededSqlProviders(
   const database = openDatabase(scratch.target);
   await migrate(database);
   const seed = await legacyFixtureSeed();
-  await seedSqlStores(database, withSeedInvitation(seed));
   const files = await bytes();
+  await seedSqlStores(database, withSeedInvitation(seed), { bytes: files.store });
   const providers = createSqlProviders(database, {
     fallbackSeed: seed,
     bytes: files.store,

@@ -230,6 +230,16 @@ describe("legacyFixtureSeed", () => {
     expect(seed.legacyAccessKeys?.["11111111-0000-4000-8000-a00000000001"]).toBe("access-key-1");
   });
 
+  it("holds the editor share's files as assets and the results share's as responses", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(
+      (seed.legacyFiles ?? []).map((f) => [f.kind, f.name, f.content.subarray(1, 4).toString()]),
+    ).toEqual([
+      ["asset", "99999999-0000-4000-8000-a00000000001", "PNG"],
+      ["response", "99999999-0000-4000-8000-a00000000002.png", "PNG"],
+    ]);
+  });
+
   it("gives memberships lower-case ids and the role in lower case", async () => {
     const seed = await legacyFixtureSeed();
     expect(seed.memberships).toContainEqual({

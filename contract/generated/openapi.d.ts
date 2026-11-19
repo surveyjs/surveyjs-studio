@@ -1277,12 +1277,17 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `asset` for images placed in the editor, `response` for files respondents uploaded. */
-                kind: "asset" | "response";
+                /**
+                 * @description `asset` for images placed in the editor, `response` for files respondents uploaded
+                 *     (lower case). Any other value is `404 not-found`, as an unknown name is: the schema
+                 *     leaves it open so that no value answers `400`.
+                 */
+                kind: string;
                 /**
                  * @description The file's name as the old service stored it, matched exactly (case included). A name is
-                 *     one path segment of letters, digits, `.`, `-` and `_`; any other name is `404` without a
-                 *     lookup.
+                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), other
+                 *     than `.` and `..`; any other name is `404 not-found` without a lookup (the schema leaves
+                 *     it open so that no name answers `400`).
                  */
                 name: string;
             };
@@ -1292,8 +1297,9 @@ export interface paths {
          * Download a file by its legacy name
          * @description Serves a file stored under the old service's name, which sites still reference. The bytes
          *     are returned as stored (a legacy file keeps any padding it has), with the content type
-         *     from the name's extension, or `application/octet-stream` without one, and the headers of
-         *     `downloadFile`. An unknown name is `404 file-not-found`.
+         *     from the name's extension, or `application/octet-stream` without one or for an extension
+         *     it does not know, and the headers of `downloadFile`. An unknown name or kind is
+         *     `404 not-found`, as for `downloadFile`.
          */
         get: operations["getLegacyFile"];
         put?: never;
@@ -4133,12 +4139,17 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `asset` for images placed in the editor, `response` for files respondents uploaded. */
-                kind: "asset" | "response";
+                /**
+                 * @description `asset` for images placed in the editor, `response` for files respondents uploaded
+                 *     (lower case). Any other value is `404 not-found`, as an unknown name is: the schema
+                 *     leaves it open so that no value answers `400`.
+                 */
+                kind: string;
                 /**
                  * @description The file's name as the old service stored it, matched exactly (case included). A name is
-                 *     one path segment of letters, digits, `.`, `-` and `_`; any other name is `404` without a
-                 *     lookup.
+                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), other
+                 *     than `.` and `..`; any other name is `404 not-found` without a lookup (the schema leaves
+                 *     it open so that no name answers `400`).
                  */
                 name: string;
             };

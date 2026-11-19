@@ -99,6 +99,11 @@ export function toProblem(error: unknown): Problem {
             ...(detail !== undefined && { detail }),
           });
     }
+    // A path segment longer than the router takes (100 characters) is longer than any id or
+    // legacy file name: it names nothing.
+    if (code === "FST_ERR_MAX_PARAM_LENGTH") {
+      return problem({ code: "not-found", status: 404, title: "Not found" });
+    }
     if (code === "FST_ERR_CTP_BODY_TOO_LARGE") {
       return problem({ code: "payload-too-large", status: 413, title: "Payload too large" });
     }

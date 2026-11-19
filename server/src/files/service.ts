@@ -3,6 +3,7 @@ import type { RequestUser } from "../auth/authenticate.js";
 import { publicUrl } from "../auth/identity.js";
 import type { Clock } from "../auth/session.js";
 import { newFileId } from "../domain/file-id.js";
+import { isLegacyFileName } from "../domain/legacy-file.js";
 import type { StoredFileRecord, SurveyRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import type {
@@ -69,6 +70,11 @@ export interface FilesService {
   ): Promise<StoredFileJson>;
   /** 404 not-found for an unknown or malformed id. */
   download(fileId: string): Promise<StoredFileContent>;
+  /**
+   * A file by its legacy name (ADR 0039 point 3). 404 not-found for an unknown name, and without
+   * a lookup for a kind other than `asset` or `response` or a name `isLegacyFileName` refuses.
+   */
+  downloadLegacy(kind: string, name: string): Promise<StoredFileContent>;
 }
 
 /** The field an upload sends its file in. */
@@ -183,6 +189,13 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
 
     async download(fileId) {
       const found = await files.getFile(fileId);
+      if (!found) throw notFound();
+      return found;
+    },
+
+    async downloadLegacy(kind, name) {
+      if ((kind !== "asset" && kind !== "response") || !isLegacyFileName(name)) throw notFound();
+      const found = await files.getFileByLegacyName(kind, name);
       if (!found) throw notFound();
       return found;
     },

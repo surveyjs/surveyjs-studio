@@ -1,8 +1,10 @@
 import { Readable } from "node:stream";
 import type { BlobServiceClient } from "@azure/storage-blob";
 import { surveyIdOfFile } from "../../domain/file-id.js";
+import { isLegacyFileName, legacyFileRecord } from "../../domain/legacy-file.js";
 import type { FileStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
+import type { LegacyShareReader } from "./legacy-shares.js";
 import { fileRecordFromBlob, isGuid } from "./mapping.js";
 import {
   writeFile,
@@ -15,15 +17,18 @@ import {
  * Editor files in a blob container of the surveys account (Step 7, R2): block blob
  * `{surveyId}/{fileId}` with the type as its content type and metadata `kind`, `name` and
  * `createdat`. Legacy code addresses containers by fixed names only, so it never sees this one;
- * the legacy file share `surveyfiles` is never touched.
+ * the legacy file shares are never written.
+ *
+ * Files under the old service's names come from the legacy shares (`shares`): editor images
+ * from `surveyfiles`, respondent uploads from `files`. Without a reader every such name is unknown.
  *
  * Reads only here (the folder is read-only by lint); the store's writes call writes.ts.
  */
 export function createAzureFileStore(
   blobs: BlobServiceClient,
-  options: { readonly container: string },
+  options: { readonly container: string; readonly shares: LegacyShareReader | null },
 ): FileStore {
-  const { container } = options;
+  const { container, shares } = options;
   const files = () => blobs.getContainerClient(container);
 
   return {
@@ -77,5 +82,13 @@ export function createAzureFileStore(
 
     copySurveyAssets: (fromSurveyId, toSurveyId, copiedAt) =>
       writeSurveyAssetsCopy(blobs, container, fromSurveyId, toSurveyId, copiedAt),
+
+    async getFileByLegacyName(kind, name) {
+      if (!shares || !isLegacyFileName(name)) return null;
+      const bytes = await shares.read(kind === "asset" ? "surveyfiles" : "files", name);
+      return bytes
+        ? { file: legacyFileRecord(kind, name, bytes.length), content: Readable.from(bytes) }
+        : null;
+    },
   };
 }

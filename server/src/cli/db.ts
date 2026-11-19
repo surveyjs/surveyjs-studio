@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { openByteStore, type ByteStore } from "../bytes/index.js";
 import { loadConfig } from "../config.js";
 import { openDatabase, type DatabaseTarget, type SqlDatabase } from "../sql/database.js";
 import { withSeedInvitation } from "../providers/seed-invitations.js";
@@ -14,7 +15,8 @@ export const USAGE = `Usage: pnpm db:migrate [--env-file <path>]
 db:migrate applies the database migrations this version has and the database lacks, in one
 transaction (the server also does this when it starts). db:status lists the applied and the
 pending migrations, and writes nothing. seed migrates, then loads the shared seed (the golden
-fixtures): each seed survey is replaced, every other survey stays. STORAGE_PROVIDER must be
+fixtures, their legacy files into FILE_STORE too): each seed survey is replaced, every other
+survey stays. STORAGE_PROVIDER must be
 sqlite or postgres (for the local PostgreSQL pass --env-file docker/postgres.env).
 
 Options:
@@ -71,9 +73,11 @@ async function apply(database: SqlDatabase, io: CliIo): Promise<number> {
   return 0;
 }
 
-async function seed(database: SqlDatabase, io: CliIo): Promise<number> {
+async function seed(database: SqlDatabase, bytes: ByteStore, io: CliIo): Promise<number> {
   await apply(database, io);
-  const report = await seedSqlStores(database, withSeedInvitation(await legacyFixtureSeed()));
+  const report = await seedSqlStores(database, withSeedInvitation(await legacyFixtureSeed()), {
+    bytes,
+  });
   io.out(`Seeded ${report.surveys} surveys and ${report.projects} projects.\n`);
   return 0;
 }
@@ -137,7 +141,7 @@ export async function run(
     }
     database = openDatabase(config.database!);
     io.out(`Database: ${describeTarget(config.database!)}\n`);
-    if (command === "seed") return await seed(database, io);
+    if (command === "seed") return await seed(database, openByteStore(config.files!), io);
     return command === "migrate" ? await apply(database, io) : await status(database, io);
   } catch (error) {
     io.err(`Error: ${safeErrorText(error)}\n`);

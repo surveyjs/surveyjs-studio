@@ -1,3 +1,5 @@
+import type { ByteStore } from "../bytes/types.js";
+import { legacyFileRecord } from "../domain/legacy-file.js";
 import type { MemorySeed } from "../providers/memory.js";
 import { seedInstanceAdmin } from "../providers/seed-instance-admin.js";
 import type { SqlDatabase } from "./database.js";
@@ -18,10 +20,27 @@ export interface SeedReport {
  * responses, markers and layouts; projects with their members), in one transaction. A seed
  * survey or project that exists is replaced with what belongs to it; every other row stays, so
  * running it again resets the seed data and keeps what people made.
+ *
+ * With `bytes` (the file store) the seed's legacy files are loaded too: each is a `files` row of
+ * `legacyFileRecord` (the all-zero survey) named in `legacy_files`, its bytes written before the
+ * transaction (a key the record fixes, so a second run replaces them).
  */
-export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Promise<SeedReport> {
+export async function seedSqlStores(
+  database: SqlDatabase,
+  seed: MemorySeed,
+  options: { readonly bytes?: ByteStore } = {},
+): Promise<SeedReport> {
   const byId = <T>(map: Record<string, T> | undefined, id: string): T | undefined =>
     Object.entries(map ?? {}).find(([key]) => key.toLowerCase() === id)?.[1];
+  const legacyFiles = options.bytes
+    ? (seed.legacyFiles ?? []).map((f) => ({
+        ...f,
+        record: legacyFileRecord(f.kind, f.name, f.content.length),
+      }))
+    : [];
+  for (const { record, content } of legacyFiles) {
+    await options.bytes!.put(`${record.surveyId}/${record.id}`, content, record.contentType);
+  }
   await database.db.transaction().execute(async (trx) => {
     // The seed users as local accounts without a password (USER_DIRECTORY=local reads them; the
     // memory directory has its own copy), and the seed's instance admin. A blocked user is a
@@ -128,6 +147,32 @@ export async function seedSqlStores(database: SqlDatabase, seed: MemorySeed): Pr
           )
           .execute();
       }
+    }
+    // A seed legacy file replaces its own files row and takes its name over (a file the name named
+    // before stays, without the name).
+    for (const { record } of legacyFiles) {
+      await trx
+        .deleteFrom("legacy_files")
+        .where("kind", "=", record.kind)
+        .where("legacy_name", "=", record.name)
+        .execute();
+      await trx.deleteFrom("files").where("id", "=", record.id).execute();
+      await trx
+        .insertInto("files")
+        .values({
+          id: record.id,
+          survey_id: record.surveyId,
+          kind: record.kind,
+          name: record.name,
+          content_type: record.contentType,
+          size: record.size,
+          created_at: record.createdAt,
+        })
+        .execute();
+      await trx
+        .insertInto("legacy_files")
+        .values({ kind: record.kind, legacy_name: record.name, file_id: record.id })
+        .execute();
     }
     // The seed's invitations; those of a seed project were dropped with it (cascade).
     for (const invitation of seed.invitations ?? []) {

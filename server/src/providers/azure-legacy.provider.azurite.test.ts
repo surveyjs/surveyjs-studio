@@ -7,15 +7,20 @@ import { localTableClient } from "../legacy/local-clients.js";
 import { loadLegacyFixtures } from "../legacy/load-fixtures.js";
 import { replicaConfig, replicaEnv } from "../legacy/replica-env.js";
 import { createAzureCredentialStore } from "./azure-legacy/credentials.js";
+import { readLegacyFixtures } from "./azure-legacy/fixtures.js";
 import { createAzureLegacyProviders } from "./azure-legacy/index.js";
+import { createStubShareReader } from "./azure-legacy/legacy-shares-stub.js";
 import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 import { describeLicenceNoticeSuite } from "./suite/licence-notice-suite.js";
 import { describeProviderSuite } from "./suite/provider-suite.js";
 
 // Runs in the `providers-azurite` Vitest project: `pnpm test:providers:azurite`. Its global setup
-// loads the golden fixtures into the local replica first.
-describeProviderSuite("azure-legacy (local replica)", () =>
-  Promise.resolve(createAzureLegacyProviders(replicaConfig())),
+// loads the golden fixtures into the local replica first. Azurite has no file service: the legacy
+// file shares are a stub over the fixtures' share files.
+describeProviderSuite("azure-legacy (local replica)", async () =>
+  createAzureLegacyProviders(replicaConfig(), {
+    legacyShares: createStubShareReader((await readLegacyFixtures()).files),
+  }),
 );
 
 describeLicenceNoticeSuite("azure-legacy (local replica)", (now) =>
@@ -327,5 +332,24 @@ describe("azure-legacy token writes under concurrency (local replica)", () => {
     expect(listed.map((r) => r.lastFour)).toEqual(["abcd"]);
     expect(await plain.revokeApiToken(t.id, AT)).toBe(true);
     expect(await plain.findApiToken(oldHash)).toMatchObject({ revokedAt: AT });
+  });
+});
+
+describe("azure-legacy legacy files (local replica)", () => {
+  it("reads no share on the replica, which has no file service: every legacy name is unknown", async () => {
+    const providers = createAzureLegacyProviders(replicaConfig());
+    try {
+      expect(
+        await providers.files.getFileByLegacyName("asset", "99999999-0000-4000-8000-a00000000001"),
+      ).toBeNull();
+      expect(
+        await providers.files.getFileByLegacyName(
+          "response",
+          "99999999-0000-4000-8000-a00000000002.png",
+        ),
+      ).toBeNull();
+    } finally {
+      await providers.close();
+    }
   });
 });

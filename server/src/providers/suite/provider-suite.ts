@@ -11,6 +11,7 @@ import type {
   SurveyOwner,
   SurveyRecord,
 } from "../../domain/types.js";
+import { readLegacyFixtures } from "../azure-legacy/fixtures.js";
 import { surveyListOrder } from "../ordering.js";
 import type {
   AppendOutcome,
@@ -24,6 +25,8 @@ import {
   ADMIN_ID,
   BLOCKED_ID,
   ERASABLE_ID,
+  LEGACY_ASSET_NAME,
+  LEGACY_RESPONSE_NAME,
   MEMBER_ID,
   OUTSIDER_ID,
   OWNER_ID,
@@ -2070,6 +2073,73 @@ export function describeProviderSuite(
         expect([
           ...(await providers.files.copySurveyAssets(freshSurveyId(), target, copiedAt)),
         ]).toEqual([]);
+      });
+
+      describe("getFileByLegacyName", () => {
+        /** The fixtures' editor asset (no extension) and respondent file. */
+        const fixtureFile = async (share: string, name: string): Promise<Buffer> => {
+          const { files } = await readLegacyFixtures();
+          const found = files.find((f) => f.share === share && f.name === name);
+          if (!found) throw new Error(`No fixture file ${share}/${name}`);
+          return found.content;
+        };
+        const readLegacy = async (kind: "asset" | "response", name: string) => {
+          const found = await providers.files.getFileByLegacyName(kind, name);
+          if (!found) return null;
+          const chunks: Buffer[] = [];
+          for await (const chunk of found.content) chunks.push(chunk as Buffer);
+          return { file: found.file, bytes: Buffer.concat(chunks) };
+        };
+
+        it("returns the seeded editor asset as stored, octet-stream without an extension", async () => {
+          const bytes = await fixtureFile("surveyfiles", LEGACY_ASSET_NAME);
+          const found = await readLegacy("asset", LEGACY_ASSET_NAME);
+          expect(found?.bytes.equals(bytes)).toBe(true);
+          expect(found?.file).toMatchObject({
+            kind: "asset",
+            name: LEGACY_ASSET_NAME,
+            contentType: "application/octet-stream",
+            size: bytes.length,
+          });
+        });
+
+        it("returns the seeded respondent file with the type of its extension", async () => {
+          const bytes = await fixtureFile("files", LEGACY_RESPONSE_NAME);
+          const found = await readLegacy("response", LEGACY_RESPONSE_NAME);
+          expect(found?.bytes.equals(bytes)).toBe(true);
+          expect(found?.file).toMatchObject({
+            kind: "response",
+            name: LEGACY_RESPONSE_NAME,
+            contentType: "image/png",
+            size: bytes.length,
+          });
+        });
+
+        it("matches names as stored, case included", async () => {
+          expect(await readLegacy("asset", LEGACY_ASSET_NAME.toUpperCase())).toBeNull();
+          expect(
+            await readLegacy("response", LEGACY_RESPONSE_NAME.replace(".png", ".PNG")),
+          ).toBeNull();
+        });
+
+        it("answers null for an unknown name and for a name of the other kind", async () => {
+          expect(await readLegacy("asset", "99999999-0000-4000-8000-a00000000099")).toBeNull();
+          expect(await readLegacy("response", LEGACY_ASSET_NAME)).toBeNull();
+          expect(await readLegacy("asset", LEGACY_RESPONSE_NAME)).toBeNull();
+        });
+
+        it.each([
+          "../x",
+          "a/b",
+          "..",
+          ".",
+          "",
+          `${LEGACY_ASSET_NAME}/`,
+          `..\\${LEGACY_ASSET_NAME}`,
+        ])("answers null for the name %j, which is no legacy name", async (name) => {
+          expect(await readLegacy("asset", name)).toBeNull();
+          expect(await readLegacy("response", name)).toBeNull();
+        });
       });
     });
 

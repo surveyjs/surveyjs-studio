@@ -235,3 +235,86 @@ describe("uploadResponseFileByPostId", () => {
     expect(await codeOf(unknown)).toBe("survey-not-available");
   });
 });
+
+describe("getLegacyFile", () => {
+  const LEGACY = "/public/legacy-files/{kind}/{name}";
+  /** The fixtures' editor asset (no extension) and respondent file: the same one-pixel PNG. */
+  const ASSET = "99999999-0000-4000-8000-a00000000001";
+  const RESPONSE = "99999999-0000-4000-8000-a00000000002.png";
+  const FIXTURE_PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  /**
+   * The Azure legacy provider reads these files from the legacy file shares, and Azurite has no
+   * file service: the reference server runs there without a share reader, so every name is
+   * unknown. The provider suite reads the shares through a stub instead.
+   */
+  const sharesReadable = process.env.CONFORMANCE_PROVIDER?.trim() !== "azure-legacy";
+
+  /** Without cookies: sites reference these files from anywhere. `path` is sent as written. */
+  const legacyFile = (path: string) =>
+    call("GET", LEGACY, { path: `/public/legacy-files/${path}` });
+
+  it.runIf(sharesReadable)(
+    "serves the seeded editor asset as stored, as an octet-stream attachment",
+    async () => {
+      const response = await legacyFile(`asset/${ASSET}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/octet-stream");
+      expect(response.headers.get("content-disposition")).toBe(
+        `attachment; filename="${ASSET}"; filename*=UTF-8''${ASSET}`,
+      );
+      expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+      expect(response.headers.get("content-security-policy")).toContain("sandbox");
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(FIXTURE_PNG);
+    },
+  );
+
+  it.runIf(sharesReadable)(
+    "serves the seeded respondent file inline with the type of its extension",
+    async () => {
+      const response = await legacyFile(`response/${RESPONSE}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      expect(response.headers.get("content-disposition")).toBe(
+        `inline; filename="${RESPONSE}"; filename*=UTF-8''${RESPONSE}`,
+      );
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(FIXTURE_PNG);
+    },
+  );
+
+  it("answers 404 not-found for an unknown name, another case and the other kind", async () => {
+    for (const path of [
+      "asset/99999999-0000-4000-8000-a00000000099",
+      `asset/${ASSET.toUpperCase()}`,
+      `response/${RESPONSE.replace(".png", ".PNG")}`,
+      `response/${ASSET}`,
+      `asset/${RESPONSE}`,
+    ]) {
+      const response = await legacyFile(path);
+      expect(response.status, path).toBe(404);
+      expect(await codeOf(response), path).toBe("not-found");
+    }
+  });
+
+  it("answers 404 not-found for a name with a path and for an unknown kind", async () => {
+    for (const path of [
+      "asset/..%2Fx",
+      "asset/a%2Fb",
+      "response/%2E%2E%2Fx",
+      `asset/..%5C${ASSET}`,
+      "asset/a%20b",
+      `asset/dxsimage:${ASSET}`,
+      `image/${ASSET}`,
+      `ASSET/${ASSET}`,
+      `asset/${"a".repeat(300)}`,
+    ]) {
+      const response = await legacyFile(path);
+      expect(response.status, path).toBe(404);
+      expect(await codeOf(response), path).toBe("not-found");
+    }
+  });
+});

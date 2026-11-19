@@ -148,6 +148,15 @@ export interface FileStore {
     toSurveyId: string,
     copiedAt: string,
   ): Promise<ReadonlyMap<string, string>>;
+  /**
+   * A file stored under the old service's name (ADR 0039 point 3): an editor image (`asset`) or a
+   * respondent upload (`response`). Names match as stored, case included; null for an unknown
+   * name and, without any lookup, for a name `isLegacyFileName` refuses. The bytes are as stored;
+   * `file.name` is the legacy name and `file.contentType` the type of its extension
+   * (`legacyContentType`), whatever the provider keeps. A provider that holds the file by name
+   * only gives it the record of `legacyFileRecord`.
+   */
+  getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
 }
 
 export type AppendOutcome = "stored" | "exists";

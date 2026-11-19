@@ -42,6 +42,17 @@ paths:
           content:
             image/png:
               schema: { type: string, contentMediaType: image/png }
+  /anything:
+    get:
+      operationId: getAnything
+      responses:
+        "200":
+          description: Any file; images listed by range.
+          content:
+            image/*:
+              schema: { type: string }
+            "*/*":
+              schema: { type: string }
   /empty:
     get:
       operationId: getEmpty

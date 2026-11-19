@@ -1,8 +1,9 @@
 import type { MultipartFile } from "@fastify/multipart";
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { MULTIPART_LIMITS, type Handlers } from "../api.js";
 import { requireUser } from "../auth/authenticate.js";
 import { AppError } from "../errors.js";
+import type { StoredFileContent } from "../providers/types.js";
 import { contentDisposition } from "./file-type.js";
 import {
   createFilesService,
@@ -92,19 +93,28 @@ export function createFileHandlers(options: FilesServiceOptions): Handlers {
 
     downloadFile: async (request, reply) => {
       const { fileId } = request.params as { fileId: string };
-      const { file, content } = await service.download(fileId);
-      return reply
-        .code(200)
-        .headers({
-          "content-type": file.contentType,
-          "content-length": file.size,
-          "content-disposition": contentDisposition(file),
-          "cache-control": CACHE_CONTROL,
-          "x-content-type-options": "nosniff",
-          "content-security-policy": CONTENT_SECURITY_POLICY,
-          "cross-origin-resource-policy": "cross-origin",
-        })
-        .send(content);
+      return sendFile(reply, await service.download(fileId));
+    },
+
+    getLegacyFile: async (request, reply) => {
+      const { kind, name } = request.params as { kind: string; name: string };
+      return sendFile(reply, await service.downloadLegacy(kind, name));
     },
   };
+}
+
+/** A stored file with the R7 headers, for `downloadFile` and `getLegacyFile`. */
+function sendFile(reply: FastifyReply, { file, content }: StoredFileContent): FastifyReply {
+  return reply
+    .code(200)
+    .headers({
+      "content-type": file.contentType,
+      "content-length": file.size,
+      "content-disposition": contentDisposition(file),
+      "cache-control": CACHE_CONTROL,
+      "x-content-type-options": "nosniff",
+      "content-security-policy": CONTENT_SECURITY_POLICY,
+      "cross-origin-resource-policy": "cross-origin",
+    })
+    .send(content);
 }

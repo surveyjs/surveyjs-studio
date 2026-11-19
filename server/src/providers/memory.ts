@@ -40,7 +40,7 @@ import { createMemoryLocalAccounts } from "./memory-accounts.js";
 import { createMemoryCredentials } from "./memory-credentials.js";
 import { createMemoryInvitations } from "./memory-invitations.js";
 import { seedInstanceAdmin } from "./seed-instance-admin.js";
-import { createMemoryFileStore } from "./memory-files.js";
+import { createMemoryFileStore, type MemoryLegacyFile } from "./memory-files.js";
 import { createMemoryResultStore } from "./memory-results.js";
 import { createMemoryViewStore } from "./memory-views.js";
 import type { ProjectInvitation, ProviderSet } from "./types.js";
@@ -80,6 +80,8 @@ export interface MemorySeed {
   privateResultQuestions?: Record<string, string[]>;
   /** The legacy access key of a user, by user id. */
   legacyAccessKeys?: Record<string, string>;
+  /** Files stored under the old service's names (`getFileByLegacyName`). */
+  legacyFiles?: readonly MemoryLegacyFile[];
 }
 
 interface StoredHistoryEntry {
@@ -397,7 +399,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
             : [],
         ),
     },
-    files: createMemoryFileStore(),
+    files: createMemoryFileStore(seed?.legacyFiles),
     results: results.store,
     views: views.store,
     credentials,

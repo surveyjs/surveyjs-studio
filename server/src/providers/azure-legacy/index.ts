@@ -42,6 +42,7 @@ import type {
 import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
+import { createLegacyShareReader, type LegacyShareReader } from "./legacy-shares.js";
 import { createAzureResultStore } from "./results.js";
 import { createAzureCredentialStore } from "./credentials.js";
 import { createAzureViewStore } from "./views.js";
@@ -122,6 +123,11 @@ export interface AzureLegacyOptions {
   readonly now?: Clock;
   /** Blob container of the editor files in the surveys account; default `my-surveys-files`. Tests only. */
   readonly filesContainer?: string;
+  /**
+   * Reads the legacy file shares; default: over the accounts' connection strings, absent for the
+   * local emulator (no file service). Tests only (a stub on Azurite).
+   */
+  readonly legacyShares?: LegacyShareReader | null;
 }
 
 /** The editor files' container (Step 7, R2), invisible to legacy code. */
@@ -852,6 +858,10 @@ export function createAzureLegacyProviders(
 
     files: createAzureFileStore(surveysAccount.blobs, {
       container: options.filesContainer ?? FILES_CONTAINER,
+      shares:
+        options.legacyShares === undefined
+          ? createLegacyShareReader(legacy, logger)
+          : options.legacyShares,
     }),
 
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),

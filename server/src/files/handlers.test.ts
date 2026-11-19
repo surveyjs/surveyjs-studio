@@ -373,3 +373,100 @@ describe("downloadFile", () => {
     });
   });
 });
+
+describe("getLegacyFile", () => {
+  const ASSET = "0b5c7c6e-0000-4000-8000-a00000000001";
+  const RESPONSE = "0b5c7c6e-0000-4000-8000-a00000000002.Pdf";
+
+  /** The app with a FileStore whose legacy lookup is recorded and knows ASSET and RESPONSE. */
+  async function startWithSpy() {
+    const calls: [string, string][] = [];
+    await start({
+      files: (store) => ({
+        ...store,
+        getFileByLegacyName: (kind, name) => {
+          calls.push([kind, name]);
+          const bytes = png(20);
+          const known =
+            (kind === "asset" && name === ASSET) || (kind === "response" && name === RESPONSE);
+          return Promise.resolve(
+            known
+              ? {
+                  file: {
+                    id: newFileId("00000000-0000-0000-0000-000000000000"),
+                    surveyId: "00000000-0000-0000-0000-000000000000",
+                    kind,
+                    name,
+                    contentType: name.endsWith(".Pdf")
+                      ? "application/pdf"
+                      : "application/octet-stream",
+                    size: bytes.length,
+                    createdAt: "1970-01-01T00:00:00.000Z",
+                  },
+                  content: Readable.from(bytes),
+                }
+              : null,
+          );
+        },
+      }),
+    });
+    return calls;
+  }
+
+  it("serves a file by its legacy name with downloadFile's headers", async () => {
+    const calls = await startWithSpy();
+    const res = await app!.inject({ url: `/api/v1/public/legacy-files/asset/${ASSET}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload).toStrictEqual(png(20));
+    expect(res.headers).toMatchObject({
+      "content-type": "application/octet-stream",
+      "content-length": "20",
+      "content-disposition": `attachment; filename="${ASSET}"; filename*=UTF-8''${ASSET}`,
+      "cache-control": "public, max-age=3600",
+      "x-content-type-options": "nosniff",
+      "content-security-policy":
+        "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+      "cross-origin-resource-policy": "cross-origin",
+    });
+    expect(calls).toEqual([["asset", ASSET]]);
+
+    const response = await app!.inject({ url: `/api/v1/public/legacy-files/response/${RESPONSE}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(calls).toEqual([
+      ["asset", ASSET],
+      ["response", RESPONSE],
+    ]);
+  });
+
+  it("answers 404 not-found for a name the store does not know", async () => {
+    const calls = await startWithSpy();
+    const res = await app!.inject({ url: `/api/v1/public/legacy-files/response/${ASSET}` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "not-found", status: 404 });
+    expect(calls).toEqual([["response", ASSET]]);
+  });
+
+  it.each([
+    ["..", "asset/.."],
+    ["%2E%2E", "asset/%2E%2E"],
+    [".", "asset/."],
+    ["..%2Fx", "asset/..%2Fx"],
+    ["a%2Fb", "asset/a%2Fb"],
+    ["%2E%2E%2Fx", "response/%2E%2E%2Fx"],
+    ["..%5Cx", "asset/..%5Cx"],
+    ["a%20b", "asset/a%20b"],
+    ["dxsimage:x", `asset/dxsimage:${ASSET}`],
+    ["a%00b", "asset/a%00b"],
+    ["101 letters", `asset/${"a".repeat(101)}`],
+    ["256 letters", `asset/${"a".repeat(256)}`],
+    ["an unknown kind", `image/${ASSET}`],
+    ["a kind in another case", `Asset/${ASSET}`],
+  ])("answers 404 not-found without a lookup for %s", async (_label, path) => {
+    const calls = await startWithSpy();
+    const res = await app!.inject({ url: `/api/v1/public/legacy-files/${path}` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ code: "not-found", status: 404 });
+    expect(calls).toEqual([]);
+  });
+});
