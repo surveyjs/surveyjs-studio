@@ -8,6 +8,7 @@ import Fastify, {
   type FastifyRequest,
   type FastifyServerOptions,
 } from "fastify";
+import { registerActions } from "./actions/index.js";
 import { sendEmpty } from "./answers.js";
 import { registerCors } from "./cors.js";
 import { createForwarder, MAX_HEADER_BYTES, plainAddress, type Forwarder } from "./forward.js";
@@ -29,6 +30,8 @@ export interface BridgeDeps {
   logger?: FastifyServerOptions["logger"];
   /** How long the old service may send nothing on a forwarded request (tests). */
   forwardTimeoutMs?: number;
+  /** Whether to register the old API's actions (default true; tests of the skeleton add their own). */
+  actions?: boolean;
 }
 
 /**
@@ -173,6 +176,8 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     request.log.error({ err: error }, "unexpected error");
     return sendEmpty(reply, 500);
   });
+
+  if (deps.actions !== false) registerActions(app, settings);
 
   app.addHook("onClose", async () => forwarder.close());
 

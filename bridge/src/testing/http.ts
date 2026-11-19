@@ -118,13 +118,19 @@ export interface RunningBridge {
   close(): Promise<void>;
 }
 
-/** Builds the bridge, lets the test add routes, and listens on a free port. */
+/**
+ * Builds the bridge, lets the test add routes, and listens on a free port. A test that adds its
+ * own routes gets the bridge without the old API's actions (they would share route names).
+ */
 export async function startBridge(
   settings: Partial<BridgeSettings> & Pick<BridgeSettings, "studioUrl" | "legacyUrl">,
   register?: (app: FastifyInstance) => void,
   deps?: BridgeDeps,
 ): Promise<RunningBridge> {
-  const app = buildBridge({ ...TEST_SETTINGS, ...settings }, deps);
+  const app = buildBridge(
+    { ...TEST_SETTINGS, ...settings },
+    { actions: register === undefined, ...deps },
+  );
   register?.(app);
   await app.listen({ host: "127.0.0.1", port: 0 });
   const { port } = app.server.address() as AddressInfo;

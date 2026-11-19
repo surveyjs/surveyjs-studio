@@ -55,8 +55,11 @@ export function sendJson(reply: FastifyReply, status: number, value: unknown): F
   return sendJsonText(reply, status, JSON.stringify(value) ?? "null");
 }
 
-/** **Empty 200/400/404/429/500**: no body, `Content-Length: 0`, no `Content-Type`. */
-export function sendEmpty(reply: FastifyReply, status: 200 | 400 | 404 | 429 | 500): FastifyReply {
+/** **Empty 200/400/404/413/429/500**: no body, `Content-Length: 0`, no `Content-Type`. */
+export function sendEmpty(
+  reply: FastifyReply,
+  status: 200 | 400 | 404 | 413 | 429 | 500,
+): FastifyReply {
   return reply.code(status).removeHeader("content-type").send();
 }
 

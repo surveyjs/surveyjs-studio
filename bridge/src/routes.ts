@@ -32,12 +32,18 @@ export function oldRoute(
  * is repeated, `+` and percent escapes decoded. `undefined` when absent.
  */
 export function queryValue(request: FastifyRequest, name: string): string | undefined {
+  return queryValues(request, name)[0];
+}
+
+/** Every value of a query parameter, in order, its name in any letter case; `[]` when absent. */
+export function queryValues(request: FastifyRequest, name: string): string[] {
   const url = request.raw.url ?? "";
   const start = url.indexOf("?");
-  if (start < 0) return undefined;
+  if (start < 0) return [];
   const wanted = name.toLowerCase();
+  const values: string[] = [];
   for (const [key, value] of new URLSearchParams(url.slice(start + 1))) {
-    if (key.toLowerCase() === wanted) return value;
+    if (key.toLowerCase() === wanted) values.push(value);
   }
-  return undefined;
+  return values;
 }
