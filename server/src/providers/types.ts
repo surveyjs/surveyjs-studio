@@ -82,6 +82,8 @@ export interface ResponsePageQuery {
   readonly after?: ResponsePosition;
   /** 1–1000. */
   readonly limit: number;
+  /** Leave out responses whose run has no complete row (ADR 0038). */
+  readonly completedOnly?: boolean;
 }
 
 export interface ResponsePage {
