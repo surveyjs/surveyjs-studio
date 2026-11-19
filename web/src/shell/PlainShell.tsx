@@ -10,6 +10,7 @@ export function PlainShell({
   signingOut,
   signOutError,
   projectsLink,
+  apiTokensLink,
   changePasswordLink,
   usersLink,
   children,
@@ -21,6 +22,11 @@ export function PlainShell({
         {projectsLink && (
           <a href={projectsLink.href} onClick={followAppLink(projectsLink)}>
             Projects
+          </a>
+        )}
+        {apiTokensLink && (
+          <a href={apiTokensLink.href} onClick={followAppLink(apiTokensLink)}>
+            API tokens
           </a>
         )}
         {usersLink && (

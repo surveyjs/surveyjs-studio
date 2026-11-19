@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
+import { hashCredential } from "../../credentials/format.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   NewProject,
@@ -2189,6 +2190,44 @@ export function describeProviderSuite(
           expect(await providers.projects.getUserProject(ADMIN_ID, id)).toBeNull();
           expect(await providers.projects.listMembers(id)).toEqual([]);
           expect(await providers.projects.deleteProject(id, options)).toBeNull();
+        });
+
+        it("stops the project's API tokens, and only those", async () => {
+          const { id } = await ownProject();
+          const other = await ownProject();
+          const token = (projectId: string | null) => ({
+            id: randomUUID(),
+            creatorId: ADMIN_ID,
+            projectId,
+            name: "Suite",
+            lastFour: "abcd",
+            createdAt: CREATED_AT,
+          });
+          const hashes = [id, other.id, null].map(() =>
+            hashCredential(`sjs_${randomUUID()}`, "api-token"),
+          );
+          const [inProject, elsewhere, personal] = [token(id), token(other.id), token(null)];
+          await providers.credentials.createApiToken(inProject, hashes[0]!);
+          await providers.credentials.createApiToken(elsewhere, hashes[1]!);
+          await providers.credentials.createApiToken(personal, hashes[2]!);
+          onTestFinished(async () => {
+            await providers.credentials.revokeApiTokensOfProject(other.id, NOW);
+            await providers.credentials.revokeApiToken(personal.id, NOW);
+          });
+
+          expect(
+            await providers.projects.deleteProject(id, { receiverId: ADMIN_ID, now: NOW }),
+          ).toEqual([]);
+          // Revoked (memory, Azure) or deleted with the project (SQL's foreign key).
+          const gone = await providers.credentials.findApiToken(hashes[0]!);
+          expect(gone === null || gone.revokedAt !== null).toBe(true);
+          expect(await providers.credentials.listApiTokens({ projectId: id })).toEqual([]);
+          expect(await providers.credentials.findApiToken(hashes[1]!)).toMatchObject({
+            revokedAt: null,
+          });
+          expect(await providers.credentials.findApiToken(hashes[2]!)).toMatchObject({
+            revokedAt: null,
+          });
         });
 
         it("answers [] for a project without surveys and null for an unknown one", async () => {

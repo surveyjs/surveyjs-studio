@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { components } from "@surveyjs-studio/contract";
-import type { RequestUser } from "../auth/authenticate.js";
+import { scopeOf, type RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
+import { membershipIn } from "../credentials/scope.js";
 import type { ProjectMember, ProjectMembership, ProjectRole } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import {
@@ -182,15 +183,22 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
   const { users, projects, invitations = null, now = Date.now } = options;
   const isoNow = (): string => new Date(now()).toISOString();
 
-  /** An instance admin acts as an admin of every project (S17). */
-  const instanceAdmin = (user: RequestUser) => user.instanceRole === "admin";
+  const membershipOf = membershipIn(projects);
 
   /**
-   * The user's membership of the project; a project of others answers like an unknown one. An
-   * instance admin gets every project, with the role `admin`.
+   * An instance admin acts as an admin of every project (S17); an API token never does, it keeps to
+   * its scope (ADR 0037).
+   */
+  const instanceAdmin = (user: RequestUser) =>
+    user.instanceRole === "admin" && scopeOf(user).kind === "all";
+
+  /**
+   * The membership the request acts with in the project; a project of others, or one outside the
+   * credential's scope, answers like an unknown one. An instance admin gets every project, with the
+   * role `admin`; a project token its own project, with the role `admin`.
    */
   async function access(user: RequestUser, projectId: string): Promise<ProjectMembership> {
-    const membership = await projects.getUserProject(user.id, projectId);
+    const membership = await membershipOf(user, projectId);
     if (membership) return instanceAdmin(user) ? { ...membership, role: "admin" } : membership;
     const project = instanceAdmin(user) ? await projects.getProject(projectId) : null;
     if (!project) throw notFound();
@@ -202,6 +210,20 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
     const membership = await access(user, projectId);
     if (membership.role !== "admin") throw forbidden();
     return membership;
+  }
+
+  /** The projects a `listProjects` of the user's own lists, in project list order. */
+  async function memberships(user: RequestUser): Promise<ProjectMembership[]> {
+    const credential = scopeOf(user);
+    // A Personal token reaches no project; a project token its own one.
+    if (credential.kind === "personal") return [];
+    if (credential.kind === "project") {
+      const own = await membershipOf(user, credential.projectId);
+      return own ? [own] : [];
+    }
+    return (await projects.listUserProjects(user.id)).map((membership) =>
+      instanceAdmin(user) ? { ...membership, role: "admin" } : membership,
+    );
   }
 
   return {
@@ -219,9 +241,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
       const all: ProjectMembership[] =
         scope === "all"
           ? (await projects.listProjects()).map((project) => ({ project, role: "admin" }))
-          : (await projects.listUserProjects(user.id)).map((membership) =>
-              instanceAdmin(user) ? { ...membership, role: "admin" } : membership,
-            );
+          : await memberships(user);
       const page = pageOf(all, projectPosition, after, limit, encodeProjectCursor);
       return { items: page.items.map(projectJson), nextCursor: page.nextCursor };
     },

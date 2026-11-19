@@ -28,7 +28,7 @@ export const appConfig: components["schemas"]["AppConfig"] = {
     privacyUrl: null,
     poweredBy: true,
   },
-  features: { embed: false, apiDocs: false, apiTokens: false },
+  features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
 };
 
 export function configHandler(config = appConfig) {

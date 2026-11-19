@@ -17,6 +17,10 @@ import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { registerCors } from "./cors.js";
+import { createCredentialHandlers } from "./credentials/handlers.js";
+import { createOwnerCheck } from "./credentials/owner-check.js";
+import { createBearerResolver } from "./credentials/resolve.js";
 import { defaultApiDocsPath, registerApiDocs } from "./docs.js";
 import { AppError, PROBLEM_CONTENT_TYPE, problem, toProblem, type Problem } from "./errors.js";
 import { createHandlers } from "./handlers.js";
@@ -138,6 +142,8 @@ export async function buildApp(
     done(null, payload);
   });
 
+  registerCors(app);
+
   app.setErrorHandler((error, request, reply) => {
     if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
       drainSmallOverflow(request, reply);
@@ -203,7 +209,12 @@ export async function buildApp(
 
   // Account erasure: the account-deleted webhook and the instance admin's delete (S15).
   const eraseAccount = createEraseAccount(
-    { surveys: providers.surveys, projects: providers.projects, files: providers.files },
+    {
+      surveys: providers.surveys,
+      projects: providers.projects,
+      files: providers.files,
+      credentials: providers.credentials,
+    },
     app.log,
   );
 
@@ -294,6 +305,13 @@ export async function buildApp(
         maxFileBytes: config.limits.maxFileBytes,
         ...(options.now && { now: options.now }),
       }),
+      ...createCredentialHandlers({
+        credentials: providers.credentials,
+        users: providers.users,
+        projects: providers.projects,
+        legacyKeyRevoke: config.features.legacyKeyRevoke,
+        ...(options.now && { now: options.now }),
+      }),
       ...createAccountHandlers({
         webhookSecret: config.accountWebhookSecret,
         eraseAccount,
@@ -304,6 +322,18 @@ export async function buildApp(
       sessionSecret: config.sessionSecret,
       ...(options.now && { now: options.now }),
       ...(local && { sessionCheck: local.sessionCheck }),
+      // API tokens and legacy access keys (ADR 0037).
+      bearer: createBearerResolver({
+        credentials: providers.credentials,
+        projects: providers.projects,
+        owners: createOwnerCheck({
+          users: providers.users,
+          accounts,
+          ...(options.now && { now: options.now }),
+        }),
+        ...(options.now && { now: options.now }),
+        log: app.log,
+      }),
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),

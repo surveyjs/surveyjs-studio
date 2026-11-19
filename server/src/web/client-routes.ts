@@ -11,6 +11,7 @@ function route(path: string): RegExp {
 export const CLIENT_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/$/,
   route("/projects"),
+  route("/api-tokens"),
   route(`/surveys/${SEGMENT}/edit`),
   route(`/surveys/${SEGMENT}/history`),
   route(`/surveys/${SEGMENT}/results`),

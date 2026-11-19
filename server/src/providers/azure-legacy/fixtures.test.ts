@@ -224,6 +224,12 @@ describe("legacyFixtureSeed", () => {
     expect(seed.surveys).toHaveLength(9);
   });
 
+  it("gives each user their access key, as the replica does", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(Object.keys(seed.legacyAccessKeys ?? {})).toHaveLength(6);
+    expect(seed.legacyAccessKeys?.["11111111-0000-4000-8000-a00000000001"]).toBe("access-key-1");
+  });
+
   it("gives memberships lower-case ids and the role in lower case", async () => {
     const seed = await legacyFixtureSeed();
     expect(seed.memberships).toContainEqual({

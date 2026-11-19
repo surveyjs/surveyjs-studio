@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openapiPath } from "@surveyjs-studio/contract";
+import { parse } from "yaml";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadContract } from "./contract.js";
 
@@ -47,6 +48,37 @@ describe("loadContract", () => {
     expect(security("logout")).toEqual([["cookieAuth", "csrfToken"], []]);
     expect(security("createSurvey")).toEqual([["cookieAuth", "csrfToken"], ["bearerAuth"]]);
     expect(security("getCurrentUser")).toEqual([["cookieAuth"], ["bearerAuth"]]);
+  });
+
+  it("keeps bearer credentials away from account, project and member management", async () => {
+    const contract = await loadContract(openapiPath);
+    const security = (id: string) =>
+      contract.operations.find((op) => op.operationId === id)?.security;
+    const sessionOnly = [
+      "createProject",
+      "deleteProject",
+      "addMember",
+      "updateMember",
+      "removeMember",
+      "removeInvitation",
+      "listApiTokens",
+      "createApiToken",
+      "revokeApiToken",
+      "revokeLegacyAccessKey",
+    ];
+    for (const id of sessionOnly) {
+      const alternatives = security(id);
+      expect(alternatives, id).toBeDefined();
+      expect(JSON.stringify(alternatives), id).not.toContain("bearerAuth");
+    }
+    expect(security("createApiToken")).toEqual([["cookieAuth", "csrfToken"]]);
+    expect(security("revokeLegacyAccessKey")).toEqual([["cookieAuth", "csrfToken"]]);
+    expect(security("listApiTokens")).toEqual([["cookieAuth"]]);
+    expect(security("replaceCurrentCredential")).toEqual([["bearerAuth"]]);
+    const source = parse(await readFile(openapiPath, "utf8")) as {
+      components: { securitySchemes: { bearerAuth: Record<string, unknown> } };
+    };
+    expect(source.components.securitySchemes.bearerAuth).not.toHaveProperty("x-phase");
   });
 
   it("reads a missing top-level security as public", async () => {

@@ -1,12 +1,19 @@
 import { decideMemberErasure, type ErasureFacts } from "../projects/rules.js";
 import type { SurveyOwner } from "../domain/types.js";
-import type { FileStore, MemberErasure, ProjectStore, SurveyStore } from "../providers/types.js";
+import type {
+  CredentialStore,
+  FileStore,
+  MemberErasure,
+  ProjectStore,
+  SurveyStore,
+} from "../providers/types.js";
 import { GUID } from "../domain/guid.js";
 
 /**
- * Account erasure (R11): everything the app holds for one user id. Projects come first: the user
- * leaves each one, an admin is promoted where none would remain, and a project with no other
- * member is deleted with its surveys. The personal surveys go last, so a survey a deleted project
+ * Account erasure (R11): everything the app holds for one user id. The user's API tokens are
+ * revoked first, project tokens too (ADR 0037), so none acts while the data goes. Then the
+ * projects: the user leaves each one, an admin is promoted where none would remain, and a project
+ * with no other member is deleted with its surveys. The personal surveys go last, so a survey a deleted project
  * left behind is deleted too. Results, views, history and themes go with each survey.
  *
  * Erasure enumerates by the raw id reads (`listUserProjectIds`, `listSurveyIds`), not by the
@@ -30,6 +37,7 @@ export interface ErasureStores {
   readonly surveys: SurveyStore;
   readonly projects: ProjectStore;
   readonly files: FileStore;
+  readonly credentials: CredentialStore;
 }
 
 /** Pino-compatible (Fastify's `app.log` fits). Receives ids and counts only. */
@@ -90,6 +98,7 @@ async function deleteSurveysOf(stores: ErasureStores, owner: SurveyOwner): Promi
 export function createEraseAccount(stores: ErasureStores, logger?: ErasureLogger): EraseAccount {
   return async (userId, { now }) => {
     const id = checkedUserId(userId);
+    await stores.credentials.revokeApiTokensOfCreator(id, now);
     let surveysDeleted = 0;
     let projectsLeft = 0;
     let projectsDeleted = 0;

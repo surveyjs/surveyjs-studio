@@ -3,6 +3,7 @@ import type { AccountNoticesSetting, AppConfig } from "../config.js";
 import { openDatabase, type SqlDatabase } from "../sql/database.js";
 import { DatabaseTooNewError, migrate, migrationStatus, type Migration } from "../sql/migrator.js";
 import { openByteStore, type ByteStore } from "../bytes/index.js";
+import { createSqlCredentialStore } from "../sql/credential-store.js";
 import { createSqlInvitationStore } from "../sql/invitation-store.js";
 import { createSqlFileStore } from "../sql/file-store.js";
 import { createSqlLocalAccounts, usersById } from "../sql/account-store.js";
@@ -130,6 +131,7 @@ export function createSqlProviders(
     files: createSqlFileStore(database, options.bytes),
     results: createSqlResultStore(database),
     views: createSqlViewStore(database),
+    credentials: createSqlCredentialStore(database),
     accounts: local?.accounts ?? null,
     invitations: local ? createSqlInvitationStore(database) : null,
     notices: fallback.notices,

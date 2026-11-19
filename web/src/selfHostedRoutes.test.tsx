@@ -41,7 +41,7 @@ const selfHosted = {
   shell: "self-hosted",
   authMethods: ["password" as const],
   branding,
-  features: { embed: false, apiDocs: false, apiTokens: false },
+  features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
 };
 
 beforeEach(() => {

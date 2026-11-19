@@ -124,6 +124,27 @@ describe("AccountMenu", () => {
     ]);
   });
 
+  it("links to the API tokens page, after Projects, only when given the link", () => {
+    renderMenu({
+      projectsLink: { href: "/projects", navigate: vi.fn() },
+      apiTokensLink: { href: "/api-tokens", navigate: vi.fn() },
+    });
+
+    const link = screen.getByRole("link", { name: "API tokens" });
+    expect(link.getAttribute("href")).toBe("/api-tokens");
+    const names = Array.from(screen.getByRole("navigation").querySelectorAll("a"), (item) =>
+      item.textContent.trim(),
+    );
+    expect(names).toEqual([
+      "Settings",
+      "Projects",
+      "API tokens",
+      "Help Desk",
+      "Billing",
+      "Sign Out",
+    ]);
+  });
+
   describe("Projects", () => {
     function renderWithProjects() {
       const navigate = vi.fn();

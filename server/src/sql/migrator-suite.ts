@@ -120,6 +120,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       const shipped = loadMigrations(dialect);
       expect((await migrate(database)).applied).toEqual(shipped);
       expect(await tablesOf(database)).toEqual([
+        "api_tokens",
         "completion_markers",
         "files",
         "legacy_views",

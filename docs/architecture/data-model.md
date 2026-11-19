@@ -204,15 +204,20 @@ account. Index `user_identities_user` (`user_id`).
 purpose and an account status. At a user's sign-in with that email, one transaction turns each invitation into a
 `project_members` row with its role (none when the user is already a member) and deletes it.
 
+### `api_tokens` (0006)
+
+Bearer credentials for the API (ADR 0037). Only the SHA-256 hash of the value is stored, never the value.
+
+**`api_tokens`**: `id` (GUID, primary key), `creator_id` (GUID, no foreign key: users are external to the table),
+`project_id` (GUID, null; FK to `projects`, cascade: a token with a project is scoped to it and goes with it), `name`,
+`token_hash` (unique), `last_four` (the last four characters of the value, to tell tokens apart), `created_at`,
+`last_used_at` (null), `revoked_at` (null). Index `api_tokens_creator` (`creator_id`, `project_id`). A revoked token
+keeps its row, so a presented value answers as revoked, not unknown.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
 "HM" the hosted-migration plan.
-
-### API tokens (HM Step 3)
-
-**`api_tokens`**: `id` (GUID, primary key), `user_id` (FK, cascade), `name`, `token_hash` (unique), `created_at`,
-`last_used_at` (null), `revoked_at` (null).
 
 ### Survey events (HM Step 8)
 
@@ -241,6 +246,7 @@ Empty and unused in the self-hosted image.
 | `FileStore`                                 | `files` and the byte store                               | Built           |
 | `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |
 | `InvitationStore`                           | `project_invitations`                                    | Built (`local`) |
+| `CredentialStore`                           | `api_tokens` (legacy access keys: hosted provider only)  | Built           |
 
 With `USER_DIRECTORY=memory` (the default for `sqlite` and `postgres`) the SQL providers keep the **users** in memory
 (the memory provider's, seeded by `MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production`

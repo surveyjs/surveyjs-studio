@@ -103,6 +103,8 @@ export const memoryServerEnv = {
   STORAGE_PROVIDER: "memory",
   IDENTITY_PROVIDER: "dev",
   MEMORY_SEED: "legacy-fixtures",
+  // The API tokens spec revokes a seeded legacy access key.
+  LEGACY_KEY_REVOKE: "true",
 };
 
 const serverCommand = "pnpm --filter @surveyjs-studio/server start";
@@ -387,6 +389,7 @@ const chromiumOnline = { ...devices["Desktop Chrome"], viewport };
 // the password and self-hosted modes.
 const allButNotices = [
   "notices.spec.ts",
+  "api-tokens.spec.ts",
   "password.spec.ts",
   "self-hosted.spec.ts",
   "oauth.spec.ts",

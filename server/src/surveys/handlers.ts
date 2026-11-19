@@ -16,6 +16,7 @@ export function createSurveyHandlers(options: SurveysServiceOptions): Handlers {
   const service = createSurveysService(options);
 
   return {
+    // Without `project` the service lists the credential's own space.
     listSurveys: (request) => service.list(requireUser(request), request.query as SurveyListQuery),
 
     createSurvey: async (request, reply) => {

@@ -51,7 +51,7 @@ export function sessionHandlers(ctx: HandlerContext) {
           privacyUrl: null,
           poweredBy: true,
         },
-        features: { embed: false, apiDocs: false, apiTokens: false },
+        features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
       }),
     ),
 

@@ -3,12 +3,14 @@
  * receiver of a deleted project's surveys, orphan rows and the members cursor. Each test starts a
  * fresh app on the seed below, so tests may write anything.
  */
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { createDevIdentityProvider } from "../auth/providers/dev.js";
 import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
+import { hashCredential, lastFour, newApiTokenValue } from "../credentials/format.js";
 import type { SurveyRecord, User } from "../domain/types.js";
 import { encodeProjectCursor } from "../paging/cursor.js";
 import { createMemoryProviders, type MemorySeed } from "../providers/memory.js";
@@ -470,5 +472,104 @@ describe("pending members", () => {
       await as(ANN),
     );
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("API token scopes", () => {
+  /** Stores an API token of `creator` (Personal with `projectId` null); answers its bearer headers. */
+  async function tokenOf(
+    providers: ProviderSet,
+    creator: User,
+    projectId: string | null,
+  ): Promise<Headers> {
+    const value = newApiTokenValue();
+    await providers.credentials.createApiToken(
+      {
+        id: randomUUID(),
+        creatorId: creator.id,
+        projectId,
+        name: "CI",
+        lastFour: lastFour(value),
+        createdAt: NOW,
+      },
+      hashCredential(value, "api-token"),
+    );
+    return { authorization: `Bearer ${value}` };
+  }
+
+  it("a Personal token lists no projects and reaches none", async () => {
+    const { providers } = await start();
+    const headers = await tokenOf(providers, ANN, null);
+    const listed = await send("GET", "/projects", headers);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual({ items: [], nextCursor: null });
+    for (const [method, url, payload] of [
+      ["GET", `/projects/${TEAM}`, undefined],
+      ["PATCH", `/projects/${TEAM}`, { name: "Renamed" }],
+      ["GET", `/projects/${TEAM}/members`, undefined],
+    ] as const) {
+      const res = await send(method, url, headers, payload);
+      expect(res.statusCode, `${method} ${url}`).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+  });
+
+  it("a project token reaches its project only, though its creator is an admin of another", async () => {
+    const { providers } = await start();
+    const headers = await tokenOf(providers, ANN, TEAM);
+    const listed = await send("GET", "/projects", headers);
+    expect(listed.json()).toMatchObject({ items: [{ id: TEAM, role: "admin" }], nextCursor: null });
+    for (const [method, payload] of [
+      ["GET", undefined],
+      ["PATCH", { name: "Renamed" }],
+    ] as const) {
+      const res = await send(method, `/projects/${GONE}`, headers, payload);
+      expect(res.statusCode, method).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+    expect((await send("GET", `/projects/${GONE}/members`, headers)).statusCode).toBe(404);
+  });
+
+  for (const left of [false, true]) {
+    it(`a project token acts as its project's admin when its creator ${left ? "has left" : "is a plain member"}`, async () => {
+      const { providers } = await start();
+      // BOB is a plain member of TEAM.
+      const headers = await tokenOf(providers, BOB, TEAM);
+      if (left) expect(await providers.projects.removeMember(TEAM, BOB.id)).toBe("removed");
+      const listed = await send("GET", "/projects", headers);
+      expect(listed.json()).toMatchObject({ items: [{ id: TEAM, role: "admin" }] });
+      const renamed = await send("PATCH", `/projects/${TEAM}`, headers, { name: "Renamed" });
+      expect(renamed.statusCode).toBe(200);
+      expect(renamed.json()).toMatchObject({ id: TEAM, name: "Renamed", role: "admin" });
+      const got = await send("GET", `/projects/${TEAM}`, headers);
+      expect(got.statusCode).toBe(200);
+      expect(got.json()).toMatchObject({ name: "Renamed", role: "admin" });
+      expect((await send("GET", `/projects/${TEAM}/members`, headers)).statusCode).toBe(200);
+    });
+  }
+
+  it("a token cannot list every project (scope=all), whatever its scope", async () => {
+    const { providers } = await start();
+    for (const projectId of [null, TEAM]) {
+      const res = await send(
+        "GET",
+        "/projects?scope=all",
+        await tokenOf(providers, ANN, projectId),
+      );
+      expect(res.statusCode, String(projectId)).toBe(403);
+      expect(res.json()).toMatchObject({ code: "forbidden" });
+    }
+  });
+
+  it("a project token of a deleted project reaches nothing", async () => {
+    const { providers, as } = await start();
+    const headers = await tokenOf(providers, ANN, GONE);
+    expect((await send("DELETE", `/projects/${GONE}`, await as(ANN))).statusCode).toBe(204);
+    // Revoked with the project.
+    expect((await send("GET", "/projects", headers)).statusCode).toBe(401);
+    // One the deletion left unrevoked (a failed best-effort revocation) does not sign in at all.
+    const left = await tokenOf(providers, ANN, GONE);
+    expect((await send("GET", "/projects", left)).statusCode).toBe(401);
+    expect((await send("GET", `/projects/${GONE}`, left)).statusCode).toBe(401);
   });
 });

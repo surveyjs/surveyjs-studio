@@ -13,6 +13,7 @@ import { Route as PrivateRouteImport } from './routes/_private'
 import { Route as SetPasswordRouteImport } from './routes/set-password'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as PrivateIndexRouteImport } from './routes/_private/index'
+import { Route as PrivateApiTokensRouteImport } from './routes/_private/api-tokens'
 import { Route as PrivateChangePasswordRouteImport } from './routes/_private/change-password'
 import { Route as PrivateProjectsRouteImport } from './routes/_private/projects'
 import { Route as ResultsSurveyIdRouteImport } from './routes/results/$surveyId'
@@ -43,6 +44,13 @@ const PrivateIndexRoute = PrivateIndexRouteImport.update({
   getParentRoute: () => PrivateRoute,
 } as any).lazy(() =>
   import('./routes/_private/index.lazy').then((d) => d.Route),
+)
+const PrivateApiTokensRoute = PrivateApiTokensRouteImport.update({
+  id: '/api-tokens',
+  path: '/api-tokens',
+  getParentRoute: () => PrivateRoute,
+} as any).lazy(() =>
+  import('./routes/_private/api-tokens.lazy').then((d) => d.Route),
 )
 const PrivateChangePasswordRoute = PrivateChangePasswordRouteImport.update({
   id: '/change-password',
@@ -119,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/': typeof PrivateIndexRoute
   '/set-password': typeof SetPasswordRoute
   '/sign-in': typeof SignInRoute
+  '/api-tokens': typeof PrivateApiTokensRoute
   '/change-password': typeof PrivateChangePasswordRoute
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
@@ -132,6 +141,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/set-password': typeof SetPasswordRoute
   '/sign-in': typeof SignInRoute
+  '/api-tokens': typeof PrivateApiTokensRoute
   '/change-password': typeof PrivateChangePasswordRoute
   '/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
@@ -148,6 +158,7 @@ export interface FileRoutesById {
   '/_private': typeof PrivateRouteWithChildren
   '/set-password': typeof SetPasswordRoute
   '/sign-in': typeof SignInRoute
+  '/_private/api-tokens': typeof PrivateApiTokensRoute
   '/_private/change-password': typeof PrivateChangePasswordRoute
   '/_private/projects': typeof PrivateProjectsRoute
   '/results/$surveyId': typeof ResultsSurveyIdRoute
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/'
     | '/set-password'
     | '/sign-in'
+    | '/api-tokens'
     | '/change-password'
     | '/projects'
     | '/results/$surveyId'
@@ -178,6 +190,7 @@ export interface FileRouteTypes {
   to:
     | '/set-password'
     | '/sign-in'
+    | '/api-tokens'
     | '/change-password'
     | '/projects'
     | '/results/$surveyId'
@@ -193,6 +206,7 @@ export interface FileRouteTypes {
     | '/_private'
     | '/set-password'
     | '/sign-in'
+    | '/_private/api-tokens'
     | '/_private/change-password'
     | '/_private/projects'
     | '/results/$surveyId'
@@ -242,6 +256,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof PrivateIndexRouteImport
+      parentRoute: typeof PrivateRoute
+    }
+    '/_private/api-tokens': {
+      id: '/_private/api-tokens'
+      path: '/api-tokens'
+      fullPath: '/api-tokens'
+      preLoaderRoute: typeof PrivateApiTokensRouteImport
       parentRoute: typeof PrivateRoute
     }
     '/_private/change-password': {
@@ -311,6 +332,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface PrivateRouteChildren {
+  PrivateApiTokensRoute: typeof PrivateApiTokensRoute
   PrivateChangePasswordRoute: typeof PrivateChangePasswordRoute
   PrivateProjectsRoute: typeof PrivateProjectsRoute
   PrivateIndexRoute: typeof PrivateIndexRoute
@@ -321,6 +343,7 @@ interface PrivateRouteChildren {
 }
 
 const PrivateRouteChildren: PrivateRouteChildren = {
+  PrivateApiTokensRoute: PrivateApiTokensRoute,
   PrivateChangePasswordRoute: PrivateChangePasswordRoute,
   PrivateProjectsRoute: PrivateProjectsRoute,
   PrivateIndexRoute: PrivateIndexRoute,

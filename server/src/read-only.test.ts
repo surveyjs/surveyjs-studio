@@ -19,6 +19,10 @@ import { READ_ONLY_ALLOWED, refusedWhenReadOnly } from "./read-only.js";
  */
 const REFUSED = [
   "changeOwnPassword",
+  "replaceCurrentCredential",
+  "createApiToken",
+  "revokeApiToken",
+  "revokeLegacyAccessKey",
   "setPasswordWithLink",
   "createUser",
   "updateUser",
