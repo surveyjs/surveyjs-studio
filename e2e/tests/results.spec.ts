@@ -11,6 +11,7 @@ import {
   LARGE_SURVEY,
   openResultsTab,
   recordViewWrites,
+  submitClientResponseViaApi,
   submitViaApi,
   summaryItemNames,
   summaryItems,
@@ -260,11 +261,48 @@ test("surveyjs.io's saved layouts load without being saved again; the Table show
   await expectSummaryItems(page, ["satisfaction", "receipt"]);
 
   await openResultsTab(page, "Table");
-  await expect(tableHeaders(page).last()).toHaveText("IPAddress", { timeout: 30_000 });
+  // The fixture's row 02 is an open partial run: the Partial column follows IPAddress.
+  await expect(tableHeaders(page).last()).toHaveText("Partial", { timeout: 30_000 });
+  await expect(tableHeaders(page).nth(-2)).toHaveText("IPAddress");
+  await expect(tableCells(page, "Partial").filter({ hasText: "Yes" })).toHaveCount(1);
   await expect(tableCells(page, "IPAddress").filter({ hasText: "203.0.113.7" })).toHaveCount(1);
   await openResultsTab(page, "Summary");
   await expectSummaryItems(page, ["satisfaction", "receipt"]);
   expect(writes).toEqual([]);
+});
+
+test("a partial response shows as a Partial row and joins its complete response", async ({
+  page,
+  browserName,
+}) => {
+  await signInAt(page, "/", "admin");
+  const survey = await createSurveyViaApi(page, uniqueSurveyName("Partial", browserName));
+  await putDefinitionViaApi(page, survey.id, CHART_DEFINITION);
+  await publishViaApi(page, survey.id);
+  await withCleanup(page, [survey.id], async () => {
+    const client = "e2e-partial-client";
+    await submitClientResponseViaApi(page, survey.id, {
+      data: { q1: "Red" },
+      clientId: client,
+      partial: true,
+    });
+
+    await page.goto(`/surveys/${survey.id}/results`);
+    await openResultsTab(page, "Table");
+    await expect(page.locator(".tabulator-row")).toHaveCount(1, { timeout: 30_000 });
+    await expect(tableHeaders(page).last()).toHaveText("Partial");
+    await expect(tableCells(page, "Partial").filter({ hasText: "Yes" })).toHaveCount(1);
+    await openResultsTab(page, "Details");
+    await expect(page.getByText("Total responses: 0", { exact: true })).toBeVisible();
+
+    await submitClientResponseViaApi(page, survey.id, { data: { q3: 4 }, clientId: client });
+    await page.reload();
+    await openResultsTab(page, "Table");
+    await expect(page.locator(".tabulator-row")).toHaveCount(1, { timeout: 30_000 });
+    await expect(tableHeaders(page).filter({ hasText: "Partial" })).toHaveCount(0);
+    await openResultsTab(page, "Details");
+    await expect(page.getByText("Total responses: 1", { exact: true })).toBeVisible();
+  });
 });
 
 test("the Dashboard loads only on the results page, and its table only on the Table tab", async ({
