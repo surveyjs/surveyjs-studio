@@ -10,6 +10,7 @@ import {
   ResponseTooLargeError,
   type FileStore,
   type ProviderSet,
+  type ResponsePageQuery,
   type ResultStore,
   type ViewStore,
 } from "../providers/types.js";
@@ -483,5 +484,55 @@ describe("getPublicDefinition", () => {
       url: `/api/v1/public/surveys/${randomUUID()}/definition`,
     });
     expect(unknown.statusCode).toBe(404);
+  });
+});
+
+describe("getPublicResults from and till", () => {
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+  const results = (server: FastifyInstance, query: string, surveyId = FEEDBACK) =>
+    server.inject({ url: `/api/v1/public/surveys/${surveyId}/results?${query}` });
+
+  it("refuses a leap second as the validator refuses any malformed date-time", async () => {
+    const { server } = await start();
+    for (const [name, value] of [
+      ["from", "2026-04-01T23:59:60Z"],
+      ["till", encodeURIComponent("2026-04-01T00:00:60+00:01")],
+    ] as const) {
+      const malformed = await results(server, `${name}=not-a-date`);
+      const leap = await results(server, `${name}=${value}`);
+      expect(malformed.statusCode).toBe(400);
+      expect(leap.statusCode).toBe(400);
+      expect(leap.headers["content-type"]).toBe(malformed.headers["content-type"]);
+      expect(leap.json()).toStrictEqual(malformed.json());
+    }
+    const both = "from=2026-04-01T23:59:60Z&till=2026-04-01T23:59:60Z";
+    expect((await results(server, both)).json()).toStrictEqual(
+      (await results(server, "from=x&till=y")).json(),
+    );
+    // Refused before the survey is looked up, as the validator does.
+    const unknown = await results(server, "from=2026-04-01T23:59:60Z", randomUUID());
+    expect(unknown.statusCode).toBe(400);
+  });
+
+  it("hands the store the bounds as instants in toISOString form", async () => {
+    const seen: ResponsePageQuery[] = [];
+    const { server } = await start({
+      results: (store) => ({
+        ...store,
+        listResponsePage: (survey, query) => {
+          seen.push(query);
+          return store.listResponsePage(survey, query);
+        },
+      }),
+    });
+    const query = `from=${encodeURIComponent("2026-04-01T12:30:00+02:00")}&till=2026-04-01T12:00:00Z`;
+    const res = await results(server, query);
+    expect(res.statusCode).toBe(200);
+    expect(seen).toEqual([
+      expect.objectContaining({
+        from: "2026-04-01T10:30:00.000Z",
+        till: "2026-04-01T12:00:00.000Z",
+      }),
+    ]);
   });
 });

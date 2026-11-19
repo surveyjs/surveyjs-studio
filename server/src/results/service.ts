@@ -87,7 +87,8 @@ export interface ResultsService {
   deleteResults(user: RequestUser, surveyId: string): Promise<void>;
   /**
    * One page of public results (Grant Access on); private questions' answers left out. `from` and
-   * `till` (ISO 8601) keep responses placed strictly between them.
+   * `till` (ISO 8601) keep responses placed strictly between them; one a Date cannot read (a leap
+   * second) is refused as the validator refuses a malformed date-time.
    */
   publicPage(
     surveyId: string,
@@ -124,6 +125,35 @@ const tooLarge = (cause: unknown): AppError =>
     detail: "The answers are too large to store.",
     cause,
   });
+
+/**
+ * `from` and `till` of public results as instants in `toISOString` form. A value the contract's
+ * `date-time` accepts but Date cannot read (a leap second, `23:59:60`) is refused with the answer
+ * the validator gives for any other malformed date-time.
+ */
+function publicWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
+  const window: { from?: string; till?: string } = {};
+  const unreadable: string[] = [];
+  for (const name of ["from", "till"] as const) {
+    const value = page[name];
+    if (value === undefined) continue;
+    const at = Date.parse(value);
+    if (Number.isNaN(at)) unreadable.push(name);
+    else window[name] = new Date(at).toISOString();
+  }
+  if (unreadable.length > 0) {
+    throw new AppError({
+      code: "bad-request",
+      status: 400,
+      title: "Bad request",
+      errors: unreadable.map((name) => ({
+        pointer: `/${name}`,
+        detail: 'must match format "date-time"',
+      })),
+    });
+  }
+  return window;
+}
 
 /** Loading a published survey, storing responses to it once, and counting them. */
 export function createResultsService(options: ResultsServiceOptions): ResultsService {
@@ -287,6 +317,8 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
     },
 
     async publicPage(surveyId, page) {
+      // Before any lookup, as the validator refuses a malformed date-time.
+      const window = publicWindow(page);
       const survey = await surveys.getSurvey(surveyId);
       if (!survey?.settings.publicResults) throw surveyNotAvailable();
       const after =
@@ -301,8 +333,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         limit: page.limit,
         completedOnly: true,
         ...(after && { after }),
-        ...(page.from !== undefined && { from: page.from }),
-        ...(page.till !== undefined && { till: page.till }),
+        ...window,
       });
       return {
         survey: {

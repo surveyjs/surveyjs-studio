@@ -186,6 +186,20 @@ describe("getPublicResults", () => {
     }
   });
 
+  it("refuses a leap second as any other malformed date-time", async () => {
+    // RFC 3339 allows second 60, which the date-time check accepts but a Date cannot hold.
+    for (const [name, value] of [
+      ["from", "2026-04-01T23:59:60Z"],
+      ["till", encodeURIComponent("2026-04-01T00:00:60+00:01")],
+    ] as const) {
+      const malformed = await results(FEEDBACK, `?${name}=not-a-date`);
+      const leap = await results(FEEDBACK, `?${name}=${value}`);
+      expect(leap.status).toBe(400);
+      expect(leap.headers.get("content-type")).toBe(malformed.headers.get("content-type"));
+      expect(await leap.json()).toStrictEqual(await malformed.json());
+    }
+  });
+
   it("refuses unknown surveys, bad paging and cursors of another survey", async (ctx) => {
     await expectNotAvailable(await results(UNKNOWN_ID));
     for (const query of ["?limit=0", "?limit=1001"]) {

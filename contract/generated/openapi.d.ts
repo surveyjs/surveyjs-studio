@@ -1326,6 +1326,14 @@ export interface paths {
          *     `survey.privateQuestions` names them. Each page includes the survey definition so a
          *     dashboard can render it.
          *
+         *     `from` and `till` narrow the list to a range of `submittedAt`, both bounds exclusive. For a
+         *     response saved in parts, `submittedAt` is the time of its first save: a response started
+         *     before `from` is left out even when it was completed after it, and one started before
+         *     `till` is kept even when it was completed later. Times compare as instants, whatever the
+         *     offset. The range applies before `limit`, so a page holds up to `limit` responses inside
+         *     it, and a `cursor` keeps paging inside it. A `from` or `till` that is not an RFC 3339
+         *     date-time a server can read (a leap second included) fails with `400 bad-request`.
+         *
          *     In P1 this is complemented by token-based shareable reports.
          */
         get: operations["getPublicResults"];
@@ -4177,14 +4185,6 @@ export interface operations {
                  * @description Only responses submitted before this time: a response is kept when its `submittedAt` is
                  *     earlier than `till` (a response submitted exactly at `till` is left out). Combine with
                  *     `from` for a range.
-                 *
-                 *     Both bounds apply to a response's `submittedAt`, which for a response saved in parts is
-                 *     the time of its first save: a response started before `from` is left out even when it
-                 *     was completed after it, and one started before `till` is kept even when it was
-                 *     completed later. Times compare as instants, whatever the offset. They are applied
-                 *     before `limit`, so a page holds up to `limit` responses inside the range, and a
-                 *     `cursor` keeps paging inside it. A value that is not an RFC 3339 date-time fails with
-                 *     `400 bad-request`.
                  */
                 till?: string;
             };
