@@ -84,8 +84,8 @@ by survey ID, as the old `getSurvey` and `getSurveyAndIsCompleted` are.
   name → file ID; migration `0008`, filled by the migration in Step 9); on the Azure legacy provider by reading the
   legacy `surveyfiles` (editor) and `files` (respondent) shares directly, read-only, before the cutover; on the memory
   provider from its seed. Tests stub the share reader, since Azurite has no file service.
-- `files?name=` answers `application/octet-stream`, as the old API does; `image` and `file` answer the stored content
-  type.
+- `files?name=` and `file` answer `application/octet-stream` (`file` as an attachment), as the old API does; `image`
+  serves the image with its own content type (for a Studio upload, detected from the bytes).
 
 ### 4. The bridge
 
@@ -152,9 +152,12 @@ by survey ID, as the old `getSurvey` and `getSurveyAndIsCompleted` are.
   provider and a handler in the web sandbox.
 - **Migration `0008`** adds `legacy_files`; the Azure legacy provider gains a read-only file-share reader
   (`@azure/storage-file-share`).
-- **Differences from the old API,** listed in `docs/api/legacy-compat.md`: the three in point 1, `getResult` counting
-  completed responses folded by ADR 0038 (the old code counts every row merged by client), `getSurvey` returning JSON
-  rather than the stored bytes, `429` under Studio's rate limits, and incidental bytes.
+- **Differences from the old API:** the three in point 1; `getResult` counting completed responses folded by ADR 0038
+  (the old code counts every row merged by client); `getSurveyPublicResults` returning completed responses only (the old
+  one also returned partial saves); `getSurvey` returning JSON rather than the stored bytes, and answering `200 {}` for a
+  survey whose definition was never saved (the old API answered `400`); uploads whose extension has characters outside
+  `[A-Za-z0-9_-]` answered without an extension; Studio's rate limits (`429`, and slow streaming of very large public
+  results); and incidental bytes. [`docs/api/legacy-compat.md`](../api/legacy-compat.md) holds the full list.
 - **Step 6** adds the access-key actions and the results-layout reads (`getIsResultPublic`, `getResultPublicColumns`,
   `getPublicResultSummaryState`, `getPublicResultTableState`) on the same bridge.
 - **The recordings** may bring a round of small fixes before Step 7.
