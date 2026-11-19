@@ -51,13 +51,14 @@ order of the survey.
 
 ## Table
 
-The Table has one row for each response and one column for each question, in survey order. Two more
+The Table has one row for each response and one column for each question, in survey order. Up to three more
 columns are added at the end:
 
 | Column        | Holds                                                                                                                                                                                        |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Submitted** | When the response was sent, in UTC, as `2026-05-01T08:00:00.000Z`                                                                                                                            |
 | **IPAddress** | The respondent's IP address, when [Save Respondent IP](publishing-and-collecting-responses.md#save-respondent-ip) was on. The column is there only when at least one response has an address |
+| **Partial**   | **Yes** for a [partial response](#partial-responses). The column is there only when at least one response is partial, after **IPAddress**                                                    |
 
 A question that is itself called `HappendAt` or `IPAddress` keeps its own answer, and the extra column of
 that name is left out. The table never shows the response id or the client id.
@@ -76,6 +77,25 @@ What you can do:
   PDF code loads the first time you use it, so the first Excel or PDF export takes a moment longer. If it
   cannot be loaded, the page says "The export could not be prepared. Please try again."
 - A CSV file from a table of 1,500 responses has 1,501 lines: the header and one line for each response.
+
+## Partial responses
+
+A form that saves progress (one that posts the answers on every page through the API) leaves a **partial response**
+until the respondent completes it. This page shows a respondent's saves as **one response**, not one for every page:
+the answers of all the saves, a later answer replacing an earlier one, with the time of the first save. When the
+respondent completes, the same response becomes complete. The run page of this application does not save progress yet,
+so you meet partial responses only from forms that use the API.
+
+- **Table.** A partial response has **Yes** in the **Partial** column. The column is there only while at least one
+  response is partial.
+- **Not counted.** The **Details** tab and the Summary count and chart **completed responses
+  only**. A response that is still partial is not in them, nor on the public results page.
+- **Downloads.** The JSON and CSV files include partial responses and mark them
+  ([Downloading](downloading-sharing-and-deleting-results.md#csv)).
+- **Not the same as the old page.** The old page merged all the rows of one browser into one, also two complete
+  answers. Here only the saves of one run (partial saves up to the next complete answer) are one response: a browser
+  that completes twice has two responses, and a partial save after completing starts a new one. The old page also
+  charted partial rows on the Summary and the public page.
 
 ## Your layout is saved
 

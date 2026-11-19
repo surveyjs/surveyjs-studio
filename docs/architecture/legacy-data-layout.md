@@ -404,7 +404,8 @@ the site's results summary code
 `providers/azure-legacy/writes.ts`, [ADR 0010](../adr/0010-writing-to-the-legacy-stores.md#step-8-result-rows-and-completion-markers)),
 not through the legacy `POST post`, so the sanitizer never runs: the text of `result` is stored as typed,
 while old rows may hold entities. The row has exactly the properties above with their Edm types
-(`ispartialcompleted` is never written, `clientid` and `ipaddress` only when given), and `surveyid` is a
+(`ispartialcompleted` is written only on a partial save, as `Edm.Boolean` true, so a complete row has no such
+property; `clientid` and `ipaddress` only when given), and `surveyid` is a
 random GUID as in legacy. The row id is a GUID that the server derives from the `Idempotency-Key`
 (a version 5 UUID of the survey id and the key) or makes at random, and `happendat` is the server's clock
 in UTC. A result text over **32,768 UTF-16 code units** is refused before anything is written (the answer
@@ -442,12 +443,12 @@ The run page on surveyjs.io never sends a client ID, so it never creates these r
 the site's run page
 
 **Implemented in Step 8.** Every response that carries a client id writes its marker with an upsert
-(`Replace`) at the row key `clientId`, with `ispartialcompleted` as `Edm.Boolean` false and `publishid` as
+(`Replace`) at the row key `clientId`, with `ispartialcompleted` as `Edm.Boolean` (true after a partial save, false after a complete response) and `publishid` as
 `Edm.String` when the survey has one (read from `Surveys.publishid`). The table
 `SurveyCompletion{surveyId}` is created when it is missing. A response that is stored again under the same
 id writes the marker again at the store level (the HTTP service answers a keyed retry
-before it reaches the store, so only a race of identical requests gets there). A marker written by an old API client
-with `ispartialcompleted` true reads as `partial`, and "completed" for the run page is a marker that exists and
+before it reaches the store, so only a race of identical requests gets there). A marker with `ispartialcompleted` true, whether
+written by an old API client or by a partial save, reads as `partial`, and "completed" for the run page is a marker that exists and
 is not partial. A client id that Azure refuses as a row key cannot be stored, so the contract's `ClientId`
 refuses `/`, `\`, `#`, `?` and control characters up front. The run page of My Surveys, unlike the old one, sends a client
 id when "Limit to one response" is on, so it creates these rows.

@@ -84,8 +84,8 @@ The body is `{ "data": { ... }, "clientId": "...", "partial": false, "lastPageIn
 required. The server stores the response and answers its `id`. The id is a GUID, as the old site's
 readers need.
 
-- `partial` and `lastPageIndex` are **ignored** until phase 2: the response is stored as a normal, complete
-  response.
+- `partial` and `lastPageIndex` are for forms that save progress: see [Partial saves](#partial-saves). Without
+  `partial: true` the response is stored as complete.
 - The server's clock sets the time (`submittedAt`). The server does not check `data` against the survey.
 - The respondent's address is stored only when the survey's `storeRespondentIp` setting is on
   ([below](#the-respondents-ip-address)).
@@ -107,6 +107,39 @@ A client that is not sure a request arrived sends it again with the same `Idempo
   client still answers `201`, not `409`.
 - Two different requests with the same key stored as one: the second one's data is dropped. A client
   that wants a new response sends a new key.
+
+## Partial saves
+
+A form that saves progress posts the whole answer set on every page, with the same `clientId` and `partial: true`, and
+posts the complete answers at the end without `partial`. Each post is stored as its own row; the results read a
+client's saves as one response ([ADR 0038](../adr/0038-partial-responses.md)).
+
+```sh
+curl -s -X POST -H "Content-Type: application/json"   -d '{"data":{"color":"Red"},"clientId":"demo-client","partial":true,"lastPageIndex":0}'   "$API/public/surveys/$ID/responses"
+```
+
+- **`partial: true` with a `clientId`** stores a partial save and marks the client as partial. The client can save
+  again as often as it likes. A post without `partial` stores the complete response and marks the client complete.
+- **`partial: true` without a `clientId`** has no client to resume, so the response is stored as a **complete** one,
+  as the old service did.
+- **`lastPageIndex`** must be a whole number of at least 0, or the post is `422 validation-failed`. It is **not
+  stored**: the old service kept no page number, and Studio's run page does not resume yet.
+- **`Idempotency-Key`** works as for any post: a retry of a partial save stores nothing and answers the same `id`.
+- **Limit to one response** refuses a client only after it has **completed** ([below](#one-response-per-respondent)):
+  a client with a partial marker may keep saving and may complete.
+
+How the results read these rows:
+
+- **A run is one response.** One client's rows, in the order they were stored (`submittedAt`, then `id`): one or more
+  partial saves followed by the next complete post, if there is one, are a **run**. The run reads as one response
+  with the `id` and `submittedAt` of its **first** save (so it keeps its place in the list while saves arrive), the
+  answers of all its rows merged in order (a later answer wins), the last `respondentIp` that was stored, and
+  `partial: true` until its complete post arrives. `partial` is returned only when true.
+- **A run ends at the complete post.** Two complete answers from one client stay **two** responses, and a partial save
+  after the client completed starts a new response.
+- **A post without a `clientId` is never folded.**
+- **Counts leave partial responses out.** `getResultStats` counts completed responses; `firstSubmittedAt` and `lastSubmittedAt` are the times responses were **completed**.
+- **The Summary and public results leave them out**; the Table, `listResults` and the exports show them, marked.
 
 ## One response per respondent
 
@@ -151,10 +184,10 @@ HTTP/1.1 409 Conflict
 Rules:
 
 - Every stored response that has a `clientId` writes the marker, with the limit on or off. `completed`
-  reads it: true when a marker exists and is not a partial one (a marker written by an old API client
-  with a partial response is `false`). Client ids match exactly, including case.
-- The `409` needs all three: the limit is on, a `clientId` is sent and it has completed. With the limit
-  off a client may submit again.
+  reads it: true when a marker exists and is not a partial one. A [partial save](#partial-saves) writes a partial
+  marker, so `completed` stays `false` until the client completes. Client ids match exactly, including case.
+- The `409` needs all three: the limit is on, a `clientId` is sent and it has completed, for a partial post too.
+  A client whose marker is partial may still post. With the limit off a client may submit again.
 - **A race can store two responses.** Two first submissions of one client sent at the same moment may
   both pass the check. The check and the write are not one atomic step.
 - It cannot stop a respondent who changes the client id, which anyone calling the API can.

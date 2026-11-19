@@ -118,7 +118,8 @@ A JSON array of the same items `listResults` returns, written as the rows are re
 ```
 
 - `clientId` and `respondentIp` are there when the row has them, whatever the survey's setting is **now**
-  (an address that was stored stays in the JSON file). `partial` is not returned.
+  (an address that was stored stays in the JSON file). `partial` is there, as `true`, only on a response that is
+  still partial: a client's [partial saves](public-endpoints.md#partial-saves) are one item, as in `listResults`.
 - The owner's file has everything the owner can read. It is **not** the old site's
   `{ "ResultCount": …, "Data": […] }`.
 - Count them with `jq length`:
@@ -133,27 +134,30 @@ curl -s -b "msid=<cookie value>" "$API/surveys/$ID/results/export?format=json" |
 
 ### CSV rules
 
-| Item                         | Rule                                                                                                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Encoding                     | UTF-8, starting with a byte order mark (U+FEFF). Fields are separated by commas. **Every** record, the header and the last row included, ends with CRLF                                                       |
-| Quoting                      | RFC 4180: a field that contains a comma, a double quote, CR or LF is wrapped in `"` and its quotes are doubled                                                                                                |
-| Formula guard                | A **text** value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a `'` in front of it (before quoting). Header names too. Numbers and booleans are not touched                           |
-| Columns                      | `Submitted`; `IPAddress` **only while the survey's `storeRespondentIp` setting is on**; one column per question, in the order of the definition; `ClientId`, last, always                                     |
-| Question columns             | Pages in order, panels flattened in place. A dynamic panel, a matrix and a multiple text are **one** column each. Elements of the types `html` and `image` have no column. A name that repeats has one column |
-| Comment columns              | A question with `showCommentArea`, `hasComment`, `showOtherItem` or `hasOther` set to true gets a second column right after it                                                                                |
-| Headers                      | The question's **`name`**, not its title. The comment column is the name plus the suffix: the definition's `commentSuffix`, else `commentPrefix`, else `-Comment`                                             |
-| Which answer                 | The answer is read under the question's `valueName` when it has a non-empty one, else under its `name`. The comment is read under that key plus the suffix                                                    |
-| Values                       | A string as it is; a number or boolean as text (`4`, `true`); an array or object as compact JSON text; `null` and a missing answer as an empty field                                                          |
-| Left out                     | Answers whose key is not a question of the definition. They stay in the JSON file                                                                                                                             |
-| `Submitted`                  | `submittedAt` as stored, ISO 8601 UTC (`2026-05-01T08:00:00.000Z`)                                                                                                                                            |
-| No responses                 | The byte order mark and the header record only                                                                                                                                                                |
-| A definition without `pages` | Read as one page. A legacy `questions` list is read like `elements`                                                                                                                                           |
+| Item                         | Rule                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Encoding                     | UTF-8, starting with a byte order mark (U+FEFF). Fields are separated by commas. **Every** record, the header and the last row included, ends with CRLF                                                            |
+| Quoting                      | RFC 4180: a field that contains a comma, a double quote, CR or LF is wrapped in `"` and its quotes are doubled                                                                                                     |
+| Formula guard                | A **text** value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a `'` in front of it (before quoting). Header names too. Numbers and booleans are not touched                                |
+| Columns                      | `Submitted`; `IPAddress` **only while the survey's `storeRespondentIp` setting is on**; one column per question, in the order of the definition; `ClientId`; `Partial`, last, **only while a response is partial** |
+| Question columns             | Pages in order, panels flattened in place. A dynamic panel, a matrix and a multiple text are **one** column each. Elements of the types `html` and `image` have no column. A name that repeats has one column      |
+| Comment columns              | A question with `showCommentArea`, `hasComment`, `showOtherItem` or `hasOther` set to true gets a second column right after it                                                                                     |
+| Headers                      | The question's **`name`**, not its title. The comment column is the name plus the suffix: the definition's `commentSuffix`, else `commentPrefix`, else `-Comment`                                                  |
+| Which answer                 | The answer is read under the question's `valueName` when it has a non-empty one, else under its `name`. The comment is read under that key plus the suffix                                                         |
+| Values                       | A string as it is; a number or boolean as text (`4`, `true`); an array or object as compact JSON text; `null` and a missing answer as an empty field                                                               |
+| Left out                     | Answers whose key is not a question of the definition. They stay in the JSON file                                                                                                                                  |
+| `Submitted`                  | `submittedAt` as stored, ISO 8601 UTC (`2026-05-01T08:00:00.000Z`)                                                                                                                                                 |
+| No responses                 | The byte order mark and the header record only                                                                                                                                                                     |
+| A definition without `pages` | Read as one page. A legacy `questions` list is read like `elements`                                                                                                                                                |
 
 For "API created" the first record of the file is:
 
 ```text
 Submitted,color,score,subscribe,channels,comment,ClientId
 ```
+
+While the survey has a response that is still partial, the header ends with `ClientId,Partial`, and the column holds
+`true` for partial responses and nothing for the others. Without one there is no `Partial` column.
 
 A few cases to know:
 
