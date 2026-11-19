@@ -3,7 +3,7 @@ import type { RequestUser } from "../auth/authenticate.js";
 import { publicUrl } from "../auth/identity.js";
 import type { Clock } from "../auth/session.js";
 import { newFileId } from "../domain/file-id.js";
-import type { StoredFileRecord } from "../domain/types.js";
+import type { StoredFileRecord, SurveyRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import type {
   ProjectStore,
@@ -11,7 +11,7 @@ import type {
   StoredFileContent,
   SurveyStore,
 } from "../providers/types.js";
-import { availableSurvey } from "../results/availability.js";
+import { availableSurvey, surveyNotAvailable } from "../results/availability.js";
 import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { ALLOWED_TYPES_TEXT, detectFileType, fileNameOf } from "./file-type.js";
 import { formatBytes, remainingQuota } from "./quota.js";
@@ -57,6 +57,14 @@ export interface FilesService {
    */
   uploadResponse(
     surveyId: string,
+    read: (maxBytes: number) => Promise<IncomingFile | undefined>,
+  ): Promise<StoredFileJson>;
+  /**
+   * As `uploadResponse`, addressed by post ID and whatever the survey's publish state. Unknown post
+   * ID: `survey-not-available`.
+   */
+  uploadResponseByPostId(
+    postId: string,
     read: (maxBytes: number) => Promise<IncomingFile | undefined>,
   ): Promise<StoredFileJson>;
   /** 404 not-found for an unknown or malformed id. */
@@ -160,39 +168,17 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
     },
 
     async uploadResponse(surveyId, read) {
-      const survey = await availableSurvey(surveys, surveyId);
+      return storeResponseFile(await availableSurvey(surveys, surveyId), read, () =>
+        availableSurvey(surveys, surveyId),
+      );
+    },
 
-      const incoming = await read(maxFileBytes);
-      if (incoming?.fieldName !== FILE_FIELD) {
-        throw invalidFile("Send one file in the part named file.");
-      }
-      const { bytes } = incoming;
-      if (bytes.length === 0) throw invalidFile("The file is empty.");
-
-      const record: StoredFileRecord = {
-        id: newFileId(survey.id),
-        surveyId: survey.id.toLowerCase(),
-        kind: "response",
-        name: fileNameOf(incoming.fileName),
-        contentType: detectFileType(bytes)?.contentType ?? "application/octet-stream",
-        size: bytes.length,
-        createdAt: new Date(now()).toISOString(),
-      };
-      await files.putFile(record, bytes);
-      try {
-        // A survey deleted or unpublished while the bytes were stored must not keep the file.
-        await availableSurvey(surveys, survey.id);
-      } catch (error) {
-        await files.deleteFile(record.id).catch(() => undefined);
-        throw error;
-      }
-      return {
-        id: record.id,
-        url: publicUrl(publicBaseUrl, filePath(record.id)),
-        name: record.name,
-        contentType: record.contentType,
-        size: record.size,
-      };
+    async uploadResponseByPostId(postId, read) {
+      const survey = await surveys.findSurveyByKey({ postId });
+      if (!survey) throw surveyNotAvailable();
+      return storeResponseFile(survey, read, async () => {
+        if (!(await surveys.getSurvey(survey.id))) throw surveyNotAvailable();
+      });
     },
 
     async download(fileId) {
@@ -201,4 +187,43 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
       return found;
     },
   };
+
+  /** S11 order for a survey found by either route; `stillAvailable` is the check after the bytes are stored. */
+  async function storeResponseFile(
+    survey: SurveyRecord,
+    read: (maxBytes: number) => Promise<IncomingFile | undefined>,
+    stillAvailable: () => Promise<unknown>,
+  ): Promise<StoredFileJson> {
+    const incoming = await read(maxFileBytes);
+    if (incoming?.fieldName !== FILE_FIELD) {
+      throw invalidFile("Send one file in the part named file.");
+    }
+    const { bytes } = incoming;
+    if (bytes.length === 0) throw invalidFile("The file is empty.");
+
+    const record: StoredFileRecord = {
+      id: newFileId(survey.id),
+      surveyId: survey.id.toLowerCase(),
+      kind: "response",
+      name: fileNameOf(incoming.fileName),
+      contentType: detectFileType(bytes)?.contentType ?? "application/octet-stream",
+      size: bytes.length,
+      createdAt: new Date(now()).toISOString(),
+    };
+    await files.putFile(record, bytes);
+    try {
+      // A survey deleted or unpublished while the bytes were stored must not keep the file.
+      await stillAvailable();
+    } catch (error) {
+      await files.deleteFile(record.id).catch(() => undefined);
+      throw error;
+    }
+    return {
+      id: record.id,
+      url: publicUrl(publicBaseUrl, filePath(record.id)),
+      name: record.name,
+      contentType: record.contentType,
+      size: record.size,
+    };
+  }
 }

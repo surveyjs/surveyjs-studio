@@ -3952,6 +3952,9 @@ export interface operations {
             /** @description The definition is unchanged since the `ETag` in `If-None-Match`. */
             304: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description Always `no-cache`. */
+                    "Cache-Control": "no-cache";
                     [name: string]: unknown;
                 };
                 content?: never;

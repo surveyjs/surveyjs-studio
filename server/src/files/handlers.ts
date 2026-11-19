@@ -82,6 +82,14 @@ export function createFileHandlers(options: FilesServiceOptions): Handlers {
       return reply.code(201).header("location", filePath(stored.id)).send(stored);
     },
 
+    uploadResponseFileByPostId: async (request, reply) => {
+      const { postId } = request.params as { postId: string };
+      const stored = await service.uploadResponseByPostId(postId, (maxBytes) =>
+        readFirstFile(request, maxBytes, () => fileTooLarge(maxBytes)),
+      );
+      return reply.code(201).header("location", filePath(stored.id)).send(stored);
+    },
+
     downloadFile: async (request, reply) => {
       const { fileId } = request.params as { fileId: string };
       const { file, content } = await service.download(fileId);

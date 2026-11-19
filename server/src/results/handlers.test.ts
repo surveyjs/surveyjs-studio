@@ -434,3 +434,54 @@ describe("submitResponse partial saves", () => {
     expect(await providers.results.listResponses(survey)).toHaveLength(1);
   });
 });
+
+describe("submitResponseByPostId", () => {
+  it("stores for an unpublished survey with the respondent address, and refuses an unknown post ID", async () => {
+    const { server, providers, publish } = await start();
+    const survey = await publish(
+      { pages: [], cookieName: "limit-test" },
+      { storeRespondentIp: true },
+    );
+    await providers.surveys.updateSurvey(survey.id, { published: false, updatedAt: NOW });
+    const post = (postId: string, body: object) =>
+      server.inject({
+        method: "POST",
+        url: `/api/v1/public/posts/${postId}/responses`,
+        payload: body,
+        remoteAddress: "203.0.113.9",
+      });
+    const body = { data: { q1: "a" }, clientId: "c-1" };
+    expect((await post(survey.postId, body)).statusCode).toBe(201);
+    expect((await post(survey.postId, body)).statusCode).toBe(201);
+    const stored = await providers.results.listResponses(survey);
+    expect(stored[0]).toMatchObject({ respondentIp: "203.0.113.9" });
+    expect(await providers.results.completion(survey, "c-1")).toBe("completed");
+
+    const unknown = await post(randomUUID(), body);
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toMatchObject({ code: "survey-not-available" });
+    // The result ID is not the post ID.
+    expect((await post(survey.resultId, body)).statusCode).toBe(404);
+  });
+});
+
+describe("getPublicDefinition", () => {
+  it("answers 304 with the tag and no body, and 404 for an unknown survey", async () => {
+    const { server, publish } = await start();
+    const survey = await publish({ pages: [] });
+    const url = `/api/v1/public/surveys/${survey.id}/definition`;
+    const first = await server.inject({ method: "GET", url });
+    expect(first.statusCode).toBe(200);
+    const etag = first.headers.etag as string;
+    const again = await server.inject({ method: "GET", url, headers: { "if-none-match": etag } });
+    expect(again.statusCode).toBe(304);
+    expect(again.headers.etag).toBe(etag);
+    expect(again.headers["cache-control"]).toBe("no-cache");
+    expect(again.body).toBe("");
+    const unknown = await server.inject({
+      method: "GET",
+      url: `/api/v1/public/surveys/${randomUUID()}/definition`,
+    });
+    expect(unknown.statusCode).toBe(404);
+  });
+});

@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import type { Handlers } from "../api.js";
 import { requireUser } from "../auth/authenticate.js";
+import { formatEtag, ifNoneMatchHits } from "../content/etag.js";
 import { contentDisposition } from "../files/file-type.js";
 import { negotiateExportFormat, notAcceptable, type ExportFormat } from "./export-format.js";
 import { createResultsService, type ResultsServiceOptions } from "./service.js";
@@ -32,6 +33,46 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
         ip: request.ip,
       });
       return reply.code(201).send(stored);
+    },
+
+    submitResponseByPostId: async (request, reply) => {
+      const { postId } = request.params as { postId: string };
+      const body = request.body as {
+        data: Record<string, unknown>;
+        clientId?: string;
+        partial?: boolean;
+      };
+      const key = request.headers["idempotency-key"];
+      const stored = await service.submitByPostId(postId, {
+        data: body.data,
+        ...(body.clientId !== undefined && { clientId: body.clientId }),
+        ...(body.partial === true && { partial: true }),
+        ...(typeof key === "string" && { idempotencyKey: key }),
+        ip: request.ip,
+      });
+      return reply.code(201).send(stored);
+    },
+
+    getPublicDefinition: async (request, reply) => {
+      const { surveyId } = request.params as { surveyId: string };
+      const { content, version } = await service.getPublicDefinition(surveyId);
+      const etag = formatEtag(version);
+      void reply.header("etag", etag).header("cache-control", "no-cache");
+      const match = request.headers["if-none-match"];
+      if (typeof match === "string" && ifNoneMatchHits(match, version)) {
+        return reply.code(304).send();
+      }
+      return reply.send(content);
+    },
+
+    getRespondentState: (request) => {
+      const { surveyId, clientId } = request.params as { surveyId: string; clientId: string };
+      return service.respondentState({ surveyId }, clientId);
+    },
+
+    getRespondentStateByResultId: (request) => {
+      const { resultId, clientId } = request.params as { resultId: string; clientId: string };
+      return service.respondentState({ resultId }, clientId);
     },
 
     listResults: (request) => {

@@ -386,6 +386,8 @@ function contractOperations(): ContractOperation[] {
   // Ids of the owner's fixture records, so implemented reads find them (a 404 here means "not routed").
   const pathValues: Record<string, string> = {
     surveyId: surveyFeedback.id,
+    postId: surveyFeedback.postId,
+    resultId: surveyFeedback.resultId,
     projectId: PROJECT_A_ID,
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,

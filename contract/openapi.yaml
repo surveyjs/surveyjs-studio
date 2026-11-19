@@ -1767,6 +1767,12 @@ paths:
               schema: { $ref: '#/components/schemas/SurveyDefinition' }
         '304':
           description: The definition is unchanged since the `ETag` in `If-None-Match`.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+            Cache-Control:
+              description: 'Always `no-cache`.'
+              required: true
+              schema: { type: string, enum: [no-cache] }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/respondents/{clientId}:

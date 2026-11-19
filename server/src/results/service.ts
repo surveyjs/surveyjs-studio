@@ -4,6 +4,7 @@ import type { RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { responseIdFor } from "../domain/response-id.js";
 import { AppError } from "../errors.js";
+import type { CompletionState, SurveyDefinition, SurveyRecord } from "../domain/types.js";
 import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
@@ -50,6 +51,18 @@ export interface SubmitRequest {
 export interface ResultsService {
   getPublished(surveyId: string, clientId: string | undefined): Promise<PublishedSurveyJson>;
   submit(surveyId: string, request: SubmitRequest): Promise<{ id: string }>;
+  /**
+   * As `submit`, addressed by post ID and following the old service's checks: the survey's publish
+   * state and "Limit to one response" are ignored. Unknown post ID: `survey-not-available`.
+   */
+  submitByPostId(postId: string, request: SubmitRequest): Promise<{ id: string }>;
+  /** The working definition, whatever the survey's publish state; `survey-not-available` when none. */
+  getPublicDefinition(surveyId: string): Promise<{ content: SurveyDefinition; version: string }>;
+  /** A client's state in the survey, by survey ID or result ID; `survey-not-available` when unknown. */
+  respondentState(
+    key: { readonly surveyId: string } | { readonly resultId: string },
+    clientId: string,
+  ): Promise<{ state: CompletionState }>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
   /** One page of every stored response, oldest first; answers included. */
   list(
@@ -103,6 +116,42 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
   const { surveys, projects, results, files, views, now = Date.now } = options;
   const access = createSurveyAccess({ surveys, projects });
 
+  /** Stores a response to `survey`; `limitToOneResponse` off ignores the survey's one-response limit. */
+  async function store(
+    survey: SurveyRecord,
+    request: SubmitRequest,
+    check: { readonly limitToOneResponse: boolean },
+  ): Promise<{ id: string }> {
+    const { clientId, idempotencyKey } = request;
+    const id =
+      idempotencyKey === undefined ? randomUUID() : responseIdFor(survey.id, idempotencyKey);
+    // A retry of a stored response answers as the original did, even if the client has completed since.
+    if (idempotencyKey !== undefined && (await results.hasResponse(survey, id))) return { id };
+
+    if (clientId !== undefined && check.limitToOneResponse) {
+      const definition = await surveys.getDefinition(survey.id);
+      if (!definition) throw surveyNotAvailable();
+      const limited = survey.settings.useCookies || limitCookieOf(definition.content) !== null;
+      if (limited && (await results.completion(survey, clientId)) === "completed") {
+        throw alreadyCompleted();
+      }
+    }
+    try {
+      await results.appendResponse(survey, {
+        id,
+        submittedAt: new Date(now()).toISOString(),
+        data: request.data,
+        ...(clientId !== undefined && { clientId }),
+        ...(clientId !== undefined && request.partial === true && { partial: true }),
+        ...(survey.settings.storeRespondentIp && { respondentIp: respondentIp(request.ip) }),
+      });
+    } catch (error) {
+      if (error instanceof ResponseTooLargeError) throw tooLarge(error);
+      throw error;
+    }
+    return { id };
+  }
+
   return {
     async getPublished(surveyId, clientId) {
       const survey = await availableSurvey(surveys, surveyId);
@@ -125,36 +174,28 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       };
     },
 
-    async submit(surveyId, request) {
-      const survey = await availableSurvey(surveys, surveyId);
-      const { clientId, idempotencyKey } = request;
-      const id =
-        idempotencyKey === undefined ? randomUUID() : responseIdFor(survey.id, idempotencyKey);
-      // A retry of a stored response answers as the original did, even if the client has completed since.
-      if (idempotencyKey !== undefined && (await results.hasResponse(survey, id))) return { id };
+    submit: async (surveyId, request) =>
+      store(await availableSurvey(surveys, surveyId), request, { limitToOneResponse: true }),
 
-      if (clientId !== undefined) {
-        const definition = await surveys.getDefinition(survey.id);
-        if (!definition) throw surveyNotAvailable();
-        const limited = survey.settings.useCookies || limitCookieOf(definition.content) !== null;
-        if (limited && (await results.completion(survey, clientId)) === "completed") {
-          throw alreadyCompleted();
-        }
-      }
-      try {
-        await results.appendResponse(survey, {
-          id,
-          submittedAt: new Date(now()).toISOString(),
-          data: request.data,
-          ...(clientId !== undefined && { clientId }),
-          ...(clientId !== undefined && request.partial === true && { partial: true }),
-          ...(survey.settings.storeRespondentIp && { respondentIp: respondentIp(request.ip) }),
-        });
-      } catch (error) {
-        if (error instanceof ResponseTooLargeError) throw tooLarge(error);
-        throw error;
-      }
-      return { id };
+    async submitByPostId(postId, request) {
+      const survey = await surveys.findSurveyByKey({ postId });
+      if (!survey) throw surveyNotAvailable();
+      return store(survey, request, { limitToOneResponse: false });
+    },
+
+    async getPublicDefinition(surveyId) {
+      const definition = await surveys.getDefinition(surveyId);
+      if (!definition || !(await surveys.getSurvey(surveyId))) throw surveyNotAvailable();
+      return definition;
+    },
+
+    async respondentState(key, clientId) {
+      const survey =
+        "surveyId" in key
+          ? await surveys.getSurvey(key.surveyId)
+          : await surveys.findSurveyByKey(key);
+      if (!survey) throw surveyNotAvailable();
+      return { state: await results.completion(survey, clientId) };
     },
 
     async stats(user, surveyId) {

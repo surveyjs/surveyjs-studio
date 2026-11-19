@@ -476,3 +476,166 @@ describe("getResultStats", () => {
     expect((await stats(fixture.customerFeedback)).status).toBe(401);
   });
 });
+
+/** The survey's post and result IDs, read as its owner. */
+async function keysOf(
+  headers: Headers,
+  surveyId: string,
+): Promise<{ postId: string; resultId: string }> {
+  const read = await call("GET", "/surveys/{surveyId}", { path: `/surveys/${surveyId}`, headers });
+  return (await read.json()) as { postId: string; resultId: string };
+}
+
+function definitionOf(surveyId: string, headers: Headers = {}): Promise<Response> {
+  return call("GET", "/public/surveys/{surveyId}/definition", {
+    path: `/public/surveys/${surveyId}/definition`,
+    headers,
+  });
+}
+
+async function stateOf(surveyId: string, clientId: string): Promise<unknown> {
+  const response = await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+    path: `/public/surveys/${surveyId}/respondents/${encodeURIComponent(clientId)}`,
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+function stateByResultId(resultId: string, clientId: string): Promise<Response> {
+  return call("GET", "/public/results/{resultId}/respondents/{clientId}", {
+    path: `/public/results/${resultId}/respondents/${encodeURIComponent(clientId)}`,
+  });
+}
+
+function submitByPostId(
+  postId: string,
+  body: unknown,
+  options: { key?: string } = {},
+): Promise<Response> {
+  return call("POST", "/public/posts/{postId}/responses", {
+    path: `/public/posts/${postId}/responses`,
+    body,
+    headers: options.key === undefined ? {} : { "idempotency-key": options.key },
+  });
+}
+
+describe("getPublicDefinition", () => {
+  it("serves the working definition of any survey, with a strong ETag to revalidate", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    await expectNotAvailable(await load(surveyId));
+
+    const first = await definitionOf(surveyId);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toStrictEqual(ONE_QUESTION);
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^"[^"]+"$/);
+    expect(first.headers.get("cache-control")).toBe("no-cache");
+
+    for (const match of [etag!, `"other", ${etag!}`, "*"]) {
+      const same = await definitionOf(surveyId, { "if-none-match": match });
+      expect(same.status).toBe(304);
+      expect(same.headers.get("etag")).toBe(etag);
+      expect(same.headers.get("cache-control")).toBe("no-cache");
+      expect(await same.text()).toBe("");
+    }
+    const stale = await definitionOf(surveyId, { "if-none-match": '"stale"' });
+    expect(stale.status).toBe(200);
+
+    const edited = { pages: [{ name: "page1", elements: [{ type: "text", name: "q2" }] }] };
+    const saved = await call("PUT", "/surveys/{surveyId}/definition", {
+      path: `/surveys/${surveyId}/definition`,
+      headers: { ...headers, "if-match": etag! },
+      body: edited,
+    });
+    expect(saved.status).toBe(204);
+    const changed = await definitionOf(surveyId, { "if-none-match": etag! });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    expect(await changed.json()).toStrictEqual(edited);
+  });
+
+  it("serves an archived survey and answers 404 for an unknown one", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await newSurvey(headers, { definition: ONE_QUESTION });
+    const archived = await call("PATCH", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers: { "content-type": "application/merge-patch+json", ...headers },
+      body: { archived: true },
+    });
+    expect(archived.status).toBe(200);
+    expect((await definitionOf(surveyId)).status).toBe(200);
+    expect((await definitionOf(fixture.unpublishedArchived)).status).toBe(200);
+    await expectNotAvailable(await definitionOf(UNKNOWN_ID));
+  });
+});
+
+describe("getRespondentState", () => {
+  it("follows the client's marker, by survey ID and by result ID", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    const clientId = `client ${randomUUID()}%`;
+    const both = async (state: string) => {
+      expect(await stateOf(surveyId, clientId)).toStrictEqual({ state });
+      const byResult = await stateByResultId(resultId, clientId);
+      expect(byResult.status).toBe(200);
+      expect(await byResult.json()).toStrictEqual({ state });
+    };
+    const post = (extra: object) =>
+      submitByPostId(postId, { data: { q1: "a" }, clientId, ...extra });
+
+    await both("none");
+    expect((await post({ partial: true })).status).toBe(201);
+    await both("partial");
+    expect((await post({})).status).toBe(201);
+    await both("completed");
+    expect((await post({ partial: true })).status).toBe(201);
+    await both("partial");
+  });
+
+  it("answers 404 for an unknown survey or result ID", async () => {
+    const response = await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+      path: `/public/surveys/${UNKNOWN_ID}/respondents/c`,
+    });
+    await expectNotAvailable(response);
+    await expectNotAvailable(await stateByResultId(UNKNOWN_ID, "c"));
+  });
+});
+
+describe("submitResponseByPostId", () => {
+  it("stores a response for an unpublished survey, once per Idempotency-Key", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId } = await keysOf(headers, surveyId);
+    await expectNotAvailable(await submit(surveyId, { data: { q1: "a" } }));
+
+    const key = `k-${randomUUID()}`;
+    const first = await submitByPostId(postId, { data: { q1: "a" } }, { key });
+    expect(first.status).toBe(201);
+    const replay = await submitByPostId(postId, { data: { q1: "b" } }, { key });
+    expect(replay.status).toBe(201);
+    expect(await idOf(replay)).toBe(await idOf(first));
+    expect(await countOf(surveyId, headers)).toBe(1);
+  });
+
+  it("stores a completed client's next post and the marker follows it", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, {
+      definition: { ...ONE_QUESTION, cookieName: "limit-by-post" },
+    });
+    const { postId } = await keysOf(headers, surveyId);
+    const clientId = `client-${randomUUID()}`;
+    const body = { data: { q1: "a" }, clientId };
+    expect((await submitByPostId(postId, body)).status).toBe(201);
+    expect((await submit(surveyId, body)).status).toBe(409);
+    expect((await submitByPostId(postId, body)).status).toBe(201);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "completed" });
+    expect((await submitByPostId(postId, { ...body, partial: true })).status).toBe(201);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "partial" });
+  });
+
+  it("answers 404 for an unknown post ID", async () => {
+    await expectNotAvailable(await submitByPostId(UNKNOWN_ID, { data: { q1: "a" } }));
+  });
+});

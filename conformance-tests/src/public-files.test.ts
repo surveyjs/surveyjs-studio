@@ -205,3 +205,33 @@ describe("uploadResponseFile", () => {
     expect((await download(stored.id)).status).toBe(404);
   });
 });
+
+describe("uploadResponseFileByPostId", () => {
+  it("stores a file for an unpublished survey and answers 404 for an unknown post ID", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { published: false });
+    expect((await uploadTo(surveyId, fileForm(PNG_1X1))).status).toBe(404);
+    const read = await call("GET", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers,
+    });
+    const { postId } = (await read.json()) as { postId: string };
+
+    const response = await upload("/public/posts/{postId}/files", {
+      path: `/public/posts/${postId}/files`,
+      form: fileForm(PNG_1X1, "dot.png"),
+    });
+    expect(response.status).toBe(201);
+    const stored = (await response.json()) as StoredFile;
+    expect(stored).toMatchObject({ name: "dot.png", contentType: "image/png" });
+    expect(response.headers.get("location")).toBe(`/api/v1/public/files/${stored.id}`);
+    expect((await download(stored.id)).status).toBe(200);
+
+    const unknown = await upload("/public/posts/{postId}/files", {
+      path: `/public/posts/${UNKNOWN_ID}/files`,
+      form: fileForm(PNG_1X1),
+    });
+    expect(unknown.status).toBe(404);
+    expect(await codeOf(unknown)).toBe("survey-not-available");
+  });
+});
