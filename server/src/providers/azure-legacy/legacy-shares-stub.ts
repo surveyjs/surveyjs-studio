@@ -21,18 +21,18 @@ export function stubShareRoot(files: readonly { name: string; content: Buffer }[
   return {
     listFilesAndDirectories: ({ prefix }) => ({
       byPage: ({ maxPageSize }) => {
-        const fileItems = files
+        const names = files
           .filter((file) => fold(file.name).slice(0, prefix.length) === fold(prefix))
-          .slice(0, maxPageSize)
           .map((file) => ({ name: file.name }));
-        let done = false;
+        let offset = 0;
         return {
           next: () => {
-            const result = done
-              ? { done: true as const, value: undefined }
-              : { done: false as const, value: { segment: { fileItems } } };
-            done = true;
-            return Promise.resolve(result);
+            if (offset >= names.length) {
+              return Promise.resolve({ done: true as const, value: undefined });
+            }
+            const fileItems = names.slice(offset, offset + maxPageSize);
+            offset += maxPageSize;
+            return Promise.resolve({ done: false as const, value: { segment: { fileItems } } });
           },
         };
       },

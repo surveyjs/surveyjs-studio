@@ -228,9 +228,10 @@ included), `file_id` (FK to `files`, cascade: deleting the file deletes its name
 `legacy_name`); index `legacy_files_file` (`file_id`). `getFileByLegacyName` reads the file through it, with the legacy
 name as the file's name and the type of its extension as its content type (`application/octet-stream` without one, for
 an unknown extension, and for HTML and script). A name that is not one path segment of letters, digits, `.`, `-` and
-`_` (at most 100 characters, not `.` or `..`) is unknown without a query. The hosted migration fills the table;
+`_` (at most 100 characters, not only dots) is unknown without a query. The hosted migration fills the table;
 `pnpm seed` adds the fixtures' two files as `files` rows of the all-zero survey (their ids are derived from kind and
-name, so a second seed replaces them), with their bytes in the byte store.
+name, so a second seed replaces them), with their bytes in the byte store, when `FILES_PATH` or `FILE_STORE` is set;
+otherwise it skips them and says so.
 
 ## Planned
 

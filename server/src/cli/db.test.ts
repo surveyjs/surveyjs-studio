@@ -163,6 +163,19 @@ describe("db CLI", () => {
     }
   });
 
+  it("skips the legacy files, with one line, when neither FILES_PATH nor FILE_STORE is set", async () => {
+    const { STORAGE_PROVIDER, SQLITE_PATH } = sqliteEnv();
+    const env = { STORAGE_PROVIDER, SQLITE_PATH };
+    const result = capture();
+    expect(await run(["seed"], result.io, { env })).toBe(0);
+    expect(result.out).toMatch(
+      /\nSeeded 9 surveys and 2 projects\.\nLegacy files skipped: set FILES_PATH or FILE_STORE to load them\.\n$/,
+    );
+    const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+    expect(await database.db.selectFrom("legacy_files").selectAll().execute()).toEqual([]);
+    await database.close();
+  });
+
   it("refuses to seed with READ_ONLY=true", async () => {
     const result = capture();
     expect(await run(["seed"], result.io, { env: sqliteEnv({ READ_ONLY: "true" }) })).toBe(2);

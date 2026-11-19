@@ -460,6 +460,7 @@ describe("getLegacyFile", () => {
     ["a%00b", "asset/a%00b"],
     ["101 letters", `asset/${"a".repeat(101)}`],
     ["256 letters", `asset/${"a".repeat(256)}`],
+    ["1025 letters, over the router's limit", `asset/${"a".repeat(1025)}`],
     ["an unknown kind", `image/${ASSET}`],
     ["a kind in another case", `Asset/${ASSET}`],
   ])("answers 404 not-found without a lookup for %s", async (_label, path) => {

@@ -219,6 +219,8 @@ export async function createValidator(openapiPath: string): Promise<Validator> {
           `content type "${contentType}" is not one of: ${mediaTypes.join(", ")}`,
         ];
       }
+      // A range describes many types: a body it matched is checked by media type only.
+      if (key !== contentType) return headerProblems;
       const entry = media[key];
       const schema = isObject(entry) ? entry.schema : undefined;
       // Other media types (images, CSV, …) are checked by media type only.

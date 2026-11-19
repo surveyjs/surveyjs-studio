@@ -113,7 +113,13 @@ describe("validator (fixture contract)", () => {
   });
 
   it("matches a media type to a documented range", async () => {
-    for (const type of ["image/png", "application/pdf", "application/octet-stream"]) {
+    // `*/*` carries a schema no body meets: a body matched through a range is not checked by it.
+    for (const type of [
+      "image/png",
+      "application/pdf",
+      "application/octet-stream",
+      "application/json",
+    ]) {
       const file = respond(200, "x", { "content-type": type });
       expect(await v.check("GET", "/anything", file), type).toEqual([]);
     }

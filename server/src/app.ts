@@ -106,8 +106,14 @@ export async function buildApp(
     frameworkErrors: (error, request, reply) => {
       const body = toProblem(error);
       if (body.status >= 500) request.log.error({ err: error }, "framework error");
+      else if (error.code === "FST_ERR_MAX_PARAM_LENGTH") {
+        request.log.debug({ code: error.code }, "path segment over the router's limit");
+      }
       return sendProblem(reply, body);
     },
+    // A path segment may be this long, decoded: a client ID (up to 256 characters) or a question
+    // name (free text) must route. A longer one answers 404 (errors.ts).
+    routerOptions: { maxParamLength: 1024 },
     bodyLimit: config.limits.maxResponseBytes,
     // Node answers 408 and closes a request whose headers and body have not all arrived in time
     // (Fastify's default, 0, waits forever); this also bounds the drain of an early answer.

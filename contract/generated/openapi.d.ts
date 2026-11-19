@@ -1285,9 +1285,9 @@ export interface paths {
                 kind: string;
                 /**
                  * @description The file's name as the old service stored it, matched exactly (case included). A name is
-                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), other
-                 *     than `.` and `..`; any other name is `404 not-found` without a lookup (the schema leaves
-                 *     it open so that no name answers `400`).
+                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), not only
+                 *     dots; any other name is `404 not-found` without a lookup (the schema leaves it open so
+                 *     that no name answers `400`).
                  */
                 name: string;
             };
@@ -4147,9 +4147,9 @@ export interface operations {
                 kind: string;
                 /**
                  * @description The file's name as the old service stored it, matched exactly (case included). A name is
-                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), other
-                 *     than `.` and `..`; any other name is `404 not-found` without a lookup (the schema leaves
-                 *     it open so that no name answers `400`).
+                 *     one path segment of at most 100 characters (letters, digits, `.`, `-` and `_`), not only
+                 *     dots; any other name is `404 not-found` without a lookup (the schema leaves it open so
+                 *     that no name answers `400`).
                  */
                 name: string;
             };

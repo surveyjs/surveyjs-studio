@@ -31,10 +31,12 @@ export interface ShareRoot {
 }
 
 /**
- * Entries of the one listing page that checks a name's case. The share's names are GUIDs (with an
- * extension for respondent files), so few names start with another one.
+ * The listing that checks a name's case reads at most this many pages of this many entries. The
+ * share's names are GUIDs (with an extension for respondent files), so few names start with
+ * another one; a name not found in them reads as unknown.
  */
 const CASE_CHECK_PAGE = 100;
+const CASE_CHECK_PAGES = 10;
 
 /**
  * A reader over the given share roots; a share without a root holds nothing. Azure Files matches
@@ -47,12 +49,16 @@ export function shareReaderOf(roots: Partial<Record<LegacyShare, ShareRoot>>): L
       const root = roots[share];
       if (!root || !isLegacyFileName(name)) return null;
       try {
-        const page = await root
+        const pages = root
           .listFilesAndDirectories({ prefix: name })
-          .byPage({ maxPageSize: CASE_CHECK_PAGE })
-          .next();
-        const names = page.done === true ? [] : page.value.segment.fileItems;
-        if (!names.some((item) => item.name === name)) return null;
+          .byPage({ maxPageSize: CASE_CHECK_PAGE });
+        let listed = false;
+        for (let read = 0; read < CASE_CHECK_PAGES && !listed; read++) {
+          const page = await pages.next();
+          if (page.done === true) break;
+          listed = page.value.segment.fileItems.some((item) => item.name === name);
+        }
+        if (!listed) return null;
         return await root.getFileClient(name).downloadToBuffer();
       } catch (error) {
         // The share itself is missing, or the file went between the listing and the read.

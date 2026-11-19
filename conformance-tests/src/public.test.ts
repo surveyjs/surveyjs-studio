@@ -594,6 +594,17 @@ describe("getRespondentState", () => {
     await both("partial");
   });
 
+  it("routes a client ID of the longest length, 256 characters, on both paths", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const clientId = "c".repeat(256);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "none" });
+    const byResult = await stateByResultId(resultId, clientId);
+    expect(byResult.status).toBe(200);
+    expect(await byResult.json()).toStrictEqual({ state: "none" });
+  });
+
   it("answers 404 for an unknown survey or result ID", async () => {
     const response = await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
       path: `/public/surveys/${UNKNOWN_ID}/respondents/c`,
@@ -658,6 +669,25 @@ describe("getQuestionSummary", () => {
       firstSubmittedAt: null,
       lastSubmittedAt: null,
     });
+  });
+
+  it("routes a question name of the longest length, 256 characters, and refuses a longer one", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const response = await summaryOf(resultId, `question ${"q".repeat(247)}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      answered: 0,
+      values: [],
+      responseCount: 0,
+      firstSubmittedAt: null,
+      lastSubmittedAt: null,
+    });
+    // The contract's `maxLength: 256`: a 300-character name is routed and refused by the schema.
+    const longer = await summaryOf(resultId, `question ${"q".repeat(291)}`);
+    expect(longer.status).toBe(400);
+    expect(await codeOf(longer)).toBe("bad-request");
   });
 
   it("answers 404 for an unknown result ID", async () => {

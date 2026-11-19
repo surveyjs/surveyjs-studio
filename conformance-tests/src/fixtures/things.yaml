@@ -52,7 +52,7 @@ paths:
             image/*:
               schema: { type: string }
             "*/*":
-              schema: { type: string }
+              schema: { type: object, required: [never] }
   /empty:
     get:
       operationId: getEmpty

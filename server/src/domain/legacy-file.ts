@@ -9,8 +9,8 @@ import type { FileKind, StoredFileRecord } from "./types.js";
 /** Letters, digits, `.`, `-` and `_`: one path segment, matched as stored (case included). */
 const LEGACY_NAME = /^[A-Za-z0-9._-]+$/;
 /**
- * The longest legacy name taken: the router's limit for a path segment, and longer than any name
- * the old service made (a GUID with an extension, or its 68-character preview image names).
+ * The longest legacy name taken: longer than any name the old service made (a GUID with an
+ * extension, or its 68-character preview image names).
  */
 const MAX_LEGACY_NAME_LENGTH = 100;
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";

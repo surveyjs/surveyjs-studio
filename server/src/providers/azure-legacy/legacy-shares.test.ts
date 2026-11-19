@@ -113,6 +113,20 @@ describe("shareReaderOf", () => {
     expect(asked).toEqual([NAME, NAME]);
   });
 
+  it("follows the listing for up to 10 pages of 100 names", async () => {
+    // Names that start with the wanted one, listed before it (the stub keeps the given order).
+    const longer = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({ name: `${NAME}.${String(i)}`, content: BYTES }));
+    const onPageTen = shareReaderOf({
+      surveyfiles: stubShareRoot([...longer(900), { name: NAME, content: BYTES }]),
+    });
+    expect(await onPageTen.read("surveyfiles", NAME)).toStrictEqual(BYTES);
+    const onPageEleven = shareReaderOf({
+      surveyfiles: stubShareRoot([...longer(1000), { name: NAME, content: BYTES }]),
+    });
+    expect(await onPageEleven.read("surveyfiles", NAME)).toBeNull();
+  });
+
   it("answers null when the file goes between the listing and the read", async () => {
     const root = stubShareRoot([{ name: NAME, content: BYTES }]);
     const gone: ShareRoot = {
