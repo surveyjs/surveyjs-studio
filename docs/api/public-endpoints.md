@@ -1,9 +1,10 @@
 # Public endpoints, rate limits and idempotency
 
 Five operations serve respondents, embeds and readers of shared results: the three of Step 8,
-`downloadFile` of Step 7 and `getPublicResults` of Step 10. Seven more serve [the bridge](#operations-for-the-bridge). They need **no session and no CSRF token**, so they are
-rate limited. A sixth, `getResultStats`, needs a session and is listed because it is the way to count
-responses without loading them. The reasons for each rule are in
+`downloadFile` of Step 7 and `getPublicResults` of Step 10. Seven more serve
+[the bridge](#operations-for-the-bridge). They need **no session and no CSRF token**, so they are rate
+limited. A sixth, `getResultStats`, needs a session and is listed because it is the way to count responses without
+loading them. The reasons for each rule are in
 [ADR 0014](../adr/0014-run-page-and-response-collection.md) (the run operations) and
 [ADR 0016](../adr/0016-results-details-exports-and-public-results.md) (public results). The people-facing
 descriptions are [Publishing and collecting responses](../user-guide/publishing-and-collecting-responses.md) and
@@ -382,7 +383,7 @@ answers and aggregates are reachable only through its result ID, and posting onl
 | Operation                      | Request                                                 | Answer                                                                                                         |
 | ------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `getPublicDefinition`          | `GET /public/surveys/{surveyId}/definition`             | `200` the working definition, with a strong `ETag` (`If-None-Match` gives `304`) and `Cache-Control: no-cache` |
-| `getRespondentState`           | `GET /public/surveys/{surveyId}/respondents/{clientId}` | `200` `{ "state": "none"                                                                                       | "partial" | "completed" }` |
+| `getRespondentState`           | `GET /public/surveys/{surveyId}/respondents/{clientId}` | `200` `{ "state" }`: `none`, `partial` or `completed`                                                          |
 | `submitResponseByPostId`       | `POST /public/posts/{postId}/responses`                 | As `submitResponse`                                                                                            |
 | `uploadResponseFileByPostId`   | `POST /public/posts/{postId}/files`                     | As `uploadResponseFile`                                                                                        |
 | `getRespondentStateByResultId` | `GET /public/results/{resultId}/respondents/{clientId}` | As `getRespondentState`                                                                                        |
