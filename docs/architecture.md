@@ -152,7 +152,7 @@ Server, and what is not emulated: [ADR 0006](adr/0006-legacy-replica.md).
 | `StoredFileRecord`   | One stored file: `id` (64 hex digits), `surveyId`, `kind` (`asset` for the editor, `response` for a respondent's file), `name`, `contentType`, `size` (bytes) and `createdAt` (ISO 8601 UTC). `domain/file-id.ts` has the id rules                               |
 | `SurveyResponse`     | One stored response (the read shape): `id`, `submittedAt`, `data`, optional `clientId` and `respondentIp`, `partial`                                                                                                                                             |
 | `NewResponse`        | A response to store: `id` (a GUID: `responseIdFor(surveyId, key)` for an `Idempotency-Key`, else random), `submittedAt` (the server clock, ISO 8601 UTC with milliseconds), `data`, optional `clientId`, and `respondentIp` only when the survey keeps addresses |
-| `CompletionState`    | A client's marker: `none`, `partial` (a marker an old API client wrote) or `completed`                                                                                                                                                                           |
+| `CompletionState`    | A client's marker: `none`, `partial` (a marker a partial save or an old API client wrote) or `completed`                                                                                                                                                         |
 | `ResultStatsRecord`  | `count`, `firstSubmittedAt` and `lastSubmittedAt` (`null` when there are no responses)                                                                                                                                                                           |
 
 ## Surveys and projects
@@ -376,8 +376,8 @@ Step 8 builds `getPublishedSurvey`, `submitResponse` and `getResultStats` in `se
   id, and the data of the replay is dropped.
 - **The address.** The service stores `respondentIp(request.ip)` only when `settings.storeRespondentIp` is
   on. `request.ip` already went through `TRUST_PROXY` (see [Request flow](#request-flow)).
-- **Partial responses.** `partial` and `lastPageIndex` are read by nobody; the response is stored as
-  complete.
+- **Partial responses.** `partial` with a `clientId` stores a partial row and a partial marker;
+  `lastPageIndex` is validated and not stored ([ADR 0038](adr/0038-partial-responses.md)).
 - **Memory provider.** `createMemoryResultStore(seed)` (`providers/memory-results.ts`) keeps responses by
   survey id and markers by survey id and client id, and returns copies. `createMemoryProviders` hands out its
   `store` as `results` and calls its `dropSurvey(id)` from `surveys.deleteSurvey`. `MemorySeed` gained
@@ -406,7 +406,7 @@ Step 9 builds `listResults` (in `server/src/results/`) and the three view operat
 | `resetResultsView` | Session; CSRF; the path; visible; `ViewStore.resetView`; `204`                                                                                                                                                                                                                                                      |
 
 - **The page.** `ResultsService.list` turns each `SurveyResponse` into `{ id, submittedAt, data }` plus
-  `clientId` and `respondentIp` when present, as stored (no `partial`). `nextCursor` is
+  `clientId` and `respondentIp` when present, as stored, and `partial: true` while a run is open. `nextCursor` is
   `encodeResultsCursor(next, survey.id)` or `null`. The cursor (`paging/cursor.ts`) holds the kind, the
   survey id, the time and the id of the last row, and belongs to one survey.
 - **Order.** `responseOrder` and `isAfterResponse` (`providers/ordering.ts`) are the one order of both
@@ -577,12 +577,13 @@ markers" in the ESLint `ignores` comment):
   created in `post{postId}` (without dashes, lower case) with exactly the legacy properties and Edm types:
   `PartitionKey` `*`, `RowKey` and `id` the response id, `type` `SURVEY_POSTRESUTL`, `happendat`, a random
   `surveyid` (as legacy: it is not the survey), `postid`, `result`, and `clientid` and `ipaddress` only when
-  given; `ispartialcompleted` only on a partial save, as `Edm.Boolean` true (a complete row has none). The table is created when it is missing. An existing row (`409`) is left
+  given; `ispartialcompleted` only on a partial save, as `Edm.Boolean` true (a complete row has none).
+  The table is created when it is missing. An existing row (`409`) is left
   as it is and the outcome is `exists`. Rows are written **directly**, not through the legacy `POST post`, so
   the legacy HTML cleaner never runs ([ADR 0005](adr/0005-respondent-files-as-urls.md)).
 - **Completion marker**: when a `clientId` is given (also for `exists`), an upsert into
-  `SurveyCompletion{surveyId}` at the row key `clientId` with `ispartialcompleted` as `Edm.Boolean` (the posted value: true for a partial save, false for a complete response) and `publishid` when the
-  survey has one; the table is created when it is missing.
+  `SurveyCompletion{surveyId}` at the row key `clientId` with `ispartialcompleted` as `Edm.Boolean` (the posted value: true for a partial save, false
+  for a complete response) and `publishid` when the survey has one; the table is created when it is missing.
 - No audit row (the row is the event) and `Surveys.timestamp` is not touched. `LegacyWriteTargets` gained
   `resultTable(name)`, a table client of the results account. Failures are `LegacyStoreError("response write")`
   and `LegacyStoreError("completion marker write")`.

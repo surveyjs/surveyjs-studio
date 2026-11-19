@@ -306,8 +306,8 @@ completion.
 }
 ```
 
-`count` is the number of stored rows. Rows of one client are **not** merged: Step 9 decides the reading
-rules. A survey with no responses has `count` 0 and `null` times.
+`count` is the number of completed responses: a client's partial saves and its next complete post are one response, and
+a response that is still partial is not counted ([Partial saves](#partial-saves)). A survey with no responses has `count` 0 and `null` times.
 
 ## Public results
 
