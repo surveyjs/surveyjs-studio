@@ -29,12 +29,13 @@ export function unexpectedStatus(response: Response): never {
 /**
  * A client for one caller: `callerIp` goes to Studio in `X-Forwarded-For` (Studio trusts it only
  * from the bridge, `TRUST_PROXY`). Each call, its answer's body included, must finish within
- * `studioTimeoutMs`. Studio's `429` and `5xx` throw a `StudioFailure`.
+ * `studioTimeoutMs`, and stops when `callerGone` aborts. Studio's `429` and `5xx` throw a `StudioFailure`.
  */
 export function studioClient(
   settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
   callerIp: string,
   fetchImpl: (request: Request) => Promise<Response> = fetch,
+  callerGone?: AbortSignal,
 ): StudioClient {
   const client = createClient<paths>({
     baseUrl: settings.studioUrl,
@@ -42,7 +43,11 @@ export function studioClient(
     fetch: (request) =>
       fetchImpl(
         new Request(request, {
-          signal: AbortSignal.any([request.signal, AbortSignal.timeout(settings.studioTimeoutMs)]),
+          signal: AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(settings.studioTimeoutMs),
+            ...(callerGone === undefined ? [] : [callerGone]),
+          ]),
         }),
       ),
   });

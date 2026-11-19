@@ -1,4 +1,4 @@
-import type { ServerResponse } from "node:http";
+import { request as httpRequest, type ServerResponse } from "node:http";
 import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sendJsonString } from "./answers.js";
@@ -167,6 +167,42 @@ describe("when Studio is down or slow", () => {
       expect(action.ms).toBeLessThan(2_000);
       expect(forwarded.status).toBe(200);
       expect(forwarded.body.toString()).toBe("old service");
+    } finally {
+      await bridge?.close();
+      bridge = undefined;
+      await silent.close();
+    }
+  });
+
+  it("stops the Studio call when the caller goes away", async () => {
+    let abandonedAt: number | undefined;
+    const silent = await startStub((_request, res) => {
+      res.on("close", () => (abandonedAt = Date.now()));
+    });
+    try {
+      bridge = await startBridge(
+        { studioUrl: `${silent.url}/api/v1`, legacyUrl: legacy.url, studioTimeoutMs: 10_000 },
+        registerTitle,
+      );
+      const { url } = bridge;
+      const leftAt = await new Promise<number>((resolve) => {
+        const req = httpRequest(`${url}/public/Survey/getSurvey?surveyId=s1`, { agent: false });
+        req.on("error", () => undefined);
+        req.end();
+        // Once Studio has the call, the caller hangs up.
+        const wait = setInterval(() => {
+          if (silent.requests.length > 0) {
+            clearInterval(wait);
+            req.destroy();
+            resolve(Date.now());
+          }
+        }, 10);
+      });
+      for (let i = 0; i < 100 && abandonedAt === undefined; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(abandonedAt).toBeDefined();
+      expect(abandonedAt! - leftAt).toBeLessThan(1_000);
     } finally {
       await bridge?.close();
       bridge = undefined;

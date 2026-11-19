@@ -6,7 +6,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import type { FastifyInstance } from "fastify";
 import { buildBridge, type BridgeDeps } from "../app.js";
 import type { BridgeSettings } from "../settings.js";
@@ -30,7 +30,8 @@ export async function startStub(
   handle: (request: RecordedRequest, response: ServerResponse) => void,
 ): Promise<Stub> {
   const requests: RecordedRequest[] = [];
-  const server = createServer((req, res) => {
+  // Room for the bridge's 32 KB of request headers.
+  const server = createServer({ maxHeaderSize: 64 * 1024 }, (req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
@@ -135,4 +136,31 @@ export async function closedUrl(): Promise<string> {
   const stub = await startStub((_, res) => res.end());
   await stub.close();
   return stub.url;
+}
+
+/**
+ * Writes `text` as it is to the bridge's socket and resolves with everything read until the
+ * connection closes, or after `waitMs` (`timedOut` then).
+ */
+export function sendRaw(
+  url: string,
+  text: string,
+  waitMs = 3_000,
+): Promise<{ data: string; timedOut: boolean }> {
+  const { hostname, port } = new URL(url);
+  return new Promise((resolve) => {
+    const socket = connect(Number(port), hostname);
+    let data = "";
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve({ data, timedOut: true });
+    }, waitMs);
+    socket.on("data", (chunk: Buffer) => (data += chunk.toString("latin1")));
+    socket.on("error", () => undefined);
+    socket.on("close", () => {
+      clearTimeout(timer);
+      resolve({ data, timedOut: false });
+    });
+    socket.write(text);
+  });
 }

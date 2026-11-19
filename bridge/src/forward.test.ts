@@ -1,11 +1,12 @@
 import { request as httpRequest, type ServerResponse } from "node:http";
 import { gzipSync } from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { endToEndHeaders } from "./forward.js";
+import { endToEndHeaders, originTarget } from "./forward.js";
 import {
   closedUrl,
   headerNames,
   send,
+  sendRaw,
   startBridge,
   startStub,
   type RunningBridge,
@@ -295,6 +296,103 @@ describe("endToEndHeaders", () => {
         ["host"],
       ),
     ).toEqual(["Set-Cookie", "a=1", "set-cookie", "b=2", "X-Two", "2"]);
+  });
+
+  it("never lets Connection remove the framing or the bridge's own headers", () => {
+    expect(
+      endToEndHeaders([
+        "Connection",
+        "Content-Length, Transfer-Encoding, Host, X-Forwarded-For, X-Gone",
+        "Content-Length",
+        "5",
+        "Host",
+        "h",
+        "X-Forwarded-For",
+        "192.0.2.1",
+        "X-Gone",
+        "1",
+      ]),
+    ).toEqual(["Content-Length", "5", "Host", "h", "X-Forwarded-For", "192.0.2.1"]);
+  });
+});
+
+describe("originTarget", () => {
+  it.each([
+    ["/a/b?c=%2F+d", "/a/b?c=%2F+d"],
+    ["/", "/"],
+    ["http://a/b%2F?c=%41", "/b%2F?c=%41"],
+    ["HTTP://a", "/"],
+    ["https://a.example:8443?x=1", "/?x=1"],
+    ["*", undefined],
+    ["http://", undefined],
+    ["http:///x", undefined],
+    ["a/b", undefined],
+    ["", undefined],
+    [undefined, undefined],
+  ])("%s → %s", (url, target) => {
+    expect(originTarget(url)).toBe(target);
+  });
+});
+
+describe("hostile and malformed requests", () => {
+  const SMUGGLED =
+    "GET /private/Service/checkPQueue?key=k HTTP/1.1\r\nHost: old\r\nX-Forwarded-For: 6.6.6.6\r\n\r\n";
+
+  it.each(["GET", "DELETE", "POST"])(
+    "%s naming Content-Length in Connection reaches the old service as one request, its body framed",
+    async (method) => {
+      const { data } = await sendRaw(
+        bridge.url,
+        `${method} /x HTTP/1.1\r\nHost: b\r\nConnection: close, content-length\r\n` +
+          `Content-Length: ${Buffer.byteLength(SMUGGLED)}\r\n\r\n${SMUGGLED}`,
+      );
+      expect(data.split("\r\n")[0]).toBe("HTTP/1.1 200 OK");
+      // Let a smuggled second request arrive, if there were one.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(legacy.requests).toHaveLength(1);
+      const forwarded = legacy.requests[0]!;
+      expect(forwarded.method).toBe(method);
+      expect(forwarded.url).toBe("/x");
+      expect(forwarded.headers["content-length"]).toBe(String(Buffer.byteLength(SMUGGLED)));
+      expect(forwarded.body.toString()).toBe(SMUGGLED);
+      expect(forwarded.headers["x-forwarded-for"]).toBe("127.0.0.1");
+      expect(forwarded.headers.host).toBe(new URL(legacy.url).host);
+    },
+  );
+
+  it.each(["GET http:// HTTP/1.1", "OPTIONS * HTTP/1.1", "GET http:///x HTTP/1.1"])(
+    "%s: an empty 400 at once, and the bridge keeps serving",
+    async (line) => {
+      const { data, timedOut } = await sendRaw(
+        bridge.url,
+        `${line}\r\nHost: x\r\nConnection: close\r\n\r\n`,
+      );
+      expect(timedOut).toBe(false);
+      expect(data.split("\r\n")[0]).toBe("HTTP/1.1 400 Bad Request");
+      expect(data).toMatch(/content-length: 0/i);
+      expect(legacy.requests).toEqual([]);
+      const next = await send(`${bridge.url}/private/Surveys/nps`);
+      expect(next.status).toBe(200);
+      expect(legacy.requests).toHaveLength(1);
+    },
+  );
+
+  it("forwards an absolute-form target as its path and query bytes", async () => {
+    const { data } = await sendRaw(
+      bridge.url,
+      "GET http://a.example/b%2F?c=%41&d=+ HTTP/1.1\r\nHost: a.example\r\nConnection: close\r\n\r\n",
+    );
+    expect(data.split("\r\n")[0]).toBe("HTTP/1.1 200 OK");
+    expect(legacy.requests[0]!.url).toBe("/b%2F?c=%41&d=+");
+  });
+
+  it("forwards 20 KB of cookies", async () => {
+    const cookie = `big=${"c".repeat(20 * 1024)}`;
+    const response = await send(`${bridge.url}/private/Surveys/nps`, {
+      headers: [["Cookie", cookie]],
+    });
+    expect(response.status).toBe(200);
+    expect(legacy.requests[0]!.headers.cookie).toBe(cookie);
   });
 });
 

@@ -15,6 +15,9 @@ import type { FastifyBaseLogger } from "fastify";
 /** No answer, and no bytes of one, for this long: the old service is taken as failed. */
 export const FORWARD_TIMEOUT_MS = 120_000;
 
+/** The largest header block the bridge accepts, and reads from the old service. */
+export const MAX_HEADER_BYTES = 32 * 1024;
+
 /** Headers of one connection, never forwarded (RFC 9110 §7.6.1), whichever way. */
 const HOP_BY_HOP = new Set([
   "connection",
@@ -29,14 +32,24 @@ const HOP_BY_HOP = new Set([
 ]);
 
 /**
+ * Headers `Connection` may never remove: the message's framing and the headers the bridge sets
+ * itself. Otherwise a caller naming `Content-Length` there could send a body unframed and smuggle
+ * a second request to the old service.
+ */
+const PROTECTED = new Set(["content-length", "transfer-encoding", "host", "x-forwarded-for"]);
+
+/**
  * The headers of a raw list (`[name, value, …]`) that may be forwarded: without the hop-by-hop
- * ones, those the `Connection` header names, and `drop` (lower-case names).
+ * ones, those the `Connection` header names (but the protected ones), and `drop` (lower-case).
  */
 export function endToEndHeaders(rawHeaders: string[], drop: readonly string[] = []): string[] {
   const named = new Set<string>(drop);
   for (let i = 0; i < rawHeaders.length; i += 2) {
     if (rawHeaders[i]!.toLowerCase() === "connection") {
-      for (const token of rawHeaders[i + 1]!.split(",")) named.add(token.trim().toLowerCase());
+      for (const token of rawHeaders[i + 1]!.split(",")) {
+        const name = token.trim().toLowerCase();
+        if (!PROTECTED.has(name)) named.add(name);
+      }
     }
   }
   const kept: string[] = [];
@@ -45,6 +58,20 @@ export function endToEndHeaders(rawHeaders: string[], drop: readonly string[] = 
     if (!HOP_BY_HOP.has(name) && !named.has(name)) kept.push(rawHeaders[i]!, rawHeaders[i + 1]!);
   }
   return kept;
+}
+
+/**
+ * The path and query to send on, as the bytes received: an origin-form target as it is; an
+ * absolute-form one (`http://host/path?q`) without its scheme and authority. `undefined` for any
+ * other target (`*`, `http://`, garbage), which the bridge answers with an empty `400`.
+ */
+export function originTarget(url: string | undefined): string | undefined {
+  if (url === undefined || url === "") return undefined;
+  if (url.startsWith("/")) return url;
+  const absolute = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]+([/?][^#]*)?$/.exec(url);
+  if (absolute === null) return undefined;
+  const rest = absolute[1] ?? "";
+  return rest.startsWith("/") ? rest : `/${rest}`;
 }
 
 /** An IPv4 address mapped into IPv6 (`::ffff:192.0.2.1`) in its IPv4 form. */
@@ -76,13 +103,13 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
   const send = https ? httpsRequest : httpRequest;
   const basePath = base.pathname.replace(/\/$/, "");
 
-  function fail(res: ServerResponse, cors: boolean): void {
-    if (res.destroyed) return;
+  function fail(res: ServerResponse, cors: boolean, status: 400 | 500 = 500): void {
+    if (res.destroyed || res.writableEnded) return;
     if (res.headersSent) {
       res.destroy();
       return;
     }
-    res.writeHead(500, {
+    res.writeHead(status, {
       "content-length": "0",
       ...(cors && { "access-control-allow-origin": "*" }),
     });
@@ -91,27 +118,29 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
 
   return {
     forward(req, res, { peer, cors, log }) {
-      // The request target as received; an absolute form keeps its path and query only.
-      const target = (req.url ?? "/").startsWith("/")
-        ? (req.url ?? "/")
-        : (() => {
-            const url = new URL(req.url ?? "/");
-            return `${url.pathname}${url.search}`;
-          })();
+      const target = originTarget(req.url);
+      if (target === undefined) {
+        fail(res, cors, 400);
+        return;
+      }
 
-      // Host is the old service's; Expect was answered by this server already.
-      const headers = endToEndHeaders(req.rawHeaders, ["host", "expect", "x-forwarded-for"]);
+      // Host is the old service's; Expect was answered by this server already; the framing is
+      // this hop's own, from what Node's parser read (below).
+      const headers = endToEndHeaders(req.rawHeaders, [
+        "host",
+        "expect",
+        "x-forwarded-for",
+        "content-length",
+      ]);
       const forwardedFor = [req.headers["x-forwarded-for"], peer]
         .filter((part) => part !== undefined && part !== "")
         .join(", ");
       headers.unshift("Host", base.host);
       headers.push("X-Forwarded-For", forwardedFor);
-      // A body of unknown length is sent in chunks of this hop's own.
-      if (
-        req.headers["content-length"] === undefined &&
-        req.headers["transfer-encoding"] !== undefined
-      ) {
+      if (req.headers["transfer-encoding"] !== undefined) {
         headers.push("Transfer-Encoding", "chunked");
+      } else if (req.headers["content-length"] !== undefined) {
+        headers.push("Content-Length", req.headers["content-length"]);
       }
 
       let upstream: ReturnType<typeof send>;
@@ -125,6 +154,8 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
           path: `${basePath}${target}`,
           headers,
           agent,
+          // As the bridge's own server: the old host took 32 KB of headers.
+          maxHeaderSize: MAX_HEADER_BYTES,
         });
       } catch (error) {
         log.error({ err: error }, "cannot forward to the old service");
@@ -136,11 +167,19 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
         upstream.destroy(new Error(`the old service sent nothing for ${timeoutMs} ms`));
       });
       upstream.on("response", (answer) => {
-        res.writeHead(
-          answer.statusCode ?? 500,
-          answer.statusMessage,
-          endToEndHeaders(answer.rawHeaders),
-        );
+        try {
+          res.writeHead(
+            answer.statusCode ?? 500,
+            answer.statusMessage,
+            endToEndHeaders(answer.rawHeaders),
+          );
+        } catch (error) {
+          log.error({ err: error }, "the old service's answer cannot be passed on");
+          answer.destroy();
+          upstream.destroy();
+          fail(res, cors);
+          return;
+        }
         pipeline(answer, res, (error) => {
           if (error) {
             log.warn({ err: error }, "forwarded answer interrupted");
@@ -150,7 +189,7 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
       });
       upstream.on("error", (error) => {
         // The caller went away (below): nothing to answer.
-        if (res.destroyed) return;
+        if (res.destroyed || res.writableEnded) return;
         log.error({ err: error }, "forwarding to the old service failed");
         fail(res, cors);
       });
