@@ -1345,8 +1345,11 @@ paths:
       operationId: listResults
       summary: List responses
       description: |
-        Every stored response, oldest first (by `submittedAt`, then `id`). Each stored
-        row is one item: responses that one client sent are not merged. The dashboard
+        Every stored response, oldest first (by `submittedAt`, then `id`). The partial
+        saves of one client fold into one response with the answers merged in order
+        (later answers win) and `partial: true` until the client completes; a response
+        sent without `clientId` is never folded. A folded response keeps the `id`,
+        `submittedAt` and page position of its first save. The dashboard
         loads every page; there is no 1,000-response cap. For whole-dataset downloads
         use `GET /surveys/{surveyId}/results/export`.
 
@@ -1394,6 +1397,10 @@ paths:
       tags: [Results]
       operationId: getResultStats
       summary: Response statistics
+      description: |
+        Counts completed responses only: `count`, `firstSubmittedAt` and `lastSubmittedAt`
+        describe completed responses, and the dates are the time each was completed.
+        Responses that are still partial are not counted.
       responses:
         '200':
           description: Totals for the Details tab.
@@ -1580,8 +1587,12 @@ paths:
         since. Two first submissions of one client sent at the same moment may both be
         stored.
 
-        `partial` and `lastPageIndex` are ignored in Phase 1: the response is stored
-        as complete. A server may refuse answers its storage cannot hold with
+        With `partial: true` and a `clientId`, the server stores the answers as a partial
+        save and marks the client as partial; the client can keep saving, and its saves
+        read as one response in the results until a post without `partial` completes it.
+        Without a `clientId`, `partial: true` has no client to resume, so the response is
+        stored as complete. A post without `partial` marks the client complete.
+        `lastPageIndex` is accepted and validated but not stored. A server may refuse answers its storage cannot hold with
         `413 payload-too-large`, even below `limits.maxResponseBytes`.
       security: []
       parameters:
@@ -1727,7 +1738,7 @@ paths:
         ("Grant Access"), whether or not the survey is published or archived; otherwise
         `404 survey-not-available`, the same answer as for an unknown survey.
 
-        Every stored response, oldest first, paged as `listResults` (a cursor belongs to its
+        Every completed response, oldest first, paged as `listResults` (a cursor belongs to its
         survey). The cursor carries the last item's submission time and response id: it is opaque
         to clients, and response ids are random. Items carry `submittedAt` and `data` only: no id,
         client id or IP address. The answers and comments of the questions in `settings.privateResultQuestions` are left out;
@@ -2754,8 +2765,7 @@ components:
           description: Present only when `storeRespondentIp` was on at submission time.
         partial:
           type: boolean
-          description: A partial save from an older client. Not returned in Phase 1.
-          x-phase: P1
+          description: A response whose client has saved progress but not completed; one client's saves read as one response. Present only when true.
       examples:
         - id: eb2ed53e-f1ee-4343-a7d4-371d1d689dca
           submittedAt: '2026-10-05T06:48:57.517Z'
@@ -2770,11 +2780,19 @@ components:
       type: object
       required: [count, firstSubmittedAt, lastSubmittedAt]
       properties:
-        count: { type: integer, minimum: 0, description: Stored responses. }
+        count: { type: integer, minimum: 0, description: Completed responses. }
         firstSubmittedAt:
-          { type: [string, 'null'], format: date-time, description: '`null` when there are none.' }
+          {
+            type: [string, 'null'],
+            format: date-time,
+            description: 'When the earliest completed response was completed; `null` when there are none.',
+          }
         lastSubmittedAt:
-          { type: [string, 'null'], format: date-time, description: '`null` when there are none.' }
+          {
+            type: [string, 'null'],
+            format: date-time,
+            description: 'When the latest completed response was completed; `null` when there are none.',
+          }
     ViewState:
       type: object
       description: Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`).
@@ -2803,13 +2821,11 @@ components:
         partial:
           type: boolean
           default: false
-          description: 'Save progress without completing. Ignored in Phase 1: the response is stored as complete.'
-          x-phase: P1
+          description: 'Save progress without completing. Needs a `clientId`; without one the response is stored as complete.'
         lastPageIndex:
           type: integer
           minimum: 0
-          description: Page to resume on. Ignored in Phase 1.
-          x-phase: P1
+          description: Page the client was on. Validated, not stored.
     PublicResultPage:
       type: object
       required: [survey, items, nextCursor]

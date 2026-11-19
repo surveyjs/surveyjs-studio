@@ -81,6 +81,16 @@ describe("loadContract", () => {
     expect(source.components.securitySchemes.bearerAuth).not.toHaveProperty("x-phase");
   });
 
+  it("has no P1 marker on the partial response fields", async () => {
+    const source = parse(await readFile(openapiPath, "utf8")) as {
+      components: { schemas: Record<string, { properties: Record<string, object> }> };
+    };
+    const schemas = source.components.schemas;
+    expect(schemas.ResponseSubmission.properties.partial).not.toHaveProperty("x-phase");
+    expect(schemas.ResponseSubmission.properties.lastPageIndex).not.toHaveProperty("x-phase");
+    expect(schemas.SurveyResponse.properties.partial).not.toHaveProperty("x-phase");
+  });
+
   it("reads a missing top-level security as public", async () => {
     const source = await readFile(openapiPath, "utf8");
     const withoutTopLevel = source.replace(/^security:\r?\n( {2}- .*\r?\n)+/m, "");
