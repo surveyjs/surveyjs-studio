@@ -1,0 +1,41 @@
+{
+  "source": "derived",
+  "description": "ClientId and IPAddress are never included (ADR 0039)",
+  "difference": "ADR 0039 point 1: the old API added the respondent's ClientId and IPAddress to each row of a survey without a saved column layout; the bridge never includes them.",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true,
+        "storeRespondentIp": true
+      }
+    },
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/{{survey.surveyId}}"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "<iso>Z",
+            "InstanceId": null
+          }
+        ],
+        "ResultCount": 1
+      }
+    }
+  }
+}

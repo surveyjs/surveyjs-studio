@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "a name with a colon: an empty 400",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": {
+      "name": "a:b"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

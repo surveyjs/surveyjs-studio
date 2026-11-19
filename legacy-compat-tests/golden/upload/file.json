@@ -1,0 +1,35 @@
+{
+  "source": "derived",
+  "description": "another file: \"dxsfile:\" + Studio's file ID + the extension",
+  "difference": "The old API named the stored file with a new GUID (dxsimage:{guid}.png); the bridge answers Studio's file ID, 64 hex digits. Callers keep the name as an opaque answer value.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/upload/",
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "report.pdf",
+          "contentType": "application/pdf",
+          "base64": "JVBERi0xLjQKJSBsZWdhY3kgY29tcGF0IHRlc3QgZmlsZQo="
+        },
+        {
+          "name": "postId",
+          "value": "{{survey.postId}}"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "dxsfile:<hex64>.pdf"
+    }
+  }
+}

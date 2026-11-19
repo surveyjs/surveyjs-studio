@@ -46,6 +46,13 @@ const isCore = (name: string): boolean =>
 
 const isSurveyJs = (name: string): boolean => name.startsWith("survey-");
 
+/**
+ * Manifests whose `survey-*` packages are left out of the one-version rule: the legacy
+ * compatibility suite pins the Form Library v1 on purpose, as pages built for the old service use it.
+ * They must still be exact versions.
+ */
+const SURVEYJS_VERSION_EXEMPT = new Set(["legacy-compat-tests/package.json"]);
+
 const isAllowedVersion = (version: string): boolean =>
   version === "workspace:*" || EXACT_SEMVER.test(version);
 
@@ -64,7 +71,7 @@ export function checkDependencies(manifests: Manifest[]): Violation[] {
             rule: "core-dependency-must-be-exact",
           });
         }
-        if (isSurveyJs(dependency)) {
+        if (isSurveyJs(dependency) && !SURVEYJS_VERSION_EXEMPT.has(path)) {
           surveyEntries.push({
             file: path,
             dependency,

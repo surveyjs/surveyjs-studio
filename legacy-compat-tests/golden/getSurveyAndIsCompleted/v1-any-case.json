@@ -1,0 +1,43 @@
+{
+  "source": "derived",
+  "description": "the v1 prefix in other letter case with a trailing slash",
+  "request": {
+    "method": "GET",
+    "path": "/public/V1/survey/getsurveyandiscompleted/",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000001",
+      "clientId": "client-0001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "survey": {
+          "title": "Customer feedback",
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "rating",
+                  "name": "satisfaction",
+                  "title": "How satisfied are you?"
+                },
+                {
+                  "type": "file",
+                  "name": "receipt",
+                  "title": "Upload your receipt"
+                }
+              ]
+            }
+          ]
+        },
+        "isCompleted": "partial"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "property names in any letter case, unknown properties ignored",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "text": "{\"POSTID\":\"{{survey.postId}}\",\"SurveyResult\":\"{\\\"satisfaction\\\":2}\",\"extra\":1}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

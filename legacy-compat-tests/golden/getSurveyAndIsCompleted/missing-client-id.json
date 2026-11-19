@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "no clientId: 400 \"Check 'clientId' parameter\"",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurveyAndIsCompleted",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "Check 'clientId' parameter"
+    }
+  }
+}

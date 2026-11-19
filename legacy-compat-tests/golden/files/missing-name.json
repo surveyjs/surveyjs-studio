@@ -1,0 +1,16 @@
+{
+  "source": "derived",
+  "description": "no name: an empty 400",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

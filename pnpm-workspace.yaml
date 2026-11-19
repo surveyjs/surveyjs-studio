@@ -5,6 +5,7 @@ packages:
   - conformance-tests
   - e2e
   - bridge
+  - legacy-compat-tests
 
 allowBuilds:
   esbuild: true

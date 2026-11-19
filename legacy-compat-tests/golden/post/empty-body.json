@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "an empty body: the validation problem under \"\"",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "text": ""
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "": ["A non-empty request body is required."]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

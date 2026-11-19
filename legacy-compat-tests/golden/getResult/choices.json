@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "a radiogroup over 1,500 responses",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000008",
+      "name": "color"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "AnswersCount": 1500,
+        "QuestionResult": {
+          "Red": 500,
+          "Green": 500,
+          "Blue": 500
+        },
+        "FirstResultAt": "2026-05-01T08:00:00",
+        "LastResultAt": "2026-05-01T20:30:00",
+        "ResultCount": 1500
+      }
+    }
+  }
+}

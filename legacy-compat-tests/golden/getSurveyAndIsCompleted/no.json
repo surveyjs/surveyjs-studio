@@ -1,0 +1,43 @@
+{
+  "source": "derived",
+  "description": "a respondent without a marker: \"no\"",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurveyAndIsCompleted",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000001",
+      "clientId": "someone-new"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "survey": {
+          "title": "Customer feedback",
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "rating",
+                  "name": "satisfaction",
+                  "title": "How satisfied are you?"
+                },
+                {
+                  "type": "file",
+                  "name": "receipt",
+                  "title": "Upload your receipt"
+                }
+              ]
+            }
+          ]
+        },
+        "isCompleted": "no"
+      }
+    }
+  }
+}

@@ -82,6 +82,11 @@ jobs:
       - name: Conformance tests (sandbox mock, msw/node)
         run: pnpm test:conformance:sandbox
 
+      # The bridge in front of in-memory Studio, against the derived golden files, and the Form
+      # Library v1 in jsdom; forwarded paths go to a local stub, never the old service.
+      - name: Legacy API compatibility tests (the bridge on in-memory Studio)
+        run: pnpm test:compat
+
   # The production image, saved for the jobs that run suites on it (docker run --network host) and,
   # on master, for the publish job.
   image:
@@ -161,6 +166,9 @@ jobs:
         run: pnpm test:conformance:azurite
         env:
           CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
+
+      - name: Legacy API compatibility tests (the bridge on Azure legacy, Azurite)
+        run: pnpm test:compat:azurite
 
       # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers

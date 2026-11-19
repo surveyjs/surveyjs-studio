@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "an unknown postId: 400 \"Check parameter values.\"",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "postId": "99999999-9999-4999-8999-999999999999",
+        "surveyResult": "{\"satisfaction\":4}"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "Check parameter values."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a survey without responses: zeros and 0001-01-01T00:00:00",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000002",
+      "name": "satisfaction"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "AnswersCount": 0,
+        "QuestionResult": {},
+        "FirstResultAt": "0001-01-01T00:00:00",
+        "LastResultAt": "0001-01-01T00:00:00",
+        "ResultCount": 0
+      }
+    }
+  }
+}

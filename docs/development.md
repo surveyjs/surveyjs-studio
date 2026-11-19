@@ -985,7 +985,8 @@ needs no server change until you implement it.
     `vite`, `fastify`, `openapi-typescript`, `openapi-fetch`, `openapi-react-query`, `openapi-msw`,
     and every package whose name starts with `@vitejs/`, `@tanstack/`, `@fastify/`, `@redocly/`
     or `survey-`;
-  - `survey-*` packages are used with different versions (they must move together).
+  - `survey-*` packages are used with different versions (they must move together). The one
+    exception is `legacy-compat-tests`, which pins the Form Library v1 (`survey-core` 1.x) on purpose.
 - **Renovate** (`renovate.json`) pins versions, waits 14 days after a release, and refreshes the
   lockfile on Mondays before 5:00. Its pull requests:
   - one group for all minor and patch updates except SurveyJS: merge when CI is green;

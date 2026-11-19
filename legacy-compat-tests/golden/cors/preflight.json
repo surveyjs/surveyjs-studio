@@ -1,0 +1,23 @@
+{
+  "source": "derived",
+  "description": "a preflight to an action: 204 with the requested method and headers",
+  "request": {
+    "method": "OPTIONS",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "origin": "https://example.com",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type"
+    }
+  },
+  "response": {
+    "status": 204,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "POST",
+      "access-control-allow-headers": "content-type",
+      "access-control-max-age": null
+    },
+    "body": null
+  }
+}

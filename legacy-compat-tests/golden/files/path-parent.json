@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "a name with a path (../x): an empty 404, nothing looked up",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": {
+      "name": "../x"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

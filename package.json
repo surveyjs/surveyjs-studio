@@ -30,6 +30,8 @@
     "test:conformance:user-api": "pnpm --filter @surveyjs-studio/conformance-tests test:user-api",
     "test:conformance:read-only": "pnpm --filter @surveyjs-studio/conformance-tests test:read-only",
     "test:conformance:sandbox": "pnpm --filter @surveyjs-studio/conformance-tests test:sandbox",
+    "test:compat": "pnpm --filter @surveyjs-studio/legacy-compat-tests test",
+    "test:compat:azurite": "pnpm --filter @surveyjs-studio/legacy-compat-tests test:azurite",
     "test": "pnpm test:unit && pnpm test:conformance",
     "e2e": "pnpm --filter @surveyjs-studio/e2e test",
     "e2e:azurite": "pnpm --filter @surveyjs-studio/e2e test:azurite",

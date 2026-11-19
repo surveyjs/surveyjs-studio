@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "no such file: an empty 404",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": {
+      "name": "nosuch.png"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "source": "derived",
+  "description": "a name with an escaped slash (a%2Fb): an empty 404, nothing looked up",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": "name=a%2Fb"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

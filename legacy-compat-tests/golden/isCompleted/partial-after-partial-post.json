@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "after a partial post with the client ID: \"partial\"",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a",
+        "isPartialCompleted": true
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/isCompleted",
+    "query": {
+      "resultId": "{{survey.resultId}}",
+      "clientId": "client-a"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "partial"
+    }
+  }
+}

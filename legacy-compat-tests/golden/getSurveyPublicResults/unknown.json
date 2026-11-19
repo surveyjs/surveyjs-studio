@@ -1,0 +1,17 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: 400 with the refusal text",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/99999999-9999-4999-8999-999999999999"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to get results of the survey 99999999-9999-4999-8999-999999999999"
+    }
+  }
+}

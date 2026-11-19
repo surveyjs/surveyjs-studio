@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "an unknown resultId: \"no\"",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/isCompleted",
+    "query": {
+      "resultId": "99999999-9999-4999-8999-999999999999",
+      "clientId": "client-0001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "no"
+    }
+  }
+}

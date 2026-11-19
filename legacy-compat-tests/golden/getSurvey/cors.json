@@ -1,0 +1,45 @@
+{
+  "source": "derived",
+  "description": "a caller with an Origin gets Access-Control-Allow-Origin: *",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000001"
+    },
+    "headers": {
+      "origin": "https://example.com"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "vary": null,
+      "access-control-allow-credentials": null
+    },
+    "body": {
+      "json": {
+        "title": "Customer feedback",
+        "pages": [
+          {
+            "name": "page1",
+            "elements": [
+              {
+                "type": "rating",
+                "name": "satisfaction",
+                "title": "How satisfied are you?"
+              },
+              {
+                "type": "file",
+                "name": "receipt",
+                "title": "Upload your receipt"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

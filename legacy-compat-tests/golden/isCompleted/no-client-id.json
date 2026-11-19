@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "no clientId: \"no\" (ADR 0039: the old API answered another respondent's state)",
+  "difference": "ADR 0039 point 1: the old API answered the state of the first stored respondent (client-0001: \"partial\").",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/isCompleted",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "no"
+    }
+  }
+}

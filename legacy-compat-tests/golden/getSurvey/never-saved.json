@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "a survey never saved in the editor",
+  "difference": "Not among ADR 0039's listed differences: the old API answered 400 \"Check parameter values.\" for a survey whose definition was never saved (it had no stored definition). Studio's getPublicDefinition returns the empty definition {} for it, which the bridge cannot tell from a saved empty survey.",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000002"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "json": {}
+    }
+  }
+}

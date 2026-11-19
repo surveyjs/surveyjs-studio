@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "an empty name: 400 Bad Request, with Cache-Control",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000001",
+      "name": ""
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "Bad Request",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}
