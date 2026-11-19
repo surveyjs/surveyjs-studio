@@ -75,6 +75,11 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
       return service.respondentState({ resultId }, clientId);
     },
 
+    getQuestionSummary: (request) => {
+      const { resultId, name } = request.params as { resultId: string; name: string };
+      return service.questionSummary(resultId, name);
+    },
+
     listResults: (request) => {
       const { surveyId } = request.params as { surveyId: string };
       const query = request.query as { limit: number; cursor?: string };

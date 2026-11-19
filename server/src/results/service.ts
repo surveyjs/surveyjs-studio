@@ -9,6 +9,7 @@ import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
   type ProjectStore,
+  type ResponsePosition,
   type FileStore,
   type ResultStore,
   type SurveyStore,
@@ -19,7 +20,14 @@ import { availableSurvey, surveyNotAvailable } from "./availability.js";
 import { decodeResultsCursor, encodeResultsCursor } from "../paging/cursor.js";
 import { privateKeysOf, withoutKeys } from "./definition.js";
 import { csvColumns } from "./csv.js";
-import { csvExport, jsonExport, responseJson, storedResponses } from "./export.js";
+import {
+  EXPORT_PAGE_SIZE,
+  csvExport,
+  jsonExport,
+  responseJson,
+  storedResponses,
+} from "./export.js";
+import { summarizeQuestion } from "./question-summary.js";
 import { exportFileName, type ExportFormat } from "./export-format.js";
 import { limitCookieOf, publishedDefinition } from "./one-response.js";
 
@@ -27,6 +35,7 @@ export type PublishedSurveyJson = components["schemas"]["PublishedSurvey"];
 export type ResultStatsJson = components["schemas"]["ResultStats"];
 export type ResponsePageJson = components["schemas"]["ResponsePage"];
 export type PublicResultPageJson = components["schemas"]["PublicResultPage"];
+export type QuestionSummaryJson = components["schemas"]["QuestionSummary"];
 
 export interface ExportFile {
   /** `exportFileName(survey.name, format)`. */
@@ -63,6 +72,8 @@ export interface ResultsService {
     key: { readonly surveyId: string } | { readonly resultId: string },
     clientId: string,
   ): Promise<{ state: CompletionState }>;
+  /** One question's answers counted over the completed responses; `survey-not-available` for an unknown result ID. */
+  questionSummary(resultId: string, name: string): Promise<QuestionSummaryJson>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
   /** One page of every stored response, oldest first; answers included. */
   list(
@@ -196,6 +207,35 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
           : await surveys.findSurveyByKey(key);
       if (!survey) throw surveyNotAvailable();
       return { state: await results.completion(survey, clientId) };
+    },
+
+    async questionSummary(resultId, name) {
+      const survey = await surveys.findSurveyByKey({ resultId });
+      if (!survey) throw surveyNotAvailable();
+      const completed = async function* () {
+        let after: ResponsePosition | undefined;
+        for (;;) {
+          const page = await results.listResponsePage(survey, {
+            limit: EXPORT_PAGE_SIZE,
+            completedOnly: true,
+            ...(after && { after }),
+          });
+          yield* page.items;
+          if (page.next === null) return;
+          after = page.next;
+        }
+      };
+      const [counts, stats] = await Promise.all([
+        summarizeQuestion(name, completed()),
+        results.stats(survey),
+      ]);
+      return {
+        answered: counts.answered,
+        values: counts.values,
+        responseCount: stats.count,
+        firstSubmittedAt: stats.firstSubmittedAt,
+        lastSubmittedAt: stats.lastSubmittedAt,
+      };
     },
 
     async stats(user, surveyId) {

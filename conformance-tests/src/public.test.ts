@@ -603,6 +603,68 @@ describe("getRespondentState", () => {
   });
 });
 
+function summaryOf(resultId: string, name: string): Promise<Response> {
+  return call("GET", "/public/results/{resultId}/questions/{name}", {
+    path: `/public/results/${resultId}/questions/${encodeURIComponent(name)}`,
+  });
+}
+
+describe("getQuestionSummary", () => {
+  it("counts the completed responses only, by result ID", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    const post = async (data: object, extra: object = {}) => {
+      expect((await submitByPostId(postId, { data, ...extra })).status).toBe(201);
+    };
+    await post({ q1: ["a", "b"] });
+    await post({ q1: ["b"] });
+    await post({ q1: { r1: "c1" } });
+    await post({ q1: 1 });
+    await post({ q1: "1" });
+    await post({ other: "x" });
+    await post({ q1: "partial only" }, { clientId: "p1", partial: true });
+    await post({ q1: "run" }, { clientId: "c1", partial: true });
+    await post({ q1: ["a"] }, { clientId: "c1" });
+
+    const response = await summaryOf(resultId, "q1");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      answered: 6,
+      values: [
+        { value: "a", count: 2 },
+        { value: "b", count: 2 },
+        { value: ["r1", "c1"], count: 1 },
+        { value: 1, count: 1 },
+        { value: "1", count: 1 },
+      ],
+      responseCount: 7,
+    });
+    expect(body.firstSubmittedAt).toEqual(expect.any(String));
+    expect(body.lastSubmittedAt).toEqual(expect.any(String));
+  });
+
+  it("answers an empty summary for a survey without responses", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const response = await summaryOf(resultId, "q1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      answered: 0,
+      values: [],
+      responseCount: 0,
+      firstSubmittedAt: null,
+      lastSubmittedAt: null,
+    });
+  });
+
+  it("answers 404 for an unknown result ID", async () => {
+    await expectNotAvailable(await summaryOf(UNKNOWN_ID, "q1"));
+  });
+});
+
 describe("submitResponseByPostId", () => {
   it("stores a response for an unpublished survey, once per Idempotency-Key", async (ctx) => {
     const headers = await as(ctx, admin);
