@@ -84,6 +84,13 @@ export interface ResponsePageQuery {
   readonly limit: number;
   /** Leave out responses whose run has no complete row (ADR 0038). */
   readonly completedOnly?: boolean;
+  /**
+   * ISO 8601. Only responses placed strictly after this time (a run's place is its first row's
+   * `submittedAt`, ADR 0038). Applied before `limit`; a cursor before it reads as it.
+   */
+  readonly from?: string;
+  /** ISO 8601. Only responses placed strictly before this time, as `from`. */
+  readonly till?: string;
 }
 
 export interface ResponsePage {

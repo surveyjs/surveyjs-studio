@@ -85,10 +85,13 @@ export interface ResultsService {
   exportResults(user: RequestUser, surveyId: string, format: ExportFormat): Promise<ExportFile>;
   /** Deletes every response, marker and respondent file; needs modify permission. */
   deleteResults(user: RequestUser, surveyId: string): Promise<void>;
-  /** One page of public results (Grant Access on); private questions' answers left out. */
+  /**
+   * One page of public results (Grant Access on); private questions' answers left out. `from` and
+   * `till` (ISO 8601) keep responses placed strictly between them.
+   */
   publicPage(
     surveyId: string,
-    page: { limit: number; cursor?: string },
+    page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<PublicResultPageJson>;
 }
 
@@ -298,6 +301,8 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         limit: page.limit,
         completedOnly: true,
         ...(after && { after }),
+        ...(page.from !== undefined && { from: page.from }),
+        ...(page.till !== undefined && { till: page.till }),
       });
       return {
         survey: {

@@ -120,11 +120,18 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
 
     getPublicResults: (request, reply) => {
       const { surveyId } = request.params as { surveyId: string };
-      const query = request.query as { limit: number; cursor?: string };
+      const query = request.query as {
+        limit: number;
+        cursor?: string;
+        from?: string;
+        till?: string;
+      };
       void reply.header("cache-control", "no-store");
       return service.publicPage(surveyId, {
         limit: query.limit,
         ...(query.cursor !== undefined && { cursor: query.cursor }),
+        ...(query.from !== undefined && { from: query.from }),
+        ...(query.till !== undefined && { till: query.till }),
       });
     },
   };

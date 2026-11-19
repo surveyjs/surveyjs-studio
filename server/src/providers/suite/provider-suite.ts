@@ -1566,6 +1566,105 @@ export function describeProviderSuite(
           expect(pages.map((page) => page.next !== null)).toEqual([true, true, false]);
         });
 
+        describe("from and till", () => {
+          const window = (query: Omit<ResponsePageQuery, "limit">, limit = 10) =>
+            providers.results.listResponsePage(surveyFeedback, { limit, ...query });
+          /** Between rows 2 (09:15) and 3 (10:30) of fixture 01. */
+          const between2and3 = "2026-04-01T10:00:00.000Z";
+          /** Between rows 3 (10:30) and 4 (11:45). */
+          const before4 = "2026-04-01T11:00:00.000Z";
+
+          it("lists rows 3 to 5 of fixture 01 from a time between rows 2 and 3", async () => {
+            expect(await window({ from: between2and3 })).toStrictEqual({
+              items: feedbackResponses.slice(2),
+              next: null,
+            });
+          });
+
+          it("lists rows 1 to 3 till a time before row 4", async () => {
+            expect(await window({ till: before4 })).toStrictEqual({
+              items: feedbackResponses.slice(0, 3),
+              next: null,
+            });
+          });
+
+          it("applies both, leaving out a response exactly at either bound", async () => {
+            expect(
+              await window({
+                from: feedbackResponses[0]!.submittedAt,
+                till: feedbackResponses[4]!.submittedAt,
+              }),
+            ).toStrictEqual({ items: feedbackResponses.slice(1, 4), next: null });
+            expect(
+              (await window({ from: between2and3, till: before4 })).items.map((item) => item.id),
+            ).toStrictEqual([feedbackResponses[2]!.id]);
+          });
+
+          it("compares the bounds as instants", async () => {
+            // Row 3's time (10:30:00.000Z) written with an offset and without milliseconds.
+            const page = await window({ from: "2026-04-01T12:30:00+02:00" });
+            expect(page.items.map((item) => item.id)).toStrictEqual(
+              feedbackResponses.slice(3).map((response) => response.id),
+            );
+          });
+
+          it("leaves out a run that starts before from, even with its complete row inside", async () => {
+            const survey = await freshSurvey();
+            const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
+            await append(survey, sid(1), { submittedAt: at(10), clientId: "a", partial: true });
+            await append(survey, sid(2), { submittedAt: at(12), clientId: "a", data: { a: 2 } });
+            await append(survey, sid(3), { submittedAt: at(13) });
+            // Starts inside the window, completes after till: placed at its first row, so kept.
+            await append(survey, sid(4), { submittedAt: at(14), clientId: "b", partial: true });
+            await append(survey, sid(5), { submittedAt: at(16), clientId: "b", data: { b: 5 } });
+            for (const completedOnly of [false, true]) {
+              const page = await providers.results.listResponsePage(survey, {
+                limit: 10,
+                completedOnly,
+                from: at(11),
+                till: at(15),
+              });
+              expect(page.items.map((item) => [item.id, item.partial])).toStrictEqual([
+                [sid(3), false],
+                [sid(4), false],
+              ]);
+              expect(page.items[1]!.data).toStrictEqual({ q: "first", b: 5 });
+              expect(page.next).toBeNull();
+            }
+          });
+
+          it("pages by one within the window", async () => {
+            const from = feedbackResponses[0]!.submittedAt;
+            const till = feedbackResponses[4]!.submittedAt;
+            const pages: Page[] = [];
+            let after: ResponsePosition | undefined;
+            do {
+              const page = await window({ from, till, ...(after && { after }) }, 1);
+              pages.push(page);
+              after = page.next ?? undefined;
+            } while (after);
+            expect(pages.map((page) => page.items)).toStrictEqual([
+              [feedbackResponses[1]],
+              [feedbackResponses[2]],
+              [feedbackResponses[3]],
+            ]);
+            expect(pages.map((page) => page.next)).toStrictEqual([
+              { submittedAt: feedbackResponses[1]!.submittedAt, id: feedbackResponses[1]!.id },
+              { submittedAt: feedbackResponses[2]!.submittedAt, id: feedbackResponses[2]!.id },
+              null,
+            ]);
+          });
+
+          it("reads a cursor before from as from", async () => {
+            const first = feedbackResponses[0]!;
+            const page = await window({
+              from: between2and3,
+              after: { submittedAt: first.submittedAt, id: first.id },
+            });
+            expect(page.items).toStrictEqual(feedbackResponses.slice(2));
+          });
+        });
+
         describe("on a fresh survey", () => {
           const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
           const seeded = async (): Promise<SurveyRecord> => {

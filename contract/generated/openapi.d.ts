@@ -4177,6 +4177,14 @@ export interface operations {
                  * @description Only responses submitted before this time: a response is kept when its `submittedAt` is
                  *     earlier than `till` (a response submitted exactly at `till` is left out). Combine with
                  *     `from` for a range.
+                 *
+                 *     Both bounds apply to a response's `submittedAt`, which for a response saved in parts is
+                 *     the time of its first save: a response started before `from` is left out even when it
+                 *     was completed after it, and one started before `till` is kept even when it was
+                 *     completed later. Times compare as instants, whatever the offset. They are applied
+                 *     before `limit`, so a page holds up to `limit` responses inside the range, and a
+                 *     `cursor` keeps paging inside it. A value that is not an RFC 3339 date-time fails with
+                 *     `400 bad-request`.
                  */
                 till?: string;
             };

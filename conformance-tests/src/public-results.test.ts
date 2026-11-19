@@ -144,6 +144,48 @@ describe("getPublicResults", () => {
     expect(page.survey.privateQuestions).toEqual(["q2"]);
   });
 
+  it("keeps responses strictly between from and till, paging inside them", async () => {
+    // Customer feedback's completed responses: 08:00:00.500 (4), 10:30 (5), 11:45 (3), 12:00 (1);
+    // the partial one at 09:15 is never listed.
+    const satisfaction = async (query: string): Promise<unknown[]> => {
+      const response = await results(FEEDBACK, query);
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as PublicPage;
+      return page.items.map((item) => item.data.satisfaction);
+    };
+    expect(await satisfaction("?from=2026-04-01T10:00:00Z")).toEqual([5, 3, 1]);
+    expect(await satisfaction("?till=2026-04-01T11:00:00Z")).toEqual([4, 5]);
+    expect(
+      await satisfaction("?from=2026-04-01T08:00:00.500Z&till=2026-04-01T12:00:00.000Z"),
+    ).toEqual([5, 3]);
+    // 10:30Z written with an offset: compared as an instant, and exactly at the bound.
+    expect(await satisfaction(`?from=${encodeURIComponent("2026-04-01T12:30:00+02:00")}`)).toEqual([
+      3, 1,
+    ]);
+
+    const window = "from=2026-04-01T08:00:00.500Z&till=2026-04-01T12:00:00Z";
+    const seen: unknown[] = [];
+    const cursors: (string | null)[] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = `?limit=1&${window}${cursor === null ? "" : `&cursor=${cursor}`}`;
+      const page = (await (await results(FEEDBACK, query)).json()) as PublicPage;
+      seen.push(...page.items.map((item) => item.data.satisfaction));
+      cursor = page.nextCursor;
+      cursors.push(cursor);
+    } while (cursor !== null);
+    expect(seen).toEqual([5, 3]);
+    expect(cursors.map((next) => next !== null)).toEqual([true, false]);
+  });
+
+  it("refuses a from or till that is not a date-time", async () => {
+    for (const query of ["?from=yesterday", "?till=2026-04-01", "?from=2026-13-01T00:00:00Z"]) {
+      const response = await results(FEEDBACK, query);
+      expect(response.status).toBe(400);
+      expect(await codeOf(response)).toBe("bad-request");
+    }
+  });
+
   it("refuses unknown surveys, bad paging and cursors of another survey", async (ctx) => {
     await expectNotAvailable(await results(UNKNOWN_ID));
     for (const query of ["?limit=0", "?limit=1001"]) {
