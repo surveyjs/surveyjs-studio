@@ -309,10 +309,20 @@ describe("submitResponse", () => {
       expect(lines[0]).toBe("Submitted,q1,ClientId,Partial");
       expect(lines[1]).toMatch(/,a,.*,true$/);
     }
-    const open = await call("GET", "/public/surveys/{surveyId}/results", {
-      path: `/public/surveys/${surveyId}/results`,
+    const grant = await call("PATCH", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers: { "content-type": "application/merge-patch+json", ...headers },
+      body: { settings: { publicResults: true } },
     });
-    expect(open.status).toBe(404);
+    expect(grant.status).toBe(200);
+    const publicItems = async () => {
+      const open = await call("GET", "/public/surveys/{surveyId}/results", {
+        path: `/public/surveys/${surveyId}/results`,
+      });
+      expect(open.status).toBe(200);
+      return ((await open.json()) as { items: unknown[] }).items;
+    };
+    expect(await publicItems()).toHaveLength(0);
 
     const done = await submit(surveyId, { data: { q1: "b" }, clientId });
     expect(done.status).toBe(201);
@@ -322,6 +332,7 @@ describe("submitResponse", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ id: partialId, data: { q1: "b" } });
     expect(listed[0]).not.toHaveProperty("partial");
+    expect(await publicItems()).toMatchObject([{ data: { q1: "b" } }]);
     if (!sandbox) {
       const csv = await call("GET", "/surveys/{surveyId}/results/export", {
         path: `/surveys/${surveyId}/results/export?format=csv`,

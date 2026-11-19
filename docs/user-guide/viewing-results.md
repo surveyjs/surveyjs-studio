@@ -31,7 +31,7 @@ The address after `?tab=` names the tab, so you can bookmark or share a link to 
 link has no `tab`.
 
 **Every response counts.** The old page showed a banner, "displays only the first 1,000 responses", and
-charted only the first 1,000. This page loads all responses, in pages of 1,000, and charts every one of them.
+charted only the first 1,000. This page loads all responses, in pages of 1,000, and charts every completed one of them (the Summary leaves partial responses out).
 
 ## Summary
 
@@ -60,7 +60,7 @@ columns are added at the end:
 | **IPAddress** | The respondent's IP address, when [Save Respondent IP](publishing-and-collecting-responses.md#save-respondent-ip) was on. The column is there only when at least one response has an address |
 | **Partial**   | **Yes** for a [partial response](#partial-responses). The column is there only when at least one response is partial, after **IPAddress**                                                    |
 
-A question that is itself called `HappendAt` or `IPAddress` keeps its own answer, and the extra column of
+A question that is itself called `HappendAt`, `IPAddress` or `Partial` keeps its own answer, and the extra column of
 that name is left out. The table never shows the response id or the client id.
 
 What you can do:

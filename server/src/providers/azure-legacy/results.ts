@@ -100,7 +100,7 @@ function placedForFolding(row: Record<string, unknown> & { rowKey?: string }): P
 }
 
 /** Columns of the first read of a page: enough to place each row and fold it into runs. */
-const POSITION_COLUMNS = ["RowKey", "id", "happendat", "clientid", "ispartialcompleted"];
+const POSITION_COLUMNS = ["RowKey", "happendat", "clientid", "ispartialcompleted"];
 
 /** Point reads of a page's rows that come after its time window run this many at a time. */
 const POINT_READS_AT_ONCE = 32;

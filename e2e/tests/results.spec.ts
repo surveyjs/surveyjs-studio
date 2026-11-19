@@ -263,7 +263,7 @@ test("surveyjs.io's saved layouts load without being saved again; the Table show
   await openResultsTab(page, "Table");
   // The fixture's row 02 is an open partial run: the Partial column follows IPAddress.
   await expect(tableHeaders(page).last()).toHaveText("Partial", { timeout: 30_000 });
-  await expect(tableHeaders(page).nth(-2)).toHaveText("IPAddress");
+  expect((await tableHeaders(page).allTextContents()).slice(-2)).toEqual(["IPAddress", "Partial"]);
   await expect(tableCells(page, "Partial").filter({ hasText: "Yes" })).toHaveCount(1);
   await expect(tableCells(page, "IPAddress").filter({ hasText: "203.0.113.7" })).toHaveCount(1);
   await openResultsTab(page, "Summary");

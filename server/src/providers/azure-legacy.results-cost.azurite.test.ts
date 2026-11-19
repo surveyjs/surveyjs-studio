@@ -300,7 +300,6 @@ describe("azure-legacy results page reads (local replica)", () => {
       const [first, ...full] = page.calls;
       expect(first?.options?.queryOptions?.select).toEqual([
         "RowKey",
-        "id",
         "happendat",
         "clientid",
         "ispartialcompleted",

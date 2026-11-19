@@ -46,10 +46,7 @@ export interface SurveyPageQuery {
 export interface SurveyPage {
   /** At most `limit` items, in list order. May be shorter than `limit` even when more follow (skipped legacy rows). */
   readonly items: SurveyRecord[];
-  /**
-   * First-row position of the last response returned when more follow; null on the last page.
-   * A response is a run of one client's rows read as one (ADR 0038).
-   */
+  /** Position of the last row this page covered when more rows follow; null on the last page. */
   readonly next: SurveyPosition | null;
 }
 
@@ -163,7 +160,8 @@ export interface ResultStore {
   /**
    * Stores the response unless one with this id (case-insensitive) exists for the survey.
    * - absent: stores `{ id lower-case, submittedAt, data (a copy), clientId?, respondentIp?, partial:
-   *   response.partial === true }`, then, when `clientId` is given, writes or overwrites that client's
+   *   response.partial === true && clientId given }` (a partial post without a client id is stored as
+   *   complete: there is no run to fold it into), then, when `clientId` is given, writes or overwrites that client's
    *   marker (partial when the response is, else complete); -> "stored".
    * - present: the stored response is not changed; when `clientId` is given the client's marker is
    *   (re)written with the posted state (repairs a marker lost to a failure after the row); -> "exists".

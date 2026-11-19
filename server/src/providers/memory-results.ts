@@ -64,7 +64,7 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
           data: structuredClone(response.data),
           ...(response.clientId !== undefined && { clientId: response.clientId }),
           ...(response.respondentIp !== undefined && { respondentIp: response.respondentIp }),
-          partial: response.partial === true,
+          partial: response.partial === true && response.clientId !== undefined,
         });
         responses.set(key, rows);
       }

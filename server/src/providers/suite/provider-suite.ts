@@ -1444,6 +1444,15 @@ export function describeProviderSuite(
           expect(await ids(true)).toStrictEqual([sid(2)]);
         });
 
+        it("lists a partial post without a client id as complete and counts it", async () => {
+          const survey = await freshSurvey();
+          await append(survey, sid(1), { submittedAt: at(10), partial: true });
+          const page = await folded(survey, { limit: 10 });
+          expect(page.items.map((item) => item.id)).toStrictEqual([sid(1)]);
+          expect(page.items[0]?.partial).not.toBe(true);
+          expect((await providers.results.stats(survey)).count).toBe(1);
+        });
+
         it("tells whether a client's marker is partial", async () => {
           const survey = await freshSurvey();
           expect(await providers.results.hasPartial(survey)).toBe(false);
