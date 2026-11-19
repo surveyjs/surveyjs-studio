@@ -1348,8 +1348,10 @@ paths:
         Every stored response, oldest first (by `submittedAt`, then `id`). The partial
         saves of one client fold into one response with the answers merged in order
         (later answers win) and `partial: true` until the client completes; a response
-        sent without `clientId` is never folded. A folded response keeps the `id`,
-        `submittedAt` and page position of its first save. The dashboard
+        sent without `clientId` is never folded. A run of saves ends at the client's next
+        complete response: two complete answers from one client stay two responses, and a
+        partial save after completing starts a new response. A folded response keeps the
+        `id`, `submittedAt` and page position of its first save. The dashboard
         loads every page; there is no 1,000-response cap. For whole-dataset downloads
         use `GET /surveys/{surveyId}/results/export`.
 
@@ -1592,7 +1594,9 @@ paths:
         read as one response in the results until a post without `partial` completes it.
         Without a `clientId`, `partial: true` has no client to resume, so the response is
         stored as complete. A post without `partial` marks the client complete.
-        `lastPageIndex` is accepted and validated but not stored. A server may refuse answers its storage cannot hold with
+        `lastPageIndex` is accepted and validated but not stored.
+
+        A server may refuse answers its storage cannot hold with
         `413 payload-too-large`, even below `limits.maxResponseBytes`.
       security: []
       parameters:
