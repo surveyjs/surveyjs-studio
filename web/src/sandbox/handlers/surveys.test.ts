@@ -27,7 +27,7 @@ describe("GET /surveys", () => {
     });
     // The list leaves the private-question list out, as the server's survey JSON without it.
     expect(page.items[0].settings).not.toHaveProperty("privateResultQuestions");
-    expect(page.items[0]).not.toHaveProperty("useCookies");
+    expect(page.items[0]).toHaveProperty("useCookies");
   });
 
   it("lists archived surveys with archived=true", async () => {

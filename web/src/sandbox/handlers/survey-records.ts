@@ -22,9 +22,13 @@ export function surveyJson(
     postId: survey.postId,
     resultId: survey.resultId,
     permissions: { canModify: canModifySurvey },
+    useCookies: survey.settings.useCookies,
+    creatorId: survey.creatorId,
+    legacyPublishId: null,
     settings: {
       publicResults: survey.settings.publicResults,
       storeRespondentIp: survey.settings.storeRespondentIp,
+      useCookies: survey.settings.useCookies,
       ...(privateQuestions && { privateResultQuestions: [...privateQuestions] }),
     },
   };
