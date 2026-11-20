@@ -188,6 +188,17 @@ describe("oldJson: stored answers as the old results wrote them", () => {
       '{"2026-05-01T10:00:00.000Z":1}',
     );
   });
+
+  it("leaves every string as stored with strings: as-stored, numbers still as the old serializer", () => {
+    const value = parseStudioJson('{"a":"2026-05-01T10:00:00.000Z","b":[1.0,1e21],"c":"text"}');
+    expect(oldJson(value, false, { strings: "as-stored" })).toBe(
+      '{"a":"2026-05-01T10:00:00.000Z","b":[1.0,1E+21],"c":"text"}',
+    );
+  });
+
+  it("writes plain numbers (a lenient parse's) as integers or old doubles", () => {
+    expect(oldJson({ a: 2, b: 0.5, c: 1e21, d: -0 })).toBe('{"a":2,"b":0.5,"c":1E+21,"d":0}');
+  });
 });
 
 describe("parseOldDate: the old reader's date-like strings", () => {

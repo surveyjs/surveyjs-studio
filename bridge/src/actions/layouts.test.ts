@@ -299,6 +299,22 @@ describe("the results layout actions", () => {
       );
     });
 
+    it("rewrites the old visibility in the written elements too, whatever its spacing", async () => {
+      add({
+        layouts: {
+          columns: '{"columns":[{"name":"q1","visibility": 2},{"name":"q2","visibility" : "1"}]}',
+        },
+      });
+      expectJson(
+        await call("GET", `getResultTableState/${SURVEY}`),
+        200,
+        layoutAnswer(
+          '{"elements":[{"name":"q1","isVisible":true,"isPublic":false},' +
+            '{"name":"q2","isVisible":false,"isPublic":true}]}',
+        ),
+      );
+    });
+
     it("gives null elements for a columns layout without columns", async () => {
       add({ layouts: { columns: '{"newcolumnsvisibility":1}' } });
       expectJson(
@@ -459,6 +475,19 @@ describe("the results layout actions", () => {
       );
     });
 
+    it("clears the private questions for a list with only public entries, or an empty list", async () => {
+      for (const json of ['[{"name":"q1","isPublic":true},{"name":"q2"}]', "[]"]) {
+        const survey = add({ privateResultQuestions: ["q9"] });
+        studio.requests.length = 0;
+        expectEmpty(await put("setResultPermissions", state(SURVEY, json)), 200);
+        expect(survey.privateResultQuestions).toEqual([]);
+        const patch = studio.requests.find((r) => r.method === "PATCH");
+        expect(JSON.parse(patch!.body.toString())).toEqual({
+          settings: { privateResultQuestions: [] },
+        });
+      }
+    });
+
     it("changes nothing for an empty Json", async () => {
       const survey = add({ privateResultQuestions: ["q9"] });
       for (const json of ["", null]) {
@@ -566,6 +595,16 @@ describe("the results layout actions", () => {
       expectEmpty(answer, 400);
     });
 
+    it("needs no private question list without a columns layout", async () => {
+      add({ responses, privateResultQuestions: undefined });
+      expect((await call("GET", `getResultColumns/${SURVEY}`)).status).toBe(200);
+    });
+
+    it("answers an empty 500 when Studio cannot read the private questions and a layout exists", async () => {
+      add({ responses, privateResultQuestions: undefined, layouts: { columns: '{"columns":[]}' } });
+      expectEmpty(await call("GET", `getResultColumns/${SURVEY}`), 500);
+    });
+
     it("answers an empty 400 for a columns layout the old calculation failed on", async () => {
       add({ responses, layouts: { columns: '{"columns":"text"}' } });
       expectEmpty(await call("GET", `getResultColumns/${SURVEY}`), 400);
@@ -640,6 +679,16 @@ describe("the results layout actions", () => {
           Columns: [column("HappendAt", "Submitted"), column("q1", "Name")],
           Id: ZERO,
         }),
+      );
+    });
+
+    it("answers just the Submitted column for a survey without responses", async () => {
+      addPublic();
+      studio.publicResults.set(SURVEY, { items: [] });
+      expectJson(
+        await call("GET", `getResultPublicColumns/${SURVEY}`, "", { key: null }),
+        200,
+        JSON.stringify({ Columns: [column("HappendAt", "Submitted")], Id: ZERO }),
       );
     });
 

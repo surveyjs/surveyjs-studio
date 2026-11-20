@@ -13,7 +13,7 @@ import { sendEmpty, sendJsonNull, sendJsonString, sendJsonText } from "../answer
 import { boundGuid, EMPTY_GUID, formOf } from "../binding.js";
 import { ColumnsRefused, localeOf, resultColumns, type ColumnsResponse } from "../columns.js";
 import { contextOf } from "../context.js";
-import { dotnetDouble, JsonNumber, oldNumberText, parseStudioJson } from "../dotnet-format.js";
+import { JsonNumber, oldJson, parseStudioJson } from "../dotnet-format.js";
 import { bindJsonBody, parseLenientJson } from "../json-body.js";
 import { studioFor } from "../key.js";
 import { StudioFailure, unexpectedStatus, type StudioClient } from "../studio.js";
@@ -48,8 +48,6 @@ export class LayoutRefused extends Error {
     this.name = "LayoutRefused";
   }
 }
-
-const rawJson = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
 
 /** The characters the old serializer escaped beyond JSON's own: NEL and the line separators. */
 function withOldEscapes(json: string): string {
@@ -103,18 +101,10 @@ function parseLayout(text: string): unknown {
 
 /**
  * A layout written again as the old serializer wrote it: compact, numbers as it wrote them (`1.0`
- * stays), texts as they are (dates are not rewritten).
+ * stays), texts as they are (dates are not rewritten: a layout is the caller's own document).
  */
 function layoutJson(value: unknown): string {
-  return withOldEscapes(
-    JSON.stringify(value, (_key: string, inner: unknown) => {
-      if (inner instanceof JsonNumber) return rawJson(oldNumberText(inner.text));
-      if (typeof inner === "number") {
-        return rawJson(Number.isSafeInteger(inner) ? String(inner) : dotnetDouble(inner));
-      }
-      return inner;
-    }),
-  );
+  return withOldEscapes(oldJson(value, false, { strings: "as-stored" }));
 }
 
 /** The `elements` of a state, which must be a JSON object holding a list of objects. */
@@ -158,7 +148,8 @@ export function tableFromColumns(columnsText: string): string {
   if (!isRecord(layout)) throw new LayoutRefused("a columns layout that is no JSON object");
   if (!Object.hasOwn(layout, "columns")) return '{"elements":null}';
   if (!Array.isArray(layout.columns)) throw new LayoutRefused("columns that are no list");
-  return layoutJson({ elements: layout.columns });
+  // Rewritten again after writing, so a spaced `"visibility": 2` reads as the compact one.
+  return withoutOldVisibility(layoutJson({ elements: layout.columns }));
 }
 
 /**
@@ -444,9 +435,6 @@ export async function getResultColumns(
   const locale = localeOf(request.headers["accept-language"]);
   if (locale === "bad") return sendEmpty(reply, 400);
   const { settings } = survey.data;
-  if (settings.privateResultQuestions === undefined) {
-    throw new StudioFailure(500, "Studio could not read the private questions");
-  }
 
   const read = pageReader(client, surveyId);
   const [definition, columnsLayout, first] = await Promise.all([
@@ -463,11 +451,16 @@ export async function getResultColumns(
   if (definition.data === undefined) return unexpectedStatus(definition.response);
   // Only a cursor can be refused.
   if (first === "refused" || first === "bad-cursor") return notAuthorized(reply, MODIFY, surveyId);
+  // The private questions mark only a layout's columns: without one they are not needed.
+  const privateQuestions = columnsLayout === null ? [] : settings.privateResultQuestions;
+  if (privateQuestions === undefined) {
+    throw new StudioFailure(500, "Studio could not read the private questions");
+  }
   return sendColumns(reply, {
     definition: parseStudioJson(definition.data),
     responses: itemsOf<ColumnsResponse>(allPages(request, read, first, surveyId)),
     columnsLayout,
-    privateQuestions: settings.privateResultQuestions,
+    privateQuestions,
     locale,
     storeIp: settings.storeRespondentIp === true,
   });
