@@ -61,7 +61,7 @@ async function readFirstFile(
   return { fieldName: part.fieldname, fileName: part.filename, bytes };
 }
 
-/** The file operations: editor and respondent uploads, public downloads. */
+/** The file operations: editor and respondent uploads, public downloads (also by legacy name). */
 export function createFileHandlers(options: FilesServiceOptions): Handlers {
   const service = createFilesService(options);
   const quota = options.maxAssetBytesPerSurvey;
@@ -89,6 +89,13 @@ export function createFileHandlers(options: FilesServiceOptions): Handlers {
         readFirstFile(request, maxBytes, () => fileTooLarge(maxBytes)),
       );
       return reply.code(201).header("location", filePath(stored.id)).send(stored);
+    },
+
+    uploadLegacyFile: async (request, reply) => {
+      const stored = await service.uploadLegacyFile(requireUser(request), (maxBytes) =>
+        readFirstFile(request, maxBytes, () => fileTooLarge(maxBytes)),
+      );
+      return reply.code(201).send(stored);
     },
 
     downloadFile: async (request, reply) => {

@@ -156,8 +156,33 @@ export interface FileStore {
    * `file.name` is the legacy name and `file.contentType` the type of its extension
    * (`legacyContentType`), whatever the provider keeps. A provider that holds the file by name
    * only gives it the record of `legacyFileRecord`.
+   *
+   * An `asset` name is first looked up among the files of no survey (`saveUserFile`, whose name is
+   * their id): such a file has its stored record, with `file.name` the legacy name and its stored
+   * type. Then among the old service's files.
    */
   getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
+  /**
+   * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) for its
+   * owner (a GUID, any case; rejects otherwise): kind `asset`, `surveyId` null, a new id
+   * (`newFileId(ownerUserId)`), which is also its legacy name (`getFileByLegacyName("asset", id)`).
+   * Studio's own file store on every provider, never the old service's. Such a file is no survey's:
+   * `getFile`, `deleteFile`, `usage` and `deleteSurveyFiles` do not see it.
+   */
+  saveUserFile(ownerUserId: string, file: NewFile): Promise<StoredFileRecord>;
+  /** Deletes every file `saveUserFile` stored for the owner; nothing for a non-GUID id. */
+  deleteUserFiles(ownerUserId: string): Promise<void>;
+}
+
+/** A file to store for a user (`FileStore.saveUserFile`). */
+export interface NewFile {
+  /** The uploaded name (R12). */
+  readonly name: string;
+  /** The detected type. */
+  readonly contentType: string;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+  readonly content: Buffer;
 }
 
 export type AppendOutcome = "stored" | "exists";

@@ -2315,6 +2315,14 @@ export function describeProviderSuite(
         ]).toEqual([]);
       });
 
+      const readLegacy = async (kind: "asset" | "response", name: string) => {
+        const found = await providers.files.getFileByLegacyName(kind, name);
+        if (!found) return null;
+        const chunks: Buffer[] = [];
+        for await (const chunk of found.content) chunks.push(chunk as Buffer);
+        return { file: found.file, bytes: Buffer.concat(chunks) };
+      };
+
       describe("getFileByLegacyName", () => {
         /** The fixtures' editor asset (no extension) and respondent file. */
         const fixtureFile = async (share: string, name: string): Promise<Buffer> => {
@@ -2322,13 +2330,6 @@ export function describeProviderSuite(
           const found = files.find((f) => f.share === share && f.name === name);
           if (!found) throw new Error(`No fixture file ${share}/${name}`);
           return found.content;
-        };
-        const readLegacy = async (kind: "asset" | "response", name: string) => {
-          const found = await providers.files.getFileByLegacyName(kind, name);
-          if (!found) return null;
-          const chunks: Buffer[] = [];
-          for await (const chunk of found.content) chunks.push(chunk as Buffer);
-          return { file: found.file, bytes: Buffer.concat(chunks) };
         };
 
         it("returns the seeded editor asset as stored, octet-stream without an extension", async () => {
@@ -2379,6 +2380,101 @@ export function describeProviderSuite(
         ])("answers null for the name %j, which is no legacy name", async (name) => {
           expect(await readLegacy("asset", name)).toBeNull();
           expect(await readLegacy("response", name)).toBeNull();
+        });
+      });
+
+      describe("files of no survey (saveUserFile, deleteUserFiles)", () => {
+        const SAVED_AT = "2026-11-20T10:00:00.000Z";
+        /** A fresh owner id (the store does not need the user to exist), files removed at the end. */
+        const owners: string[] = [];
+        const freshOwner = (): string => {
+          const id = randomUUID();
+          owners.push(id);
+          return id;
+        };
+        afterAll(async () => {
+          for (const id of owners) await providers.files.deleteUserFiles(id);
+        });
+        const save = (
+          ownerUserId: string,
+          content: Buffer = PNG,
+          over: { name?: string; contentType?: string } = {},
+        ) =>
+          providers.files.saveUserFile(ownerUserId, {
+            name: "logo.png",
+            contentType: "image/png",
+            createdAt: SAVED_AT,
+            content,
+            ...over,
+          });
+
+        it("stores an editor file under a new id, served as an asset by that name with its type", async () => {
+          const owner = freshOwner();
+          const file = await save(owner.toUpperCase());
+          expect(file).toEqual({
+            id: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+            surveyId: null,
+            kind: "asset",
+            name: "logo.png",
+            contentType: "image/png",
+            size: PNG.length,
+            createdAt: SAVED_AT,
+          });
+          const found = await readLegacy("asset", file.id);
+          expect(found?.bytes.equals(PNG)).toBe(true);
+          expect(found?.file).toEqual({ ...file, name: file.id });
+
+          // The type is the one given, not the name's.
+          const pdf = Buffer.from("%PDF-1.4\n");
+          const other = await save(owner, pdf, {
+            name: "doc.png",
+            contentType: "application/octet-stream",
+          });
+          expect(other.id).not.toBe(file.id);
+          const read = await readLegacy("asset", other.id);
+          expect(read?.bytes.equals(pdf)).toBe(true);
+          expect(read?.file).toMatchObject({
+            contentType: "application/octet-stream",
+            size: pdf.length,
+          });
+        });
+
+        it("stores an empty file", async () => {
+          const file = await save(freshOwner(), Buffer.alloc(0));
+          const found = await readLegacy("asset", file.id);
+          expect(found?.file.size).toBe(0);
+          expect(found?.bytes.length).toBe(0);
+        });
+
+        it("is no survey's file: not read by id or as a response, nor counted or deleted with one", async () => {
+          const owner = freshOwner();
+          const file = await save(owner);
+          expect(await providers.files.getFile(file.id)).toBeNull();
+          expect(await readLegacy("response", file.id)).toBeNull();
+          expect(await readLegacy("asset", file.id.toUpperCase())).toBeNull();
+          expect(await providers.files.usage(owner, "asset")).toBe(0);
+          expect(await providers.files.deleteSurveyFiles(owner)).toBe(0);
+          expect(await providers.files.deleteFile(file.id)).toBe(false);
+          expect((await readLegacy("asset", file.id))?.bytes.equals(PNG)).toBe(true);
+        });
+
+        it("deletes the owner's files, in any id case, and leaves another's", async () => {
+          const owner = freshOwner();
+          const other = freshOwner();
+          const mine = [await save(owner), await save(owner)];
+          const theirs = await save(other);
+          await providers.files.deleteUserFiles(owner.toUpperCase());
+          for (const file of mine) expect(await readLegacy("asset", file.id)).toBeNull();
+          expect((await readLegacy("asset", theirs.id))?.bytes.equals(PNG)).toBe(true);
+          // Nothing left, an owner without files and a malformed id: nothing to do.
+          await providers.files.deleteUserFiles(owner);
+          await providers.files.deleteUserFiles(freshOwner());
+          await providers.files.deleteUserFiles("not-a-guid");
+          expect((await readLegacy("asset", theirs.id))?.bytes.equals(PNG)).toBe(true);
+        });
+
+        it("rejects an owner id that is not a GUID", async () => {
+          await expect(save("not-a-guid")).rejects.toThrow();
         });
       });
     });
@@ -2899,6 +2995,13 @@ export function describeProviderSuite(
           await providers.surveys.updateSurvey(archived.id, { archived: true, updatedAt: NOW });
           const withFile = await providers.surveys.createSurvey(newSurvey(scope));
           const fileId = await putAsset(withFile.id);
+          // An editor file of no survey (uploadLegacyFile) is the user's too.
+          const ownFile = await providers.files.saveUserFile(scope.userId, {
+            name: "logo.png",
+            contentType: "image/png",
+            createdAt: CREATED_AT,
+            content: PNG,
+          });
           const eraseAccount = createEraseAccount(providers);
 
           expect(await eraseAccount(scope.userId, options)).toEqual({
@@ -2912,6 +3015,7 @@ export function describeProviderSuite(
           expect(await providers.surveys.getSurvey(archived.id)).toBeNull();
           expect(await providers.surveys.getSurvey(withFile.id)).toBeNull();
           expect(await providers.files.getFile(fileId)).toBeNull();
+          expect(await providers.files.getFileByLegacyName("asset", ownFile.id)).toBeNull();
           expect(await eraseAccount(scope.userId, options)).toEqual({
             userId: scope.userId,
             ...noCounts,

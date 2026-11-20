@@ -159,6 +159,7 @@ export async function seedSqlStores(
         .values({
           id: record.id,
           survey_id: record.surveyId,
+          owner_user_id: null,
           kind: record.kind,
           name: record.name,
           content_type: record.contentType,

@@ -111,7 +111,10 @@ export interface ProjectMembersTable {
 export interface FilesTable {
   /** 64 lower-case hex digits. */
   id: string;
-  survey_id: string;
+  /** Exactly one of survey_id and owner_user_id is set (0009). */
+  survey_id: string | null;
+  /** The user an editor file of no survey belongs to (0009). */
+  owner_user_id: string | null;
   kind: "asset" | "response";
   name: string;
   content_type: string;

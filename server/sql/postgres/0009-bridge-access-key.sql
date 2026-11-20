@@ -22,3 +22,16 @@ insert into survey_layouts (survey_id, kind, text)
 select survey_id, view, state::text from legacy_views;
 
 drop table legacy_views;
+
+-- An editor file that belongs to no survey (uploadLegacyFile, ADR 0040 point 3) has an owner
+-- instead: the user who uploaded it, whose account deletion deletes it. Exactly one of survey_id
+-- and owner_user_id is set. Its bytes are in the file store under users/{owner id}/{file id}.
+alter table files alter column survey_id drop not null;
+
+alter table files add column owner_user_id uuid;
+
+alter table files add constraint files_survey_or_owner
+  check ((survey_id is null) <> (owner_user_id is null));
+
+-- A user's files, for the account deletion.
+create index files_owner on files (owner_user_id);

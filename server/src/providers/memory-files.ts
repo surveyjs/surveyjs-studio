@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../domain/file-id.js";
+import { GUID } from "../domain/guid.js";
 import { isLegacyFileName, legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, StoredFileRecord } from "../domain/types.js";
 import type { FileStore } from "./types.js";
@@ -16,9 +17,18 @@ interface Stored {
   readonly bytes: Buffer;
 }
 
-/** Files in process memory, like all memory data; the legacy files are the seed's, read only. */
+interface UserFile extends Stored {
+  /** Lower-case GUID. */
+  readonly ownerUserId: string;
+}
+
+/**
+ * Files in process memory, like all memory data; the legacy files are the seed's, read only. The
+ * files of no survey (`saveUserFile`) are kept apart, by id.
+ */
 export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] = []): FileStore {
   const files = new Map<string, Stored>();
+  const userFiles = new Map<string, UserFile>();
   const legacyKey = (kind: FileKind, name: string): string => `${kind}/${name}`;
   const legacy = new Map(
     legacyFiles.map((f) => [legacyKey(f.kind, f.name), Buffer.from(f.content)] as const),
@@ -78,6 +88,13 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
       return Promise.resolve(copied);
     },
     getFileByLegacyName: (kind, name) => {
+      const own = kind === "asset" ? userFiles.get(name) : undefined;
+      if (own) {
+        return Promise.resolve({
+          file: { ...own.file, name },
+          content: Readable.from(Buffer.from(own.bytes)),
+        });
+      }
       const bytes = isLegacyFileName(name) ? legacy.get(legacyKey(kind, name)) : undefined;
       return Promise.resolve(
         bytes
@@ -87,6 +104,34 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
             }
           : null,
       );
+    },
+    saveUserFile: (ownerUserId, { name, contentType, createdAt, content }) => {
+      if (!GUID.test(ownerUserId)) {
+        return Promise.reject(new Error("A file of no survey needs its owner's GUID"));
+      }
+      const id = newFileId(ownerUserId);
+      const file: StoredFileRecord = {
+        id,
+        surveyId: null,
+        kind: "asset",
+        name,
+        contentType,
+        size: content.length,
+        createdAt,
+      };
+      userFiles.set(id, {
+        ownerUserId: ownerUserId.toLowerCase(),
+        file,
+        bytes: Buffer.from(content),
+      });
+      return Promise.resolve({ ...file });
+    },
+    deleteUserFiles: (ownerUserId) => {
+      const owner = ownerUserId.toLowerCase();
+      for (const [id, stored] of userFiles) {
+        if (stored.ownerUserId === owner) userFiles.delete(id);
+      }
+      return Promise.resolve();
     },
   };
 }

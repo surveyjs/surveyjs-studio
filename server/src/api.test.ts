@@ -512,6 +512,8 @@ const HOSTED_ONLY = [
   "uploadResponseFileByPostId",
   "getQuestionSummary",
   "getLegacyFile",
+  "getPublicLayout",
+  "uploadLegacyFile",
 ];
 
 describe("/api/docs", () => {

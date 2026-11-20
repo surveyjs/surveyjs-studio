@@ -493,6 +493,11 @@ Facts that matter for the new app:
   place**. They are not counted against the quota, not copied by a clone and not deleted with the survey.
   They stop working when `api.surveyjs.io` is retired; a migration belongs to the rollout.
 - Deleting a survey now deletes its files in the new container. A clone copies them.
+- **Hosted Step 6** ([ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3): an editor file that belongs to no
+  survey (`uploadLegacyFile`, the bridge's `uploadFiles`) is block blob `users/{userId}/{fileId}` of the same
+  container, with the same content type and metadata; its file id starts with the uploader's GUID and is also its
+  legacy name. `getLegacyFile` (`asset`) looks there first, then in the share `surveyfiles`, which is never written.
+  Erasing the account deletes every blob under `users/{userId}/`.
 
 ### 3.10 Results layouts (the only saved UI state)
 
@@ -1247,6 +1252,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored.                                                                                                              |
 | Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                                                                                                                                  |
 | Container `my-surveys-files`       | `StoredFile` for new uploads          | Blob `{surveyId}/{fileId}`: the survey ID is in the name, the content type is the blob's own, the size is its length; metadata `kind`, `name` (URI-encoded) and `createdat`. |
+| Container `my-surveys-files`       | editor file of no survey (hosted)     | Blob `users/{userId}/{fileId}`, as above but owned by the user (no survey); its legacy name is its id.                                                                       |
 
 ## 10. Replica plan
 

@@ -8,7 +8,7 @@ import { text } from "node:stream/consumers";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLocalByteStore } from "../bytes/local.js";
 import { newFileId } from "../domain/file-id.js";
-import type { StoredFileRecord } from "../domain/types.js";
+import type { SurveyFileRecord } from "../domain/types.js";
 import { legacyFixtureSeed } from "../providers/azure-legacy/fixtures.js";
 import { openDatabase } from "../sql/database.js";
 import { createSqlFileStore } from "../sql/file-store.js";
@@ -72,7 +72,7 @@ describe("surveyjs-studio backup and restore", () => {
     await migrate(database);
     await seedSqlStores(database, seed);
     const surveyId = seed.surveys[0]!.id.toLowerCase();
-    const file: StoredFileRecord = {
+    const file: SurveyFileRecord = {
       id: newFileId(surveyId),
       surveyId,
       kind: "response",

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FileKind, StoredFileRecord } from "./types.js";
+import type { FileKind, SurveyFileRecord } from "./types.js";
 
 /**
  * Files stored under the old service's names (ADR 0039 point 3): editor images (`asset`) and
@@ -77,7 +77,7 @@ export function legacyContentType(name: string): string {
  * seed): its id is 32 zeros and 32 hex digits of the SHA-256 of `{kind}/{name}`, so it belongs to
  * the all-zero survey, which no survey has; created at the epoch (the time is not known).
  */
-export function legacyFileRecord(kind: FileKind, name: string, size: number): StoredFileRecord {
+export function legacyFileRecord(kind: FileKind, name: string, size: number): SurveyFileRecord {
   const hash = createHash("sha256").update(`${kind}/${name}`).digest("hex");
   return {
     id: `${"0".repeat(32)}${hash.slice(0, 32)}`,

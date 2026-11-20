@@ -1063,8 +1063,11 @@ export interface paths {
          * Upload an editor file that belongs to no survey
          * @description An editor file that belongs to no survey, stored under a new legacy name and served by
          *     `getLegacyFile` (`kind` `asset`). It is the uploader's and is deleted with their account. It
-         *     goes to Studio's own file store on every provider. Send one file as the multipart part `file`;
-         *     any content type is accepted, up to the asset size limit (`413 payload-too-large`).
+         *     goes to Studio's own file store on every provider. Send one file as the multipart part `file`
+         *     (a form without one is `400 bad-request`); any content and an empty file are accepted, up to
+         *     `limits.maxAssetBytesPerSurvey` (`413 payload-too-large`). Its type is detected from its
+         *     content as for `uploadSurveyAsset`; any other content is stored as
+         *     `application/octet-stream`.
          *
          *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
          *     does.
@@ -1420,8 +1423,10 @@ export interface paths {
          * @description Serves a file stored under the old service's name, which sites still reference. The bytes
          *     are returned as stored (a legacy file keeps any padding it has), with the content type
          *     from the name's extension, or `application/octet-stream` without one or for an extension
-         *     it does not know, and the headers of `downloadFile`. An unknown name or kind is
-         *     `404 not-found`, as for `downloadFile`. Rate limited as `downloadFile`.
+         *     it does not know, and the headers of `downloadFile`. An editor file uploaded with
+         *     `uploadLegacyFile` (`kind` `asset`, its name 64 lower-case hex digits) has the type
+         *     detected when it was stored. An unknown name or kind is `404 not-found`, as for
+         *     `downloadFile`. Rate limited as `downloadFile`.
          *
          *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
          *     does, with no rate limit.

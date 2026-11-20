@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createLocalByteStore } from "../bytes/local.js";
 import { newFileId } from "../domain/file-id.js";
-import type { FileKind, StoredFileRecord } from "../domain/types.js";
+import type { FileKind, SurveyFileRecord } from "../domain/types.js";
 import type { FileStore } from "../providers/types.js";
 import { openDatabase, type SqlDatabase, type SqlDialectName } from "./database.js";
 import { createSqlFileStore } from "./file-store.js";
@@ -35,9 +35,9 @@ export function describeSqlLegacyFilesSuite(dialect: SqlDialectName): void {
     });
 
     /** A stored file of a new survey, named `name` in `legacy_files` as `kind`. */
-    async function named(kind: FileKind, name: string): Promise<StoredFileRecord> {
+    async function named(kind: FileKind, name: string): Promise<SurveyFileRecord> {
       const surveyId = randomUUID();
-      const file: StoredFileRecord = {
+      const file: SurveyFileRecord = {
         id: newFileId(surveyId),
         surveyId,
         kind,

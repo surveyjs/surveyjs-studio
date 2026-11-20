@@ -341,6 +341,30 @@ describe("fileRecordFromBlob", () => {
     }
   });
 
+  it("reads a user's file of no survey from users/{ownerId}/{fileId}, with no survey", () => {
+    // The id starts with the owner's id, as newFileId(ownerId) makes it.
+    expect(fileRecordFromBlob(`users/${name}`, properties, metadata)).toEqual({
+      id: ID,
+      surveyId: null,
+      kind: "asset",
+      name: 'Логотип "ü" 1.png',
+      contentType: "image/png",
+      size: 1234,
+      createdAt: "2026-09-01T10:00:05.123Z",
+    });
+    const other = "22222222-0000-4000-8000-a00000000002";
+    for (const blob of [
+      `users/${other}/${ID}`,
+      `users/${SURVEY.toUpperCase()}/${ID}`,
+      `Users/${name}`,
+      `users/users/${name}`,
+      `projects/${name}`,
+      `users/${ID}`,
+    ]) {
+      expect(fileRecordFromBlob(blob, properties, metadata), blob).toBeNull();
+    }
+  });
+
   it("keeps the kind of a respondent file", () => {
     expect(fileRecordFromBlob(name, properties, { ...metadata, kind: "response" })).toMatchObject({
       id: ID,

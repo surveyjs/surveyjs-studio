@@ -119,7 +119,17 @@ async function start(
       headers: { "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
       payload,
     });
-  return { providers: memory, upload, uploadResponse };
+  const uploadLegacy = (payload: Buffer, withSession = true) =>
+    app!.inject({
+      method: "POST",
+      url: "/api/v1/legacy-files",
+      headers: {
+        ...(withSession && headers),
+        "content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+      },
+      payload,
+    });
+  return { providers: memory, upload, uploadResponse, uploadLegacy };
 }
 
 describe("uploadSurveyAsset", () => {
@@ -375,6 +385,94 @@ describe("downloadFile", () => {
         "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
       "cross-origin-resource-policy": "cross-origin",
     });
+  });
+});
+
+describe("uploadLegacyFile", () => {
+  /** The file `getLegacyFile` serves under `legacyName`. */
+  const served = (legacyName: string) =>
+    app!.inject({ url: `/api/v1/public/legacy-files/asset/${legacyName}` });
+
+  it("stores an editor file of no survey and answers its legacy name, served with the detected type", async () => {
+    const { providers, uploadLegacy } = await start();
+    const res = await uploadLegacy(fileBody("C:\\fakepath\\Logo.png", png(100)));
+    expect(res.statusCode).toBe(201);
+    expect(res.headers["content-type"]).toMatch(/^application\/json/);
+    expect(res.headers.location).toBeUndefined();
+    const body = res.json<{ legacyName: string }>();
+    expect(Object.keys(body)).toEqual(["legacyName"]);
+    // The file's id, which starts with the uploader's.
+    expect(body.legacyName).toMatch(new RegExp(`^${USER.id.replaceAll("-", "")}[0-9a-f]{32}$`));
+
+    const found = await providers.files.getFileByLegacyName("asset", body.legacyName);
+    found?.content.destroy();
+    expect(found?.file).toStrictEqual({
+      id: body.legacyName,
+      surveyId: null,
+      kind: "asset",
+      name: body.legacyName,
+      contentType: "image/png",
+      size: 100,
+      createdAt: NOW,
+    });
+    const file = await served(body.legacyName);
+    expect(file.statusCode).toBe(200);
+    expect(file.headers["content-type"]).toBe("image/png");
+    expect(file.headers["content-disposition"]).toMatch(/^inline; /);
+    expect(file.rawPayload).toStrictEqual(png(100));
+    // Not a survey's file.
+    expect(await providers.files.getFile(body.legacyName)).toBeNull();
+  });
+
+  it("stores any other type, and an empty file, as application/octet-stream", async () => {
+    const { uploadLegacy } = await start();
+    const pdf = Buffer.from("%PDF-1.4\n");
+    for (const bytes of [pdf, Buffer.alloc(0)]) {
+      const res = await uploadLegacy(fileBody("doc.pdf", bytes));
+      expect(res.statusCode).toBe(201);
+      const file = await served(res.json<{ legacyName: string }>().legacyName);
+      expect(file.statusCode).toBe(200);
+      expect(file.headers["content-type"]).toBe("application/octet-stream");
+      expect(file.headers["content-disposition"]).toMatch(/^attachment; /);
+      expect(file.rawPayload).toStrictEqual(bytes);
+    }
+  });
+
+  it("takes a file of the asset limit and answers 413 payload-too-large for a byte more", async () => {
+    const saved: string[] = [];
+    const { uploadLegacy } = await start({
+      files: (store) => ({
+        ...store,
+        saveUserFile: async (owner, file) => {
+          const stored = await store.saveUserFile(owner, file);
+          saved.push(stored.id);
+          return stored;
+        },
+      }),
+    });
+    expect((await uploadLegacy(fileBody("a.png", png(QUOTA)))).statusCode).toBe(201);
+    const res = await uploadLegacy(fileBody("a.png", png(QUOTA + 1)));
+    expect(res.statusCode).toBe(413);
+    expect(res.json()).toMatchObject({
+      code: "payload-too-large",
+      title: "File too large",
+      detail: "A file can be up to 1000 bytes.",
+    });
+    // The file over the limit was not stored.
+    expect(saved).toHaveLength(1);
+  });
+
+  it("answers 400 bad-request without a part named file", async () => {
+    const { uploadLegacy } = await start();
+    const res = await uploadLegacy(fileBody("a.png", png(20), "image"));
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: "bad-request" });
+  });
+
+  it("answers 401 without a session and stores nothing", async () => {
+    const { uploadLegacy } = await start();
+    const res = await uploadLegacy(fileBody("a.png", png(20)), false);
+    expect(res.statusCode).toBe(401);
   });
 });
 

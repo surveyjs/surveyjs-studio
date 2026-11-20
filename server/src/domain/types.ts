@@ -159,8 +159,11 @@ export type FileKind = "asset" | "response";
 export interface StoredFileRecord {
   /** 64 lower-case hex digits (R1). */
   readonly id: string;
-  /** Lower-case GUID of the owning survey (equals surveyIdOfFile(id)). */
-  readonly surveyId: string;
+  /**
+   * Lower-case GUID of the owning survey (equals surveyIdOfFile(id)); null for an editor file that
+   * belongs to no survey (`FileStore.saveUserFile`), whose id starts with its owner's id instead.
+   */
+  readonly surveyId: string | null;
   readonly kind: FileKind;
   /** The uploaded name (R12), any Unicode, 1–255 UTF-16 code units. */
   readonly name: string;
@@ -171,6 +174,9 @@ export interface StoredFileRecord {
   /** ISO 8601 UTC. */
   readonly createdAt: string;
 }
+
+/** A survey's stored file. */
+export type SurveyFileRecord = StoredFileRecord & { readonly surveyId: string };
 
 /** A saved results layout: `summary` (Dashboard) or `table` (Table) (contract `view`). */
 export type ViewName = "summary" | "table";

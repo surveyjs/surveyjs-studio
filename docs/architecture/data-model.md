@@ -149,24 +149,33 @@ other; on SQLite every transaction already runs alone. `deleteProject` moves the
 personal scope (`updated_at` = now; id, creator, published, archived and settings unchanged) and deletes the project
 with its members.
 
-### `files` (0003)
+### `files` (0003, 0009)
 
 The metadata of stored files ([ADR 0025](../adr/0025-file-storage-for-the-sql-providers.md)); the bytes are in the
-byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}`.
+byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}`, or `users/{user id}/{file id}` for
+an editor file of no survey.
 
-| Column         | Type              | Notes                                                                                   |
-| -------------- | ----------------- | --------------------------------------------------------------------------------------- |
-| `id`           | text, primary key | 64 lower-case hex digits ([ADR 0013](../adr/0013-editor-uploads-and-files.md)), checked |
-| `survey_id`    | GUID              | No foreign key: the service deletes a survey's files first (R10)                        |
-| `kind`         | text              | `asset` (editor) or `response` (respondent)                                             |
-| `name`         | text              | The uploaded name                                                                       |
-| `content_type` | text              | One of the allowed types                                                                |
-| `size`         | bigint / integer  | Bytes                                                                                   |
-| `created_at`   | timestamp         |                                                                                         |
+| Column          | Type              | Notes                                                                                                    |
+| --------------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `id`            | text, primary key | 64 lower-case hex digits ([ADR 0013](../adr/0013-editor-uploads-and-files.md)), checked                  |
+| `survey_id`     | GUID, nullable    | No foreign key: the service deletes a survey's files first (R10). Null for an editor file of no survey   |
+| `owner_user_id` | GUID, nullable    | 0009. The user an editor file of no survey belongs to; no foreign key. Exactly one of the two ids is set |
+| `kind`          | text              | `asset` (editor) or `response` (respondent)                                                              |
+| `name`          | text              | The uploaded name                                                                                        |
+| `content_type`  | text              | One of the allowed types, or `application/octet-stream` (respondent files, editor files of no survey)    |
+| `size`          | bigint / integer  | Bytes                                                                                                    |
+| `created_at`    | timestamp         |                                                                                                          |
 
 Index `files_survey` (`survey_id`, `kind`) serves `usage` (the quota), per-survey deletes and asset copies. A new
 file's row is written before its bytes and read again after them (a delete in between removes the bytes too); a delete
 removes the bytes, then the rows, so a failed delete can be retried.
+
+An editor file of no survey (`uploadLegacyFile`, [ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3) has
+`owner_user_id` instead of `survey_id`, kind `asset`, and an id that starts with its owner's id; a `legacy_files` row
+(`asset`, its id) names it, so `getLegacyFile` serves it, with its stored type. The survey operations (`getFile`,
+`deleteFile`, `usage`, per-survey deletes and copies) never see it; the account erasure deletes a user's files by index
+`files_owner` (`owner_user_id`). Migration 0009 made `survey_id` nullable: on SQLite by rebuilding `files` and
+`legacy_files` (`legacy_files` first, so dropping the old `files` cascades to nothing), keeping every row.
 
 ### `users` and `password_links` (0004)
 
@@ -232,7 +241,7 @@ reference: `kind` (`asset`, an editor image, or `response`, a respondent upload)
 included), `file_id` (FK to `files`, cascade: deleting the file deletes its names); primary key (`kind`,
 `legacy_name`); index `legacy_files_file` (`file_id`). `getFileByLegacyName` reads the file through it, with the legacy
 name as the file's name and the type of its extension as its content type (`application/octet-stream` without one, for
-an unknown extension, and for HTML and script). A name that is not one path segment of letters, digits, `.`, `-` and
+an unknown extension, and for HTML and script); an editor file of no survey keeps its stored type. A name that is not one path segment of letters, digits, `.`, `-` and
 `_` (at most 100 characters, not only dots) is unknown without a query. The hosted migration fills the table;
 `pnpm seed` adds the fixtures' two files as `files` rows of the all-zero survey (their ids are derived from kind and
 name, so a second seed replaces them), with their bytes in the byte store, when `FILES_PATH` or `FILE_STORE` is set;
