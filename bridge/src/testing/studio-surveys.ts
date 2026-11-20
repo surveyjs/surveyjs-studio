@@ -1,8 +1,8 @@
 // The fake Studio's survey records for the access-key action tests: `listSurveys`, `getSurvey`,
 // `createSurvey`, `updateSurvey`, `deleteSurvey`, `cloneSurvey`, `getSurveyDefinition`,
 // `getSurveyTheme`, the responses (`listResults`, `deleteResults`, `deleteResponse`) and the shared
-// layouts (`getSurveyLayout`), with Studio's visibility and modify rules (ADR 0009) for the caller
-// the bearer credential names. Ids are lower-case GUIDs; times advance one second per write.
+// layouts (`getSurveyLayout`, `saveSurveyLayout`, `deleteSurveyLayout`), with Studio's visibility
+// and modify rules (ADR 0009) for the caller the bearer credential names. Ids are lower-case GUIDs; times advance one second per write.
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import type { components } from "@surveyjs-studio/contract/types";
@@ -193,6 +193,19 @@ function surveyJson(
 
 const API = "/api/v1";
 
+/** The kinds of shared layout (`table`, `summary`, `columns`). */
+export const LAYOUT_KINDS: readonly string[] = ["table", "summary", "columns"];
+
+/** Whether `names` is a list `settings.privateResultQuestions` takes (the contract's limits). */
+function validPrivateQuestions(names: unknown): names is string[] {
+  return (
+    Array.isArray(names) &&
+    names.length <= 1000 &&
+    new Set(names).size === names.length &&
+    names.every((name) => typeof name === "string" && name.length >= 1 && name.length <= 256)
+  );
+}
+
 function readBody(request: RecordedRequest): Record<string, unknown> {
   if (request.body.length === 0) return {};
   return JSON.parse(request.body.toString()) as Record<string, unknown>;
@@ -287,6 +300,11 @@ export function surveyOperation(
         survey.storeRespondentIp = settings.storeRespondentIp;
       }
       if (typeof settings.useCookies === "boolean") survey.useCookies = settings.useCookies;
+      if (settings.privateResultQuestions !== undefined) {
+        const names = settings.privateResultQuestions;
+        if (!validPrivateQuestions(names)) return (problem(res, 422, "validation-failed"), true);
+        survey.privateResultQuestions = [...names];
+      }
       survey.updatedAt = tick(store);
       json(res, 200, surveyJson(store, survey, userId, false));
       return true;
@@ -398,15 +416,30 @@ export function surveyOperation(
       res.writeHead(204).end();
       return true;
     }
-    case "GET surveys/:/layouts/:": {
+    case "GET surveys/:/layouts/:":
+    case "PUT surveys/:/layouts/:":
+    case "DELETE surveys/:/layouts/:": {
       const kind = segments[3]!;
-      if (!["table", "summary", "columns"].includes(kind)) {
-        return (problem(res, 400, "bad-request"), true);
-      }
+      if (!LAYOUT_KINDS.includes(kind)) return (problem(res, 400, "bad-request"), true);
       if (!visible) return (problem(res, 404, "not-found"), true);
-      const text = survey.layouts[kind];
-      if (text === undefined) problem(res, 404, "layout-not-found");
-      else json(res, 200, { text });
+      if (request.method === "GET") {
+        const text = survey.layouts[kind];
+        if (text === undefined) problem(res, 404, "layout-not-found");
+        else json(res, 200, { text });
+        return true;
+      }
+      if (!canModify(store, survey, userId)) return (problem(res, 403, "forbidden"), true);
+      if (request.method === "DELETE") {
+        delete survey.layouts[kind];
+      } else {
+        // A layout save leaves the survey's time as it is.
+        const text = parseObject(request)?.text;
+        if (typeof text !== "string" || text === "") {
+          return (problem(res, 422, "validation-failed"), true);
+        }
+        survey.layouts[kind] = text;
+      }
+      res.writeHead(204).end();
       return true;
     }
     default:

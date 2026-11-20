@@ -31,7 +31,7 @@ const GET_RESULTS = "You are not authorized to get results of the survey";
 const MODIFY = "You are not authorized to modify the survey";
 
 /** The largest page Studio gives, the old API's largest page, and the old demo's cap. */
-const PAGE_LIMIT = 1000;
+export const PAGE_LIMIT = 1000;
 
 const rawJson = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
 
@@ -47,7 +47,7 @@ function notAuthorized(reply: FastifyReply, message: string, id: string): Fastif
 }
 
 /** A response as `listResults` gives it, its answers' numbers with their text. */
-interface StudioResponse {
+export interface StudioResponse {
   id: string;
   submittedAt: string;
   data: Record<string, unknown>;
@@ -55,7 +55,7 @@ interface StudioResponse {
   respondentIp?: string;
 }
 
-interface ResponsePage {
+export interface ResponsePage {
   items: StudioResponse[];
   nextCursor: string | null;
 }
@@ -75,12 +75,12 @@ function readResponsePage(text: string): ResponsePage {
  * One page of the survey's responses from `cursor` (none: the first), at most `limit`:
  * `refused` when Studio does not show the survey, `bad-cursor` when it refuses the cursor.
  */
-type PageReader = (
+export type PageReader = (
   cursor: string | undefined,
   limit: number,
 ) => Promise<ResponsePage | "refused" | "bad-cursor">;
 
-function pageReader(
+export function pageReader(
   client: StudioClient,
   surveyId: string,
   bounds: { from?: string | undefined; till?: string | undefined } = {},
@@ -117,7 +117,7 @@ function laterPage(read: PageReader) {
 }
 
 /** Every response from the first page `first` on, the later pages waiting out Studio's `429`. */
-function allPages(
+export function allPages(
   request: FastifyRequest,
   read: PageReader,
   first: ResponsePage,

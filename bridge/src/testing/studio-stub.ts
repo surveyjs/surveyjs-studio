@@ -5,6 +5,7 @@
 import type { ServerResponse } from "node:http";
 import { startStub, type RecordedRequest, type Stub } from "./http.js";
 import {
+  LAYOUT_KINDS,
   newSurveyStore,
   resetSurveyStore,
   surveyOperation,
@@ -55,7 +56,7 @@ export interface FakeStudio extends Stub {
   files: Map<string, StoredFile>;
   /** `getLegacyFile` by `kind/name`. */
   legacyFiles: Map<string, StoredFile>;
-  /** `getPublicResults` by survey ID. */
+  /** `getPublicResults` by survey ID (each page's definition from `definitions`). */
   publicResults: Map<string, StoredPublicResults>;
   /** Items per page of `getPublicResults`, whatever `limit` asks (`undefined`: `limit`). */
   pageSize: number | undefined;
@@ -119,12 +120,23 @@ function publicResults(fake: FakeStudio, res: ServerResponse, surveyId: string, 
   const survey = JSON.stringify({
     id: surveyId,
     name: "",
-    definition: {},
+    definition: fake.definitions.get(surveyId)?.definition ?? {},
     ...(stored.privateQuestions !== undefined && { privateQuestions: stored.privateQuestions }),
   });
   res
     .writeHead(200, { "content-type": "application/json" })
     .end(`{"survey":${survey},"items":[${page.join(",")}],"nextCursor":${next}}`);
+}
+
+/** Studio's `getPublicLayout`, from the survey records: only while public results are on. */
+function publicLayout(fake: FakeStudio, res: ServerResponse, surveyId: string, kind: string): void {
+  if (!LAYOUT_KINDS.includes(kind)) return problem(res, 400, "bad-request");
+  const survey = fake.store.surveys.get(surveyId);
+  if (survey?.publicResults !== true) return problem(res, 404, "survey-not-available");
+  json(res, 200, {
+    text: survey.layouts[kind] ?? null,
+    privateQuestions: survey.privateResultQuestions ?? [],
+  });
 }
 
 function problem(res: ServerResponse, status: number, code?: string): void {
@@ -248,6 +260,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
       }
       case "GET surveys/:/results":
         return publicResults(fake, res, id, url);
+      case "GET surveys/:/layouts/:":
+        return publicLayout(fake, res, id, segments[3]!);
       case "POST posts/:/files":
         if (!fake.postIds.has(id)) return problem(res, 404);
         return json(res, 201, fake.storedFile);

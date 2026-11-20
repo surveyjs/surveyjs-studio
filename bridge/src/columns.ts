@@ -366,16 +366,34 @@ export function newestFirst<T extends { readonly submittedAt: string }>(rows: re
   return [...rows].sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt));
 }
 
+/**
+ * The language of the column titles from an `Accept-Language` header, as the old API took it: the
+ * first entry as it is (no quality, no trimming), its language lower case (`de-DE` → `de`);
+ * `default` without one; `bad` (an empty `400`) for an entry its platform read as no culture name
+ * (`en;q=0.9`, `*`, `en_US`).
+ */
+export function localeOf(acceptLanguage: string | undefined): string {
+  const first = (acceptLanguage ?? "").split(",")[0]!;
+  if (first === "") return "default";
+  const match = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{1,8})*$/.exec(first);
+  return match === null ? "bad" : match[1]!.toLowerCase();
+}
+
+/** A response as the column calculation reads it: Studio's `SurveyResponse`, or a public result. */
+export type ColumnsResponse = Pick<SurveyResponse, "submittedAt" | "data"> & {
+  readonly clientId?: string;
+};
+
 /** The old `{ Columns, Id }` answer from every response. Throws `ColumnsRefused` where it failed. */
 export async function resultColumns(input: {
-  definition: object;
-  responses: AsyncIterable<SurveyResponse>;
+  definition: unknown;
+  responses: AsyncIterable<ColumnsResponse>;
   columnsLayout: string | null;
   privateQuestions: string[];
   locale: string;
   storeIp: boolean;
 }): Promise<{ Columns: ResultColumn[]; Id: string }> {
-  const rows: SurveyResponse[] = [];
+  const rows: ColumnsResponse[] = [];
   for await (const response of input.responses) rows.push(response);
   return { Columns: calculateColumns({ ...input, rows: newestFirst(rows) }), Id: EMPTY_GUID };
 }

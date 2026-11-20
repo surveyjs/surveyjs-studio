@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateColumns, ColumnsRefused, newestFirst, resultColumns } from "./columns.js";
+import {
+  calculateColumns,
+  ColumnsRefused,
+  localeOf,
+  newestFirst,
+  resultColumns,
+} from "./columns.js";
 import { parseStudioJson } from "./dotnet-format.js";
 
 const ZERO = "00000000-0000-0000-0000-000000000000";
@@ -251,5 +257,28 @@ describe("resultColumns", () => {
       ],
       Id: ZERO,
     });
+  });
+});
+
+describe("localeOf", () => {
+  it("takes the language of the first Accept-Language entry, lower case", () => {
+    expect(localeOf("de-DE")).toBe("de");
+    expect(localeOf("de-DE,de;q=0.9,en;q=0.8")).toBe("de");
+    expect(localeOf("EN-us, fr")).toBe("en");
+    expect(localeOf("zh-Hans")).toBe("zh");
+    expect(localeOf("fil-PH")).toBe("fil");
+    expect(localeOf("fr")).toBe("fr");
+  });
+
+  it("is default without the header or with an empty first entry", () => {
+    expect(localeOf(undefined)).toBe("default");
+    expect(localeOf("")).toBe("default");
+    expect(localeOf(",de")).toBe("default");
+  });
+
+  it("is bad for a first entry the old code could not read as a culture name", () => {
+    for (const header of ["en;q=0.9", "*", "en_US", "en-US ,de", "e", "de-"]) {
+      expect(localeOf(header), header).toBe("bad");
+    }
   });
 });

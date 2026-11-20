@@ -109,7 +109,10 @@ export async function getResult(
   );
 }
 
-interface ResultPage {
+/** A page of Studio's public results. */
+export interface ResultPage {
+  /** The survey's definition, its numbers with their text. */
+  definition: unknown;
   privateQuestions: readonly string[];
   items: { submittedAt: string; data: Record<string, unknown> }[];
   nextCursor: string | null;
@@ -123,11 +126,16 @@ function readPage(text: string): ResultPage {
   if (!Array.isArray(items) || (nextCursor !== null && typeof nextCursor !== "string")) {
     throw new Error("Studio sent no page of results");
   }
-  const survey = page!.survey as { privateQuestions?: unknown } | undefined;
+  const survey = page!.survey as { definition?: unknown; privateQuestions?: unknown } | undefined;
   const privateQuestions = Array.isArray(survey?.privateQuestions)
     ? (survey.privateQuestions as unknown[]).filter((name) => typeof name === "string")
     : [];
-  return { privateQuestions, items: items as ResultPage["items"], nextCursor };
+  return {
+    definition: survey?.definition,
+    privateQuestions,
+    items: items as ResultPage["items"],
+    nextCursor,
+  };
 }
 
 /**
@@ -233,42 +241,65 @@ export async function getSurveyPublicResults(
   // A malformed bound is no bound, as the old API ignored it.
   const from = parseDateArgument(queryValue(request, "from") ?? "");
   const till = parseDateArgument(queryValue(request, "till") ?? "");
-  const fetchPage = (cursor: string | undefined) =>
-    request.studio.GET("/public/surveys/{surveyId}/results", {
+  const read = publicPageReader(request, surveyId, { from, till });
+
+  const firstPage = await read(undefined);
+  // Unknown, or its results are not public: the old refusal.
+  if (firstPage === "refused") return sendJsonString(reply, 400, refusal);
+  const hidden = new Set(firstPage.privateQuestions);
+
+  // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
+  // answer has started cuts it off, as the old API's failures mid-stream did.
+  const pages = publicPagesFrom(request, read, firstPage, surveyId);
+  return sendStreamedRows(reply, pages, (item) => resultRow(item, hidden));
+}
+
+/**
+ * One page of the survey's public results from `cursor` (none: the first), within `bounds`;
+ * `refused` when Studio does not show them (unknown, or its results are not public).
+ */
+export type PublicPageReader = (cursor: string | undefined) => Promise<ResultPage | "refused">;
+
+export function publicPageReader(
+  request: FastifyRequest,
+  surveyId: string,
+  bounds: { from?: string | undefined; till?: string | undefined } = {},
+): PublicPageReader {
+  return async (cursor) => {
+    const { data, response } = await request.studio.GET("/public/surveys/{surveyId}/results", {
       params: {
         path: { surveyId },
         query: {
           limit: PAGE_LIMIT,
           ...(cursor !== undefined && { cursor }),
-          ...(from !== undefined && { from }),
-          ...(till !== undefined && { till }),
+          ...(bounds.from !== undefined && { from: bounds.from }),
+          ...(bounds.till !== undefined && { till: bounds.till }),
         },
       },
       parseAs: "text",
     });
+    if (response.status === 404) return "refused";
+    if (response.status !== 200 || data === undefined) return unexpectedStatus(response);
+    return readPage(data);
+  };
+}
 
-  const first = await fetchPage(undefined);
-  // Unknown, or its results are not public: the old refusal.
-  if (first.response.status === 404) return sendJsonString(reply, 400, refusal);
-  if (first.response.status !== 200 || first.data === undefined) {
-    return unexpectedStatus(first.response);
-  }
-  const firstPage = readPage(first.data);
-  const hidden = new Set(firstPage.privateQuestions);
-
-  /** A page after the first: the answer has started, so Studio's `429` is waited out. */
-  async function laterPage(cursor: string): Promise<ResultPage> {
-    const next = await fetchPage(cursor);
-    if (next.response.status !== 200 || next.data === undefined) {
-      return unexpectedStatus(next.response);
-    }
-    return readPage(next.data);
-  }
-
-  // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
-  // answer has started cuts it off, as the old API's failures mid-stream did.
-  const pages = pagesFrom(request, firstPage, laterPage, { surveyId, read: "public results" });
-  return sendStreamedRows(reply, pages, (item) => resultRow(item, hidden));
+/**
+ * The public result pages from `first` to the last; a later page waits out Studio's `429`, and one
+ * Studio refuses (its results stopped being public) fails as an unexpected answer.
+ */
+export function publicPagesFrom(
+  request: FastifyRequest,
+  read: PublicPageReader,
+  first: ResultPage,
+  surveyId: string,
+): AsyncGenerator<ResultPage> {
+  const laterPage = async (cursor: string): Promise<ResultPage> => {
+    const page = await read(cursor);
+    if (page === "refused") throw new StudioFailure(500, "Studio refused a later page of results");
+    return page;
+  };
+  return pagesFrom(request, first, laterPage, { surveyId, read: "public results" });
 }
 
 /**

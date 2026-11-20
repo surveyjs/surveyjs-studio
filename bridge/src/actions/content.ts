@@ -32,7 +32,7 @@ function notAuthorized(reply: FastifyReply, message: string, id: string): Fastif
 }
 
 /** The JSON types the old API read a body as: `application/json`, `text/json`, `application/*+json`. */
-function isJson(request: FastifyRequest): boolean {
+export function isJson(request: FastifyRequest): boolean {
   const type = (request.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
   return (
     type === "application/json" || type === "text/json" || /^application\/[^/]+\+json$/.test(type)
