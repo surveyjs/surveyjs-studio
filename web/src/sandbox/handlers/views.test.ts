@@ -129,6 +129,11 @@ describe("shared layouts", () => {
       expect(response.status).toBe(422);
     }
     expect((await call(layout(SURVEYS.campaign, "table"))).status).toBe(401);
+    // A member who can see the survey but not change it may read and not write (Engineering retro).
+    const retro = layout(SURVEYS.retro, "table");
+    expect((await call(retro, { user: USERS.owner })).status).toBe(404);
+    expect((await call(retro, put({ text: "{}" }, USERS.owner))).status).toBe(403);
+    expect((await call(retro, { method: "DELETE", user: USERS.owner })).status).toBe(403);
     // Someone outside the survey's scope sees nothing.
     expect(
       (await call(layout(SURVEYS.feedback, "table"), put({ text: "{}" }, USERS.member))).status,

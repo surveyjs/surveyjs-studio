@@ -84,6 +84,8 @@ describe("uploadLegacyFile", () => {
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("image/png");
     expect((await call(`/public/legacy-files/response/${body.legacyName}`)).status).toBe(404);
+    // Not by id on the survey files' route.
+    expect((await call(`/public/files/${body.legacyName}`)).status).toBe(404);
     // Any other type, and an empty file, are octet-stream.
     const other = await call("/legacy-files", {
       method: "POST",

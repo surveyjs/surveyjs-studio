@@ -357,7 +357,11 @@ export function fileHandlers(ctx: HandlerContext) {
     http.get("/public/files/{fileId}", ({ params }) =>
       guarded(() => {
         const id = params.fileId.toLowerCase();
-        const file = ctx.store.read().files.find((candidate) => candidate.id === id);
+        // Only files of a survey: an editor file of no survey is served by its legacy name alone
+        // (server `getFile` leaves out files with no survey).
+        const file = ctx.store
+          .read()
+          .files.find((candidate) => candidate.id === id && candidate.surveyId !== null);
         if (!file) throw notFound();
         return fileResponse(file);
       }),

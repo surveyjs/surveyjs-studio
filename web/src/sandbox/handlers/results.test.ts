@@ -243,3 +243,108 @@ describe("deleteResponse", () => {
     expect((await call(outsider.path, outsider.init)).status).toBe(404);
   });
 });
+
+describe("deleteResponse runs", () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 5, 1, 0, n)).toISOString();
+  const sid = (n: number) => `66666666-0000-4000-8000-a0000000000${n}`;
+  const ids = (sandbox: ReturnType<typeof setupSandbox>) =>
+    sandbox.ctx.store
+      .read()
+      .responses[SURVEYS.campaign]!.map((row) => row.id)
+      .sort();
+
+  /**
+   * Saves 1 (no client), 2-4 (client-del: two partial saves, then the complete one), 5
+   * (client-other, complete), in submission order.
+   */
+  async function setup() {
+    const sandbox = setupSandbox({}, "hosted");
+    await sandbox.ctx.store.write((data) => {
+      const row = (n: number, extra: { clientId?: string; partial?: boolean }) => ({
+        id: sid(n),
+        submittedAt: at(n),
+        data: { n },
+        partial: false,
+        ...extra,
+      });
+      data.responses[SURVEYS.campaign] = [
+        row(1, {}),
+        row(2, { clientId: "client-del", partial: true }),
+        row(3, { clientId: "client-del", partial: true }),
+        row(4, { clientId: "client-del" }),
+        row(5, { clientId: "client-other" }),
+      ];
+      data.completions[SURVEYS.campaign] = {
+        "client-del": { partial: false },
+        "client-other": { partial: false },
+      };
+    });
+    return sandbox;
+  }
+  const remove = (sandbox: ReturnType<typeof setupSandbox>, responseId: string, user?: string) =>
+    sandbox.call(`${results(SURVEYS.campaign)}/${responseId}`, {
+      method: "DELETE",
+      user: user ?? USERS.owner,
+    });
+  const state = async (sandbox: ReturnType<typeof setupSandbox>, clientId: string) =>
+    (
+      await (
+        await sandbox.call(`/public/surveys/${SURVEYS.campaign}/respondents/${clientId}`)
+      ).json()
+    ).state;
+
+  it.each([
+    ["the last save's id, in upper case", 4],
+    ["the middle save's id", 3],
+    ["the first save's id", 2],
+  ])("deletes the whole run by %s and clears the client's state", async (_name, n) => {
+    const sandbox = await setup();
+    expect(await state(sandbox, "client-del")).toBe("completed");
+    expect((await remove(sandbox, sid(n).toUpperCase())).status).toBe(204);
+    expect(ids(sandbox)).toStrictEqual([sid(1), sid(5)]);
+    expect(await state(sandbox, "client-del")).toBe("none");
+    expect(await state(sandbox, "client-other")).toBe("completed");
+    const page = await (
+      await sandbox.call(`${results(SURVEYS.campaign)}?limit=10`, { user: USERS.owner })
+    ).json();
+    expect(page.items.map((r: { id: string }) => r.id)).toStrictEqual([sid(1), sid(5)]);
+  });
+
+  it("answers 404 for an unknown id and changes nothing", async () => {
+    const sandbox = await setup();
+    for (const id of [sid(8), "not-a-guid"]) expect((await remove(sandbox, id)).status).toBe(404);
+    expect(ids(sandbox)).toHaveLength(5);
+    expect(await state(sandbox, "client-del")).toBe("completed");
+  });
+
+  it("deletes a response without a client id by its id, and only that one", async () => {
+    const sandbox = await setup();
+    expect((await remove(sandbox, sid(1))).status).toBe(204);
+    expect(ids(sandbox)).toStrictEqual([sid(2), sid(3), sid(4), sid(5)]);
+    expect(await state(sandbox, "client-del")).toBe("completed");
+    expect((await remove(sandbox, sid(1))).status).toBe(404);
+  });
+
+  it("keeps the marker of a client's later run", async () => {
+    const sandbox = setupSandbox({}, "hosted");
+    await sandbox.ctx.store.write((data) => {
+      data.responses[SURVEYS.campaign] = [
+        { id: sid(1), submittedAt: at(1), data: {}, clientId: "client-two", partial: false },
+        { id: sid(2), submittedAt: at(2), data: {}, clientId: "client-two", partial: true },
+      ];
+      data.completions[SURVEYS.campaign] = { "client-two": { partial: true } };
+    });
+    expect((await remove(sandbox, sid(1))).status).toBe(204);
+    expect(ids(sandbox)).toStrictEqual([sid(2)]);
+    expect(await state(sandbox, "client-two")).toBe("partial");
+    expect((await remove(sandbox, sid(2))).status).toBe(204);
+    expect(await state(sandbox, "client-two")).toBe("none");
+  });
+
+  it("answers 403 to a user who can see the survey but not change it", async () => {
+    const sandbox = setupSandbox({}, "hosted");
+    const retro = `${results(SURVEYS.retro)}/${sid(1)}`;
+    const response = await sandbox.call(retro, { method: "DELETE", user: USERS.owner });
+    expect(response.status).toBe(403);
+  });
+});
