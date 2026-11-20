@@ -158,6 +158,76 @@ describe("the recording script", () => {
     expect(lines.join("\n")).not.toContain("stand-in-key");
   });
 
+  it("reports a cleanup that cannot list the account without hiding the case's own outcome", async () => {
+    // A stand-in "old API": the first survey made (the script's probe for the account's user ID)
+    // deletes; the case's own survey does not, and once its delete was tried the lists fail too,
+    // so the re-list after the failed delete, and the run's sweep, cannot see the account.
+    const probe = "abcdef01-2345-4678-9abc-def012345670";
+    const made = "abcdef01-2345-4678-9abc-def012345679";
+    const listed = new Set<string>();
+    let creates = 0;
+    let deleteFailed = false;
+    const server = createServer((request, response) => {
+      const url = new URL(request.url ?? "/", "http://x");
+      const path = url.pathname;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      if (path.endsWith("/create")) {
+        const next = creates === 0 ? probe : made;
+        creates += 1;
+        listed.add(next);
+        response.end(
+          JSON.stringify({ Id: next, PostId: next, ResultId: next, UserId: probe, Name: "x" }),
+        );
+      } else if (path.endsWith("/delete")) {
+        const id = url.searchParams.get("id") ?? "";
+        if (id === probe) {
+          listed.delete(probe);
+          response.end();
+        } else {
+          deleteFailed = true;
+          response.writeHead(400).end();
+        }
+      } else if (deleteFailed) {
+        response.writeHead(500).end();
+      } else if (path.endsWith("/getActive")) {
+        response.end(JSON.stringify([...listed].map((id) => ({ Id: id }))));
+      } else if (path.endsWith("/getArchive")) {
+        response.end("[]");
+      } else {
+        response.writeHead(400).end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    onTestFinished(
+      () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        }),
+    );
+    const { port } = server.address() as AddressInfo;
+    const lines: string[] = [];
+    const problems = await record({
+      base: `http://127.0.0.1:${port}`,
+      surveys: { ids: IDS },
+      out: temporaryFolder(),
+      key: "stand-in-key",
+      only: "create/named",
+      log: (line) => lines.push(line),
+    });
+    // The case's own line, not a failure caused by its cleanup.
+    expect(lines.filter((line) => line.startsWith("create/named:"))).toEqual([
+      expect.stringMatching(/^create\/named: 200, /),
+    ]);
+    expect(lines).toContain(
+      `Could not delete survey ${made}: delete answered 400, and the account's surveys could not be listed.`,
+    );
+    expect(lines.at(-1)).toBe("Could not list the test account's surveys after the run: check it.");
+    // The case differs from its golden (a stand-in answer), the delete and the sweep failed.
+    expect(problems).toBe(3);
+    expect(lines.join("\n")).not.toContain("stand-in-key");
+  });
+
   it("prints no body when an answer is not what the script expects", async () => {
     // A stand-in "old API" that answers every request with 200 and a text body.
     const server = createServer((_request, response) => {

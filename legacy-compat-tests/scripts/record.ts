@@ -277,8 +277,10 @@ const LAYOUT_ACTIONS = {
 class Account {
   private before: Set<string> | undefined;
   private knownUserId: string | undefined;
-  /** The surveys whose delete failed while they still existed. */
+  /** The surveys whose delete failed while they still existed (or could not be checked). */
   readonly failedDeletes: string[] = [];
+  /** How many times the account's surveys could not be listed to clean up after a case. */
+  failedLists = 0;
 
   constructor(
     private readonly base: string,
@@ -428,35 +430,66 @@ class Account {
   }
 
   /**
-   * Deletes a survey of the run; one already gone (a case deleted it) is fine. A delete that
-   * fails while the survey is still listed is printed with the survey's ID and remembered, so the
-   * run ends with a failure.
+   * Deletes a survey of the run; one already gone (a case deleted it) is fine. Never throws, so a
+   * cleanup cannot hide the outcome of the case it follows: a delete that fails while the survey
+   * is still listed, or whose survey cannot be listed again, is printed with the survey's ID
+   * (only the script's own words) and remembered, so the run ends with a failure.
    */
   async remove(surveyId: string): Promise<void> {
-    const answer = await call(this.base, {
-      method: "DELETE",
-      path: `${PRIVATE}delete`,
-      query: { id: surveyId, accessKey: this.key },
-    });
-    if (answer.status === 200) return;
-    if (!(await this.surveyIds()).has(surveyId.toLowerCase())) return;
+    let status: number;
+    try {
+      status = (
+        await call(this.base, {
+          method: "DELETE",
+          path: `${PRIVATE}delete`,
+          query: { id: surveyId, accessKey: this.key },
+        })
+      ).status;
+    } catch {
+      this.failedDeletes.push(surveyId);
+      this.log(`Could not delete survey ${surveyId}: the delete request failed.`);
+      return;
+    }
+    if (status === 200) return;
+    try {
+      if (!(await this.surveyIds()).has(surveyId.toLowerCase())) return;
+    } catch {
+      this.failedDeletes.push(surveyId);
+      this.log(
+        `Could not delete survey ${surveyId}: delete answered ${status}, ` +
+          "and the account's surveys could not be listed.",
+      );
+      return;
+    }
     this.failedDeletes.push(surveyId);
-    this.log(`Could not delete survey ${surveyId}: delete answered ${answer.status}.`);
+    this.log(`Could not delete survey ${surveyId}: delete answered ${status}.`);
   }
 
-  /** Deletes every survey listed now that `before` does not hold. */
+  /**
+   * Deletes every survey listed now that `before` does not hold. Never throws: a list that fails
+   * is printed and remembered, and the run's sweep tries again.
+   */
   async removeNew(before: ReadonlySet<string>): Promise<void> {
-    for (const id of await this.surveyIds()) if (!before.has(id)) await this.remove(id);
+    let listed: Set<string>;
+    try {
+      listed = await this.surveyIds();
+    } catch {
+      this.failedLists += 1;
+      this.log("Could not list the test account's surveys to clean up after a case.");
+      return;
+    }
+    for (const id of listed) if (!before.has(id)) await this.remove(id);
   }
 
   /**
    * Deletes every survey that appeared since `start`, then lists the account again: the IDs of
-   * the run's surveys still there (none when the cleanup worked).
+   * the run's surveys still there (none when the cleanup worked). Throws when the account cannot
+   * be listed; the run reports that once.
    */
   async sweep(): Promise<string[]> {
     if (this.before === undefined) return [];
     const before = this.before;
-    await this.removeNew(before);
+    for (const id of await this.surveyIds()) if (!before.has(id)) await this.remove(id);
     return [...(await this.surveyIds())].filter((id) => !before.has(id));
   }
 }
@@ -564,6 +597,8 @@ async function recordCase(
         : `differs at ${differences.map((difference) => difference.at).join(", ")}`;
     return `${name}: ${answer.status}, ${verdict}`;
   } finally {
+    // Neither throws: a failed cleanup is printed and counted, and the case's own line or error
+    // stays what the run reports for it.
     if (beforeCase !== undefined) await account!.removeNew(beforeCase);
     if (made !== undefined) await account!.remove(made);
   }
@@ -631,8 +666,9 @@ export async function record(options: RecordOptions): Promise<number> {
         problems += 1;
         log("Could not list the test account's surveys after the run: check it.");
       }
-      // Each failed delete fails the run, even when the sweep removed the survey later.
-      problems += account.failedDeletes.length;
+      // Each failed delete or cleanup list fails the run, even when the sweep removed the survey
+      // later.
+      problems += account.failedDeletes.length + account.failedLists;
     }
   }
   return problems;
