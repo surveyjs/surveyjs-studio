@@ -1,30 +1,34 @@
-import type { ViewName, ViewState } from "../domain/types.js";
+import type { LayoutKind, ViewName, ViewState } from "../domain/types.js";
 import type { ViewStore } from "./types.js";
 import { GUID } from "../domain/guid.js";
+import { viewStateOf } from "../domain/view-state.js";
 
-/** The marker of a reset view: `getView` answers null for it, even where a legacy state exists. */
+/** The marker of a reset view: `getView` answers null for it, even where a shared layout exists. */
 const RESET = Symbol("reset");
 
 export interface MemoryViewsSeed {
-  /** The legacy per-survey layouts by survey id: the fallback until a user saves or resets. */
-  readonly legacyViews?: Record<string, Partial<Record<ViewName, ViewState>>>;
+  /** The shared layouts by survey id, the text as stored: the fallback until a user saves or resets. */
+  readonly layouts?: Record<string, Partial<Record<LayoutKind, string>>>;
   /** The names of the questions hidden from public results, by survey id. */
   readonly privateResultQuestions?: Record<string, readonly string[]>;
 }
 
 export interface MemoryViewStore {
   readonly store: ViewStore;
-  /** Forgets every user's views and markers and the private-question list of the survey (called by `deleteSurvey`). */
+  /**
+   * Forgets every user's views and markers, the shared layouts and the private-question list of the
+   * survey (called by `deleteSurvey`).
+   */
   dropSurvey(surveyId: string): void;
 }
 
 /** Saved results layouts in process memory, like all memory data. */
 export function createMemoryViewStore(seed: MemoryViewsSeed = {}): MemoryViewStore {
   const saved = new Map<string, Map<string, ViewState | typeof RESET>>();
-  const legacy = new Map(
-    Object.entries(seed.legacyViews ?? {}).map(([surveyId, views]) => [
+  const layouts = new Map(
+    Object.entries(seed.layouts ?? {}).map(([surveyId, texts]) => [
       surveyId.toLowerCase(),
-      structuredClone(views),
+      new Map(Object.entries(texts) as [LayoutKind, string][]),
     ]),
   );
 
@@ -53,17 +57,38 @@ export function createMemoryViewStore(seed: MemoryViewsSeed = {}): MemoryViewSto
     return Promise.resolve();
   };
 
+  const layoutOf = (surveyId: string, kind: LayoutKind): string | null => {
+    if (!GUID.test(surveyId)) return null;
+    const text = layouts.get(surveyId.toLowerCase())?.get(kind);
+    return text === undefined || text === "" ? null : text;
+  };
+
   const store: ViewStore = {
     getView: (surveyId, userId, view) => {
       if (!GUID.test(surveyId) || !GUID.test(userId)) return Promise.resolve(null);
       const own = saved.get(surveyId.toLowerCase())?.get(entryKey(userId, view));
       if (own === RESET) return Promise.resolve(null);
-      const state = own ?? legacy.get(surveyId.toLowerCase())?.[view];
-      return Promise.resolve(state === undefined ? null : structuredClone(state));
+      if (own !== undefined) return Promise.resolve(structuredClone(own));
+      const text = layoutOf(surveyId, view);
+      return Promise.resolve(text === null ? null : viewStateOf(text));
     },
     saveView: (surveyId, userId, view, state) =>
       write(surveyId, userId, view, structuredClone(state)),
     resetView: (surveyId, userId, view) => write(surveyId, userId, view, RESET),
+    getLayout: (surveyId, kind) => Promise.resolve(layoutOf(surveyId, kind)),
+    saveLayout: (surveyId, kind, text) => {
+      if (!GUID.test(surveyId)) return Promise.reject(new Error("Layout ids must be GUIDs"));
+      const key = surveyId.toLowerCase();
+      const texts = layouts.get(key) ?? new Map<LayoutKind, string>();
+      texts.set(kind, text);
+      layouts.set(key, texts);
+      return Promise.resolve();
+    },
+    deleteLayout: (surveyId, kind) => {
+      if (!GUID.test(surveyId)) return Promise.reject(new Error("Layout ids must be GUIDs"));
+      layouts.get(surveyId.toLowerCase())?.delete(kind);
+      return Promise.resolve();
+    },
     getPrivateQuestions: (surveyId) =>
       Promise.resolve([...(privateQuestions.get(surveyId.toLowerCase()) ?? [])]),
     savePrivateQuestions: (surveyId, names) => {
@@ -77,6 +102,7 @@ export function createMemoryViewStore(seed: MemoryViewsSeed = {}): MemoryViewSto
     store,
     dropSurvey: (surveyId) => {
       saved.delete(surveyId.toLowerCase());
+      layouts.delete(surveyId.toLowerCase());
       privateQuestions.delete(surveyId.toLowerCase());
     },
   };

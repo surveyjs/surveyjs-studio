@@ -79,10 +79,11 @@ export interface SavedViewsTable {
   updated_at: Timestamp;
 }
 
-export interface LegacyViewsTable {
+/** A survey's shared results layout (0009), the text verbatim. */
+export interface SurveyLayoutsTable {
   survey_id: string;
-  view: "summary" | "table";
-  state: Json;
+  kind: "table" | "summary" | "columns";
+  text: string;
 }
 
 export interface PrivateQuestionsTable {
@@ -189,7 +190,7 @@ export interface DatabaseSchema {
   survey_responses: SurveyResponsesTable;
   completion_markers: CompletionMarkersTable;
   saved_views: SavedViewsTable;
-  legacy_views: LegacyViewsTable;
+  survey_layouts: SurveyLayoutsTable;
   private_questions: PrivateQuestionsTable;
   projects: ProjectsTable;
   project_members: ProjectMembersTable;

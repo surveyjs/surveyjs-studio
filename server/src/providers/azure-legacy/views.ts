@@ -1,12 +1,15 @@
 import type { BlobServiceClient } from "@azure/storage-blob";
-import type { ViewName, ViewState } from "../../domain/types.js";
+import type { LayoutKind } from "../../domain/types.js";
+import { viewStateOf } from "../../domain/view-state.js";
 import type { ViewStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { isGuid, privateQuestionsFromLegacy } from "./mapping.js";
+import { LAYOUT_CONTAINERS_BY_KIND, isGuid, privateQuestionsFromLegacy } from "./mapping.js";
 import {
   PERMISSIONS_CONTAINER,
   VIEWS_CONTAINER,
+  writeLayout,
+  writeLayoutDeletion,
   writePrivateQuestions,
   writeView,
   writeViewReset,
@@ -15,16 +18,16 @@ import {
 /**
  * Saved results layouts (Step 9, R4 to R7): block blob `{surveyId}/{userId}/{view}` (lower case) in
  * the surveys account's container `my-surveys-views`, which legacy code never reads. A blob of zero
- * bytes is a reset marker. Without an own blob a read falls back to the survey's legacy layout blob
- * (`surveyresultsummarystate/{id}` or `surveyresulttablestate/{id}`), read only.
+ * bytes is a reset marker. Without an own blob a read falls back to the survey's shared layout.
  *
- * Reads only here (the folder is read-only by lint); saves and resets call writes.ts. Logs hold ids
- * and view names, never layout content.
+ * The shared layouts (ADR 0040 point 4) are the old service's per-survey layout blobs
+ * `{container}/{surveyId}` of `LAYOUT_CONTAINERS_BY_KIND` (`surveyresulttablestate`,
+ * `surveyresultsummarystate`, `surveyresultcolumns`), read and written in place, so the old site
+ * and Studio see one copy.
+ *
+ * Reads only here (the folder is read-only by lint); saves, resets and deletes call writes.ts. Logs
+ * hold ids and view names, never layout content.
  */
-const LEGACY_CONTAINERS: Readonly<Record<ViewName, string>> = {
-  summary: "surveyresultsummarystate",
-  table: "surveyresulttablestate",
-};
 
 /** The text of a blob; undefined when the blob or its container is missing. */
 async function textOf(
@@ -43,18 +46,7 @@ async function textOf(
 }
 
 const PERMISSIONS_READ = "public questions read";
-
-/** The JSON object in `text`; null when it is not one. */
-function parseState(text: string): ViewState | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as ViewState)
-      : null;
-  } catch {
-    return null;
-  }
-}
+const LAYOUT_READ = "layout read";
 
 export function createAzureViewStore(options: {
   readonly blobs: BlobServiceClient;
@@ -66,6 +58,15 @@ export function createAzureViewStore(options: {
     return null;
   };
 
+  /**
+   * The text of the shared layout of a lower-case GUID survey; null without a blob, and for an
+   * empty one (an old save between its create and its append, or one that failed half way).
+   */
+  const layoutOf = async (survey: string, kind: LayoutKind): Promise<string | null> => {
+    const text = await textOf(blobs, LAYOUT_CONTAINERS_BY_KIND[kind], survey, LAYOUT_READ);
+    return text === undefined || text === "" ? null : text;
+  };
+
   return {
     async getView(surveyId, userId, view) {
       if (!isGuid(surveyId) || !isGuid(userId)) return null;
@@ -74,16 +75,23 @@ export function createAzureViewStore(options: {
       const own = await textOf(blobs, VIEWS_CONTAINER, `${survey}/${user}/${view}`);
       if (own !== undefined) {
         if (own === "") return null; // a reset marker
-        return parseState(own) ?? ignored({ surveyId: survey, userId: user, view });
+        return viewStateOf(own) ?? ignored({ surveyId: survey, userId: user, view });
       }
-      const legacy = await textOf(blobs, LEGACY_CONTAINERS[view], survey);
-      if (legacy === undefined) return null;
-      return parseState(legacy) ?? ignored({ surveyId: survey, view });
+      const shared = await layoutOf(survey, view);
+      if (shared === null) return null;
+      return viewStateOf(shared) ?? ignored({ surveyId: survey, view });
     },
 
     saveView: (surveyId, userId, view, state) => writeView(blobs, surveyId, userId, view, state),
 
     resetView: (surveyId, userId, view) => writeViewReset(blobs, surveyId, userId, view),
+
+    getLayout: (surveyId, kind) =>
+      isGuid(surveyId) ? layoutOf(surveyId.toLowerCase(), kind) : Promise.resolve(null),
+
+    saveLayout: (surveyId, kind, text) => writeLayout(blobs, surveyId, kind, text),
+
+    deleteLayout: (surveyId, kind) => writeLayoutDeletion(blobs, surveyId, kind),
 
     // Fails closed: a list that exists but cannot be read never means "every question public".
     // An empty blob is usually a save between its create and its append, so it is read once more.

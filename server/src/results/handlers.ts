@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import type { Handlers } from "../api.js";
 import { requireUser } from "../auth/authenticate.js";
 import { formatEtag, ifNoneMatchHits } from "../content/etag.js";
+import type { LayoutKind } from "../domain/types.js";
 import { contentDisposition } from "../files/file-type.js";
 import { negotiateExportFormat, notAcceptable, type ExportFormat } from "./export-format.js";
 import { createResultsService, type ResultsServiceOptions } from "./service.js";
@@ -146,6 +147,12 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
         ...(query.from !== undefined && { from: query.from }),
         ...(query.till !== undefined && { till: query.till }),
       });
+    },
+
+    getPublicLayout: (request, reply) => {
+      const { surveyId, kind } = request.params as { surveyId: string; kind: LayoutKind };
+      void reply.header("cache-control", "no-store");
+      return service.publicLayout(surveyId, kind);
     },
   };
 }

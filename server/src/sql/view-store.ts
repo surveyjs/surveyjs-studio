@@ -1,5 +1,6 @@
 import { GUID } from "../domain/guid.js";
-import type { ViewName, ViewState } from "../domain/types.js";
+import type { LayoutKind, ViewName, ViewState } from "../domain/types.js";
+import { viewStateOf } from "../domain/view-state.js";
 import type { ViewStore } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
 import { jsonOf, jsonText } from "./values.js";
@@ -14,8 +15,8 @@ const stateOf = (stored: unknown): ViewState | null => {
 
 /**
  * The view store on SQLite or PostgreSQL (docs/architecture/data-model.md): the users' saved
- * layouts (a null state is a reset marker), the legacy per-survey layouts and the private-question
- * lists. It does not check that a survey exists; `deleteSurvey` deletes these rows.
+ * layouts (a null state is a reset marker), the surveys' shared layouts (text verbatim) and the
+ * private-question lists. It does not check that a survey exists; `deleteSurvey` deletes these rows.
  */
 export function createSqlViewStore(database: SqlDatabase): ViewStore {
   const { db } = database;
@@ -46,6 +47,17 @@ export function createSqlViewStore(database: SqlDatabase): ViewStore {
       .execute();
   };
 
+  /** The stored text of a GUID survey's layout; null when none (or an empty one) is stored. */
+  const layoutOf = async (surveyId: string, kind: LayoutKind): Promise<string | null> => {
+    const row = await db
+      .selectFrom("survey_layouts")
+      .select("text")
+      .where("survey_id", "=", surveyId.toLowerCase())
+      .where("kind", "=", kind)
+      .executeTakeFirst();
+    return row && row.text !== "" ? row.text : null;
+  };
+
   return {
     getView: async (surveyId, userId, view) => {
       if (!GUID.test(surveyId) || !GUID.test(userId)) return null;
@@ -58,16 +70,29 @@ export function createSqlViewStore(database: SqlDatabase): ViewStore {
         .where("view", "=", view)
         .executeTakeFirst();
       if (own) return own.state === null ? null : stateOf(own.state);
-      const legacy = await db
-        .selectFrom("legacy_views")
-        .select("state")
-        .where("survey_id", "=", survey)
-        .where("view", "=", view)
-        .executeTakeFirst();
-      return legacy ? stateOf(legacy.state) : null;
+      const text = await layoutOf(survey, view);
+      return text === null ? null : viewStateOf(text);
     },
     saveView: (surveyId, userId, view, state) => write(surveyId, userId, view, state),
     resetView: (surveyId, userId, view) => write(surveyId, userId, view, null),
+    getLayout: (surveyId, kind) =>
+      GUID.test(surveyId) ? layoutOf(surveyId, kind) : Promise.resolve(null),
+    saveLayout: async (surveyId, kind, text) => {
+      if (!GUID.test(surveyId)) throw new Error("Layout ids must be GUIDs");
+      await db
+        .insertInto("survey_layouts")
+        .values({ survey_id: surveyId.toLowerCase(), kind, text })
+        .onConflict((oc) => oc.columns(["survey_id", "kind"]).doUpdateSet({ text }))
+        .execute();
+    },
+    deleteLayout: async (surveyId, kind) => {
+      if (!GUID.test(surveyId)) throw new Error("Layout ids must be GUIDs");
+      await db
+        .deleteFrom("survey_layouts")
+        .where("survey_id", "=", surveyId.toLowerCase())
+        .where("kind", "=", kind)
+        .execute();
+    },
     getPrivateQuestions: async (surveyId) => {
       if (!GUID.test(surveyId)) return [];
       const row = await db

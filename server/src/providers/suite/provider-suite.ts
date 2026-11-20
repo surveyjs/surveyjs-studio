@@ -4,6 +4,7 @@ import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
 import { hashCredential } from "../../credentials/format.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -12,6 +13,7 @@ import type {
   SurveyRecord,
 } from "../../domain/types.js";
 import { readLegacyFixtures } from "../azure-legacy/fixtures.js";
+import { LAYOUT_CONTAINERS_BY_KIND } from "../azure-legacy/mapping.js";
 import { surveyListOrder } from "../ordering.js";
 import type {
   AppendOutcome,
@@ -1976,6 +1978,117 @@ export function describeProviderSuite(
         await expect(
           providers.views.resetView(surveyFeedback.id, "x", "summary"),
         ).rejects.toThrow();
+      });
+
+      describe("shared layouts", () => {
+        // Whitespace, key order and a duplicate key are part of the text, kept as given.
+        const text = ' {\n  "b": 2,  "a": [1, { "z": "Ünïcødé 😀" }],\n "b": 3 }\n';
+        const fresh = () => providers.surveys.createSurvey(newSurvey(freshScope()));
+        const layout = (surveyId: string, kind: LayoutKind) =>
+          providers.views.getLayout(surveyId, kind);
+        /** The text of the fixture's old layout of this kind for survey …a01. */
+        const fixtureText = async (kind: LayoutKind): Promise<string> => {
+          const { blobs } = await readLegacyFixtures();
+          const container = LAYOUT_CONTAINERS_BY_KIND[kind];
+          const found = blobs.find(
+            (b) => b.container === container && b.name === surveyFeedback.id,
+          );
+          if (!found) throw new Error(`No fixture layout ${kind} of ${surveyFeedback.id}`);
+          return found.content.toString("utf8");
+        };
+
+        it("reads the fixture layouts of survey …a01 verbatim, and null elsewhere", async () => {
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(surveyFeedback.id, kind)).toBe(await fixtureText(kind));
+          }
+          expect(await layout(surveyFeedback.id.toUpperCase(), "table")).toBe(
+            await fixtureText("table"),
+          );
+          expect(await layout(surveyCampaign.id, "summary")).toBeNull();
+          expect(await layout(surveyCampaign.id, "columns")).toBeNull();
+        });
+
+        it("saves, reads verbatim, replaces and deletes, per survey and kind", async () => {
+          const survey = await fresh();
+          const other = await fresh();
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBeNull();
+            await providers.views.saveLayout(survey.id, kind, `${kind}${text}`);
+          }
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBe(`${kind}${text}`);
+            expect(await layout(other.id, kind)).toBeNull();
+          }
+          expect(await layout(survey.id.toUpperCase(), "summary")).toBe(`summary${text}`);
+
+          await providers.views.saveLayout(survey.id.toUpperCase(), "summary", "x");
+          expect(await layout(survey.id, "summary")).toBe("x");
+
+          await providers.views.deleteLayout(survey.id, "summary");
+          expect(await layout(survey.id, "summary")).toBeNull();
+          expect(await layout(survey.id, "table")).toBe(`table${text}`);
+          await providers.views.deleteLayout(survey.id, "summary");
+          await providers.views.deleteLayout(other.id, "columns");
+          expect(await layout(survey.id, "summary")).toBeNull();
+        });
+
+        it("does not change the survey record", async () => {
+          const survey = await fresh();
+          await providers.views.saveLayout(survey.id, "table", text);
+          expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+          await providers.views.deleteLayout(survey.id, "table");
+          expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+        });
+
+        it("is each user's view until they save or reset their own", async () => {
+          const survey = await fresh();
+          const state = { elements: [{ name: "q1", isVisible: false }], pageSize: 5 };
+          await providers.views.saveLayout(survey.id, "table", JSON.stringify(state, null, 2));
+          const [none, own, reset] = [randomUUID(), randomUUID(), randomUUID()];
+          await providers.views.saveView(survey.id, own, "table", { mine: true });
+          await providers.views.resetView(survey.id, reset, "table");
+          expect(await get(survey.id, none, "table")).toEqual(state);
+          expect(await get(survey.id, own, "table")).toEqual({ mine: true });
+          expect(await get(survey.id, reset, "table")).toBeNull();
+          expect(await get(survey.id, none, "summary")).toBeNull();
+
+          await providers.views.saveLayout(survey.id, "summary", '{"s":1}');
+          expect(await get(survey.id, none, "summary")).toEqual({ s: 1 });
+          await providers.views.deleteLayout(survey.id, "table");
+          expect(await get(survey.id, none, "table")).toBeNull();
+        });
+
+        it("is no view when it is not a JSON object, and stays readable as text", async () => {
+          const survey = await fresh();
+          const user = randomUUID();
+          for (const stored of ["[1]", '"x"', "not json", "null"]) {
+            await providers.views.saveLayout(survey.id, "summary", stored);
+            expect(await get(survey.id, user, "summary")).toBeNull();
+            expect(await layout(survey.id, "summary")).toBe(stored);
+          }
+        });
+
+        it("is not copied by a clone and is deleted with the survey", async () => {
+          const survey = await fresh();
+          for (const kind of ["table", "summary", "columns"] as const) {
+            await providers.views.saveLayout(survey.id, kind, text);
+          }
+          const copy = await providers.surveys.cloneSurvey(survey.id, newSurvey(freshScope()));
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(copy!.id, kind)).toBeNull();
+            expect(await layout(survey.id, kind)).toBe(text);
+          }
+          expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBeNull();
+          }
+        });
+
+        it("reads null and refuses writes for an id that is not a GUID", async () => {
+          expect(await layout("not-a-guid", "table")).toBeNull();
+          await expect(providers.views.saveLayout("not-a-guid", "table", text)).rejects.toThrow();
+          await expect(providers.views.deleteLayout("not-a-guid", "table")).rejects.toThrow();
+        });
       });
 
       describe("private questions", () => {

@@ -1,17 +1,18 @@
 /**
- * `getResultsView`, `saveResultsView` and `resetResultsView` against the legacy fixtures.
+ * `getResultsView`, `saveResultsView` and `resetResultsView`, and the shared layouts
+ * (`getSurveyLayout`, `saveSurveyLayout`, `deleteSurveyLayout`), against the legacy fixtures.
  *
  * The data is shared by all test files and never reset, so every test that writes a layout creates
- * its own survey (in the admin's Personal scope, or in Engineering for the per-user test) and
- * writes only there. The fixture surveys `…a01` and `…a08` are read only: no view goes to them;
- * the checks on them are reads and refusals. Cleanup (archive, then delete) is registered with
+ * its own survey (in the admin's Personal scope, or in Engineering or Marketing for the tests of
+ * several users) and writes only there. The fixture surveys `…a01` and `…a08` are read only: no
+ * view or layout goes to them; the checks on them are reads and refusals. Cleanup (archive, then delete) is registered with
  * `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
 import { call, codeOf, as, cleanUp, ownsServer, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
-const { owner, admin, outsider } = fixtureUsers;
+const { owner, admin, member, outsider } = fixtureUsers;
 
 const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
 const LARGE = "22222222-0000-4000-8000-a00000000008";
@@ -233,5 +234,169 @@ describe("views", () => {
         expect(await codeOf(response)).toBe("not-found");
       }
     }
+  });
+});
+
+const LAYOUT = "/surveys/{surveyId}/layouts/{kind}";
+const MARKETING = "55555555-0000-4000-8000-a00000000001";
+
+const getLayout = (surveyId: string, kind: string, headers?: Headers) =>
+  call("GET", LAYOUT, {
+    path: `/surveys/${surveyId}/layouts/${kind}`,
+    ...(headers && { headers }),
+  });
+
+const putLayout = (surveyId: string, kind: string, headers: Headers | undefined, body?: unknown) =>
+  call("PUT", LAYOUT, {
+    path: `/surveys/${surveyId}/layouts/${kind}`,
+    ...(headers && { headers }),
+    ...(body !== undefined && { body }),
+  });
+
+const deleteLayout = (surveyId: string, kind: string, headers?: Headers) =>
+  call("DELETE", LAYOUT, {
+    path: `/surveys/${surveyId}/layouts/${kind}`,
+    ...(headers && { headers }),
+  });
+
+async function expectLayoutNotFound(response: Response): Promise<void> {
+  expect(response.status).toBe(404);
+  expect(await response.json()).toMatchObject({
+    code: "layout-not-found",
+    title: "Layout not found",
+  });
+}
+
+/** The text of a layout read, which must succeed. */
+async function layoutText(response: Response): Promise<string> {
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as { text: string };
+  expect(Object.keys(body)).toEqual(["text"]);
+  return body.text;
+}
+
+describe("shared layouts", () => {
+  // Whitespace and key order are part of the text, kept as given.
+  const TEXT = ' {\n  "pageSize": 25,  "elements": [{ "name": "q1", "isVisible": false }] }\n';
+
+  it("saves, reads verbatim and deletes each kind without touching the survey", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await created(adam);
+    const before = await updatedAtOf(surveyId, adam);
+    for (const kind of ["table", "summary", "columns"]) {
+      await expectLayoutNotFound(await getLayout(surveyId, kind, adam));
+      expect((await putLayout(surveyId, kind, adam, { text: `${kind}${TEXT}` })).status).toBe(204);
+    }
+    for (const kind of ["table", "summary", "columns"]) {
+      expect(await layoutText(await getLayout(surveyId, kind, adam))).toBe(`${kind}${TEXT}`);
+    }
+    expect((await putLayout(surveyId, "table", adam, { text: "Ünïcødé 😀" })).status).toBe(204);
+    expect(await layoutText(await getLayout(surveyId, "table", adam))).toBe("Ünïcødé 😀");
+
+    expect((await deleteLayout(surveyId, "table", adam)).status).toBe(204);
+    await expectLayoutNotFound(await getLayout(surveyId, "table", adam));
+    expect((await deleteLayout(surveyId, "table", adam)).status).toBe(204);
+    expect(await layoutText(await getLayout(surveyId, "summary", adam))).toBe(`summary${TEXT}`);
+
+    expect(await updatedAtOf(surveyId, adam)).toBe(before);
+  });
+
+  it("serves the fixture layouts of a survey", async (ctx) => {
+    const olivia = await as(ctx, owner);
+    const summary = await layoutText(await getLayout(FEEDBACK, "summary", olivia));
+    expect(JSON.parse(summary)).toStrictEqual(LEGACY_SUMMARY);
+    const table = await layoutText(await getLayout(FEEDBACK, "table", olivia));
+    expect(JSON.parse(table)).toStrictEqual(LEGACY_TABLE);
+    const columns = await layoutText(await getLayout(FEEDBACK, "columns", olivia));
+    expect(JSON.parse(columns)).toMatchObject({ newcolumnsvisibility: 0 });
+  });
+
+  it("lets anyone who can see the survey read it, and only who can change it save", async (ctx) => {
+    // Marketing: Adam and Olivia are admins, Mia a plain member; Oscar is outside.
+    const adam = await as(ctx, admin);
+    const mia = await as(ctx, member);
+    const oscar = await as(ctx, outsider);
+    const surveyId = await created(adam, { projectId: MARKETING });
+    expect((await putLayout(surveyId, "table", adam, { text: TEXT })).status).toBe(204);
+
+    expect(await layoutText(await getLayout(surveyId, "table", mia))).toBe(TEXT);
+    for (const response of [
+      await putLayout(surveyId, "table", mia, { text: "{}" }),
+      await deleteLayout(surveyId, "table", mia),
+    ]) {
+      expect(response.status).toBe(403);
+      expect(await codeOf(response)).toBe("forbidden");
+    }
+    for (const response of [
+      await getLayout(surveyId, "table", oscar),
+      await putLayout(surveyId, "table", oscar, { text: "{}" }),
+      await deleteLayout(surveyId, "table", oscar),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await codeOf(response)).toBe("not-found");
+    }
+    expect(await layoutText(await getLayout(surveyId, "table", adam))).toBe(TEXT);
+  });
+
+  it("is the view of a user with no view of their own and no reset", async (ctx) => {
+    // Review Focus 4: a layout saved for the survey, as the bridge saves the old table state.
+    const adam = await as(ctx, admin);
+    const mia = await as(ctx, member);
+    const olivia = await as(ctx, owner);
+    const surveyId = await created(adam, { projectId: MARKETING });
+    const shared = { elements: [{ name: "q1", isVisible: false }], pageSize: 5 };
+    const text = JSON.stringify(shared, null, 2);
+    expect((await putLayout(surveyId, "table", adam, { text })).status).toBe(204);
+    const own = { pageSize: 50 };
+    expect((await put(surveyId, "table", olivia, own)).status).toBe(204);
+    expect((await reset(surveyId, "table", adam)).status).toBe(204);
+
+    expect(await (await get(surveyId, "table", mia)).json()).toStrictEqual(shared);
+    expect(await (await get(surveyId, "table", olivia)).json()).toStrictEqual(own);
+    await expectViewNotFound(await get(surveyId, "table", adam));
+    await expectViewNotFound(await get(surveyId, "summary", mia));
+
+    // A layout that is not a JSON object is no view.
+    expect((await putLayout(surveyId, "table", adam, { text: "[1]" })).status).toBe(204);
+    await expectViewNotFound(await get(surveyId, "table", mia));
+  });
+
+  it("is not copied to a clone", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await created(adam);
+    expect((await putLayout(surveyId, "summary", adam, { text: TEXT })).status).toBe(204);
+    const response = await call("POST", "/surveys/{surveyId}/clones", {
+      path: `/surveys/${surveyId}/clones`,
+      headers: adam,
+    });
+    expect(response.status).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    onTestFinished(() => cleanUp(adam, id));
+    await expectLayoutNotFound(await getLayout(id, "summary", adam));
+  });
+
+  it("refuses an unknown kind, an empty text, no CSRF token and no session", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await created(adam);
+    expect((await getLayout(surveyId, "charts", adam)).status).toBe(400);
+    for (const body of [{ text: "" }, {}, { text: 5 }]) {
+      const response = await putLayout(surveyId, "table", adam, body);
+      expect(response.status).toBe(422);
+      expect(await codeOf(response)).toBe("validation-failed");
+    }
+    await expectLayoutNotFound(await getLayout(surveyId, "table", adam));
+    if (!sandbox) {
+      const { cookie = "" } = adam;
+      for (const response of [
+        await putLayout(surveyId, "table", { cookie }, { text: "{}" }),
+        await deleteLayout(surveyId, "table", { cookie }),
+      ]) {
+        expect(response.status).toBe(403);
+        expect(await codeOf(response)).toBe("csrf-token-invalid");
+      }
+    }
+    expect((await getLayout(surveyId, "table")).status).toBe(401);
+    expect((await putLayout(surveyId, "table", undefined, { text: "{}" })).status).toBe(401);
+    expect((await deleteLayout(surveyId, "table")).status).toBe(401);
   });
 });

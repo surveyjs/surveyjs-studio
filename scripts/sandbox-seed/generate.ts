@@ -4,6 +4,7 @@
 // development time; the web gets only the generated JSON and web/src/sandbox/seed-types.ts.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { viewStateOf } from "../../server/src/domain/view-state.js";
 import { legacyFixtureSeed } from "../../server/src/providers/azure-legacy/fixtures.js";
 import type { MemorySeed } from "../../server/src/providers/memory.js";
 import { withSeedInvitation } from "../../server/src/providers/seed-invitations.js";
@@ -49,6 +50,19 @@ const bySurvey = <T>(map: Record<string, T> | undefined, surveys: Set<string>): 
 
 const byId = <T extends { id: string }>(items: readonly T[]): T[] =>
   [...items].sort((a, b) => byCodePoint(a.id, b.id));
+
+/** The summary and table layouts of each survey that parse to a JSON object, parsed. */
+function viewsOf(layouts: MemorySeed["layouts"]): SandboxSeed["legacyViews"] {
+  const views: SandboxSeed["legacyViews"] = {};
+  for (const [id, texts] of Object.entries(layouts ?? {})) {
+    for (const view of ["summary", "table"] as const) {
+      const text = texts[view];
+      const state = text === undefined ? null : viewStateOf(text);
+      if (state !== null) (views[id] ??= {})[view] = state;
+    }
+  }
+  return views;
+}
 
 export async function sandboxSeed(): Promise<SandboxSeed> {
   const tags = readTags();
@@ -132,7 +146,7 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
       ]),
     ),
     completions: bySurvey(seed.completions, surveys),
-    legacyViews: bySurvey(seed.legacyViews, surveys),
+    legacyViews: bySurvey(viewsOf(seed.layouts), surveys),
     privateResultQuestions: bySurvey(seed.privateResultQuestions, surveys),
   };
 }

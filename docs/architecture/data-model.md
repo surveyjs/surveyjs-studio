@@ -112,16 +112,20 @@ marker.
 `survey_id` (FK, cascade), `client_id` (text, matched exactly), `partial` (boolean); primary key (`survey_id`,
 `client_id`). `completion` reads it: no row is `none`.
 
-### `saved_views`, `legacy_views` and `private_questions` (0002)
+### `saved_views`, `survey_layouts` and `private_questions` (0002, 0009)
 
-| Table               | Columns                                                                                                                  | Notes                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `saved_views`       | `survey_id`, `user_id` (GUIDs), `view` (`summary` or `table`), `state` (JSON, null), `updated_at`; primary key all three | A user's layout; a null `state` is a reset marker                                                    |
-| `legacy_views`      | `survey_id`, `view`, `state` (JSON); primary key (`survey_id`, `view`)                                                   | The legacy per-survey layout, `getView`'s fallback (R4); filled by the seed and the hosted migration |
-| `private_questions` | `survey_id` (primary key), `names` (JSON array, no duplicates)                                                           | The questions hidden from public results                                                             |
+| Table               | Columns                                                                                                                  | Notes                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `saved_views`       | `survey_id`, `user_id` (GUIDs), `view` (`summary` or `table`), `state` (JSON, null), `updated_at`; primary key all three | A user's layout; a null `state` is a reset marker                                                                                                                                |
+| `survey_layouts`    | `survey_id` (GUID), `kind` (`table`, `summary` or `columns`), `text` (text); primary key (`survey_id`, `kind`)           | 0009. A survey's shared layout (ADR 0040 point 4), the text verbatim; `getView`'s fallback when it parses to a JSON object. Filled by the app, the seed and the hosted migration |
+| `private_questions` | `survey_id` (primary key), `names` (JSON array, no duplicates)                                                           | The questions hidden from public results                                                                                                                                         |
 
 The view store does not check that a survey exists, so these tables have **no foreign key**; `deleteSurvey` deletes
-their rows in its transaction. A clone copies none of them; "delete all results" keeps them.
+their rows in its transaction. A clone copies none of them; "delete all results" keeps them. Saving or deleting a
+shared layout writes no history and leaves the survey's `updated_at` alone (ADR 0015 R7).
+
+0009 replaced `legacy_views` (0002: `survey_id`, `view`, `state` JSON, the old per-survey layouts as the fallback of
+a user's view): its rows moved into `survey_layouts` as text and the table was dropped.
 
 ### `projects` and `project_members` (0002)
 
@@ -260,7 +264,7 @@ Empty and unused in the self-hosted image.
 | ------------------------------------------- | -------------------------------------------------------- | --------------- |
 | `SurveyStore`                               | `surveys`, `survey_history`                              | Built           |
 | `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built           |
-| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built           |
+| `ViewStore`                                 | `saved_views`, `survey_layouts`, `private_questions`     | Built           |
 | `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built           |
 | `FileStore`                                 | `files`, `legacy_files` and the byte store               | Built           |
 | `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |

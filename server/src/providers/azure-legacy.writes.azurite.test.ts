@@ -11,6 +11,7 @@ import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { newFileId } from "../domain/file-id.js";
 import type {
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -1548,6 +1549,78 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       expect(await store().surveys.deleteSurvey(survey.id)).toBe(true);
       expect(await blobs.getContainerClient(CONTAINER).getBlobClient(survey.id).exists()).toBe(
         false,
+      );
+    });
+  });
+
+  describe("shared layouts", () => {
+    const CONTAINERS = {
+      table: "surveyresulttablestate",
+      summary: "surveyresultsummarystate",
+      columns: "surveyresultcolumns",
+    } as const;
+
+    it("writes the old layout blobs in place: append blobs, the text as UTF-8, no SQL or audit change", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      const before = await rawRow(survey.id);
+      const auditBefore = (await auditRows(survey.id)).length;
+      const text = ' {\n  "b": 1, "a": "Ünïcødé 😀" }\n';
+
+      for (const [kind, container] of Object.entries(CONTAINERS)) {
+        await store().views.saveLayout(survey.id.toUpperCase(), kind as LayoutKind, text);
+        expect(await blobType(container, survey.id), container).toBe("AppendBlob");
+        const bytes = await blobs
+          .getContainerClient(container)
+          .getBlobClient(survey.id)
+          .downloadToBuffer();
+        expect(bytes.equals(Buffer.from(text, "utf8")), container).toBe(true);
+      }
+      await store().views.saveLayout(survey.id, "table", "x");
+      expect(await blobText(CONTAINERS.table, survey.id)).toBe("x");
+
+      await store().views.deleteLayout(survey.id, "table");
+      const table = blobs.getContainerClient(CONTAINERS.table).getBlobClient(survey.id);
+      expect(await table.exists()).toBe(false);
+      await store().views.deleteLayout(survey.id, "table");
+      expect(await blobText(CONTAINERS.summary, survey.id)).toBe(text);
+
+      expect(await rawRow(survey.id)).toEqual(before);
+      expect(await auditRows(survey.id)).toHaveLength(auditBefore);
+    });
+
+    it("reads a block blob too, an empty blob as none, and warns for a view that is no object", async () => {
+      const survey = await store().surveys.createSurvey(newSurvey(personal()));
+      const client = blobs.getContainerClient(CONTAINERS.summary);
+      await client.createIfNotExists();
+      const put = async (text: string) =>
+        client.getBlockBlobClient(survey.id).upload(text, Buffer.byteLength(text));
+      const user = randomUUID();
+
+      await put('{"a":1}');
+      expect(await store().views.getLayout(survey.id, "summary")).toBe('{"a":1}');
+      expect(await store().views.getView(survey.id, user, "summary")).toEqual({ a: 1 });
+
+      await put("");
+      expect(await store().views.getLayout(survey.id, "summary")).toBeNull();
+      expect(await store().views.getView(survey.id, user, "summary")).toBeNull();
+
+      const before = warnings.length;
+      await put("[1]");
+      expect(await store().views.getView(survey.id, user, "summary")).toBeNull();
+      expect(warnings.slice(before)).toEqual([
+        {
+          details: { surveyId: survey.id, view: "summary" },
+          message: "Ignored a saved results layout that is not a JSON object.",
+        },
+      ]);
+    });
+
+    it("refuses an id that is not a GUID before any write", async () => {
+      await expect(store().views.saveLayout("not-a-guid", "table", "{}")).rejects.toThrow(
+        "every id must be a GUID",
+      );
+      await expect(store().views.deleteLayout("not-a-guid", "table")).rejects.toThrow(
+        "every id must be a GUID",
       );
     });
   });

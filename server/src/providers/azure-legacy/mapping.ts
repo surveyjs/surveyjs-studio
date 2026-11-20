@@ -2,6 +2,7 @@ import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
   HistoryEntryRecord,
+  LayoutKind,
   ProjectMembership,
   ProjectRecord,
   SurveyDefinition,
@@ -316,6 +317,16 @@ export function licenceExpiriesFromLegacy(rows: readonly LegacyLicenceRow[]): (D
     return row.parentexpirationdate;
   });
 }
+
+/**
+ * The surveys-account container of each shared results layout kind (layout section 3.10; ADR 0040
+ * point 4): the old service's per-survey layouts, one append blob `{surveyId}` (lower case) each.
+ */
+export const LAYOUT_CONTAINERS_BY_KIND: Readonly<Record<LayoutKind, string>> = {
+  table: "surveyresulttablestate",
+  summary: "surveyresultsummarystate",
+  columns: "surveyresultcolumns",
+};
 
 /**
  * The names of the questions a legacy `surveyresultpermissions` blob hides from public results: the

@@ -3,6 +3,7 @@ import type {
   CompletionState,
   FileKind,
   HistoryEntryRecord,
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -230,11 +231,10 @@ export interface ResultStore {
 export interface ViewStore {
   /**
    * The user's saved state of this view of the survey. When the user has none and has not reset
-   * it since, the survey's legacy per-survey state as stored (R4): azure-legacy blob
-   * `surveyresultsummarystate/{surveyId}` (summary) or `surveyresulttablestate/{surveyId}`
-   * (table); memory the seed's `legacyViews`. null when there is neither, after a reset, for a
-   * stored value that is not a JSON object, and for a non-GUID survey or user id. Ids match
-   * case-insensitively.
+   * it since, the survey's shared layout of the same kind (`getLayout`, ADR 0040 point 4) parsed
+   * as JSON. null when there is neither, after a reset, for a stored value that is not a JSON
+   * object (azure-legacy logs a warning with the ids), and for a non-GUID survey or user id. Ids
+   * match case-insensitively.
    */
   getView(surveyId: string, userId: string, view: ViewName): Promise<ViewState | null>;
   /**
@@ -249,6 +249,22 @@ export interface ViewStore {
    * Rejects for a non-GUID survey or user id, like `saveView`.
    */
   resetView(surveyId: string, userId: string, view: ViewName): Promise<void>;
+  /**
+   * The survey's shared layout of this kind (ADR 0040 point 4), the text exactly as saved; null
+   * when none is saved, for an empty stored text and for a non-GUID id. Ids match
+   * case-insensitively. azure-legacy: the old service's per-survey layout itself, so the old site
+   * and Studio read one copy; memory: the seed's `layouts`, then saves.
+   */
+  getLayout(surveyId: string, kind: LayoutKind): Promise<string | null>;
+  /**
+   * Stores `text` as the survey's layout of this kind, replacing the previous one. No history, no
+   * audit entry, no change of the survey record (ADR 0015 R7). Rejects (nothing written) for a
+   * non-GUID id; does not check that the survey exists. Deleted with the survey, not copied by a
+   * clone.
+   */
+  saveLayout(surveyId: string, kind: LayoutKind, text: string): Promise<void>;
+  /** Deletes the layout of this kind; idempotent. Rejects for a non-GUID id, like `saveLayout`. */
+  deleteLayout(surveyId: string, kind: LayoutKind): Promise<void>;
   /**
    * The names of the survey's questions hidden from public results (R1), in stored order, no
    * duplicates; [] when none are stored, for an unknown survey and for a non-GUID id. Ids match

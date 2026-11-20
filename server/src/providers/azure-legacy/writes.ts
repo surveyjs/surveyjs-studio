@@ -17,6 +17,7 @@ import sql from "mssql";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -46,7 +47,13 @@ import {
 } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy, userFromLegacy } from "./mapping.js";
+import {
+  LAYOUT_CONTAINERS_BY_KIND,
+  fileRecordFromBlob,
+  isGuid,
+  privateQuestionsToLegacy,
+  userFromLegacy,
+} from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
@@ -55,7 +62,8 @@ import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy, userFromLegacy } 
  * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
  * our own; Step 10: deleting all results and the public-question list; Step 11: projects and
  * members (Organizations and OrganizationUsers rows, project deletion), in SQL transactions;
- * Step 12: member erasure (an erased account's membership rows, a successor made admin). Each
+ * Step 12: member erasure (an erased account's membership rows, a successor made admin); Hosted
+ * Step 6: deleting one result and the shared results layouts (the old per-survey layouts). Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -109,13 +117,11 @@ const MAX_RESULT_LENGTH = 32_768;
 /** Container of the public-question lists (layout section 10), each blob named by the survey id. */
 export const PERMISSIONS_CONTAINER = "surveyresultpermissions";
 
-/** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
-const LAYOUT_CONTAINERS = [
-  "surveyresulttablestate",
-  "surveyresultsummarystate",
-  PERMISSIONS_CONTAINER,
-  "surveyresultcolumns",
-] as const;
+/**
+ * Containers of the old per-survey results layouts and the public-question list; each blob is
+ * named by the survey id (layout 3.10).
+ */
+const LAYOUT_CONTAINERS = [...Object.values(LAYOUT_CONTAINERS_BY_KIND), PERMISSIONS_CONTAINER];
 
 type SqlType = (() => sql.ISqlType) | sql.ISqlType;
 
@@ -1291,6 +1297,52 @@ export async function writePrivateQuestions(
     }
   } catch (error) {
     throw new LegacyStoreError("public questions save", error);
+  }
+}
+
+/**
+ * Replaces the survey's shared layout of this kind (ADR 0040 point 4): the old per-survey layout
+ * blob `{container}/{surveyId}` of `LAYOUT_CONTAINERS_BY_KIND`, an append blob holding the text in
+ * UTF-8 without a byte-order mark, overwritten in full, as the old service writes it (layout 3.10).
+ * A `404` for the container runs `createIfNotExists()` and the write once more. No SQL change, no
+ * audit row (ADR 0015 R7). The text is never logged.
+ */
+export async function writeLayout(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  kind: LayoutKind,
+  text: string,
+): Promise<void> {
+  const id = checkedId("layout save", surveyId);
+  const container = LAYOUT_CONTAINERS_BY_KIND[kind];
+  const content = Buffer.from(text, "utf8");
+  try {
+    try {
+      await replaceAppendBlob(blobs, container, id, content);
+    } catch (error) {
+      if (statusOf(error) !== 404) throw error;
+      await blobs.getContainerClient(container).createIfNotExists();
+      await replaceAppendBlob(blobs, container, id, content);
+    }
+  } catch (error) {
+    throw new LegacyStoreError("layout save", error);
+  }
+}
+
+/**
+ * Deletes the survey's shared layout of this kind, as the old service's reset of a layout deletes
+ * its blob (layout 3.10); a missing blob or container is fine. No SQL change, no audit row.
+ */
+export async function writeLayoutDeletion(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  kind: LayoutKind,
+): Promise<void> {
+  const id = checkedId("layout delete", surveyId);
+  try {
+    await deleteBlobIfPresent(blobs, LAYOUT_CONTAINERS_BY_KIND[kind], id);
+  } catch (error) {
+    throw new LegacyStoreError("layout delete", error);
   }
 }
 

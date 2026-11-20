@@ -1536,8 +1536,8 @@ paths:
         survey: saving or resetting one changes nothing for other users. Anyone who
         can see the survey may read, save and reset their own layout.
 
-        A server that took over the per-survey layouts of an older system returns
-        that layout until the user saves or resets their own.
+        A user who has not saved or reset their own layout gets the survey's shared
+        layout of this kind (`getSurveyLayout`) when its text is a JSON object.
 
         `404 not-found`: the survey is unknown or not visible to the caller.
         `404 view-not-found`: no layout is saved, and the default layout is used.
@@ -1585,7 +1585,7 @@ paths:
       summary: Reset the layout to the default
       description: |
         Deletes the caller's layout of this view. Afterwards `getResultsView` answers
-        `404 view-not-found`, also where an older per-survey layout exists, until the
+        `404 view-not-found`, also where a shared layout exists, until the
         next save. Resetting a view without a saved layout also answers `204`. `403`
         means a missing or wrong CSRF token.
       security:

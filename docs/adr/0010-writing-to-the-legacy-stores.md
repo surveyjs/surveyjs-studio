@@ -520,6 +520,29 @@ HOLDLOCK`; no row means "no such project" and nothing is written), then reads an
 - **Foreign key.** On the replica `OrganizationUsers.userid` references `Users.id`, so the tests write member
   rows only for fixture users; orphan rows are tested on the memory provider ([testing](../testing.md)).
 
+## Hosted Step 6: shared results layouts
+
+Hosted Step 6 adds two writes for the survey's shared layouts ([ADR 0040](0040-bridge-access-key-actions.md) point 4),
+in `writes.ts` (the file header and the ESLint `ignores` comment gain "the shared results layouts"). The three kinds
+are the old per-survey layout blobs of the Table state, the Summary state and the old column layout
+([layout, 3.10](../architecture/legacy-data-layout.md#310-results-layouts-the-only-saved-ui-state);
+`LAYOUT_CONTAINERS_BY_KIND` in `mapping.ts`), so the old site and Studio share one copy until the cutover.
+
+- **`writeLayout(blobs, surveyId, kind, text)`** replaces the blob as the old service does: an append blob holding
+  the text in UTF-8 without a byte-order mark, overwritten in full (`replaceAppendBlob`); a `404` for the container
+  runs `createIfNotExists()` and the write once more. The id goes through `checkedId`. A failure is
+  `LegacyStoreError("layout save")`.
+- **`writeLayoutDeletion(blobs, surveyId, kind)`** deletes the blob, as the old reset of a layout does; a missing
+  blob or container is fine. A failure is `LegacyStoreError("layout delete")`.
+- **No audit row, no change of the survey's date, no history** (ADR 0015 R7). The old save wrote the layout into
+  an audit row and moved the survey's date; this one does neither, so a layout saved through the bridge does not
+  move the survey up the old site's list either (a difference ADR 0040 lists).
+- **The survey deletion** already removed these blobs (three of the four legacy layout blobs). A clone copies none.
+- **Reads** (`providers/azure-legacy/views.ts`) return the text as stored; a blob of zero bytes (an old save between
+  its create and its append) reads as no layout. A user's view without an own blob falls back to the shared layout
+  of its kind when it parses to a JSON object, else the existing warning with ids only.
+- Errors and logs carry the operation name, the driver's codes and ids, never the layout's text.
+
 ## Consequences
 
 - The legacy site and the new application can write to the same stores. Surveys created by one show

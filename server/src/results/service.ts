@@ -4,7 +4,12 @@ import type { RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { responseIdFor } from "../domain/response-id.js";
 import { AppError } from "../errors.js";
-import type { CompletionState, SurveyDefinition, SurveyRecord } from "../domain/types.js";
+import type {
+  CompletionState,
+  LayoutKind,
+  SurveyDefinition,
+  SurveyRecord,
+} from "../domain/types.js";
 import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
@@ -36,6 +41,7 @@ export type ResultStatsJson = components["schemas"]["ResultStats"];
 export type ResponsePageJson = components["schemas"]["ResponsePage"];
 export type PublicResultPageJson = components["schemas"]["PublicResultPage"];
 export type QuestionSummaryJson = components["schemas"]["QuestionSummary"];
+export type PublicLayoutJson = components["schemas"]["PublicLayout"];
 
 export interface ExportFile {
   /** `exportFileName(survey.name, format)`. */
@@ -102,6 +108,11 @@ export interface ResultsService {
     surveyId: string,
     page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<PublicResultPageJson>;
+  /**
+   * The survey's shared layout of this kind (`null` when none is saved) and its private question
+   * names, while public results are on; `survey-not-available` otherwise and for an unknown survey.
+   */
+  publicLayout(surveyId: string, kind: LayoutKind): Promise<PublicLayoutJson>;
 }
 
 export interface ResultsServiceOptions {
@@ -110,7 +121,7 @@ export interface ResultsServiceOptions {
   readonly results: ResultStore;
   /** Respondent files: deleted with the results. */
   readonly files: FileStore;
-  /** The private-question lists. */
+  /** The private-question lists and the shared layouts. */
   readonly views: ViewStore;
   /** The clock for submission times; default `Date.now`. */
   readonly now?: Clock;
@@ -373,6 +384,16 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         })),
         nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
       };
+    },
+
+    async publicLayout(surveyId, kind) {
+      const survey = await surveys.getSurvey(surveyId);
+      if (!survey?.settings.publicResults) throw surveyNotAvailable();
+      const [text, privateQuestions] = await Promise.all([
+        views.getLayout(survey.id, kind),
+        views.getPrivateQuestions(survey.id),
+      ]);
+      return { text, privateQuestions };
     },
   };
 }

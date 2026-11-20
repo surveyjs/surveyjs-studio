@@ -320,15 +320,17 @@ describe("the generated large survey", () => {
   });
 });
 
-describe("legacyFixtureSeed views", () => {
-  it("holds the legacy layouts of the first survey, by survey id and view", async () => {
+describe("legacyFixtureSeed layouts", () => {
+  it("holds the old layouts of the first survey as text, by survey id and kind", async () => {
     const seed = await legacyFixtureSeed();
-    expect(seed.legacyViews).toEqual({
-      "22222222-0000-4000-8000-a00000000001": {
-        summary: legacyFeedbackSummaryView,
-        table: legacyFeedbackTableView,
-      },
-    });
+    const layouts = seed.layouts?.["22222222-0000-4000-8000-a00000000001"];
+    expect(Object.keys(seed.layouts ?? {})).toEqual(["22222222-0000-4000-8000-a00000000001"]);
+    expect(Object.keys(layouts ?? {}).sort()).toEqual(["columns", "summary", "table"]);
+    expect(JSON.parse(layouts?.summary ?? "")).toEqual(legacyFeedbackSummaryView);
+    expect(JSON.parse(layouts?.table ?? "")).toEqual(legacyFeedbackTableView);
+    expect(JSON.parse(layouts?.columns ?? "")).toMatchObject({ newcolumnsvisibility: 0 });
+    // As stored: the fixture files are indented.
+    expect(layouts?.table).toMatch(/^\{\n {2}"locale"/);
   });
 });
 

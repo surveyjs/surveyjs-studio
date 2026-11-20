@@ -2,10 +2,11 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SurveyDefinition, SurveyTheme, ViewName, ViewState } from "../../domain/types.js";
+import type { LayoutKind, SurveyDefinition, SurveyTheme } from "../../domain/types.js";
 import type { MemorySeed } from "../memory.js";
 import { LARGE_SURVEY_TABLE, largeSurveyTable } from "./large-survey.js";
 import {
+  LAYOUT_CONTAINERS_BY_KIND,
   membershipFromLegacy,
   privateQuestionsFromLegacy,
   projectFromLegacy,
@@ -314,18 +315,19 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     if (text === null || text.trim() === "") continue;
     themes[str(row, "id").toLowerCase()] = JSON.parse(text) as SurveyTheme;
   }
-  const legacyViews: NonNullable<MemorySeed["legacyViews"]> = {};
-  const viewContainers: Record<string, ViewName> = {
-    surveyresultsummarystate: "summary",
-    surveyresulttablestate: "table",
-  };
+  // The old per-survey layouts are the shared layouts, the text as stored (ADR 0040 point 4).
+  const layouts: NonNullable<MemorySeed["layouts"]> = {};
+  const layoutKinds = new Map(
+    Object.entries(LAYOUT_CONTAINERS_BY_KIND).map(([kind, container]) => [
+      container,
+      kind as LayoutKind,
+    ]),
+  );
   for (const blob of fixtures.blobs) {
-    const view = viewContainers[blob.container];
+    const kind = layoutKinds.get(blob.container);
     const surveyId = blob.name.toLowerCase();
-    if (blob.account !== "surveys" || view === undefined || !surveyRows.has(surveyId)) continue;
-    const state: unknown = JSON.parse(blob.content.toString("utf8"));
-    if (typeof state !== "object" || state === null || Array.isArray(state)) continue;
-    (legacyViews[surveyId] ??= {})[view] = state as ViewState;
+    if (blob.account !== "surveys" || kind === undefined || !surveyRows.has(surveyId)) continue;
+    (layouts[surveyId] ??= {})[kind] = blob.content.toString("utf8");
   }
   const privateResultQuestions: NonNullable<MemorySeed["privateResultQuestions"]> = {};
   for (const blob of fixtures.blobs) {
@@ -407,7 +409,7 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     history,
     responses,
     completions,
-    legacyViews,
+    layouts,
     privateResultQuestions,
     legacyAccessKeys,
     legacyFiles,

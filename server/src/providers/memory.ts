@@ -1,5 +1,6 @@
 import type { AccountNoticesSetting } from "../config.js";
 import type {
+  LayoutKind,
   NewSurvey,
   ProjectMember,
   ProjectMembership,
@@ -13,7 +14,6 @@ import type {
   SurveyTheme,
   User,
   Versioned,
-  ViewName,
 } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
 import { contentVersion } from "../domain/content-version.js";
@@ -74,8 +74,11 @@ export interface MemorySeed {
   responses?: Record<string, SurveyResponse[]>;
   /** Completion markers by survey id, then client id (S15). */
   completions?: Record<string, Record<string, { partial: boolean }>>;
-  /** The legacy per-survey layouts by survey id, the fallback of `getView` (Step 9). */
-  legacyViews?: Record<string, Partial<Record<ViewName, Record<string, unknown>>>>;
+  /**
+   * The shared results layouts by survey id, then kind, the text as stored (ADR 0040 point 4):
+   * `getLayout`, and the fallback of `getView`.
+   */
+  layouts?: Record<string, Partial<Record<LayoutKind, string>>>;
   /** The names of the questions hidden from public results, by survey id (Step 10). */
   privateResultQuestions?: Record<string, string[]>;
   /** The legacy access key of a user, by user id. */
@@ -167,7 +170,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
   });
 
   const views = createMemoryViewStore({
-    ...(seed?.legacyViews && { legacyViews: seed.legacyViews }),
+    ...(seed?.layouts && { layouts: seed.layouts }),
     ...(seed?.privateResultQuestions && { privateResultQuestions: seed.privateResultQuestions }),
   });
 

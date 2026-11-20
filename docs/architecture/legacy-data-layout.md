@@ -914,7 +914,13 @@ the copy's definition text and theme.
 **Implemented in Step 9** (`writes.ts`; [ADR 0015](../adr/0015-results-summary-table-and-views.md)): the
 per-user layout save and reset in the new container `my-surveys-views` (section 3.10). They write **no**
 audit row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them: the
-old per-survey blobs are read only.
+old per-survey blobs are read only by views.
+
+**Implemented in hosted Step 6** (`writes.ts`; [ADR 0040](../adr/0040-bridge-access-key-actions.md) point 4): the
+shared layouts write the old per-survey blobs `surveyresulttablestate/{id}`, `surveyresultsummarystate/{id}` and
+`surveyresultcolumns/{id}` in place (section 3.10): an append blob, the text as given in UTF-8 without a byte-order
+mark, overwritten in full; a delete removes the blob, as the old reset does. Like the views they write **no** audit
+row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them either.
 
 **Implemented in Step 10** (`writes.ts`; [ADR 0016](../adr/0016-results-details-exports-and-public-results.md)): the
 delete-all-results rows (batched, tables kept, with the `SURVEY_DELETEALLRESULTS` audit row of this section's
@@ -1192,7 +1198,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | `Surveys.theme`                                                      | `SurveyTheme`                     | Parse JSON; `{}` when empty.                                                                                                                                                                                                                                                                 |
 | `Surveys.usecookies`                                                 | (none yet)                        | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                                                                                                                                                                          |
 | blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                 | `user` = `null` for all legacy entries.                                                                                                                                                                                                                                                      |
-| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`)  | **Decided in Step 9** (per user): a user's view is read from the container `my-surveys-views`; until the user saves or resets, the survey's blob is returned as stored (section 3.10).                                                                                                       |
+| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`)  | **Decided in Step 9** (per user), hosted Step 6: these and `surveyresultcolumns/{id}` are the shared layouts (`getLayout`, text verbatim); a user's view is read from `my-surveys-views`, and until the user saves or resets, the shared layout parsed as JSON.                              |
 | blob `surveyresultpermissions/{id}`                                  | `settings.privateResultQuestions` | **Decided in Step 10 (R1):** the names of the elements with `isPublic` false; any other element is public. Read with the old defaults, written for the private ones only (section 3.10). `getSurvey`, `updateSurvey`, `createSurvey` and `cloneSurvey` carry it; `listSurveys` items do not. |
 
 ### 9.2 Response (`SurveyResponse`, `ResultStats`)

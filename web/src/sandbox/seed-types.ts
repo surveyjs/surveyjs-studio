@@ -110,7 +110,7 @@ export interface SandboxSeed {
   responses: Record<string, SandboxResponse[]>;
   /** `MemorySeed.completions`, by survey id, then client id. */
   completions: Record<string, Record<string, { partial: boolean }>>;
-  /** `MemorySeed.legacyViews`: the legacy summary and table layouts, by survey id. */
+  /** The summary and table layouts of `MemorySeed.layouts`, parsed, by survey id. */
   legacyViews: Record<string, Partial<Record<SandboxViewName, Record<string, unknown>>>>;
   /** `MemorySeed.privateResultQuestions`: question names hidden from public results, by survey id. */
   privateResultQuestions: Record<string, string[]>;

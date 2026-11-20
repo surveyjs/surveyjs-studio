@@ -159,14 +159,14 @@ export async function insertSurvey(
 
 /**
  * Deletes a survey and everything stored for it: history, responses and markers by cascade, and the
- * results layouts and private questions, which have no foreign key. Run it inside a transaction.
+ * users' views, the shared layouts and the private questions, which have no foreign key. Run it inside a transaction.
  * false when there was no such survey.
  */
 export async function deleteSurveyRows(
   trx: Kysely<DatabaseSchema>,
   survey: string,
 ): Promise<boolean> {
-  for (const table of ["saved_views", "legacy_views", "private_questions"] as const) {
+  for (const table of ["saved_views", "survey_layouts", "private_questions"] as const) {
     await trx.deleteFrom(table).where("survey_id", "=", survey).execute();
   }
   const result = await trx.deleteFrom("surveys").where("id", "=", survey).executeTakeFirst();

@@ -177,3 +177,9 @@ export type ViewName = "summary" | "table";
 
 /** Opaque SurveyJS Dashboard or Table state (contract ViewState): any JSON object. */
 export type ViewState = Record<string, unknown>;
+
+/**
+ * A survey's shared results layout (contract `LayoutKind`, ADR 0040 point 4): the Table state,
+ * the Summary (Dashboard) state, or the old column layout. Its text is opaque and kept verbatim.
+ */
+export type LayoutKind = "table" | "summary" | "columns";

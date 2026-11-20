@@ -124,7 +124,6 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "completion_markers",
         "files",
         "legacy_files",
-        "legacy_views",
         "password_links",
         "private_questions",
         "project_invitations",
@@ -132,12 +131,34 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "projects",
         "saved_views",
         "survey_history",
+        "survey_layouts",
         "survey_responses",
         "surveys",
         "user_identities",
         "users",
       ]);
       expect((await migrationStatus(database)).pending).toEqual([]);
+    });
+
+    it("moves the old per-survey layouts into survey_layouts (0009)", async () => {
+      const { database } = await fresh();
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 9),
+      );
+      const surveyId = "22222222-0000-4000-8000-a00000000001";
+      await sql`insert into legacy_views (survey_id, view, state)
+        values (${surveyId}, 'table', ${'{"pageSize":10}'})`.execute(database.db);
+      await migrate(database, shipped);
+      const { rows } = await sql<{
+        survey_id: string;
+        kind: string;
+        text: string;
+      }>`select survey_id, kind, text from survey_layouts`.execute(database.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ survey_id: surveyId, kind: "table" });
+      expect(JSON.parse(rows[0]!.text)).toEqual({ pageSize: 10 });
     });
 
     if (dialect === "postgres") {

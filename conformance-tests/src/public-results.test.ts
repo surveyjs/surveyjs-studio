@@ -1,6 +1,6 @@
 /**
- * `getPublicResults` against the legacy fixtures: the Grant Access rule, paging, the private-question
- * strip and the refusals.
+ * `getPublicResults` and (hosted only) `getPublicLayout` against the legacy fixtures: the Grant
+ * Access rule, paging, the private-question strip and the refusals.
  *
  * The data is shared by all test files and never reset (the Azurite replica keeps its tables between
  * runs), so every test that writes creates its own survey in the admin's Personal scope and writes only
@@ -8,7 +8,16 @@
  * Cleanup (archive, then delete) is registered with `onTestFinished` right after a survey is created.
  */
 import { describe, expect, it } from "vitest";
-import { call, codeOf, as, ownSurvey, sandbox, submitted } from "./harness.js";
+import {
+  call,
+  codeOf,
+  as,
+  expectNotRouted,
+  hosted,
+  ownSurvey,
+  sandbox,
+  submitted,
+} from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { admin } = fixtureUsers;
@@ -249,5 +258,64 @@ describe("getPublicResults rate limit", () => {
     expect(limited).toBeDefined();
     expect(Number(limited?.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(await codeOf(limited!)).toBe("rate-limited");
+  });
+});
+
+const PUBLIC_LAYOUT = "/public/surveys/{surveyId}/layouts/{kind}";
+
+function publicLayout(surveyId: string, kind: string): Promise<Response> {
+  return call("GET", PUBLIC_LAYOUT, { path: `/public/surveys/${surveyId}/layouts/${kind}` });
+}
+
+// The bridge's public layout reads exist in the hosted edition only.
+describe.runIf(hosted)("getPublicLayout", () => {
+  it("serves Customer feedback's layouts and its private question names, to anyone", async () => {
+    const response = await publicLayout(FEEDBACK, "table");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { text: string; privateQuestions: string[] };
+    expect(Object.keys(body)).toEqual(["text", "privateQuestions"]);
+    expect(body.privateQuestions).toEqual(["receipt"]);
+    expect(JSON.parse(body.text)).toMatchObject({ pageSize: 10 });
+    const columns = (await (await publicLayout(FEEDBACK, "columns")).json()) as { text: string };
+    expect(JSON.parse(columns.text)).toMatchObject({ newcolumnsvisibility: 0 });
+  });
+
+  it("follows Grant Access and answers null for a kind without a layout", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const id = await ownSurvey(adam, { definition: TEXT_SURVEY });
+    const text = ' { "elements": [{ "name": "q1" }],\n "pageSize": 5 }';
+    const saved = await call("PUT", "/surveys/{surveyId}/layouts/{kind}", {
+      path: `/surveys/${id}/layouts/summary`,
+      headers: adam,
+      body: { text },
+    });
+    expect(saved.status).toBe(204);
+    await expectNotAvailable(await publicLayout(id, "summary"));
+
+    const patched = await patch(adam, id, {
+      settings: { publicResults: true, privateResultQuestions: ["q1"] },
+    });
+    expect(patched.status).toBe(200);
+    const on = await publicLayout(id, "summary");
+    expect(on.status).toBe(200);
+    expect(await on.json()).toStrictEqual({ text, privateQuestions: ["q1"] });
+    expect(await (await publicLayout(id, "table")).json()).toStrictEqual({
+      text: null,
+      privateQuestions: ["q1"],
+    });
+
+    expect((await patch(adam, id, { settings: { publicResults: false } })).status).toBe(200);
+    await expectNotAvailable(await publicLayout(id, "summary"));
+  });
+
+  it("refuses an unknown survey and an unknown kind", async () => {
+    await expectNotAvailable(await publicLayout(UNKNOWN_ID, "table"));
+    expect((await publicLayout(FEEDBACK, "charts")).status).toBe(400);
+  });
+});
+
+describe.skipIf(hosted)("getPublicLayout outside the hosted edition", () => {
+  it("answers 404 not-found as for an unknown path", async () => {
+    await expectNotRouted(await publicLayout(FEEDBACK, "table"));
   });
 });
