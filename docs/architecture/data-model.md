@@ -174,9 +174,9 @@ file's row is written before its bytes and read again after them (a delete in be
 removes the bytes, then the rows, so a failed delete can be retried.
 
 An editor file of no survey (`uploadLegacyFile`, [ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3) has
-`owner_user_id` instead of `survey_id`, kind `asset`, and a random id (64 hex digits, no survey or user id in it:
-it is the file's public name); a `legacy_files` row (`asset`, its id) names it, so `getLegacyFile` serves it, with its
-stored type. The survey operations (`getFile`,
+`owner_user_id` instead of `survey_id`, kind `asset`, and a random id (64 hex digits, no survey or user id in it); a
+`legacy_files` row (`asset`, a random lower-case GUID, the form the old service gave its uploads) names it, so
+`getLegacyFile` serves it by that public name, with its stored type. The survey operations (`getFile`,
 `deleteFile`, `usage`, per-survey deletes and copies) never see it; the account erasure deletes a user's files by index
 `files_owner` (`owner_user_id`). Migration 0009 made `survey_id` nullable: on SQLite by rebuilding `files` and
 `legacy_files` (`legacy_files` first, so dropping the old `files` cascades to nothing), keeping every row.

@@ -157,20 +157,21 @@ export interface FileStore {
    * (`legacyContentType`), whatever the provider keeps. A provider that holds the file by name
    * only gives it the record of `legacyFileRecord`.
    *
-   * An `asset` name is first looked up among the files of no survey (`saveUserFile`, whose name is
-   * their id): such a file has its stored record, with `file.name` the legacy name and its stored
-   * type. Then among the old service's files.
+   * An `asset` name is first looked up among the files of no survey (`saveUserFile`, by the
+   * `legacyName` it gave): such a file has its stored record, with `file.name` the legacy name and
+   * its stored type. Then among the old service's files.
    */
   getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
   /**
    * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) for its
    * owner (a GUID, any case; rejects otherwise): kind `asset`, `surveyId` null, a new random id
-   * (`newUserFileId()`, no owner or survey id in it: it is public), which is also its legacy name
-   * (`getFileByLegacyName("asset", id)`). Studio's own file store on every provider, never the old
-   * service's. Such a file is no survey's: `getFile`, `deleteFile`, `usage` and
-   * `deleteSurveyFiles` do not see it.
+   * (`newUserFileId()`), and a new legacy name (`newLegacyFileName()`: a random lower-case GUID, as
+   * the old service named uploads) by which `getFileByLegacyName("asset", legacyName)` finds it.
+   * Neither names the owner or a survey: the name is public. Studio's own file store on every
+   * provider, never the old service's. Such a file is no survey's: `getFile`, `deleteFile`,
+   * `usage` and `deleteSurveyFiles` do not see it.
    */
-  saveUserFile(ownerUserId: string, file: NewFile): Promise<StoredFileRecord>;
+  saveUserFile(ownerUserId: string, file: NewFile): Promise<StoredUserFile>;
   /** How many files `saveUserFile` stored for the owner (any id case); 0 for a non-GUID id. */
   countUserFiles(ownerUserId: string): Promise<number>;
   /**
@@ -178,6 +179,13 @@ export interface FileStore {
    * for a non-GUID id.
    */
   deleteUserFiles(ownerUserId: string): Promise<number>;
+}
+
+/** What `FileStore.saveUserFile` stored: the record and the file's legacy name. */
+export interface StoredUserFile {
+  readonly file: StoredFileRecord;
+  /** A lower-case GUID; `getFileByLegacyName("asset", legacyName)` reads the file. */
+  readonly legacyName: string;
 }
 
 /** A file to store for a user (`FileStore.saveUserFile`). */

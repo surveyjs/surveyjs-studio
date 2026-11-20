@@ -69,7 +69,7 @@ describe("outside the hosted edition (the sandbox's own)", () => {
 });
 
 describe("uploadLegacyFile", () => {
-  it("stores an editor file of no survey under a random 64-hex name, served as an asset", async () => {
+  it("stores an editor file of no survey under a random GUID name, served as an asset", async () => {
     const { call } = setupSandbox({}, "hosted");
     const response = await call("/legacy-files", {
       method: "POST",
@@ -79,7 +79,13 @@ describe("uploadLegacyFile", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { legacyName: string };
     expect(Object.keys(body)).toEqual(["legacyName"]);
-    expect(body.legacyName).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.legacyName).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(body.legacyName).not.toContain(USERS.owner.toLowerCase());
+    expect((await call(`/public/legacy-files/asset/${body.legacyName.toUpperCase()}`)).status).toBe(
+      404,
+    );
     const served = await call(`/public/legacy-files/asset/${body.legacyName}`);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("image/png");

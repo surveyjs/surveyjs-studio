@@ -23,7 +23,7 @@ export function surveyIdOfFile(fileId: string): string | null {
 
 /**
  * A new id for an editor file of no survey (`FileStore.saveUserFile`): 64 random lower-case hex
- * digits. It is also the file's public legacy name, so it holds no survey or user id.
+ * digits, with no survey or user id in it. Its public name is another, `newLegacyFileName()`.
  */
 export function newUserFileId(random: (size: number) => Uint8Array = randomBytes): string {
   return Buffer.from(random(32)).toString("hex");

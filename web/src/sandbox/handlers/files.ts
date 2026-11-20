@@ -7,7 +7,13 @@ import { HttpResponse } from "msw";
 import type { SandboxSurvey } from "../seed-types";
 import type { SandboxData, SandboxFile } from "../store";
 import { checkPathId, mutate, requireSession, view } from "./common";
-import { newFileId, newUserFileId, requireHosted, type HandlerContext } from "./context";
+import {
+  newFileId,
+  newLegacyFileName,
+  newUserFileId,
+  requireHosted,
+  type HandlerContext,
+} from "./context";
 import { http } from "./http";
 import { checkMultipart, readFirstFile } from "./multipart";
 import {
@@ -302,8 +308,9 @@ export function fileHandlers(ctx: HandlerContext) {
       }),
     ),
 
-    // Hosted only (service.ts `uploadLegacyFile`): an editor file of no survey, the user's, named
-    // by a random 64-hex id. Any file is stored, an empty one too; the size limit is the asset one.
+    // Hosted only (service.ts `uploadLegacyFile`): an editor file of no survey, the user's, under a
+    // random 64-hex id and named by a random GUID. Any file is stored, an empty one too; the size
+    // limit is the asset one.
     http.post("/legacy-files", ({ request, cookies }) =>
       guarded(async () => {
         requireHosted(ctx);
@@ -317,12 +324,13 @@ export function fileHandlers(ctx: HandlerContext) {
         const name = fileNameOf(part.fileName);
         const contentType = typeOfName(name) ?? "application/octet-stream";
         const base64 = toBase64(part.bytes);
-        const id = newUserFileId();
+        const legacyName = newLegacyFileName();
         await mutate(ctx, cookies, (data, user) => {
           data.files.push({
-            id,
+            id: newUserFileId(),
             surveyId: null,
             ownerId: user.id,
+            legacyName,
             kind: "asset",
             name,
             contentType,
@@ -331,7 +339,7 @@ export function fileHandlers(ctx: HandlerContext) {
             createdAt: ctx.now().toISOString(),
           });
         });
-        return HttpResponse.json({ legacyName: id }, { status: 201 });
+        return HttpResponse.json({ legacyName }, { status: 201 });
       }),
     ),
 
@@ -347,7 +355,7 @@ export function fileHandlers(ctx: HandlerContext) {
             (candidate) =>
               candidate.surveyId === null &&
               candidate.ownerId !== undefined &&
-              candidate.id === params.name,
+              candidate.legacyName === params.name,
           );
         if (!file) throw notFound();
         return fileResponse(file);

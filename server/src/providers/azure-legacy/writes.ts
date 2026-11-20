@@ -15,6 +15,7 @@ import type {
 } from "@azure/storage-blob";
 import sql from "mssql";
 import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../../domain/file-id.js";
+import { newLegacyFileName } from "../../domain/legacy-file.js";
 import type {
   FileKind,
   LayoutKind,
@@ -43,6 +44,7 @@ import {
   type AppendOutcome,
   type MemberErasure,
   type NewFile,
+  type StoredUserFile,
   type RemovalOutcome,
   type RoleChangeOutcome,
 } from "../types.js";
@@ -903,7 +905,7 @@ async function uploadNewFile(
   blobName: string,
   file: StoredFileRecord,
   content: Buffer,
-  owner?: string,
+  more: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const upload = () =>
     files.getBlockBlobClient(blobName).uploadData(content, {
@@ -913,7 +915,7 @@ async function uploadNewFile(
         kind: file.kind,
         name: encodeURIComponent(file.name),
         createdat: new Date(file.createdAt).toISOString(),
-        ...(owner !== undefined && { owner }),
+        ...more,
       },
       conditions: { ifNoneMatch: "*" },
     });
@@ -973,7 +975,7 @@ export async function writeUserFile(
   container: string,
   ownerUserId: string,
   { name, contentType, createdAt, content }: NewFile,
-): Promise<StoredFileRecord> {
+): Promise<StoredUserFile> {
   if (!isGuid(ownerUserId)) {
     throw new Error("File upload refused: a file of no survey needs its owner's GUID");
   }
@@ -987,18 +989,19 @@ export async function writeUserFile(
     size: content.length,
     createdAt,
   };
+  const legacyName = newLegacyFileName();
   try {
     await uploadNewFile(
       blobs.getContainerClient(container),
-      `${UPLOADS_PREFIX}${file.id}`,
+      `${UPLOADS_PREFIX}${legacyName}`,
       file,
       content,
-      owner,
+      { owner, fileid: file.id },
     );
   } catch (error) {
     throw new LegacyStoreError("file upload", error);
   }
-  return file;
+  return { file, legacyName };
 }
 
 /**

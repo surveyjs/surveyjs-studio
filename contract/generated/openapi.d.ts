@@ -1062,7 +1062,9 @@ export interface paths {
         /**
          * Upload an editor file that belongs to no survey
          * @description An editor file that belongs to no survey, stored under a new legacy name and served by
-         *     `getLegacyFile` (`kind` `asset`). It is the uploader's and is deleted with their account. It
+         *     `getLegacyFile` (`kind` `asset`). The name is a random GUID in lower case with dashes, the
+         *     form the old service gave its uploads; it names no user or survey, and it is not the file's
+         *     id. The file is the uploader's and is deleted with their account. It
          *     goes to Studio's own file store on every provider. Send one file as the multipart part `file`
          *     (a form without one is `400 bad-request`); any content and an empty file are accepted, up to
          *     `limits.maxAssetBytesPerSurvey` (`413 payload-too-large`). Its type is detected from its
@@ -1424,8 +1426,8 @@ export interface paths {
          *     are returned as stored (a legacy file keeps any padding it has), with the content type
          *     from the name's extension, or `application/octet-stream` without one or for an extension
          *     it does not know, and the headers of `downloadFile`. An editor file uploaded with
-         *     `uploadLegacyFile` (`kind` `asset`, its name 64 lower-case hex digits) has the type
-         *     detected when it was stored. An unknown name or kind is `404 not-found`, as for
+         *     `uploadLegacyFile` (`kind` `asset`, its name a lower-case GUID) has the type detected when
+         *     it was stored. An unknown name or kind is `404 not-found`, as for
          *     `downloadFile`. Rate limited as `downloadFile`.
          *
          *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
@@ -2144,7 +2146,11 @@ export interface components {
             privateQuestions: string[];
         };
         LegacyFileName: {
-            /** @description The name `getLegacyFile` serves the file under (`kind` `asset`). */
+            /**
+             * Format: uuid
+             * @description The name `getLegacyFile` serves the file under (`kind` `asset`): a random GUID in lower
+             *     case with dashes.
+             */
             legacyName: string;
         };
         /** @description Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`). */

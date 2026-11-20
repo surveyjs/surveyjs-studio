@@ -401,15 +401,17 @@ describe("uploadLegacyFile", () => {
     expect(res.headers.location).toBeUndefined();
     const body = res.json<{ legacyName: string }>();
     expect(Object.keys(body)).toEqual(["legacyName"]);
-    // The file's id: 64 random hex digits, without the uploader's id (the name is public).
-    expect(body.legacyName).toMatch(/^[0-9a-f]{64}$/);
+    // A random lower-case GUID, as the old service gave, without the uploader's id (it is public).
+    expect(body.legacyName).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(body.legacyName).not.toContain(USER.id.replaceAll("-", ""));
     expect(body.legacyName).not.toContain(USER.id);
 
     const found = await providers.files.getFileByLegacyName("asset", body.legacyName);
     found?.content.destroy();
     expect(found?.file).toStrictEqual({
-      id: body.legacyName,
+      id: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
       surveyId: null,
       kind: "asset",
       name: body.legacyName,
@@ -423,7 +425,7 @@ describe("uploadLegacyFile", () => {
     expect(file.headers["content-disposition"]).toMatch(/^inline; /);
     expect(file.rawPayload).toStrictEqual(png(100));
     // Not a survey's file.
-    expect(await providers.files.getFile(body.legacyName)).toBeNull();
+    expect(await providers.files.getFile(found!.file.id)).toBeNull();
   });
 
   it("stores any other type, and an empty file, as application/octet-stream", async () => {
@@ -447,7 +449,7 @@ describe("uploadLegacyFile", () => {
         ...store,
         saveUserFile: async (owner, file) => {
           const stored = await store.saveUserFile(owner, file);
-          saved.push(stored.id);
+          saved.push(stored.legacyName);
           return stored;
         },
       }),

@@ -2,7 +2,7 @@ import type { Selectable } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../domain/file-id.js";
 import { GUID } from "../domain/guid.js";
-import { isLegacyFileName, legacyContentType } from "../domain/legacy-file.js";
+import { isLegacyFileName, legacyContentType, newLegacyFileName } from "../domain/legacy-file.js";
 import type { StoredFileRecord } from "../domain/types.js";
 import type { FileStore } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
@@ -42,7 +42,7 @@ const recordOf = (row: Selectable<FilesTable>): StoredFileRecord => ({
  * - A file under the old service's name is a `files` row named by `legacy_files`; deleting the
  *   file deletes its names (cascade).
  * - An editor file of no survey (`saveUserFile`) is a row with `owner_user_id` instead of
- *   `survey_id` and a random id, named by `legacy_files` (`asset`, its id); its bytes are under
+ *   `survey_id` and a random id, named by `legacy_files` (`asset`, a random GUID); its bytes are under
  *   `uploads/{file id}`. The survey operations never see it.
  */
 export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): FileStore {
@@ -196,6 +196,7 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
         size: content.length,
         createdAt,
       };
+      const legacyName = newLegacyFileName();
       await db.transaction().execute(async (trx) => {
         await trx
           .insertInto("files")
@@ -212,11 +213,11 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
           .execute();
         await trx
           .insertInto("legacy_files")
-          .values({ kind: "asset", legacy_name: file.id, file_id: file.id })
+          .values({ kind: "asset", legacy_name: legacyName, file_id: file.id })
           .execute();
       });
       await storeBytes(file.id, uploadKeyOf(file.id), content, contentType);
-      return file;
+      return { file, legacyName };
     },
     countUserFiles: async (ownerUserId) => {
       if (!GUID.test(ownerUserId)) return 0;

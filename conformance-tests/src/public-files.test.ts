@@ -365,7 +365,12 @@ describe("uploadLegacyFile", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { legacyName: string };
     expect(Object.keys(body)).toEqual(["legacyName"]);
-    expect(body.legacyName).toMatch(/^[0-9a-f]{64}$/);
+    // A random lower-case GUID, as the old service named uploads; it names no user (it is public).
+    expect(body.legacyName).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(body.legacyName).not.toContain(admin.id.toLowerCase());
+    expect(body.legacyName).not.toContain(admin.id.toLowerCase().replaceAll("-", ""));
     return body.legacyName;
   }
 

@@ -214,13 +214,13 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
       const incoming = await read(quota);
       if (incoming?.fieldName !== FILE_FIELD) throw noFilePart();
       const { bytes } = incoming;
-      const file = await files.saveUserFile(user.id, {
+      const { legacyName } = await files.saveUserFile(user.id, {
         name: fileNameOf(incoming.fileName),
         contentType: detectFileType(bytes)?.contentType ?? "application/octet-stream",
         createdAt: new Date(now()).toISOString(),
         content: bytes,
       });
-      return { legacyName: file.id };
+      return { legacyName };
     },
 
     async download(fileId) {

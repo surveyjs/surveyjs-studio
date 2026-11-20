@@ -1,7 +1,11 @@
 import { Readable } from "node:stream";
 import type { BlobServiceClient } from "@azure/storage-blob";
-import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
-import { isLegacyFileName, legacyFileRecord } from "../../domain/legacy-file.js";
+import { surveyIdOfFile } from "../../domain/file-id.js";
+import {
+  isLegacyFileName,
+  isUploadLegacyName,
+  legacyFileRecord,
+} from "../../domain/legacy-file.js";
 import type { FileStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyShareReader } from "./legacy-shares.js";
@@ -21,8 +25,9 @@ import {
  * `createdat`. Legacy code addresses containers by fixed names only, so it never sees this one;
  * the legacy file shares are never written.
  *
- * A user's editor file of no survey (`saveUserFile`) is block blob `uploads/{fileId}` of the same
- * container, its owner in metadata `owner`; its legacy name is its (random) id.
+ * A user's editor file of no survey (`saveUserFile`) is block blob `uploads/{legacyName}` of the
+ * same container (a random lower-case GUID), its file id and owner in metadata `fileid` and
+ * `owner`.
  *
  * Files under the old service's names come from the legacy shares (`shares`): editor images
  * from `surveyfiles`, respondent uploads from `files`. Without a reader every such name is unknown.
@@ -94,8 +99,8 @@ export function createAzureFileStore(
       writeSurveyAssetsCopy(blobs, container, fromSurveyId, toSurveyId, copiedAt),
 
     async getFileByLegacyName(kind, name) {
-      // A user's file: its id, lower case, is its name.
-      if (kind === "asset" && FILE_ID_PATTERN.test(name)) {
+      // A user's file: its legacy name, a lower-case GUID, names its blob.
+      if (kind === "asset" && isUploadLegacyName(name)) {
         const own = await readBlob(`${UPLOADS_PREFIX}${name}`);
         if (own) return { file: { ...own.file, name }, content: own.content };
       }

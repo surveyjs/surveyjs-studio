@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../domain/file-id.js";
 import { GUID } from "../domain/guid.js";
-import { isLegacyFileName, legacyFileRecord } from "../domain/legacy-file.js";
+import { isLegacyFileName, legacyFileRecord, newLegacyFileName } from "../domain/legacy-file.js";
 import type { FileKind, StoredFileRecord } from "../domain/types.js";
 import type { FileStore } from "./types.js";
 
@@ -20,11 +20,13 @@ interface Stored {
 interface UserFile extends Stored {
   /** Lower-case GUID. */
   readonly ownerUserId: string;
+  /** The key of `userFiles`. */
+  readonly legacyName: string;
 }
 
 /**
  * Files in process memory, like all memory data; the legacy files are the seed's, read only. The
- * files of no survey (`saveUserFile`) are kept apart, by id.
+ * files of no survey (`saveUserFile`) are kept apart, by legacy name.
  */
 export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] = []): FileStore {
   const files = new Map<string, Stored>();
@@ -112,9 +114,9 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
       if (!GUID.test(ownerUserId)) {
         return Promise.reject(new Error("A file of no survey needs its owner's GUID"));
       }
-      const id = newUserFileId();
+      const legacyName = newLegacyFileName();
       const file: StoredFileRecord = {
-        id,
+        id: newUserFileId(),
         surveyId: null,
         kind: "asset",
         name,
@@ -122,17 +124,18 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
         size: content.length,
         createdAt,
       };
-      userFiles.set(id, {
+      userFiles.set(legacyName, {
         ownerUserId: ownerUserId.toLowerCase(),
+        legacyName,
         file,
         bytes: Buffer.from(content),
       });
-      return Promise.resolve({ ...file });
+      return Promise.resolve({ file: { ...file }, legacyName });
     },
     countUserFiles: (ownerUserId) => Promise.resolve(ofOwner(ownerUserId).length),
     deleteUserFiles: (ownerUserId) => {
       const found = ofOwner(ownerUserId);
-      for (const stored of found) userFiles.delete(stored.file.id);
+      for (const stored of found) userFiles.delete(stored.legacyName);
       return Promise.resolve(found.length);
     },
   };

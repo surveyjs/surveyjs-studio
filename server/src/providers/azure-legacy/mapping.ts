@@ -1,3 +1,4 @@
+import { isUploadLegacyName } from "../../domain/legacy-file.js";
 import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
@@ -190,18 +191,20 @@ function decodedFileName(value: string | undefined): string | null {
 }
 
 /**
- * Where the users' editor files of no survey are, in the files container: `uploads/{fileId}`, the
- * owner in the blob's `owner` metadata (the id is public, so it does not name the owner).
+ * Where the users' editor files of no survey are, in the files container: `uploads/{legacyName}`,
+ * the file id and the owner in the blob's `fileid` and `owner` metadata (the name is public, so it
+ * does not name the owner).
  */
 export const UPLOADS_PREFIX = "uploads/";
 
 /**
  * A stored file from a blob of the files container (Step 7, R2). Only `{surveyId}/{fileId}` in
  * lower case, with the survey part equal to the one the id names, is a survey's file; a user's
- * editor file of no survey (`saveUserFile`) is `uploads/{fileId}` and has no survey. Only a blob
- * with a known `kind` metadata, a content type and a length is a file. Other blobs give null
- * (treated as missing). The name is the decoded `name` metadata, else the file id; the time is the
- * `createdat` metadata when it is ISO 8601 UTC, else the epoch.
+ * editor file of no survey (`saveUserFile`) is `uploads/{legacyName}` (a lower-case GUID), its id
+ * in metadata `fileid`, and has no survey. Only a blob with a known `kind` metadata, a content
+ * type and a length is a file. Other blobs give null (treated as missing). The name is the decoded
+ * `name` metadata, else the file id; the time is the `createdat` metadata when it is ISO 8601 UTC,
+ * else the epoch.
  */
 export function fileRecordFromBlob(
   blobName: string,
@@ -212,10 +215,12 @@ export function fileRecordFromBlob(
   metadata: Readonly<Record<string, string | undefined>> | undefined,
 ): StoredFileRecord | null {
   const slash = blobName.indexOf("/");
-  const id = blobName.slice(slash + 1);
-  if (slash < 0 || !FILE_ID_PATTERN.test(id)) return null;
   const folder = blobName.slice(0, slash + 1);
-  const surveyId = folder === UPLOADS_PREFIX ? null : surveyIdOfFile(id);
+  const upload = folder === UPLOADS_PREFIX;
+  if (upload && !isUploadLegacyName(blobName.slice(slash + 1))) return null;
+  const id = upload ? (metadata?.fileid ?? "") : blobName.slice(slash + 1);
+  if (slash < 0 || !FILE_ID_PATTERN.test(id)) return null;
+  const surveyId = upload ? null : surveyIdOfFile(id);
   if (surveyId !== null && folder !== `${surveyId}/`) return null;
   const kind = metadata?.kind;
   const { contentType, contentLength } = properties;

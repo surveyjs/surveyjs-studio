@@ -494,11 +494,12 @@ Facts that matter for the new app:
   They stop working when `api.surveyjs.io` is retired; a migration belongs to the rollout.
 - Deleting a survey now deletes its files in the new container. A clone copies them.
 - **Hosted Step 6** ([ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3): an editor file that belongs to no
-  survey (`uploadLegacyFile`, the bridge's `uploadFiles`) is block blob `uploads/{fileId}` of the same container,
-  with the same content type and metadata plus `owner` (the uploader's lower-case GUID). The file id is 64 random hex
-  digits, with no survey or user id in it, and is also its public legacy name. `getLegacyFile` (`asset`) looks there
-  first, then in the share `surveyfiles`, which is never written. Erasing the account lists `uploads/` and deletes the
-  blobs whose `owner` is the user.
+  survey (`uploadLegacyFile`, the bridge's `uploadFiles`) is block blob `uploads/{legacyName}` of the same
+  container, with the same content type and metadata plus `fileid` (its 64 random hex digit id) and `owner` (the
+  uploader's lower-case GUID). The legacy name is a random lower-case GUID, as the old `uploadFiles` gave, with no
+  survey or user id in it. `getLegacyFile` (`asset`) looks there first, then in the share `surveyfiles`, which is
+  never written (a GUID there and a new one being equal is a 2^-122 chance). Erasing the account lists `uploads/` and
+  deletes the blobs whose `owner` is the user.
 
 ### 3.10 Results layouts (the only saved UI state)
 
@@ -1253,7 +1254,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored.                                                                                                              |
 | Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                                                                                                                                  |
 | Container `my-surveys-files`       | `StoredFile` for new uploads          | Blob `{surveyId}/{fileId}`: the survey ID is in the name, the content type is the blob's own, the size is its length; metadata `kind`, `name` (URI-encoded) and `createdat`. |
-| Container `my-surveys-files`       | editor file of no survey (hosted)     | Blob `uploads/{fileId}`, as above plus metadata `owner` (the uploader); no survey; its legacy name is its id.                                                                |
+| Container `my-surveys-files`       | editor file of no survey (hosted)     | Blob `uploads/{legacyName}` (a GUID), as above plus metadata `fileid` and `owner` (the uploader); no survey.                                                                 |
 
 ## 10. Replica plan
 

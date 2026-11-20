@@ -42,3 +42,11 @@ export function newUserFileId(): string {
   const random = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+/**
+ * A new legacy name for an editor file of no survey: a random lower-case GUID, as the old service
+ * named uploads (`newLegacyFileName` in server/src/domain/legacy-file.ts).
+ */
+export function newLegacyFileName(): string {
+  return crypto.randomUUID().toLowerCase();
+}
