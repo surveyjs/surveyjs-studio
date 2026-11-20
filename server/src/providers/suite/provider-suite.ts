@@ -128,6 +128,7 @@ const storedRecord = (survey: NewSurvey): SurveyRecord => ({
   creatorId: survey.creatorId.toLowerCase(),
   postId: survey.postId.toLowerCase(),
   resultId: survey.resultId.toLowerCase(),
+  legacyPublishId: null,
   published: true,
   archived: false,
   createdAt: survey.createdAt,
@@ -219,6 +220,21 @@ export function describeProviderSuite(
             resultId: surveyFeedback.resultId.toUpperCase(),
           }),
         ).toEqual(surveyFeedback);
+      });
+
+      it("finds a survey by its legacy publish ID, upper case too", async () => {
+        const publishId = surveyOldPoll.legacyPublishId!;
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: publishId })).toEqual(
+          surveyOldPoll,
+        );
+        expect(
+          await providers.surveys.findSurveyByKey({ legacyPublishId: publishId.toUpperCase() }),
+        ).toEqual(surveyOldPoll);
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: UNKNOWN_ID })).toBeNull();
+        expect(
+          await providers.surveys.findSurveyByKey({ legacyPublishId: "not-a-guid" }),
+        ).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: "" })).toBeNull();
       });
 
       it("finds an archived survey", async () => {
@@ -879,6 +895,11 @@ export function describeProviderSuite(
           { settings: { storeRespondentIp: true } },
           { settings: { publicResults: false, storeRespondentIp: true, useCookies: false } },
         ],
+        [
+          "settings.useCookies",
+          { settings: { useCookies: true } },
+          { settings: { publicResults: false, storeRespondentIp: false, useCookies: true } },
+        ],
       ] as const)("changes %s alone", async (_field, changes, expected) => {
         const survey = await created();
         const updated = await providers.surveys.updateSurvey(survey.id, {
@@ -920,6 +941,21 @@ export function describeProviderSuite(
           storeRespondentIp: true,
           useCookies: false,
         });
+      });
+
+      it("turns the one-response setting on and off again", async () => {
+        const survey = await created();
+        const on = await providers.surveys.updateSurvey(survey.id, {
+          settings: { useCookies: true },
+          updatedAt: UPDATED_AT,
+        });
+        expect(on?.settings.useCookies).toBe(true);
+        const off = await providers.surveys.updateSurvey(survey.id, {
+          settings: { useCookies: false },
+          updatedAt: UPDATED_AT,
+        });
+        expect(off?.settings.useCookies).toBe(false);
+        expect((await providers.surveys.getSurvey(survey.id))?.settings.useCookies).toBe(false);
       });
 
       it("takes updatedAt even when nothing else changes", async () => {

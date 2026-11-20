@@ -40,6 +40,7 @@ const surveyRow = (over: Partial<LegacySurveyRow> = {}): LegacySurveyRow => ({
   allowaccessresult: 1,
   storeipaddress: "1",
   usecookies: 1,
+  publishid: "DDDDDDDD-0000-4000-8000-000000000001",
   ...over,
 });
 

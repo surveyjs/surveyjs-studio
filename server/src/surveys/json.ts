@@ -22,7 +22,7 @@ export function surveyJson(
     permissions: { canModify },
     useCookies: survey.settings.useCookies,
     creatorId: survey.creatorId,
-    legacyPublishId: null,
+    legacyPublishId: survey.legacyPublishId,
     settings: {
       publicResults: survey.settings.publicResults,
       storeRespondentIp: survey.settings.storeRespondentIp,

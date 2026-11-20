@@ -18,6 +18,9 @@ const { owner, admin, member, outsider } = fixtureUsers;
 
 const MARKETING = "55555555-0000-4000-8000-a00000000001";
 const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+const OLD_POLL_PUBLISH_ID = "dddddddd-0000-4000-8000-a00000000001";
+const OLD_POLL_POST_ID = "33333333-0000-4000-8000-a00000000003";
+const OUTSIDER_QUIZ_POST_ID = "33333333-0000-4000-8000-a00000000007";
 const UNKNOWN_ID = "99999999-0000-4000-8000-a00000000099";
 
 /** Survey ids of the fixtures. */
@@ -43,7 +46,11 @@ interface Survey {
   postId: string;
   resultId: string;
   permissions: { canModify: boolean };
-  settings: { publicResults: boolean; storeRespondentIp: boolean };
+  useCookies: boolean;
+  creatorId: string | null;
+  legacyPublishId: string | null;
+  theme?: Record<string, unknown> | null;
+  settings: { publicResults: boolean; storeRespondentIp: boolean; useCookies: boolean };
 }
 
 interface SurveyPage {
@@ -175,7 +182,10 @@ describe("listSurveys", () => {
       postId: "33333333-0000-4000-8000-a00000000001",
       resultId: "44444444-0000-4000-8000-a00000000001",
       permissions: { canModify: true },
-      settings: { publicResults: true, storeRespondentIp: true },
+      useCookies: true,
+      creatorId: owner.id,
+      legacyPublishId: null,
+      settings: { publicResults: true, storeRespondentIp: true, useCookies: true },
     });
     // Draft idea's published flag is empty (NULL), which means published.
     expect(find(items, fixture.draftIdea)?.published).toBe(true);
@@ -189,6 +199,73 @@ describe("listSurveys", () => {
       expect(ids).not.toContain(active);
     }
     expect(items.every((item) => item.archived)).toBe(true);
+  });
+
+  it("carries the one-response setting, the creator and the publish ID", async (ctx) => {
+    const items = await walk(await as(ctx, owner));
+    expect(find(items, fixture.customerFeedback)).toMatchObject({
+      useCookies: true,
+      creatorId: owner.id,
+      legacyPublishId: null,
+      settings: { useCookies: true },
+    });
+    expect(find(items, fixture.draftIdea)).toMatchObject({ useCookies: false });
+    const archived = await walk(await as(ctx, owner), { archived: true });
+    expect(find(archived, fixture.oldPoll).legacyPublishId).toBe(OLD_POLL_PUBLISH_ID);
+    // The API-created survey has the all-zero creator, which reads as unknown.
+    expect(find(items, fixture.apiCreated).creatorId).toBeNull();
+  });
+
+  it("include=theme adds each item's theme, null without one", async (ctx) => {
+    const headers = await as(ctx, owner);
+    const items = await walk(headers, { include: "theme" });
+    expect(find(items, fixture.customerFeedback).theme).toMatchObject({ themeName: "default" });
+    expect(find(items, fixture.draftIdea).theme).toBeNull();
+    const plain = await walk(headers);
+    expect(find(plain, fixture.customerFeedback)).not.toHaveProperty("theme");
+  });
+
+  it("finds a survey by post ID in any scope, archived too, ignoring project and archived", async (ctx) => {
+    const headers = await as(ctx, owner);
+    const queries: ListQuery[] = [
+      { postId: OLD_POLL_POST_ID },
+      { postId: OLD_POLL_POST_ID.toUpperCase(), project: ENGINEERING, archived: false },
+    ];
+    for (const query of queries) {
+      const { items, nextCursor } = await page(headers, query);
+      expect(idsOf(items), JSON.stringify(query)).toEqual([fixture.oldPoll]);
+      expect(nextCursor).toBeNull();
+    }
+    const { items } = await page(headers, { postId: "33333333-0000-4000-8000-a00000000004" });
+    expect(idsOf(items)).toEqual([fixture.campaign]);
+  });
+
+  it("finds a survey by publish ID, upper case too", async (ctx) => {
+    const headers = await as(ctx, owner);
+    for (const id of [OLD_POLL_PUBLISH_ID, OLD_POLL_PUBLISH_ID.toUpperCase()]) {
+      const { items } = await page(headers, { legacyPublishId: id });
+      expect(idsOf(items)).toEqual([fixture.oldPoll]);
+    }
+    expect(idsOf((await page(headers, { legacyPublishId: UNKNOWN_ID })).items)).toEqual([]);
+  });
+
+  it("finds no survey the caller cannot see, nor an unknown post ID", async (ctx) => {
+    const headers = await as(ctx, owner);
+    expect(idsOf((await page(headers, { postId: OUTSIDER_QUIZ_POST_ID })).items)).toEqual([]);
+    expect(idsOf((await page(headers, { postId: UNKNOWN_ID })).items)).toEqual([]);
+  });
+
+  it("answers 400 bad-request for a post ID that is no GUID and for an unknown include", async (ctx) => {
+    const headers = await as(ctx, owner);
+    const queries: ListQuery[] = [
+      { postId: "nope" },
+      { legacyPublishId: "nope" },
+      { include: "history" },
+    ];
+    for (const query of queries) {
+      const response = await list(headers, query);
+      expect(response.status, JSON.stringify(query)).toBe(400);
+    }
   });
 
   it("a member lists a project's surveys; canModify follows the creator", async (ctx) => {

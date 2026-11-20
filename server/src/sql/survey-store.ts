@@ -38,6 +38,7 @@ const RECORD_COLUMNS = [
   "public_results",
   "store_respondent_ip",
   "use_cookies",
+  "legacy_publish_id",
   "created_at",
   "updated_at",
 ] as const;
@@ -54,6 +55,7 @@ const recordOf = (row: RecordRow): SurveyRecord => ({
   creatorId: row.creator_id,
   postId: row.post_id,
   resultId: row.result_id,
+  legacyPublishId: row.legacy_publish_id,
   published: flagOf(row.published),
   archived: flagOf(row.archived),
   createdAt: isoOf(row.created_at),
@@ -78,13 +80,14 @@ const columnsOf = (record: SurveyRecord) => ({
   public_results: record.settings.publicResults,
   store_respondent_ip: record.settings.storeRespondentIp,
   use_cookies: record.settings.useCookies,
+  legacy_publish_id: record.legacyPublishId?.toLowerCase() ?? null,
   created_at: isoOf(record.createdAt),
   updated_at: isoOf(record.updatedAt),
 });
 
 /**
  * The columns `changes` sets, as `applySurveyChanges` changes the record: a move sets the scope and
- * the creator, `settings.useCookies` is never changed, `updated_at` always is.
+ * the creator, `updated_at` always is.
  */
 const changedColumns = (changes: SurveyChanges): Updateable<SurveysTable> => {
   const { name, move, published, archived, settings, updatedAt } = changes;
@@ -101,6 +104,7 @@ const changedColumns = (changes: SurveyChanges): Updateable<SurveysTable> => {
     ...(settings?.storeRespondentIp !== undefined && {
       store_respondent_ip: settings.storeRespondentIp,
     }),
+    ...(settings?.useCookies !== undefined && { use_cookies: settings.useCookies }),
     updated_at: isoOf(updatedAt),
   };
 };
@@ -280,8 +284,13 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
       return survey === null ? Promise.resolve(null) : getRecord(survey);
     },
     findSurveyByKey: async (lookup) => {
-      const column = "postId" in lookup ? "post_id" : "result_id";
-      const value = key("postId" in lookup ? lookup.postId : lookup.resultId);
+      const [column, text] =
+        "postId" in lookup
+          ? (["post_id", lookup.postId] as const)
+          : "resultId" in lookup
+            ? (["result_id", lookup.resultId] as const)
+            : (["legacy_publish_id", lookup.legacyPublishId] as const);
+      const value = key(text);
       if (value === null) return null;
       const row = await selectRecords().where(column, "=", value).executeTakeFirst();
       return row ? recordOf(row) : null;

@@ -879,10 +879,10 @@ is listed here with how it is done:
   `timestamp`, in the same `UPDATE` (no delete and rewrite of the row); audit row `SURVEY_TRANSFER` with
   `userid` and `creatorid` (`Edm.Guid`). Unlike the legacy code, the server first checks that the acting
   user belongs to the target project.
-- **Settings:** `allowaccessresult` (1 / 0) and `storeipaddress` (`"1"` / `"0"`, a text column) and
-  `timestamp`; audit rows `SURVEY_ACCESSRESUTL` with `grantaccess` and `SURVEY_POSTRESUTL` with
-  `storeipaddress` (both `Edm.Boolean`; the type codes keep the legacy spelling). `usecookies` is not
-  written.
+- **Settings:** `allowaccessresult` (1 / 0), `storeipaddress` (`"1"` / `"0"`, a text column), `usecookies`
+  (1 / 0) and `timestamp`; audit rows `SURVEY_ACCESSRESUTL` with `grantaccess`, `SURVEY_POSTRESUTL` with
+  `storeipaddress` and `SURVEY_USECOOKIES` with `usecookies` (all `Edm.Boolean`; the type codes keep the
+  legacy spelling). `publishid` is read (as `legacyPublishId`), never written.
 - **Delete:** the three results-account tables (`post{postId}`, `SurveyCompletion{surveyId}`,
   `postdelete{postId}`), the blobs `surveyjson/{id}` and `surveytext/{id}`, every history blob under
   `surveyjsonhistory/{id}/`, and the four results-layout blobs of section 3.10 (legacy leaves these
@@ -950,7 +950,7 @@ audit row, except the survey move of a delete.
 
 All of these (but not the layout writes of Step 9) set `timestamp` to the time the server's clock gives,
 once per request, and an update that changes no value still rewrites it. Every audit row is best effort (a
-failure is logged with the survey id and the type only). Still to build: the setting `usecookies`.
+failure is logged with the survey id and the type only)..
 
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |

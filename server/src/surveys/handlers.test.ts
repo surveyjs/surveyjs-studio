@@ -18,6 +18,7 @@ const USER: User = {
   displayName: "User",
   blocked: false,
 };
+const PUBLISH_ID = "ffffffff-0000-4000-8000-000000000001";
 const PROJECT_ID = "bbbbbbbb-0000-4000-8000-000000000001";
 const OTHER_PROJECT_ID = "bbbbbbbb-0000-4000-8000-000000000002";
 
@@ -27,6 +28,7 @@ function survey(
   owner: SurveyRecord["owner"],
   archived = false,
   creatorId: string = USER.id,
+  legacyPublishId: string | null = null,
 ): SurveyRecord {
   n += 1;
   return {
@@ -36,6 +38,7 @@ function survey(
     creatorId,
     postId: `dddddddd-0000-4000-8000-${String(n).padStart(12, "0")}`,
     resultId: `eeeeeeee-0000-4000-8000-${String(n).padStart(12, "0")}`,
+    legacyPublishId,
     published: false,
     archived,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -55,7 +58,7 @@ const seed: MemorySeed = {
     survey("New Survey 4", project),
     survey("New Survey 9", { kind: "project", projectId: OTHER_PROJECT_ID }),
     // Made by someone else in USER's project: visible to USER, not modifiable.
-    survey("Colleague poll", project, true, "aaaaaaaa-0000-4000-8000-000000000009"),
+    survey("Colleague poll", project, true, "aaaaaaaa-0000-4000-8000-000000000009", PUBLISH_ID),
   ],
   projects: [
     { id: PROJECT_ID, name: "Team", creatorId: USER.id, createdAt: "2025-01-01T00:00:00.000Z" },
@@ -209,6 +212,82 @@ describe("listSurveys", () => {
     expect(res.json()).toMatchObject({ code: "not-found" });
   });
 
+  it("finds one survey by post ID in any scope the caller sees, archived too, ignoring project and archived", async () => {
+    const { server, headers } = await start();
+    for (const url of [
+      `/api/v1/surveys?postId=${colleaguePoll?.postId}`,
+      `/api/v1/surveys?postId=${colleaguePoll?.postId.toUpperCase()}&archived=false&project=personal`,
+      `/api/v1/surveys?legacyPublishId=${PUBLISH_ID}&project=${OTHER_PROJECT_ID}`,
+      `/api/v1/surveys?legacyPublishId=${PUBLISH_ID.toUpperCase()}`,
+    ]) {
+      const res = await server.inject({ url, headers });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.json(), url).toMatchObject({
+        items: [
+          {
+            id: colleaguePoll?.id,
+            archived: true,
+            legacyPublishId: PUBLISH_ID,
+            creatorId: "aaaaaaaa-0000-4000-8000-000000000009",
+            useCookies: false,
+            permissions: { canModify: false },
+          },
+        ],
+        nextCursor: null,
+      });
+    }
+  });
+
+  it("finds no survey the caller cannot see, nor an unknown ID, nor one with another publish ID", async () => {
+    const { server, headers } = await start();
+    const hidden = seed.surveys[3];
+    for (const query of [
+      `postId=${hidden?.postId}`,
+      `postId=${randomUUID()}`,
+      `legacyPublishId=${randomUUID()}`,
+      `postId=${colleaguePoll?.postId}&legacyPublishId=${randomUUID()}`,
+    ]) {
+      const res = await server.inject({ url: `/api/v1/surveys?${query}`, headers });
+      expect(res.statusCode, query).toBe(200);
+      expect(res.json(), query).toEqual({ items: [], nextCursor: null });
+    }
+  });
+
+  it("answers 400 for a post ID that is no GUID", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({ url: "/api/v1/surveys?postId=nope", headers });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("carries each item's theme with include=theme, null without one", async () => {
+    const { server, providers, headers } = await start();
+    const before = await server.inject({ url: "/api/v1/surveys?include=theme", headers });
+    expect(before.json<{ items: { theme: unknown }[] }>().items.map((i) => i.theme)).toEqual([
+      null,
+    ]);
+    const stored = await providers.surveys.getTheme(ownPersonal!.id);
+    await providers.surveys.saveTheme(
+      ownPersonal!.id,
+      { themeName: "default" },
+      {
+        ifVersion: stored!.version,
+        savedAt: NOW,
+      },
+    );
+    const after = await server.inject({ url: "/api/v1/surveys?include=theme", headers });
+    expect(after.json<{ items: { theme: unknown }[] }>().items[0]?.theme).toEqual({
+      themeName: "default",
+    });
+    const plain = await server.inject({ url: "/api/v1/surveys", headers });
+    expect(plain.json<{ items: object[] }>().items[0]).not.toHaveProperty("theme");
+  });
+
+  it("answers 400 for an unknown include", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({ url: "/api/v1/surveys?include=history", headers });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("answers 400 for a malformed cursor", async () => {
     const { server, headers } = await start();
     const res = await server.inject({ url: "/api/v1/surveys?cursor=abc", headers });
@@ -229,6 +308,15 @@ function patch(
 }
 
 describe("updateSurvey", () => {
+  it("sets the one-response setting, which the survey answers twice over", async () => {
+    const { server, headers } = await start();
+    const res = await patch(server, headers, ownPersonal?.id, { settings: { useCookies: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ useCookies: true, settings: { useCookies: true } });
+    const got = await server.inject({ url: `/api/v1/surveys/${ownPersonal?.id}`, headers });
+    expect(got.json()).toMatchObject({ useCookies: true, settings: { useCookies: true } });
+  });
+
   it("sets updatedAt to the clock, also when no value changes", async () => {
     const { server, headers } = await start();
     const res = await patch(server, headers, ownPersonal?.id, { name: ownPersonal?.name });
@@ -633,6 +721,20 @@ describe("a Personal API token", () => {
     expect(project.json()).toMatchObject({ code: "not-found" });
   });
 
+  it("finds a survey by post ID within its scope only", async () => {
+    const { server, headers } = await startPersonal();
+    const own = await server.inject({
+      url: `/api/v1/surveys?postId=${ownPersonal?.postId}`,
+      headers,
+    });
+    expect(ids(own)).toEqual([ownPersonal?.id]);
+    const project = await server.inject({
+      url: `/api/v1/surveys?postId=${ownProject?.postId}`,
+      headers,
+    });
+    expect(ids(project)).toEqual([]);
+  });
+
   it("answers 404 for a project survey of the user, as for an unknown one", async () => {
     const { server, headers } = await startPersonal();
     for (const url of [
@@ -702,6 +804,19 @@ describe("a project API token", () => {
       expect(res.statusCode, project).toBe(404);
       expect(res.json()).toMatchObject({ code: "not-found" });
     }
+  });
+
+  it("finds a survey by post ID or publish ID in its project only", async () => {
+    const { server, headers } = await startProject();
+    for (const query of [`postId=${ownProject?.postId}`, `legacyPublishId=${PUBLISH_ID}`]) {
+      const found = await server.inject({ url: `/api/v1/surveys?${query}`, headers });
+      expect(ids(found), query).toHaveLength(1);
+    }
+    const personalOne = await server.inject({
+      url: `/api/v1/surveys?postId=${ownPersonal?.postId}`,
+      headers,
+    });
+    expect(ids(personalOne)).toEqual([]);
   });
 
   it("answers 404 for a personal survey and a survey of another project", async () => {

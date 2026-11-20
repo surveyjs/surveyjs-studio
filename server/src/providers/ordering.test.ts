@@ -61,6 +61,7 @@ describe("isAfter", () => {
     creatorId: null,
     postId: "p",
     resultId: "r",
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: updatedAt,

@@ -26,6 +26,7 @@ function personal(userId: string): SurveyRecord {
     creatorId: userId,
     postId: `eeeeeeee-0000-4000-8001-${String(n).padStart(12, "0")}`,
     resultId: `eeeeeeee-0000-4000-8002-${String(n).padStart(12, "0")}`,
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-01-01T00:00:00.000Z",

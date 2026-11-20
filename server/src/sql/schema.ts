@@ -33,6 +33,8 @@ export interface SurveysTable {
   public_results: Flag;
   store_respondent_ip: Flag;
   use_cookies: Flag;
+  /** The publish ID the old service gave the survey, lower-case (0009). */
+  legacy_publish_id: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
   /** null: no definition stored (read as `{}`). */

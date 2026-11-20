@@ -611,6 +611,10 @@ export async function writeSurveyChanges(
     // The type legacy writes for this change (layout section 5.1), misspelling included.
     event("SURVEY_POSTRESUTL", { storeipaddress: settings.storeRespondentIp });
   }
+  if (settings.useCookies !== undefined) {
+    columns.push(["usecookies", sql.TinyInt, flag(settings.useCookies)]);
+    event("SURVEY_USECOOKIES", { usecookies: settings.useCookies });
+  }
 
   try {
     const request = (await targets.pool()).request().input("id", sql.UniqueIdentifier, id);

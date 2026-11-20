@@ -28,6 +28,7 @@ function personal(userId: string): SurveyRecord {
     creatorId: userId,
     postId: `eeeeeeee-0000-4000-8001-${tail}`,
     resultId: `eeeeeeee-0000-4000-8002-${tail}`,
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-01-01T00:00:00.000Z",

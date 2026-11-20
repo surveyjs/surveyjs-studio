@@ -45,6 +45,7 @@ function survey(n: number, creatorId: string, archived: boolean): SurveyRecord {
     creatorId,
     postId: `dddddddd-0000-4000-8000-00000000000${n}`,
     resultId: `eeeeeeee-0000-4000-8000-00000000000${n}`,
+    legacyPublishId: null,
     published: false,
     archived,
     createdAt: "2026-01-01T00:00:00.000Z",

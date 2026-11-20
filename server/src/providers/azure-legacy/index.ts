@@ -141,7 +141,7 @@ const EPOCH = new Date(0);
 
 const SURVEY_COLUMNS =
   "s.id, s.name, s.userid, s.creatorid, s.postid, s.resultid, s.createdat, s.[timestamp], " +
-  "s.ispublished, s.isarchived, s.allowaccessresult, s.storeipaddress, s.usecookies, " +
+  "s.ispublished, s.isarchived, s.allowaccessresult, s.storeipaddress, s.usecookies, s.publishid, " +
   "CASE WHEN EXISTS (SELECT 1 FROM Organizations o WHERE o.id = s.userid) THEN 1 ELSE 0 END " +
   "AS isproject";
 const SURVEY_SELECT = `SELECT ${SURVEY_COLUMNS} FROM Surveys s`;
@@ -792,11 +792,18 @@ export function createAzureLegacyProviders(
     surveys: {
       getSurvey,
 
-      async findSurveyByKey(key: { readonly postId: string } | { readonly resultId: string }) {
+      async findSurveyByKey(
+        key:
+          | { readonly postId: string }
+          | { readonly resultId: string }
+          | { readonly legacyPublishId: string },
+      ) {
         const [column, value] =
           "postId" in key
             ? (["postid", key.postId] as const)
-            : (["resultid", key.resultId] as const);
+            : "resultId" in key
+              ? (["resultid", key.resultId] as const)
+              : (["publishid", key.legacyPublishId] as const);
         if (!isGuid(value)) return null;
         const rows = await select<SurveyQueryRow>(
           "survey key lookup",

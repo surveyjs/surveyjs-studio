@@ -18,6 +18,7 @@ export interface LegacySurveyRow {
   allowaccessresult: number | null;
   storeipaddress: string | null;
   usecookies: number | null;
+  publishid: string | null;
 }
 
 /** SQL `Users` (layout section 3.11), only the columns My Surveys needs. */

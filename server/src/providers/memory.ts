@@ -281,7 +281,9 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         const [field, value] =
           "postId" in key
             ? (["postId", key.postId] as const)
-            : (["resultId", key.resultId] as const);
+            : "resultId" in key
+              ? (["resultId", key.resultId] as const)
+              : (["legacyPublishId", key.legacyPublishId] as const);
         const found = GUID.test(value) ? surveys.find((s) => s[field] === lower(value)) : undefined;
         return Promise.resolve(found ? copySurvey(found) : null);
       },

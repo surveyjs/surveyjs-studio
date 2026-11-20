@@ -35,6 +35,7 @@ function survey(name: string, owner: SurveyRecord["owner"], archived = false): S
     creatorId: ERIN.id,
     postId: `88888888-0000-4000-8001-${tail}`,
     resultId: `88888888-0000-4000-8002-${tail}`,
+    legacyPublishId: null,
     published: false,
     archived,
     createdAt: "2026-01-01T00:00:00.000Z",

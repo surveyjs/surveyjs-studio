@@ -81,6 +81,7 @@ export function surveyFromLegacy(
     creatorId: creatorId === ZERO_GUID ? null : creatorId,
     postId,
     resultId,
+    legacyPublishId: row.publishid === null ? null : guid(row.publishid),
     published: publishedFlag(row.ispublished),
     archived: flag(row.isarchived),
     createdAt: createdAt.toISOString(),

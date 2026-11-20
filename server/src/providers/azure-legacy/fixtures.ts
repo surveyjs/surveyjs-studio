@@ -153,6 +153,7 @@ function surveyRow(row: Record<string, unknown>): LegacySurveyRow {
     allowaccessresult: optNum(row, "allowaccessresult"),
     storeipaddress: optStr(row, "storeipaddress"),
     usecookies: optNum(row, "usecookies"),
+    publishid: optStr(row, "publishid"),
   };
 }
 

@@ -90,6 +90,7 @@ describe("erasure with orphan memberships", () => {
     creatorId: ERASED,
     postId: "eeeeeeee-0000-4000-8000-0000000000b2",
     resultId: "eeeeeeee-0000-4000-8000-0000000000c2",
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-08-01T10:00:00.000Z",

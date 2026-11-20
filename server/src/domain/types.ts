@@ -10,6 +10,8 @@ export interface SurveyRecord {
   readonly creatorId: string | null; // legacy all-zero GUID -> null
   readonly postId: string;
   readonly resultId: string;
+  /** The publish ID the old service gave the survey; null for surveys made in Studio. */
+  readonly legacyPublishId: string | null;
   readonly published: boolean; // legacy NULL -> true (only 0 is unpublished, ADR 0014 S1)
   readonly archived: boolean;
   readonly createdAt: string; // ISO 8601 UTC, Date#toISOString() format
@@ -32,7 +34,11 @@ export interface SurveyChanges {
   readonly move?: { readonly owner: SurveyOwner; readonly creatorId: string };
   readonly published?: boolean;
   readonly archived?: boolean;
-  readonly settings?: { readonly publicResults?: boolean; readonly storeRespondentIp?: boolean };
+  readonly settings?: {
+    readonly publicResults?: boolean;
+    readonly storeRespondentIp?: boolean;
+    readonly useCookies?: boolean;
+  };
   /** ISO 8601 UTC; always set. */
   readonly updatedAt: string;
 }

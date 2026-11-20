@@ -220,6 +220,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
       creatorId: null,
       postId: "eeeeeeee-0000-4000-8000-0000000000d1",
       resultId: "eeeeeeee-0000-4000-8000-0000000000c1",
+      legacyPublishId: null,
       // An empty published flag means published (ADR 0014 S1).
       published: true,
       archived: false,

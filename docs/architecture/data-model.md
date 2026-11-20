@@ -40,26 +40,27 @@ names in both. The table `schema_migrations` (`version` integer key, `name`, `ap
 
 One row per survey: the record, the definition and the theme. `SurveyStore` (`server/src/sql/survey-store.ts`).
 
-| Column                | Type              | Notes                                                                                                                                     |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | GUID, primary key |                                                                                                                                           |
-| `name`                | text              |                                                                                                                                           |
-| `owner_user_id`       | GUID, null        | Set for a personal survey. Exactly one of the two owner columns is set (`surveys_one_owner`).                                             |
-| `owner_project_id`    | GUID, null        | Set for a project survey. No foreign key to `projects` in the migrations (one was planned for self-hosted Step 2); hosted Step 8 decides. |
-| `creator_id`          | GUID, null        | null for legacy rows whose creator is the all-zero GUID                                                                                   |
-| `post_id`             | GUID, unique      | The legacy public id; the hosted compatibility layer looks surveys up by it                                                               |
-| `result_id`           | GUID, unique      | The legacy public results id                                                                                                              |
-| `published`           | boolean           | A new survey is published (ADR 0014 S1)                                                                                                   |
-| `archived`            | boolean           |                                                                                                                                           |
-| `public_results`      | boolean           |                                                                                                                                           |
-| `store_respondent_ip` | boolean           |                                                                                                                                           |
-| `use_cookies`         | boolean           | Legacy only: never changed by the app                                                                                                     |
-| `created_at`          | timestamp         |                                                                                                                                           |
-| `updated_at`          | timestamp         | Moves on every record change and every definition or theme save                                                                           |
-| `definition`          | JSON, null        | null: none stored, read as `{}`                                                                                                           |
-| `definition_version`  | text              | The version token of `definition` (the hash of `""` when none)                                                                            |
-| `theme`               | JSON, null        | null: none stored, read as `{}`                                                                                                           |
-| `theme_version`       | text              | The version token of `theme`                                                                                                              |
+| Column                | Type              | Notes                                                                                                                                                                    |
+| --------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                  | GUID, primary key |                                                                                                                                                                          |
+| `name`                | text              |                                                                                                                                                                          |
+| `owner_user_id`       | GUID, null        | Set for a personal survey. Exactly one of the two owner columns is set (`surveys_one_owner`).                                                                            |
+| `owner_project_id`    | GUID, null        | Set for a project survey. No foreign key to `projects` in the migrations (one was planned for self-hosted Step 2); hosted Step 8 decides.                                |
+| `creator_id`          | GUID, null        | null for legacy rows whose creator is the all-zero GUID                                                                                                                  |
+| `post_id`             | GUID, unique      | The legacy public id; the hosted compatibility layer looks surveys up by it                                                                                              |
+| `result_id`           | GUID, unique      | The legacy public results id                                                                                                                                             |
+| `published`           | boolean           | A new survey is published (ADR 0014 S1)                                                                                                                                  |
+| `archived`            | boolean           |                                                                                                                                                                          |
+| `public_results`      | boolean           |                                                                                                                                                                          |
+| `store_respondent_ip` | boolean           |                                                                                                                                                                          |
+| `use_cookies`         | boolean           | "Limit to one response"; set by `updateSurvey` (`settings.useCookies`)                                                                                                   |
+| `legacy_publish_id`   | text, null        | 0009. The publish ID the old service gave the survey (lower-case GUID text); filled by the hosted migration, never changed by the app; index `surveys_legacy_publish_id` |
+| `created_at`          | timestamp         |                                                                                                                                                                          |
+| `updated_at`          | timestamp         | Moves on every record change and every definition or theme save                                                                                                          |
+| `definition`          | JSON, null        | null: none stored, read as `{}`                                                                                                                                          |
+| `definition_version`  | text              | The version token of `definition` (the hash of `""` when none)                                                                                                           |
+| `theme`               | JSON, null        | null: none stored, read as `{}`                                                                                                                                          |
+| `theme_version`       | text              | The version token of `theme`                                                                                                                                             |
 
 Indexes: `surveys_personal_list` (`owner_user_id`, `archived`, `updated_at` desc, `id`) and `surveys_project_list`
 (`owner_project_id`, …), both partial on their owner column. They serve the survey list and its keyed paging
