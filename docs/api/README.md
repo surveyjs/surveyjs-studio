@@ -19,6 +19,8 @@ committed.
 - [Public endpoints, rate limits and idempotency](public-endpoints.md): loading and answering a published
   survey, respondent files, `Idempotency-Key`, the one-response rule, `TRUST_PROXY`, payload limits, rate
   limits and the public results of a survey.
+- [Moving from api.surveyjs.io](migrating-from-api-surveyjs-io.md): every action of the old API, the operations that
+  do the same, with examples, and where the new API differs in shape.
 - [Managing users (instance admins)](admin-users.md): the `/admin/users` operations, set-password links,
   the last instance admin, and an instance admin's view of every project.
 - [Exporting results](exporting-results.md): downloading every response as JSON or CSV (the format choice,

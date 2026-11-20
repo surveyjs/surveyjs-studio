@@ -13,7 +13,9 @@ warnings.
 | Provider suite     | Does a storage provider behave like the others? | `server/src/providers/suite/` | Built (Step 2)        |
 | Compatibility      | Does the bridge answer as the old API did?      | `legacy-compat-tests/`        | Built (hosted Step 5) |
 
-The bridge's own unit tests are the Vitest project `bridge` (`pnpm test:bridge`, also part of `pnpm test:unit`).
+The bridge's own unit tests are the Vitest project `bridge` (`pnpm test:bridge`, also part of `pnpm test:unit`). One of them, `bridge/src/guide.test.ts`, checks that the table of actions in the
+[migration guide](api/migrating-from-api-surveyjs-io.md#every-action-and-its-operations) has exactly the rows of the
+bridge's mapping table (action, methods and Studio operations).
 Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`).
 
 The visual parity specs (Step 13) use the browser seam: they compare screenshots of the app with screenshots of
