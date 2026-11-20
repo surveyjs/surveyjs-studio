@@ -2,6 +2,8 @@
 // one after masking. Pure apart from reading the files; shared by the tests (src/harness.ts) and
 // the recording script (scripts/record.ts).
 import { readdirSync, readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -348,6 +350,45 @@ export interface Answer {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Buffer;
+}
+
+/**
+ * Sends a golden request to `baseUrl` and reads the whole answer. `fetch` cannot send a body with
+ * a `GET` (a form body the old API's form binding could read), so such a request goes through
+ * `node:http`.
+ */
+export async function sendRequest(baseUrl: string, request: GoldenRequest): Promise<Answer> {
+  const url = requestUrl(baseUrl, request);
+  const init = requestInit(request);
+  if (init.body === undefined || (request.method !== "GET" && request.method !== "HEAD")) {
+    return readAnswer(await fetch(url, init));
+  }
+  const body = Buffer.from(init.body as Uint8Array);
+  const send = url.startsWith("https:") ? httpsRequest : httpRequest;
+  return new Promise<Answer>((resolve, reject) => {
+    const outgoing = send(
+      url,
+      {
+        method: request.method,
+        headers: { ...(init.headers as Record<string, string>), "content-length": body.length },
+      },
+      (incoming) => {
+        const chunks: Buffer[] = [];
+        incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+        incoming.on("error", reject);
+        incoming.on("end", () => {
+          const headers: Record<string, string> = {};
+          for (const [name, value] of Object.entries(incoming.headers)) {
+            if (value !== undefined)
+              headers[name] = Array.isArray(value) ? value.join(", ") : value;
+          }
+          resolve({ status: incoming.statusCode ?? 0, headers, body: Buffer.concat(chunks) });
+        });
+      },
+    );
+    outgoing.on("error", reject);
+    outgoing.end(body);
+  });
 }
 
 export async function readAnswer(response: Response): Promise<Answer> {

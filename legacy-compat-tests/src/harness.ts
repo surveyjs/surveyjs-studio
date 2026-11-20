@@ -5,9 +5,7 @@ import { expect, inject, it } from "vitest";
 import {
   compareAnswer,
   loadGoldens,
-  readAnswer,
-  requestInit,
-  requestUrl,
+  sendRequest,
   substitute,
   type Answer,
   type Golden,
@@ -37,7 +35,7 @@ export const LEGACY_STUB_URL = inject("legacyStubUrl");
 
 /** Sends a request to the old API's host and reads the whole answer. */
 export async function send(request: GoldenRequest): Promise<Answer> {
-  return readAnswer(await fetch(requestUrl(BASE_URL, request), requestInit(request)));
+  return sendRequest(BASE_URL, request);
 }
 
 /**

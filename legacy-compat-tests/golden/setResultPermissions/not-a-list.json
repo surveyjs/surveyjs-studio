@@ -1,7 +1,7 @@
 {
   "source": "derived",
-  "description": "a Json that is no permissions list: stored as given, an empty 200",
-  "knownMismatch": "The bridge answers an empty 400 for a permissions list it cannot read; the old API stored any non-empty text without reading it and answered an empty 200 (its later layout reads then failed). Reported in hosted Step 6 Task 13.",
+  "description": "a Json that is no permissions list: nothing stored, an empty 400",
+  "difference": "The old API stored any non-empty text without reading it and answered an empty 200; its later layout reads then failed. Studio keeps the private questions as a list, so the bridge refuses a text it cannot read as one (docs/api/legacy-compat.md).",
   "setup": {
     "survey": {}
   },
@@ -22,7 +22,7 @@
     }
   },
   "response": {
-    "status": 200,
+    "status": 400,
     "headers": {
       "content-type": null,
       "content-length": "0"

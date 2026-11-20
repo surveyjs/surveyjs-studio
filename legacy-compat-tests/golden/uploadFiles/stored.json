@@ -19,7 +19,6 @@
     }
   },
   "noRecording": "the old API would keep the file in its share; no action removes it",
-  "knownMismatch": "The bridge answers Studio's legacy file name (64 hexadecimal digits); the old API answered a new GUID (D format, no extension). Reported in hosted Step 6 Task 13.",
   "response": {
     "status": 200,
     "headers": {

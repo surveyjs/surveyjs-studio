@@ -1,7 +1,7 @@
 {
   "source": "derived",
-  "description": "the current version of another user's survey: the publish-version refusal",
-  "knownMismatch": "The bridge answers an empty 400, as for a version no survey has: Studio does not show it another user's survey. The old API found the survey and answered its refusal text. Reported in hosted Step 6 Task 13.",
+  "description": "the current version of another user's survey: an empty 400, as for an unknown version",
+  "difference": "The old API found the survey and answered 400 \"You are not authorized to publish the survey version dddddddd-0000-4000-8000-a00000000001.\"; Studio does not show another user's survey, so the bridge answers as for a version no survey has, as getSurveyInfo does (docs/api/legacy-compat.md).",
   "request": {
     "method": "PUT",
     "path": "/private/v1/Surveys/publishVersion",
@@ -13,10 +13,9 @@
   "response": {
     "status": 400,
     "headers": {
-      "content-type": "application/json; charset=utf-8"
+      "content-type": null,
+      "content-length": "0"
     },
-    "body": {
-      "json": "You are not authorized to publish the survey version dddddddd-0000-4000-8000-a00000000001."
-    }
+    "body": null
   }
 }

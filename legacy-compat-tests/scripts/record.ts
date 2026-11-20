@@ -43,9 +43,7 @@ import {
   FEEDBACK_DEFINITION,
   isKeyed,
   loadGoldens,
-  readAnswer,
-  requestInit,
-  requestUrl,
+  sendRequest,
   SETUP_SURVEY_NAME,
   substitute,
   type Golden,
@@ -194,7 +192,7 @@ function bodyForm(body: ResponseBody): "json" | "text" | "base64" | null {
 }
 
 async function call(base: string, request: GoldenRequest) {
-  return readAnswer(await fetch(requestUrl(base, request), requestInit(request)));
+  return sendRequest(base, request);
 }
 
 /** Posts and uploads the case's setup to `survey` through the public actions; adds their variables. */
