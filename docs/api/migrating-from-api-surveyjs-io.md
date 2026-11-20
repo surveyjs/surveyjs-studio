@@ -143,8 +143,11 @@ Where the new API differs:
   and the private questions. The old `PostId`, `ResultId`, `UserId`, `AllowAccessResult`, `StoreIPAddress` and `IsArchived`
   are `postId`, `resultId`, `creatorId`, `settings.publicResults`, `settings.storeRespondentIp` and `archived`.
   `published` is `true` unless the survey was unpublished; the old `IsPublished` could be `null`.
-- **`ownerId`** (a project's id in `getActive`) is `project`; without it you get the token's own space, as with the old
-  personal list. A project token sees only its project. Add `include=theme` to get each survey's theme in the list.
+- **`ownerId`** (a project's id in `getActive`). Through the bridge, an `ownerId` that names a project the caller cannot
+  see falls back to the personal surveys, as the old API did. In Studio's own API it is the `project` parameter of
+  `listSurveys`: a project the caller cannot see is `404`, and without `project` a token lists its own space (the
+  personal surveys for a Personal token, the project's for a project token). Add `include=theme` to get each survey's
+  theme in the list.
 - **Lists** are pages: follow `nextCursor` ([paging](paging.md)); the order is newest first, as before.
 - **`delete`** needs an archived survey. The bridge archives first because the old API deleted active surveys.
 - **A `PATCH`** changes only the fields you send, and `settings` takes the whole `privateResultQuestions` list. Moving a
@@ -270,7 +273,9 @@ A legacy key cannot be replaced this way yet: make an API token instead, and rev
 With a bad key the bridge answers as the old API did, and Studio answers `401` with a problem document. Through the bridge
 that is an empty `401` for most actions and `200` with a `text/html` line for five of them (`generateAccessKey`,
 `getSurveyDemoResults`, `exportSurveyResults`, `uploadFiles`, `PUT clone`); [the bridge's guide](legacy-compat.md#a-bad-key)
-has the table. Calling Studio directly, check the status code, not the body.
+has the table. Calling Studio directly, check the status code, not the body. One more difference: through the bridge, a
+wrong or revoked key sent with an invalid body (for example `changeJson` with an `Id` that is no GUID) gets the body's
+`400`, not the `401`, because the key is checked after the body.
 
 ## What stays the same, and what does not
 

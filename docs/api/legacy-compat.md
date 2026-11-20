@@ -109,6 +109,13 @@ failure or any status the action has no answer for is an empty `500` (see [Error
 API had no revoked keys: a key replaced by `generateAccessKey` was just unknown. Revoking a key on the API tokens page
 ([ADR 0037](../adr/0037-access-keys-and-api-tokens.md)) gives the same answer as a wrong key.
 
+**The order of the checks differs for the actions that need sign-in** (every action answering the empty `401`). A missing
+or empty key is answered before the body is read. A key that is present is checked by Studio only after the bridge has
+read and validated the body, because only Studio knows whether a key is wrong or revoked, and an extra Studio call
+for each request was judged not worth it. So a wrong or revoked key sent with an unreadable or invalid body (for
+example `changeJson` with an `Id` that is no GUID, or a body that is not JSON) gets that body's empty `400`, where the
+old API answered the `401`.
+
 ### How the actions work
 
 - **Permissions are Studio's.** The owner, a project admin, or the survey's creator may change a survey (the
@@ -364,6 +371,9 @@ incidental bytes listed at the top, and not otherwise.
 **Keys**
 
 - A key with a trailing space or any character outside visible ASCII gets the bad-key answer.
+- For the actions that answer an empty `401`, a wrong or revoked key sent with an unreadable or invalid body answers that
+  body's empty `400`, not the `401`: Studio checks a present key after the bridge has validated the body
+  ([A bad key](#a-bad-key)). A missing key still answers `401` first.
 - `generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone` take the key from a form field, the route or
   the query, as before. A key in the body of a `GET` request is not read. `exportSurveyResults` takes it from the query
   only, as before.
