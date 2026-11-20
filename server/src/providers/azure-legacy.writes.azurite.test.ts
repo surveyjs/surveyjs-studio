@@ -1607,7 +1607,8 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       const before = warnings.length;
       await put("[1]");
       expect(await store().views.getView(survey.id, user, "summary")).toBeNull();
-      expect(warnings.slice(before)).toEqual([
+      const added = warnings.splice(before); // later tests expect no warnings
+      expect(added).toEqual([
         {
           details: { surveyId: survey.id, view: "summary" },
           message: "Ignored a saved results layout that is not a JSON object.",
