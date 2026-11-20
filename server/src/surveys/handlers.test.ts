@@ -736,16 +736,33 @@ describe("a Personal API token", () => {
   });
 
   it("answers 404 for a project survey of the user, as for an unknown one", async () => {
-    const { server, headers } = await startPersonal();
-    for (const url of [
-      `/api/v1/surveys/${ownProject?.id}`,
-      `/api/v1/surveys/${ownProject?.id}/definition`,
-      `/api/v1/surveys/${ownProject?.id}/results`,
-    ]) {
-      const res = await server.inject({ url, headers });
-      expect(res.statusCode, url).toBe(404);
+    const { server, providers, headers: session } = await start();
+    const headers = await tokenHeaders(providers, null);
+    const id = ownProject?.id;
+    // A stored response of the project survey, so that its delete is refused for the scope alone.
+    const responseId = randomUUID();
+    await providers.results.appendResponse(ownProject!, {
+      id: responseId,
+      submittedAt: NOW,
+      data: { q1: "kept" },
+    });
+    const requests = [
+      { method: "GET", url: `/api/v1/surveys/${id}` },
+      { method: "GET", url: `/api/v1/surveys/${id}/definition` },
+      { method: "GET", url: `/api/v1/surveys/${id}/results` },
+      // The bridge's operations (hosted Step 6, ADR 0040 point 3).
+      { method: "GET", url: `/api/v1/surveys/${id}/layouts/table` },
+      { method: "PUT", url: `/api/v1/surveys/${id}/layouts/table`, payload: { text: "{}" } },
+      { method: "DELETE", url: `/api/v1/surveys/${id}/layouts/table` },
+      { method: "DELETE", url: `/api/v1/surveys/${id}/results/${responseId}` },
+    ] as const;
+    for (const request of requests) {
+      const res = await server.inject({ ...request, headers });
+      expect(res.statusCode, `${request.method} ${request.url}`).toBe(404);
       expect(res.json()).toMatchObject({ code: "not-found" });
     }
+    const results = await server.inject({ url: `/api/v1/surveys/${id}/results`, headers: session });
+    expect(ids(results)).toEqual([responseId]);
     const own = await server.inject({ url: `/api/v1/surveys/${ownPersonal?.id}`, headers });
     expect(own.statusCode).toBe(200);
   });
