@@ -30,6 +30,16 @@ export interface StoredSurvey {
   theme: Record<string, unknown> | null;
   /** The definition as Studio's JSON text. */
   definition: string;
+  /** The definition saves, oldest first (`PUT definition` adds one). */
+  history: { id: string; definition: string; at: string; userId: string }[];
+}
+
+/** A file `POST /legacy-files` stored. */
+export interface StoredUpload {
+  legacyName: string;
+  fileName: string;
+  bytes: number;
+  userId: string;
 }
 
 export interface SurveyStore {
@@ -38,6 +48,8 @@ export interface SurveyStore {
   memberships: Map<string, Map<string, "admin" | "user">>;
   /** Items per page of `listSurveys`, whatever `limit` asks (`undefined`: `limit`). */
   surveyPageSize: number | undefined;
+  /** The files `POST /legacy-files` stored, in order. */
+  uploads: StoredUpload[];
   /** The next write's time (advances one second per write). */
   clock: number;
 }
@@ -49,6 +61,7 @@ export function newSurveyStore(): SurveyStore {
     surveys: new Map(),
     memberships: new Map(),
     surveyPageSize: undefined,
+    uploads: [],
     clock: START_TIME,
   };
 }
@@ -57,6 +70,7 @@ export function resetSurveyStore(store: SurveyStore): void {
   store.surveys.clear();
   store.memberships.clear();
   store.surveyPageSize = undefined;
+  store.uploads.length = 0;
   store.clock = START_TIME;
 }
 
@@ -81,6 +95,7 @@ export function storedSurvey(
     storeRespondentIp: false,
     theme: null,
     definition: "{}",
+    history: [],
     ...fields,
   };
 }
@@ -167,6 +182,11 @@ export function surveyOperation(
   userId: string | undefined,
 ): boolean {
   const url = new URL(request.url, "http://studio");
+  if (url.pathname === `${API}/legacy-files` && request.method === "POST") {
+    if (userId === undefined) problem(res, 401, "unauthenticated");
+    else void legacyUpload(store, request, res, userId);
+    return true;
+  }
   if (!url.pathname.startsWith(`${API}/surveys`)) return false;
   if (userId === undefined) {
     problem(res, 401, "unauthenticated");
@@ -272,6 +292,51 @@ export function surveyOperation(
       if (!visible) problem(res, 404, "not-found");
       else res.writeHead(200, { "content-type": "application/json" }).end(survey.definition);
       return true;
+    case "PUT surveys/:/definition": {
+      if (!visible) return (problem(res, 404, "not-found"), true);
+      if (!canModify(store, survey, userId)) return (problem(res, 403, "forbidden"), true);
+      if (request.headers["if-match"] !== "*")
+        return (problem(res, 428, "precondition-required"), true);
+      const body = parseObject(request);
+      if (body === undefined) return (problem(res, 422, "validation-failed"), true);
+      survey.definition = JSON.stringify(body);
+      survey.updatedAt = tick(store);
+      survey.history.push({
+        id: randomUUID(),
+        definition: survey.definition,
+        at: survey.updatedAt,
+        userId,
+      });
+      res.writeHead(204).end();
+      return true;
+    }
+    case "PUT surveys/:/theme": {
+      if (!visible) return (problem(res, 404, "not-found"), true);
+      if (!canModify(store, survey, userId)) return (problem(res, 403, "forbidden"), true);
+      const body = parseObject(request);
+      if (body === undefined) return (problem(res, 400, "bad-request"), true);
+      survey.theme = Object.keys(body).length === 0 ? null : body;
+      survey.updatedAt = tick(store);
+      res.writeHead(204).end();
+      return true;
+    }
+    case "GET surveys/:/history":
+      if (!visible) return (problem(res, 404, "not-found"), true);
+      json(res, 200, {
+        items: [...survey.history].reverse().map((entry) => ({
+          id: entry.id,
+          at: entry.at,
+          user: { id: entry.userId, displayName: "A user" },
+        })),
+        nextCursor: null,
+      });
+      return true;
+    case "GET surveys/:/history/:": {
+      const entry = survey?.history.find((candidate) => candidate.id === segments[3]);
+      if (!visible || entry === undefined) return (problem(res, 404, "not-found"), true);
+      res.writeHead(200, { "content-type": "application/json" }).end(entry.definition);
+      return true;
+    }
     case "GET surveys/:/theme":
       if (!visible) problem(res, 404, "not-found");
       else json(res, 200, survey.theme ?? {});
@@ -321,4 +386,37 @@ function listSurveys(store: SurveyStore, url: URL, res: ServerResponse, userId: 
     items: page.map((survey) => surveyJson(store, survey, userId, withTheme)),
     nextCursor: start + size < items.length ? String(start + size) : null,
   });
+}
+
+function parseObject(request: RecordedRequest): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(request.body.toString());
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `POST /legacy-files`: one multipart part `file`; a name `legacy-<n>` for each stored file. */
+async function legacyUpload(
+  store: SurveyStore,
+  request: RecordedRequest,
+  res: ServerResponse,
+  userId: string,
+): Promise<void> {
+  let file: string | File | null = null;
+  try {
+    const form = await new Response(new Uint8Array(request.body), {
+      headers: { "content-type": request.headers["content-type"] ?? "" },
+    }).formData();
+    file = form.get("file");
+  } catch {
+    // Not a form: no file.
+  }
+  if (file === null || typeof file === "string") return problem(res, 400, "bad-request");
+  const legacyName = `legacy-${store.uploads.length + 1}`;
+  store.uploads.push({ legacyName, fileName: file.name, bytes: file.size, userId });
+  json(res, 201, { legacyName });
 }

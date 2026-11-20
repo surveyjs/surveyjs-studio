@@ -4,6 +4,7 @@
 // table does not hold is forwarded to the old service.
 import type { HTTPMethods, onRequestAsyncHookHandler, RouteHandlerMethod } from "fastify";
 import { generateAccessKey, setGenerationJSONType } from "./actions/account.js";
+import { changeJson, changeTheme, getHistoryPoint, uploadFiles } from "./actions/content.js";
 import { file, files, image } from "./actions/files.js";
 import { MAX_POST_BYTES, post, upload, uploadGate } from "./actions/post.js";
 import { getResult, getSurveyPublicResults } from "./actions/results.js";
@@ -354,6 +355,42 @@ export const ACTIONS: readonly ActionEntry[] = [
     key: "authorize",
     studio: ["getCurrentUser", "updateSurvey"],
     handler: changeOrganization,
+  },
+  {
+    action: "changeJson",
+    controller: "private",
+    methods: ["PUT"],
+    paths: ["changeJson"],
+    key: "authorize",
+    studio: ["saveSurveyDefinition", "getSurvey", "updateSurvey"],
+    handler: changeJson,
+  },
+  {
+    action: "changeTheme",
+    controller: "private",
+    methods: ["PUT"],
+    paths: ["changeTheme"],
+    key: "authorize",
+    studio: ["saveSurveyTheme", "getSurvey", "updateSurvey"],
+    handler: changeTheme,
+  },
+  {
+    action: "getHistoryPoint",
+    controller: "private",
+    methods: ["GET"],
+    paths: ["getHistoryPoint", "getHistoryPoint/:id"],
+    key: "authorize",
+    studio: ["getSurveyHistoryEntry", "getSurvey"],
+    handler: getHistoryPoint,
+  },
+  {
+    action: "uploadFiles",
+    controller: "private",
+    methods: ["POST"],
+    paths: ["uploadFiles"],
+    key: "text",
+    studio: ["getCurrentUser", "uploadLegacyFile"],
+    handler: uploadFiles,
   },
   {
     // The bare prefixes: the old routing found no single action there and failed for every

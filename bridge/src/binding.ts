@@ -85,7 +85,7 @@ const forms = new WeakMap<FastifyRequest, Promise<FormData | null>>();
  * the actions' body parser collected it; `null` without one, or for one that cannot be read
  * (its fields then bind as missing).
  */
-function formOf(request: FastifyRequest): Promise<FormData | null> {
+export function formOf(request: FastifyRequest): Promise<FormData | null> {
   let form = forms.get(request);
   if (form === undefined) {
     form = readForm(request);
