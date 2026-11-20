@@ -127,6 +127,52 @@ describe("loadContract", () => {
     expect(names).toEqual(expect.arrayContaining(["from", "till"]));
   });
 
+  it("declares the access-key actions' operations, parameters and fields", async () => {
+    const contract = await loadContract(openapiPath);
+    const appSource = await readFile(new URL("./app.ts", import.meta.url), "utf8");
+    const hostedList = /const HOSTED_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
+    const publicList = /const PUBLIC_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
+    for (const id of [
+      "deleteResponse",
+      "getSurveyLayout",
+      "saveSurveyLayout",
+      "deleteSurveyLayout",
+      "getPublicLayout",
+      "uploadLegacyFile",
+    ]) {
+      expect(
+        contract.operations.find((o) => o.operationId === id),
+        id,
+      ).toBeDefined();
+    }
+    const op = (id: string) => contract.operations.find((o) => o.operationId === id);
+    expect(op("getPublicLayout")?.security).toEqual([]);
+    expect(publicList).toContain('"getPublicLayout"');
+    expect(hostedList).toContain('"getPublicLayout"');
+    expect(hostedList).toContain('"uploadLegacyFile"');
+    expect(JSON.stringify(op("deleteResponse")?.security)).toContain("csrfToken");
+    expect(JSON.stringify(op("saveSurveyLayout")?.security)).toContain("csrfToken");
+    expect(JSON.stringify(op("uploadLegacyFile")?.security)).toContain("csrfToken");
+
+    const source = parse(await readFile(openapiPath, "utf8")) as {
+      paths: Record<string, Record<string, { parameters?: { name: string }[] }>>;
+      components: { schemas: Record<string, { properties: Record<string, unknown> }> };
+    };
+    const names = (path: string, method: string) =>
+      source.paths[path]?.[method]?.parameters?.map((p) => p.name) ?? [];
+    expect(names("/surveys", "get")).toEqual(
+      expect.arrayContaining(["include", "postId", "legacyPublishId"]),
+    );
+    expect(names("/surveys/{surveyId}/results", "get")).toEqual(
+      expect.arrayContaining(["from", "till"]),
+    );
+    const { Survey, SurveySettings } = source.components.schemas;
+    for (const field of ["useCookies", "creatorId", "legacyPublishId"]) {
+      expect(Survey?.properties, field).toHaveProperty(field);
+    }
+    expect(SurveySettings?.properties).toHaveProperty("useCookies");
+  });
+
   it("reads a missing top-level security as public", async () => {
     const source = await readFile(openapiPath, "utf8");
     const withoutTopLevel = source.replace(/^security:\r?\n( {2}- .*\r?\n)+/m, "");

@@ -871,6 +871,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/surveys/{surveyId}/results/{responseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /**
+                 * @description The ID of any stored save in the run. Callers hold the IDs the old API showed, which for a
+                 *     run of saves was the last one's.
+                 */
+                responseId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one response
+         * @description Deletes the whole run that contains the save `responseId` (ADR 0038), keeps an audit copy as
+         *     `deleteResults` does, and clears that respondent's completion state. Requires modify
+         *     permission. `404 not-found`: the survey is unknown or not visible, or no stored save has that
+         *     ID. `403` means the caller cannot modify the survey, or a missing or wrong CSRF token.
+         */
+        delete: operations["deleteResponse"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/surveys/{surveyId}/results/stats": {
         parameters: {
             query?: never;
@@ -972,6 +1002,75 @@ export interface paths {
          *     means a missing or wrong CSRF token.
          */
         delete: operations["resetResultsView"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/surveys/{surveyId}/layouts/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the shared layout
+         * @description The survey's shared results layout of this kind: one per survey and kind, beside the per-user
+         *     views, as the text was given, stored and returned verbatim. A user with no view of their own
+         *     and no reset sees it as the default. Anyone who can see the survey may read it.
+         *
+         *     `404 not-found`: the survey is unknown or not visible to the caller.
+         *     `404 layout-not-found`: no layout is saved.
+         */
+        get: operations["getSurveyLayout"];
+        /**
+         * Save the shared layout
+         * @description Saves the survey's shared layout of this kind, replacing the previous one. The text is stored
+         *     as sent. Requires modify permission. Saving a layout does not change the survey (its
+         *     `updatedAt` stays) and leaves no history or audit entry. `403` means the caller cannot modify
+         *     the survey, or a missing or wrong CSRF token.
+         */
+        put: operations["saveSurveyLayout"];
+        post?: never;
+        /**
+         * Delete the shared layout
+         * @description Deletes the survey's shared layout of this kind. Afterwards `getSurveyLayout` answers
+         *     `404 layout-not-found`. Deleting a layout that is not saved also answers `204`. Requires
+         *     modify permission; `403` means the caller cannot modify the survey, or a missing or wrong CSRF
+         *     token.
+         */
+        delete: operations["deleteSurveyLayout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legacy-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an editor file that belongs to no survey
+         * @description An editor file that belongs to no survey, stored under a new legacy name and served by
+         *     `getLegacyFile` (`kind` `asset`). It is the uploader's and is deleted with their account. It
+         *     goes to Studio's own file store on every provider. Send one file as the multipart part `file`;
+         *     any content type is accepted, up to the asset size limit (`413 payload-too-large`).
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does.
+         */
+        post: operations["uploadLegacyFile"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1336,6 +1435,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/surveys/{surveyId}/layouts/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Public results layout
+         * @description Public: no sign-in. Available only while the survey's `publicResults` setting is on, whether
+         *     or not the survey is published or archived; otherwise `404 survey-not-available`, the same
+         *     answer as for an unknown survey. Answers the layout text (`null` when none is saved) and the
+         *     names of the private questions (`settings.privateResultQuestions`), for the bridge's public
+         *     layout reads. Rate limited as a public read.
+         *
+         *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+         *     does, with no rate limit.
+         */
+        get: operations["getPublicLayout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/surveys/{surveyId}/results": {
         parameters: {
             query?: never;
@@ -1445,7 +1575,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "layout-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -1785,6 +1915,8 @@ export interface components {
             publicResults?: boolean;
             /** @description "Save Respondent IP in Results". */
             storeRespondentIp?: boolean;
+            /** @description "Limit to one response": a respondent can complete the survey once. */
+            useCookies?: boolean;
             /**
              * @description Names of the questions hidden from public results: `getPublicResults` leaves their answers
              *     (and comments) out, and the public dashboard does not show them. Empty means every question
@@ -1809,9 +1941,13 @@ export interface components {
          *       "permissions": {
          *         "canModify": true
          *       },
+         *       "useCookies": false,
+         *       "creatorId": "3b7c1d52-6f0e-4a54-9b0c-1f5f3a1c9e11",
+         *       "legacyPublishId": null,
          *       "settings": {
          *         "publicResults": false,
-         *         "storeRespondentIp": false
+         *         "storeRespondentIp": false,
+         *         "useCookies": false
          *       }
          *     }
          */
@@ -1835,6 +1971,20 @@ export interface components {
             permissions: {
                 canModify: boolean;
             };
+            /** @description "Limit to one response", as `settings.useCookies`; also on list items. */
+            useCookies: boolean;
+            /**
+             * @description The user who created the survey, `null` when unknown. Moving a survey makes the mover its
+             *     creator.
+             */
+            creatorId: components["schemas"]["Id"] | null;
+            /**
+             * @description The publish ID the old service gave the survey. Read-only; `null` for surveys made in Studio
+             *     and outside the hosted edition.
+             */
+            legacyPublishId: string | null;
+            /** @description Only on `listSurveys` items, and only with `include=theme`; `null` when the survey has no theme. */
+            theme?: components["schemas"]["SurveyTheme"] | null;
             settings: components["schemas"]["SurveySettings"] & unknown;
         };
         SurveyCreate: {
@@ -1978,6 +2128,20 @@ export interface components {
              */
             lastSubmittedAt: string | null;
         };
+        SurveyLayout: {
+            /** @description The layout as given, stored and returned verbatim. */
+            text: string;
+        };
+        PublicLayout: {
+            /** @description The shared layout text, `null` when none is saved. */
+            text: string | null;
+            /** @description Names of the questions hidden from public results. */
+            privateQuestions: string[];
+        };
+        LegacyFileName: {
+            /** @description The name `getLegacyFile` serves the file under (`kind` `asset`). */
+            legacyName: string;
+        };
         /** @description Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`). */
         ViewState: {
             [key: string]: unknown;
@@ -2096,7 +2260,7 @@ export interface components {
         };
         /**
          * @description The resource does not exist or is not visible to the caller. Codes:
-         *     `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`.
+         *     `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`, `layout-not-found`.
          */
         NotFound: {
             headers: {
@@ -2292,6 +2456,8 @@ export interface components {
         IfMatch: string;
         /** @description A client-generated unique key (UUID recommended). A repeated key for the same survey returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours. */
         IdempotencyKey: string;
+        /** @description `table`, `summary` or `columns`. */
+        LayoutKind: "table" | "summary" | "columns";
         /** @description The survey's result ID, which the old service exposed for reading its results. */
         ResultId: string;
         /** @description The survey's post ID, which the old service exposed for posting responses. */
@@ -3219,6 +3385,23 @@ export interface operations {
                 project?: string;
                 /** @description `false` lists active surveys; `true` lists archived ones. */
                 archived?: boolean;
+                /**
+                 * @description `theme`: each item also carries its `theme` (the survey's theme object, or `null` when it
+                 *     has none), so a list costs one call.
+                 */
+                include?: "theme";
+                /**
+                 * @description Finds the survey with this post ID among every survey the caller can see, Personal and
+                 *     projects alike (any project in the credential's scope, archived or not). The answer holds
+                 *     the one matching survey or none; `project` and `archived` are ignored.
+                 */
+                postId?: string;
+                /**
+                 * @description As `postId`, for the publish ID the old service gave a survey (`Survey.legacyPublishId`).
+                 *     Accepted in every edition; outside the hosted edition no survey has one, so the answer is
+                 *     empty.
+                 */
+                legacyPublishId?: string;
                 /** @description Page size. */
                 limit?: components["parameters"]["Limit"];
                 /** @description The `nextCursor` value from the previous page. */
@@ -3621,6 +3804,17 @@ export interface operations {
                 limit?: number;
                 /** @description The `nextCursor` value from the previous page. */
                 cursor?: components["parameters"]["Cursor"];
+                /**
+                 * @description Only responses whose first save is after this time (a response saved exactly at `from` is
+                 *     left out), as on `getPublicResults`.
+                 */
+                from?: string;
+                /**
+                 * @description Only responses whose first save is before this time (exclusive), as on `getPublicResults`.
+                 *     Combine with `from` for a range. A `from` or `till` that is not an RFC 3339 date-time a
+                 *     server can read fails with `400 bad-request`.
+                 */
+                till?: string;
             };
             header?: never;
             path: {
@@ -3662,6 +3856,36 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    deleteResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /**
+                 * @description The ID of any stored save in the run. Callers hold the IDs the old API showed, which for a
+                 *     run of saves was the last one's.
+                 */
+                responseId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3808,6 +4032,124 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    getSurveyLayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The layout text. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveyLayout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveSurveyLayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SurveyLayout"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    deleteSurveyLayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    uploadLegacyFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUpload"];
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyFileName"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
             503: components["responses"]["ReadOnly"];
         };
     };
@@ -4202,6 +4544,33 @@ export interface operations {
                     "*/*": string;
                 };
             };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getPublicLayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                surveyId: components["parameters"]["SurveyId"];
+                /** @description `table`, `summary` or `columns`. */
+                kind: components["parameters"]["LayoutKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The layout and the private question names. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicLayout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };

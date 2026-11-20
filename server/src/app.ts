@@ -65,6 +65,8 @@ const HOSTED_OPERATIONS: readonly OperationId[] = [
   "uploadResponseFileByPostId",
   "getQuestionSummary",
   "getLegacyFile",
+  "getPublicLayout",
+  "uploadLegacyFile",
 ];
 /** The respondent's operations, limited by `PUBLIC_RATE_LIMIT` per client IP and minute. */
 const PUBLIC_OPERATIONS: readonly OperationId[] = [
@@ -77,6 +79,7 @@ const PUBLIC_OPERATIONS: readonly OperationId[] = [
   "getRespondentStateByResultId",
   "submitResponseByPostId",
   "uploadResponseFileByPostId",
+  "getPublicLayout",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = [

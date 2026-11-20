@@ -117,6 +117,13 @@ describe("the contract's operations", () => {
         "unlinkUserIdentity",
         "exportResults",
         "receiveAccountDeleted",
+        // Until their sandbox handlers exist (hosted Step 6).
+        "deleteResponse",
+        "getSurveyLayout",
+        "saveSurveyLayout",
+        "deleteSurveyLayout",
+        "getPublicLayout",
+        "uploadLegacyFile",
       ].sort(),
     );
   });

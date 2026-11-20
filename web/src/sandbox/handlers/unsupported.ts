@@ -61,6 +61,38 @@ const UNSUPPORTED: readonly Unsupported[] = [
     path: "/surveys/:surveyId/results/export",
     before: "survey",
   },
+  // The access-key actions' operations, until their sandbox handlers exist.
+  {
+    id: "deleteResponse",
+    method: "delete",
+    path: "/surveys/:surveyId/results/:responseId",
+    before: "session",
+  },
+  {
+    id: "getSurveyLayout",
+    method: "get",
+    path: "/surveys/:surveyId/layouts/:kind",
+    before: "session",
+  },
+  {
+    id: "saveSurveyLayout",
+    method: "put",
+    path: "/surveys/:surveyId/layouts/:kind",
+    before: "session",
+  },
+  {
+    id: "deleteSurveyLayout",
+    method: "delete",
+    path: "/surveys/:surveyId/layouts/:kind",
+    before: "session",
+  },
+  {
+    id: "getPublicLayout",
+    method: "get",
+    path: "/public/surveys/:surveyId/layouts/:kind",
+    before: "nothing",
+  },
+  { id: "uploadLegacyFile", method: "post", path: "/legacy-files", before: "session" },
   {
     id: "receiveAccountDeleted",
     method: "post",

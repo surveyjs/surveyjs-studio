@@ -972,6 +972,26 @@ paths:
           in: query
           description: '`false` lists active surveys; `true` lists archived ones.'
           schema: { type: boolean, default: false }
+        - name: include
+          in: query
+          description: |
+            `theme`: each item also carries its `theme` (the survey's theme object, or `null` when it
+            has none), so a list costs one call.
+          schema: { type: string, enum: [theme] }
+        - name: postId
+          in: query
+          description: |
+            Finds the survey with this post ID among every survey the caller can see, Personal and
+            projects alike (any project in the credential's scope, archived or not). The answer holds
+            the one matching survey or none; `project` and `archived` are ignored.
+          schema: { type: string, format: uuid }
+        - name: legacyPublishId
+          in: query
+          description: |
+            As `postId`, for the publish ID the old service gave a survey (`Survey.legacyPublishId`).
+            Accepted in every edition; outside the hosted edition no survey has one, so the answer is
+            empty.
+          schema: { type: string, format: uuid }
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Cursor' }
       responses:
@@ -1363,6 +1383,19 @@ paths:
           description: Page size, 1 to 1000.
           schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
         - { $ref: '#/components/parameters/Cursor' }
+        - name: from
+          in: query
+          description: |
+            Only responses whose first save is after this time (a response saved exactly at `from` is
+            left out), as on `getPublicResults`.
+          schema: { type: string, format: date-time }
+        - name: till
+          in: query
+          description: |
+            Only responses whose first save is before this time (exclusive), as on `getPublicResults`.
+            Combine with `from` for a range. A `from` or `till` that is not an RFC 3339 date-time a
+            server can read fails with `400 bad-request`.
+          schema: { type: string, format: date-time }
       responses:
         '200':
           description: A page of responses.
@@ -1388,6 +1421,36 @@ paths:
         - bearerAuth: []
       responses:
         '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /surveys/{surveyId}/results/{responseId}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - name: responseId
+        in: path
+        required: true
+        description: |
+          The ID of any stored save in the run. Callers hold the IDs the old API showed, which for a
+          run of saves was the last one's.
+        schema: { $ref: '#/components/schemas/Id' }
+    delete:
+      tags: [Results]
+      operationId: deleteResponse
+      summary: Delete one response
+      description: |
+        Deletes the whole run that contains the save `responseId` (ADR 0038), keeps an audit copy as
+        `deleteResults` does, and clears that respondent's completion state. Requires modify
+        permission. `404 not-found`: the survey is unknown or not visible, or no stored save has that
+        ID. `403` means the caller cannot modify the survey, or a missing or wrong CSRF token.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1535,6 +1598,112 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /surveys/{surveyId}/layouts/{kind}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - { $ref: '#/components/parameters/LayoutKind' }
+    get:
+      tags: [Views]
+      operationId: getSurveyLayout
+      summary: Get the shared layout
+      description: |
+        The survey's shared results layout of this kind: one per survey and kind, beside the per-user
+        views, as the text was given, stored and returned verbatim. A user with no view of their own
+        and no reset sees it as the default. Anyone who can see the survey may read it.
+
+        `404 not-found`: the survey is unknown or not visible to the caller.
+        `404 layout-not-found`: no layout is saved.
+      responses:
+        '200':
+          description: The layout text.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyLayout' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Views]
+      operationId: saveSurveyLayout
+      summary: Save the shared layout
+      description: |
+        Saves the survey's shared layout of this kind, replacing the previous one. The text is stored
+        as sent. Requires modify permission. Saving a layout does not change the survey (its
+        `updatedAt` stays) and leaves no history or audit entry. `403` means the caller cannot modify
+        the survey, or a missing or wrong CSRF token.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyLayout' }
+      responses:
+        '204': { description: Saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+    delete:
+      tags: [Views]
+      operationId: deleteSurveyLayout
+      summary: Delete the shared layout
+      description: |
+        Deletes the survey's shared layout of this kind. Afterwards `getSurveyLayout` answers
+        `404 layout-not-found`. Deleting a layout that is not saved also answers `204`. Requires
+        modify permission; `403` means the caller cannot modify the survey, or a missing or wrong CSRF
+        token.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ReadOnly' }
+  /legacy-files:
+    post:
+      tags: [Files]
+      operationId: uploadLegacyFile
+      summary: Upload an editor file that belongs to no survey
+      description: |
+        An editor file that belongs to no survey, stored under a new legacy name and served by
+        `getLegacyFile` (`kind` `asset`). It is the uploader's and is deleted with their account. It
+        goes to Studio's own file store on every provider. Send one file as the multipart part `file`;
+        any content type is accepted, up to the asset size limit (`413 payload-too-large`).
+
+        Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+        does.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/FileUpload' }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegacyFileName' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '503': { $ref: '#/components/responses/ReadOnly' }
 
   # ----------------------------------------------------------------- Public
@@ -2006,6 +2175,33 @@ paths:
               schema: { type: string, contentMediaType: application/octet-stream }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+  /public/surveys/{surveyId}/layouts/{kind}:
+    parameters:
+      - { $ref: '#/components/parameters/SurveyId' }
+      - { $ref: '#/components/parameters/LayoutKind' }
+    get:
+      tags: [Public]
+      operationId: getPublicLayout
+      summary: Public results layout
+      description: |
+        Public: no sign-in. Available only while the survey's `publicResults` setting is on, whether
+        or not the survey is published or archived; otherwise `404 survey-not-available`, the same
+        answer as for an unknown survey. Answers the layout text (`null` when none is saved) and the
+        names of the private questions (`settings.privateResultQuestions`), for the bridge's public
+        layout reads. Rate limited as a public read.
+
+        Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
+        does, with no rate limit.
+      security: []
+      responses:
+        '200':
+          description: The layout and the private question names.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicLayout' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /public/surveys/{surveyId}/results:
     parameters:
       - { $ref: '#/components/parameters/SurveyId' }
@@ -2181,6 +2377,12 @@ components:
         returns the original response's `id` and stores nothing. Keys are remembered for at least 24 hours.
       schema: { type: string, minLength: 1, maxLength: 128 }
 
+    LayoutKind:
+      name: kind
+      in: path
+      required: true
+      description: '`table`, `summary` or `columns`.'
+      schema: { type: string, enum: [table, summary, columns] }
     ResultId:
       name: resultId
       in: path
@@ -2268,7 +2470,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to the caller. Codes:
-        `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`.
+        `not-found`, `survey-not-available`, `user-not-found`, `view-not-found`, `layout-not-found`.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -2429,6 +2631,7 @@ components:
             - survey-not-available
             - user-not-found
             - view-not-found
+            - layout-not-found
             - survey-not-archived
             - already-member
             - already-invited
@@ -2903,6 +3106,9 @@ components:
         storeRespondentIp:
           type: boolean
           description: '"Save Respondent IP in Results".'
+        useCookies:
+          type: boolean
+          description: '"Limit to one response": a respondent can complete the survey once.'
         privateResultQuestions:
           type: array
           maxItems: 1000
@@ -2929,6 +3135,9 @@ components:
         - resultId
         - permissions
         - settings
+        - useCookies
+        - creatorId
+        - legacyPublishId
       properties:
         id: { $ref: '#/components/schemas/Id' }
         name:
@@ -2955,6 +3164,28 @@ components:
           required: [canModify]
           properties:
             canModify: { type: boolean }
+        useCookies:
+          type: boolean
+          description: '"Limit to one response", as `settings.useCookies`; also on list items.'
+        creatorId:
+          description: |
+            The user who created the survey, `null` when unknown. Moving a survey makes the mover its
+            creator.
+          oneOf:
+            - { $ref: '#/components/schemas/Id' }
+            - { type: 'null' }
+        legacyPublishId:
+          description: |
+            The publish ID the old service gave the survey. Read-only; `null` for surveys made in Studio
+            and outside the hosted edition.
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: 'null' }
+        theme:
+          description: Only on `listSurveys` items, and only with `include=theme`; `null` when the survey has no theme.
+          oneOf:
+            - { $ref: '#/components/schemas/SurveyTheme' }
+            - { type: 'null' }
         settings:
           allOf:
             - { $ref: '#/components/schemas/SurveySettings' }
@@ -2970,7 +3201,10 @@ components:
           postId: 13f2e886-9c38-42f2-b814-d0900cf06a19
           resultId: 929d229c-9f78-40ec-aa47-0eea718a53b2
           permissions: { canModify: true }
-          settings: { publicResults: false, storeRespondentIp: false }
+          useCookies: false
+          creatorId: 3b7c1d52-6f0e-4a54-9b0c-1f5f3a1c9e11
+          legacyPublishId: null
+          settings: { publicResults: false, storeRespondentIp: false, useCookies: false }
     SurveyCreate:
       type: object
       properties:
@@ -3148,6 +3382,32 @@ components:
             format: date-time,
             description: 'When the latest completed response was completed; `null` when there are none.',
           }
+    SurveyLayout:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          description: The layout as given, stored and returned verbatim.
+    PublicLayout:
+      type: object
+      required: [text, privateQuestions]
+      properties:
+        text:
+          type: [string, 'null']
+          description: The shared layout text, `null` when none is saved.
+        privateQuestions:
+          type: array
+          items: { type: string }
+          description: Names of the questions hidden from public results.
+    LegacyFileName:
+      type: object
+      required: [legacyName]
+      properties:
+        legacyName:
+          type: string
+          description: The name `getLegacyFile` serves the file under (`kind` `asset`).
     ViewState:
       type: object
       description: Opaque state from SurveyJS Dashboard (`summary`) or Table (`table`).
