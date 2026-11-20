@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "an unknown post ID: the modify refusal naming the post ID",
+  "request": {
+    "method": "DELETE",
+    "path": "/private/v1/Surveys/deleteResult",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "postId": "12345678-90ab-4cde-8f01-234567890abc",
+      "instanceId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to modify the survey 12345678-90ab-4cde-8f01-234567890abc"
+    }
+  }
+}

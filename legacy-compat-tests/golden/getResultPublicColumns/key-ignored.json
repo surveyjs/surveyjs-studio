@@ -1,0 +1,43 @@
+{
+  "source": "derived",
+  "description": "a wrong key in the query is ignored",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultPublicColumns",
+    "query": {
+      "id": "{{survey.surveyId}}",
+      "accessKey": "wrong-access-key"
+    },
+    "headers": {
+      "accept-language": "en"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Columns": [
+          {
+            "Name": "HappendAt",
+            "DisplayName": "Submitted",
+            "DataType": 0,
+            "Visibility": 0,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          }
+        ],
+        "Id": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

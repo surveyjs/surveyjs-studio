@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "Accept-Language * (what fetch sends by default) is no culture name: an empty 400",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultColumns",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    },
+    "headers": {
+      "accept-language": "*"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

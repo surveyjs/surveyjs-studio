@@ -1,0 +1,29 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: the modify refusal",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeTheme",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "12345678-90ab-4cde-8f01-234567890abc",
+        "ThemeJson": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to modify the survey 12345678-90ab-4cde-8f01-234567890abc"
+    }
+  }
+}

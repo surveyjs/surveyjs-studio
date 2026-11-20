@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "PUT with a wrong key: the text answer",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/clone",
+    "query": {
+      "accessKey": "wrong-access-key",
+      "id": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey 'wrong-access-key' is incorrect."
+    }
+  }
+}

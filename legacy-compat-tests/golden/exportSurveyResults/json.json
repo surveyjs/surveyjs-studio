@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "no format: the JSON file, InstanceId null, client IDs kept",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/exportSurveyResults/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-disposition": "attachment; filename=\"Legacy compat.json\"; filename*=UTF-8''Legacy%20compat.json"
+    },
+    "body": {
+      "json": {
+        "ResultCount": 1,
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "<iso>Z",
+            "ClientId": "client-a",
+            "InstanceId": null
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "source": "derived",
+  "description": "take larger than the rest: every row, a null token",
+  "difference": "The old rows came in the storage's order (random by row key); the bridge's in Studio's order, oldest first (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":2}"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyResults",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "take": "5"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "ContinuationToken": null,
+        "ResultCount": 2,
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "<iso>Z",
+            "ClientId": "client-a",
+            "InstanceId": "<guid>"
+          },
+          {
+            "satisfaction": 2,
+            "HappendAt": "<iso>Z",
+            "InstanceId": "<guid>"
+          }
+        ]
+      }
+    }
+  }
+}

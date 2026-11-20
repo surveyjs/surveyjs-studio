@@ -1,0 +1,39 @@
+{
+  "source": "derived",
+  "description": "the owner's archived surveys, with the publish ID",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getArchive",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": [
+        {
+          "Name": "Old poll",
+          "IsArchived": true,
+          "UserId": "11111111-0000-4000-8000-a00000000001",
+          "CreatorId": "11111111-0000-4000-8000-a00000000001",
+          "PostId": "33333333-0000-4000-8000-a00000000003",
+          "ResultId": "44444444-0000-4000-8000-a00000000003",
+          "PublishId": "dddddddd-0000-4000-8000-a00000000001",
+          "IsPublished": false,
+          "UseCookies": false,
+          "UpdatedOn": "2026-05-20T12:00:00.123Z",
+          "CreatedAt": "2025-12-10T12:00:00Z",
+          "AllowAccessResult": false,
+          "StoreIPAddress": false,
+          "Theme": null,
+          "Json": null,
+          "Id": "22222222-0000-4000-8000-a00000000003"
+        }
+      ]
+    }
+  }
+}

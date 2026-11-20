@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "a history point of the caller's survey: the definition it holds, as JSON",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getHistoryPoint/22222222-0000-4000-8000-a00000000001",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "pointId": "88888888-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "title": "Customer feedback (draft)",
+        "pages": [
+          {
+            "name": "page1",
+            "elements": [
+              {
+                "type": "rating",
+                "name": "satisfaction",
+                "title": "How satisfied are you?"
+              },
+              {
+                "type": "file",
+                "name": "receipt",
+                "title": "Upload your receipt"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

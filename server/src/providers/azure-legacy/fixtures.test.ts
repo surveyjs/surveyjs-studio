@@ -230,6 +230,11 @@ describe("legacyFixtureSeed", () => {
     expect(seed.legacyAccessKeys?.["11111111-0000-4000-8000-a00000000001"]).toBe("access-key-1");
   });
 
+  it("marks the erasure user's key revoked, as the provider's own table records it", async () => {
+    const seed = await legacyFixtureSeed();
+    expect(seed.revokedLegacyKeys).toEqual(["11111111-0000-4000-8000-a00000000006"]);
+  });
+
   it("holds the editor share's files as assets and the results share's as responses", async () => {
     const seed = await legacyFixtureSeed();
     expect(

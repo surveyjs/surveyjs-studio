@@ -1,0 +1,35 @@
+{
+  "source": "derived",
+  "description": "an empty Json: the state removed, an empty 200",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "summary": "{}"
+      }
+    }
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/setResultSummaryState",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "{{survey.surveyId}}",
+        "Json": ""
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

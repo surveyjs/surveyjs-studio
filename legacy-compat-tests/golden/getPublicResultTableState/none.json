@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "public results without a state: null",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getPublicResultTableState",
+    "query": {
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": null
+    }
+  }
+}

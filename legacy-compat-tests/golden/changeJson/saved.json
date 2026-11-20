@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "Id and Json: an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeJson",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "{{survey.surveyId}}",
+        "Json": "{\"title\":\"Changed\",\"pages\":[]}",
+        "Text": "ignored"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

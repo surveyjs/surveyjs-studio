@@ -2,7 +2,8 @@
 // (ADR 0039 point 6; plan-hosted rule 6: production data never goes into the repository).
 //
 //   pnpm --filter @surveyjs-studio/legacy-compat-tests record -- \
-//     --base https://api.surveyjs.io --surveys <file> --out <dir> [--only <action>[/<case>]]
+//     --base https://api.surveyjs.io --surveys <file> --out <dir> [--key-file <file>] \
+//     [--only <action>[/<case>]]
 //
 // `--surveys` is a JSON file of the test account's values:
 //
@@ -18,6 +19,16 @@
 // with Grant Access and "Save Respondent IP" on, which the script cannot switch). A case whose
 // request names a fixture ID without a value in `ids` is skipped.
 //
+// `--key-file` names a file outside the repository holding the test account's access key. With it,
+// the keyed cases (a request with `{{accessKey}}` or `{{revokedKey}}`) run, and only against
+// surveys the script makes: a keyed case with a `setup` gets a survey made and set up through the
+// old actions with the key, deleted after the case, and at the end every survey that appeared
+// during the run is deleted (use a test account nobody else changes meanwhile). Keyed cases that
+// name a fixture ID, need a project member's key or a project, or carry `noRecording` are skipped.
+// `{{revokedKey}}` is a made-up key the old API never had. Without the file, keyed cases are
+// skipped. The key is never printed or written: recordings keep the golden request
+// (`{{accessKey}}`), and the key is mapped back to its variable in answers and printed lines.
+//
 // For each case the script replays the setup and the request against `--base`, maps the test
 // account's values in the answer back to the fixtures' and writes `<out>/<action>/<case>.json` with
 // `"source": "recorded"`. It prints each case's name, status and whether the answer matches the
@@ -29,10 +40,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   answerAsGolden,
   compareAnswer,
+  FEEDBACK_DEFINITION,
+  isKeyed,
   loadGoldens,
   readAnswer,
   requestInit,
   requestUrl,
+  SETUP_SURVEY_NAME,
   substitute,
   type Golden,
   type GoldenCase,
@@ -60,6 +74,8 @@ export interface RecordOptions {
   readonly base: string;
   readonly surveys: SurveysFile;
   readonly out: string;
+  /** The test account's access key (from `--key-file`); without it keyed cases are skipped. */
+  readonly key?: string;
   /** `<action>` or `<action>/<case>`: only those cases. */
   readonly only?: string;
   /** Receives one line per case (never a body). */
@@ -90,6 +106,22 @@ export function insideRepository(path: string): boolean {
   const outside = relation === ".." || relation.startsWith(`..${sep}`) || isAbsolute(relation);
   return !outside;
 }
+
+/**
+ * The access key in `path`, a file outside the repository (it must never be committed), without
+ * surrounding whitespace.
+ */
+export function readKeyFile(path: string): string {
+  if (insideRepository(path)) {
+    throw new UsageError("--key-file is inside the repository; keep the key outside it");
+  }
+  const key = readFileSync(path, "utf8").trim();
+  if (key === "") throw new UsageError("--key-file is empty");
+  return key;
+}
+
+/** What `{{revokedKey}}` is when recording: a key the old API never had. */
+export const RETIRED_KEY = "retired-access-key-of-the-recordings";
 
 /**
  * A failure whose message the script may print: written here, never taken from an answer, so no
@@ -165,17 +197,13 @@ async function call(base: string, request: GoldenRequest) {
   return readAnswer(await fetch(requestUrl(base, request), requestInit(request)));
 }
 
-/** Replays the case's setup against the old API; returns its variables. */
-async function setUp(
+/** Posts and uploads the case's setup to `survey` through the public actions; adds their variables. */
+async function postAndUpload(
   base: string,
   golden: Golden,
   survey: SurveyIds,
-): Promise<Record<string, string>> {
-  const vars: Record<string, string> = {
-    "survey.surveyId": survey.surveyId,
-    "survey.postId": survey.postId,
-    "survey.resultId": survey.resultId,
-  };
+  vars: Record<string, string>,
+): Promise<void> {
   for (const post of golden.setup?.posts ?? []) {
     const answer = await call(base, {
       method: "POST",
@@ -214,61 +242,309 @@ async function setUp(
     vars[upload.as] = name;
     vars[`${upload.as}.name`] = name.slice(name.indexOf(":") + 1);
   }
-  return vars;
+}
+
+/** The variables naming a survey. */
+function surveyVars(survey: SurveyIds): Record<string, string> {
+  return {
+    "survey.surveyId": survey.surveyId,
+    "survey.postId": survey.postId,
+    "survey.resultId": survey.resultId,
+  };
+}
+
+// ---- The test account, through the old actions with its key ----
+
+const PRIVATE = "/private/v1/Surveys/";
+
+/** The fields of the old survey record the script reads. */
+interface OldRecord {
+  readonly Id: string;
+  readonly PostId: string;
+  readonly ResultId: string;
+  readonly UserId: string;
+}
+
+/** The old action that saves each kind of shared layout. */
+const LAYOUT_ACTIONS = {
+  table: "setResultTableState",
+  summary: "setResultSummaryState",
+  columns: "setResultColumns",
+} as const;
+
+/** The test account's surveys, through the old actions with its key. */
+class Account {
+  private before: Set<string> | undefined;
+  private knownUserId: string | undefined;
+
+  constructor(
+    private readonly base: string,
+    private readonly key: string,
+  ) {}
+
+  /** Calls an old private action with the key and a JSON body; throws unless it answers `200`. */
+  private async action(
+    method: string,
+    action: string,
+    query: Record<string, string> = {},
+    body?: unknown,
+  ): Promise<Buffer> {
+    const answer = await call(this.base, {
+      method,
+      path: `${PRIVATE}${action}`,
+      query: { ...query, accessKey: this.key },
+      ...(body !== undefined && {
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: { json: body },
+      }),
+    });
+    if (answer.status !== 200) {
+      throw new CaseError(`the account's ${action} answered ${answer.status}`);
+    }
+    return answer.body;
+  }
+
+  /** An action whose answer is JSON. */
+  private async json<T>(method: string, action: string, query?: Record<string, string>) {
+    const body = await this.action(method, action, query);
+    try {
+      return JSON.parse(body.toString("utf8")) as T;
+    } catch {
+      throw new CaseError(`the account's ${action} answered no JSON`);
+    }
+  }
+
+  /** The IDs of every survey of the account, active and archived. */
+  private async surveyIds(): Promise<Set<string>> {
+    const ids = new Set<string>();
+    for (const action of ["getActive", "getArchive"]) {
+      const list = await this.json<OldRecord[]>("GET", action);
+      if (!Array.isArray(list)) throw new CaseError(`the account's ${action} answered no list`);
+      for (const survey of list) ids.add(String(survey.Id).toLowerCase());
+    }
+    return ids;
+  }
+
+  /** Remembers the account's surveys, so that `sweep` removes only the run's own. */
+  async start(): Promise<void> {
+    this.before ??= await this.surveyIds();
+  }
+
+  /** The account's user ID, from a survey made for it and deleted. */
+  async userId(): Promise<string> {
+    if (this.knownUserId === undefined) {
+      const probe = await this.json<OldRecord>("POST", "create", {
+        name: `${SETUP_SURVEY_NAME} probe`,
+      });
+      await this.remove(probe.Id);
+      this.knownUserId = probe.UserId;
+    }
+    return this.knownUserId;
+  }
+
+  /**
+   * A survey made and set up as the case's setup says, through the old actions; its variables
+   * hold its IDs, `owner.userId` and, after posts, `survey.responseId`.
+   */
+  async survey(golden: Golden): Promise<{ surveyId: string; vars: Record<string, string> }> {
+    const setup = golden.setup!;
+    const created = await this.json<OldRecord>("POST", "create", { name: SETUP_SURVEY_NAME });
+    this.knownUserId ??= created.UserId;
+    const ids = { surveyId: created.Id, postId: created.PostId, resultId: created.ResultId };
+    const vars: Record<string, string> = { ...surveyVars(ids), "owner.userId": created.UserId };
+    try {
+      const { settings = {}, theme, layouts = {}, archived } = setup.survey;
+      const id = { id: ids.surveyId };
+      await this.action(
+        "PUT",
+        "changeJson",
+        {},
+        {
+          Id: ids.surveyId,
+          Json: JSON.stringify(FEEDBACK_DEFINITION),
+        },
+      );
+      for (const [name, value] of Object.entries(settings)) {
+        if (name === "publicResults") {
+          await this.action("PUT", "makeResultPublic", { ...id, makeResultPublic: `${value}` });
+        } else if (name === "storeRespondentIp") {
+          await this.action("PUT", "storeIPAddressInResult", { ...id, storeIPAddress: `${value}` });
+        } else if (name === "useCookies") {
+          await this.action("PUT", "setUseCookies", { ...id, useCookies: `${value}` });
+        } else if (name === "privateResultQuestions") {
+          const permissions = (value as string[]).map((question) => ({
+            name: question,
+            isPublic: false,
+          }));
+          await this.action(
+            "PUT",
+            "setResultPermissions",
+            {},
+            {
+              Id: ids.surveyId,
+              Json: JSON.stringify(permissions),
+            },
+          );
+        } else {
+          throw new CaseError(`the setting ${name} has no old action`);
+        }
+      }
+      if (theme !== undefined) {
+        await this.action(
+          "PUT",
+          "changeTheme",
+          {},
+          {
+            Id: ids.surveyId,
+            ThemeJson: JSON.stringify(theme),
+          },
+        );
+      }
+      for (const [kind, text] of Object.entries(layouts)) {
+        const action = LAYOUT_ACTIONS[kind as keyof typeof LAYOUT_ACTIONS];
+        await this.action("PUT", action, {}, { Id: ids.surveyId, Json: text });
+      }
+      await postAndUpload(this.base, golden, ids, vars);
+      if ((setup.posts ?? []).length > 0) {
+        const results = await this.json<{ Data?: { InstanceId?: unknown }[] }>(
+          "GET",
+          "getSurveyResults",
+          id,
+        );
+        const first = results.Data?.[0]?.InstanceId;
+        if (typeof first === "string") vars["survey.responseId"] = first;
+      }
+      if (archived === true) await this.action("PUT", "archive", id);
+    } catch (error) {
+      await this.remove(ids.surveyId);
+      throw error;
+    }
+    return { surveyId: ids.surveyId, vars };
+  }
+
+  /** Deletes a survey of the run; one already gone is fine. */
+  async remove(surveyId: string): Promise<void> {
+    await call(this.base, {
+      method: "DELETE",
+      path: `${PRIVATE}delete`,
+      query: { id: surveyId, accessKey: this.key },
+    });
+  }
+
+  /** Deletes every survey that appeared since `start`; returns how many. */
+  async sweep(): Promise<number> {
+    if (this.before === undefined) return 0;
+    let removed = 0;
+    for (const id of await this.surveyIds()) {
+      if (this.before.has(id)) continue;
+      await this.remove(id);
+      removed += 1;
+    }
+    return removed;
+  }
+}
+
+/** Why a keyed case is not replayed; `undefined` when it is. */
+function keyedSkip(golden: Golden, account: Account | undefined): string | undefined {
+  const request = JSON.stringify(golden.request);
+  if (account === undefined) return "a keyed request needs --key-file";
+  if (request.includes("{{memberKey}}")) return "needs a project member's key";
+  if (golden.setup?.survey.projectId !== undefined) return "needs a project of the test account";
+  if (request.match(FIXTURE_ID) !== null) {
+    return "keyed requests run only on surveys the script makes";
+  }
+  return undefined;
 }
 
 /** Records one case into `out` (already resolved); returns the line to print. */
 async function recordCase(
   options: RecordOptions,
   out: string,
+  account: Account | undefined,
   { name, golden }: GoldenCase,
 ): Promise<string> {
   const { base, surveys } = options;
-  const missing = unmappedIds(golden.request, surveys.ids);
-  if (missing.length > 0)
-    return `${name}: skipped (no test-account value for ${missing.join(", ")})`;
-  const survey = surveys.cases?.[name] ?? surveys.survey;
-  if (golden.setup !== undefined && survey === undefined) {
+  if (golden.noRecording !== undefined) return `${name}: skipped (${golden.noRecording})`;
+  const keyed = isKeyed(golden.request);
+  if (keyed) {
+    const why = keyedSkip(golden, account);
+    if (why !== undefined) return `${name}: skipped (${why})`;
+  } else {
+    const missing = unmappedIds(golden.request, surveys.ids);
+    if (missing.length > 0) {
+      return `${name}: skipped (no test-account value for ${missing.join(", ")})`;
+    }
+  }
+  // A keyed case always gets a survey the script makes; another case the one the surveys file
+  // gives it, else (with a key) one the script makes, else the file's shared survey.
+  const given = keyed ? undefined : (surveys.cases?.[name] ?? undefined);
+  const own = golden.setup !== undefined && given === undefined && account !== undefined;
+  const shared = golden.setup !== undefined && given === undefined && !own ? surveys.survey : given;
+  if (golden.setup !== undefined && !own && shared === undefined) {
     return `${name}: skipped (needs "survey" or cases["${name}"] in the surveys file)`;
   }
   const toAccount = Object.entries(surveys.ids);
-  const vars =
-    survey !== undefined && golden.setup !== undefined ? await setUp(base, golden, survey) : {};
-  const request = substitute(mapValues(golden.request, toAccount), vars);
-  const answer = await call(base, request);
+  const vars: Record<string, string> = {};
+  if (account !== undefined) {
+    vars.accessKey = options.key!;
+    vars.revokedKey = RETIRED_KEY;
+  }
+  let made: string | undefined;
+  if (own) {
+    const survey = await account!.survey(golden);
+    made = survey.surveyId;
+    Object.assign(vars, survey.vars);
+  } else if (shared !== undefined) {
+    Object.assign(vars, surveyVars(shared));
+    await postAndUpload(base, golden, shared, vars);
+  }
+  try {
+    if (account !== undefined && vars["owner.userId"] === undefined) {
+      if (JSON.stringify(golden).includes("{{owner.userId}}")) {
+        vars["owner.userId"] = await account.userId();
+      }
+    }
+    // A keyed request names no fixture ID, so it is sent as written.
+    const written = keyed ? golden.request : mapValues(golden.request, toAccount);
+    const answer = await call(base, substitute(written, vars));
 
-  const expected = substitute(mapValues(golden.response, toAccount), vars);
-  const differences = compareAnswer(expected, answer);
+    const expected = substitute(mapValues(golden.response, toAccount), vars);
+    const differences = compareAnswer(expected, answer);
 
-  // Back to the fixtures' values, so the recording can stand in for the derived file.
-  const toFixtures: [string, string][] = [
-    ...Object.entries(vars).map(([key, value]): [string, string] => [value, `{{${key}}}`]),
-    ...toAccount.map(([fixture, account]): [string, string] => [account, fixture]),
-  ];
-  const recorded = answerAsGolden(
-    answer,
-    Object.keys(golden.response.headers),
-    bodyForm(golden.response.body),
-  );
-  const body =
-    recorded.body !== null && "json" in recorded.body
-      ? { json: maskVolatile(recorded.body.json) }
-      : recorded.body;
-  const file: Golden = {
-    source: "recorded",
-    description: golden.description,
-    ...(golden.setup !== undefined && { setup: golden.setup }),
-    request: golden.request,
-    response: mapValues({ ...recorded, body }, toFixtures),
-  };
-  const path = join(out, `${name}.json`);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(file, null, 2)}\n`);
-  const verdict =
-    differences.length === 0
-      ? "matches the derived golden"
-      : `differs at ${differences.map((difference) => difference.at).join(", ")}`;
-  return `${name}: ${answer.status}, ${verdict}`;
+    // Back to the fixtures' values, so the recording can stand in for the derived file; the keys
+    // back to their variables.
+    const toFixtures: [string, string][] = [
+      ...Object.entries(vars).map(([key, value]): [string, string] => [value, `{{${key}}}`]),
+      ...toAccount.map(([fixture, value]): [string, string] => [value, fixture]),
+    ];
+    const recorded = answerAsGolden(
+      answer,
+      Object.keys(golden.response.headers),
+      bodyForm(golden.response.body),
+    );
+    const body =
+      recorded.body !== null && "json" in recorded.body
+        ? { json: maskVolatile(recorded.body.json) }
+        : recorded.body;
+    const file: Golden = {
+      source: "recorded",
+      description: golden.description,
+      ...(golden.setup !== undefined && { setup: golden.setup }),
+      ...(golden.creates !== undefined && { creates: golden.creates }),
+      request: golden.request,
+      response: mapValues({ ...recorded, body }, toFixtures),
+    };
+    const path = join(out, `${name}.json`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(file, null, 2)}\n`);
+    const verdict =
+      differences.length === 0
+        ? "matches the derived golden"
+        : `differs at ${differences.map((difference) => difference.at).join(", ")}`;
+    return `${name}: ${answer.status}, ${verdict}`;
+  } finally {
+    if (made !== undefined) await account!.remove(made);
+  }
 }
 
 /** Records every selected case into `options.out`; returns how many differ or failed. */
@@ -279,27 +555,55 @@ export async function record(options: RecordOptions): Promise<number> {
       "--out is inside the repository; recordings go to the private location (plan-hosted rule 6)",
     );
   }
-  const log = options.log ?? ((line: string) => console.log(line));
+  const key = options.key;
+  const print = options.log ?? ((line: string) => console.log(line));
+  // Whatever a line quotes, the key never reaches the output.
+  const log = (line: string) =>
+    print(key === undefined ? line : line.replaceAll(key, "{{accessKey}}"));
   const cases = loadGoldens().filter(
     ({ name }) =>
       options.only === undefined || name === options.only || name.startsWith(`${options.only}/`),
   );
+  const account = key === undefined ? undefined : new Account(options.base, key);
   let problems = 0;
-  for (const goldenCase of cases) {
-    try {
-      const line = await recordCase(options, out, goldenCase);
-      if (line.includes(": skipped") === false && !line.endsWith("matches the derived golden")) {
-        problems += 1;
+  try {
+    if (account !== undefined && cases.some(({ golden }) => isKeyed(golden.request))) {
+      try {
+        await account.start();
+      } catch (error) {
+        throw new UsageError(
+          `the test account's surveys could not be listed${
+            error instanceof CaseError ? ` (${error.message})` : ""
+          }`,
+        );
       }
-      log(line);
-    } catch (error) {
-      problems += 1;
-      // Only the script's own texts: another error's message could quote an answer.
-      const reason =
-        error instanceof CaseError
-          ? error.message
-          : `${error instanceof Error ? error.name : "error"} while calling --base`;
-      log(`${goldenCase.name}: failed (${reason})`);
+    }
+    for (const goldenCase of cases) {
+      try {
+        const line = await recordCase(options, out, account, goldenCase);
+        if (line.includes(": skipped") === false && !line.endsWith("matches the derived golden")) {
+          problems += 1;
+        }
+        log(line);
+      } catch (error) {
+        problems += 1;
+        // Only the script's own texts: another error's message could quote an answer.
+        const reason =
+          error instanceof CaseError
+            ? error.message
+            : `${error instanceof Error ? error.name : "error"} while calling --base`;
+        log(`${goldenCase.name}: failed (${reason})`);
+      }
+    }
+  } finally {
+    if (account !== undefined) {
+      try {
+        const removed = await account.sweep();
+        if (removed > 0) log(`Deleted ${removed} survey(s) the run made.`);
+      } catch {
+        problems += 1;
+        log("Could not delete the surveys the run made: check the test account.");
+      }
     }
   }
   return problems;
@@ -326,6 +630,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const base = argument(args, "--base");
   const surveysPath = argument(args, "--surveys");
   const out = argument(args, "--out");
+  const keyFile = argument(args, "--key-file");
   if (base === undefined || surveysPath === undefined || out === undefined) {
     throw new UsageError("--base, --surveys and --out are required");
   }
@@ -337,6 +642,7 @@ async function main(argv: readonly string[]): Promise<number> {
     base: base.replace(/\/+$/, ""),
     surveys: readSurveys(surveysPath),
     out,
+    ...(keyFile !== undefined && { key: readKeyFile(keyFile) }),
     only: argument(args, "--only"),
   });
   console.log(`${problems === 0 ? "All" : "Not all"} recorded answers match the derived goldens.`);
@@ -349,7 +655,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     (error: unknown) => {
       if (!(error instanceof UsageError)) throw error;
       console.error(
-        `${error.message}\nUsage: record --base <url> --surveys <file> --out <dir> [--only <action>[/<case>]]`,
+        `${error.message}\nUsage: record --base <url> --surveys <file> --out <dir> [--key-file <file>] [--only <action>[/<case>]]`,
       );
       process.exitCode = 2;
     },

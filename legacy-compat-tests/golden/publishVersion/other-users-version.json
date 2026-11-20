@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "the current version of another user's survey: the publish-version refusal",
+  "knownMismatch": "The bridge answers an empty 400, as for a version no survey has: Studio does not show it another user's survey. The old API found the survey and answered its refusal text. Reported in hosted Step 6 Task 13.",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/publishVersion",
+    "query": {
+      "accessKey": "{{memberKey}}",
+      "versionId": "dddddddd-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to publish the survey version dddddddd-0000-4000-8000-a00000000001."
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "source": "derived",
+  "description": "no paging: every response with its InstanceId, {Data, ResultCount}",
+  "difference": "The old rows came in the storage's order (random by row key); the bridge's in Studio's order, oldest first (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":2}"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyResults/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "<iso>Z",
+            "ClientId": "client-a",
+            "InstanceId": "<guid>"
+          },
+          {
+            "satisfaction": 2,
+            "HappendAt": "<iso>Z",
+            "InstanceId": "<guid>"
+          }
+        ],
+        "ResultCount": 2
+      }
+    }
+  }
+}

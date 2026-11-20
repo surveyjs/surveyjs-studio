@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "a Json that is no permissions list: stored as given, an empty 200",
+  "knownMismatch": "The bridge answers an empty 400 for a permissions list it cannot read; the old API stored any non-empty text without reading it and answered an empty 200 (its later layout reads then failed). Reported in hosted Step 6 Task 13.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/setResultPermissions",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "{{survey.surveyId}}",
+        "Json": "not a list"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

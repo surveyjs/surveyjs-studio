@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "ownerId naming a project of the caller: the project's active surveys",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getActive",
+    "query": {
+      "accessKey": "{{memberKey}}",
+      "ownerId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": [
+        {
+          "Name": "Campaign survey",
+          "IsArchived": false,
+          "UserId": "55555555-0000-4000-8000-a00000000001",
+          "CreatorId": "11111111-0000-4000-8000-a00000000003",
+          "PostId": "33333333-0000-4000-8000-a00000000004",
+          "ResultId": "44444444-0000-4000-8000-a00000000004",
+          "PublishId": null,
+          "IsPublished": true,
+          "UseCookies": false,
+          "UpdatedOn": "2026-06-10T09:05:00Z",
+          "CreatedAt": "2026-01-15T13:00:00Z",
+          "AllowAccessResult": false,
+          "StoreIPAddress": true,
+          "Theme": null,
+          "Json": null,
+          "Id": "22222222-0000-4000-8000-a00000000004"
+        }
+      ]
+    }
+  }
+}

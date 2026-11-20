@@ -1,0 +1,48 @@
+{
+  "source": "derived",
+  "description": "a project survey with ownerId naming the project: the record, UserId the project",
+  "difference": "The old API's create left CreatorId all zeros and IsPublished null until the survey was published or unpublished; the bridge answers the real creator and Studio's published flag (never null), as docs/api/legacy-compat.md lists.",
+  "setup": {
+    "survey": {
+      "projectId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyInfo",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "surveyId": "{{survey.surveyId}}",
+      "ownerId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Info": {
+          "Name": "Legacy compat",
+          "IsArchived": false,
+          "UserId": "55555555-0000-4000-8000-a00000000001",
+          "CreatorId": "{{owner.userId}}",
+          "PostId": "{{survey.postId}}",
+          "ResultId": "{{survey.resultId}}",
+          "PublishId": null,
+          "IsPublished": true,
+          "UseCookies": false,
+          "UpdatedOn": "<iso>",
+          "CreatedAt": "<iso>",
+          "AllowAccessResult": false,
+          "StoreIPAddress": false,
+          "Theme": null,
+          "Json": null,
+          "Id": "{{survey.surveyId}}"
+        },
+        "Json": "{&quot;title&quot;:&quot;Customer feedback&quot;,&quot;pages&quot;:[{&quot;name&quot;:&quot;page1&quot;,&quot;elements&quot;:[{&quot;type&quot;:&quot;rating&quot;,&quot;name&quot;:&quot;satisfaction&quot;,&quot;title&quot;:&quot;How satisfied are you?&quot;},{&quot;type&quot;:&quot;file&quot;,&quot;name&quot;:&quot;receipt&quot;,&quot;title&quot;:&quot;Upload your receipt&quot;}]}]}"
+      }
+    }
+  }
+}

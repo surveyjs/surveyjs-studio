@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a form without files: an empty object",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "body": {
+      "multipart": [
+        {
+          "name": "field",
+          "value": "x"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {}
+    }
+  }
+}

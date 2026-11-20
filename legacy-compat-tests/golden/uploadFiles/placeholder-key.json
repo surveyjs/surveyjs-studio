@@ -1,0 +1,39 @@
+{
+  "source": "derived",
+  "description": "the documentation's placeholder key: nothing stored, the zero GUID",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "<your_access_key>"
+    },
+    "body": {
+      "multipart": [
+        {
+          "name": "a",
+          "filename": "one.png",
+          "contentType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        },
+        {
+          "name": "b",
+          "filename": "two.txt",
+          "contentType": "text/plain",
+          "text": "two"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "one.png": "00000000-0000-0000-0000-000000000000",
+        "two.txt": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

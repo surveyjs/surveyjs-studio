@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "no Summary state: null, even with a column layout",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "columns": "{\"columns\":[{\"name\":\"satisfaction\",\"visibility\":0}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultSummaryState",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": null
+    }
+  }
+}

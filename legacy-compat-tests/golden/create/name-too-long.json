@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "a name of 201 characters: an empty 400 (the old database refused it)",
+  "creates": true,
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/create",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "name": "{{n*201}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

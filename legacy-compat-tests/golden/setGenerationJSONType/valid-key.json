@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "a valid key: an empty 200",
+  "difference": "The old API stored the setting on the user; the bridge checks the key and stores nothing, as nothing in the API read it (ADR 0040 point 1).",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/setGenerationJSONType",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "generateValidJSON": "true"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

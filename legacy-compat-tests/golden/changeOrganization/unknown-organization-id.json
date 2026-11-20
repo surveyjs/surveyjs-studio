@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "an organizationId that is neither the caller nor a project of theirs: the access-denied text",
+  "difference": "The old API moved the survey to any ID it was given and answered an empty 200 (the survey vanished from the caller's lists); the bridge refuses with the old access-denied text (ADR 0040 point 1).",
+  "noRecording": "the old API would move the test survey to an owner nobody has; no key could remove it",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeOrganization",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "organizationId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "Something going wrong. Access denied."
+    }
+  }
+}

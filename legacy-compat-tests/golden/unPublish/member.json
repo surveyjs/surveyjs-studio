@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "a project member who is neither an admin nor the creator: the modify refusal",
+  "difference": "The old API let any member of the owning project change the survey; the bridge applies Studio's permissions (ADR 0040 point 1, ADR 0009): a member who is neither a project admin nor the survey's creator gets the action's refusal. The old answer here was an empty 200.",
+  "setup": {
+    "survey": {
+      "projectId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/unPublish",
+    "query": {
+      "accessKey": "{{memberKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to modify the survey {{survey.surveyId}}"
+    }
+  }
+}

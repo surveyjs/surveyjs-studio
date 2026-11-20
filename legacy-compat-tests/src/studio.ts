@@ -3,6 +3,7 @@
 // OAuth stub's form (memory), the mock OIDC server's login form (Azurite) or the dev provider's
 // "Sign in as…" page (a server started with it).
 import { inject } from "vitest";
+import { FEEDBACK_DEFINITION, SETUP_SURVEY_NAME, type LayoutKind } from "./golden.js";
 
 /** Studio's API base URL, with `/api/v1`. */
 const STUDIO_URL = inject("studioUrl");
@@ -131,6 +132,7 @@ export async function studio(
   path: string,
   body?: unknown,
   contentType = "application/json",
+  headers: Record<string, string> = {},
 ): Promise<Response> {
   return fetch(`${STUDIO_URL}${path}`, {
     method,
@@ -138,6 +140,7 @@ export async function studio(
     headers: {
       ...(await ownerHeaders()),
       ...(body !== undefined && { "content-type": contentType }),
+      ...headers,
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
@@ -149,29 +152,23 @@ export interface FreshSurvey {
   readonly resultId: string;
 }
 
-/** The definition of the fixture "Customer feedback", given to fresh surveys. */
-export const FEEDBACK_DEFINITION = {
-  title: "Customer feedback",
-  pages: [
-    {
-      name: "page1",
-      elements: [
-        { type: "rating", name: "satisfaction", title: "How satisfied are you?" },
-        { type: "file", name: "receipt", title: "Upload your receipt" },
-      ],
-    },
-  ],
-};
+export { FEEDBACK_DEFINITION };
 
 /**
  * Creates a survey as the owner with the feedback definition, and with `settings` (publicResults,
- * storeRespondentIp, privateResultQuestions) when given. Remove it with `removeSurvey`.
+ * storeRespondentIp, privateResultQuestions) when given; in the project `projectId` when given.
+ * Remove it with `removeSurvey`.
  */
 export async function createSurvey(
   settings?: Record<string, unknown>,
   definition: unknown = FEEDBACK_DEFINITION,
+  projectId?: string,
 ): Promise<FreshSurvey> {
-  const created = await studio("POST", "/surveys", { name: "Legacy compat", definition });
+  const created = await studio("POST", "/surveys", {
+    name: SETUP_SURVEY_NAME,
+    definition,
+    ...(projectId !== undefined && { projectId }),
+  });
   if (created.status !== 201) throw new Error(`createSurvey answered ${created.status}`);
   const survey = (await created.json()) as { id: string; postId: string; resultId: string };
   if (settings !== undefined) {
@@ -219,4 +216,77 @@ export async function listResults(surveyId: string): Promise<StoredResponse[]> {
   const response = await studio("GET", `/surveys/${surveyId}/results?limit=1000`);
   if (response.status !== 200) throw new Error(`listResults answered ${response.status}`);
   return ((await response.json()) as { items: StoredResponse[] }).items;
+}
+
+/** Calls Studio and throws unless it answers `expected`. */
+async function expectStatus(
+  what: string,
+  expected: number,
+  ...call: Parameters<typeof studio>
+): Promise<Response> {
+  const response = await studio(...call);
+  if (response.status !== expected) throw new Error(`${what} answered ${response.status}`);
+  return response;
+}
+
+/** Saves the survey's theme. */
+export async function saveTheme(surveyId: string, theme: unknown): Promise<void> {
+  await expectStatus(
+    "saveSurveyTheme",
+    204,
+    "PUT",
+    `/surveys/${surveyId}/theme`,
+    theme,
+    "application/json",
+    { "if-match": "*" },
+  );
+}
+
+/** Saves the survey's shared results layout of `kind`, the text as given. */
+export async function saveLayout(surveyId: string, kind: LayoutKind, text: string): Promise<void> {
+  const response = await studio("PUT", `/surveys/${surveyId}/layouts/${kind}`, { text });
+  if (response.status !== 200 && response.status !== 204) {
+    throw new Error(`saveSurveyLayout answered ${response.status}`);
+  }
+}
+
+/** Archives the survey. */
+export async function archiveSurvey(surveyId: string): Promise<void> {
+  await expectStatus(
+    "archiving",
+    200,
+    "PATCH",
+    `/surveys/${surveyId}`,
+    { archived: true },
+    "application/merge-patch+json",
+  );
+}
+
+/** Where the owner's surveys can be: Personal and the fixture projects the owner belongs to. */
+const OWNER_SPACES = [
+  "personal",
+  "55555555-0000-4000-8000-a00000000001",
+  "55555555-0000-4000-8000-a00000000002",
+];
+
+/** The IDs of every survey the owner sees, active and archived. */
+export async function ownerSurveyIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const project of OWNER_SPACES) {
+    for (const archived of [false, true]) {
+      let cursor: string | null = null;
+      do {
+        const query = new URLSearchParams({ project, archived: String(archived), limit: "200" });
+        if (cursor !== null) query.set("cursor", cursor);
+        const response = await expectStatus("listSurveys", 200, "GET", `/surveys?${query}`);
+        const page = (await response.json()) as {
+          items: { id: string }[];
+          nextCursor: string | null;
+        };
+        for (const item of page.items) ids.add(item.id.toLowerCase());
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+    }
+  }
+  return ids;
 }

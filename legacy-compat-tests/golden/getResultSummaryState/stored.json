@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "a Summary state: the text as stored, as a JSON string",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "summary": "{\"elements\":[{\"name\":\"satisfaction\"}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultSummaryState/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{\"elements\":[{\"name\":\"satisfaction\"}]}"
+    }
+  }
+}

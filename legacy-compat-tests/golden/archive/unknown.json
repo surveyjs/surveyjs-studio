@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: the modify refusal with its ID",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/archive/12345678-90ab-4cde-8f01-234567890abc",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to modify the survey 12345678-90ab-4cde-8f01-234567890abc"
+    }
+  }
+}

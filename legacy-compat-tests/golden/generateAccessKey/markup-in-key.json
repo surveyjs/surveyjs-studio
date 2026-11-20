@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "a key with markup: the text answer, the key HTML-encoded",
+  "difference": "The old API echoed the key unencoded in its text/html answer (a reflected-HTML hole); the bridge HTML-encodes it (ADR 0040 point 1).",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/generateAccessKey",
+    "query": {
+      "accessKey": "<b>Tom&'Jerry\""
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey '&lt;b&gt;Tom&amp;&#39;Jerry&quot;' is incorrect."
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "results not public: false",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getIsResultPublic",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": false
+    }
+  }
+}

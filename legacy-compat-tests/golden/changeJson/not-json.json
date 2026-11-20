@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "a body that is not JSON (text/plain): an empty 415",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeJson",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "text/plain"
+    },
+    "body": {
+      "text": "{\"Id\":\"12345678-90ab-4cde-8f01-234567890abc\",\"Json\":\"{}\"}"
+    }
+  },
+  "response": {
+    "status": 415,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

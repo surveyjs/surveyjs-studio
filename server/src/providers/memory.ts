@@ -83,6 +83,8 @@ export interface MemorySeed {
   privateResultQuestions?: Record<string, string[]>;
   /** The legacy access key of a user, by user id. */
   legacyAccessKeys?: Record<string, string>;
+  /** The users of `legacyAccessKeys` whose key is revoked (ADR 0037). */
+  revokedLegacyKeys?: readonly string[];
   /** Files stored under the old service's names (`getFileByLegacyName`). */
   legacyFiles?: readonly MemoryLegacyFile[];
 }
@@ -174,7 +176,10 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     ...(seed?.privateResultQuestions && { privateResultQuestions: seed.privateResultQuestions }),
   });
 
-  const credentials = createMemoryCredentials(seed?.legacyAccessKeys).store;
+  const credentials = createMemoryCredentials(
+    seed?.legacyAccessKeys,
+    seed?.revokedLegacyKeys,
+  ).store;
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
 
   /** Stores a new survey; throws on a duplicate id. */

@@ -1,0 +1,39 @@
+{
+  "source": "derived",
+  "description": "no name: the new survey's record",
+  "difference": "The old API's create left CreatorId all zeros and IsPublished null until the survey was published or unpublished; the bridge answers the real creator and Studio's published flag (never null), as docs/api/legacy-compat.md lists. The old CreatedAt was the server's local time; the bridge's is UTC. The old record's Name was null (no name stored); Studio names it \"New Survey N\".",
+  "creates": true,
+  "request": {
+    "method": "POST",
+    "path": "/private/Surveys/create",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Name": "New Survey <any>",
+        "IsArchived": false,
+        "UserId": "{{owner.userId}}",
+        "CreatorId": "{{owner.userId}}",
+        "PostId": "<guid>",
+        "ResultId": "<guid>",
+        "PublishId": null,
+        "IsPublished": true,
+        "UseCookies": false,
+        "UpdatedOn": "<iso>",
+        "CreatedAt": "<iso>",
+        "AllowAccessResult": false,
+        "StoreIPAddress": false,
+        "Theme": null,
+        "Json": null,
+        "Id": "<guid>"
+      }
+    }
+  }
+}

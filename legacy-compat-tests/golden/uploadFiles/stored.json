@@ -1,0 +1,34 @@
+{
+  "source": "derived",
+  "description": "a file: the client name mapped to the stored name",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "body": {
+      "multipart": [
+        {
+          "name": "anything",
+          "filename": "logo.png",
+          "contentType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        }
+      ]
+    }
+  },
+  "noRecording": "the old API would keep the file in its share; no action removes it",
+  "knownMismatch": "The bridge answers Studio's legacy file name (64 hexadecimal digits); the old API answered a new GUID (D format, no extension). Reported in hosted Step 6 Task 13.",
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "logo.png": "<guid>"
+      }
+    }
+  }
+}

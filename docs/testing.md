@@ -854,24 +854,34 @@ set `COMPAT_BASE_URL` (the bridge's origin) and `COMPAT_STUDIO_URL` (Studio's `/
 
 `legacy-compat-tests/golden/<action>/<case>.json`, one per case:
 
-| Member                       | Meaning                                                                                                                                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`                     | `derived` or `recorded`                                                                                                                                                                      |
-| `description`                | What the case shows                                                                                                                                                                          |
-| `difference`                 | Where the bridge differs from the old API on purpose, with how the old API answered; for the reviewers of recordings, not compared                                                           |
-| `providers`, `providersNote` | The providers the case can run on (default: all), with why when limited                                                                                                                      |
-| `setup`                      | State the case needs: a survey of its own (`survey.settings`), then `posts` (`surveyResult`, `clientId`, `isPartialCompleted`) and `uploads` made through the old actions                    |
-| `request`                    | `method`, `path` as sent (letter case, trailing slash and escapes kept), `query` (an object, or the raw string), `headers` and a `body`: `text`, `json`, `base64` or `multipart` parts       |
-| `response`                   | `status`, the `headers` callers depend on (lower-case names; `null` means absent) and a `body`: `null` for empty, `json` (compared as values; key order ignored), `text` or `base64` (exact) |
+| Member                       | Meaning                                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                     | `derived` or `recorded`                                                                                                                                                                                                   |
+| `description`                | What the case shows                                                                                                                                                                                                       |
+| `difference`                 | Where the bridge differs from the old API on purpose, with how the old API answered; for the reviewers of recordings, not compared                                                                                        |
+| `knownMismatch`              | A difference from the old answer that no listed difference explains, reported and not yet settled: the case must fail (`it.fails`) until the bridge answers as the file says                                              |
+| `noRecording`                | Why the recording script must not replay the case (it would leave something in the old service that no action removes)                                                                                                    |
+| `creates`                    | The request makes surveys (`create`, `clone`): every survey that appears while it runs is removed afterwards                                                                                                              |
+| `providers`, `providersNote` | The providers the case can run on (default: all), with why when limited                                                                                                                                                   |
+| `setup`                      | State the case needs: a survey of its own (`survey`: `settings`, `projectId`, `theme`, `layouts`, `archived`), then `posts` (`surveyResult`, `clientId`, `isPartialCompleted`) and `uploads` made through the old actions |
+| `request`                    | `method`, `path` as sent (letter case, trailing slash and escapes kept), `query` (an object, or the raw string), `headers` and a `body`: `text`, `json`, `base64` or `multipart` parts                                    |
+| `response`                   | `status`, the `headers` callers depend on (lower-case names; `null` means absent) and a `body`: `null` for empty, `json` (compared as values; key order ignored), `text` or `base64` (exact)                              |
 
 - **Derived or recorded.** Golden files are **derived** from the old code and ADR 0039's differences until the SurveyJS
   team's recordings replace them with **recorded** ones. A reviewed recording must match its derived file, or every
   difference is fixed, or recorded in the file's `difference` note and in
   [the list of differences](api/legacy-compat.md#differences-from-the-old-api), before the cutover.
-- **Variables.** `{{survey.surveyId}}`, `{{survey.postId}}` and `{{survey.resultId}}` name the case's own survey; an
-  upload's answer `dxsimage:x.png` sets `{{<as>}}` to the answer and `{{<as>.name}}` to `x.png`; `{{c*n}}` is the character
-  `c` repeated `n` times (large bodies without large files). A fixture's own IDs (`22222222-0000-4000-8000-a00000000001`
-  and so on) stand for the fixtures' surveys.
+- **Variables.** `{{survey.surveyId}}`, `{{survey.postId}}` and `{{survey.resultId}}` name the case's own survey, and
+  after its posts `{{survey.responseId}}` the first response's ID; an upload's answer `dxsimage:x.png` sets `{{<as>}}` to
+  the answer and `{{<as>.name}}` to `x.png`; `{{c*n}}` is the character `c` repeated `n` times (large bodies without
+  large files). A fixture's own IDs (`22222222-0000-4000-8000-a00000000001` and so on) stand for the fixtures' surveys.
+- **Access keys** (hosted Step 6, [ADR 0040](adr/0040-bridge-access-key-actions.md) point 6). `{{accessKey}}` is the
+  survey owner's key, `{{memberKey}}` the key of a Marketing member with the `user` role (neither a project admin nor the
+  creator of the cases' surveys) and `{{revokedKey}}` the erasure user's key, which the fixtures revoke;
+  `{{owner.userId}}` is the owner's user ID. A request holding a key variable is a **keyed** request. Every keyed action
+  has a case with a valid, a wrong (`wrong-access-key`) and a revoked key; write actions run on the case's own survey.
+  The cases' own surveys are made by the owner, in Personal or, with `projectId`, in a fixture project the owner
+  administers.
 - **Placeholders** for volatile parts, in any expected string (header, text or a JSON string): `<guid>`, `<hex64>` (a
   Studio file ID), `<iso>` (a date and time without a zone, up to seven fractional digits; write the `Z` after it where
   the answer has one) and `<any>` (anything). The JSON string `"<any>"` matches any JSON **string**, and only a string, for
@@ -886,7 +896,7 @@ answered, for review before anything is committed.
 
 ```sh
 pnpm --filter @surveyjs-studio/legacy-compat-tests record -- \
-  --base <the old API's origin> --surveys <file> --out <folder> [--only <action>[/<case>]]
+  --base <the old API's origin> --surveys <file> --out <folder> [--key-file <file>] [--only <action>[/<case>]]
 ```
 
 `--surveys` is a JSON file of the test account's values:
@@ -912,6 +922,14 @@ pnpm --filter @surveyjs-studio/legacy-compat-tests record -- \
   and `..`): use the private location agreed with the SurveyJS team. The recordings are reviewed there; ids, emails and
   addresses that are not the test account's are replaced, and only then does a reviewed file replace the derived one in
   `golden/`. The script prints no answer text; an error shows only its own message.
+- **Keyed cases** run only with `--key-file`, a file **outside** the repository (the script refuses one inside it) that
+  holds the test account's access key. They run only against surveys the script makes under the test account: a keyed
+  case with a `setup` gets a survey made and set up through the old actions with the key (`create`, `changeJson`, the
+  settings, theme and layout actions, `archive`), deleted after the case, and at the end every survey that appeared
+  during the run is deleted, so use a test account nobody changes meanwhile. Keyed cases that name a fixture ID, need
+  `{{memberKey}}` or a project, or carry `noRecording` are skipped. `{{revokedKey}}` is a made-up key the old API never
+  had (it had no revocation: a replaced key was simply unknown). The key is never printed or written: a recording keeps
+  the golden request with `{{accessKey}}`, and the key is mapped back to its variable in answers and printed lines.
 - The test account's surveys hold made-up answers only. The suite's own test of the script (`record.test.ts`) runs it
   against the bridge with fixture data.
 

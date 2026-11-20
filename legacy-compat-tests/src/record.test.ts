@@ -11,14 +11,22 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import { insideRepository, realPath, record, UsageError } from "../scripts/record.js";
-import { loadGoldens, type Golden } from "./golden.js";
-import { BASE_URL, PROVIDER } from "./harness.js";
+import {
+  insideRepository,
+  readKeyFile,
+  realPath,
+  record,
+  RETIRED_KEY,
+  UsageError,
+} from "../scripts/record.js";
+import { isKeyed, loadGoldens, type Golden } from "./golden.js";
+import { BASE_URL, KEYS, PROVIDER } from "./harness.js";
 import { createSurvey, removeSurvey, type FreshSurvey } from "./studio.js";
 
 const PACKAGE = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -159,45 +167,121 @@ describe("the recording script", () => {
     );
   });
 
-  it("writes recorded files that match every derived golden, and prints no body", async () => {
+  it("refuses a --key-file inside the repository, and reads one outside it trimmed", () => {
+    expect(() => readKeyFile(join(PACKAGE, "key.txt"))).toThrow(UsageError);
+    const file = join(temporaryFolder(), "key.txt");
+    writeFileSync(file, " the-key\n");
+    expect(readKeyFile(file)).toBe("the-key");
+    writeFileSync(file, "\n");
+    expect(() => readKeyFile(file)).toThrow(UsageError);
+  });
+
+  it("skips the keyed cases without a key; a made-up wrong key needs none", async () => {
+    const lines: string[] = [];
+    await record({
+      base: BASE_URL,
+      surveys: { ids: IDS },
+      out: temporaryFolder(),
+      only: "getArchive",
+      log: (line) => lines.push(line),
+    });
+    expect(lines).toEqual(
+      loadGoldens(["getArchive"]).map(({ name, golden }) =>
+        isKeyed(golden.request)
+          ? `${name}: skipped (a keyed request needs --key-file)`
+          : `${name}: 401, matches the derived golden`,
+      ),
+    );
+    expect(lines).toContain("getArchive/wrong-key: 401, matches the derived golden");
+  });
+
+  it("writes recorded files that match every derived golden, and never prints or writes the key", async () => {
     const out = temporaryFolder();
     expect(insideRepository(out)).toBe(false);
     const goldens = loadGoldens();
-    // Each case with a setup gets a survey of its own, so no case depends on another's posts.
+    // Each unkeyed case whose setup needs only settings gets a survey of its own from the surveys
+    // file; the others (layouts, keyed requests) get one the script makes with the key.
     const cases: Record<string, FreshSurvey> = {};
     for (const { name, golden } of goldens) {
-      if (golden.setup !== undefined) cases[name] = await fresh(golden.setup.survey.settings);
+      const { survey } = golden.setup ?? {};
+      const settingsOnly =
+        survey !== undefined && Object.keys(survey).every((k) => k === "settings");
+      if (settingsOnly && !isKeyed(golden.request)) cases[name] = await fresh(survey.settings);
     }
     const lines: string[] = [];
     const problems = await record({
       base: BASE_URL,
       surveys: { ids: IDS, cases },
       out,
+      key: KEYS.accessKey,
       log: (line) => lines.push(line),
     });
 
-    expect(lines).toHaveLength(goldens.length);
-    // Cases limited to other providers (the legacy file shares) differ here, as Studio does.
-    const elsewhere = goldens
-      .filter(
-        ({ golden }) => golden.providers !== undefined && !golden.providers.includes(PROVIDER),
-      )
+    // One line per case, then the surveys the run made (create and clone) deleted.
+    const sweep = lines.at(-1);
+    expect(sweep).toMatch(/^Deleted \d+ survey\(s\) the run made\.$/);
+    const caseLines = lines.slice(0, -1);
+    expect(caseLines).toHaveLength(goldens.length);
+    const nameOf = (line: string) => line.slice(0, line.indexOf(":"));
+
+    // Skipped: what would leave something behind, and keyed cases that need a member's key, a
+    // project or a fixture survey (keyed requests run only on the script's own surveys).
+    const skipped = goldens
+      .filter(({ golden }) => {
+        if (golden.noRecording !== undefined) return true;
+        if (!isKeyed(golden.request)) return false;
+        const request = JSON.stringify(golden.request);
+        return (
+          request.includes("{{memberKey}}") ||
+          golden.setup?.survey.projectId !== undefined ||
+          /[0-9a-f]{8}-0000-4000-8000-a[0-9a-f]{11}/i.test(request)
+        );
+      })
       .map(({ name }) => name);
-    const differing = lines.filter((line) => !line.endsWith("matches the derived golden"));
-    expect(differing.map((line) => line.slice(0, line.indexOf(":")))).toEqual(elsewhere);
+    expect(caseLines.filter((line) => line.includes(": skipped (")).map(nameOf)).toEqual(skipped);
+
+    // Differing: cases limited to other providers (the legacy file shares) and the known
+    // mismatches, which the bridge answers differently from the old API.
+    const elsewhere = goldens
+      .filter(({ name, golden }) => {
+        if (skipped.includes(name)) return false;
+        const otherProvider =
+          golden.providers !== undefined && !golden.providers.includes(PROVIDER);
+        return otherProvider || golden.knownMismatch !== undefined;
+      })
+      .map(({ name }) => name);
+    const differing = caseLines.filter(
+      (line) => !line.includes(": skipped (") && !line.endsWith("matches the derived golden"),
+    );
+    expect(differing.map(nameOf)).toEqual(elsewhere);
     expect(problems).toBe(elsewhere.length);
     for (const line of lines) {
       expect(line).not.toMatch(/Customer feedback|Check parameter|iVBOR|satisfaction":/);
+      expect(line).not.toContain(KEYS.accessKey);
     }
 
-    for (const { name, golden } of goldens) {
-      const recorded = JSON.parse(readFileSync(join(out, `${name}.json`), "utf8")) as Golden;
+    const recordedNames = caseLines
+      .filter((line) => !line.includes(": skipped ("))
+      .map(nameOf)
+      .sort();
+    const byName = new Map(goldens.map(({ name, golden }) => [name, golden]));
+    for (const name of recordedNames) {
+      const text = readFileSync(join(out, `${name}.json`), "utf8");
+      expect(text).not.toContain(KEYS.accessKey);
+      expect(text).not.toContain(RETIRED_KEY);
+      const recorded = JSON.parse(text) as Golden;
       expect(recorded.source).toBe("recorded");
-      expect(recorded.request).toEqual(golden.request);
+      expect(recorded.request).toEqual(byName.get(name)?.request);
     }
-    expect(readdirSync(out).sort()).toEqual(readdirSync(join(PACKAGE, "golden")).sort());
+    const written = readdirSync(out)
+      .flatMap((action) => readdirSync(join(out, action)).map((file) => `${action}/${file}`))
+      .map((file) => file.slice(0, -".json".length))
+      .sort();
+    expect(written).toEqual(recordedNames);
     // The survey's own IDs are written back as the golden's variables.
     const uploaded = JSON.parse(readFileSync(join(out, "upload", "image.json"), "utf8")) as Golden;
     expect(JSON.stringify(uploaded)).not.toContain(cases["upload/image"]?.postId);
+    // The run left no survey of its own behind.
+    expect(Number(/\d+/.exec(sweep ?? "")?.[0])).toBeGreaterThan(0);
   });
 });

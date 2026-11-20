@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LayoutKind, SurveyDefinition, SurveyTheme } from "../../domain/types.js";
+import { hashCredential } from "../../credentials/format.js";
 import type { MemorySeed } from "../memory.js";
 import { LARGE_SURVEY_TABLE, largeSurveyTable } from "./large-survey.js";
 import {
@@ -14,6 +15,7 @@ import {
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
+import { API_TOKENS_TABLE, REVOKED_KEY_PARTITION } from "./writes.js";
 import type {
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
@@ -364,6 +366,17 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     const key = optStr(row, "accesskey");
     if (key !== null && key !== "") legacyAccessKeys[str(row, "id").toLowerCase()] = key;
   }
+  // Revoked keys, as the provider keeps them: `legacyrevoked/{hash}` rows of its own table.
+  const revokedHashes = new Set(
+    fixtures.tables
+      .filter((t) => t.account === "surveys" && t.name === API_TOKENS_TABLE)
+      .flatMap((t) => t.entities)
+      .filter((e) => e.PartitionKey === REVOKED_KEY_PARTITION)
+      .map((e) => String(e.RowKey)),
+  );
+  const revokedLegacyKeys = Object.entries(legacyAccessKeys)
+    .filter(([, key]) => revokedHashes.has(hashCredential(key, "legacy-key")))
+    .map(([userId]) => userId);
   // The legacy file shares: editor images in `surveyfiles`, respondent uploads in `files`.
   const shareKinds: Record<string, "asset" | "response"> = {
     "surveys/surveyfiles": "asset",
@@ -412,6 +425,7 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     layouts,
     privateResultQuestions,
     legacyAccessKeys,
+    revokedLegacyKeys,
     legacyFiles,
   };
 }

@@ -1,0 +1,23 @@
+{
+  "source": "derived",
+  "description": "an empty name: nothing renamed, an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeName/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "name": ""
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "the ID in a form body wins over the route's",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/archive/12345678-90ab-4cde-8f01-234567890abc",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "text": "id={{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

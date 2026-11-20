@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "POST with surveyId: the copy is made, an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "creates": true,
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/clone",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "surveyId": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

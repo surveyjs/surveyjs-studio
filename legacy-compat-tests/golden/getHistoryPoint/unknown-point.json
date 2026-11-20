@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "a point the survey does not have: \"Check parameter values.\"",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getHistoryPoint",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "pointId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "Check parameter values."
+    }
+  }
+}

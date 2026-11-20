@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "a project survey without ownerId: the old failed refusal, an empty 500",
+  "setup": {
+    "survey": {
+      "projectId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyInfo",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "surveyId": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

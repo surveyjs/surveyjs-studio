@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: the get-information refusal",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getIsPublished",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to get this information about the survey 12345678-90ab-4cde-8f01-234567890abc"
+    }
+  }
+}

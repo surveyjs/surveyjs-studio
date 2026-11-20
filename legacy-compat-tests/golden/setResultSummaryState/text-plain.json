@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a JSON body sent as text/plain: read as JSON, an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/setResultSummaryState",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "text/plain"
+    },
+    "body": {
+      "text": "{\"Id\":\"{{survey.surveyId}}\",\"Json\":\"{}\"}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

@@ -19,4 +19,6 @@ regexes = [
   '''whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==''',
   # The placeholder session secret of the tests (hex digits 0-f twice; docs/operations/going-public.md).
   '''0123456789abcdef0123456789abcdef''',
+  # The SHA-256 of the legacy fixtures' made-up key access-key-6, which the fixtures revoke.
+  '''05f56a06c14f0616bc3c407399f3c0a8cb1ae87a90e8e1389eb9b046455e9ee9''',
 ]

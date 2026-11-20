@@ -1,0 +1,37 @@
+{
+  "source": "derived",
+  "description": "from after every response: no rows",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":2}"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyResults",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "from": "2100-01-01"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Data": [],
+        "ResultCount": 0
+      }
+    }
+  }
+}

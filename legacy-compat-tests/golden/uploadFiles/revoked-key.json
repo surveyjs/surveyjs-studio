@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "a revoked key: 200 text/html \"The accessKey '…' is incorrect.\"",
+  "difference": "The old API had no revoked keys: a key replaced by generateAccessKey was unknown and answered the same.",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "{{revokedKey}}"
+    },
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "logo.png",
+          "contentType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey '{{revokedKey}}' is incorrect."
+    }
+  }
+}

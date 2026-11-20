@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "a version ID no survey has: an empty 400",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/publishVersion",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "versionId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

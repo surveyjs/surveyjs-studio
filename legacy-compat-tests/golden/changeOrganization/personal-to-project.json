@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "a survey moved to a project the caller administers: an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeOrganization",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "organizationId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

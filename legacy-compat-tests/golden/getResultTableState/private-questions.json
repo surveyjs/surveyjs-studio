@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "a Table state and private questions: isPublic set on the elements, written again",
+  "difference": "The old API set isPublic only on the elements its permissions list named; Studio keeps only the private questions, so every other element reads isPublic: true (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {
+      "settings": {
+        "privateResultQuestions": ["satisfaction"]
+      },
+      "layouts": {
+        "table": "{\"elements\":[{\"name\":\"satisfaction\"},{\"name\":\"receipt\"}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultTableState",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{\"elements\":[{\"name\":\"satisfaction\",\"isPublic\":false},{\"name\":\"receipt\",\"isPublic\":true}]}"
+    }
+  }
+}

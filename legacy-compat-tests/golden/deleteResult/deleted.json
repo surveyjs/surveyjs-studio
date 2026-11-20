@@ -1,0 +1,33 @@
+{
+  "source": "derived",
+  "description": "a response of the caller's survey: an empty 200",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":2}"
+      }
+    ]
+  },
+  "request": {
+    "method": "DELETE",
+    "path": "/private/v1/Surveys/deleteResult",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "postId": "{{survey.postId}}",
+      "instanceId": "{{survey.responseId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

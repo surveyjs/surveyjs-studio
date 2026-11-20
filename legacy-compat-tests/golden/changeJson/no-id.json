@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "no Id: the modify refusal with the zero GUID",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeJson",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Json": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to modify the survey 00000000-0000-0000-0000-000000000000"
+    }
+  }
+}
