@@ -1,7 +1,8 @@
 // The fake Studio's survey records for the access-key action tests: `listSurveys`, `getSurvey`,
-// `createSurvey`, `updateSurvey`, `deleteSurvey`, `cloneSurvey`, `getSurveyDefinition` and
-// `getSurveyTheme`, with Studio's visibility and modify rules (ADR 0009) for the caller the bearer
-// credential names. Ids are lower-case GUIDs; times advance one second per write.
+// `createSurvey`, `updateSurvey`, `deleteSurvey`, `cloneSurvey`, `getSurveyDefinition`,
+// `getSurveyTheme`, the responses (`listResults`, `deleteResults`, `deleteResponse`) and the shared
+// layouts (`getSurveyLayout`), with Studio's visibility and modify rules (ADR 0009) for the caller
+// the bearer credential names. Ids are lower-case GUIDs; times advance one second per write.
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import type { components } from "@surveyjs-studio/contract/types";
@@ -32,6 +33,20 @@ export interface StoredSurvey {
   definition: string;
   /** The definition saves, oldest first (`PUT definition` adds one). */
   history: { id: string; definition: string; at: string; userId: string }[];
+  /** The responses, oldest first, as `listResults` answers them. */
+  responses: StoredResponse[];
+  /** `settings.privateResultQuestions`; `undefined`: Studio cannot read the list right now. */
+  privateResultQuestions: string[] | undefined;
+  /** The shared layouts' texts by kind (`table`, `summary`, `columns`). */
+  layouts: Partial<Record<string, string>>;
+}
+
+/** One response (a run of saves, ADR 0038). */
+export interface StoredResponse {
+  /** The `SurveyResponse` as Studio's JSON text (so a test can send `1.0`). */
+  text: string;
+  /** The ids of the run's later saves, which `deleteResponse` also takes. */
+  laterSaveIds?: string[];
 }
 
 /** A file `POST /legacy-files` stored. */
@@ -52,6 +67,10 @@ export interface SurveyStore {
   uploads: StoredUpload[];
   /** The next write's time (advances one second per write). */
   clock: number;
+  /** Items per page of `listResults`, whatever `limit` asks (`undefined`: `limit`). */
+  resultPageSize: number | undefined;
+  /** Told the client ID of each run a delete removes (its respondent state is cleared). */
+  onRunDeleted: (surveyId: string, clientId: string) => void;
 }
 
 export const START_TIME = Date.parse("2026-11-19T10:00:00.127Z");
@@ -63,6 +82,8 @@ export function newSurveyStore(): SurveyStore {
     surveyPageSize: undefined,
     uploads: [],
     clock: START_TIME,
+    resultPageSize: undefined,
+    onRunDeleted: () => undefined,
   };
 }
 
@@ -72,6 +93,7 @@ export function resetSurveyStore(store: SurveyStore): void {
   store.surveyPageSize = undefined;
   store.uploads.length = 0;
   store.clock = START_TIME;
+  store.resultPageSize = undefined;
 }
 
 /** A stored survey with defaults for what the test does not give. */
@@ -96,6 +118,9 @@ export function storedSurvey(
     theme: null,
     definition: "{}",
     history: [],
+    responses: [],
+    privateResultQuestions: [],
+    layouts: {},
     ...fields,
   };
 }
@@ -137,6 +162,7 @@ function surveyJson(
   survey: StoredSurvey,
   userId: string,
   withTheme: boolean,
+  single = false,
 ): Survey {
   return {
     id: survey.id,
@@ -157,6 +183,10 @@ function surveyJson(
       publicResults: survey.publicResults,
       storeRespondentIp: survey.storeRespondentIp,
       useCookies: survey.useCookies,
+      ...(single &&
+        survey.privateResultQuestions !== undefined && {
+          privateResultQuestions: survey.privateResultQuestions,
+        }),
     },
   };
 }
@@ -228,7 +258,7 @@ export function surveyOperation(
     }
     case "GET surveys/:":
       if (!visible) problem(res, 404, "not-found");
-      else json(res, 200, surveyJson(store, survey, userId, false));
+      else json(res, 200, surveyJson(store, survey, userId, false, true));
       return true;
     case "PATCH surveys/:": {
       if (!visible) return (problem(res, 404, "not-found"), true);
@@ -341,6 +371,44 @@ export function surveyOperation(
       if (!visible) problem(res, 404, "not-found");
       else json(res, 200, survey.theme ?? {});
       return true;
+    case "GET surveys/:/results":
+      if (!visible) problem(res, 404, "not-found");
+      else listResults(store, survey, url, res);
+      return true;
+    case "DELETE surveys/:/results":
+      if (!visible) problem(res, 404, "not-found");
+      else if (!canModify(store, survey, userId)) problem(res, 403, "forbidden");
+      else {
+        for (const response of survey.responses) runDeleted(store, survey, response);
+        survey.responses = [];
+        res.writeHead(204).end();
+      }
+      return true;
+    case "DELETE surveys/:/results/:": {
+      if (!visible) return (problem(res, 404, "not-found"), true);
+      if (!canModify(store, survey, userId)) return (problem(res, 403, "forbidden"), true);
+      const saveId = segments[3]!;
+      const index = survey.responses.findIndex(
+        (response) =>
+          responseOf(response).id === saveId || response.laterSaveIds?.includes(saveId) === true,
+      );
+      if (index < 0) return (problem(res, 404, "not-found"), true);
+      runDeleted(store, survey, survey.responses[index]!);
+      survey.responses.splice(index, 1);
+      res.writeHead(204).end();
+      return true;
+    }
+    case "GET surveys/:/layouts/:": {
+      const kind = segments[3]!;
+      if (!["table", "summary", "columns"].includes(kind)) {
+        return (problem(res, 400, "bad-request"), true);
+      }
+      if (!visible) return (problem(res, 404, "not-found"), true);
+      const text = survey.layouts[kind];
+      if (text === undefined) problem(res, 404, "layout-not-found");
+      else json(res, 200, { text });
+      return true;
+    }
     default:
       problem(res, 404, "not-found");
       return true;
@@ -386,6 +454,60 @@ function listSurveys(store: SurveyStore, url: URL, res: ServerResponse, userId: 
     items: page.map((survey) => surveyJson(store, survey, userId, withTheme)),
     nextCursor: start + size < items.length ? String(start + size) : null,
   });
+}
+
+function responseOf(response: StoredResponse): {
+  id: string;
+  submittedAt: string;
+  clientId?: string;
+} {
+  return JSON.parse(response.text) as { id: string; submittedAt: string; clientId?: string };
+}
+
+function runDeleted(store: SurveyStore, survey: StoredSurvey, response: StoredResponse): void {
+  const { clientId } = responseOf(response);
+  if (clientId !== undefined) store.onRunDeleted(survey.id, clientId);
+}
+
+/**
+ * `listResults`: oldest first, `from` and `till` exclusive on `submittedAt`. A cursor is
+ * `<survey id>~<index>`; any other is a `400`, as Studio refuses a cursor it did not make or one of
+ * another survey.
+ */
+function listResults(
+  store: SurveyStore,
+  survey: StoredSurvey,
+  url: URL,
+  res: ServerResponse,
+): void {
+  const query = url.searchParams;
+  const from = query.get("from");
+  const till = query.get("till");
+  for (const bound of [from, till]) {
+    if (bound !== null && Number.isNaN(Date.parse(bound))) return problem(res, 400, "bad-request");
+  }
+  const limit = Number(query.get("limit") ?? "500");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    return problem(res, 400, "bad-request");
+  }
+  const cursor = query.get("cursor");
+  let start = 0;
+  if (cursor !== null) {
+    const match = /^([0-9a-f-]{36})~([0-9]+)$/.exec(cursor);
+    if (match === null || match[1] !== survey.id) return problem(res, 400, "bad-request");
+    start = Number(match[2]);
+  }
+  const inRange = survey.responses.filter((response) => {
+    const at = Date.parse(responseOf(response).submittedAt);
+    return (from === null || at > Date.parse(from)) && (till === null || at < Date.parse(till));
+  });
+  const size = store.resultPageSize ?? limit;
+  const page = inRange.slice(start, start + size);
+  const next =
+    start + size < inRange.length ? JSON.stringify(`${survey.id}~${start + size}`) : "null";
+  res
+    .writeHead(200, { "content-type": "application/json" })
+    .end(`{"items":[${page.map((response) => response.text).join(",")}],"nextCursor":${next}}`);
 }
 
 function parseObject(request: RecordedRequest): Record<string, unknown> | undefined {

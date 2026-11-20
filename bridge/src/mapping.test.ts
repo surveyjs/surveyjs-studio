@@ -81,6 +81,11 @@ describe("ACTIONS", () => {
       "storeIPAddressInResult",
       "clone",
       "changeOrganization",
+      "deleteResult",
+      "deleteAllResults",
+      "getSurveyResults",
+      "getSurveyDemoResults",
+      "exportSurveyResults",
     ]) {
       expect(names, name).toContain(name);
     }

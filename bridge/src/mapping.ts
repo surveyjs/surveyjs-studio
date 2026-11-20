@@ -7,6 +7,13 @@ import { generateAccessKey, setGenerationJSONType } from "./actions/account.js";
 import { changeJson, changeTheme, getHistoryPoint, uploadFiles } from "./actions/content.js";
 import { file, files, image } from "./actions/files.js";
 import { MAX_POST_BYTES, post, upload, uploadGate } from "./actions/post.js";
+import {
+  deleteAllResults,
+  deleteResult,
+  exportSurveyResults,
+  getSurveyDemoResults,
+  getSurveyResults,
+} from "./actions/responses.js";
 import { getResult, getSurveyPublicResults } from "./actions/results.js";
 import { getSurvey, getSurveyAndIsCompleted, isCompleted } from "./actions/survey.js";
 import {
@@ -391,6 +398,51 @@ export const ACTIONS: readonly ActionEntry[] = [
     key: "text",
     studio: ["getCurrentUser", "uploadLegacyFile"],
     handler: uploadFiles,
+  },
+  {
+    action: "deleteResult",
+    controller: "private",
+    methods: ["DELETE"],
+    paths: ["deleteResult"],
+    key: "authorize",
+    studio: ["listSurveys", "deleteResponse"],
+    handler: deleteResult,
+  },
+  {
+    action: "deleteAllResults",
+    controller: "private",
+    methods: ["DELETE"],
+    paths: ["deleteAllResults", "deleteAllResults/:id"],
+    key: "authorize",
+    studio: ["deleteResults"],
+    handler: deleteAllResults,
+  },
+  {
+    action: "getSurveyResults",
+    controller: "private",
+    methods: ["GET"],
+    paths: ["getSurveyResults", "getSurveyResults/:id"],
+    key: "authorize",
+    studio: ["listResults"],
+    handler: getSurveyResults,
+  },
+  {
+    action: "getSurveyDemoResults",
+    controller: "private",
+    methods: ["GET"],
+    paths: ["getSurveyDemoResults", "getSurveyDemoResults/:id"],
+    key: "text",
+    studio: ["listResults"],
+    handler: getSurveyDemoResults,
+  },
+  {
+    action: "exportSurveyResults",
+    controller: "private",
+    methods: ["GET"],
+    paths: ["exportSurveyResults", "exportSurveyResults/:id"],
+    key: "text",
+    studio: ["getSurvey", "getSurveyDefinition", "getSurveyLayout", "listResults"],
+    handler: exportSurveyResults,
   },
   {
     // The bare prefixes: the old routing found no single action there and failed for every

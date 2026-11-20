@@ -1,6 +1,8 @@
 // The old API's results reads (reference behaviour: ADR 0039): `getResult`, one question's counts
 // through Studio's `getQuestionSummary`, and `getSurveyPublicResults`, every public result through
-// Studio's `getPublicResults`, paged to the end and streamed as the pages come.
+// Studio's `getPublicResults`, paged to the end and streamed as the pages come. The page walk, its
+// waits for Studio's rate limit and the streamed answer are shared with the response actions
+// (responses.ts).
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -171,6 +173,49 @@ export function retryDelayMs(retryAfter: string | null, now = Date.now()): numbe
   return Math.min(Math.max(seconds, MIN_RETRY_WAIT_S), MAX_RETRY_WAIT_S) * 1000;
 }
 
+/**
+ * `read` again and again while Studio answers `429` (a `StudioFailure`), waiting as it asks
+ * between reads, for as long as the caller stays: once an answer has started (or a read walks
+ * Studio's pages), the rate limit can no longer be passed on. When the caller leaves, the wait
+ * ends and nothing more is read. `what` names the read in the log.
+ */
+export async function patiently<T>(
+  request: FastifyRequest,
+  read: () => Promise<T>,
+  what: Record<string, unknown>,
+): Promise<T> {
+  for (;;) {
+    request.callerGone.throwIfAborted();
+    try {
+      return await read();
+    } catch (error) {
+      if (!(error instanceof StudioFailure) || error.status !== 429) throw error;
+      const waitMs = retryDelayMs(error.retryAfter);
+      request.log.info({ ...what, waitMs }, "Studio's rate limit, waiting");
+      await sleep(waitMs, undefined, { signal: request.callerGone });
+    }
+  }
+}
+
+/**
+ * Studio's pages from `first` to the last: each later page read with `read` from the cursor before
+ * it, {@link patiently}. One page at a time in memory.
+ */
+export async function* pagesFrom<P extends { nextCursor: string | null }>(
+  request: FastifyRequest,
+  first: P,
+  read: (cursor: string) => Promise<P>,
+  what: Record<string, unknown>,
+): AsyncGenerator<P> {
+  let page = first;
+  for (;;) {
+    yield page;
+    const cursor = page.nextCursor;
+    if (cursor === null) return;
+    page = await patiently(request, () => read(cursor), what);
+  }
+}
+
 /** The largest page Studio gives. */
 const PAGE_LIMIT = 1000;
 
@@ -211,43 +256,38 @@ export async function getSurveyPublicResults(
   const firstPage = readPage(first.data);
   const hidden = new Set(firstPage.privateQuestions);
 
-  /**
-   * A page after the first. The answer has started, so Studio's rate limit (`429`) can no longer
-   * be passed on: the bridge waits as Studio asks and reads the page again, for as long as the
-   * caller stays; when the caller leaves, the wait ends and nothing more is read.
-   */
+  /** A page after the first: the answer has started, so Studio's `429` is waited out. */
   async function laterPage(cursor: string): Promise<ResultPage> {
-    for (;;) {
-      request.callerGone.throwIfAborted();
-      try {
-        const next = await fetchPage(cursor);
-        if (next.response.status !== 200 || next.data === undefined) {
-          return unexpectedStatus(next.response);
-        }
-        return readPage(next.data);
-      } catch (error) {
-        if (!(error instanceof StudioFailure) || error.status !== 429) throw error;
-        const waitMs = retryDelayMs(error.retryAfter);
-        request.log.info({ surveyId, waitMs }, "public results: Studio's rate limit, waiting");
-        await sleep(waitMs, undefined, { signal: request.callerGone });
-      }
+    const next = await fetchPage(cursor);
+    if (next.response.status !== 200 || next.data === undefined) {
+      return unexpectedStatus(next.response);
     }
+    return readPage(next.data);
   }
 
   // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
   // answer has started cuts it off, as the old API's failures mid-stream did.
+  const pages = pagesFrom(request, firstPage, laterPage, { surveyId, read: "public results" });
+  return sendStreamedRows(reply, pages, (item) => resultRow(item, hidden));
+}
+
+/**
+ * The old streamed results answer, `{"Data":[…],"ResultCount":N}`, written as `pages` come, each
+ * item as `row` writes it. `200`, chunked.
+ */
+export function sendStreamedRows<T>(
+  reply: FastifyReply,
+  pages: AsyncIterable<{ items: readonly T[] }>,
+  row: (item: T) => string,
+): FastifyReply {
   async function* body(): AsyncGenerator<string> {
     yield '{"Data":[';
     let written = 0;
-    let page = firstPage;
-    for (;;) {
-      if (page.items.length > 0) {
-        const rows = page.items.map((item) => resultRow(item, hidden)).join(",");
-        yield written > 0 ? `,${rows}` : rows;
-        written += page.items.length;
-      }
-      if (page.nextCursor === null) break;
-      page = await laterPage(page.nextCursor);
+    for await (const page of pages) {
+      if (page.items.length === 0) continue;
+      const rows = page.items.map((item) => row(item)).join(",");
+      yield written > 0 ? `,${rows}` : rows;
+      written += page.items.length;
     }
     yield `],"ResultCount":${written}}`;
   }

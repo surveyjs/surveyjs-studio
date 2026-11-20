@@ -297,6 +297,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
       fake.override = undefined;
     },
   };
+  // Deleting a run clears its respondent's state, as Studio's deletes do.
+  fake.store.onRunDeleted = (surveyId, clientId) => fake.states.delete(`${surveyId}/${clientId}`);
   holder.studio = fake;
   return fake;
 }
