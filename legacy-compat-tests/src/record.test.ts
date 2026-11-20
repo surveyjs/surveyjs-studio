@@ -27,7 +27,7 @@ import {
 } from "../scripts/record.js";
 import { isKeyed, loadGoldens, type Golden } from "./golden.js";
 import { BASE_URL, KEYS, PROVIDER } from "./harness.js";
-import { createSurvey, removeSurvey, type FreshSurvey } from "./studio.js";
+import { createSurvey, ownerSurveyIds, removeSurvey, type FreshSurvey } from "./studio.js";
 
 const PACKAGE = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -112,6 +112,50 @@ describe("the recording script", () => {
     } finally {
       unlinkSync(link);
     }
+  });
+
+  it("names a survey it could not delete and fails the run", async () => {
+    // A stand-in "old API" whose delete always fails: create adds a survey the lists then show.
+    const made = "abcdef01-2345-4678-9abc-def012345678";
+    let created = false;
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? "/", "http://x").pathname;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      if (path.endsWith("/create")) {
+        created = true;
+        response.end(
+          JSON.stringify({ Id: made, PostId: made, ResultId: made, UserId: made, Name: "x" }),
+        );
+      } else if (path.endsWith("/getActive")) {
+        response.end(JSON.stringify(created ? [{ Id: made }] : []));
+      } else if (path.endsWith("/getArchive")) {
+        response.end("[]");
+      } else {
+        response.writeHead(400).end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    onTestFinished(
+      () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        }),
+    );
+    const { port } = server.address() as AddressInfo;
+    const lines: string[] = [];
+    const problems = await record({
+      base: `http://127.0.0.1:${port}`,
+      surveys: { ids: IDS },
+      out: temporaryFolder(),
+      key: "stand-in-key",
+      only: "create/named",
+      log: (line) => lines.push(line),
+    });
+    expect(lines).toContain(`Could not delete survey ${made}: delete answered 400.`);
+    expect(lines.at(-1)).toBe(`The run left 1 survey(s) of its own behind: ${made}.`);
+    expect(problems).toBeGreaterThan(1);
+    expect(lines.join("\n")).not.toContain("stand-in-key");
   });
 
   it("prints no body when an answer is not what the script expects", async () => {
@@ -208,6 +252,7 @@ describe("the recording script", () => {
         survey !== undefined && Object.keys(survey).every((k) => k === "settings");
       if (settingsOnly && !isKeyed(golden.request)) cases[name] = await fresh(survey.settings);
     }
+    const before = await ownerSurveyIds();
     const lines: string[] = [];
     const problems = await record({
       base: BASE_URL,
@@ -217,9 +262,8 @@ describe("the recording script", () => {
       log: (line) => lines.push(line),
     });
 
-    // One line per case, then the surveys the run made (create and clone) deleted.
-    const sweep = lines.at(-1);
-    expect(sweep).toMatch(/^Deleted \d+ survey\(s\) the run made\.$/);
+    // One line per case, then the check that the run left none of its surveys behind.
+    expect(lines.at(-1)).toBe("The run left no survey of its own behind.");
     const caseLines = lines.slice(0, -1);
     expect(caseLines).toHaveLength(goldens.length);
     const nameOf = (line: string) => line.slice(0, line.indexOf(":"));
@@ -281,7 +325,7 @@ describe("the recording script", () => {
     // The survey's own IDs are written back as the golden's variables.
     const uploaded = JSON.parse(readFileSync(join(out, "upload", "image.json"), "utf8")) as Golden;
     expect(JSON.stringify(uploaded)).not.toContain(cases["upload/image"]?.postId);
-    // The run left no survey of its own behind.
-    expect(Number(/\d+/.exec(sweep ?? "")?.[0])).toBeGreaterThan(0);
+    // The run left no survey of its own behind: the owner's surveys are those of the start.
+    expect(await ownerSurveyIds()).toEqual(before);
   });
 });

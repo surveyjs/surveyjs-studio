@@ -23,8 +23,11 @@
 // the keyed cases (a request with `{{accessKey}}` or `{{revokedKey}}`) run, and only against
 // surveys the script makes: a keyed case with a `setup` gets a survey made and set up through the
 // old actions with the key, deleted after the case, and at the end every survey that appeared
-// during the run is deleted (use a test account nobody else changes meanwhile). Keyed cases that
-// name a fixture ID, need a project member's key or a project, or carry `noRecording` are skipped.
+// during the run is deleted (use a test account nobody else changes meanwhile); surveys a case
+// makes (`creates`) are deleted right after it. A failed delete is printed with the survey's ID and
+// fails the run, and the end lists the account again and names any survey of the run still there.
+// Keyed cases that name a fixture ID, need a project member's key or a project, or carry
+// `noRecording` are skipped.
 // `{{revokedKey}}` is a made-up key the old API never had. Without the file, keyed cases are
 // skipped. The key is never printed or written: recordings keep the golden request
 // (`{{accessKey}}`), and the key is mapped back to its variable in answers and printed lines.
@@ -274,10 +277,14 @@ const LAYOUT_ACTIONS = {
 class Account {
   private before: Set<string> | undefined;
   private knownUserId: string | undefined;
+  /** The surveys whose delete failed while they still existed. */
+  readonly failedDeletes: string[] = [];
 
   constructor(
     private readonly base: string,
     private readonly key: string,
+    /** Prints a line (masked by the caller). */
+    private readonly log: (line: string) => void,
   ) {}
 
   /** Calls an old private action with the key and a JSON body; throws unless it answers `200`. */
@@ -313,7 +320,7 @@ class Account {
   }
 
   /** The IDs of every survey of the account, active and archived. */
-  private async surveyIds(): Promise<Set<string>> {
+  async surveyIds(): Promise<Set<string>> {
     const ids = new Set<string>();
     for (const action of ["getActive", "getArchive"]) {
       const list = await this.json<OldRecord[]>("GET", action);
@@ -420,25 +427,37 @@ class Account {
     return { surveyId: ids.surveyId, vars };
   }
 
-  /** Deletes a survey of the run; one already gone is fine. */
+  /**
+   * Deletes a survey of the run; one already gone (a case deleted it) is fine. A delete that
+   * fails while the survey is still listed is printed with the survey's ID and remembered, so the
+   * run ends with a failure.
+   */
   async remove(surveyId: string): Promise<void> {
-    await call(this.base, {
+    const answer = await call(this.base, {
       method: "DELETE",
       path: `${PRIVATE}delete`,
       query: { id: surveyId, accessKey: this.key },
     });
+    if (answer.status === 200) return;
+    if (!(await this.surveyIds()).has(surveyId.toLowerCase())) return;
+    this.failedDeletes.push(surveyId);
+    this.log(`Could not delete survey ${surveyId}: delete answered ${answer.status}.`);
   }
 
-  /** Deletes every survey that appeared since `start`; returns how many. */
-  async sweep(): Promise<number> {
-    if (this.before === undefined) return 0;
-    let removed = 0;
-    for (const id of await this.surveyIds()) {
-      if (this.before.has(id)) continue;
-      await this.remove(id);
-      removed += 1;
-    }
-    return removed;
+  /** Deletes every survey listed now that `before` does not hold. */
+  async removeNew(before: ReadonlySet<string>): Promise<void> {
+    for (const id of await this.surveyIds()) if (!before.has(id)) await this.remove(id);
+  }
+
+  /**
+   * Deletes every survey that appeared since `start`, then lists the account again: the IDs of
+   * the run's surveys still there (none when the cleanup worked).
+   */
+  async sweep(): Promise<string[]> {
+    if (this.before === undefined) return [];
+    const before = this.before;
+    await this.removeNew(before);
+    return [...(await this.surveyIds())].filter((id) => !before.has(id));
   }
 }
 
@@ -488,6 +507,9 @@ async function recordCase(
     vars.revokedKey = RETIRED_KEY;
   }
   let made: string | undefined;
+  // A case that makes surveys (create, clone) has them deleted right after it, so later list
+  // recordings see the account as it was.
+  let beforeCase: Set<string> | undefined;
   if (own) {
     const survey = await account!.survey(golden);
     made = survey.surveyId;
@@ -502,6 +524,7 @@ async function recordCase(
         vars["owner.userId"] = await account.userId();
       }
     }
+    if (golden.creates === true && account !== undefined) beforeCase = await account.surveyIds();
     // A keyed request names no fixture ID, so it is sent as written.
     const written = keyed ? golden.request : mapValues(golden.request, toAccount);
     const answer = await call(base, substitute(written, vars));
@@ -541,6 +564,7 @@ async function recordCase(
         : `differs at ${differences.map((difference) => difference.at).join(", ")}`;
     return `${name}: ${answer.status}, ${verdict}`;
   } finally {
+    if (beforeCase !== undefined) await account!.removeNew(beforeCase);
     if (made !== undefined) await account!.remove(made);
   }
 }
@@ -562,7 +586,7 @@ export async function record(options: RecordOptions): Promise<number> {
     ({ name }) =>
       options.only === undefined || name === options.only || name.startsWith(`${options.only}/`),
   );
-  const account = key === undefined ? undefined : new Account(options.base, key);
+  const account = key === undefined ? undefined : new Account(options.base, key, log);
   let problems = 0;
   try {
     if (account !== undefined && cases.some(({ golden }) => isKeyed(golden.request))) {
@@ -596,12 +620,19 @@ export async function record(options: RecordOptions): Promise<number> {
   } finally {
     if (account !== undefined) {
       try {
-        const removed = await account.sweep();
-        if (removed > 0) log(`Deleted ${removed} survey(s) the run made.`);
+        const left = await account.sweep();
+        if (left.length === 0) {
+          log("The run left no survey of its own behind.");
+        } else {
+          problems += 1;
+          log(`The run left ${left.length} survey(s) of its own behind: ${left.join(", ")}.`);
+        }
       } catch {
         problems += 1;
-        log("Could not delete the surveys the run made: check the test account.");
+        log("Could not list the test account's surveys after the run: check it.");
       }
+      // Each failed delete fails the run, even when the sweep removed the survey later.
+      problems += account.failedDeletes.length;
     }
   }
   return problems;
