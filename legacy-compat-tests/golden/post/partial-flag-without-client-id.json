@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "isPartialCompleted without a clientId: an empty 200; the flag is ignored and the response stored complete (getResult and getSurveyPublicResults cases of the same name read it back)",
+  "setup": { "survey": {} },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": { "content-type": "application/json; charset=utf-8" },
+    "body": {
+      "json": {
+        "postId": "{{survey.postId}}",
+        "surveyResult": "{\"satisfaction\":3}",
+        "isPartialCompleted": true
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": null, "content-length": "0" },
+    "body": null
+  }
+}

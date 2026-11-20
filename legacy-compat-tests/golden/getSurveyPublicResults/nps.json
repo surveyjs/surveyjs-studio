@@ -1,0 +1,17 @@
+{
+  "source": "derived",
+  "description": "getSurveyPublicResults/nps matches with the zero GUID",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/nps"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to get results of the survey 00000000-0000-0000-0000-000000000000"
+    }
+  }
+}

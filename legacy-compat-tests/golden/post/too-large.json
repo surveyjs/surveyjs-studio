@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "an answer set over the storage limit: 400 with the storage's refusal text",
+  "difference": "The old text was the storage's own message and also carried its request ID and time; the bridge answers the stable part. The old API could already have stored the response row when only the completion marker was refused; the bridge stores nothing.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "text": "{\"postId\":\"{{survey.postId}}\",\"surveyResult\":\"{\\\"comment\\\":\\\"{{a*70000}}\\\"}\"}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "The property value exceeds the maximum allowed size (64KB). If the property value is a string, it is UTF-16 encoded and the maximum number of characters should be 32K or less.\nPropertyValueTooLarge: The property value exceeds the maximum allowed size (64KB). If the property value is a string, it is UTF-16 encoded and the maximum number of characters should be 32K or less."
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "source": "derived",
+  "description": "a respondent who completed through post: \"completed\" (a client ID with a space and @, percent-encoded to Studio)",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "respondent 1@example.com"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/getSurveyAndIsCompleted",
+    "query": {
+      "surveyId": "{{survey.surveyId}}",
+      "clientId": "respondent 1@example.com"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "survey": {
+          "title": "Customer feedback",
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "rating",
+                  "name": "satisfaction",
+                  "title": "How satisfied are you?"
+                },
+                {
+                  "type": "file",
+                  "name": "receipt",
+                  "title": "Upload your receipt"
+                }
+              ]
+            }
+          ]
+        },
+        "isCompleted": "completed"
+      }
+    }
+  }
+}

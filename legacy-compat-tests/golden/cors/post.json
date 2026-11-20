@@ -1,0 +1,29 @@
+{
+  "source": "derived",
+  "description": "a post from a page: Access-Control-Allow-Origin: *",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "origin": "https://example.com"
+    },
+    "body": {
+      "json": {
+        "postId": "{{survey.postId}}",
+        "surveyResult": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

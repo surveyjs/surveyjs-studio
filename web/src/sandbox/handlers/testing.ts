@@ -52,7 +52,11 @@ export interface Sandbox {
 }
 
 /** A store over the seed, the handlers registered on the shared MSW server, and a `call` helper. */
-export function setupSandbox(settings: Partial<SandboxSettings> = {}): Sandbox {
+export function setupSandbox(
+  settings: Partial<SandboxSettings> = {},
+  /** The edition `/config` names; `hosted` answers the operations for the old service's surveys. */
+  edition: "hosted" | "self-hosted" = "self-hosted",
+): Sandbox {
   let clock = Date.parse("2026-08-01T00:00:00.000Z");
   let counter = 0;
   const ctx: HandlerContext = {
@@ -65,6 +69,7 @@ export function setupSandbox(settings: Partial<SandboxSettings> = {}): Sandbox {
     origin: ORIGIN,
     now: () => new Date((clock += 1000)),
     newId: () => `99999999-0000-4000-8000-${String(++counter).padStart(12, "0")}`,
+    edition,
   };
   server.use(...createSandboxHandlers(ctx));
   return {

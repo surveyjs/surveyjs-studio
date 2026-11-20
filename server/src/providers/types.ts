@@ -84,6 +84,13 @@ export interface ResponsePageQuery {
   readonly limit: number;
   /** Leave out responses whose run has no complete row (ADR 0038). */
   readonly completedOnly?: boolean;
+  /**
+   * ISO 8601. Only responses placed strictly after this time (a run's place is its first row's
+   * `submittedAt`, ADR 0038). Applied before `limit`; a cursor before it reads as it.
+   */
+  readonly from?: string;
+  /** ISO 8601. Only responses placed strictly before this time, as `from`. */
+  readonly till?: string;
 }
 
 export interface ResponsePage {
@@ -141,6 +148,15 @@ export interface FileStore {
     toSurveyId: string,
     copiedAt: string,
   ): Promise<ReadonlyMap<string, string>>;
+  /**
+   * A file stored under the old service's name (ADR 0039 point 3): an editor image (`asset`) or a
+   * respondent upload (`response`). Names match as stored, case included; null for an unknown
+   * name and, without any lookup, for a name `isLegacyFileName` refuses. The bytes are as stored;
+   * `file.name` is the legacy name and `file.contentType` the type of its extension
+   * (`legacyContentType`), whatever the provider keeps. A provider that holds the file by name
+   * only gives it the record of `legacyFileRecord`.
+   */
+  getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
 }
 
 export type AppendOutcome = "stored" | "exists";
@@ -243,6 +259,13 @@ export interface ViewStore {
 export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
+  /**
+   * The survey with this post ID or result ID (GUIDs, compared case-insensitively); null when
+   * none has it or the value is not a GUID. Archived surveys are found.
+   */
+  findSurveyByKey(
+    key: { readonly postId: string } | { readonly resultId: string },
+  ): Promise<SurveyRecord | null>;
   /** Archived included. Ordered by updatedAt descending, then id ascending. */
   listSurveys(owner: SurveyOwner): Promise<SurveyRecord[]>;
   /**

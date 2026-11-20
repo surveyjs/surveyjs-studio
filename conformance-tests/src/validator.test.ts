@@ -112,6 +112,26 @@ describe("validator (fixture contract)", () => {
     ]);
   });
 
+  it("matches a media type to a documented range", async () => {
+    // `*/*` carries a schema no body meets: a body matched through a range is not checked by it.
+    for (const type of [
+      "image/png",
+      "application/pdf",
+      "application/octet-stream",
+      "application/json",
+    ]) {
+      const file = respond(200, "x", { "content-type": type });
+      expect(await v.check("GET", "/anything", file), type).toEqual([]);
+    }
+    const png = respond(200, "x", { "content-type": "image/png" });
+    expect(await v.check("GET", "/files", png)).toEqual([expect.stringContaining("content type")]);
+    const untyped = new Response(new Uint8Array([1]), { status: 200 });
+    untyped.headers.delete("content-type");
+    expect(await v.check("GET", "/anything", untyped)).toEqual([
+      expect.stringContaining("content type"),
+    ]);
+  });
+
   it("validates documented and undocumented 501 as Problems", async () => {
     const nope = problem({ status: 501, code: "not-implemented" });
     expect(await v.check("DELETE", "/things/{id}", respond(501, nope, PROBLEM_TYPE))).toEqual([]);

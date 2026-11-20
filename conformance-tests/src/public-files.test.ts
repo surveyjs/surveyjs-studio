@@ -16,8 +16,11 @@ import {
   upload,
   as,
   cleanUp,
+  expectNotRouted,
+  hosted,
   newSurvey,
   ownSurvey,
+  sandbox,
 } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -203,5 +206,144 @@ describe("uploadResponseFile", () => {
 
     await cleanUp(headers, surveyId);
     expect((await download(stored.id)).status).toBe(404);
+  });
+});
+
+describe("uploadResponseFileByPostId", () => {
+  it.skipIf(hosted)("is not routed outside the hosted edition", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers);
+    const read = await call("GET", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers,
+    });
+    const { postId } = (await read.json()) as { postId: string };
+    const response = await upload("/public/posts/{postId}/files", {
+      path: `/public/posts/${postId}/files`,
+      form: fileForm(PNG_1X1, "dot.png"),
+    });
+    await expectNotRouted(response);
+  });
+
+  it.runIf(hosted)(
+    "stores a file for an unpublished survey and answers 404 for an unknown post ID",
+    async (ctx) => {
+      const headers = await as(ctx, admin);
+      const surveyId = await ownSurvey(headers, { published: false });
+      expect((await uploadTo(surveyId, fileForm(PNG_1X1))).status).toBe(404);
+      const read = await call("GET", "/surveys/{surveyId}", {
+        path: `/surveys/${surveyId}`,
+        headers,
+      });
+      const { postId } = (await read.json()) as { postId: string };
+
+      const response = await upload("/public/posts/{postId}/files", {
+        path: `/public/posts/${postId}/files`,
+        form: fileForm(PNG_1X1, "dot.png"),
+      });
+      expect(response.status).toBe(201);
+      const stored = (await response.json()) as StoredFile;
+      expect(stored).toMatchObject({ name: "dot.png", contentType: "image/png" });
+      expect(response.headers.get("location")).toBe(`/api/v1/public/files/${stored.id}`);
+      expect((await download(stored.id)).status).toBe(200);
+
+      const unknown = await upload("/public/posts/{postId}/files", {
+        path: `/public/posts/${UNKNOWN_ID}/files`,
+        form: fileForm(PNG_1X1),
+      });
+      expect(unknown.status).toBe(404);
+      expect(await codeOf(unknown)).toBe("survey-not-available");
+    },
+  );
+});
+
+describe("getLegacyFile", () => {
+  const LEGACY = "/public/legacy-files/{kind}/{name}";
+  /** The fixtures' editor asset (no extension) and respondent file: the same one-pixel PNG. */
+  const ASSET = "99999999-0000-4000-8000-a00000000001";
+  const RESPONSE = "99999999-0000-4000-8000-a00000000002.png";
+  const FIXTURE_PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  /**
+   * The Azure legacy provider reads these files from the legacy file shares, and Azurite has no
+   * file service: the reference server runs there without a share reader, so every name is
+   * unknown. The provider suite reads the shares through a stub instead. The sandbox has no legacy
+   * files either (they belong to a migrated deployment), so it answers 404 for every name. Outside
+   * the hosted edition the operation is not routed, so every name answers 404 as well.
+   */
+  const sharesReadable =
+    hosted && !sandbox && process.env.CONFORMANCE_PROVIDER?.trim() !== "azure-legacy";
+
+  /** Without cookies: sites reference these files from anywhere. `path` is sent as written. */
+  const legacyFile = (path: string) =>
+    call("GET", LEGACY, { path: `/public/legacy-files/${path}` });
+
+  it.runIf(sharesReadable)(
+    "serves the seeded editor asset as stored, as an octet-stream attachment",
+    async () => {
+      const response = await legacyFile(`asset/${ASSET}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/octet-stream");
+      expect(response.headers.get("content-disposition")).toBe(
+        `attachment; filename="${ASSET}"; filename*=UTF-8''${ASSET}`,
+      );
+      expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+      expect(response.headers.get("content-security-policy")).toContain("sandbox");
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(FIXTURE_PNG);
+    },
+  );
+
+  it.runIf(sharesReadable)(
+    "serves the seeded respondent file inline with the type of its extension",
+    async () => {
+      const response = await legacyFile(`response/${RESPONSE}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      expect(response.headers.get("content-disposition")).toBe(
+        `inline; filename="${RESPONSE}"; filename*=UTF-8''${RESPONSE}`,
+      );
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(FIXTURE_PNG);
+    },
+  );
+
+  it.skipIf(hosted)("is not routed outside the hosted edition, for a seeded name too", async () => {
+    await expectNotRouted(await legacyFile(`asset/${ASSET}`));
+    await expectNotRouted(await legacyFile(`response/${RESPONSE}`));
+  });
+
+  it("answers 404 not-found for an unknown name, another case and the other kind", async () => {
+    for (const path of [
+      "asset/99999999-0000-4000-8000-a00000000099",
+      `asset/${ASSET.toUpperCase()}`,
+      `response/${RESPONSE.replace(".png", ".PNG")}`,
+      `response/${ASSET}`,
+      `asset/${RESPONSE}`,
+    ]) {
+      const response = await legacyFile(path);
+      expect(response.status, path).toBe(404);
+      expect(await codeOf(response), path).toBe("not-found");
+    }
+  });
+
+  it("answers 404 not-found for a name with a path and for an unknown kind", async () => {
+    for (const path of [
+      "asset/..%2Fx",
+      "asset/a%2Fb",
+      "response/%2E%2E%2Fx",
+      `asset/..%5C${ASSET}`,
+      "asset/a%20b",
+      `asset/dxsimage:${ASSET}`,
+      `image/${ASSET}`,
+      `ASSET/${ASSET}`,
+      `asset/${"a".repeat(300)}`,
+    ]) {
+      const response = await legacyFile(path);
+      expect(response.status, path).toBe(404);
+      expect(await codeOf(response), path).toBe("not-found");
+    }
   });
 });

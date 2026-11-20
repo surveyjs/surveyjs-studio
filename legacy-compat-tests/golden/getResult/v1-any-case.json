@@ -1,0 +1,34 @@
+{
+  "source": "derived",
+  "description": "the v1 prefix in other letter case with a trailing slash",
+  "difference": "ADR 0039: Studio counts completed responses folded by ADR 0038. The old API counted every stored row merged by client, so also the partial save of client-0001 (ResultCount 5).",
+  "request": {
+    "method": "GET",
+    "path": "/Public/v1/SURVEY/getresult/",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000001",
+      "name": "satisfaction"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "AnswersCount": 4,
+        "QuestionResult": {
+          "1": 1,
+          "3": 1,
+          "4": 1,
+          "5": 1
+        },
+        "FirstResultAt": "2026-04-01T08:00:00.5",
+        "LastResultAt": "2026-04-01T12:00:00",
+        "ResultCount": 4
+      }
+    }
+  }
+}

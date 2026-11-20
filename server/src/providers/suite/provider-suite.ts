@@ -11,6 +11,7 @@ import type {
   SurveyOwner,
   SurveyRecord,
 } from "../../domain/types.js";
+import { readLegacyFixtures } from "../azure-legacy/fixtures.js";
 import { surveyListOrder } from "../ordering.js";
 import type {
   AppendOutcome,
@@ -24,6 +25,8 @@ import {
   ADMIN_ID,
   BLOCKED_ID,
   ERASABLE_ID,
+  LEGACY_ASSET_NAME,
+  LEGACY_RESPONSE_NAME,
   MEMBER_ID,
   OUTSIDER_ID,
   OWNER_ID,
@@ -68,6 +71,7 @@ import {
   surveyApiCreated,
   surveyCampaign,
   surveyDraft,
+  surveyArchivedCampaign,
   surveyFeedback,
   surveyOldPoll,
   surveyRetro,
@@ -193,6 +197,44 @@ export function describeProviderSuite(
       it("matches ids case-insensitively and returns lower-case ids", async () => {
         const found = await providers.surveys.getSurvey(surveyFeedback.id.toUpperCase());
         expect(found).toEqual(surveyFeedback);
+      });
+    });
+
+    describeIn("surveys")("surveys.findSurveyByKey", () => {
+      it.each([
+        ["post", (s: SurveyRecord) => ({ postId: s.postId })],
+        ["result", (s: SurveyRecord) => ({ resultId: s.resultId })],
+      ] as const)("finds a survey by its %s ID", async (_name, keyOf) => {
+        expect(await providers.surveys.findSurveyByKey(keyOf(surveyFeedback))).toEqual(
+          surveyFeedback,
+        );
+      });
+
+      it("compares the ID case-insensitively", async () => {
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyFeedback.postId.toUpperCase() }),
+        ).toEqual(surveyFeedback);
+        expect(
+          await providers.surveys.findSurveyByKey({
+            resultId: surveyFeedback.resultId.toUpperCase(),
+          }),
+        ).toEqual(surveyFeedback);
+      });
+
+      it("finds an archived survey", async () => {
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyArchivedCampaign.postId }),
+        ).toEqual(surveyArchivedCampaign);
+      });
+
+      it("answers null for an unknown ID, a non-GUID and a key of the other kind", async () => {
+        expect(await providers.surveys.findSurveyByKey({ postId: UNKNOWN_ID })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ resultId: UNKNOWN_ID })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ postId: "not-a-guid" })).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ resultId: "" })).toBeNull();
+        expect(
+          await providers.surveys.findSurveyByKey({ postId: surveyFeedback.resultId }),
+        ).toBeNull();
       });
     });
 
@@ -1527,6 +1569,105 @@ export function describeProviderSuite(
           expect(pages.map((page) => page.next !== null)).toEqual([true, true, false]);
         });
 
+        describe("from and till", () => {
+          const window = (query: Omit<ResponsePageQuery, "limit">, limit = 10) =>
+            providers.results.listResponsePage(surveyFeedback, { limit, ...query });
+          /** Between rows 2 (09:15) and 3 (10:30) of fixture 01. */
+          const between2and3 = "2026-04-01T10:00:00.000Z";
+          /** Between rows 3 (10:30) and 4 (11:45). */
+          const before4 = "2026-04-01T11:00:00.000Z";
+
+          it("lists rows 3 to 5 of fixture 01 from a time between rows 2 and 3", async () => {
+            expect(await window({ from: between2and3 })).toStrictEqual({
+              items: feedbackResponses.slice(2),
+              next: null,
+            });
+          });
+
+          it("lists rows 1 to 3 till a time before row 4", async () => {
+            expect(await window({ till: before4 })).toStrictEqual({
+              items: feedbackResponses.slice(0, 3),
+              next: null,
+            });
+          });
+
+          it("applies both, leaving out a response exactly at either bound", async () => {
+            expect(
+              await window({
+                from: feedbackResponses[0]!.submittedAt,
+                till: feedbackResponses[4]!.submittedAt,
+              }),
+            ).toStrictEqual({ items: feedbackResponses.slice(1, 4), next: null });
+            expect(
+              (await window({ from: between2and3, till: before4 })).items.map((item) => item.id),
+            ).toStrictEqual([feedbackResponses[2]!.id]);
+          });
+
+          it("compares the bounds as instants", async () => {
+            // Row 3's time (10:30:00.000Z) written with an offset and without milliseconds.
+            const page = await window({ from: "2026-04-01T12:30:00+02:00" });
+            expect(page.items.map((item) => item.id)).toStrictEqual(
+              feedbackResponses.slice(3).map((response) => response.id),
+            );
+          });
+
+          it("leaves out a run that starts before from, even with its complete row inside", async () => {
+            const survey = await freshSurvey();
+            const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
+            await append(survey, sid(1), { submittedAt: at(10), clientId: "a", partial: true });
+            await append(survey, sid(2), { submittedAt: at(12), clientId: "a", data: { a: 2 } });
+            await append(survey, sid(3), { submittedAt: at(13) });
+            // Starts inside the window, completes after till: placed at its first row, so kept.
+            await append(survey, sid(4), { submittedAt: at(14), clientId: "b", partial: true });
+            await append(survey, sid(5), { submittedAt: at(16), clientId: "b", data: { b: 5 } });
+            for (const completedOnly of [false, true]) {
+              const page = await providers.results.listResponsePage(survey, {
+                limit: 10,
+                completedOnly,
+                from: at(11),
+                till: at(15),
+              });
+              expect(page.items.map((item) => [item.id, item.partial])).toStrictEqual([
+                [sid(3), false],
+                [sid(4), false],
+              ]);
+              expect(page.items[1]!.data).toStrictEqual({ q: "first", b: 5 });
+              expect(page.next).toBeNull();
+            }
+          });
+
+          it("pages by one within the window", async () => {
+            const from = feedbackResponses[0]!.submittedAt;
+            const till = feedbackResponses[4]!.submittedAt;
+            const pages: Page[] = [];
+            let after: ResponsePosition | undefined;
+            do {
+              const page = await window({ from, till, ...(after && { after }) }, 1);
+              pages.push(page);
+              after = page.next ?? undefined;
+            } while (after);
+            expect(pages.map((page) => page.items)).toStrictEqual([
+              [feedbackResponses[1]],
+              [feedbackResponses[2]],
+              [feedbackResponses[3]],
+            ]);
+            expect(pages.map((page) => page.next)).toStrictEqual([
+              { submittedAt: feedbackResponses[1]!.submittedAt, id: feedbackResponses[1]!.id },
+              { submittedAt: feedbackResponses[2]!.submittedAt, id: feedbackResponses[2]!.id },
+              null,
+            ]);
+          });
+
+          it("reads a cursor before from as from", async () => {
+            const first = feedbackResponses[0]!;
+            const page = await window({
+              from: between2and3,
+              after: { submittedAt: first.submittedAt, id: first.id },
+            });
+            expect(page.items).toStrictEqual(feedbackResponses.slice(2));
+          });
+        });
+
         describe("on a fresh survey", () => {
           const at = (hour: number): string => `2026-08-02T${String(hour)}:00:00.000Z`;
           const seeded = async (): Promise<SurveyRecord> => {
@@ -1932,6 +2073,73 @@ export function describeProviderSuite(
         expect([
           ...(await providers.files.copySurveyAssets(freshSurveyId(), target, copiedAt)),
         ]).toEqual([]);
+      });
+
+      describe("getFileByLegacyName", () => {
+        /** The fixtures' editor asset (no extension) and respondent file. */
+        const fixtureFile = async (share: string, name: string): Promise<Buffer> => {
+          const { files } = await readLegacyFixtures();
+          const found = files.find((f) => f.share === share && f.name === name);
+          if (!found) throw new Error(`No fixture file ${share}/${name}`);
+          return found.content;
+        };
+        const readLegacy = async (kind: "asset" | "response", name: string) => {
+          const found = await providers.files.getFileByLegacyName(kind, name);
+          if (!found) return null;
+          const chunks: Buffer[] = [];
+          for await (const chunk of found.content) chunks.push(chunk as Buffer);
+          return { file: found.file, bytes: Buffer.concat(chunks) };
+        };
+
+        it("returns the seeded editor asset as stored, octet-stream without an extension", async () => {
+          const bytes = await fixtureFile("surveyfiles", LEGACY_ASSET_NAME);
+          const found = await readLegacy("asset", LEGACY_ASSET_NAME);
+          expect(found?.bytes.equals(bytes)).toBe(true);
+          expect(found?.file).toMatchObject({
+            kind: "asset",
+            name: LEGACY_ASSET_NAME,
+            contentType: "application/octet-stream",
+            size: bytes.length,
+          });
+        });
+
+        it("returns the seeded respondent file with the type of its extension", async () => {
+          const bytes = await fixtureFile("files", LEGACY_RESPONSE_NAME);
+          const found = await readLegacy("response", LEGACY_RESPONSE_NAME);
+          expect(found?.bytes.equals(bytes)).toBe(true);
+          expect(found?.file).toMatchObject({
+            kind: "response",
+            name: LEGACY_RESPONSE_NAME,
+            contentType: "image/png",
+            size: bytes.length,
+          });
+        });
+
+        it("matches names as stored, case included", async () => {
+          expect(await readLegacy("asset", LEGACY_ASSET_NAME.toUpperCase())).toBeNull();
+          expect(
+            await readLegacy("response", LEGACY_RESPONSE_NAME.replace(".png", ".PNG")),
+          ).toBeNull();
+        });
+
+        it("answers null for an unknown name and for a name of the other kind", async () => {
+          expect(await readLegacy("asset", "99999999-0000-4000-8000-a00000000099")).toBeNull();
+          expect(await readLegacy("response", LEGACY_ASSET_NAME)).toBeNull();
+          expect(await readLegacy("asset", LEGACY_RESPONSE_NAME)).toBeNull();
+        });
+
+        it.each([
+          "../x",
+          "a/b",
+          "..",
+          ".",
+          "",
+          `${LEGACY_ASSET_NAME}/`,
+          `..\\${LEGACY_ASSET_NAME}`,
+        ])("answers null for the name %j, which is no legacy name", async (name) => {
+          expect(await readLegacy("asset", name)).toBeNull();
+          expect(await readLegacy("response", name)).toBeNull();
+        });
       });
     });
 

@@ -19,6 +19,28 @@ export const baseUrl = inject("baseUrl");
 export const ownsServer = inject("ownsServer");
 /** True with `CONFORMANCE_PROVIDER=sandbox`: the sandbox's mock handlers answer, under msw/node. */
 export const sandbox = inject("sandbox");
+/**
+ * True when the server is the hosted edition, the only one that routes the operations for surveys
+ * built for the old service (ADR 0039). Elsewhere they answer `404 not-found` as unknown paths.
+ */
+export const hosted = inject("edition") === "hosted";
+
+/** The operations only the hosted edition routes (server/src/app.ts `HOSTED_OPERATIONS`). */
+export const HOSTED_OPERATIONS: readonly string[] = [
+  "getPublicDefinition",
+  "getRespondentState",
+  "getRespondentStateByResultId",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
+  "getQuestionSummary",
+  "getLegacyFile",
+];
+
+/** The answer to a path no route takes: `404 not-found`. */
+export async function expectNotRouted(response: Response): Promise<void> {
+  expect(response.status).toBe(404);
+  expect(await codeOf(response)).toBe("not-found");
+}
 
 let validatorPromise: Promise<Validator> | undefined;
 

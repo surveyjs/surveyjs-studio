@@ -17,6 +17,8 @@ import {
   call,
   codeOf,
   as,
+  expectNotRouted,
+  hosted,
   newSurvey,
   ownSurvey,
   ownsServer,
@@ -474,5 +476,291 @@ describe("getResultStats", () => {
     expect((await stats(fixture.customerFeedback, await as(ctx, outsider))).status).toBe(404);
     expect((await stats(UNKNOWN_ID, await as(ctx, owner))).status).toBe(404);
     expect((await stats(fixture.customerFeedback)).status).toBe(401);
+  });
+});
+
+/** The survey's post and result IDs, read as its owner. */
+async function keysOf(
+  headers: Headers,
+  surveyId: string,
+): Promise<{ postId: string; resultId: string }> {
+  const read = await call("GET", "/surveys/{surveyId}", { path: `/surveys/${surveyId}`, headers });
+  return (await read.json()) as { postId: string; resultId: string };
+}
+
+function definitionOf(surveyId: string, headers: Headers = {}): Promise<Response> {
+  return call("GET", "/public/surveys/{surveyId}/definition", {
+    path: `/public/surveys/${surveyId}/definition`,
+    headers,
+  });
+}
+
+async function stateOf(surveyId: string, clientId: string): Promise<unknown> {
+  const response = await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+    path: `/public/surveys/${surveyId}/respondents/${encodeURIComponent(clientId)}`,
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+function stateByResultId(resultId: string, clientId: string): Promise<Response> {
+  return call("GET", "/public/results/{resultId}/respondents/{clientId}", {
+    path: `/public/results/${resultId}/respondents/${encodeURIComponent(clientId)}`,
+  });
+}
+
+function submitByPostId(
+  postId: string,
+  body: unknown,
+  options: { key?: string } = {},
+): Promise<Response> {
+  return call("POST", "/public/posts/{postId}/responses", {
+    path: `/public/posts/${postId}/responses`,
+    body,
+    headers: options.key === undefined ? {} : { "idempotency-key": options.key },
+  });
+}
+
+// The operations for surveys built for the old service (ADR 0039) exist in the hosted edition only.
+describe.skipIf(hosted)("the bridge's operations outside the hosted edition", () => {
+  it("names the edition the suite was given in /config", async () => {
+    const config = await call("GET", "/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("self-hosted");
+  });
+
+  it("answers 404 not-found as for an unknown path, for a survey that exists", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    await expectNotRouted(await definitionOf(surveyId));
+    await expectNotRouted(
+      await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+        path: `/public/surveys/${surveyId}/respondents/c`,
+      }),
+    );
+    await expectNotRouted(await stateByResultId(resultId, "c"));
+    await expectNotRouted(await summaryOf(resultId, "q1"));
+    await expectNotRouted(await submitByPostId(postId, { data: { q1: "a" } }));
+    expect(await countOf(surveyId, headers)).toBe(0);
+  });
+});
+
+describe.runIf(hosted)("the hosted edition", () => {
+  it("names the edition the suite was given in /config", async () => {
+    const config = await call("GET", "/config");
+    expect(((await config.json()) as { edition: string }).edition).toBe("hosted");
+  });
+});
+
+describe.runIf(hosted)("getPublicDefinition", () => {
+  it("serves the working definition of any survey, with a strong ETag to revalidate", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    await expectNotAvailable(await load(surveyId));
+
+    const first = await definitionOf(surveyId);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toStrictEqual(ONE_QUESTION);
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^"[^"]+"$/);
+    expect(first.headers.get("cache-control")).toBe("no-cache");
+
+    for (const match of [etag!, `"other", ${etag!}`, "*"]) {
+      const same = await definitionOf(surveyId, { "if-none-match": match });
+      expect(same.status).toBe(304);
+      expect(same.headers.get("etag")).toBe(etag);
+      expect(same.headers.get("cache-control")).toBe("no-cache");
+      expect(await same.text()).toBe("");
+    }
+    const stale = await definitionOf(surveyId, { "if-none-match": '"stale"' });
+    expect(stale.status).toBe(200);
+
+    const edited = { pages: [{ name: "page1", elements: [{ type: "text", name: "q2" }] }] };
+    const saved = await call("PUT", "/surveys/{surveyId}/definition", {
+      path: `/surveys/${surveyId}/definition`,
+      headers: { ...headers, "if-match": etag! },
+      body: edited,
+    });
+    expect(saved.status).toBe(204);
+    const changed = await definitionOf(surveyId, { "if-none-match": etag! });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    expect(await changed.json()).toStrictEqual(edited);
+  });
+
+  it("serves an archived survey and answers 404 for an unknown one", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await newSurvey(headers, { definition: ONE_QUESTION });
+    const archived = await call("PATCH", "/surveys/{surveyId}", {
+      path: `/surveys/${surveyId}`,
+      headers: { "content-type": "application/merge-patch+json", ...headers },
+      body: { archived: true },
+    });
+    expect(archived.status).toBe(200);
+    expect((await definitionOf(surveyId)).status).toBe(200);
+    expect((await definitionOf(fixture.unpublishedArchived)).status).toBe(200);
+    await expectNotAvailable(await definitionOf(UNKNOWN_ID));
+  });
+});
+
+describe.runIf(hosted)("getRespondentState", () => {
+  it("follows the client's marker, by survey ID and by result ID", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    const clientId = `client ${randomUUID()}%`;
+    const both = async (state: string) => {
+      expect(await stateOf(surveyId, clientId)).toStrictEqual({ state });
+      const byResult = await stateByResultId(resultId, clientId);
+      expect(byResult.status).toBe(200);
+      expect(await byResult.json()).toStrictEqual({ state });
+    };
+    const post = (extra: object) =>
+      submitByPostId(postId, { data: { q1: "a" }, clientId, ...extra });
+
+    await both("none");
+    expect((await post({ partial: true })).status).toBe(201);
+    await both("partial");
+    expect((await post({})).status).toBe(201);
+    await both("completed");
+    expect((await post({ partial: true })).status).toBe(201);
+    await both("partial");
+  });
+
+  it("routes a client ID of the longest length, 256 characters, on both paths", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const clientId = "c".repeat(256);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "none" });
+    const byResult = await stateByResultId(resultId, clientId);
+    expect(byResult.status).toBe(200);
+    expect(await byResult.json()).toStrictEqual({ state: "none" });
+  });
+
+  it("answers 404 for an unknown survey or result ID", async () => {
+    const response = await call("GET", "/public/surveys/{surveyId}/respondents/{clientId}", {
+      path: `/public/surveys/${UNKNOWN_ID}/respondents/c`,
+    });
+    await expectNotAvailable(response);
+    await expectNotAvailable(await stateByResultId(UNKNOWN_ID, "c"));
+  });
+});
+
+function summaryOf(resultId: string, name: string): Promise<Response> {
+  return call("GET", "/public/results/{resultId}/questions/{name}", {
+    path: `/public/results/${resultId}/questions/${encodeURIComponent(name)}`,
+  });
+}
+
+describe.runIf(hosted)("getQuestionSummary", () => {
+  it("counts the completed responses only, by result ID", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId, resultId } = await keysOf(headers, surveyId);
+    const post = async (data: object, extra: object = {}) => {
+      expect((await submitByPostId(postId, { data, ...extra })).status).toBe(201);
+    };
+    await post({ q1: ["a", "b"] });
+    await post({ q1: ["b"] });
+    await post({ q1: { r1: "c1" } });
+    await post({ q1: 1 });
+    await post({ q1: "1" });
+    await post({ other: "x" });
+    await post({ q1: "partial only" }, { clientId: "p1", partial: true });
+    await post({ q1: "run" }, { clientId: "c1", partial: true });
+    await post({ q1: ["a"] }, { clientId: "c1" });
+
+    const response = await summaryOf(resultId, "q1");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      answered: 6,
+      values: [
+        { value: "a", count: 2 },
+        { value: "b", count: 2 },
+        { value: ["r1", "c1"], count: 1 },
+        { value: 1, count: 1 },
+        { value: "1", count: 1 },
+      ],
+      responseCount: 7,
+    });
+    expect(body.firstSubmittedAt).toEqual(expect.any(String));
+    expect(body.lastSubmittedAt).toEqual(expect.any(String));
+  });
+
+  it("answers an empty summary for a survey without responses", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const response = await summaryOf(resultId, "q1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      answered: 0,
+      values: [],
+      responseCount: 0,
+      firstSubmittedAt: null,
+      lastSubmittedAt: null,
+    });
+  });
+
+  it("routes a question name of the longest length, 256 characters, and refuses a longer one", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION });
+    const { resultId } = await keysOf(headers, surveyId);
+    const response = await summaryOf(resultId, `question ${"q".repeat(247)}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      answered: 0,
+      values: [],
+      responseCount: 0,
+      firstSubmittedAt: null,
+      lastSubmittedAt: null,
+    });
+    // The contract's `maxLength: 256`: a 300-character name is routed and refused by the schema.
+    const longer = await summaryOf(resultId, `question ${"q".repeat(291)}`);
+    expect(longer.status).toBe(400);
+    expect(await codeOf(longer)).toBe("bad-request");
+  });
+
+  it("answers 404 for an unknown result ID", async () => {
+    await expectNotAvailable(await summaryOf(UNKNOWN_ID, "q1"));
+  });
+});
+
+describe.runIf(hosted)("submitResponseByPostId", () => {
+  it("stores a response for an unpublished survey, once per Idempotency-Key", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, { definition: ONE_QUESTION, published: false });
+    const { postId } = await keysOf(headers, surveyId);
+    await expectNotAvailable(await submit(surveyId, { data: { q1: "a" } }));
+
+    const key = `k-${randomUUID()}`;
+    const first = await submitByPostId(postId, { data: { q1: "a" } }, { key });
+    expect(first.status).toBe(201);
+    const replay = await submitByPostId(postId, { data: { q1: "b" } }, { key });
+    expect(replay.status).toBe(201);
+    expect(await idOf(replay)).toBe(await idOf(first));
+    expect(await countOf(surveyId, headers)).toBe(1);
+  });
+
+  it("stores a completed client's next post and the marker follows it", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const surveyId = await ownSurvey(headers, {
+      definition: { ...ONE_QUESTION, cookieName: "limit-by-post" },
+    });
+    const { postId } = await keysOf(headers, surveyId);
+    const clientId = `client-${randomUUID()}`;
+    const body = { data: { q1: "a" }, clientId };
+    expect((await submitByPostId(postId, body)).status).toBe(201);
+    expect((await submit(surveyId, body)).status).toBe(409);
+    expect((await submitByPostId(postId, body)).status).toBe(201);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "completed" });
+    expect((await submitByPostId(postId, { ...body, partial: true })).status).toBe(201);
+    expect(await stateOf(surveyId, clientId)).toStrictEqual({ state: "partial" });
+  });
+
+  it("answers 404 for an unknown post ID", async () => {
+    await expectNotAvailable(await submitByPostId(UNKNOWN_ID, { data: { q1: "a" } }));
   });
 });

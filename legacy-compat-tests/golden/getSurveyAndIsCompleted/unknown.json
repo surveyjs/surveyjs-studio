@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: 400 \"Check parameter values.\"",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurveyAndIsCompleted",
+    "query": {
+      "surveyId": "99999999-9999-4999-8999-999999999999",
+      "clientId": "client-0001"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "Check parameter values."
+    }
+  }
+}

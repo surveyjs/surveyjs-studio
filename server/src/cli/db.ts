@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { openByteStore, type ByteStore } from "../bytes/index.js";
 import { loadConfig } from "../config.js";
 import { openDatabase, type DatabaseTarget, type SqlDatabase } from "../sql/database.js";
 import { withSeedInvitation } from "../providers/seed-invitations.js";
@@ -14,8 +15,10 @@ export const USAGE = `Usage: pnpm db:migrate [--env-file <path>]
 db:migrate applies the database migrations this version has and the database lacks, in one
 transaction (the server also does this when it starts). db:status lists the applied and the
 pending migrations, and writes nothing. seed migrates, then loads the shared seed (the golden
-fixtures): each seed survey is replaced, every other survey stays. STORAGE_PROVIDER must be
-sqlite or postgres (for the local PostgreSQL pass --env-file docker/postgres.env).
+fixtures): each seed survey is replaced, every other survey stays. With FILES_PATH or FILE_STORE
+set, it also writes the fixtures' legacy files to that file store; otherwise it skips them.
+STORAGE_PROVIDER must be sqlite or postgres (for the local PostgreSQL run pnpm seed:postgres,
+which also sets FILES_PATH to the demo's folder).
 
 Options:
   --env-file <path>   Load environment variables from this file first;
@@ -71,10 +74,18 @@ async function apply(database: SqlDatabase, io: CliIo): Promise<number> {
   return 0;
 }
 
-async function seed(database: SqlDatabase, io: CliIo): Promise<number> {
+/**
+ * `bytes`: the file store for the fixtures' legacy files, or null when neither FILES_PATH nor
+ * FILE_STORE is set: the default folder (/data/files, the image's volume) may not exist or be
+ * writable here, so the files are skipped then.
+ */
+async function seed(database: SqlDatabase, bytes: ByteStore | null, io: CliIo): Promise<number> {
   await apply(database, io);
-  const report = await seedSqlStores(database, withSeedInvitation(await legacyFixtureSeed()));
+  const report = await seedSqlStores(database, withSeedInvitation(await legacyFixtureSeed()), {
+    ...(bytes && { bytes }),
+  });
   io.out(`Seeded ${report.surveys} surveys and ${report.projects} projects.\n`);
+  if (!bytes) io.out("Legacy files skipped: set FILES_PATH or FILE_STORE to load them.\n");
   return 0;
 }
 
@@ -137,7 +148,10 @@ export async function run(
     }
     database = openDatabase(config.database!);
     io.out(`Database: ${describeTarget(config.database!)}\n`);
-    if (command === "seed") return await seed(database, io);
+    if (command === "seed") {
+      const fileStoreSet = Boolean(env.FILES_PATH?.trim() || env.FILE_STORE?.trim());
+      return await seed(database, fileStoreSet ? openByteStore(config.files!) : null, io);
+    }
     return command === "migrate" ? await apply(database, io) : await status(database, io);
   } catch (error) {
     io.err(`Error: ${safeErrorText(error)}\n`);

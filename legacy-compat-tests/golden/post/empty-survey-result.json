@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "an empty surveyResult: 400 Bad Request",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "postId": "99999999-9999-4999-8999-999999999999",
+        "surveyResult": ""
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "Bad Request",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

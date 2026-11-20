@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "a client ID the storage refuses (a slash): 400 with the storage's refusal text",
+  "difference": "The old text was the storage's own message and also carried its request ID and time; the bridge answers the stable part. The old API could already have stored the response row when only the completion marker was refused; the bridge stores nothing.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "postId": "{{survey.postId}}",
+        "surveyResult": "{}",
+        "clientId": "a/b"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "One of the request inputs is not valid.\nInvalidInput: One of the request inputs is not valid."
+    }
+  }
+}

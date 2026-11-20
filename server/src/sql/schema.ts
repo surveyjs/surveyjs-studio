@@ -117,6 +117,14 @@ export interface FilesTable {
   created_at: Timestamp;
 }
 
+/** A file under the old service's name (0008). */
+export interface LegacyFilesTable {
+  kind: "asset" | "response";
+  /** As stored, case included. */
+  legacy_name: string;
+  file_id: string;
+}
+
 export interface UsersTable {
   id: string;
   /** Stored lower-case. */
@@ -184,6 +192,7 @@ export interface DatabaseSchema {
   projects: ProjectsTable;
   project_members: ProjectMembersTable;
   files: FilesTable;
+  legacy_files: LegacyFilesTable;
   users: UsersTable;
   password_links: PasswordLinksTable;
   user_identities: UserIdentitiesTable;

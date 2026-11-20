@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "a respondent file of the old service: octet-stream, attachment with its name",
+  "providers": ["memory"],
+  "providersNote": "Azurite has no file service, so the azure-legacy provider cannot read the legacy file shares here",
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/file",
+    "query": {
+      "filePath": "99999999-0000-4000-8000-a00000000002.png"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-disposition": "attachment; filename=99999999-0000-4000-8000-a00000000002.png; filename*=UTF-8''99999999-0000-4000-8000-a00000000002.png",
+      "cache-control": null
+    },
+    "body": {
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+  }
+}

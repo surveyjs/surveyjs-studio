@@ -95,6 +95,12 @@ describe("toProblem", () => {
     });
   });
 
+  it("maps a path segment over the router's limit to 404 not-found", () => {
+    expect(
+      toProblem(fastifyError("FST_ERR_MAX_PARAM_LENGTH", "long", { statusCode: 414 })),
+    ).toMatchObject({ status: 404, code: "not-found" });
+  });
+
   it("maps oversized bodies to 413 payload-too-large", () => {
     expect(
       toProblem(fastifyError("FST_ERR_CTP_BODY_TOO_LARGE", "big", { statusCode: 413 })),

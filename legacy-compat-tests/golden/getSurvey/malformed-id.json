@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a surveyId that is not a GUID: the validation problem",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": {
+      "surveyId": "GUID"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "surveyId": ["The value 'GUID' is not valid."]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

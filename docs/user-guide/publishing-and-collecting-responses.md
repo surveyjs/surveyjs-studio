@@ -16,6 +16,11 @@ That address is the **link to give to respondents**. It needs no sign-in.
 - **Archiving does not stop collecting.** An archived survey that is still published keeps accepting
   responses, as it does on surveyjs.io. Unpublish it to stop.
 - **Unpublish** stops new responses at once. The responses already stored stay.
+- **On studio.surveyjs.io (the hosted edition), surveys built for the old service** keep the old API's rules. A page or
+  server that loads a survey through the old API's addresses (`api.surveyjs.io`, [the bridge](../api/legacy-compat.md))
+  can still read the definition of an unpublished or archived survey and post responses to it, as the old API always
+  allowed; publishing and "Limit to one response" apply to the run page above. A self-hosted server has no such
+  addresses: there, Unpublish stops every new response.
 - A survey that was never switched on or off on the old site counts as **published** here, as it did on
   the old run page. A new survey is published too, so it runs at once. Unpublish a survey that should not
   collect responses yet.

@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a form-encoded body: 415",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "text": "postId=99999999-9999-4999-8999-999999999999&surveyResult=%7B%7D"
+    }
+  },
+  "response": {
+    "status": 415,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.16",
+        "title": "Unsupported Media Type",
+        "status": 415,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

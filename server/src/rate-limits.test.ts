@@ -9,8 +9,11 @@ const SURVEY_URL = `/api/v1/public/surveys/${SURVEY}`;
 
 let app: FastifyInstance | undefined;
 
-async function start(env: Record<string, string> = {}): Promise<FastifyInstance> {
-  const config = loadConfig({
+async function start(
+  env: Record<string, string> = {},
+  edition: "hosted" | "self-hosted" = "self-hosted",
+): Promise<FastifyInstance> {
+  const loaded = loadConfig({
     NODE_ENV: "test",
     IDENTITY_PROVIDER: "dev",
     MEMORY_SEED: "legacy-fixtures",
@@ -18,6 +21,8 @@ async function start(env: Record<string, string> = {}): Promise<FastifyInstance>
     PUBLIC_FILE_RATE_LIMIT: "1",
     ...env,
   });
+  // Set after loading: the dev sign-in is refused with APP_EDITION=hosted.
+  const config = { ...loaded, edition };
   app = await buildApp(config, await createProviders(config));
   return app;
 }
@@ -68,6 +73,45 @@ describe("public rate limits", () => {
     const url = "/api/v1/public/files/99999999-0000-4000-8000-a00000000099";
     expect((await server.inject({ url, remoteAddress: "203.0.113.9" })).statusCode).toBe(404);
     expect((await server.inject({ url, remoteAddress: "203.0.113.9" })).statusCode).toBe(429);
+  });
+
+  it("limits getLegacyFile by PUBLIC_FILE_RATE_LIMIT, on its own counter", async () => {
+    const server = await start({ PUBLIC_FILE_RATE_LIMIT: "3" }, "hosted");
+    const remoteAddress = "203.0.113.30";
+    const read = () =>
+      server.inject({ url: "/api/v1/public/legacy-files/asset/unknown.png", remoteAddress });
+    for (let i = 0; i < 3; i += 1) expect((await read()).statusCode).toBe(404);
+    expect((await read()).statusCode).toBe(429);
+    const file = "/api/v1/public/files/99999999-0000-4000-8000-a00000000099";
+    expect((await server.inject({ url: file, remoteAddress })).statusCode).toBe(404);
+  });
+
+  it("limits getQuestionSummary by PUBLIC_SUMMARY_RATE_LIMIT, on its own counter", async () => {
+    const server = await start(
+      { PUBLIC_RATE_LIMIT: "100", PUBLIC_SUMMARY_RATE_LIMIT: "2" },
+      "hosted",
+    );
+    const remoteAddress = "203.0.113.31";
+    const summary = () =>
+      server.inject({
+        url: "/api/v1/public/results/99999999-0000-4000-8000-a00000000099/questions/q",
+        remoteAddress,
+      });
+    expect((await summary()).statusCode).toBe(404);
+    expect((await summary()).statusCode).toBe(404);
+    const limited = await summary();
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toMatchObject({ code: "rate-limited" });
+    expect((await server.inject({ url: SURVEY_URL, remoteAddress })).statusCode).toBe(200);
+  });
+
+  it("defaults PUBLIC_SUMMARY_RATE_LIMIT to 10 a minute", async () => {
+    const server = await start({ PUBLIC_RATE_LIMIT: "100" }, "hosted");
+    const res = await server.inject({
+      url: "/api/v1/public/results/99999999-0000-4000-8000-a00000000099/questions/q",
+      remoteAddress: "203.0.113.32",
+    });
+    expect(res.headers["x-ratelimit-limit"]).toBe("10");
   });
 
   it("keys on X-Forwarded-For only from a trusted proxy", async () => {

@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "no postId: 400 \"Check parameter values.\"",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "surveyResult": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "Check parameter values."
+    }
+  }
+}

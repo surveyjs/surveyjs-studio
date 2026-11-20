@@ -4,10 +4,12 @@ import type { RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { responseIdFor } from "../domain/response-id.js";
 import { AppError } from "../errors.js";
+import type { CompletionState, SurveyDefinition, SurveyRecord } from "../domain/types.js";
 import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
   type ProjectStore,
+  type ResponsePosition,
   type FileStore,
   type ResultStore,
   type SurveyStore,
@@ -18,7 +20,14 @@ import { availableSurvey, surveyNotAvailable } from "./availability.js";
 import { decodeResultsCursor, encodeResultsCursor } from "../paging/cursor.js";
 import { privateKeysOf, withoutKeys } from "./definition.js";
 import { csvColumns } from "./csv.js";
-import { csvExport, jsonExport, responseJson, storedResponses } from "./export.js";
+import {
+  EXPORT_PAGE_SIZE,
+  csvExport,
+  jsonExport,
+  responseJson,
+  storedResponses,
+} from "./export.js";
+import { SummaryCache, summarizeQuestion } from "./question-summary.js";
 import { exportFileName, type ExportFormat } from "./export-format.js";
 import { limitCookieOf, publishedDefinition } from "./one-response.js";
 
@@ -26,6 +35,7 @@ export type PublishedSurveyJson = components["schemas"]["PublishedSurvey"];
 export type ResultStatsJson = components["schemas"]["ResultStats"];
 export type ResponsePageJson = components["schemas"]["ResponsePage"];
 export type PublicResultPageJson = components["schemas"]["PublicResultPage"];
+export type QuestionSummaryJson = components["schemas"]["QuestionSummary"];
 
 export interface ExportFile {
   /** `exportFileName(survey.name, format)`. */
@@ -50,6 +60,20 @@ export interface SubmitRequest {
 export interface ResultsService {
   getPublished(surveyId: string, clientId: string | undefined): Promise<PublishedSurveyJson>;
   submit(surveyId: string, request: SubmitRequest): Promise<{ id: string }>;
+  /**
+   * As `submit`, addressed by post ID and following the old service's checks: the survey's publish
+   * state and "Limit to one response" are ignored. Unknown post ID: `survey-not-available`.
+   */
+  submitByPostId(postId: string, request: SubmitRequest): Promise<{ id: string }>;
+  /** The working definition, whatever the survey's publish state; `survey-not-available` when none. */
+  getPublicDefinition(surveyId: string): Promise<{ content: SurveyDefinition; version: string }>;
+  /** A client's state in the survey, by survey ID or result ID; `survey-not-available` when unknown. */
+  respondentState(
+    key: { readonly surveyId: string } | { readonly resultId: string },
+    clientId: string,
+  ): Promise<{ state: CompletionState }>;
+  /** One question's answers counted over the completed responses; `survey-not-available` for an unknown result ID. */
+  questionSummary(resultId: string, name: string): Promise<QuestionSummaryJson>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
   /** One page of every stored response, oldest first; answers included. */
   list(
@@ -61,10 +85,14 @@ export interface ResultsService {
   exportResults(user: RequestUser, surveyId: string, format: ExportFormat): Promise<ExportFile>;
   /** Deletes every response, marker and respondent file; needs modify permission. */
   deleteResults(user: RequestUser, surveyId: string): Promise<void>;
-  /** One page of public results (Grant Access on); private questions' answers left out. */
+  /**
+   * One page of public results (Grant Access on); private questions' answers left out. `from` and
+   * `till` (ISO 8601) keep responses placed strictly between them; one a Date cannot read (a leap
+   * second) is refused as the validator refuses a malformed date-time.
+   */
   publicPage(
     surveyId: string,
-    page: { limit: number; cursor?: string },
+    page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<PublicResultPageJson>;
 }
 
@@ -98,10 +126,80 @@ const tooLarge = (cause: unknown): AppError =>
     cause,
   });
 
+/**
+ * `from` and `till` of public results as instants in `toISOString` form. A value the contract's
+ * `date-time` accepts but Date cannot read (a leap second, `23:59:60`) is refused with the answer
+ * the validator gives for any other malformed date-time.
+ */
+function publicWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
+  const window: { from?: string; till?: string } = {};
+  const unreadable: string[] = [];
+  for (const name of ["from", "till"] as const) {
+    const value = page[name];
+    if (value === undefined) continue;
+    const at = Date.parse(value);
+    if (Number.isNaN(at)) unreadable.push(name);
+    else window[name] = new Date(at).toISOString();
+  }
+  if (unreadable.length > 0) {
+    throw new AppError({
+      code: "bad-request",
+      status: 400,
+      title: "Bad request",
+      errors: unreadable.map((name) => ({
+        pointer: `/${name}`,
+        detail: 'must match format "date-time"',
+      })),
+    });
+  }
+  return window;
+}
+
 /** Loading a published survey, storing responses to it once, and counting them. */
+/** How many question summaries a server keeps (`getQuestionSummary`). */
+const SUMMARY_CACHE_ENTRIES = 100;
+
 export function createResultsService(options: ResultsServiceOptions): ResultsService {
   const { surveys, projects, results, files, views, now = Date.now } = options;
   const access = createSurveyAccess({ surveys, projects });
+  // Repeated anonymous calls on an unchanged survey do not read its responses again.
+  const summaries = new SummaryCache<QuestionSummaryJson>(SUMMARY_CACHE_ENTRIES);
+
+  /** Stores a response to `survey`; `limitToOneResponse` off ignores the survey's one-response limit. */
+  async function store(
+    survey: SurveyRecord,
+    request: SubmitRequest,
+    check: { readonly limitToOneResponse: boolean },
+  ): Promise<{ id: string }> {
+    const { clientId, idempotencyKey } = request;
+    const id =
+      idempotencyKey === undefined ? randomUUID() : responseIdFor(survey.id, idempotencyKey);
+    // A retry of a stored response answers as the original did, even if the client has completed since.
+    if (idempotencyKey !== undefined && (await results.hasResponse(survey, id))) return { id };
+
+    if (clientId !== undefined && check.limitToOneResponse) {
+      const definition = await surveys.getDefinition(survey.id);
+      if (!definition) throw surveyNotAvailable();
+      const limited = survey.settings.useCookies || limitCookieOf(definition.content) !== null;
+      if (limited && (await results.completion(survey, clientId)) === "completed") {
+        throw alreadyCompleted();
+      }
+    }
+    try {
+      await results.appendResponse(survey, {
+        id,
+        submittedAt: new Date(now()).toISOString(),
+        data: request.data,
+        ...(clientId !== undefined && { clientId }),
+        ...(clientId !== undefined && request.partial === true && { partial: true }),
+        ...(survey.settings.storeRespondentIp && { respondentIp: respondentIp(request.ip) }),
+      });
+    } catch (error) {
+      if (error instanceof ResponseTooLargeError) throw tooLarge(error);
+      throw error;
+    }
+    return { id };
+  }
 
   return {
     async getPublished(surveyId, clientId) {
@@ -125,36 +223,61 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       };
     },
 
-    async submit(surveyId, request) {
-      const survey = await availableSurvey(surveys, surveyId);
-      const { clientId, idempotencyKey } = request;
-      const id =
-        idempotencyKey === undefined ? randomUUID() : responseIdFor(survey.id, idempotencyKey);
-      // A retry of a stored response answers as the original did, even if the client has completed since.
-      if (idempotencyKey !== undefined && (await results.hasResponse(survey, id))) return { id };
+    submit: async (surveyId, request) =>
+      store(await availableSurvey(surveys, surveyId), request, { limitToOneResponse: true }),
 
-      if (clientId !== undefined) {
-        const definition = await surveys.getDefinition(survey.id);
-        if (!definition) throw surveyNotAvailable();
-        const limited = survey.settings.useCookies || limitCookieOf(definition.content) !== null;
-        if (limited && (await results.completion(survey, clientId)) === "completed") {
-          throw alreadyCompleted();
+    async submitByPostId(postId, request) {
+      const survey = await surveys.findSurveyByKey({ postId });
+      if (!survey) throw surveyNotAvailable();
+      return store(survey, request, { limitToOneResponse: false });
+    },
+
+    async getPublicDefinition(surveyId) {
+      const definition = await surveys.getDefinition(surveyId);
+      if (!definition || !(await surveys.getSurvey(surveyId))) throw surveyNotAvailable();
+      return definition;
+    },
+
+    async respondentState(key, clientId) {
+      const survey =
+        "surveyId" in key
+          ? await surveys.getSurvey(key.surveyId)
+          : await surveys.findSurveyByKey(key);
+      if (!survey) throw surveyNotAvailable();
+      return { state: await results.completion(survey, clientId) };
+    },
+
+    async questionSummary(resultId, name) {
+      const survey = await surveys.findSurveyByKey({ resultId });
+      if (!survey) throw surveyNotAvailable();
+      const completed = async function* () {
+        let after: ResponsePosition | undefined;
+        for (;;) {
+          const page = await results.listResponsePage(survey, {
+            limit: EXPORT_PAGE_SIZE,
+            completedOnly: true,
+            ...(after && { after }),
+          });
+          yield* page.items;
+          if (page.next === null) return;
+          after = page.next;
         }
-      }
-      try {
-        await results.appendResponse(survey, {
-          id,
-          submittedAt: new Date(now()).toISOString(),
-          data: request.data,
-          ...(clientId !== undefined && { clientId }),
-          ...(clientId !== undefined && request.partial === true && { partial: true }),
-          ...(survey.settings.storeRespondentIp && { respondentIp: respondentIp(request.ip) }),
-        });
-      } catch (error) {
-        if (error instanceof ResponseTooLargeError) throw tooLarge(error);
-        throw error;
-      }
-      return { id };
+      };
+      // The stats are cheap: an unchanged count and last submission time reuse the summary.
+      const stats = await results.stats(survey);
+      const key = SummaryCache.key(survey.id, name, stats);
+      const cached = summaries.get(key);
+      if (cached !== undefined) return cached;
+      const counts = await summarizeQuestion(name, completed());
+      const summary: QuestionSummaryJson = {
+        answered: counts.answered,
+        values: counts.values,
+        responseCount: stats.count,
+        firstSubmittedAt: stats.firstSubmittedAt,
+        lastSubmittedAt: stats.lastSubmittedAt,
+      };
+      summaries.set(key, summary);
+      return summary;
     },
 
     async stats(user, surveyId) {
@@ -203,6 +326,8 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
     },
 
     async publicPage(surveyId, page) {
+      // Before any lookup, as the validator refuses a malformed date-time.
+      const window = publicWindow(page);
       const survey = await surveys.getSurvey(surveyId);
       if (!survey?.settings.publicResults) throw surveyNotAvailable();
       const after =
@@ -217,6 +342,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         limit: page.limit,
         completedOnly: true,
         ...(after && { after }),
+        ...window,
       });
       return {
         survey: {

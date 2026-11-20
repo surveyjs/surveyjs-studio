@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "a repeated surveyId: the validation problem quotes every value",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": "surveyId=bad&surveyId=x"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "surveyId": ["The value 'bad,x' is not valid."]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

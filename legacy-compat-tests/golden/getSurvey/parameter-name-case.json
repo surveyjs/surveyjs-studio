@@ -1,0 +1,39 @@
+{
+  "source": "derived",
+  "description": "the parameter name in any letter case",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": {
+      "SURVEYID": "22222222-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "json": {
+        "title": "Customer feedback",
+        "pages": [
+          {
+            "name": "page1",
+            "elements": [
+              {
+                "type": "rating",
+                "name": "satisfaction",
+                "title": "How satisfied are you?"
+              },
+              {
+                "type": "file",
+                "name": "receipt",
+                "title": "Upload your receipt"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -10,6 +10,7 @@ import {
   ResponseTooLargeError,
   type FileStore,
   type ProviderSet,
+  type ResponsePageQuery,
   type ResultStore,
   type ViewStore,
 } from "../providers/types.js";
@@ -43,13 +44,16 @@ async function start(
     logLines?: string[];
   } = {},
 ): Promise<Started> {
-  const config = loadConfig({
+  const loaded = loadConfig({
     NODE_ENV: "test",
     IDENTITY_PROVIDER: "dev",
     MEMORY_SEED: "legacy-fixtures",
     LOG_LEVEL: "info",
     ...options.env,
   });
+  // Hosted, which routes the bridge's operations (set after loading: the dev sign-in is refused
+  // with APP_EDITION=hosted). api.test.ts checks they are not routed elsewhere.
+  const config = { ...loaded, edition: "hosted" as const };
   const memory = await createProviders(config);
   const providers: ProviderSet = {
     ...memory,
@@ -432,5 +436,156 @@ describe("submitResponse partial saves", () => {
     const again = await submit(server, survey, body, { headers });
     expect(again.json<{ id: string }>().id).toBe(first.json<{ id: string }>().id);
     expect(await providers.results.listResponses(survey)).toHaveLength(1);
+  });
+});
+
+describe("submitResponseByPostId", () => {
+  it("stores for an unpublished survey with the respondent address, and refuses an unknown post ID", async () => {
+    const { server, providers, publish } = await start();
+    const survey = await publish(
+      { pages: [], cookieName: "limit-test" },
+      { storeRespondentIp: true },
+    );
+    await providers.surveys.updateSurvey(survey.id, { published: false, updatedAt: NOW });
+    const post = (postId: string, body: object) =>
+      server.inject({
+        method: "POST",
+        url: `/api/v1/public/posts/${postId}/responses`,
+        payload: body,
+        remoteAddress: "203.0.113.9",
+      });
+    const body = { data: { q1: "a" }, clientId: "c-1" };
+    expect((await post(survey.postId, body)).statusCode).toBe(201);
+    expect((await post(survey.postId, body)).statusCode).toBe(201);
+    const stored = await providers.results.listResponses(survey);
+    expect(stored[0]).toMatchObject({ respondentIp: "203.0.113.9" });
+    expect(await providers.results.completion(survey, "c-1")).toBe("completed");
+
+    const unknown = await post(randomUUID(), body);
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toMatchObject({ code: "survey-not-available" });
+    // The result ID is not the post ID.
+    expect((await post(survey.resultId, body)).statusCode).toBe(404);
+  });
+});
+
+describe("getQuestionSummary", () => {
+  it("reuses a summary while the survey is unchanged and reads again after a new response", async () => {
+    let pages = 0;
+    const { server, publish } = await start({
+      results: (store) => ({
+        ...store,
+        listResponsePage: (survey, page) => {
+          pages += 1;
+          return store.listResponsePage(survey, page);
+        },
+      }),
+    });
+    const survey = await publish({ pages: [] });
+    const submit = (q: string) =>
+      server.inject({
+        method: "POST",
+        url: `/api/v1/public/surveys/${survey.id}/responses`,
+        payload: { data: { q } },
+      });
+    const summary = async (name = "q") => {
+      const res = await server.inject({
+        url: `/api/v1/public/results/${survey.resultId}/questions/${name}`,
+      });
+      expect(res.statusCode).toBe(200);
+      return res.json<{ answered: number; values: unknown[]; responseCount: number }>();
+    };
+    expect((await submit("a")).statusCode).toBe(201);
+    expect(await summary()).toMatchObject({ answered: 1, responseCount: 1 });
+    const scanned = pages;
+    expect(scanned).toBeGreaterThan(0);
+    expect(await summary()).toMatchObject({ answered: 1, responseCount: 1 });
+    expect(pages).toBe(scanned);
+    // Another question of the same survey is its own entry.
+    await summary("other");
+    expect(pages).toBeGreaterThan(scanned);
+    const before = pages;
+    expect((await submit("b")).statusCode).toBe(201);
+    expect(await summary()).toMatchObject({
+      answered: 2,
+      // Both stored at the test clock's one instant: in either order.
+      values: expect.arrayContaining([
+        { value: "a", count: 1 },
+        { value: "b", count: 1 },
+      ]) as unknown,
+      responseCount: 2,
+    });
+    expect(pages).toBeGreaterThan(before);
+  });
+});
+
+describe("getPublicDefinition", () => {
+  it("answers 304 with the tag and no body, and 404 for an unknown survey", async () => {
+    const { server, publish } = await start();
+    const survey = await publish({ pages: [] });
+    const url = `/api/v1/public/surveys/${survey.id}/definition`;
+    const first = await server.inject({ method: "GET", url });
+    expect(first.statusCode).toBe(200);
+    const etag = first.headers.etag as string;
+    const again = await server.inject({ method: "GET", url, headers: { "if-none-match": etag } });
+    expect(again.statusCode).toBe(304);
+    expect(again.headers.etag).toBe(etag);
+    expect(again.headers["cache-control"]).toBe("no-cache");
+    expect(again.body).toBe("");
+    const unknown = await server.inject({
+      method: "GET",
+      url: `/api/v1/public/surveys/${randomUUID()}/definition`,
+    });
+    expect(unknown.statusCode).toBe(404);
+  });
+});
+
+describe("getPublicResults from and till", () => {
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+  const results = (server: FastifyInstance, query: string, surveyId = FEEDBACK) =>
+    server.inject({ url: `/api/v1/public/surveys/${surveyId}/results?${query}` });
+
+  it("refuses a leap second as the validator refuses any malformed date-time", async () => {
+    const { server } = await start();
+    for (const [name, value] of [
+      ["from", "2026-04-01T23:59:60Z"],
+      ["till", encodeURIComponent("2026-04-01T00:00:60+00:01")],
+    ] as const) {
+      const malformed = await results(server, `${name}=not-a-date`);
+      const leap = await results(server, `${name}=${value}`);
+      expect(malformed.statusCode).toBe(400);
+      expect(leap.statusCode).toBe(400);
+      expect(leap.headers["content-type"]).toBe(malformed.headers["content-type"]);
+      expect(leap.json()).toStrictEqual(malformed.json());
+    }
+    const both = "from=2026-04-01T23:59:60Z&till=2026-04-01T23:59:60Z";
+    expect((await results(server, both)).json()).toStrictEqual(
+      (await results(server, "from=x&till=y")).json(),
+    );
+    // Refused before the survey is looked up, as the validator does.
+    const unknown = await results(server, "from=2026-04-01T23:59:60Z", randomUUID());
+    expect(unknown.statusCode).toBe(400);
+  });
+
+  it("hands the store the bounds as instants in toISOString form", async () => {
+    const seen: ResponsePageQuery[] = [];
+    const { server } = await start({
+      results: (store) => ({
+        ...store,
+        listResponsePage: (survey, query) => {
+          seen.push(query);
+          return store.listResponsePage(survey, query);
+        },
+      }),
+    });
+    const query = `from=${encodeURIComponent("2026-04-01T12:30:00+02:00")}&till=2026-04-01T12:00:00Z`;
+    const res = await results(server, query);
+    expect(res.statusCode).toBe(200);
+    expect(seen).toEqual([
+      expect.objectContaining({
+        from: "2026-04-01T10:30:00.000Z",
+        till: "2026-04-01T12:00:00.000Z",
+      }),
+    ]);
   });
 });

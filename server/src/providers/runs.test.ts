@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SurveyResponse } from "../domain/types.js";
 import { isAfterResponse } from "./ordering.js";
-import { foldRuns, pageOfFoldedRuns, pageOfRuns, responseOfRun, type RunRows } from "./runs.js";
+import {
+  foldRuns,
+  isInWindow,
+  pageOfFoldedRuns,
+  pageOfRuns,
+  responseOfRun,
+  type ResponseWindow,
+  type RunRows,
+} from "./runs.js";
 import type { ResponsePosition } from "./types.js";
 
 /** A row submitted `minute` minutes into the day. */
@@ -108,13 +116,25 @@ describe("responseOfRun", () => {
   });
 });
 
-/** An in-memory RunRows that records the client ids it was asked for. */
-function fakeRows(rows: SurveyResponse[]): RunRows & { asked: string[][] } {
+/** An in-memory RunRows that records the client ids and windows it was asked for. */
+function fakeRows(
+  rows: SurveyResponse[],
+): RunRows & { asked: string[][]; windows: ResponseWindow[] } {
   const asked: string[][] = [];
+  const windows: ResponseWindow[] = [];
   return {
     asked,
-    rowsAfter: (after, limit) =>
-      Promise.resolve(rows.filter((row) => !after || isAfterResponse(row, after)).slice(0, limit)),
+    windows,
+    rowsAfter: (after, limit, window) => {
+      windows.push(window);
+      return Promise.resolve(
+        rows
+          .filter(
+            (row) => (!after || isAfterResponse(row, after)) && isInWindow(row.submittedAt, window),
+          )
+          .slice(0, limit),
+      );
+    },
     partialClientRows: (clientIds) => {
       asked.push([...clientIds]);
       const partialClients = new Set(
@@ -231,9 +251,9 @@ describe("pageOfRuns", () => {
     const source = fakeRows([p1, done2]);
     let calls = 0;
     const counting: RunRows = {
-      rowsAfter: (after, limit) => {
+      rowsAfter: (after, limit, window) => {
         calls += 1;
-        return source.rowsAfter(after, limit);
+        return source.rowsAfter(after, limit, window);
       },
       partialClientRows: (clientIds) => source.partialClientRows(clientIds),
     };
@@ -241,6 +261,79 @@ describe("pageOfRuns", () => {
     expect(page.items.map((item) => item.id)).toEqual(["p1"]);
     expect(page.next).toBeNull();
     expect(calls).toBe(1);
+  });
+});
+
+describe("isInWindow", () => {
+  const row = r("x", 10).submittedAt;
+
+  it("keeps a time strictly between the bounds", () => {
+    expect(isInWindow(row, {})).toBe(true);
+    expect(isInWindow(row, { from: r("a", 9).submittedAt, till: r("b", 11).submittedAt })).toBe(
+      true,
+    );
+  });
+
+  it("leaves out a time exactly at either bound", () => {
+    expect(isInWindow(row, { from: row })).toBe(false);
+    expect(isInWindow(row, { till: row })).toBe(false);
+  });
+
+  it("compares as instants, not as text", () => {
+    // 00:10 UTC written with an offset and without milliseconds.
+    expect(isInWindow(row, { from: "2026-11-19T02:10:00+02:00" })).toBe(false);
+    expect(isInWindow(row, { from: "2026-11-19T02:09:59+02:00" })).toBe(true);
+    expect(isInWindow(row, { till: "2026-11-19T00:10:00.001Z" })).toBe(true);
+  });
+});
+
+describe("pageOfRuns in a window", () => {
+  const p1 = r("p1", 1, "c", true, { q1: 1 });
+  const done3 = r("done3", 3, "c", false, { q3: 3 });
+  const x4 = r("x4", 4);
+  const p5 = r("p5", 5, "d", true, { q5: 5 });
+  const x6 = r("x6", 6);
+  const done8 = r("done8", 8, "d", false, { q8: 8 });
+  const all = [p1, done3, x4, p5, x6, done8];
+  const from = r("", 2).submittedAt;
+  const till = r("", 7).submittedAt;
+
+  it("reads rows inside the window only", async () => {
+    const source = fakeRows(all);
+    await pageOfRuns(source, { limit: 10, from, till });
+    expect(source.windows).toEqual([{ from, till }]);
+  });
+
+  it("leaves out a run that starts before from, even with its complete row inside", async () => {
+    for (const completedOnly of [false, true]) {
+      const page = await pageOfRuns(fakeRows(all), { limit: 10, from, till, completedOnly });
+      expect(page.items.map((item) => item.id)).toEqual(["x4", "p5", "x6"]);
+    }
+  });
+
+  it("takes a whole run that starts inside the window and completes after till", async () => {
+    const page = await pageOfRuns(fakeRows(all), { limit: 10, from, till, completedOnly: true });
+    expect(page.items[1]).toEqual({
+      id: "p5",
+      submittedAt: p5.submittedAt,
+      clientId: "d",
+      data: { q5: 5, q8: 8 },
+      partial: false,
+    });
+    expect(page.next).toBeNull();
+  });
+
+  it("pages by one inside the window, a cursor before from reading as from", async () => {
+    const source = fakeRows(all);
+    const page1 = await pageOfRuns(source, { limit: 1, from, till, after: at(p1) });
+    expect(page1.items.map((item) => item.id)).toEqual(["x4"]);
+    expect(page1.next).toEqual(at(x4));
+    const page2 = await pageOfRuns(source, { limit: 1, from, till, after: page1.next! });
+    expect(page2.items.map((item) => item.id)).toEqual(["p5"]);
+    expect(page2.next).toEqual(at(p5));
+    const page3 = await pageOfRuns(source, { limit: 1, from, till, after: page2.next! });
+    expect(page3.items.map((item) => item.id)).toEqual(["x6"]);
+    expect(page3.next).toBeNull();
   });
 });
 
@@ -269,6 +362,26 @@ describe("pageOfFoldedRuns", () => {
 
     const page2 = pageOfFoldedRuns(runs, { limit: 1, completedOnly: true, after: page1.next! });
     expect(ids(page2.runs)).toEqual([["done4"]]);
+    expect(page2.next).toBeNull();
+  });
+
+  it("pages runs placed inside the window, leaving out a run started before from", () => {
+    const windowed = foldRuns([
+      r("p1", 1, "c", true),
+      r("x2", 2),
+      r("done3", 3, "c"),
+      r("p4", 4, "d", true),
+      r("done6", 6, "d"),
+      r("x7", 7),
+    ]);
+    const from = r("", 1).submittedAt;
+    const till = r("", 7).submittedAt;
+    const page1 = pageOfFoldedRuns(windowed, { limit: 1, from, till, completedOnly: true });
+    expect(ids(page1.runs)).toEqual([["x2"]]);
+    expect(page1.next).toEqual(at(r("x2", 2)));
+
+    const page2 = pageOfFoldedRuns(windowed, { limit: 1, from, till, after: page1.next! });
+    expect(ids(page2.runs)).toEqual([["p4", "done6"]]);
     expect(page2.next).toBeNull();
   });
 });

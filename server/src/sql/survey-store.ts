@@ -279,6 +279,13 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
       const survey = key(id);
       return survey === null ? Promise.resolve(null) : getRecord(survey);
     },
+    findSurveyByKey: async (lookup) => {
+      const column = "postId" in lookup ? "post_id" : "result_id";
+      const value = key("postId" in lookup ? lookup.postId : lookup.resultId);
+      if (value === null) return null;
+      const row = await selectRecords().where(column, "=", value).executeTakeFirst();
+      return row ? recordOf(row) : null;
+    },
     listSurveys: async (owner) => {
       const rows = await inScope(owner)
         ?.orderBy("updated_at", "desc")

@@ -16,6 +16,14 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "legacy-compat-tests pins the Form Library v1 (survey-core 1.x), as pages built for the old service use it: it stays on 1.x, outside the SurveyJS group, after the usual release age",
+      "matchFileNames": ["legacy-compat-tests/package.json"],
+      "matchPackageNames": ["survey-core"],
+      "groupName": "Form Library v1 (legacy-compat-tests)",
+      "allowedVersions": "<2",
+      "minimumReleaseAge": "14 days"
+    },
+    {
       "groupName": "all non-major dependencies",
       "matchUpdateTypes": ["minor", "patch"],
       "matchPackageNames": ["*", "!survey-*"]

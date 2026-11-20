@@ -98,19 +98,21 @@ describe("surveyjs-studio backup and restore", () => {
 
   it("backs up, and restores into an empty place what was there", async () => {
     const { data, env, seed, file, before, status } = await setup();
+    // The latest shipped migration, not a fixed number: branches that add one do not conflict here.
+    const latest = status.applied.at(-1)!.version;
     const result = capture();
     expect(await runBackup([], result.io, { env })).toBe(0);
     const folder = folderOf(result.out);
     expect(dirname(folder)).toBe(join(data, "backups"));
     expect(folder).toMatch(/[/\\]surveyjs-studio-\d{8}-\d{6}Z$/);
-    expect(result.out).toContain("Database: migration 7\n");
+    expect(result.out).toContain(`Database: migration ${latest}\n`);
     expect(result.out).toContain(`Files: 1 file, ${file.size} bytes\n`);
     expect((await readdir(folder)).sort()).toEqual(["backup.json", "files", "surveyjs-studio.db"]);
     const manifest = JSON.parse(await readFile(join(folder, "backup.json"), "utf8"));
     expect(manifest).toEqual({
       format: 1,
       createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/),
-      migration: 7,
+      migration: latest,
       files: 1,
       bytes: file.size,
     });

@@ -32,7 +32,7 @@ the sandbox). The Azure replica and the provider suite have neither.
 | `sql/<Table>.json`                        | Array of rows. Keys are lower-case column names. GUIDs are strings, `tinyint` is a number or null, `datetime` is ISO `Z`.                                 |
 | `tables/<account>/<TableName>.json`       | Azure Table entities in Table REST JSON: `PartitionKey`, `RowKey`, properties and `<prop>@odata.type` annotations. `<account>` is `surveys` or `results`. |
 | `blobs/<account>/<container>/<blob name>` | Raw blob content. A blob name with `/` is a nested folder. Loaded as append blobs.                                                                        |
-| `files/<account>/<share>/<name>`          | Raw Azure Files content. Kept for completeness; Azurite has no Files service, so nothing loads it.                                                        |
+| `files/<account>/<share>/<name>`          | Raw Azure Files content: the legacy files of the memory and SQL seeds. Azurite has no Files service: the provider suite reads them through a stub.        |
 
 ## What is in them
 

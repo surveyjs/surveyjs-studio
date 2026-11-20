@@ -33,7 +33,7 @@ export function sessionHandlers(ctx: HandlerContext) {
   return [
     http.get("/config", () =>
       HttpResponse.json({
-        edition: "self-hosted",
+        edition: ctx.edition ?? "self-hosted",
         shell: "self-hosted",
         authMethods: ["password"],
         surveyjsLicenseKey: sandboxLicenseKey(import.meta.env.VITE_SANDBOX_LICENSE_KEY),

@@ -1,7 +1,7 @@
 import type { Kysely, Selectable } from "kysely";
 import { GUID } from "../domain/guid.js";
 import type { CompletionState, SurveyResponse } from "../domain/types.js";
-import { pageOfRuns } from "../providers/runs.js";
+import { pageOfRuns, type ResponseWindow } from "../providers/runs.js";
 import type { ResponsePosition, ResultStore } from "../providers/types.js";
 import type { SqlDatabase, SqlDialectName } from "./database.js";
 import type { DatabaseSchema, SurveyResponsesTable } from "./schema.js";
@@ -54,19 +54,24 @@ export async function insertResponses(
 }
 
 /**
- * One page of a survey's responses in submission order, strictly after `after`: at most `limit`
- * rows. Exported for the test that checks its query plan.
+ * One page of a survey's responses in submission order, strictly after `after` and strictly
+ * between the window's `from` and `till`: at most `limit` rows. Exported for the test that checks
+ * its query plan.
  */
 export function responsePageQuery(
   db: Kysely<DatabaseSchema>,
   surveyId: string,
   after: ResponsePosition | undefined,
   limit: number,
+  window: ResponseWindow = {},
 ) {
   let query = db
     .selectFrom("survey_responses")
     .select(RESPONSE_COLUMNS)
     .where("survey_id", "=", surveyId.toLowerCase());
+  // As instants: isoOf writes the bound as the column's values are written.
+  if (window.from !== undefined) query = query.where("submitted_at", ">", isoOf(window.from));
+  if (window.till !== undefined) query = query.where("submitted_at", "<", isoOf(window.till));
   if (after) {
     const at = isoOf(after.submittedAt);
     const afterId = after.id.toLowerCase();
@@ -173,8 +178,8 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
       const surveyId = survey.id.toLowerCase();
       return pageOfRuns(
         {
-          rowsAfter: async (after, limit) =>
-            (await responsePageQuery(db, surveyId, after, limit).execute()).map(responseOf),
+          rowsAfter: async (after, limit, window) =>
+            (await responsePageQuery(db, surveyId, after, limit, window).execute()).map(responseOf),
           // At most limit + 1 ids (limit is at most 1000), under both databases' parameter limits.
           partialClientRows: async (clientIds) => {
             if (clientIds.length === 0) return [];

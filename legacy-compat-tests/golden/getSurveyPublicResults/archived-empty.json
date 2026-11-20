@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "an archived survey with Grant Access and no responses",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/22222222-0000-4000-8000-a00000000005"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Data": [],
+        "ResultCount": 0
+      }
+    }
+  }
+}

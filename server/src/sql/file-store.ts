@@ -2,6 +2,7 @@ import type { Selectable } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../domain/file-id.js";
 import { GUID } from "../domain/guid.js";
+import { isLegacyFileName, legacyContentType } from "../domain/legacy-file.js";
 import type { StoredFileRecord } from "../domain/types.js";
 import type { FileStore } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
@@ -30,6 +31,8 @@ const recordOf = (row: Selectable<FilesTable>): StoredFileRecord => ({
  *   account went), the bytes are deleted too and the upload is refused.
  * - A delete removes the bytes first, then the rows: when the bytes cannot be deleted the rows
  *   stay, so the caller's retry finds them. A row whose bytes are gone reads as no file.
+ * - A file under the old service's name is a `files` row named by `legacy_files`; deleting the
+ *   file deletes its names (cascade).
  */
 export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): FileStore {
   const { db } = database;
@@ -152,6 +155,22 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
         throw error;
       }
       return new Map(copies.map(({ row, id }) => [row.id, id]));
+    },
+    getFileByLegacyName: async (kind, name) => {
+      if (!isLegacyFileName(name)) return null;
+      const row = await db
+        .selectFrom("legacy_files")
+        .innerJoin("files", "files.id", "legacy_files.file_id")
+        .selectAll("files")
+        .where("legacy_files.kind", "=", kind)
+        .where("legacy_files.legacy_name", "=", name)
+        .executeTakeFirst();
+      if (!row) return null;
+      const file = recordOf(row);
+      const content = await bytes.get(keyOf(file));
+      return content === null
+        ? null
+        : { file: { ...file, kind, name, contentType: legacyContentType(name) }, content };
     },
   };
 }

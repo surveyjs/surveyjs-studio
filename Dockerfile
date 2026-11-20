@@ -11,6 +11,7 @@ COPY server/package.json server/
 COPY web/package.json web/
 COPY conformance-tests/package.json conformance-tests/
 COPY e2e/package.json e2e/
+COPY bridge/package.json bridge/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -20,7 +21,8 @@ RUN pnpm build
 ARG TARGETARCH
 RUN case "$TARGETARCH" in amd64) cpu=x64 ;; arm64) cpu=arm64 ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac \
     && echo "$cpu" > /tmp/target-cpu \
-    && pnpm --filter @surveyjs-studio/server deploy --prod --os=linux --cpu="$cpu" --libc=glibc /out/server
+    && pnpm --filter @surveyjs-studio/server deploy --prod --os=linux --cpu="$cpu" --libc=glibc /out/server \
+    && pnpm --filter @surveyjs-studio/bridge deploy --prod --os=linux --cpu="$cpu" --libc=glibc /out/bridge
 # The docs route reads reference.html next to the contract package's openapi.yaml; the build fails
 # when that folder is not found (API_DOCS=true would answer 404 otherwise).
 RUN openapi="$(find /out/server/node_modules/@surveyjs-studio/contract/ -maxdepth 1 -name openapi.yaml)" \
@@ -30,12 +32,14 @@ RUN openapi="$(find /out/server/node_modules/@surveyjs-studio/contract/ -maxdept
     && cp contract/dist/reference.html "$contract/dist/reference.html" \
     && rm -rf web/dist/.vite
 # The runtime stages may run on another architecture than this one: no native add-on may be in the output.
-# The deploy must hold the esbuild binary of the target CPU and of no other platform.
-RUN test -z "$(find /out/server -name '*.node')" \
-    && cpu="$(cat /tmp/target-cpu)" \
-    && found="$(find /out/server/node_modules -type d -path '*/@esbuild/*' -prune -print | sed 's|.*/@esbuild/||' | sort -u)" \
-    && echo "esbuild platform packages: $found" \
-    && test "$found" = "linux-$cpu"
+# Each deploy must hold the esbuild binary of the target CPU and of no other platform.
+RUN cpu="$(cat /tmp/target-cpu)" \
+    && for out in /out/server /out/bridge; do \
+         test -z "$(find "$out" -name '*.node')" \
+         && found="$(find "$out/node_modules" -type d -path '*/@esbuild/*' -prune -print | sed 's|.*/@esbuild/||' | sort -u)" \
+         && echo "$out: esbuild platform packages: $found" \
+         && test "$found" = "linux-$cpu" || exit 1; \
+       done
 # The licences of what the image ships (D4: generated here, never committed).
 RUN node --import tsx scripts/third-party-notices/cli.ts --out /out/THIRD_PARTY_NOTICES.md
 
@@ -73,6 +77,24 @@ USER node
 WORKDIR /app/server
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+CMD ["node", "--import", "tsx", "src/main.ts"]
+
+# The bridge (ADR 0035): answers on the old API's host through Studio's public API and forwards the
+# rest to the old service. Build it with --target bridge. It holds no store and no store
+# credentials; its settings are the BRIDGE_* variables (bridge/src/settings.ts).
+FROM node:24.22.1-bookworm-slim AS bridge
+LABEL org.opencontainers.image.source="https://github.com/surveyjs/surveyjs-studio" \
+      org.opencontainers.image.title="SurveyJS Studio bridge" \
+      org.opencontainers.image.description="The compatibility bridge in front of SurveyJS Studio's public API." \
+      org.opencontainers.image.licenses="MIT"
+COPY --from=build /out/bridge /app/bridge
+# The notices of the server's and the web app's dependencies cover the bridge's (a subset).
+COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
+COPY LICENSE /app/LICENSE
+ENV NODE_ENV=production BRIDGE_HOST=0.0.0.0 BRIDGE_PORT=3002
+USER node
+WORKDIR /app/bridge
+EXPOSE 3002
 CMD ["node", "--import", "tsx", "src/main.ts"]
 
 # The hosted image (studio.surveyjs.io): keep this stage last, so a plain `docker build .` builds it.

@@ -1,0 +1,23 @@
+{
+  "source": "derived",
+  "description": "the v1 prefix in other letter case with a trailing slash",
+  "providers": ["memory"],
+  "providersNote": "Azurite has no file service, so the azure-legacy provider cannot read the legacy file shares here",
+  "request": {
+    "method": "GET",
+    "path": "/PRIVATE/v1/surveys/FILES/",
+    "query": {
+      "name": "99999999-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-disposition": "attachment; filename=99999999-0000-4000-8000-a00000000001; filename*=UTF-8''99999999-0000-4000-8000-a00000000001"
+    },
+    "body": {
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+  }
+}

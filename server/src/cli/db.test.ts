@@ -1,8 +1,17 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../sql/database.js";
 import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js";
 import { createSqlSurveyStore } from "../sql/survey-store.js";
-import { surveyFeedback } from "../providers/suite/expected.js";
+import { createLocalByteStore } from "../bytes/local.js";
+import { createSqlFileStore } from "../sql/file-store.js";
+import {
+  LEGACY_ASSET_NAME,
+  LEGACY_RESPONSE_NAME,
+  surveyFeedback,
+} from "../providers/suite/expected.js";
 import { describeTarget, run } from "./db.js";
 
 function capture() {
@@ -21,14 +30,26 @@ function capture() {
 
 describe("db CLI", () => {
   const scratches: ScratchDatabase[] = [];
+  const folders: string[] = [];
   afterEach(async () => {
     for (const scratch of scratches.splice(0)) await scratch.drop();
+    for (const folder of folders.splice(0)) {
+      rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
   });
+  /** A new SQLite file, and a new folder for the file bytes the seed writes. */
   const sqliteEnv = (extra: Record<string, string> = {}) => {
     const scratch = scratchSqlite();
     scratches.push(scratch);
     if (scratch.target.dialect !== "sqlite") throw new Error("unreachable");
-    return { STORAGE_PROVIDER: "sqlite", SQLITE_PATH: scratch.target.path, ...extra };
+    const files = mkdtempSync(join(tmpdir(), "surveyjs-studio-db-cli-files-"));
+    folders.push(files);
+    return {
+      STORAGE_PROVIDER: "sqlite",
+      SQLITE_PATH: scratch.target.path,
+      FILES_PATH: files,
+      ...extra,
+    };
   };
 
   it("shows a new database's migrations as pending, then applies them once", async () => {
@@ -41,7 +62,7 @@ describe("db CLI", () => {
     const first = capture();
     expect(await run(["migrate"], first.io, { env })).toBe(0);
     expect(first.out).toMatch(
-      /^Database: sqlite, .+test\.db\nApplied 7 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses\n$/,
+      /^Database: sqlite, .+test\.db\nApplied 8 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses, 0008-legacy-files\n$/,
     );
 
     const second = capture();
@@ -81,7 +102,7 @@ describe("db CLI", () => {
     const result = capture();
     expect(await run(["seed"], result.io, { env })).toBe(0);
     expect(result.out).toMatch(
-      /^Database: sqlite, .+\nApplied 7 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses\nSeeded 9 surveys and 2 projects\.\n$/,
+      /^Database: sqlite, .+\nApplied 8 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses, 0008-legacy-files\nSeeded 9 surveys and 2 projects\.\n$/,
     );
     const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
     const store = createSqlSurveyStore(database);
@@ -118,6 +139,41 @@ describe("db CLI", () => {
     expect(await after.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
     expect(await after.getSurvey(own.id)).toEqual(own);
     await reopened.close();
+  });
+
+  it("seeds the legacy files, bytes included, and seeds them again unchanged", async () => {
+    const env = sqliteEnv();
+    for (let round = 0; round < 2; round++) {
+      expect(await run(["seed"], capture().io, { env })).toBe(0);
+      const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+      const files = createSqlFileStore(database, createLocalByteStore(env.FILES_PATH));
+      for (const [kind, name] of [
+        ["asset", LEGACY_ASSET_NAME],
+        ["response", LEGACY_RESPONSE_NAME],
+      ] as const) {
+        const found = await files.getFileByLegacyName(kind, name);
+        expect(found?.file, `${kind} ${name}`).toMatchObject({ kind, name });
+        const chunks: Buffer[] = [];
+        for await (const chunk of found!.content) chunks.push(chunk as Buffer);
+        expect(Buffer.concat(chunks).subarray(1, 4).toString(), `${kind} ${name}`).toBe("PNG");
+      }
+      const rows = await database.db.selectFrom("legacy_files").selectAll().execute();
+      expect(rows).toHaveLength(2);
+      await database.close();
+    }
+  });
+
+  it("skips the legacy files, with one line, when neither FILES_PATH nor FILE_STORE is set", async () => {
+    const { STORAGE_PROVIDER, SQLITE_PATH } = sqliteEnv();
+    const env = { STORAGE_PROVIDER, SQLITE_PATH };
+    const result = capture();
+    expect(await run(["seed"], result.io, { env })).toBe(0);
+    expect(result.out).toMatch(
+      /\nSeeded 9 surveys and 2 projects\.\nLegacy files skipped: set FILES_PATH or FILE_STORE to load them\.\n$/,
+    );
+    const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+    expect(await database.db.selectFrom("legacy_files").selectAll().execute()).toEqual([]);
+    await database.close();
   });
 
   it("refuses to seed with READ_ONLY=true", async () => {

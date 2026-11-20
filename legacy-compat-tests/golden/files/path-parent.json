@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "a name with a path (../x): an empty 404, nothing looked up",
+  "difference": "Only names of letters, digits, '.', '-' and '_' are looked up (ADR 0039 point 2); the old API passed the name to the file share, which could answer an empty 400 (a storage error) instead of the empty 404.",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": {
+      "name": "../x"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}
