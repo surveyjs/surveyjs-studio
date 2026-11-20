@@ -479,6 +479,7 @@ describe("the admin service's writes", () => {
     email: "ivy@example.com",
     avatarUrl: null,
     instanceRole: "admin",
+    scope: { kind: "all" },
   };
 
   /** A service over memory accounts with two active admins and one user, Una. */

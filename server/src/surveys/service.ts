@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { components } from "@surveyjs-studio/contract";
-import { scopeOf, type RequestUser } from "../auth/authenticate.js";
+import { type RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { inScope, membershipIn } from "../credentials/scope.js";
 import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
@@ -157,7 +157,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
    * (403). Outside the credential's scope either answers 404, as an unknown project.
    */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
-    const credential = scopeOf(user);
+    const credential = user.scope;
     if (projectId === null) {
       if (!inScope(credential, personalOwner(user))) throw notFound();
       return personalScope(user);
@@ -169,7 +169,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
 
   /** The scope used when a request names none: a project token's project, else Personal. */
   async function ownScope(user: RequestUser): Promise<Scope> {
-    const credential = scopeOf(user);
+    const credential = user.scope;
     if (credential.kind !== "project") return personalScope(user);
     // The token's project is gone: as an unknown project.
     const membership = await membershipOf(user, credential.projectId);
@@ -180,7 +180,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
   /** The scope `listSurveys` names: `personal` or a project; anything out of reach answers 404. */
   async function listedScope(user: RequestUser, project: string): Promise<Scope> {
     if (project === PERSONAL) {
-      if (!inScope(scopeOf(user), personalOwner(user))) throw notFound();
+      if (!inScope(user.scope, personalOwner(user))) throw notFound();
       return personalScope(user);
     }
     // An unknown id, text that is no id and a project of others all look the same.

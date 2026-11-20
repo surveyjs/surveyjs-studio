@@ -199,6 +199,7 @@ export async function run(
           email: found.email,
           displayName: found.displayName,
           avatarUrl: null,
+          scope: { kind: "all" },
         },
         legacy: createLegacyClient({
           baseUrl: args.legacyApi,

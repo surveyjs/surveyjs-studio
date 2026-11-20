@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { components } from "@surveyjs-studio/contract";
-import { scopeOf, type RequestUser } from "../auth/authenticate.js";
+import { type RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { membershipIn } from "../credentials/scope.js";
 import type { ProjectMember, ProjectMembership, ProjectRole } from "../domain/types.js";
@@ -190,7 +190,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
    * its scope (ADR 0037).
    */
   const instanceAdmin = (user: RequestUser) =>
-    user.instanceRole === "admin" && scopeOf(user).kind === "all";
+    user.instanceRole === "admin" && user.scope.kind === "all";
 
   /**
    * The membership the request acts with in the project; a project of others, or one outside the
@@ -214,7 +214,7 @@ export function createProjectsService(options: ProjectsServiceOptions): Projects
 
   /** The projects a `listProjects` of the user's own lists, in project list order. */
   async function memberships(user: RequestUser): Promise<ProjectMembership[]> {
-    const credential = scopeOf(user);
+    const credential = user.scope;
     // A Personal token reaches no project; a project token its own one.
     if (credential.kind === "personal") return [];
     if (credential.kind === "project") {

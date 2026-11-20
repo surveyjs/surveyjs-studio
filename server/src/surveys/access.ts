@@ -1,4 +1,4 @@
-import { scopeOf, type RequestUser } from "../auth/authenticate.js";
+import { type RequestUser } from "../auth/authenticate.js";
 import { inScope, membershipIn } from "../credentials/scope.js";
 import type { ProjectMembership, SurveyRecord } from "../domain/types.js";
 import { AppError } from "../errors.js";
@@ -39,7 +39,7 @@ export function createSurveyAccess(stores: {
 
   async function visible(user: RequestUser, surveyId: string): Promise<FoundSurvey> {
     const survey = await surveys.getSurvey(surveyId);
-    if (!survey || !inScope(scopeOf(user), survey.owner)) throw notFound();
+    if (!survey || !inScope(user.scope, survey.owner)) throw notFound();
     const membership =
       survey.owner.kind === "project" ? await membershipOf(user, survey.owner.projectId) : null;
     // A survey the user cannot see answers like an unknown one.

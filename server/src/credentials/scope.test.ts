@@ -15,12 +15,12 @@ const record = (id: string): ProjectRecord => ({
   memberCount: 1,
 });
 
-const userWith = (scope?: CredentialScope): RequestUser => ({
+const userWith = (scope: CredentialScope = { kind: "all" }): RequestUser => ({
   id: USER_ID,
   displayName: "User",
   email: "user@example.com",
   avatarUrl: null,
-  ...(scope && { scope }),
+  scope,
 });
 
 const personalOwner = { kind: "personal", userId: USER_ID } as const;
