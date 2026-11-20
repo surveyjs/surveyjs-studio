@@ -29,6 +29,8 @@ export const STORAGE_WRITTEN_EVENT = "sandbox:storage-written";
 export interface SandboxFile {
   id: string;
   surveyId: string | null;
+  /** The user an editor file of no survey (`uploadLegacyFile`) belongs to; its id is its public name. */
+  ownerId?: string;
   /** An editor upload (an asset, copied with a clone) or a respondent's file; absent means an asset. */
   kind?: "asset" | "respondent";
   name: string;

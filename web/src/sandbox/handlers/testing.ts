@@ -46,7 +46,7 @@ export interface Sandbox {
       user?: string | null;
       json?: unknown;
       headers?: Record<string, string>;
-      body?: string;
+      body?: string | FormData;
     },
   ): Promise<Response>;
 }

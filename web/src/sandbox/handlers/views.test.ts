@@ -135,7 +135,7 @@ describe("shared layouts", () => {
     ).toBe(404);
   });
 
-  it("is hosted only: the public layout and the legacy upload answer 404", async () => {
+  it("is not routed outside the hosted edition: the public layout and the legacy upload answer 404", async () => {
     const { call } = setupSandbox();
     const publicLayout = await call(`/public/surveys/${SURVEYS.feedback}/layouts/table`);
     expect(publicLayout.status).toBe(404);

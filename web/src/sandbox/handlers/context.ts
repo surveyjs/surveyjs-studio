@@ -36,3 +36,9 @@ export function newFileId(surveyId: string): string {
   const hex = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return surveyId.replaceAll("-", "").toLowerCase() + hex;
 }
+
+/** A new id for an editor file of no survey: 64 random hex digits, no survey or user id in it (`newUserFileId`). */
+export function newUserFileId(): string {
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}

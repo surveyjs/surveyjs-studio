@@ -24,7 +24,6 @@ import { summarizeQuestion } from "./question-summary";
 import {
   badRequest,
   guarded,
-  notFound,
   ProblemError,
   surveyNotAvailable,
   validationFailed,
@@ -429,10 +428,27 @@ export function publicHandlers(ctx: HandlerContext) {
       }),
     ),
 
-    // Hosted only, and the sandbox is not hosted whatever its edition: not routed, so `404`.
-    http.get("/public/surveys/{surveyId}/layouts/{kind}", () =>
+    // Hosted only (service.ts `publicLayout`): the shared layout (null when none) and the private
+    // question names, while public results are on.
+    http.get("/public/surveys/{surveyId}/layouts/{kind}", ({ params }) =>
       guarded(() => {
-        throw notFound();
+        requireHosted(ctx);
+        checkPathId(params.surveyId, "surveyId");
+        if (params.kind !== "table" && params.kind !== "summary" && params.kind !== "columns") {
+          throw badRequest(undefined, [
+            { pointer: "/kind", detail: "must be equal to one of the allowed values" },
+          ]);
+        }
+        const data = ctx.store.read();
+        const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
+        if (!survey?.settings.publicResults) throw surveyNotAvailable();
+        return HttpResponse.json(
+          {
+            text: data.layouts[survey.id]?.[params.kind] ?? null,
+            privateQuestions: [...(data.privateResultQuestions[survey.id] ?? [])],
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
       }),
     ),
 

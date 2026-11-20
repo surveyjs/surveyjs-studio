@@ -1,6 +1,6 @@
 // uploadResponseFileByPostId (ADR 0039 point 2) in the sandbox.
 import { describe, expect, it } from "vitest";
-import { ORIGIN, setupSandbox, SURVEYS } from "./testing";
+import { ORIGIN, setupSandbox, SURVEYS, USERS } from "./testing";
 
 function form(size: number, name = "dot.png", field = "file"): FormData {
   const data = new FormData();
@@ -65,5 +65,58 @@ describe("outside the hosted edition (the sandbox's own)", () => {
     const { call } = setupSandbox({}, "hosted");
     const config = await call("/config");
     expect(((await config.json()) as { edition: string }).edition).toBe("hosted");
+  });
+});
+
+describe("uploadLegacyFile", () => {
+  it("stores an editor file of no survey under a random 64-hex name, served as an asset", async () => {
+    const { call } = setupSandbox({}, "hosted");
+    const response = await call("/legacy-files", {
+      method: "POST",
+      body: form(10),
+      user: USERS.owner,
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { legacyName: string };
+    expect(Object.keys(body)).toEqual(["legacyName"]);
+    expect(body.legacyName).toMatch(/^[0-9a-f]{64}$/);
+    const served = await call(`/public/legacy-files/asset/${body.legacyName}`);
+    expect(served.status).toBe(200);
+    expect(served.headers.get("content-type")).toBe("image/png");
+    expect((await call(`/public/legacy-files/response/${body.legacyName}`)).status).toBe(404);
+    // Any other type, and an empty file, are octet-stream.
+    const other = await call("/legacy-files", {
+      method: "POST",
+      body: form(0, "doc.pdf"),
+      user: USERS.owner,
+    });
+    const name = ((await other.json()) as { legacyName: string }).legacyName;
+    const file = await call(`/public/legacy-files/asset/${name}`);
+    expect(file.headers.get("content-type")).toBe("application/octet-stream");
+  });
+
+  it("answers 413 over the asset limit, 400 without a file part, 401 without a session", async () => {
+    const { call } = setupSandbox({}, "hosted");
+    const big = await call("/legacy-files", {
+      method: "POST",
+      body: form(10 * 1024 * 1024),
+      user: USERS.owner,
+    });
+    expect(big.status).toBe(413);
+    const text = new FormData();
+    text.append("file", "not a file");
+    const none = await call("/legacy-files", { method: "POST", body: text, user: USERS.owner });
+    expect(none.status).toBe(400);
+    expect((await call("/legacy-files", { method: "POST", body: form(10) })).status).toBe(401);
+  });
+
+  it("is not routed outside the hosted edition", async () => {
+    const { call } = setupSandbox();
+    const response = await call("/legacy-files", {
+      method: "POST",
+      body: form(10),
+      user: USERS.owner,
+    });
+    expect(response.status).toBe(404);
   });
 });

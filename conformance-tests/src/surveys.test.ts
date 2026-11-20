@@ -212,8 +212,9 @@ describe("listSurveys", () => {
     expect(find(items, fixture.draftIdea)).toMatchObject({ useCookies: false });
     const archived = await walk(await as(ctx, owner), { archived: true });
     expect(find(archived, fixture.oldPoll).legacyPublishId).toBe(OLD_POLL_PUBLISH_ID);
-    // The API-created survey has the all-zero creator, which reads as unknown.
-    expect(find(items, fixture.apiCreated).creatorId).toBeNull();
+    // The API-created survey has the all-zero creator, which reads as unknown. The sandbox seed
+    // leaves that survey (a08) out.
+    if (!sandbox) expect(find(items, fixture.apiCreated).creatorId).toBeNull();
   });
 
   it("include=theme adds each item's theme, null without one", async (ctx) => {
