@@ -14,7 +14,7 @@ export type Survey = components["schemas"]["Survey"];
  * `UserId` is the owner: the project for a project survey; for a Personal survey
  * `personalOwnerId`, which is the caller, since only its owner can see a Personal survey (ADR
  * 0009). `Theme` is the theme as JSON text (`null` without one or for an empty one), `Json` always
- * `null`. `IsPublished` is never `null` and `CreatorId` is the real creator (all zeros when
+ * `null`. `Name` is `null` for an empty name. `IsPublished` is never `null` and `CreatorId` is the real creator (all zeros when
  * unknown), as `docs/api/legacy-compat.md` lists.
  */
 export function legacySurvey(
@@ -25,7 +25,8 @@ export function legacySurvey(
   const utc = dates === "list";
   const theme = survey.theme;
   return {
-    Name: survey.name,
+    // The old API never stored an empty name (it stored none): Studio's "" is the old null.
+    Name: survey.name === "" ? null : survey.name,
     IsArchived: survey.archived,
     UserId: (survey.projectId ?? personalOwnerId).toLowerCase(),
     CreatorId: (survey.creatorId ?? EMPTY_GUID).toLowerCase(),

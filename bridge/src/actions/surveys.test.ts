@@ -150,6 +150,12 @@ describe("the survey record actions", () => {
       expectJson(await call("GET", "getActive"), 200, "[]");
     });
 
+    it("answers a nameless survey's name as null", async () => {
+      add({ name: "" });
+      const answer = await call("GET", "getActive");
+      expect(answer.body.toString()).toMatch(/^\[\{"Name":null,"IsArchived":false,/);
+    });
+
     it("lists the archived ones for getArchive", async () => {
       add({ name: "Active" });
       const archived = add({ name: "Archived", archived: true });
@@ -477,12 +483,20 @@ describe("the survey record actions", () => {
 
   describe("publishVersion and changeVersionTitle", () => {
     it("finds the survey by its publish ID and answers as the old API", async () => {
-      add({ legacyPublishId: PUBLISH_ID });
+      const survey = add({ legacyPublishId: PUBLISH_ID, updatedAt: "2026-01-01T00:00:00.000Z" });
       expectJson(
         await call("PUT", "publishVersion", `versionId=${PUBLISH_ID.toUpperCase()}`),
         200,
         JSON.stringify(PUBLISH_ID),
       );
+      // Only the time the survey changed moves, as the old rewrite of the same publish ID.
+      expect(studioCalls().map((c) => c.split("?")[0])).toEqual([
+        "GET /api/v1/surveys",
+        `PATCH /api/v1/surveys/${survey.id}`,
+      ]);
+      expect(JSON.parse(studio.requests[1]!.body.toString())).toEqual({ archived: false });
+      expect(survey.updatedAt).toBe("2026-11-19T10:00:00.127Z");
+      expect([survey.archived, survey.legacyPublishId]).toEqual([false, PUBLISH_ID]);
       expectJson(
         await call("PUT", "changeVersionTitle", `versionId=${PUBLISH_ID}&title=v2`),
         200,

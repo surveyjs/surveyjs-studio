@@ -340,7 +340,9 @@ async function surveyByVersion(request: FastifyRequest): Promise<{
 
 /**
  * `publishVersion`: the version ID back when the caller may change the survey; an unknown
- * version is an empty `400`, as the old API's.
+ * version is an empty `400`, as the old API's. The old API rewrote the publish ID it already had,
+ * which moved only the time the survey changed: an update that keeps its archived state does the
+ * same.
  */
 export async function publishVersion(
   request: FastifyRequest,
@@ -348,13 +350,11 @@ export async function publishVersion(
 ): Promise<FastifyReply> {
   const { versionId, survey } = await surveyByVersion(request);
   if (survey === undefined) return sendEmpty(reply, 400);
-  if (!survey.permissions.canModify) {
-    return sendJsonString(
-      reply,
-      400,
-      `You are not authorized to publish the survey version ${versionId}.`,
-    );
-  }
+  const refusal = `You are not authorized to publish the survey version ${versionId}.`;
+  if (!survey.permissions.canModify) return sendJsonString(reply, 400, refusal);
+  const updated = await updateSurvey(studio(request), survey.id, { archived: survey.archived });
+  if (updated === "refused") return sendJsonString(reply, 400, refusal);
+  if (updated === "invalid") return invalidUpdate();
   return sendJsonString(reply, 200, versionId);
 }
 

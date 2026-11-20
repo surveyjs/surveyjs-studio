@@ -73,6 +73,11 @@ describe("legacySurvey", () => {
     });
   });
 
+  it("writes an empty name as no name, as the old API never stored an empty one", () => {
+    expect(legacySurvey({ ...SURVEY, name: "" }, "list", CALLER).Name).toBeNull();
+    expect(legacySurvey({ ...SURVEY, name: " " }, "list", CALLER).Name).toBe(" ");
+  });
+
   it("writes an empty theme as no theme", () => {
     expect(legacySurvey({ ...SURVEY, theme: {} }, "list", CALLER).Theme).toBeNull();
     expect(legacySurvey({ ...SURVEY, theme: null }, "list", CALLER).Theme).toBeNull();

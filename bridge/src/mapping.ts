@@ -262,7 +262,7 @@ export const ACTIONS: readonly ActionEntry[] = [
     methods: ["PUT"],
     paths: ["publishVersion"],
     key: "authorize",
-    studio: ["listSurveys"],
+    studio: ["listSurveys", "updateSurvey"],
     handler: publishVersion,
   },
   {
