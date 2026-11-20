@@ -884,6 +884,10 @@ set `COMPAT_BASE_URL` (the bridge's origin) and `COMPAT_STUDIO_URL` (Studio's `/
   has a case with a valid, a wrong (`wrong-access-key`) and a revoked key; write actions run on the case's own survey.
   The cases' own surveys are made by the owner, in Personal or, with `projectId`, in a fixture project the owner
   administers.
+- **API tokens** have no golden files (the old API had none): `api-token.test.ts` makes a Personal token through the
+  owner's session for each test, sends it as the `accessKey`, and checks its scope through the bridge and its rotation by
+  `generateAccessKey`. Every answer is masked (`{{apiToken}}`) before it is compared, so a token value never reaches a
+  message.
 - **Placeholders** for volatile parts, in any expected string (header, text or a JSON string): `<guid>`, `<hex64>` (a
   Studio file ID), `<iso>` (a date and time without a zone, up to seven fractional digits; write the `Z` after it where
   the answer has one) and `<any>` (anything). The JSON string `"<any>"` matches any JSON **string**, and only a string, for
@@ -928,10 +932,12 @@ pnpm --filter @surveyjs-studio/legacy-compat-tests record -- \
   holds the test account's access key. They run only against surveys the script makes under the test account: a keyed
   case with a `setup` gets a survey made and set up through the old actions with the key (`create`, `changeJson`, the
   settings, theme and layout actions, `archive`), deleted after the case, and at the end every survey that appeared
-  during the run is deleted, so use a test account nobody changes meanwhile. Keyed cases that name a fixture ID, need
-  `{{memberKey}}` or a project, or carry `noRecording` are skipped. `{{revokedKey}}` is a made-up key the old API never
-  had (it had no revocation: a replaced key was simply unknown). The key is never printed or written: a recording keeps
-  the golden request with `{{accessKey}}`, and the key is mapped back to its variable in answers and printed lines.
+  during the run is deleted, so use a test account nobody changes meanwhile. A survey that cannot be deleted, or listed
+  again after a failed delete, is printed with its ID and fails the run; the case's own result line is still printed.
+  Keyed cases that name a fixture ID, need `{{memberKey}}` or a project, or carry `noRecording` are skipped.
+  `{{revokedKey}}` is a made-up key the old API never had (it had no revocation: a replaced key was simply unknown). The
+  key is never printed or written: a recording keeps the golden request with `{{accessKey}}`, and the key is mapped back
+  to its variable in answers and printed lines.
 - The test account's surveys hold made-up answers only. The suite's own test of the script (`record.test.ts`) runs it
   against the bridge with fixture data.
 
