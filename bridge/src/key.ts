@@ -2,7 +2,12 @@
 // `Authorization: Bearer`, never logged and never put in an answer header. Each keyed action has a
 // bad-key answer (its `KeyRule`): for a missing or empty key, given without asking Studio, and for
 // a key Studio refuses (`401`: unknown, revoked, or its owner blocked).
-import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
+import type {
+  FastifyReply,
+  FastifyRequest,
+  onRequestAsyncHookHandler,
+  RouteHandlerMethod,
+} from "fastify";
 import { htmlEncode, sendEmpty, sendText } from "./answers.js";
 import { contextOf } from "./context.js";
 import { queryValue } from "./routes.js";
@@ -81,6 +86,20 @@ export function withKeyRule(rule: KeyRule, handler: RouteHandlerMethod): RouteHa
       throw error;
     }
   } as RouteHandlerMethod;
+}
+
+/**
+ * Before the body is read: the bad-key answer for a missing or empty key, or one no credential
+ * can be, on the actions that need sign-in (`authorize`, `key-401`), as the old API challenged
+ * them before reading any parameter. `undefined` for the other rules, which check in the handler.
+ */
+export function keyGate(rule: KeyRule): onRequestAsyncHookHandler | undefined {
+  if (rule !== "authorize" && rule !== "key-401") return undefined;
+  return async function gate(request, reply) {
+    const key = queryValue(request, "accessKey") ?? "";
+    if (!CREDENTIAL.test(key)) return sendBadKey(reply, rule, key);
+    return undefined;
+  };
 }
 
 /** A request URL with each `accessKey` value (name in any letter case) replaced, for logs. */

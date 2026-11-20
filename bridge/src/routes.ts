@@ -30,8 +30,8 @@ export function oldRoute(
   options: {
     controller?: Controller;
     bodyLimit?: number;
-    /** Runs before the body is read (e.g. to refuse a request without reading it). */
-    onRequest?: onRequestAsyncHookHandler;
+    /** Run before the body is read, in order (e.g. to refuse a request without reading it). */
+    onRequest?: onRequestAsyncHookHandler | onRequestAsyncHookHandler[];
   } = {},
 ): void {
   const { bodyLimit, onRequest } = options;

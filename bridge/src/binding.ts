@@ -76,3 +76,68 @@ const CLIENT_ID = /^[^/\\#?\u0000-\u001f\u007f-\u009f]+$/;
 export function isStudioClientId(clientId: string): boolean {
   return CLIENT_ID.test(clientId) && [...clientId].length <= 256;
 }
+
+/** The form fields of each request with a form body, read once. */
+const forms = new WeakMap<FastifyRequest, Promise<FormData | null>>();
+
+/**
+ * The fields of a form body (`application/x-www-form-urlencoded` or `multipart/form-data`), as
+ * the actions' body parser collected it; `null` without one, or for one that cannot be read
+ * (its fields then bind as missing).
+ */
+function formOf(request: FastifyRequest): Promise<FormData | null> {
+  let form = forms.get(request);
+  if (form === undefined) {
+    form = readForm(request);
+    forms.set(request, form);
+  }
+  return form;
+}
+
+async function readForm(request: FastifyRequest): Promise<FormData | null> {
+  const contentType = request.headers["content-type"] ?? "";
+  const type = contentType.split(";")[0]!.trim().toLowerCase();
+  if (type !== "application/x-www-form-urlencoded" && type !== "multipart/form-data") return null;
+  const bytes = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+  try {
+    const view = new Uint8Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.length);
+    return await new Response(view, { headers: { "content-type": contentType } }).formData();
+  } catch (error) {
+    request.log.info({ err: error }, "unreadable form");
+    return null;
+  }
+}
+
+/**
+ * A simple parameter of the access-key actions as the old API bound it: from a form body first,
+ * then the route's `{id}` segment (for `id`), then the query; the name in any letter case, the
+ * first value. `undefined` when none has it.
+ */
+export async function boundValue(
+  request: FastifyRequest,
+  name: string,
+): Promise<string | undefined> {
+  const wanted = name.toLowerCase();
+  const form = await formOf(request);
+  if (form !== null) {
+    for (const [field, value] of form) {
+      if (field.toLowerCase() === wanted && typeof value === "string") return value;
+    }
+  }
+  if (wanted === "id") {
+    const { id } = (request.params ?? {}) as { id?: string };
+    if (id !== undefined) return id;
+  }
+  return queryValues(request, name)[0];
+}
+
+/** A GUID parameter bound as {@link boundValue}: missing or malformed binds as {@link EMPTY_GUID}. */
+export async function boundGuid(request: FastifyRequest, name: string): Promise<string> {
+  const text = await boundValue(request, name);
+  return (text === undefined ? null : parseGuid(text)) ?? EMPTY_GUID;
+}
+
+/** A boolean parameter bound as {@link boundValue}: `true` in any letter case, anything else `false`. */
+export async function boundBool(request: FastifyRequest, name: string): Promise<boolean> {
+  return (await boundValue(request, name))?.trim().toLowerCase() === "true";
+}

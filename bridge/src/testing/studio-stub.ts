@@ -1,9 +1,15 @@
 // A fake Studio for the action tests: the public operations the bridge calls, and the bearer
-// operations of the access-key actions, answered from maps the test fills, with every request
+// operations of the access-key actions (survey records: studio-surveys.ts), answered from maps the test fills, with every request
 // recorded. `override` answers a request differently (a status
 // the test wants) before the fake's own routing.
 import type { ServerResponse } from "node:http";
 import { startStub, type RecordedRequest, type Stub } from "./http.js";
+import {
+  newSurveyStore,
+  resetSurveyStore,
+  surveyOperation,
+  type SurveyStore,
+} from "./studio-surveys.js";
 
 export type RespondentState = "none" | "partial" | "completed";
 
@@ -58,6 +64,10 @@ export interface FakeStudio extends Stub {
    * by `replaceCurrentCredential`) or a legacy access key (which it cannot replace).
    */
   credentials: Map<string, "token" | "legacy">;
+  /** The user each credential signs in, by value (`DEFAULT_USER_ID` when not given). */
+  users: Map<string, string>;
+  /** Survey records, projects and roles for the bearer survey operations. */
+  store: SurveyStore;
   /** The value `replaceCurrentCredential` gives a rotated token. */
   nextToken: string;
   /** The file Studio answers an upload with. */
@@ -67,6 +77,9 @@ export interface FakeStudio extends Stub {
 }
 
 const API = "/api/v1";
+
+/** The user a credential signs in when the test names none. */
+export const DEFAULT_USER_ID = "3c4a7fdf-94a1-41ec-96d0-41749c260100";
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
@@ -136,7 +149,7 @@ function credentialOperation(fake: FakeStudio, request: RecordedRequest, res: Se
     problem(res, 401, "unauthenticated");
   } else if (request.method === "GET" && path === `${API}/me`) {
     json(res, 200, {
-      id: "3c4a7fdf-94a1-41ec-96d0-41749c260100",
+      id: fake.users.get(value!) ?? DEFAULT_USER_ID,
       displayName: "Alex",
       email: "alex@example.com",
     });
@@ -162,6 +175,12 @@ export async function startFakeStudio(): Promise<FakeStudio> {
     const fake = holder.studio!;
     if (fake.override?.(request, res) === true) return;
     if (credentialOperation(fake, request, res)) return;
+    const bearer = bearerOf(request);
+    const signedIn =
+      bearer !== undefined && fake.credentials.has(bearer)
+        ? (fake.users.get(bearer) ?? DEFAULT_USER_ID)
+        : undefined;
+    if (surveyOperation(fake.store, request, res, signedIn)) return;
     const url = new URL(request.url, "http://studio");
     if (!url.pathname.startsWith(`${API}/public/`)) return problem(res, 404);
     // e.g. ["surveys", "<id>", "definition"]: the route is "surveys/:/definition".
@@ -250,6 +269,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
     pageSize: undefined,
     override: undefined,
     credentials: new Map(),
+    users: new Map(),
+    store: newSurveyStore(),
     nextToken: "sjs_rotated",
     storedFile: {
       id: "5af48e08a0a544a583f41c90e8e98de10123456789abcdef0123456789abcdef",
@@ -269,6 +290,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
       fake.publicResults.clear();
       fake.pageSize = undefined;
       fake.credentials.clear();
+      fake.users.clear();
+      resetSurveyStore(fake.store);
       fake.nextToken = "sjs_rotated";
       fake.requests.length = 0;
       fake.override = undefined;

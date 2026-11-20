@@ -5,7 +5,7 @@
 import type { FastifyError, FastifyInstance } from "fastify";
 import { sendEmpty } from "../answers.js";
 import type { ActionContext } from "../context.js";
-import { withKeyRule } from "../key.js";
+import { keyGate, withKeyRule } from "../key.js";
 import { ACTIONS } from "../mapping.js";
 import { oldRoute } from "../routes.js";
 import type { BridgeSettings } from "../settings.js";
@@ -42,10 +42,12 @@ export function registerActions(
     for (const entry of ACTIONS) {
       const bodyLimit =
         typeof entry.bodyLimit === "function" ? entry.bodyLimit(settings) : entry.bodyLimit;
+      // The key gate first: a request it refuses runs no other hook and has no body read.
+      const onRequest = [keyGate(entry.key), entry.onRequest].filter((hook) => hook !== undefined);
       oldRoute(actions, entry.methods, entry.paths, withKeyRule(entry.key, entry.handler), {
         controller: entry.controller,
         ...(bodyLimit !== undefined && { bodyLimit }),
-        ...(entry.onRequest !== undefined && { onRequest: entry.onRequest }),
+        ...(onRequest.length > 0 && { onRequest }),
       });
     }
   });
