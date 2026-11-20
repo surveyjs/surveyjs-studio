@@ -377,6 +377,8 @@ incidental bytes listed at the top, and not otherwise.
 - `generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone` take the key from a form field or the query,
   as before. A key in the body of a `GET` request is not read. `exportSurveyResults` takes it from the query
   only, as before.
+- `generateAccessKey`'s answer with a new API token carries `Cache-Control: no-store`, so no cache keeps the token. The
+  old answer had no such header.
 
 **Survey records**
 

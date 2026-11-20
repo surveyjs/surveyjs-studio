@@ -105,6 +105,7 @@ describe("keyed actions", () => {
       expect(answer.status).toBe(200);
       expect(answer.headers["content-type"]).toBe(JSON_UTF8);
       expect(answer.body.toString()).toBe('"sjs_rotated"');
+      expect(answer.headers["cache-control"]).toBe("no-store");
       expect(studio.requests).toHaveLength(1);
       const call = studio.requests[0]!;
       expect(`${call.method} ${call.url}`).toBe("POST /api/v1/me/credential");

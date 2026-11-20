@@ -21,7 +21,11 @@ export async function generateAccessKey(
   const { data, error, response } = await studioFor(request, context.settings).POST(
     "/me/credential",
   );
-  if (data !== undefined) return sendJsonString(reply, 200, data.value);
+  if (data !== undefined) {
+    // The answer carries a credential: no cache may keep it (a header the old API did not send).
+    reply.header("cache-control", "no-store");
+    return sendJsonString(reply, 200, data.value);
+  }
   if (response.status === 409 && error?.code === "legacy-key-replace-unavailable") {
     // A GET: its body, if any, has not been read.
     context.forward(request, reply);
