@@ -24,7 +24,7 @@ export function surveyJson(
     permissions: { canModify: canModifySurvey },
     useCookies: survey.settings.useCookies,
     creatorId: survey.creatorId,
-    legacyPublishId: null,
+    legacyPublishId: survey.legacyPublishId,
     settings: {
       publicResults: survey.settings.publicResults,
       storeRespondentIp: survey.settings.storeRespondentIp,
@@ -43,6 +43,7 @@ export function newSurvey(
   const { now, ...rest } = fields;
   return {
     ...rest,
+    legacyPublishId: null,
     published: true,
     archived: false,
     createdAt: now,
@@ -61,7 +62,7 @@ export function dropSurvey(data: SandboxData, surveyId: string): void {
     data.history,
     data.responses,
     data.completions,
-    data.legacyViews,
+    data.layouts,
     data.privateResultQuestions,
     data.idempotencyKeys,
   ] as Record<string, unknown>[]) {

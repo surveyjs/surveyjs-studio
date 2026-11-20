@@ -5,6 +5,7 @@
 
 export type SandboxRole = "admin" | "user";
 export type SandboxViewName = "summary" | "table";
+export type SandboxLayoutKind = "table" | "summary" | "columns";
 
 /** A survey definition or theme: any JSON object. */
 export type SandboxJson = Record<string, unknown>;
@@ -56,6 +57,8 @@ export interface SandboxSurvey {
   owner: { kind: "personal"; userId: string } | { kind: "project"; projectId: string };
   /** The user who created it; null for none. */
   creatorId: string | null;
+  /** The id the old service published the survey under; null for none (and for new surveys). */
+  legacyPublishId: string | null;
   /** The id the survey runs under (the public link). */
   postId: string;
   /** The id its results are kept under. */
@@ -110,8 +113,8 @@ export interface SandboxSeed {
   responses: Record<string, SandboxResponse[]>;
   /** `MemorySeed.completions`, by survey id, then client id. */
   completions: Record<string, Record<string, { partial: boolean }>>;
-  /** The summary and table layouts of `MemorySeed.layouts`, parsed, by survey id. */
-  legacyViews: Record<string, Partial<Record<SandboxViewName, Record<string, unknown>>>>;
+  /** `MemorySeed.layouts`: the shared layouts, the text as stored, by survey id. */
+  layouts: Record<string, Partial<Record<SandboxLayoutKind, string>>>;
   /** `MemorySeed.privateResultQuestions`: question names hidden from public results, by survey id. */
   privateResultQuestions: Record<string, string[]>;
 }

@@ -84,7 +84,7 @@ describe("the sandbox seed", () => {
       "history",
       "responses",
       "completions",
-      "legacyViews",
+      "layouts",
       "privateResultQuestions",
     ] as const)
       for (const k of Object.keys(seed[key])) expect(surveys.has(k)).toBe(true);

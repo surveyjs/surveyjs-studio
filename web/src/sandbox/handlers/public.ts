@@ -24,6 +24,7 @@ import { summarizeQuestion } from "./question-summary";
 import {
   badRequest,
   guarded,
+  notFound,
   ProblemError,
   surveyNotAvailable,
   validationFailed,
@@ -111,7 +112,7 @@ function instantOf(value: string): number | null {
  * value the contract's `date-time` accepts but Date cannot read (a leap second) is refused as any
  * other malformed date-time is.
  */
-function publicWindow(query: URLSearchParams): ResponseWindow {
+export function publicWindow(query: URLSearchParams): ResponseWindow {
   const window: { from?: number; till?: number } = {};
   const unreadable: ProblemFieldError[] = [];
   for (const name of ["from", "till"] as const) {
@@ -425,6 +426,13 @@ export function publicHandlers(ctx: HandlerContext) {
           firstSubmittedAt: rows[0]?.submittedAt ?? null,
           lastSubmittedAt: rows.at(-1)?.submittedAt ?? null,
         });
+      }),
+    ),
+
+    // Hosted only, and the sandbox is not hosted whatever its edition: not routed, so `404`.
+    http.get("/public/surveys/{surveyId}/layouts/{kind}", () =>
+      guarded(() => {
+        throw notFound();
       }),
     ),
 

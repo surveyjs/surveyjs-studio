@@ -119,7 +119,7 @@ const MAPS = [
   "history",
   "responses",
   "completions",
-  "legacyViews",
+  "layouts",
   "privateResultQuestions",
   "idempotencyKeys",
   "savedViews",

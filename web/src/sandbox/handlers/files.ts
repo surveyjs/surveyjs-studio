@@ -287,6 +287,13 @@ export function fileHandlers(ctx: HandlerContext) {
       }),
     ),
 
+    // Hosted only, and the sandbox is not hosted whatever its edition: not routed, so `404`.
+    http.post("/legacy-files", () =>
+      guarded(() => {
+        throw notFound();
+      }),
+    ),
+
     // The sandbox keeps no legacy files (they belong to a migrated deployment), so every name is
     // unknown: server/src/files/service.ts `downloadLegacy` answers the same without a share.
     http.get("/public/legacy-files/{kind}/{name}", () =>

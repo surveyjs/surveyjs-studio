@@ -16,7 +16,7 @@ export function checkSettings(value: unknown, errors: ProblemFieldError[]): void
     errors.push({ pointer: "/settings", detail: "must be object" });
     return;
   }
-  for (const key of ["publicResults", "storeRespondentIp"]) {
+  for (const key of ["publicResults", "storeRespondentIp", "useCookies"]) {
     if (value[key] !== undefined && typeof value[key] !== "boolean") {
       errors.push({ pointer: `/settings/${key}`, detail: "must be boolean" });
     }
@@ -92,7 +92,15 @@ export interface SurveyListQuery {
   archived: boolean;
   limit: number;
   cursor: string | undefined;
+  /** `theme`: each item carries its theme. */
+  include: "theme" | undefined;
+  /** Finds the one survey with this post or publish ID; `project` and `archived` are then ignored. */
+  postId: string | undefined;
+  legacyPublishId: string | undefined;
 }
+
+// The validator's `uuid` format (Ajv): any letter case.
+const UUID = /^(?:urn:uuid:)?[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 export function parseListQuery(url: URL): SurveyListQuery {
   const errors: ProblemFieldError[] = [];
@@ -101,6 +109,16 @@ export function parseListQuery(url: URL): SurveyListQuery {
   if (archivedText !== null && archivedText !== "true" && archivedText !== "false") {
     errors.push({ pointer: "/archived", detail: "must be boolean" });
   }
+  const include = params.get("include");
+  if (include !== null && include !== "theme") {
+    errors.push({ pointer: "/include", detail: "must be equal to one of the allowed values" });
+  }
+  for (const name of ["postId", "legacyPublishId"]) {
+    const value = params.get(name);
+    if (value !== null && !UUID.test(value)) {
+      errors.push({ pointer: `/${name}`, detail: 'must match format "uuid"' });
+    }
+  }
   const limit = parseLimit(params, errors);
   if (errors.length > 0) throw badRequest(undefined, errors);
   return {
@@ -108,5 +126,8 @@ export function parseListQuery(url: URL): SurveyListQuery {
     archived: archivedText === "true",
     limit,
     cursor: params.get("cursor") ?? undefined,
+    include: include === "theme" ? "theme" : undefined,
+    postId: params.get("postId") ?? undefined,
+    legacyPublishId: params.get("legacyPublishId") ?? undefined,
   };
 }

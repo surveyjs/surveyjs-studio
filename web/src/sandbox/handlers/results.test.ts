@@ -190,3 +190,56 @@ describe("partial responses", () => {
     expect(items.at(-1)).not.toHaveProperty("partial");
   });
 });
+
+describe("listResults from and till", () => {
+  it("keeps responses strictly between the bounds and refuses a bad date-time", async () => {
+    const { call } = setupSandbox();
+    const times = seeded.map((r) => r.submittedAt);
+    const from = encodeURIComponent(times[0]!);
+    const till = encodeURIComponent(times.at(-1)!);
+    const page = await (
+      await call(`${results(SURVEYS.feedback)}?limit=50&from=${from}&till=${till}`, {
+        user: USERS.owner,
+      })
+    ).json();
+    expect(page.items.map((r: { id: string }) => r.id)).toEqual(
+      seeded
+        .filter((r) => r.submittedAt > times[0]! && r.submittedAt < times.at(-1)!)
+        .map((r) => r.id),
+    );
+    const bad = await call(`${results(SURVEYS.feedback)}?from=yesterday`, { user: USERS.owner });
+    expect(bad.status).toBe(400);
+  });
+});
+
+describe("deleteResponse", () => {
+  const del = (id: string, responseId: string, user?: string) =>
+    ({
+      path: `${results(id)}/${responseId}`,
+      init: { method: "DELETE", ...(user && { user }) },
+    }) as const;
+
+  it("deletes the whole run by any save's id, then answers 404", async () => {
+    const { call } = setupSandbox();
+    const before = await (
+      await call(`${results(SURVEYS.feedback)}?limit=50`, { user: USERS.owner })
+    ).json();
+    const target = before.items[0].id as string;
+    const request = del(SURVEYS.feedback, target.toUpperCase(), USERS.owner);
+    expect((await call(request.path, request.init)).status).toBe(204);
+    const after = await (
+      await call(`${results(SURVEYS.feedback)}?limit=50`, { user: USERS.owner })
+    ).json();
+    expect(after.items).toHaveLength(before.items.length - 1);
+    expect((await call(request.path, request.init)).status).toBe(404);
+  });
+
+  it("answers 401, 403 for a member who cannot modify, and 404 for an outsider", async () => {
+    const { call } = setupSandbox();
+    const target = seeded[0]!.id;
+    const anon = del(SURVEYS.feedback, target);
+    expect((await call(anon.path, anon.init)).status).toBe(401);
+    const outsider = del(SURVEYS.feedback, target, USERS.member);
+    expect((await call(outsider.path, outsider.init)).status).toBe(404);
+  });
+});
