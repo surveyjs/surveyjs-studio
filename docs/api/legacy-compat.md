@@ -81,8 +81,8 @@ bridge answers.
 ### The key
 
 - **Where it is read.** The query parameter `accessKey`, the name in any letter case, the first value. Four actions
-  (`generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone`) also read it where the old action did, from a
-  form field or the route, and `exportSurveyResults` reads it from the query only. A key in the body of a `GET` request
+  (`generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone`) also read it from a form field, as the old
+  actions did, and `exportSurveyResults` reads it from the query only. A key in the body of a `GET` request
   is not read.
 - **What happens to it.** The bridge sends the value to Studio as `Authorization: Bearer <value>` and nowhere else. It
   is never logged and never in an answer header. The value may be a legacy access key or an
@@ -374,8 +374,8 @@ incidental bytes listed at the top, and not otherwise.
 - For the actions that answer an empty `401`, a wrong or revoked key sent with an unreadable or invalid body answers that
   body's empty `400`, not the `401`: Studio checks a present key after the bridge has validated the body
   ([A bad key](#a-bad-key)). A missing key still answers `401` first.
-- `generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone` take the key from a form field, the route or
-  the query, as before. A key in the body of a `GET` request is not read. `exportSurveyResults` takes it from the query
+- `generateAccessKey`, `getSurveyDemoResults`, `uploadFiles` and `PUT clone` take the key from a form field or the query,
+  as before. A key in the body of a `GET` request is not read. `exportSurveyResults` takes it from the query
   only, as before.
 
 **Survey records**

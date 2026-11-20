@@ -891,9 +891,10 @@ export interface paths {
         /**
          * Delete one response
          * @description Deletes the whole run that contains the save `responseId` (ADR 0038), keeps an audit copy as
-         *     `deleteResults` does, and clears that respondent's completion state. Requires modify
-         *     permission. `404 not-found`: the survey is unknown or not visible, or no stored save has that
-         *     ID. `403` means the caller cannot modify the survey, or a missing or wrong CSRF token.
+         *     `deleteResults` does, and clears that respondent's completion state when it was their
+         *     latest run. Requires modify permission. `404 not-found`: the survey is unknown or not
+         *     visible, or no stored save has that ID. `403` means the caller cannot modify the survey, or
+         *     a missing or wrong CSRF token.
          */
         delete: operations["deleteResponse"];
         options?: never;

@@ -152,8 +152,8 @@ Where the new API differs:
 - **`delete`** needs an archived survey. The bridge archives first because the old API deleted active surveys.
 - **A `PATCH`** changes only the fields you send, and `settings` takes the whole `privateResultQuestions` list. Moving a
   survey (`projectId`) is allowed to a project you can move it to, or `null` for Personal.
-- **`getIsPublished`'s `publishid`** is `legacyPublishId` on the survey record (hosted edition; `null` for surveys made
-  in Studio).
+- **The old publish ID** (`getIsPublished` answers `true` only for a published survey that has one) is `legacyPublishId`
+  on the survey record (hosted edition; `null` for surveys made in Studio).
 
 ### Content: the definition, the theme, history and files
 

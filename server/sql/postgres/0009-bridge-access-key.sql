@@ -25,7 +25,7 @@ drop table legacy_views;
 
 -- An editor file that belongs to no survey (uploadLegacyFile, ADR 0040 point 3) has an owner
 -- instead: the user who uploaded it, whose account deletion deletes it. Exactly one of survey_id
--- and owner_user_id is set. Its bytes are in the file store under users/{owner id}/{file id}.
+-- and owner_user_id is set. Its bytes are in the file store under uploads/{file id}.
 alter table files alter column survey_id drop not null;
 
 alter table files add column owner_user_id uuid;
