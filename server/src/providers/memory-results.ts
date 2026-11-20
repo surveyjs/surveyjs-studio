@@ -1,6 +1,6 @@
 import type { CompletionState, SurveyRecord, SurveyResponse } from "../domain/types.js";
 import { responseOrder } from "./ordering.js";
-import { foldRuns, pageOfFoldedRuns, responseOfRun } from "./runs.js";
+import { foldRuns, pageOfFoldedRuns, responseOfRun, runHolding } from "./runs.js";
 import type { ResultStore } from "./types.js";
 import { GUID } from "../domain/guid.js";
 
@@ -102,6 +102,16 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
     deleteAll: (survey) => {
       forget(survey.id);
       return Promise.resolve();
+    },
+    deleteResponse: (survey, responseId) => {
+      const key = survey.id.toLowerCase();
+      const found = runHolding(sorted(survey), responseId);
+      if (!found) return Promise.resolve(false);
+      const rows = responses.get(key);
+      for (const row of found.run) rows?.delete(row.id);
+      const clientId = found.run[0]?.clientId;
+      if (clientId !== undefined && !found.laterRun) markers.get(key)?.delete(clientId);
+      return Promise.resolve(true);
     },
   };
 

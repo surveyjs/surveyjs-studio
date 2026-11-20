@@ -1,7 +1,7 @@
 import type { Kysely, Selectable } from "kysely";
 import { GUID } from "../domain/guid.js";
 import type { CompletionState, SurveyResponse } from "../domain/types.js";
-import { pageOfRuns, type ResponseWindow } from "../providers/runs.js";
+import { pageOfRuns, runHolding, type ResponseWindow } from "../providers/runs.js";
 import type { ResponsePosition, ResultStore } from "../providers/types.js";
 import type { SqlDatabase, SqlDialectName } from "./database.js";
 import type { DatabaseSchema, SurveyResponsesTable } from "./schema.js";
@@ -207,6 +207,73 @@ export function createSqlResultStore(database: SqlDatabase): ResultStore {
       await db.transaction().execute(async (trx) => {
         await trx.deleteFrom("survey_responses").where("survey_id", "=", surveyId).execute();
         await trx.deleteFrom("completion_markers").where("survey_id", "=", surveyId).execute();
+      });
+    },
+    deleteResponse: async (survey, responseId) => {
+      if (!GUID.test(responseId)) return false;
+      const surveyId = survey.id.toLowerCase();
+      return db.transaction().execute(async (trx) => {
+        const target = await trx
+          .selectFrom("survey_responses")
+          .select(["id", "client_id"])
+          .where("survey_id", "=", surveyId)
+          .where("id", "=", responseId.toLowerCase())
+          .executeTakeFirst();
+        if (!target) return false;
+        const clientId = target.client_id;
+        let run: readonly { id: string }[] = [target];
+        let laterRun = false;
+        if (clientId !== null) {
+          // PostgreSQL: a save of this client waits for the delete at its marker write, so the
+          // client's rows read next are all there are until the delete commits (SQLite runs one
+          // write transaction at a time).
+          let marker = trx
+            .selectFrom("completion_markers")
+            .select("client_id")
+            .where("survey_id", "=", surveyId)
+            .where("client_id", "=", clientId);
+          if (database.dialect === "postgres") marker = marker.forUpdate();
+          await marker.execute();
+          const rows = await trx
+            .selectFrom("survey_responses")
+            .select(["id", "submitted_at", "partial"])
+            .where("survey_id", "=", surveyId)
+            .where("client_id", "=", clientId)
+            .orderBy("submitted_at")
+            .orderBy("id")
+            .execute();
+          const found = runHolding(
+            rows.map((row) => ({
+              id: row.id,
+              submittedAt: isoOf(row.submitted_at),
+              clientId,
+              partial: flagOf(row.partial),
+            })),
+            target.id,
+          );
+          if (!found) return false;
+          ({ run, laterRun } = found);
+        }
+        // Small batches keep every statement under both databases' parameter limits.
+        for (let start = 0; start < run.length; start += 500) {
+          await trx
+            .deleteFrom("survey_responses")
+            .where("survey_id", "=", surveyId)
+            .where(
+              "id",
+              "in",
+              run.slice(start, start + 500).map((row) => row.id),
+            )
+            .execute();
+        }
+        if (clientId !== null && !laterRun) {
+          await trx
+            .deleteFrom("completion_markers")
+            .where("survey_id", "=", surveyId)
+            .where("client_id", "=", clientId)
+            .execute();
+        }
+        return true;
       });
     },
   };

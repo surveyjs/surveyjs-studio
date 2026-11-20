@@ -75,16 +75,24 @@ export interface ResultsService {
   /** One question's answers counted over the completed responses; `survey-not-available` for an unknown result ID. */
   questionSummary(resultId: string, name: string): Promise<QuestionSummaryJson>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
-  /** One page of every stored response, oldest first; answers included. */
+  /**
+   * One page of every stored response, oldest first; answers included. `from` and `till` as on
+   * `publicPage`.
+   */
   list(
     user: RequestUser,
     surveyId: string,
-    page: { limit: number; cursor?: string },
+    page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<ResponsePageJson>;
   /** Every stored response as a file, by `format`, streamed. */
   exportResults(user: RequestUser, surveyId: string, format: ExportFormat): Promise<ExportFile>;
   /** Deletes every response, marker and respondent file; needs modify permission. */
   deleteResults(user: RequestUser, surveyId: string): Promise<void>;
+  /**
+   * Deletes one response, the run holding the save `responseId` (`ResultStore.deleteResponse`);
+   * needs modify permission. `not-found` when no save of the survey has that id.
+   */
+  deleteResponse(user: RequestUser, surveyId: string, responseId: string): Promise<void>;
   /**
    * One page of public results (Grant Access on); private questions' answers left out. `from` and
    * `till` (ISO 8601) keep responses placed strictly between them; one a Date cannot read (a leap
@@ -127,11 +135,11 @@ const tooLarge = (cause: unknown): AppError =>
   });
 
 /**
- * `from` and `till` of public results as instants in `toISOString` form. A value the contract's
+ * `from` and `till` of a results page as instants in `toISOString` form. A value the contract's
  * `date-time` accepts but Date cannot read (a leap second, `23:59:60`) is refused with the answer
  * the validator gives for any other malformed date-time.
  */
-function publicWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
+function resultsWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
   const window: { from?: string; till?: string } = {};
   const unreadable: string[] = [];
   for (const name of ["from", "till"] as const) {
@@ -286,12 +294,15 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
     },
 
     async list(user, surveyId, page) {
+      // Before any lookup, as the validator refuses a malformed date-time.
+      const window = resultsWindow(page);
       const { survey } = await access.visible(user, surveyId);
       const after =
         page.cursor === undefined ? undefined : decodeResultsCursor(page.cursor, survey.id);
       const { items, next } = await results.listResponsePage(survey, {
         limit: page.limit,
         ...(after && { after }),
+        ...window,
       });
       return {
         items: items.map(responseJson),
@@ -325,9 +336,14 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       await results.deleteAll(survey);
     },
 
+    async deleteResponse(user, surveyId, responseId) {
+      const { survey } = await access.modifiable(user, surveyId);
+      if (!(await results.deleteResponse(survey, responseId))) throw notFound();
+    },
+
     async publicPage(surveyId, page) {
       // Before any lookup, as the validator refuses a malformed date-time.
-      const window = publicWindow(page);
+      const window = resultsWindow(page);
       const survey = await surveys.getSurvey(surveyId);
       if (!survey?.settings.publicResults) throw surveyNotAvailable();
       const after =

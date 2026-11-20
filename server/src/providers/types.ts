@@ -213,6 +213,18 @@ export interface ResultStore {
    * stored normally (azure: the tables are kept, never dropped).
    */
   deleteAll(survey: SurveyRecord): Promise<void>;
+  /**
+   * Deletes one response: the whole run (ADR 0038) holding the stored row `responseId`, which may
+   * be any row of the run (ids compared case-insensitively; `runHolding`). Then the client's
+   * marker is deleted, so `completion` answers "none", unless the client has a later run, whose
+   * state the marker holds. Other responses, the survey record and respondent files stay. An
+   * audit copy is kept as `deleteAll` keeps one: azure-legacy first copies each row to the old
+   * service's table of deleted results, as its single delete did; memory and SQL keep none.
+   * false (nothing changed) when no row of the survey has the id, a non-GUID id included.
+   * azure-legacy deletes exactly the rows it folded into the run: a save stored meanwhile stays,
+   * and so does the marker it wrote (the marker is deleted only if unchanged since it was read).
+   */
+  deleteResponse(survey: SurveyRecord, responseId: string): Promise<boolean>;
 }
 
 export interface ViewStore {

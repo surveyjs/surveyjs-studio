@@ -1440,6 +1440,97 @@ export function describeProviderSuite(
         });
       });
 
+      describe("delete one response", () => {
+        const at = (hour: number): string =>
+          `2026-08-03T${String(hour).padStart(2, "0")}:00:00.000Z`;
+        const ids = async (survey: SurveyRecord): Promise<string[]> =>
+          (await providers.results.listResponses(survey)).map((row) => row.id);
+        /** Two partial saves and a complete one of `client-del`, between two other responses. */
+        const runSurvey = async (): Promise<SurveyRecord> => {
+          const survey = await freshSurvey();
+          await append(survey, sid(1), { submittedAt: at(9) });
+          for (const [n, hour, partial] of [
+            [2, 10, true],
+            [3, 11, true],
+            [4, 12, false],
+          ] as const) {
+            await append(survey, sid(n), {
+              submittedAt: at(hour),
+              clientId: "client-del",
+              ...(partial && { partial }),
+            });
+          }
+          await append(survey, sid(5), { submittedAt: at(13), clientId: "client-other" });
+          return survey;
+        };
+
+        it.each([
+          ["third", 4],
+          ["second", 3],
+          ["first", 2],
+        ])(
+          "deletes the whole run by its %s save's id (any letter case), clearing the client's state",
+          async (_which, n) => {
+            const survey = await runSurvey();
+            expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+
+            expect(await providers.results.deleteResponse(survey, sid(n).toUpperCase())).toBe(true);
+
+            expect(await ids(survey)).toStrictEqual([sid(1), sid(5)]);
+            expect(await providers.results.completion(survey, "client-del")).toBe("none");
+            expect(await providers.results.completion(survey, "client-other")).toBe("completed");
+            expect(
+              (await providers.results.listResponsePage(survey, { limit: 10 })).items.map(
+                (item) => item.id,
+              ),
+            ).toStrictEqual([sid(1), sid(5)]);
+            expect(await providers.results.stats(survey)).toEqual({
+              count: 2,
+              firstSubmittedAt: at(9),
+              lastSubmittedAt: at(13),
+            });
+          },
+        );
+
+        it("answers false for an id no save has, and for a non-GUID id, changing nothing", async () => {
+          const survey = await runSurvey();
+          const other = await freshSurvey();
+          await append(other, sid(9), { submittedAt: at(9) });
+          for (const id of [sid(8), sid(9), "not-a-guid", ""]) {
+            expect(await providers.results.deleteResponse(survey, id), id).toBe(false);
+          }
+          expect(await ids(survey)).toStrictEqual([sid(1), sid(2), sid(3), sid(4), sid(5)]);
+          expect(await ids(other)).toStrictEqual([sid(9)]);
+          expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+        });
+
+        it("deletes a response without a client id by its id, and only that one", async () => {
+          const survey = await runSurvey();
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([sid(2), sid(3), sid(4), sid(5)]);
+          expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(false);
+        });
+
+        it("deletes an open run and keeps the marker of a client's later run", async () => {
+          const survey = await freshSurvey();
+          const client = { clientId: "client-two" };
+          await append(survey, sid(1), { submittedAt: at(9), ...client });
+          await append(survey, sid(2), { submittedAt: at(10), ...client, partial: true });
+          expect(await providers.results.completion(survey, "client-two")).toBe("partial");
+
+          // The first run (one complete save): the later open run still holds the client's state.
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([sid(2)]);
+          expect(await providers.results.completion(survey, "client-two")).toBe("partial");
+
+          expect(await providers.results.deleteResponse(survey, sid(2))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([]);
+          expect(await providers.results.completion(survey, "client-two")).toBe("none");
+          expect(await providers.results.hasPartial(survey)).toBe(false);
+        });
+      });
+
       describe("partial responses", () => {
         const at = (hour: number): string =>
           `2026-08-02T${String(hour).padStart(2, "0")}:00:00.000Z`;

@@ -39,6 +39,35 @@ export function foldRuns<T extends PlacedRow>(rows: readonly T[]): T[][] {
   return runs;
 }
 
+/** The run `runHolding` found. */
+export interface HeldRun<T extends PlacedRow> {
+  /** Every row of the run, in submission order. */
+  readonly run: T[];
+  /**
+   * Whether the run's client has a later run among the rows given. Its completion marker then
+   * describes that later run and stays when this one is deleted (`ResultStore.deleteResponse`).
+   */
+  readonly laterRun: boolean;
+}
+
+/**
+ * The run of `rows` (given in submission order) that holds the row `id`, compared
+ * case-insensitively; null when no row has that id. Any row of the run finds it: callers hold the
+ * ids of first, middle or last saves (ADR 0040 point 3, `deleteResponse`).
+ */
+export function runHolding<T extends PlacedRow>(rows: readonly T[], id: string): HeldRun<T> | null {
+  const key = id.toLowerCase();
+  const runs = foldRuns(rows);
+  const index = runs.findIndex((run) => run.some((row) => row.id.toLowerCase() === key));
+  const run = runs[index];
+  if (!run) return null;
+  const clientId = run[0]?.clientId;
+  const laterRun =
+    clientId !== undefined &&
+    runs.slice(index + 1).some((other) => other[0]?.clientId === clientId);
+  return { run, laterRun };
+}
+
 /** The response a run reads as. */
 export function responseOfRun(run: readonly SurveyResponse[]): SurveyResponse {
   const first = run[0];

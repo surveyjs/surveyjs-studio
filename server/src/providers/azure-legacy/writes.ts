@@ -1192,6 +1192,83 @@ export async function writeResultsDeletion(
   await appendEventBestEffort(targets, id, event, "the results are deleted.");
 }
 
+/** A row of `post{postId}` to delete with `writeResponseDeletion`, as read. */
+export interface DeletedResultRow {
+  /** As stored (keys are case-sensitive). */
+  readonly rowKey: string;
+  readonly result?: unknown;
+  readonly clientid?: unknown;
+  readonly ispartialcompleted?: unknown;
+}
+
+/** The marker `writeResponseDeletion` deletes: only while its ETag is the one read. */
+export interface DeletedMarker {
+  readonly clientId: string;
+  readonly etag: string;
+}
+
+/**
+ * Deletes one response (a run of rows, ADR 0038) as the old single delete did (layout section
+ * 3.8): first one `SURVEY_DELETEPOSTRESUTL` row per deleted row in `postdelete{postKey}` (created
+ * when missing) with a copy of its `result`, `clientid` and `ispartialcompleted`, `instanceid` the
+ * row's key, `postid`, `happendat` = `deletedAt` and a random `surveyid`; then the rows of
+ * `post{postKey}` (a row already gone is fine); then, when `marker` is given, that client's row of
+ * `SurveyCompletion{surveyKey}` if its ETag is still `marker.etag` (a save stored meanwhile wrote
+ * the marker again, and it stays). The copies are required, not best effort: a failure there
+ * deletes nothing. Store failures reject with LegacyStoreError.
+ */
+export async function writeResponseDeletion(
+  targets: LegacyWriteTargets,
+  survey: SurveyRecord,
+  rows: readonly DeletedResultRow[],
+  marker: DeletedMarker | null,
+  deletedAt: string,
+): Promise<void> {
+  const surveyKey = checkedId("response delete", survey.id).replaceAll("-", "");
+  const postId = checkedId("response delete", survey.postId);
+  const postKey = postId.replaceAll("-", "");
+  try {
+    const copies = targets.resultTable(`postdelete${postKey}`);
+    for (const row of rows) {
+      const copyId = randomUUID();
+      await createEntityInTable(copies, {
+        partitionKey: "*",
+        rowKey: copyId,
+        id: guid(copyId),
+        type: "SURVEY_DELETEPOSTRESUTL",
+        happendat: { type: "DateTime", value: deletedAt } satisfies Edm<"DateTime">,
+        // Legacy never sets it: a random GUID, not the survey (layout section 3.6).
+        surveyid: guid(randomUUID()),
+        postid: guid(postId),
+        instanceid: guid(row.rowKey),
+        ...(typeof row.result === "string" && { result: row.result }),
+        ...(typeof row.clientid === "string" && { clientid: row.clientid }),
+        ...(typeof row.ispartialcompleted === "boolean" && {
+          ispartialcompleted: row.ispartialcompleted,
+        }),
+      } satisfies TableEntity<Record<string, unknown>>);
+    }
+    await deleteKeys(
+      targets.resultTable(`post${postKey}`),
+      rows.map((row) => ({ partitionKey: "*", rowKey: row.rowKey })),
+    );
+  } catch (error) {
+    throw new LegacyStoreError("response delete", error);
+  }
+  if (marker === null) return;
+  try {
+    await targets
+      .resultTable(`SurveyCompletion${surveyKey}`)
+      .deleteEntity("*", marker.clientId, { etag: marker.etag });
+  } catch (error) {
+    // Gone already (404), or written again by a save stored meanwhile (412): it stays.
+    const status = statusOf(error);
+    if (status !== 404 && status !== 412) {
+      throw new LegacyStoreError("completion marker delete", error);
+    }
+  }
+}
+
 /**
  * Replaces the survey's public-question list: append blob `surveyresultpermissions/{surveyId}`, as
  * the legacy writers do (layout section 10). No SQL change and no audit row.

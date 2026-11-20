@@ -589,3 +589,140 @@ describe("getPublicResults from and till", () => {
     ]);
   });
 });
+
+describe("deleteResponse", () => {
+  const OLIVIA = "11111111-0000-4000-8000-a00000000001";
+  const OSCAR = "11111111-0000-4000-8000-a00000000004";
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+  const row = (n: number) => `66666666-0000-4000-8000-a0000000000${String(n)}`;
+
+  it("deletes the run holding a save and clears the client's state; 404 for a second delete", async () => {
+    const { server } = await start();
+    const { headers } = await signIn(server, OLIVIA);
+    const remove = (id: string) =>
+      server.inject({
+        method: "DELETE",
+        url: `/api/v1/surveys/${FEEDBACK}/results/${id}`,
+        headers,
+      });
+    const ids = async () =>
+      (await server.inject({ url: `/api/v1/surveys/${FEEDBACK}/results`, headers }))
+        .json<{ items: { id: string }[] }>()
+        .items.map((item) => item.id);
+    const state = async () =>
+      (
+        await server.inject({ url: `/api/v1/public/surveys/${FEEDBACK}/respondents/client-0001` })
+      ).json<{ state: string }>().state;
+    expect(await state()).toBe("partial");
+
+    const res = await remove(row(2).toUpperCase());
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+    expect(await ids()).toStrictEqual([row(1), row(3), row(4), row(5)]);
+    expect(await state()).toBe("none");
+
+    const again = await remove(row(2));
+    expect(again.statusCode).toBe(404);
+    expect(again.json()).toMatchObject({ code: "not-found" });
+  });
+
+  it("answers 404 for an unknown survey, an outsider or a non-GUID id, 400 for a long id, 401 without a session", async () => {
+    const { server } = await start();
+    const olivia = (await signIn(server, OLIVIA)).headers;
+    const oscar = (await signIn(server, OSCAR)).headers;
+    const remove = (surveyId: string, id: string, headers?: Record<string, string>) =>
+      server.inject({
+        method: "DELETE",
+        url: `/api/v1/surveys/${surveyId}/results/${id}`,
+        ...(headers && { headers }),
+      });
+    for (const res of [
+      await remove(randomUUID(), row(1), olivia),
+      await remove(FEEDBACK, row(1), oscar),
+      await remove(FEEDBACK, "not-a-guid", olivia),
+    ]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+    expect((await remove(FEEDBACK, "x".repeat(65), olivia)).statusCode).toBe(400);
+    expect((await remove(FEEDBACK, row(1))).statusCode).toBe(401);
+  });
+
+  it("answers 403 to a user who can see the survey but not modify it, and deletes nothing", async () => {
+    const ADMIN = "11111111-0000-4000-8000-a00000000002";
+    const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+    const deleted: string[] = [];
+    const { server, providers } = await start({
+      results: (store) => ({
+        ...store,
+        deleteResponse: (survey, id) => {
+          deleted.push(id);
+          return store.deleteResponse(survey, id);
+        },
+      }),
+    });
+    const survey = await providers.surveys.createSurvey({
+      id: randomUUID(),
+      name: "Engineering poll",
+      owner: { kind: "project", projectId: ENGINEERING },
+      creatorId: ADMIN,
+      postId: randomUUID(),
+      resultId: randomUUID(),
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const id = randomUUID();
+    await providers.results.appendResponse(survey, { id, submittedAt: NOW, data: {} });
+    const { headers } = await signIn(server, OLIVIA);
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/surveys/${survey.id}/results/${id}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: "forbidden" });
+    expect(deleted).toStrictEqual([]);
+    expect(await providers.results.hasResponse(survey, id)).toBe(true);
+  });
+});
+
+describe("listResults from and till", () => {
+  const OLIVIA = "11111111-0000-4000-8000-a00000000001";
+  const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+
+  it("hands the store the bounds as instants and refuses a leap second as a malformed date-time", async () => {
+    const seen: ResponsePageQuery[] = [];
+    const { server } = await start({
+      results: (store) => ({
+        ...store,
+        listResponsePage: (survey, query) => {
+          seen.push(query);
+          return store.listResponsePage(survey, query);
+        },
+      }),
+    });
+    const { headers } = await signIn(server, OLIVIA);
+    const list = (query: string) =>
+      server.inject({ url: `/api/v1/surveys/${FEEDBACK}/results?${query}`, headers });
+
+    const res = await list(
+      `from=${encodeURIComponent("2026-04-01T11:30:00+02:00")}&till=2026-04-01T11:45:00Z`,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ items: { id: string }[] }>().items.map((item) => item.id)).toStrictEqual([
+      "66666666-0000-4000-8000-a00000000003",
+    ]);
+    expect(seen).toEqual([
+      expect.objectContaining({
+        from: "2026-04-01T09:30:00.000Z",
+        till: "2026-04-01T11:45:00.000Z",
+      }),
+    ]);
+
+    const malformed = await list("from=not-a-date");
+    const leap = await list("from=2026-04-01T23:59:60Z");
+    expect(malformed.statusCode).toBe(400);
+    expect(leap.statusCode).toBe(400);
+    expect(leap.json()).toStrictEqual(malformed.json());
+  });
+});

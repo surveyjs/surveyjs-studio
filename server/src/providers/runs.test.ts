@@ -7,6 +7,7 @@ import {
   pageOfFoldedRuns,
   pageOfRuns,
   responseOfRun,
+  runHolding,
   type ResponseWindow,
   type RunRows,
 } from "./runs.js";
@@ -74,6 +75,35 @@ describe("foldRuns", () => {
       ["p1", "done3"],
       ["p2", "done4"],
     ]);
+  });
+});
+
+describe("runHolding", () => {
+  const rows = [
+    r("solo1", 1),
+    r("p2", 2, "c", true),
+    r("x3", 3, "other"),
+    r("P4", 4, "c", true),
+    r("done5", 5, "c"),
+    r("p6", 6, "c", true),
+  ];
+
+  it.each(["p2", "P4", "DONE5", "p4"])("finds the whole run by any of its rows (%s)", (id) => {
+    expect(runHolding(rows, id)).toEqual({
+      run: [rows[1], rows[3], rows[4]],
+      laterRun: true,
+    });
+  });
+
+  it("finds a client's last run, and a row without a client id as a run of one", () => {
+    expect(runHolding(rows, "p6")).toEqual({ run: [rows[5]], laterRun: false });
+    expect(runHolding(rows, "solo1")).toEqual({ run: [rows[0]], laterRun: false });
+    expect(runHolding(rows, "x3")).toEqual({ run: [rows[2]], laterRun: false });
+  });
+
+  it("answers null for an id no row has", () => {
+    expect(runHolding(rows, "missing")).toBeNull();
+    expect(runHolding([], "p2")).toBeNull();
   });
 });
 

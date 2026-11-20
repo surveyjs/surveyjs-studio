@@ -36,6 +36,7 @@ import {
 import { ResponseTooLargeError, type AppendOutcome, type ProviderSet } from "./types.js";
 import {
   writeDefinitionSave,
+  writeResponseDeletion,
   writeThemeSave,
   type LegacyWriteTargets,
 } from "./azure-legacy/writes.js";
@@ -1342,6 +1343,126 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
     it("resolves for a survey that never had a results table", async () => {
       const survey = await freshSurvey();
       await expect(store().results.deleteAll(survey)).resolves.toBeUndefined();
+    });
+
+    describe("one response", () => {
+      const at = (second: number) => new Date(Date.UTC(2026, 8, 12, 8, 0, second)).toISOString();
+      /** The rows of the table read without type conversion, by RowKey. */
+      async function rawRows(name: string): Promise<Record<string, unknown>[]> {
+        const found: Record<string, unknown>[] = [];
+        for await (const entity of table(name).listEntities({ disableTypeConversion: true })) {
+          found.push(entity as Record<string, unknown>);
+        }
+        return found;
+      }
+      const SYSTEM = ["partitionKey", "rowKey", "etag", "timestamp"];
+      const propertiesOf = (row: Record<string, unknown>): string[] =>
+        Object.keys(row)
+          .filter((key) => !SYSTEM.includes(key) && !key.startsWith("odata"))
+          .sort();
+
+      it("copies each row of the run to postdelete{postId} with the legacy properties, then deletes the rows and the marker", async () => {
+        const survey = await freshSurvey();
+        const postName = `post${compact(survey.postId)}`;
+        const deletedName = `postdelete${compact(survey.postId)}`;
+        const [p1, p2, done, lone] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+        const client = { clientId: "client-one" };
+        const post = (id: string, second: number, over: Partial<NewResponse> = {}) =>
+          store().results.appendResponse(survey, {
+            id,
+            submittedAt: at(second),
+            data: { q1: `answer ${String(second)}` },
+            ...over,
+          });
+        await post(p1, 1, { ...client, partial: true, respondentIp: "203.0.113.9" });
+        await post(p2, 2, { ...client, partial: true });
+        await post(done, 3, client);
+        await post(lone, 4);
+        const before = await rawRows(postName);
+        const rowOf = (id: string) => before.find((row) => row.rowKey === id);
+
+        expect(await store().results.deleteResponse(survey, done.toUpperCase())).toBe(true);
+
+        expect((await rawRows(postName)).map((row) => row.rowKey)).toEqual([lone]);
+        expect(await store().results.completion(survey, "client-one")).toBe("none");
+        expect(await entityCount(`SurveyCompletion${compact(survey.id)}`)).toBe(0);
+        const copies = await rawRows(deletedName);
+        expect(copies.map((row) => (row.instanceid as { value: string }).value).sort()).toEqual(
+          [p1, p2, done].sort(),
+        );
+        for (const copy of copies) {
+          const instance = (copy.instanceid as { value: string }).value;
+          const original = rowOf(instance)!;
+          const partial = instance !== done;
+          expect(copy.partitionKey).toBe("*");
+          expect(copy.rowKey).toMatch(GUID);
+          expect(copy.rowKey).not.toBe(instance);
+          expect(propertiesOf(copy)).toEqual(
+            [
+              "id",
+              "type",
+              "happendat",
+              "surveyid",
+              "postid",
+              "instanceid",
+              "result",
+              "clientid",
+              ...(partial ? ["ispartialcompleted"] : []),
+            ].sort(),
+          );
+          expect(copy.id).toEqual({ type: "Guid", value: copy.rowKey });
+          expect(copy.type).toEqual({ type: "String", value: "SURVEY_DELETEPOSTRESUTL" });
+          expect((copy.happendat as { type: string }).type).toBe("DateTime");
+          const surveyid = copy.surveyid as { type: string; value: string };
+          expect(surveyid.type).toBe("Guid");
+          expect(surveyid.value).not.toBe(survey.id);
+          expect(copy.postid).toEqual({ type: "Guid", value: survey.postId });
+          expect(copy.instanceid).toEqual({ type: "Guid", value: instance });
+          expect(copy.result).toEqual(original.result);
+          expect(copy.clientid).toEqual({ type: "String", value: "client-one" });
+          if (partial) expect(copy.ispartialcompleted).toEqual({ type: "Boolean", value: "true" });
+        }
+      });
+
+      it("keeps a marker that a save wrote again after it was read; a row already gone is fine", async () => {
+        const survey = await freshSurvey();
+        const markerName = `SurveyCompletion${compact(survey.id)}`;
+        const [first, again, gone] = [randomUUID(), randomUUID(), randomUUID()];
+        const post = (id: string, second: number, partial: boolean) =>
+          store().results.appendResponse(survey, {
+            id,
+            submittedAt: at(second),
+            data: { q1: "a" },
+            clientId: "client-race",
+            ...(partial && { partial }),
+          });
+        await post(first, 1, true);
+        const { etag } = await table(markerName).getEntity("*", "client-race");
+        await post(again, 2, true);
+        const targets: LegacyWriteTargets = {
+          pool: () => Promise.resolve(pool!),
+          blobs,
+          events,
+          resultTables: TableServiceClient.fromConnectionString(
+            config.resultsStorageConnectionString,
+            { allowInsecureConnection: true },
+          ),
+          resultTable: table,
+          logger: { warn: () => undefined },
+        };
+
+        await writeResponseDeletion(
+          targets,
+          survey,
+          [{ rowKey: first }, { rowKey: gone }],
+          { clientId: "client-race", etag: etag! },
+          at(3),
+        );
+
+        expect(await entityCount(`post${compact(survey.postId)}`)).toBe(1);
+        expect(await store().results.completion(survey, "client-race")).toBe("partial");
+        expect(await entityCount(`postdelete${compact(survey.postId)}`)).toBe(2);
+      });
     });
   });
 
