@@ -51,7 +51,7 @@ import {
   unPublish,
 } from "./actions/surveys.js";
 import { sendEmpty } from "./answers.js";
-import type { KeyRule } from "./key.js";
+import type { KeyRule, KeySource } from "./key.js";
 import type { Controller } from "./routes.js";
 import type { BridgeSettings } from "./settings.js";
 
@@ -68,6 +68,11 @@ export interface ActionEntry {
    */
   paths: string[];
   key: KeyRule;
+  /**
+   * Where the key is read (`withKeyRule`): by default bound from a form body, then the query, for a
+   * `text` action, and from the query for the others; `query` where the old action read it there.
+   */
+  keyFrom?: KeySource;
   /** The contract operations (operationIds) the action calls. */
   studio: readonly string[];
   handler: RouteHandlerMethod;
@@ -453,6 +458,8 @@ export const ACTIONS: readonly ActionEntry[] = [
     methods: ["GET"],
     paths: ["exportSurveyResults", "exportSurveyResults/:id"],
     key: "text",
+    // The old action took its key from the query only.
+    keyFrom: "query",
     studio: ["getSurvey", "getSurveyDefinition", "getSurveyLayout", "listResults"],
     handler: exportSurveyResults,
   },

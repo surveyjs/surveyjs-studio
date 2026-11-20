@@ -1,7 +1,8 @@
-// The old API's access key (ADR 0040 point 2): read from the query only, sent to Studio only as
-// `Authorization: Bearer`, never logged and never put in an answer header. Each keyed action has a
-// bad-key answer (its `KeyRule`): for a missing or empty key, given without asking Studio, and for
-// a key Studio refuses (`401`: unknown, revoked, or its owner blocked).
+// The old API's access key (ADR 0040 point 2): read from the query (the sign-in actions) or bound
+// as the old API bound it (the "text" actions), sent to Studio only as `Authorization: Bearer`,
+// never logged and never put in an answer header. Each keyed action has a bad-key answer (its
+// `KeyRule`): for a missing or empty key, given without asking Studio, and for a key Studio
+// refuses (`401`: unknown, revoked, or its owner blocked).
 import type {
   FastifyReply,
   FastifyRequest,
@@ -9,6 +10,7 @@ import type {
   RouteHandlerMethod,
 } from "fastify";
 import { htmlEncode, sendEmpty, sendText } from "./answers.js";
+import { boundValue } from "./binding.js";
 import { contextOf } from "./context.js";
 import { queryValue } from "./routes.js";
 import type { BridgeSettings } from "./settings.js";
@@ -36,6 +38,25 @@ export function accessKeyOf(request: FastifyRequest): string | undefined {
   return key === "" ? undefined : key;
 }
 
+/**
+ * Where a keyed action reads its key: `query`, as the old sign-in scheme did (the `authorize` and
+ * `key-401` actions, and `exportSurveyResults`); `bound`, as the old API bound any other simple
+ * parameter: a form body's field first, then the query (the other `text` actions).
+ */
+export type KeySource = "query" | "bound";
+
+/** The key a `bound` action read, by request. */
+const boundKeys = new WeakMap<FastifyRequest, string>();
+
+/**
+ * The request's key as its action reads it: the bound one for a `bound` action (after
+ * `withKeyRule` read it), else {@link accessKeyOf}. `undefined` when it is missing or empty.
+ */
+export function keyOf(request: FastifyRequest): string | undefined {
+  const key = boundKeys.get(request) ?? accessKeyOf(request);
+  return key === "" ? undefined : key;
+}
+
 /** The action's bad-key answer for `key` (`""` when there was none). */
 export function sendBadKey(reply: FastifyReply, rule: KeyRule, key: string): FastifyReply {
   switch (rule) {
@@ -51,13 +72,13 @@ export function sendBadKey(reply: FastifyReply, rule: KeyRule, key: string): Fas
 
 /**
  * Studio's public API on behalf of the caller, as `request.studio`, with `key` (by default the
- * request's own access key) as `Authorization: Bearer`. Studio's `401` then throws a `KeyRefused`,
- * which `withKeyRule` answers with the action's bad-key answer.
+ * request's own key, {@link keyOf}) as `Authorization: Bearer`. Studio's `401` then throws a
+ * `KeyRefused`, which `withKeyRule` answers with the action's bad-key answer.
  */
 export function studioFor(
   request: FastifyRequest,
   settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
-  key: string | undefined = accessKeyOf(request),
+  key: string | undefined = keyOf(request),
 ): StudioClient {
   return studioClient(
     settings,
@@ -70,14 +91,25 @@ export function studioFor(
 }
 
 /**
- * The handler of an action with key rule `rule`: a missing or empty key, or one no credential can
+ * The handler of an action with key rule `rule`, its key read from `source` (by default `bound`
+ * for a `text` action, `query` for the others): a missing or empty key, or one no credential can
  * be, gets the bad-key answer before the handler runs (so no Studio call), and a `KeyRefused`
  * from the handler's Studio calls gets it too.
  */
-export function withKeyRule(rule: KeyRule, handler: RouteHandlerMethod): RouteHandlerMethod {
+export function withKeyRule(
+  rule: KeyRule,
+  handler: RouteHandlerMethod,
+  source: KeySource = rule === "text" ? "bound" : "query",
+): RouteHandlerMethod {
   if (rule === "none") return handler;
   return async function keyed(this: unknown, request, reply) {
-    const key = queryValue(request, "accessKey") ?? "";
+    let key: string;
+    if (source === "bound") {
+      key = (await boundValue(request, "accessKey")) ?? "";
+      boundKeys.set(request, key);
+    } else {
+      key = queryValue(request, "accessKey") ?? "";
+    }
     if (!CREDENTIAL.test(key)) return sendBadKey(reply, rule, key);
     try {
       return await (handler as (...args: unknown[]) => unknown).call(this, request, reply);

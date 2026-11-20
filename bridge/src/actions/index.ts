@@ -44,11 +44,17 @@ export function registerActions(
         typeof entry.bodyLimit === "function" ? entry.bodyLimit(settings) : entry.bodyLimit;
       // The key gate first: a request it refuses runs no other hook and has no body read.
       const onRequest = [keyGate(entry.key), entry.onRequest].filter((hook) => hook !== undefined);
-      oldRoute(actions, entry.methods, entry.paths, withKeyRule(entry.key, entry.handler), {
-        controller: entry.controller,
-        ...(bodyLimit !== undefined && { bodyLimit }),
-        ...(onRequest.length > 0 && { onRequest }),
-      });
+      oldRoute(
+        actions,
+        entry.methods,
+        entry.paths,
+        withKeyRule(entry.key, entry.handler, entry.keyFrom),
+        {
+          controller: entry.controller,
+          ...(bodyLimit !== undefined && { bodyLimit }),
+          ...(onRequest.length > 0 && { onRequest }),
+        },
+      );
     }
   });
 }

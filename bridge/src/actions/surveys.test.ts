@@ -609,6 +609,37 @@ describe("the survey record actions", () => {
       );
       expectJson(await call("PUT", "clone", `id=${UNKNOWN}`), 400, modify(UNKNOWN));
     });
+
+    it("PUT clone binds the key from a form body before the query", async () => {
+      const source = add({ name: "Feedback" });
+      const form: [string, string][] = [["Content-Type", "application/x-www-form-urlencoded"]];
+      expectEmpty(
+        await call("PUT", `clone/${source.id}`, "", {
+          key: "",
+          headers: form,
+          body: `ACCESSKEY=${KEY}`,
+        }),
+        200,
+      );
+      expectEmpty(
+        await call("PUT", `clone/${source.id}`, "", {
+          key: "wrong",
+          headers: form,
+          body: `accessKey=${KEY}`,
+        }),
+        200,
+      );
+      expect(studio.store.surveys.size).toBe(3);
+      expect(studio.requests.every((r) => r.headers.authorization === `Bearer ${KEY}`)).toBe(true);
+      expectText(
+        await call("PUT", `clone/${source.id}`, "", {
+          headers: form,
+          body: "accessKey=%3Cb%3E",
+        }),
+        "The accessKey '&lt;b&gt;' is incorrect.",
+      );
+      expect(studio.store.surveys.size).toBe(3);
+    });
   });
 
   describe("changeOrganization", () => {

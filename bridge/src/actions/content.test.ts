@@ -446,6 +446,35 @@ describe("the content actions", () => {
       expect(studio.store.uploads).toHaveLength(0);
     });
 
+    it("binds the key from a form field before the query, as the old API did", async () => {
+      const files = [{ name: "f", value: "one", filename: "x.png" }];
+      const inForm = await upload([{ name: "AccessKey", value: KEY }, ...files], { key: "" });
+      expectJson(inForm, 200, '{"x.png":"legacy-1"}');
+      // The form's key wins over a wrong one in the query.
+      const both = await upload([...files, { name: "accesskey", value: KEY }], { key: "wrong" });
+      expectJson(both, 200, '{"x.png":"legacy-2"}');
+      expect(studio.store.uploads.map((u) => u.userId)).toEqual([ANN, ANN]);
+      expect(studio.requests.every((r) => r.headers.authorization === `Bearer ${KEY}`)).toBe(true);
+      expect(studio.requests.every((r) => !r.url.includes(KEY))).toBe(true);
+
+      const wrong = await upload([{ name: "accessKey", value: "<i>" }, ...files], { key: KEY });
+      expect(wrong.headers["content-type"]).toBe(HTML_UTF8);
+      expect(wrong.body.toString()).toBe("The accessKey '&lt;i&gt;' is incorrect.");
+      expect(studio.store.uploads).toHaveLength(2);
+    });
+
+    it("takes the placeholder key from a form field too", async () => {
+      const answer = await upload(
+        [
+          { name: "accessKey", value: "<your_access_key>" },
+          { name: "f", value: "1", filename: "x.png" },
+        ],
+        { key: "" },
+      );
+      expectJson(answer, 200, `{"x.png":"${ZERO}"}`);
+      expect(studio.requests).toHaveLength(0);
+    });
+
     it("answers an empty 400 for a file Studio refuses and 500 for a Studio failure", async () => {
       studio.override = (request, res) => {
         if (!request.url.endsWith("/legacy-files")) return false;

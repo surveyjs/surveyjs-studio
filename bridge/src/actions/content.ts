@@ -9,7 +9,7 @@ import { sendEmpty, sendJson, sendJsonString, sendJsonText } from "../answers.js
 import { boundGuid, boundValue, formOf, parseGuid } from "../binding.js";
 import { contextOf } from "../context.js";
 import { bindJsonBody, parseLenientJson } from "../json-body.js";
-import { accessKeyOf, studioFor } from "../key.js";
+import { keyOf, studioFor } from "../key.js";
 import { unexpectedStatus, type StudioClient } from "../studio.js";
 
 const MODIFY = "You are not authorized to modify the survey";
@@ -189,7 +189,7 @@ export async function uploadFiles(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<FastifyReply> {
-  const placeholder = accessKeyOf(request) === PLACEHOLDER_KEY;
+  const placeholder = keyOf(request) === PLACEHOLDER_KEY;
   const client = placeholder ? undefined : studio(request);
   // The old API checked the key before it read the form.
   if (client !== undefined) {

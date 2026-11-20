@@ -429,6 +429,15 @@ describe("the response actions", () => {
       expect(answer.body.toString()).toBe("The accessKey '&lt;b&gt;' is incorrect.");
     });
 
+    it("reads the key from the query, sent to Studio only as the bearer", async () => {
+      add({ responses: numbered(2) });
+      const answer = await call("GET", `getSurveyDemoResults/${SURVEY}`);
+      expect(answer.status).toBe(200);
+      expect(JSON.parse(answer.body.toString())).toMatchObject({ ResultCount: 2 });
+      expect(studio.requests.every((r) => r.headers.authorization === `Bearer ${KEY}`)).toBe(true);
+      expect(studio.requests.every((r) => !r.url.includes(KEY))).toBe(true);
+    });
+
     it("answers a survey the caller cannot see with the old refusal", async () => {
       expectJson(
         await call("GET", "getSurveyDemoResults", `id=${UNKNOWN}`),
@@ -479,6 +488,24 @@ describe("the response actions", () => {
     }
 
     const exportOf = (query: string) => call("GET", `exportSurveyResults/${SURVEY}`, query);
+
+    it("reads the key from the query only: a key in a form body is no key", async () => {
+      addExportSurvey();
+      const body = `accessKey=${KEY}`;
+      const answer = await call("GET", `exportSurveyResults/${SURVEY}`, "format=csv", {
+        key: "",
+        // Node's client frames no GET body by itself.
+        headers: [
+          ["Content-Type", "application/x-www-form-urlencoded"],
+          ["Content-Length", String(body.length)],
+        ],
+        body,
+      });
+      expect(answer.status).toBe(200);
+      expect(answer.headers["content-type"]).toBe(HTML_UTF8);
+      expect(answer.body.toString()).toBe("The accessKey '' is incorrect.");
+      expect(studio.requests).toEqual([]);
+    });
 
     it("writes CSV for format=csv: every column, newest first, en-US texts, quoted where needed", async () => {
       addExportSurvey();
