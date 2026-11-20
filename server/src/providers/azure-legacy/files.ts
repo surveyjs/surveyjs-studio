@@ -5,7 +5,7 @@ import { isLegacyFileName, legacyFileRecord } from "../../domain/legacy-file.js"
 import type { FileStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyShareReader } from "./legacy-shares.js";
-import { USER_FILES_PREFIX, fileRecordFromBlob, isGuid } from "./mapping.js";
+import { UPLOADS_PREFIX, fileRecordFromBlob, isGuid } from "./mapping.js";
 import {
   writeFile,
   writeFileDeletion,
@@ -21,8 +21,8 @@ import {
  * `createdat`. Legacy code addresses containers by fixed names only, so it never sees this one;
  * the legacy file shares are never written.
  *
- * A user's editor file of no survey (`saveUserFile`) is block blob `users/{ownerId}/{fileId}` of
- * the same container; its legacy name is its id.
+ * A user's editor file of no survey (`saveUserFile`) is block blob `uploads/{fileId}` of the same
+ * container, its owner in metadata `owner`; its legacy name is its (random) id.
  *
  * Files under the old service's names come from the legacy shares (`shares`): editor images
  * from `surveyfiles`, respondent uploads from `files`. Without a reader every such name is unknown.
@@ -94,9 +94,9 @@ export function createAzureFileStore(
       writeSurveyAssetsCopy(blobs, container, fromSurveyId, toSurveyId, copiedAt),
 
     async getFileByLegacyName(kind, name) {
-      // A user's file: its id, lower case, names its owner.
+      // A user's file: its id, lower case, is its name.
       if (kind === "asset" && FILE_ID_PATTERN.test(name)) {
-        const own = await readBlob(`${USER_FILES_PREFIX}${surveyIdOfFile(name)}/${name}`);
+        const own = await readBlob(`${UPLOADS_PREFIX}${name}`);
         if (own) return { file: { ...own.file, name }, content: own.content };
       }
       if (!shares || !isLegacyFileName(name)) return null;
@@ -107,6 +107,22 @@ export function createAzureFileStore(
     },
 
     saveUserFile: (ownerUserId, file) => writeUserFile(blobs, container, ownerUserId, file),
+
+    async countUserFiles(ownerUserId) {
+      if (!isGuid(ownerUserId)) return 0;
+      const owner = ownerUserId.toLowerCase();
+      let count = 0;
+      try {
+        const listing = files().listBlobsFlat({ prefix: UPLOADS_PREFIX, includeMetadata: true });
+        for await (const blob of listing) {
+          if (blob.metadata?.owner?.toLowerCase() === owner) count += 1;
+        }
+      } catch (error) {
+        if (statusOf(error) === 404) return 0; // no container before the first upload
+        throw new LegacyStoreError("file usage", error);
+      }
+      return count;
+    },
 
     deleteUserFiles: (ownerUserId) => writeUserFilesDeletion(blobs, container, ownerUserId),
   };

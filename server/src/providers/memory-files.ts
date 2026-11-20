@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../domain/file-id.js";
+import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../domain/file-id.js";
 import { GUID } from "../domain/guid.js";
 import { isLegacyFileName, legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, StoredFileRecord } from "../domain/types.js";
@@ -42,6 +42,9 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
     if (files.has(file.id)) throw new Error("A file with this id exists");
     files.set(file.id, { file: { ...file }, bytes: Buffer.from(content) });
   };
+
+  const ofOwner = (ownerUserId: string): UserFile[] =>
+    [...userFiles.values()].filter((s) => s.ownerUserId === ownerUserId.toLowerCase());
 
   const ofSurvey = (surveyId: string): Stored[] =>
     [...files.values()].filter((s) => s.file.surveyId === surveyId.toLowerCase());
@@ -109,7 +112,7 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
       if (!GUID.test(ownerUserId)) {
         return Promise.reject(new Error("A file of no survey needs its owner's GUID"));
       }
-      const id = newFileId(ownerUserId);
+      const id = newUserFileId();
       const file: StoredFileRecord = {
         id,
         surveyId: null,
@@ -126,12 +129,11 @@ export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] =
       });
       return Promise.resolve({ ...file });
     },
+    countUserFiles: (ownerUserId) => Promise.resolve(ofOwner(ownerUserId).length),
     deleteUserFiles: (ownerUserId) => {
-      const owner = ownerUserId.toLowerCase();
-      for (const [id, stored] of userFiles) {
-        if (stored.ownerUserId === owner) userFiles.delete(id);
-      }
-      return Promise.resolve();
+      const found = ofOwner(ownerUserId);
+      for (const stored of found) userFiles.delete(stored.file.id);
+      return Promise.resolve(found.length);
     },
   };
 }

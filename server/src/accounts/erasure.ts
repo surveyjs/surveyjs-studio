@@ -32,6 +32,8 @@ export interface ErasureSummary {
   readonly projectsDeleted: number;
   /** `promote`. */
   readonly adminsPromoted: number;
+  /** The user's editor files of no survey (`uploadLegacyFile`). */
+  readonly uploadsDeleted: number;
 }
 
 export interface ErasureStores {
@@ -63,6 +65,8 @@ export interface ErasurePreview {
     /** Surveys of the project (deleted with it on `last-member`). */
     readonly surveyCount: number;
   }[];
+  /** The user's editor files of no survey (`uploadLegacyFile`). */
+  readonly uploads: number;
 }
 
 /** The id in lower case; refuses anything but a GUID. */
@@ -117,7 +121,7 @@ export function createEraseAccount(stores: ErasureStores, logger?: ErasureLogger
     }
 
     surveysDeleted += await deleteSurveysOf(stores, { kind: "personal", userId: id });
-    await stores.files.deleteUserFiles(id);
+    const uploadsDeleted = await stores.files.deleteUserFiles(id);
 
     const summary: ErasureSummary = {
       userId: id,
@@ -125,6 +129,7 @@ export function createEraseAccount(stores: ErasureStores, logger?: ErasureLogger
       projectsLeft,
       projectsDeleted,
       adminsPromoted,
+      uploadsDeleted,
     };
     logger?.info({ ...summary }, "Erased the data of an account.");
     return summary;
@@ -176,5 +181,6 @@ export async function previewErasure(
       ...unreadable,
     ],
     projects,
+    uploads: await stores.files.countUserFiles(id),
   };
 }

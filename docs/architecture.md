@@ -1120,11 +1120,12 @@ order (idea section 8, _Erasure_):
    visible members but no other visible admin: the user's rows are deleted and the first other member by display
    name, then user id, becomes an admin, in one transaction) or `remove` (the user's rows are deleted). A plain
    member of a project with no visible admin also gives `promote`: it repairs a legacy project without admins.
-2. **Personal surveys last.** Every personal survey of `surveys.listSurveyIds` of the user, archived ones
+2. **Personal surveys next.** Every personal survey of `surveys.listSurveyIds` of the user, archived ones
    included: the files, then the survey (with its results, history, theme and layouts). No archive rule and no
    permission check.
-3. It logs and returns `{ userId, surveysDeleted, projectsLeft, projectsDeleted, adminsPromoted }` (ids and counts
-   only). Running it twice is a no-op the second time.
+3. **Uploads of no survey last** (hosted, `uploadLegacyFile`): `files.deleteUserFiles`.
+4. It logs and returns `{ userId, surveysDeleted, projectsLeft, projectsDeleted, adminsPromoted, uploadsDeleted }`
+   (ids and counts only). Running it twice is a no-op the second time.
 
 It enumerates with the **raw id reads** (`listUserProjectIds`, `listSurveyIds`), not the mapped lists, because the
 reconciliation reads raw ids too (`listMemberUserIds`, `listPersonalOwnerIds`). The mapped lists skip legacy rows

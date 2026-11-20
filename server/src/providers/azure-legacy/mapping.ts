@@ -189,17 +189,19 @@ function decodedFileName(value: string | undefined): string | null {
   }
 }
 
-/** Where a user's editor files of no survey are, in the files container: `users/{ownerId}/`. */
-export const USER_FILES_PREFIX = "users/";
+/**
+ * Where the users' editor files of no survey are, in the files container: `uploads/{fileId}`, the
+ * owner in the blob's `owner` metadata (the id is public, so it does not name the owner).
+ */
+export const UPLOADS_PREFIX = "uploads/";
 
 /**
  * A stored file from a blob of the files container (Step 7, R2). Only `{surveyId}/{fileId}` in
  * lower case, with the survey part equal to the one the id names, is a survey's file; a user's
- * editor file of no survey (`saveUserFile`) is `users/{ownerId}/{fileId}`, the owner part equal to
- * the one the id names, and has no survey. Only a blob with a known `kind` metadata, a content
- * type and a length is a file. Other blobs give null (treated as missing). The name is the decoded
- * `name` metadata, else the file id; the time is the `createdat` metadata when it is ISO 8601 UTC,
- * else the epoch.
+ * editor file of no survey (`saveUserFile`) is `uploads/{fileId}` and has no survey. Only a blob
+ * with a known `kind` metadata, a content type and a length is a file. Other blobs give null
+ * (treated as missing). The name is the decoded `name` metadata, else the file id; the time is the
+ * `createdat` metadata when it is ISO 8601 UTC, else the epoch.
  */
 export function fileRecordFromBlob(
   blobName: string,
@@ -209,15 +211,12 @@ export function fileRecordFromBlob(
   },
   metadata: Readonly<Record<string, string | undefined>> | undefined,
 ): StoredFileRecord | null {
-  // (Not startsWith: the folder's read-only lint rule refuses calls named start….)
-  const ofUser = blobName.slice(0, USER_FILES_PREFIX.length) === USER_FILES_PREFIX;
-  const name = ofUser ? blobName.slice(USER_FILES_PREFIX.length) : blobName;
-  const slash = name.indexOf("/");
-  const id = name.slice(slash + 1);
+  const slash = blobName.indexOf("/");
+  const id = blobName.slice(slash + 1);
   if (slash < 0 || !FILE_ID_PATTERN.test(id)) return null;
-  const ownerId = surveyIdOfFile(id);
-  if (ownerId === null || name.slice(0, slash) !== ownerId) return null;
-  const surveyId = ofUser ? null : ownerId;
+  const folder = blobName.slice(0, slash + 1);
+  const surveyId = folder === UPLOADS_PREFIX ? null : surveyIdOfFile(id);
+  if (surveyId !== null && folder !== `${surveyId}/`) return null;
   const kind = metadata?.kind;
   const { contentType, contentLength } = properties;
   if (!isFileKind(kind) || !contentType || contentLength === undefined) return null;

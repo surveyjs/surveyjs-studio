@@ -14,7 +14,7 @@ import type {
   ContainerClient,
 } from "@azure/storage-blob";
 import sql from "mssql";
-import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
+import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
   LayoutKind,
@@ -50,7 +50,7 @@ import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
 import {
   LAYOUT_CONTAINERS_BY_KIND,
-  USER_FILES_PREFIX,
+  UPLOADS_PREFIX,
   fileRecordFromBlob,
   isGuid,
   privateQuestionsToLegacy,
@@ -894,15 +894,16 @@ export async function writeThemeSave(
 }
 
 /**
- * Put Blob of block blob `blobName` (`{surveyId}/{fileId}`, or `users/{ownerId}/{fileId}`) in
- * `files`, refusing to replace a blob (R2). A missing container is created (private) and the
- * upload tried once more.
+ * Put Blob of block blob `blobName` (`{surveyId}/{fileId}`, or `uploads/{fileId}`) in `files`,
+ * refusing to replace a blob (R2). A missing container is created (private) and the upload tried
+ * once more. `owner` (a user's file of no survey) is added to the metadata.
  */
 async function uploadNewFile(
   files: ContainerClient,
   blobName: string,
   file: StoredFileRecord,
   content: Buffer,
+  owner?: string,
 ): Promise<void> {
   const upload = () =>
     files.getBlockBlobClient(blobName).uploadData(content, {
@@ -912,6 +913,7 @@ async function uploadNewFile(
         kind: file.kind,
         name: encodeURIComponent(file.name),
         createdat: new Date(file.createdAt).toISOString(),
+        ...(owner !== undefined && { owner }),
       },
       conditions: { ifNoneMatch: "*" },
     });
@@ -959,9 +961,10 @@ export async function writeFile(
 
 /**
  * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) as block
- * blob `{container}/users/{ownerId}/{fileId}`, with a new id (`newFileId(ownerId)`) and the type,
- * metadata `kind` (`asset`), `name` and `createdat` of a survey's file. Studio's own container,
- * never the legacy file shares. Refuses an owner id that is not a GUID.
+ * blob `{container}/uploads/{fileId}`, with a new random id (`newUserFileId()`: it is the public
+ * legacy name, so it does not name the owner), the type and metadata `kind` (`asset`), `name` and
+ * `createdat` of a survey's file, and metadata `owner` (the owner's lower-case GUID). Studio's own
+ * container, never the legacy file shares. Refuses an owner id that is not a GUID.
  *
  * Store failures reject with LegacyStoreError, which names the file operation only.
  */
@@ -976,7 +979,7 @@ export async function writeUserFile(
   }
   const owner = ownerUserId.toLowerCase();
   const file: StoredFileRecord = {
-    id: newFileId(owner),
+    id: newUserFileId(),
     surveyId: null,
     kind: "asset",
     name,
@@ -987,9 +990,10 @@ export async function writeUserFile(
   try {
     await uploadNewFile(
       blobs.getContainerClient(container),
-      `${USER_FILES_PREFIX}${owner}/${file.id}`,
+      `${UPLOADS_PREFIX}${file.id}`,
       file,
       content,
+      owner,
     );
   } catch (error) {
     throw new LegacyStoreError("file upload", error);
@@ -997,17 +1001,23 @@ export async function writeUserFile(
   return file;
 }
 
-/** Deletes every blob under `{container}/users/{ownerId}/`; nothing for a non-GUID id. */
+/**
+ * Deletes every blob under `{container}/uploads/` whose `owner` metadata is the owner (any case);
+ * returns how many. 0 for a non-GUID id. The listing reads every user's uploads: the blob names do
+ * not name their owners.
+ */
 export async function writeUserFilesDeletion(
   blobs: BlobServiceClient,
   container: string,
   ownerUserId: string,
-): Promise<void> {
-  if (!isGuid(ownerUserId)) return;
+): Promise<number> {
+  if (!isGuid(ownerUserId)) return 0;
+  const owner = ownerUserId.toLowerCase();
   try {
-    await deleteBlobsUnder(
+    return await deleteBlobsUnder(
       blobs.getContainerClient(container),
-      `${USER_FILES_PREFIX}${ownerUserId.toLowerCase()}/`,
+      UPLOADS_PREFIX,
+      (metadata) => metadata?.owner?.toLowerCase() === owner,
     );
   } catch (error) {
     throw new LegacyStoreError("file delete", error);
@@ -1015,20 +1025,20 @@ export async function writeUserFilesDeletion(
 }
 
 /**
- * Deletes the blobs under `prefix` whose metadata `kind` is `kind` (every blob without one);
- * returns how many were deleted. A missing container holds none; a blob deleted by someone else
- * since the listing is not counted.
+ * Deletes the blobs under `prefix` whose metadata `matches` (every blob without it); returns how
+ * many were deleted. A missing container holds none; a blob deleted by someone else since the
+ * listing is not counted.
  */
 async function deleteBlobsUnder(
   files: ContainerClient,
   prefix: string,
-  kind?: FileKind,
+  matches?: (metadata: Readonly<Record<string, string>> | undefined) => boolean,
 ): Promise<number> {
   const names: string[] = [];
   await ignoringNotFound(async () => {
-    const listing = files.listBlobsFlat({ prefix, includeMetadata: kind !== undefined });
+    const listing = files.listBlobsFlat({ prefix, includeMetadata: matches !== undefined });
     for await (const blob of listing) {
-      if (kind === undefined || blob.metadata?.kind === kind) names.push(blob.name);
+      if (matches === undefined || matches(blob.metadata)) names.push(blob.name);
     }
   });
   let deleted = 0;
@@ -1076,7 +1086,11 @@ export async function writeSurveyFilesDeletion(
 ): Promise<number> {
   const id = checkedId("file delete", surveyId);
   try {
-    return await deleteBlobsUnder(blobs.getContainerClient(container), `${id}/`, kind);
+    return await deleteBlobsUnder(
+      blobs.getContainerClient(container),
+      `${id}/`,
+      kind === undefined ? undefined : (metadata) => metadata?.kind === kind,
+    );
   } catch (error) {
     throw new LegacyStoreError("file delete", error);
   }

@@ -2,8 +2,8 @@ import type { Readable } from "node:stream";
 
 /**
  * Where the SQL providers keep file bytes (FILE_STORE): a folder on the data volume, or an
- * S3-compatible bucket. Keys are `{survey id}/{file id}`, or `users/{user id}/{file id}` for an
- * editor file of no survey, lower-case; the metadata is in the database's `files` table.
+ * S3-compatible bucket. Keys are `{survey id}/{file id}`, or `uploads/{file id}` for an editor
+ * file of no survey, lower-case; the metadata is in the database's `files` table.
  */
 export interface ByteStore {
   /** Stores the bytes under the key, replacing what is there. */
@@ -19,11 +19,11 @@ export interface ByteStore {
 }
 
 /**
- * `{survey id}/{file id}` or `users/{user id}/{file id}`: an optional `users/`, a lower-case GUID,
- * a slash and 64 lower-case hex digits.
+ * `{survey id}/{file id}` (a lower-case GUID) or `uploads/{file id}`, the file id 64 lower-case
+ * hex digits.
  */
 export const BYTE_KEY =
-  /^(?:users\/)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{64}$/;
+  /^(?:uploads|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[0-9a-f]{64}$/;
 
 /** Refuses anything but a well-formed key, so no key can name a path outside the store. */
 export function checkKey(key: string): string {

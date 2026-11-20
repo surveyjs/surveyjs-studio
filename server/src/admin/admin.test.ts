@@ -515,6 +515,7 @@ describe("the admin service's writes", () => {
     projectsLeft: 0,
     projectsDeleted: 0,
     adminsPromoted: 0,
+    uploadsDeleted: 0,
   });
 
   it("disables the account before it erases the user's data", async () => {

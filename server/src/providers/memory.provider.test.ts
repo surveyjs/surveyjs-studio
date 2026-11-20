@@ -151,6 +151,7 @@ describe("erasure with orphan memberships", () => {
       projectsLeft: 1,
       projectsDeleted: 1,
       adminsPromoted: 1,
+      uploadsDeleted: 0,
     });
     expect(await set.projects.listUserProjects(ERASED)).toEqual([]);
     expect(await set.projects.listMemberUserIds()).toEqual([user.id]);

@@ -117,6 +117,7 @@ const PLAN = [
   `  ${HANDOVER}  Alpha handover: leaves the project; ${ADAM.id} becomes an admin`,
   `  ${SOLO}  Beta solo: the project is deleted with its 2 surveys`,
   `  ${SHARED}  Gamma shared: leaves the project`,
+  "Uploads of no survey to delete: 0",
 ].join("\n");
 
 describe("account:erase", () => {
@@ -137,7 +138,7 @@ describe("account:erase", () => {
     const r = await erase(["--user", ERIN.id, "--yes"]);
     expect(r.code).toBe(0);
     expect(r.out).toBe(
-      `${PLAN}\nErased ${ERIN.id}: 4 surveys deleted, 2 projects left, 1 projects deleted, 1 admins promoted.\n`,
+      `${PLAN}\nErased ${ERIN.id}: 4 surveys deleted, 2 projects left, 1 projects deleted, 1 admins promoted, 0 uploads deleted.\n`,
     );
     expect(await r.providers.surveys.listSurveys(PERSONAL)).toEqual([]);
     expect(await r.providers.projects.listUserProjects(ERIN.id)).toEqual([]);
@@ -161,7 +162,8 @@ describe("account:erase", () => {
         `Account ${ghost} (not in the user directory)`,
         "Personal surveys to delete: 0",
         "Projects: 0",
-        `Erased ${ghost}: 0 surveys deleted, 0 projects left, 0 projects deleted, 0 admins promoted.`,
+        "Uploads of no survey to delete: 0",
+        `Erased ${ghost}: 0 surveys deleted, 0 projects left, 0 projects deleted, 0 admins promoted, 0 uploads deleted.`,
         "",
       ].join("\n"),
     );
@@ -258,13 +260,15 @@ describe("formatPlan", () => {
       userId: ERIN.id,
       personalSurveys: [{ id: S1.id, name: "" }],
       projects: [{ id: SHARED, name: "", decision: { kind: "remove" }, surveyCount: 0 }],
+      uploads: 2,
     });
     expect(plan).toBe(
       `Account ${ERIN.id} (not in the user directory)\n` +
         "Personal surveys to delete: 1\n" +
         `  ${S1.id}  \n` +
         "Projects: 1\n" +
-        `  ${SHARED}  (membership not readable): leaves the project\n`,
+        `  ${SHARED}  (membership not readable): leaves the project\n` +
+        "Uploads of no survey to delete: 2\n",
     );
   });
 });

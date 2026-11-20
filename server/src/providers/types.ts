@@ -164,14 +164,20 @@ export interface FileStore {
   getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
   /**
    * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) for its
-   * owner (a GUID, any case; rejects otherwise): kind `asset`, `surveyId` null, a new id
-   * (`newFileId(ownerUserId)`), which is also its legacy name (`getFileByLegacyName("asset", id)`).
-   * Studio's own file store on every provider, never the old service's. Such a file is no survey's:
-   * `getFile`, `deleteFile`, `usage` and `deleteSurveyFiles` do not see it.
+   * owner (a GUID, any case; rejects otherwise): kind `asset`, `surveyId` null, a new random id
+   * (`newUserFileId()`, no owner or survey id in it: it is public), which is also its legacy name
+   * (`getFileByLegacyName("asset", id)`). Studio's own file store on every provider, never the old
+   * service's. Such a file is no survey's: `getFile`, `deleteFile`, `usage` and
+   * `deleteSurveyFiles` do not see it.
    */
   saveUserFile(ownerUserId: string, file: NewFile): Promise<StoredFileRecord>;
-  /** Deletes every file `saveUserFile` stored for the owner; nothing for a non-GUID id. */
-  deleteUserFiles(ownerUserId: string): Promise<void>;
+  /** How many files `saveUserFile` stored for the owner (any id case); 0 for a non-GUID id. */
+  countUserFiles(ownerUserId: string): Promise<number>;
+  /**
+   * Deletes every file `saveUserFile` stored for the owner (any id case) and returns how many; 0
+   * for a non-GUID id.
+   */
+  deleteUserFiles(ownerUserId: string): Promise<number>;
 }
 
 /** A file to store for a user (`FileStore.saveUserFile`). */

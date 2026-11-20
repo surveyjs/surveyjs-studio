@@ -161,7 +161,7 @@ export interface StoredFileRecord {
   readonly id: string;
   /**
    * Lower-case GUID of the owning survey (equals surveyIdOfFile(id)); null for an editor file that
-   * belongs to no survey (`FileStore.saveUserFile`), whose id starts with its owner's id instead.
+   * belongs to no survey (`FileStore.saveUserFile`), whose id is random (`newUserFileId`).
    */
   readonly surveyId: string | null;
   readonly kind: FileKind;

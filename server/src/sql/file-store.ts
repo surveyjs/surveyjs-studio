@@ -1,6 +1,6 @@
 import type { Selectable } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
-import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../domain/file-id.js";
+import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../domain/file-id.js";
 import { GUID } from "../domain/guid.js";
 import { isLegacyFileName, legacyContentType } from "../domain/legacy-file.js";
 import type { StoredFileRecord } from "../domain/types.js";
@@ -12,11 +12,12 @@ import { isoOf } from "./values.js";
 /** A survey's file: `{survey id}/{file id}`. */
 const keyOf = (file: { id: string; surveyId: string }): string => `${file.surveyId}/${file.id}`;
 
-/** The bytes' key of a row: a survey's file, or a user's file of no survey under `users/`. */
-const keyOfRow = (row: Pick<Selectable<FilesTable>, "id" | "survey_id" | "owner_user_id">) =>
-  row.survey_id !== null
-    ? keyOf({ id: row.id, surveyId: row.survey_id })
-    : `users/${row.owner_user_id}/${row.id}`;
+/** A user's file of no survey: `uploads/{file id}` (its owner is in the row only). */
+const uploadKeyOf = (id: string): string => `uploads/${id}`;
+
+/** The bytes' key of a row: a survey's file, or a user's file of no survey. */
+const keyOfRow = (row: Pick<Selectable<FilesTable>, "id" | "survey_id">) =>
+  row.survey_id !== null ? keyOf({ id: row.id, surveyId: row.survey_id }) : uploadKeyOf(row.id);
 
 const recordOf = (row: Selectable<FilesTable>): StoredFileRecord => ({
   id: row.id,
@@ -41,8 +42,8 @@ const recordOf = (row: Selectable<FilesTable>): StoredFileRecord => ({
  * - A file under the old service's name is a `files` row named by `legacy_files`; deleting the
  *   file deletes its names (cascade).
  * - An editor file of no survey (`saveUserFile`) is a row with `owner_user_id` instead of
- *   `survey_id`, named by `legacy_files` (`asset`, its id); its bytes are under
- *   `users/{owner id}/{file id}`. The survey operations never see it.
+ *   `survey_id` and a random id, named by `legacy_files` (`asset`, its id); its bytes are under
+ *   `uploads/{file id}`. The survey operations never see it.
  */
 export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): FileStore {
   const { db } = database;
@@ -111,7 +112,7 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
       if (!FILE_ID_PATTERN.test(fileId)) return false;
       const row = await db
         .selectFrom("files")
-        .select(["id", "survey_id", "owner_user_id"])
+        .select(["id", "survey_id"])
         .where("id", "=", fileId)
         .where("survey_id", "is not", null)
         .executeTakeFirst();
@@ -187,7 +188,7 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
       if (!GUID.test(ownerUserId)) throw new Error("A file of no survey needs its owner's GUID");
       const owner = ownerUserId.toLowerCase();
       const file: StoredFileRecord = {
-        id: newFileId(owner),
+        id: newUserFileId(),
         surveyId: null,
         kind: "asset",
         name,
@@ -214,21 +215,31 @@ export function createSqlFileStore(database: SqlDatabase, bytes: ByteStore): Fil
           .values({ kind: "asset", legacy_name: file.id, file_id: file.id })
           .execute();
       });
-      await storeBytes(file.id, `users/${owner}/${file.id}`, content, contentType);
+      await storeBytes(file.id, uploadKeyOf(file.id), content, contentType);
       return file;
     },
+    countUserFiles: async (ownerUserId) => {
+      if (!GUID.test(ownerUserId)) return 0;
+      const row = await db
+        .selectFrom("files")
+        .select((eb) => eb.fn.countAll<number | string | bigint>().as("count"))
+        .where("owner_user_id", "=", ownerUserId.toLowerCase())
+        .executeTakeFirstOrThrow();
+      return Number(row.count);
+    },
     deleteUserFiles: async (ownerUserId) => {
-      if (!GUID.test(ownerUserId)) return;
+      if (!GUID.test(ownerUserId)) return 0;
       const rows = await db
         .selectFrom("files")
-        .select(["id", "survey_id", "owner_user_id"])
+        .select(["id", "survey_id"])
         .where("owner_user_id", "=", ownerUserId.toLowerCase())
         .execute();
-      if (rows.length === 0) return;
+      if (rows.length === 0) return 0;
       // The bytes first: when they cannot be deleted the rows stay, so a retry finds them.
       await bytes.delete(rows.map(keyOfRow));
       const ids = rows.map((row) => row.id);
-      await db.deleteFrom("files").where("id", "in", ids).execute();
+      const deleted = await db.deleteFrom("files").where("id", "in", ids).executeTakeFirst();
+      return Number(deleted.numDeletedRows);
     },
   };
 

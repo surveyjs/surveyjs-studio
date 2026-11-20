@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "./file-id.js";
+import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "./file-id.js";
 
 const SURVEY = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const fixed = (size: number) => new Uint8Array(size).fill(0xab);
@@ -22,6 +22,15 @@ describe("newFileId", () => {
   it("throws for a survey id that is not a GUID", () => {
     expect(() => newFileId("not-a-guid")).toThrow();
     expect(() => newFileId("")).toThrow();
+  });
+});
+
+describe("newUserFileId", () => {
+  it("is 64 random lower-case hex digits", () => {
+    expect(newUserFileId(fixed)).toBe("ab".repeat(32));
+    const a = newUserFileId();
+    expect(a).toMatch(FILE_ID_PATTERN);
+    expect(newUserFileId()).not.toBe(a);
   });
 });
 

@@ -77,17 +77,21 @@ export function formatPlan(user: User | null, preview: ErasurePreview): string {
         `  ${project.id}  ${project.name || "(membership not readable)"}: ` +
         effect(project.decision, project.surveyCount),
     ),
+    `Uploads of no survey to delete: ${preview.uploads}`,
   ]
     .map((line) => `${line}\n`)
     .join("");
 }
 
-/** `Erased <id>: <s> surveys deleted, <l> projects left, <d> projects deleted, <p> admins promoted.` */
+/**
+ * `Erased <id>: <s> surveys deleted, <l> projects left, <d> projects deleted, <p> admins promoted,
+ * <u> uploads deleted.`
+ */
 export function formatErased(summary: ErasureSummary): string {
   return (
     `Erased ${summary.userId}: ${summary.surveysDeleted} surveys deleted, ` +
     `${summary.projectsLeft} projects left, ${summary.projectsDeleted} projects deleted, ` +
-    `${summary.adminsPromoted} admins promoted.`
+    `${summary.adminsPromoted} admins promoted, ${summary.uploadsDeleted} uploads deleted.`
   );
 }
 

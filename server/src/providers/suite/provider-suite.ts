@@ -2420,6 +2420,10 @@ export function describeProviderSuite(
             size: PNG.length,
             createdAt: SAVED_AT,
           });
+          // The id is the public legacy name: random, without the owner's id in it.
+          expect(file.id).not.toContain(owner.replaceAll("-", ""));
+          expect(file.id).not.toContain(owner);
+          expect(surveyIdOfFile(file.id)).not.toBe(owner);
           const found = await readLegacy("asset", file.id);
           expect(found?.bytes.equals(PNG)).toBe(true);
           expect(found?.file).toEqual({ ...file, name: file.id });
@@ -2463,13 +2467,18 @@ export function describeProviderSuite(
           const other = freshOwner();
           const mine = [await save(owner), await save(owner)];
           const theirs = await save(other);
-          await providers.files.deleteUserFiles(owner.toUpperCase());
+          expect(await providers.files.countUserFiles(owner.toUpperCase())).toBe(2);
+          expect(await providers.files.countUserFiles(other)).toBe(1);
+          expect(await providers.files.deleteUserFiles(owner.toUpperCase())).toBe(2);
           for (const file of mine) expect(await readLegacy("asset", file.id)).toBeNull();
           expect((await readLegacy("asset", theirs.id))?.bytes.equals(PNG)).toBe(true);
+          expect(await providers.files.countUserFiles(owner)).toBe(0);
+          expect(await providers.files.countUserFiles(other)).toBe(1);
           // Nothing left, an owner without files and a malformed id: nothing to do.
-          await providers.files.deleteUserFiles(owner);
-          await providers.files.deleteUserFiles(freshOwner());
-          await providers.files.deleteUserFiles("not-a-guid");
+          expect(await providers.files.deleteUserFiles(owner)).toBe(0);
+          expect(await providers.files.deleteUserFiles(freshOwner())).toBe(0);
+          expect(await providers.files.deleteUserFiles("not-a-guid")).toBe(0);
+          expect(await providers.files.countUserFiles("not-a-guid")).toBe(0);
           expect((await readLegacy("asset", theirs.id))?.bytes.equals(PNG)).toBe(true);
         });
 
@@ -2972,7 +2981,16 @@ export function describeProviderSuite(
           projectsLeft: 0,
           projectsDeleted: 0,
           adminsPromoted: 0,
+          uploadsDeleted: 0,
         };
+        /** Stores an editor file of no survey (uploadLegacyFile) for the user. */
+        const saveUpload = (userId: string) =>
+          providers.files.saveUserFile(userId, {
+            name: "logo.png",
+            contentType: "image/png",
+            createdAt: CREATED_AT,
+            content: PNG,
+          });
 
         /** Stores an editor asset of the survey and returns its id. */
         const putAsset = async (surveyId: string): Promise<string> => {
@@ -2995,13 +3013,13 @@ export function describeProviderSuite(
           await providers.surveys.updateSurvey(archived.id, { archived: true, updatedAt: NOW });
           const withFile = await providers.surveys.createSurvey(newSurvey(scope));
           const fileId = await putAsset(withFile.id);
-          // An editor file of no survey (uploadLegacyFile) is the user's too.
-          const ownFile = await providers.files.saveUserFile(scope.userId, {
-            name: "logo.png",
-            contentType: "image/png",
-            createdAt: CREATED_AT,
-            content: PNG,
+          // An editor file of no survey (uploadLegacyFile) is the user's too; another's stays.
+          const ownFile = await saveUpload(scope.userId);
+          const bystander = randomUUID();
+          onTestFinished(async () => {
+            await providers.files.deleteUserFiles(bystander);
           });
+          const othersFile = await saveUpload(bystander);
           const eraseAccount = createEraseAccount(providers);
 
           expect(await eraseAccount(scope.userId, options)).toEqual({
@@ -3010,12 +3028,17 @@ export function describeProviderSuite(
             projectsLeft: 0,
             projectsDeleted: 0,
             adminsPromoted: 0,
+            uploadsDeleted: 1,
           });
           expect(await providers.surveys.listSurveys(scope)).toEqual([]);
           expect(await providers.surveys.getSurvey(archived.id)).toBeNull();
           expect(await providers.surveys.getSurvey(withFile.id)).toBeNull();
           expect(await providers.files.getFile(fileId)).toBeNull();
           expect(await providers.files.getFileByLegacyName("asset", ownFile.id)).toBeNull();
+          const kept = await providers.files.getFileByLegacyName("asset", othersFile.id);
+          kept?.content.destroy();
+          expect(kept?.file.id).toBe(othersFile.id);
+          expect(await providers.files.countUserFiles(bystander)).toBe(1);
           expect(await eraseAccount(scope.userId, options)).toEqual({
             userId: scope.userId,
             ...noCounts,
@@ -3051,6 +3074,7 @@ export function describeProviderSuite(
           const p2File = await putAsset(p2Survey.id);
           const p3 = await ownProject({ name: `Erasure 3 ${tag}` });
           await providers.projects.addMember(p3.id, ERASABLE_ID, "user", options);
+          const upload = await saveUpload(ERASABLE_ID);
 
           const expectedPreview = {
             userId: ERASABLE_ID,
@@ -3065,6 +3089,7 @@ export function describeProviderSuite(
               { id: p2.id, name: p2.name, decision: { kind: "last-member" }, surveyCount: 1 },
               { id: p3.id, name: p3.name, decision: { kind: "remove" }, surveyCount: 0 },
             ],
+            uploads: 1,
           };
           expect(await previewErasure(providers, ERASABLE_ID.toUpperCase())).toEqual(
             expectedPreview,
@@ -3078,8 +3103,10 @@ export function describeProviderSuite(
             projectsLeft: 2,
             projectsDeleted: 1,
             adminsPromoted: 1,
+            uploadsDeleted: 1,
           });
           expect(await providers.surveys.getSurvey(personal.id)).toBeNull();
+          expect(await providers.files.getFileByLegacyName("asset", upload.id)).toBeNull();
           expect(await providers.surveys.getSurvey(p1Survey.id)).toEqual(p1Survey);
           expect((await providers.projects.getUserProject(MEMBER_ID, p1.id))?.role).toBe("admin");
           expect(await providers.projects.getUserProject(ERASABLE_ID, p2.id)).toBeNull();

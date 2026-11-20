@@ -341,10 +341,11 @@ describe("fileRecordFromBlob", () => {
     }
   });
 
-  it("reads a user's file of no survey from users/{ownerId}/{fileId}, with no survey", () => {
-    // The id starts with the owner's id, as newFileId(ownerId) makes it.
-    expect(fileRecordFromBlob(`users/${name}`, properties, metadata)).toEqual({
-      id: ID,
+  it("reads a user's file of no survey from uploads/{fileId}, with no survey", () => {
+    const random = "cd".repeat(32);
+    const owner = { ...metadata, owner: "11111111-0000-4000-8000-a00000000001" };
+    expect(fileRecordFromBlob(`uploads/${random}`, properties, owner)).toEqual({
+      id: random,
       surveyId: null,
       kind: "asset",
       name: 'Логотип "ü" 1.png',
@@ -352,16 +353,15 @@ describe("fileRecordFromBlob", () => {
       size: 1234,
       createdAt: "2026-09-01T10:00:05.123Z",
     });
-    const other = "22222222-0000-4000-8000-a00000000002";
     for (const blob of [
-      `users/${other}/${ID}`,
-      `users/${SURVEY.toUpperCase()}/${ID}`,
-      `Users/${name}`,
-      `users/users/${name}`,
-      `projects/${name}`,
-      `users/${ID}`,
+      `Uploads/${random}`,
+      `uploads/${random.toUpperCase()}`,
+      `uploads/${random}/x`,
+      `uploads/uploads/${random}`,
+      `users/${name}`,
+      `uploads/${name}`,
     ]) {
-      expect(fileRecordFromBlob(blob, properties, metadata), blob).toBeNull();
+      expect(fileRecordFromBlob(blob, properties, owner), blob).toBeNull();
     }
   });
 

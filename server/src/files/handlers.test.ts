@@ -401,8 +401,10 @@ describe("uploadLegacyFile", () => {
     expect(res.headers.location).toBeUndefined();
     const body = res.json<{ legacyName: string }>();
     expect(Object.keys(body)).toEqual(["legacyName"]);
-    // The file's id, which starts with the uploader's.
-    expect(body.legacyName).toMatch(new RegExp(`^${USER.id.replaceAll("-", "")}[0-9a-f]{32}$`));
+    // The file's id: 64 random hex digits, without the uploader's id (the name is public).
+    expect(body.legacyName).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.legacyName).not.toContain(USER.id.replaceAll("-", ""));
+    expect(body.legacyName).not.toContain(USER.id);
 
     const found = await providers.files.getFileByLegacyName("asset", body.legacyName);
     found?.content.destroy();

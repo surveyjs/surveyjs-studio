@@ -83,6 +83,7 @@ describe("eraseAccount", () => {
       projectsLeft: 0,
       projectsDeleted: 1,
       adminsPromoted: 0,
+      uploadsDeleted: 0,
     });
     expect(lines).toEqual([{ details: summary, message: "Erased the data of an account." }]);
     expect(Object.keys(lines[0]!.details).sort()).toEqual([
@@ -90,6 +91,7 @@ describe("eraseAccount", () => {
       "projectsDeleted",
       "projectsLeft",
       "surveysDeleted",
+      "uploadsDeleted",
       "userId",
     ]);
     expect(JSON.stringify(lines)).not.toMatch(
@@ -147,6 +149,7 @@ describe("eraseAccount and reconciliation", () => {
       projectsLeft: 1,
       projectsDeleted: 1,
       adminsPromoted: 0,
+      uploadsDeleted: 0,
     });
 
     // OTHER_GONE's only row went with the project nobody visible was left in.

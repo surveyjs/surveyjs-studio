@@ -667,10 +667,10 @@ pnpm account:erase --user <id or email> [--yes] [--env-file <path>]
 
 - Without `--yes` it is a **dry run**: it prints the account, the personal surveys it would delete, and for each
   project what happens (`leaves the project`, `<id> becomes an admin`, or `the project is deleted with its N
-surveys`), and writes nothing. The **final decision for each project is made at erase time** and can differ from the
+surveys`), and how many editor uploads of no survey it would delete (hosted), and writes nothing. The **final decision for each project is made at erase time** and can differ from the
   plan, because the preview works from the visible members and the store decides again under its lock.
 - With `--yes` it erases and prints `Erased <id>: <s> surveys deleted, <l> projects left, <d> projects deleted, <p>
-admins promoted.`
+admins promoted, <u> uploads deleted.`
 - An **email** is looked up in the user directory; an unknown email exits 1. An **id** is erased even when the
   directory does not know it. **If the directory lookup fails** (it only supplies the name for the plan), the command
   exits **1 and erases nothing**; run it again when the directory is back.
