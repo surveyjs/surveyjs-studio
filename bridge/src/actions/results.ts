@@ -3,7 +3,7 @@
 // Studio's `getPublicResults`, paged to the end and streamed as the pages come.
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { jsonContentType, sendJsonString, sendProblem } from "../answers.js";
 import { EMPTY_GUID, guidParameter, parseGuid } from "../binding.js";
 import {
@@ -14,7 +14,7 @@ import {
   parseStudioJson,
   questionResultEntries,
 } from "../dotnet-format.js";
-import { oldRoute, queryValue } from "../routes.js";
+import { queryValue } from "../routes.js";
 import { StudioFailure, unexpectedStatus } from "../studio.js";
 
 /** The old `getResult`'s response header (its answers, refusals included, but not its errors). */
@@ -73,7 +73,10 @@ function sendGetResult(reply: FastifyReply, status: 200 | 400, body: string): Fa
     .send(body);
 }
 
-async function getResult(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+export async function getResult(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
   const resultId = guidParameter(request, reply, "resultId");
   if (resultId === undefined) return reply;
   const name = queryValue(request, "name");
@@ -171,7 +174,7 @@ export function retryDelayMs(retryAfter: string | null, now = Date.now()): numbe
 /** The largest page Studio gives. */
 const PAGE_LIMIT = 1000;
 
-async function getSurveyPublicResults(
+export async function getSurveyPublicResults(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<FastifyReply> {
@@ -253,15 +256,4 @@ async function getSurveyPublicResults(
     .code(200)
     .header("content-type", "application/json; charset=utf-8")
     .send(Readable.from(body(), { objectMode: false }));
-}
-
-export function registerResultActions(app: FastifyInstance): void {
-  oldRoute(app, ["GET"], ["getResult"], getResult);
-  oldRoute(
-    app,
-    ["GET"],
-    ["getSurveyPublicResults", "getSurveyPublicResults/:id"],
-    getSurveyPublicResults,
-    { controller: "private" },
-  );
 }

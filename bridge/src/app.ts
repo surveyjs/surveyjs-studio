@@ -12,6 +12,7 @@ import { registerActions } from "./actions/index.js";
 import { sendEmpty } from "./answers.js";
 import { registerCors } from "./cors.js";
 import { createForwarder, MAX_HEADER_BYTES, plainAddress, type Forwarder } from "./forward.js";
+import { withoutKey } from "./key.js";
 import type { BridgeSettings } from "./settings.js";
 import { studioClient, StudioFailure, type StudioClient } from "./studio.js";
 
@@ -23,6 +24,8 @@ declare module "fastify" {
     readonly studioFiles: StudioClient;
     /** Aborted when the caller goes away before its answer is complete. */
     readonly callerGone: AbortSignal;
+    /** The caller's address, for Studio's `X-Forwarded-For`; `""` when unknown. */
+    readonly callerIp: string;
   }
 }
 
@@ -48,6 +51,29 @@ function livePeer(request: FastifyRequest): string | undefined {
   if (socket.destroyed || !socket.writable) return undefined;
   const peer = peers.get(socket);
   return peer === undefined || peer === "" ? undefined : peer;
+}
+
+/**
+ * The logger's options, with request URLs logged without the `accessKey` value: the key is a
+ * credential and never reaches the logs. The fields are otherwise Fastify's own (without the
+ * rarely sent `Accept-Version`).
+ */
+function loggerOptions(logger: BridgeDeps["logger"]): FastifyServerOptions["logger"] {
+  if (logger === undefined || logger === false) return false;
+  const options = logger === true ? {} : logger;
+  return {
+    ...options,
+    serializers: {
+      ...options.serializers,
+      req: (request: FastifyRequest) => ({
+        method: request.method,
+        url: withoutKey(request.url),
+        host: request.host,
+        remoteAddress: request.ip,
+        remotePort: request.socket.remotePort,
+      }),
+    },
+  };
 }
 
 /** Hands the request to the old service; never throws (a failure is an empty 500). */
@@ -102,7 +128,7 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   const fetchImpl = deps.fetch ?? fetch;
 
   const app = Fastify({
-    logger: deps.logger ?? false,
+    logger: loggerOptions(deps.logger),
     routerOptions: {
       // The old API's routing: any letter case, one trailing slash or none.
       caseSensitive: false,
@@ -143,6 +169,11 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     settings.trustProxy.length > 0
       ? plainAddress(request.ip)
       : (peers.get(request.raw.socket) ?? "");
+  app.decorateRequest("callerIp", {
+    getter(this: FastifyRequest): string {
+      return callerOf(this);
+    },
+  });
   app.decorateRequest("studio", {
     getter(this: FastifyRequest): StudioClient {
       return studioClient(settings, callerOf(this), fetchImpl, callerGone.get(this.raw));
@@ -197,7 +228,12 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     return sendEmpty(reply, 500);
   });
 
-  if (deps.actions !== false) registerActions(app, settings);
+  if (deps.actions !== false) {
+    registerActions(app, settings, {
+      studioFetch: fetchImpl,
+      forward: (request, reply) => forward(forwarder, request, reply),
+    });
+  }
 
   app.addHook("onClose", async () => forwarder.close());
 

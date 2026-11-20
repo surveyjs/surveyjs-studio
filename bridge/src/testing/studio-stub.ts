@@ -1,5 +1,6 @@
-// A fake Studio for the action tests: the public operations the bridge calls, answered from maps
-// the test fills, with every request recorded. `override` answers a request differently (a status
+// A fake Studio for the action tests: the public operations the bridge calls, and the bearer
+// operations of the access-key actions, answered from maps the test fills, with every request
+// recorded. `override` answers a request differently (a status
 // the test wants) before the fake's own routing.
 import type { ServerResponse } from "node:http";
 import { startStub, type RecordedRequest, type Stub } from "./http.js";
@@ -52,6 +53,13 @@ export interface FakeStudio extends Stub {
   publicResults: Map<string, StoredPublicResults>;
   /** Items per page of `getPublicResults`, whatever `limit` asks (`undefined`: `limit`). */
   pageSize: number | undefined;
+  /**
+   * Credentials Studio accepts as `Authorization: Bearer <value>`, by value: an API token (rotated
+   * by `replaceCurrentCredential`) or a legacy access key (which it cannot replace).
+   */
+  credentials: Map<string, "token" | "legacy">;
+  /** The value `replaceCurrentCredential` gives a rotated token. */
+  nextToken: string;
   /** The file Studio answers an upload with. */
   storedFile: { id: string; url: string; name: string; contentType: string; size: number };
   /** Clears the maps, the recorded requests and the override. */
@@ -106,10 +114,44 @@ function publicResults(fake: FakeStudio, res: ServerResponse, surveyId: string, 
     .end(`{"survey":${survey},"items":[${page.join(",")}],"nextCursor":${next}}`);
 }
 
-function problem(res: ServerResponse, status: number): void {
+function problem(res: ServerResponse, status: number, code?: string): void {
   res
     .writeHead(status, { "content-type": "application/problem+json" })
-    .end(JSON.stringify({ type: "about:blank", title: "Problem", status }));
+    .end(JSON.stringify({ type: "about:blank", title: "Problem", status, ...(code && { code }) }));
+}
+
+/** The bearer credential of a request, as Studio reads it; `undefined` without one. */
+function bearerOf(request: RecordedRequest): string | undefined {
+  const header = request.headers.authorization;
+  return header?.startsWith("Bearer ") === true ? header.slice("Bearer ".length) : undefined;
+}
+
+/** `getCurrentUser` and `replaceCurrentCredential`; false for any other path. */
+function credentialOperation(fake: FakeStudio, request: RecordedRequest, res: ServerResponse) {
+  const path = new URL(request.url, "http://studio").pathname;
+  if (path !== `${API}/me` && path !== `${API}/me/credential`) return false;
+  const value = bearerOf(request);
+  const kind = value === undefined ? undefined : fake.credentials.get(value);
+  if (kind === undefined) {
+    problem(res, 401, "unauthenticated");
+  } else if (request.method === "GET" && path === `${API}/me`) {
+    json(res, 200, {
+      id: "3c4a7fdf-94a1-41ec-96d0-41749c260100",
+      displayName: "Alex",
+      email: "alex@example.com",
+    });
+  } else if (request.method === "POST" && path === `${API}/me/credential`) {
+    if (kind === "legacy") {
+      problem(res, 409, "legacy-key-replace-unavailable");
+    } else {
+      fake.credentials.delete(value!);
+      fake.credentials.set(fake.nextToken, "token");
+      json(res, 200, { value: fake.nextToken });
+    }
+  } else {
+    problem(res, 404, "not-found");
+  }
+  return true;
 }
 
 export async function startFakeStudio(): Promise<FakeStudio> {
@@ -119,6 +161,7 @@ export async function startFakeStudio(): Promise<FakeStudio> {
   const stub = await startStub((request, res) => {
     const fake = holder.studio!;
     if (fake.override?.(request, res) === true) return;
+    if (credentialOperation(fake, request, res)) return;
     const url = new URL(request.url, "http://studio");
     if (!url.pathname.startsWith(`${API}/public/`)) return problem(res, 404);
     // e.g. ["surveys", "<id>", "definition"]: the route is "surveys/:/definition".
@@ -206,6 +249,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
     publicResults: new Map(),
     pageSize: undefined,
     override: undefined,
+    credentials: new Map(),
+    nextToken: "sjs_rotated",
     storedFile: {
       id: "5af48e08a0a544a583f41c90e8e98de10123456789abcdef0123456789abcdef",
       url: "http://studio.test/api/v1/public/files/5af48e08",
@@ -223,6 +268,8 @@ export async function startFakeStudio(): Promise<FakeStudio> {
       fake.legacyFiles.clear();
       fake.publicResults.clear();
       fake.pageSize = undefined;
+      fake.credentials.clear();
+      fake.nextToken = "sjs_rotated";
       fake.requests.length = 0;
       fake.override = undefined;
     },

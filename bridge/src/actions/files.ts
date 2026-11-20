@@ -6,11 +6,11 @@
 import { validateHeaderValue } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { sendEmpty, sendProblem } from "../answers.js";
 import { EMPTY_GUID } from "../binding.js";
 import { contentDisposition } from "../dotnet-format.js";
-import { oldRoute, queryValue } from "../routes.js";
+import { queryValue } from "../routes.js";
 import { unexpectedStatus } from "../studio.js";
 
 const STUDIO_FILE_ID = /^[0-9a-f]{64}$/;
@@ -149,34 +149,34 @@ async function respondentFile(
   return sent === false ? sendProblem(reply, 404) : sent;
 }
 
-export function registerFileActions(app: FastifyInstance): void {
-  oldRoute(app, ["GET"], ["image"], (request, reply) => respondentFile(request, reply, "image"));
-  oldRoute(app, ["GET"], ["file"], (request, reply) => respondentFile(request, reply, "file"));
+/** `image`: a respondent's file by `filePath`. */
+export function image(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+  return respondentFile(request, reply, "image");
+}
 
-  oldRoute(
-    app,
-    ["GET"],
-    ["files"],
-    async (request, reply) => {
-      const name = queryValue(request, "name");
-      // No name, the logo's name (its file was never deployed) and a name the old store refused
-      // all failed, which the private actions answered with an empty 400.
-      if (name === undefined || name === "" || name === EMPTY_GUID) return sendEmpty(reply, 400);
-      const named = target(name, false);
-      if (named === "refused") return sendEmpty(reply, 400);
-      // A path or any name no legacy file has (Review Focus 4): no lookup at all.
-      if (named === "unknown" || !("legacyName" in named)) return sendEmpty(reply, 404);
-      const sent = await sendFile(
-        request,
-        reply,
-        { legacyName: named.legacyName, kind: "asset" },
-        () => ({
-          "content-type": "application/octet-stream",
-          "content-disposition": contentDisposition(name),
-        }),
-      );
-      return sent === false ? sendEmpty(reply, 404) : sent;
-    },
-    { controller: "private" },
+/** `file`: a respondent's file by `filePath`. */
+export function file(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+  return respondentFile(request, reply, "file");
+}
+
+/** `files?name=`: an image placed in the editor. */
+export async function files(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+  const name = queryValue(request, "name");
+  // No name, the logo's name (its file was never deployed) and a name the old store refused
+  // all failed, which the private actions answered with an empty 400.
+  if (name === undefined || name === "" || name === EMPTY_GUID) return sendEmpty(reply, 400);
+  const named = target(name, false);
+  if (named === "refused") return sendEmpty(reply, 400);
+  // A path or any name no legacy file has (Review Focus 4): no lookup at all.
+  if (named === "unknown" || !("legacyName" in named)) return sendEmpty(reply, 404);
+  const sent = await sendFile(
+    request,
+    reply,
+    { legacyName: named.legacyName, kind: "asset" },
+    () => ({
+      "content-type": "application/octet-stream",
+      "content-disposition": contentDisposition(name),
+    }),
   );
+  return sent === false ? sendEmpty(reply, 404) : sent;
 }

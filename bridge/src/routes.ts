@@ -19,7 +19,8 @@ const PREFIXES: Record<Controller, readonly string[]> = {
 /**
  * Registers an action: each of `names` (with a `/:id` form where the old route has one, e.g.
  * `["getSurveyPublicResults", "getSurveyPublicResults/:id"]`) under both prefixes of its controller,
- * `public/Survey` and `public/v1/Survey` or `private/Surveys` and `private/v1/Surveys`.
+ * `public/Survey` and `public/v1/Survey` or `private/Surveys` and `private/v1/Surveys`. The name
+ * `""` is the prefix itself.
  */
 export function oldRoute(
   app: FastifyInstance,
@@ -38,7 +39,7 @@ export function oldRoute(
     for (const name of names) {
       app.route({
         method: methods,
-        url: `${prefix}/${name}`,
+        url: name === "" ? prefix : `${prefix}/${name}`,
         handler,
         ...(bodyLimit !== undefined && { bodyLimit }),
         ...(onRequest !== undefined && { onRequest }),

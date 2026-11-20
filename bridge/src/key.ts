@@ -1,0 +1,101 @@
+// The old API's access key (ADR 0040 point 2): read from the query only, sent to Studio only as
+// `Authorization: Bearer`, never logged and never put in an answer header. Each keyed action has a
+// bad-key answer (its `KeyRule`): for a missing or empty key, given without asking Studio, and for
+// a key Studio refuses (`401`: unknown, revoked, or its owner blocked).
+import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
+import { htmlEncode, sendEmpty, sendText } from "./answers.js";
+import { contextOf } from "./context.js";
+import { queryValue } from "./routes.js";
+import type { BridgeSettings } from "./settings.js";
+import { KeyRefused, studioClient, type StudioClient } from "./studio.js";
+
+/**
+ * How an action answers a bad key, as the old API did (ADR 0040 point 2), but for what ADR 0040
+ * point 1 changes:
+ * - `none`: the action takes no key;
+ * - `authorize`: an empty `401`, without the old sign-in `Location` (it carried the key);
+ * - `text`: `200 text/html` "The accessKey '…' is incorrect.", the key HTML-encoded;
+ * - `key-401`: an empty `401` (`POST clone`, which only the key could sign in).
+ */
+export type KeyRule = "none" | "authorize" | "text" | "key-401";
+
+/** What an access key or API token can be: visible ASCII, which a header carries unchanged. */
+const CREDENTIAL = /^[\x21-\x7e]+$/;
+
+/**
+ * The `accessKey` query parameter as the old API read it: the name in any letter case, the first
+ * value, decoded. `undefined` when it is missing or empty.
+ */
+export function accessKeyOf(request: FastifyRequest): string | undefined {
+  const key = queryValue(request, "accessKey");
+  return key === "" ? undefined : key;
+}
+
+/** The action's bad-key answer for `key` (`""` when there was none). */
+export function sendBadKey(reply: FastifyReply, rule: KeyRule, key: string): FastifyReply {
+  switch (rule) {
+    case "authorize":
+    case "key-401":
+      return sendEmpty(reply, 401);
+    case "text":
+      return sendText(reply, `The accessKey '${htmlEncode(key)}' is incorrect.`);
+    case "none":
+      throw new Error("an action that takes no key has no bad-key answer");
+  }
+}
+
+/**
+ * Studio's public API on behalf of the caller, as `request.studio`, with `key` (by default the
+ * request's own access key) as `Authorization: Bearer`. Studio's `401` then throws a `KeyRefused`,
+ * which `withKeyRule` answers with the action's bad-key answer.
+ */
+export function studioFor(
+  request: FastifyRequest,
+  settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
+  key: string | undefined = accessKeyOf(request),
+): StudioClient {
+  return studioClient(
+    settings,
+    request.callerIp,
+    contextOf(request).studioFetch,
+    request.callerGone,
+    undefined,
+    key,
+  );
+}
+
+/**
+ * The handler of an action with key rule `rule`: a missing or empty key, or one no credential can
+ * be, gets the bad-key answer before the handler runs (so no Studio call), and a `KeyRefused`
+ * from the handler's Studio calls gets it too.
+ */
+export function withKeyRule(rule: KeyRule, handler: RouteHandlerMethod): RouteHandlerMethod {
+  if (rule === "none") return handler;
+  return async function keyed(this: unknown, request, reply) {
+    const key = queryValue(request, "accessKey") ?? "";
+    if (!CREDENTIAL.test(key)) return sendBadKey(reply, rule, key);
+    try {
+      return await (handler as (...args: unknown[]) => unknown).call(this, request, reply);
+    } catch (error) {
+      if (error instanceof KeyRefused && !reply.sent) return sendBadKey(reply, rule, key);
+      throw error;
+    }
+  } as RouteHandlerMethod;
+}
+
+/** A request URL with each `accessKey` value (name in any letter case) replaced, for logs. */
+export function withoutKey(url: string): string {
+  const start = url.indexOf("?");
+  if (start < 0) return url;
+  const parameters = url
+    .slice(start + 1)
+    .split("&")
+    .map((parameter) => {
+      // The name as `queryValues` decodes it.
+      const [name] = new URLSearchParams(parameter).keys();
+      if (name?.toLowerCase() !== "accesskey") return parameter;
+      const equals = parameter.indexOf("=");
+      return `${equals < 0 ? parameter : parameter.slice(0, equals)}=[redacted]`;
+    });
+  return `${url.slice(0, start)}?${parameters.join("&")}`;
+}

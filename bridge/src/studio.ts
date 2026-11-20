@@ -27,6 +27,17 @@ export class StudioFailure extends Error {
   readonly retryAfter: string | null;
 }
 
+/**
+ * Studio refused the caller's credential (`401`: unknown, revoked, or its owner blocked). Thrown
+ * only by a client that sends one; the action answers its bad-key answer (`key.ts`).
+ */
+export class KeyRefused extends Error {
+  constructor() {
+    super("Studio refused the access key");
+    this.name = "KeyRefused";
+  }
+}
+
 /** For a status the action does not map to an old answer: an empty `500`. */
 export function unexpectedStatus(response: Response): never {
   throw new StudioFailure(500, `unexpected status ${response.status} from Studio`);
@@ -89,6 +100,9 @@ export function withBodyDeadline(response: Response, timer: NodeJS.Timeout): Res
  *
  * With `bodyTimeoutMs` (file reads), only the answer's headers must come within `studioTimeoutMs`;
  * its body then has `bodyTimeoutMs` to arrive, so a large file streamed through is not cut off.
+ *
+ * With `bearer` (the caller's access key or API token), every call carries
+ * `Authorization: Bearer <bearer>`, and Studio's `401` throws a `KeyRefused`.
  */
 export function studioClient(
   settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
@@ -96,6 +110,7 @@ export function studioClient(
   fetchImpl: (request: Request) => Promise<Response> = fetch,
   callerGone?: AbortSignal,
   bodyTimeoutMs?: number,
+  bearer?: string,
 ): StudioClient {
   const send = async (request: Request): Promise<Response> => {
     const signals = [request.signal, ...(callerGone === undefined ? [] : [callerGone])];
@@ -114,13 +129,16 @@ export function studioClient(
       clearTimeout(headersTimer);
     }
   };
-  const client = createClient<paths>({
-    baseUrl: settings.studioUrl,
-    ...(callerIp !== "" && { headers: { "x-forwarded-for": callerIp } }),
-    fetch: send,
-  });
+  const headers: Record<string, string> = {};
+  if (callerIp !== "") headers["x-forwarded-for"] = callerIp;
+  if (bearer !== undefined) headers.authorization = `Bearer ${bearer}`;
+  const client = createClient<paths>({ baseUrl: settings.studioUrl, headers, fetch: send });
   client.use({
     async onResponse({ response }) {
+      if (bearer !== undefined && response.status === 401) {
+        await response.body?.cancel();
+        throw new KeyRefused();
+      }
       if (response.status !== 429 && response.status < 500) return undefined;
       await response.body?.cancel();
       throw new StudioFailure(
