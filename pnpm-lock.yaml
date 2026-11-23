@@ -349,6 +349,9 @@ importers:
       '@surveyjs-studio/contract':
         specifier: workspace:*
         version: link:../contract
+      '@surveyjs-studio/metrics':
+        specifier: workspace:*
+        version: link:../metrics
       ajv:
         specifier: 8.20.0
         version: 8.20.0

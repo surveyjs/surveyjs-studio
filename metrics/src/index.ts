@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Registry, collectDefaultMetrics } from "@prometheus-io/client";
 import type { Counter, Histogram } from "@prometheus-io/client";
 
-export type { Counter, Histogram, Registry } from "@prometheus-io/client";
+export { Counter, Histogram, Registry } from "@prometheus-io/client";
 
 /** Request-duration histogram buckets, in seconds. */
 export const DURATION_BUCKETS: readonly number[] = [
@@ -30,7 +30,7 @@ export function statusLabel(res: ServerResponse): string {
 /**
  * Times every request from `onRequest` until `reply.raw` emits "close" (so it also counts replies
  * Fastify hijacks, and callers that disconnect before any answer). `labelsOf` is called once, in
- * the close handler, after routing; the `status` label is added here.
+ * the close handler, after routing; the `status` label is added here, to the counter only (the histogram has `labelsOf`'s labels).
  */
 export function trackRequests(
   app: FastifyInstance,
@@ -41,8 +41,8 @@ export function trackRequests(
     const start = process.hrtime.bigint();
     reply.raw.once("close", () => {
       const seconds = Number(process.hrtime.bigint() - start) / 1e9;
-      const labels = { ...labelsOf(request), status: statusLabel(reply.raw) };
-      metrics.requests.inc(labels);
+      const labels = labelsOf(request);
+      metrics.requests.inc({ ...labels, status: statusLabel(reply.raw) });
       metrics.duration.observe(labels, seconds);
     });
     done();

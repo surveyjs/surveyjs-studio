@@ -42,7 +42,7 @@ describe("trackRequests", () => {
     const duration = new Histogram({
       name: "t_duration_seconds",
       help: "x",
-      labelNames: ["route", "status"],
+      labelNames: ["route"],
       buckets: [...DURATION_BUCKETS],
       registers: [registry],
     });

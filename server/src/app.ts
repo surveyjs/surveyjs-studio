@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@surveyjs-studio/contract";
+import { trackRequests } from "@surveyjs-studio/metrics";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createEraseAccount } from "./accounts/erasure.js";
 import { createAdminHandlers } from "./admin/handlers.js";
@@ -13,6 +14,7 @@ import { bootstrapFirstAdmin } from "./auth/bootstrap.js";
 import { createPasswordHandlers } from "./auth/password-handlers.js";
 import { createSessionCheck } from "./auth/session-check.js";
 import { createSessionHandlers } from "./auth/session-handlers.js";
+import { operationLabel, type StudioMetrics } from "./metrics.js";
 import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
@@ -51,6 +53,8 @@ export interface BuildOptions {
   readonly now?: Clock;
   /** Receives the JSON log lines, even when `NODE_ENV=test` (tests). */
   readonly logStream?: { write(line: string): void };
+  /** Counts and times every request (the `/metrics` listener is started by `main.ts`, not here). */
+  readonly metrics?: StudioMetrics;
 }
 
 /**
@@ -145,6 +149,13 @@ export async function buildApp(
     // Empty trusts nobody: `request.ip` is then the socket's peer, whatever X-Forwarded-For says.
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
+
+  if (options.metrics) {
+    trackRequests(app, options.metrics, (request) => ({
+      operation: operationLabel(request),
+      method: request.method,
+    }));
+  }
 
   const https = new URL(config.publicBaseUrl).protocol === "https:";
   /** With `WEB_ROOT`, any path but the server's own is the web app's and gets its policy (ADR 0021). */

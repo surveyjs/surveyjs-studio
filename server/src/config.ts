@@ -116,6 +116,8 @@ export interface AppConfig {
   readonly nodeEnv: "development" | "test" | "production";
   readonly host: string;
   readonly port: number;
+  /** The separate `/metrics` listener (ADR 0041); `port` null: none. */
+  readonly metrics: { readonly port: number | null; readonly host: string };
   readonly logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   readonly edition: "hosted" | "self-hosted";
   readonly shell: string;
@@ -317,6 +319,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().min(1).default("127.0.0.1"),
   PORT: decimalInt.transform(Number).pipe(z.number().int().min(0).max(65535)).default(3000),
+  // Metrics are served only on their own port, never on PORT (checked in loadConfig).
+  METRICS_PORT: decimalInt.transform(Number).pipe(z.number().int().min(1).max(65535)).optional(),
+  METRICS_HOST: z.string().min(1).default("127.0.0.1"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   APP_EDITION: z.enum(["hosted", "self-hosted"]).default("self-hosted"),
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
@@ -833,6 +838,9 @@ export function loadConfig(
       }
     }
   }
+  if (parsed.success && parsed.data.METRICS_PORT === parsed.data.PORT) {
+    problems.push("METRICS_PORT: must differ from PORT");
+  }
   problems.push(...databaseProblems(env));
   problems.push(...fileProblems(env));
   if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
@@ -850,6 +858,7 @@ export function loadConfig(
     nodeEnv: e.NODE_ENV,
     host: e.HOST,
     port: e.PORT,
+    metrics: Object.freeze({ port: e.METRICS_PORT ?? null, host: e.METRICS_HOST }),
     logLevel: e.LOG_LEVEL,
     edition: e.APP_EDITION,
     shell: e.APP_SHELL,

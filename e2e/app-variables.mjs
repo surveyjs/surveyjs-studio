@@ -75,6 +75,8 @@ export const appVariables = [
   "READ_ONLY",
   "LEGACY_KEY_REVOKE",
   "REQUEST_TIMEOUT_SECONDS",
+  "METRICS_PORT",
+  "METRICS_HOST",
   "E2E_API_PROXY_TARGET",
 ];
 
