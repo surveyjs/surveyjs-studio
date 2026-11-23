@@ -35,6 +35,7 @@ Options:
   --public-limit <n>    Bridge requests a minute under Studio's public limit (default 60)
   --file-limit <n>      ... under its file download limit (default 600)
   --summary-limit <n>   ... under its question summary limit (default 10)
+  --help, -h            Show this usage and exit
 
 Exit codes: 0 no difference and no error, 1 a difference or a failed request,
 2 usage error (nothing sent). Changed and rate-limited cases are counted but do not fail.
@@ -305,6 +306,10 @@ export async function main(
 ): Promise<number> {
   const args = argv[0] === "--" ? argv.slice(1) : argv;
   if (args[0] === "smoke") return smoke(args.slice(1), io, deps);
+  if (args.includes("--help") || args.includes("-h")) {
+    io.out(`${USAGE}\n`);
+    return 0;
+  }
   const cwd = deps.cwd ?? process.env.INIT_CWD ?? process.cwd();
   let options: Options;
   let out: string;

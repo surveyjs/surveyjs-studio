@@ -116,6 +116,17 @@ describe("legacy:replay", () => {
     expect((await run([...required(out), "--limit", "1"])).requests).toHaveLength(3);
   });
 
+  it.each([[["--help"]], [["-h"]], [["--", "--help"]]])(
+    "shows its usage on %j, sending nothing (exit 0)",
+    async (args) => {
+      const result = await run(args);
+      expect(result.code).toBe(0);
+      expect(result.out).toContain("Usage: pnpm legacy:replay --sample <csv>");
+      expect(result.err).toBe("");
+      expect(result.requests).toEqual([]);
+    },
+  );
+
   it("refuses an action that is not a replayed read (exit 2)", async () => {
     const result = await run([...required(join(dir, "x.html")), "--actions", "getSurvey,post"]);
     expect(result.code).toBe(2);

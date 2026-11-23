@@ -216,7 +216,7 @@ service and the second (port 3003) the bridge; both read the same Studio, so eve
    ```
 
    - **Check:** `--out is inside the repository; write the report outside it`, the usage, and `exit 2`. Nothing was
-     sent. (Running `pnpm legacy:replay` with no options prints the usage the same way.)
+     sent. `pnpm legacy:replay --help` (or `-h`) prints the usage and exits `0`.
 
 4. The writes, with the key taken from the environment only:
 

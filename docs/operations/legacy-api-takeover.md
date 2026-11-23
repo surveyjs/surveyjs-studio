@@ -126,17 +126,76 @@ Prometheus on the target server is reached through an SSH tunnel to it (the priv
 queries closely for the first hour, then a few times on the first day. Compare the latencies with the replay report:
 until the cutover each bridge call crosses to today's Studio, and the report shows that cost per action.
 
-| What                                       | Query                                                                                                                                                                                                                               |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Error share per action                     | `sum by (action) (rate(surveyjs_bridge_requests_total{action!="preflight",status=~"5.."}[5m])) / sum by (action) (rate(surveyjs_bridge_requests_total{action!="preflight"}[5m]))`                                                   |
-| Error share overall                        | `sum(rate(surveyjs_bridge_requests_total{action!="preflight",status=~"5.."}[5m])) / sum(rate(surveyjs_bridge_requests_total{action!="preflight"}[5m]))`                                                                             |
-| Requests per action                        | `sum by (action, status) (rate(surveyjs_bridge_requests_total[5m]))`                                                                                                                                                                |
-| Latency per action, p95                    | `histogram_quantile(0.95, sum by (action, le) (rate(surveyjs_bridge_request_duration_seconds_bucket{action!="preflight"}[5m])))`                                                                                                    |
-| Forwarded paths: errors and failures       | `sum by (status) (rate(surveyjs_bridge_requests_total{action="forwarded",status=~"5..\|none"}[5m]))` and `sum by (reason) (rate(surveyjs_bridge_forward_failures_total[5m]))`                                                       |
-| The `getSurvey` cache's hit share          | `sum(rate(surveyjs_bridge_survey_cache_total{result="hit"}[15m])) / sum(rate(surveyjs_bridge_survey_cache_total[15m]))`                                                                                                             |
-| Studio's `429`s, as the bridge sees them   | `sum by (operation) (rate(surveyjs_bridge_studio_calls_total{status="429"}[5m]))`                                                                                                                                                   |
-| Studio failing or slow, as the bridge sees | `sum by (operation, status) (rate(surveyjs_bridge_studio_calls_total{status=~"5..\|timeout\|network"}[5m]))` and `histogram_quantile(0.95, sum by (operation, le) (rate(surveyjs_bridge_studio_call_duration_seconds_bucket[5m])))` |
-| Uploads in progress (refused at 8)         | `surveyjs_bridge_uploads_in_progress`, and `sum by (status) (rate(surveyjs_bridge_requests_total{action="upload",status=~"408\|503"}[5m]))`                                                                                         |
+Each query below can be pasted into Prometheus as it stands.
+
+**Error share per action** (CORS preflights left out, so they dilute nothing):
+
+```promql
+sum by (action) (rate(surveyjs_bridge_requests_total{action!="preflight",status=~"5.."}[5m]))
+  / sum by (action) (rate(surveyjs_bridge_requests_total{action!="preflight"}[5m]))
+```
+
+**Error share overall:**
+
+```promql
+sum(rate(surveyjs_bridge_requests_total{action!="preflight",status=~"5.."}[5m]))
+  / sum(rate(surveyjs_bridge_requests_total{action!="preflight"}[5m]))
+```
+
+**Requests per action and status:**
+
+```promql
+sum by (action, status) (rate(surveyjs_bridge_requests_total[5m]))
+```
+
+**Latency per action, p95:**
+
+```promql
+histogram_quantile(0.95, sum by (action, le) (rate(surveyjs_bridge_request_duration_seconds_bucket{action!="preflight"}[5m])))
+```
+
+**Forwarded paths: errors, and requests the old service did not answer completely:**
+
+```promql
+sum by (status) (rate(surveyjs_bridge_requests_total{action="forwarded",status=~"5..|none"}[5m]))
+```
+
+```promql
+sum by (reason) (rate(surveyjs_bridge_forward_failures_total[5m]))
+```
+
+**The `getSurvey` cache's hit share:**
+
+```promql
+sum(rate(surveyjs_bridge_survey_cache_total{result="hit"}[15m]))
+  / sum(rate(surveyjs_bridge_survey_cache_total[15m]))
+```
+
+**Studio's `429`s, as the bridge sees them:**
+
+```promql
+sum by (operation) (rate(surveyjs_bridge_studio_calls_total{status="429"}[5m]))
+```
+
+**Studio failing or slow, as the bridge sees it:**
+
+```promql
+sum by (operation, status) (rate(surveyjs_bridge_studio_calls_total{status=~"5..|timeout|network"}[5m]))
+```
+
+```promql
+histogram_quantile(0.95, sum by (operation, le) (rate(surveyjs_bridge_studio_call_duration_seconds_bucket[5m])))
+```
+
+**Uploads in progress** (at 8 the next upload is refused with `503`), and the uploads refused or cut off:
+
+```promql
+surveyjs_bridge_uploads_in_progress
+```
+
+```promql
+sum by (status) (rate(surveyjs_bridge_requests_total{action="upload",status=~"408|503"}[5m]))
+```
 
 How to read them:
 

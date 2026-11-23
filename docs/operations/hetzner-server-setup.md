@@ -124,7 +124,7 @@ from here on, `ssh deploy@<server-ip>` and `sudo`.
 `--env-file` is given, and keeps the running tag unless `--tag` is given. That is how to change the domain, the
 `/readyz` addresses or the restriction: run it again with other options. **The address options are not remembered:**
 give `--readyz-allow`, `--restrict-to` and `--trusted-proxies` again on every run, or the new `Caddyfile` is written
-without them (a run without `--trusted-proxies` makes Caddy replace the bridge's `X-Forwarded-For` again, and every
+without them (a run without `--trusted-proxies` makes the web front replace the bridge's `X-Forwarded-For` again, and every
 caller of the old API then shares one rate limit). Check the result first with the same options and
 `--print-caddyfile`. The servers in `--trusted-proxies` also go into `TRUST_PROXY` in `app.env`, after the Docker
 subnet ([Taking over `api.surveyjs.io`](legacy-api-takeover.md#1-preconditions)). A changed `Caddyfile` is applied by

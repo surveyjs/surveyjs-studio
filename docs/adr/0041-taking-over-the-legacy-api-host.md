@@ -91,9 +91,8 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
 - **Paced under Studio's per-address limits.** Every replayed request reaches Studio from the operator's one address.
   The replay knows which Studio limit each action falls under (from the mapping table's `studio` operations) and
   stays below it (`--public-limit`, `--summary-limit`, `--file-limit`, defaulting to Studio's defaults of 60, 10 and
-  600 a minute). A `429`
-  from the bridge is retried once after its `Retry-After`; a second one counts as `rate-limited`, a skip reason, not a
-  difference.
+  600 a minute). A `429` from the bridge is retried once after its `Retry-After`; a second one counts as
+  `rate-limited`, a skip reason, not a difference.
 - **Keys are replayed as recorded** (the user's choice, 2026-11-23): the keyed reads (`getSurveyResults`, `getActive`,
   `getSurveyInfo`, `exportSurveyResults`) are the riskiest actions. The report never shows a key, only the first 16
   hex digits of its hash (as Studio hashes legacy keys, `hashCredential`).
@@ -103,8 +102,9 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
   `error`, and an action whose cases are mostly `changed` is flagged, since nothing of it was compared.
 - **Comparison rules** (one module, unit-tested): status; content type; the headers callers read (ADR 0039 point 1);
   JSON with property names, order and values exact; arrays in order, except those the old service orders by nothing
-  (listed in the module, each with its reason); text bodies exact. Ignored: trace ids (`traceId` in problem bodies), `Date`, `Server`, platform
-  headers, whitespace between JSON tokens, chunking. Each difference is reported with a path into the body.
+  (listed in the module, each with its reason); text bodies exact. Ignored: trace ids (`traceId` in problem bodies),
+  `Date`, `Server`, platform headers, whitespace between JSON tokens, chunking. Each difference is reported with a path
+  into the body.
 - **Selection options:** `--actions`, `--since`, `--limit`. A sample of a few thousand requests takes hours at these
   rates, which is acceptable for a gate run once or twice.
 - **Output:** an HTML report written to `--out`, which must be outside the repository (the command refuses a path
@@ -165,8 +165,9 @@ writes one log line per request (`action`, `status`, `ms`, `cache`, and `key`: t
 hash, absent when there is no key). A command in the bridge image, `bridge-callers`, reads such lines (the container's
 log) and writes one CSV row per day, key prefix and action: the count, the first and the last time. A daily job on the
 server appends yesterday's rows to a file kept until the bridge is retired. No addresses, no full keys. The hash is
-Studio's `hashCredential` for a legacy key (SHA-256 of the lower-cased key; of an `sjs_` token as sent), the one `legacy_access_keys` will hold
-from the migration on (Steps 8–9); until then the owners are found by hashing the site's keys the same way.
+Studio's `hashCredential` for a legacy key (SHA-256 of the lower-cased key; of an `sjs_` token as sent), the one
+`legacy_access_keys` will hold from the migration on (Steps 8–9); until then the owners are found by hashing the
+site's keys the same way.
 
 ### 6. Fixed before the switch
 
