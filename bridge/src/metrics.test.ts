@@ -1,4 +1,5 @@
 import { request as httpRequest, type ServerResponse } from "node:http";
+import { connect } from "node:net";
 import { Writable } from "node:stream";
 import { createRegistry, type Registry } from "@surveyjs-studio/metrics";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -275,6 +276,24 @@ describe("the bridge's metrics", () => {
     expect(await registry.metrics()).toContain(
       'surveyjs_bridge_requests_total{action="upload",method="POST",status="200"} 1',
     );
+  });
+
+  it("counts an upload that is not read in time once, with status 408, and frees the gauge", async () => {
+    const { bridge, registry } = await setup({ uploadReadTimeoutMs: 500 });
+    const { hostname, port } = new URL(bridge.url);
+    const socket = connect(Number(port), hostname);
+    socket.on("error", () => undefined);
+    cleanups.push(async () => void socket.destroy());
+    socket.write(
+      "POST /public/Survey/upload HTTP/1.1\r\nHost: b\r\n" +
+        "Content-Type: multipart/form-data; boundary=x\r\nContent-Length: 500\r\n\r\n--x",
+    );
+    await expectSample(registry, "surveyjs_bridge_uploads_in_progress 1");
+    await expectSample(
+      registry,
+      'surveyjs_bridge_requests_total{action="upload",method="POST",status="408"} 1',
+    );
+    await expectSample(registry, "surveyjs_bridge_uploads_in_progress 0");
   });
 
   it("has no label holding a key, an ID or a path", async () => {

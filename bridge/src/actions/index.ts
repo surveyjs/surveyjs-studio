@@ -54,6 +54,7 @@ export function registerActions(
           action: entry.action,
           ...(bodyLimit !== undefined && { bodyLimit }),
           ...(onRequest.length > 0 && { onRequest }),
+          ...(entry.preHandler !== undefined && { preHandler: entry.preHandler }),
         },
       );
     }

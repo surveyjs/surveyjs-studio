@@ -45,6 +45,7 @@ app.log.info(
     cacheEntries: settings.cacheEntries,
     studioTimeoutMs: settings.studioTimeoutMs,
     fileTimeoutMs: settings.fileTimeoutMs,
+    uploadReadTimeoutMs: settings.uploadReadTimeoutMs,
     trustProxy: settings.trustProxy,
     metrics:
       settings.metricsPort === null ? "off" : `${settings.metricsHost}:${settings.metricsPort}`,

@@ -26,6 +26,12 @@ export interface BridgeSettings {
    */
   readonly maxUploadBytes: number;
   /**
+   * `BRIDGE_UPLOAD_READ_TIMEOUT_MS` (default 60000): how long an `upload`'s body may take to arrive
+   * in full; an upload still being read then is answered an empty `408` and its connection is
+   * closed, so a caller trickling its body cannot hold one of the bridge's upload slots.
+   */
+  readonly uploadReadTimeoutMs: number;
+  /**
    * `BRIDGE_TRUST_PROXY` (default none): addresses or CIDR ranges of proxies in front of the bridge
    * whose `X-Forwarded-For` names the caller. Empty: the caller is the socket's peer.
    */
@@ -102,6 +108,8 @@ export function loadSettings(env: Env): BridgeSettings {
   const fileTimeoutMs = integer("BRIDGE_FILE_TIMEOUT_MS", 120_000, 1, 3_600_000);
   const maxUploadBytes = integer("BRIDGE_MAX_UPLOAD_BYTES", 11_534_336, 1, 30_000_000);
 
+  const uploadReadTimeoutMs = integer("BRIDGE_UPLOAD_READ_TIMEOUT_MS", 60_000, 1, 3_600_000);
+
   const host = env.BRIDGE_HOST ?? "127.0.0.1";
   if (host === "") problems.push("BRIDGE_HOST must not be empty");
 
@@ -133,6 +141,7 @@ export function loadSettings(env: Env): BridgeSettings {
     studioTimeoutMs,
     fileTimeoutMs,
     maxUploadBytes,
+    uploadReadTimeoutMs,
     trustProxy,
     metricsPort,
     metricsHost,

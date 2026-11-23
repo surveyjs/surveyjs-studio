@@ -6,6 +6,7 @@ import type {
   FastifyRequest,
   HTTPMethods,
   onRequestAsyncHookHandler,
+  preHandlerAsyncHookHandler,
   RouteHandlerMethod,
 } from "fastify";
 
@@ -34,9 +35,11 @@ export function oldRoute(
     bodyLimit?: number;
     /** Run before the body is read, in order (e.g. to refuse a request without reading it). */
     onRequest?: onRequestAsyncHookHandler | onRequestAsyncHookHandler[];
+    /** Runs once the body has been read, before the handler. */
+    preHandler?: preHandlerAsyncHookHandler;
   } = {},
 ): void {
-  const { bodyLimit, onRequest } = options;
+  const { bodyLimit, onRequest, preHandler } = options;
   for (const prefix of PREFIXES[options.controller ?? "public"]) {
     for (const name of names) {
       app.route({
@@ -46,6 +49,7 @@ export function oldRoute(
         ...(options.action !== undefined && { config: { action: options.action } }),
         ...(bodyLimit !== undefined && { bodyLimit }),
         ...(onRequest !== undefined && { onRequest }),
+        ...(preHandler !== undefined && { preHandler }),
       });
     }
   }

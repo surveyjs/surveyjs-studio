@@ -2,7 +2,12 @@
 // its routes, its key rule and the Studio operations it calls. The router is built from it
 // (actions/index.ts), and the migration guide's table is checked against it. A path or method the
 // table does not hold is forwarded to the old service.
-import type { HTTPMethods, onRequestAsyncHookHandler, RouteHandlerMethod } from "fastify";
+import type {
+  HTTPMethods,
+  onRequestAsyncHookHandler,
+  preHandlerAsyncHookHandler,
+  RouteHandlerMethod,
+} from "fastify";
 import { generateAccessKey, setGenerationJSONType } from "./actions/account.js";
 import { changeJson, changeTheme, getHistoryPoint, uploadFiles } from "./actions/content.js";
 import { file, files, image } from "./actions/files.js";
@@ -18,7 +23,7 @@ import {
   setResultSummaryState,
   setResultTableState,
 } from "./actions/layouts.js";
-import { MAX_POST_BYTES, post, upload, uploadGate } from "./actions/post.js";
+import { MAX_POST_BYTES, post, upload, uploadBodyRead, uploadGate } from "./actions/post.js";
 import {
   deleteAllResults,
   deleteResult,
@@ -80,6 +85,8 @@ export interface ActionEntry {
   bodyLimit?: number | ((settings: BridgeSettings) => number);
   /** Runs before the body is read (e.g. to refuse a request without reading it). */
   onRequest?: onRequestAsyncHookHandler;
+  /** Runs once the body has been read, before the handler. */
+  preHandler?: preHandlerAsyncHookHandler;
 }
 
 /** Every method the router knows: the bare root path answers them all alike. */
@@ -134,6 +141,7 @@ export const ACTIONS: readonly ActionEntry[] = [
     handler: upload,
     bodyLimit: (settings) => settings.maxUploadBytes,
     onRequest: uploadGate,
+    preHandler: uploadBodyRead,
   },
   {
     action: "getResult",
