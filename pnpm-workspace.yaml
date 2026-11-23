@@ -5,6 +5,7 @@ packages:
   - conformance-tests
   - e2e
   - bridge
+  - metrics
   - legacy-compat-tests
 
 allowBuilds:

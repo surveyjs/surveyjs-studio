@@ -40,6 +40,7 @@ export default defineConfig({
         },
       },
       { test: { name: "bridge", include: ["bridge/src/**/*.test.ts"] } },
+      { test: { name: "metrics", include: ["metrics/src/**/*.test.ts"] } },
       "web",
       {
         test: {
