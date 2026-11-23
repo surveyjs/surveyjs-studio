@@ -92,7 +92,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
 /** A string whose characters are `text`'s UTF-8 bytes, to search bytes read as `latin1`. */
 const asBytes = (text: string) => Buffer.from(text, "utf8").toString("latin1");
 
-interface Scrubber {
+export interface Scrubber {
   /** Strings, array items and object keys and values, with each key masked. */
   value<T>(value: T): T;
   /** An answer with each key masked in its headers and body bytes (the same on every answer). */
@@ -104,7 +104,7 @@ interface Scrubber {
  * case. Answers are scrubbed before they are compared, so no window cut around a difference can
  * hold part of a key.
  */
-function scrubberOf(keys: readonly { key: string; recorded: string }[]): Scrubber {
+export function scrubberOf(keys: readonly { key: string; recorded: string }[]): Scrubber {
   const rules = keys
     .filter(({ key }) => key !== "")
     .map(({ key, recorded }) => {
@@ -162,14 +162,14 @@ function scrubberOf(keys: readonly { key: string; recorded: string }[]): Scrubbe
   };
 }
 
-function describeError(error: unknown): string {
+export function describeError(error: unknown): string {
   const text = String(error);
   const cause =
     error instanceof Error && error.cause !== undefined ? ` (${String(error.cause)})` : "";
   return text + cause;
 }
 
-async function readAnswer(response: Response): Promise<Answer> {
+export async function readAnswer(response: Response): Promise<Answer> {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, name) => (headers[name] = value));
   return { status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) };
