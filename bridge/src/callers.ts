@@ -42,32 +42,55 @@ function requestLine(text: string): { time: number; key: string; action: string 
   return { time, key: key ?? "", action };
 }
 
+export interface CallerSummary {
+  /** Counts one log line; a line that is not a request line is skipped. */
+  add(text: string): void;
+  /** The rows so far, sorted by day, key and action. */
+  rows(): CallerRow[];
+}
+
 /**
- * One row per UTC day, key prefix and action of the bridge's request lines (pino's JSON, its
- * `time` in milliseconds), sorted by day, key and action. Other lines are skipped.
+ * Sums the bridge's request lines (pino's JSON, its `time` in milliseconds) one at a time into one
+ * row per UTC day, key prefix and action, so a long log is never held in memory.
+ */
+export function createCallerSummary(): CallerSummary {
+  const rows = new Map<string, CallerRow>();
+  return {
+    add(text) {
+      const line = requestLine(text);
+      if (line === undefined) return;
+      // ISO 8601 times in UTC compare as strings.
+      const at = new Date(line.time).toISOString();
+      const day = at.slice(0, 10);
+      const id = JSON.stringify([day, line.key, line.action]);
+      const row = rows.get(id);
+      if (row === undefined) {
+        rows.set(id, { day, key: line.key, action: line.action, count: 1, first: at, last: at });
+        return;
+      }
+      row.count += 1;
+      if (at < row.first) row.first = at;
+      if (at > row.last) row.last = at;
+    },
+    rows() {
+      const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return [...rows.values()]
+        .map((row) => ({ ...row }))
+        .sort(
+          (a, b) => compare(a.day, b.day) || compare(a.key, b.key) || compare(a.action, b.action),
+        );
+    },
+  };
+}
+
+/**
+ * One row per UTC day, key prefix and action of the bridge's request lines, sorted by day, key and
+ * action. Other lines are skipped.
  */
 export function summarizeCallers(lines: Iterable<string>): CallerRow[] {
-  const rows = new Map<string, CallerRow>();
-  for (const text of lines) {
-    const line = requestLine(text);
-    if (line === undefined) continue;
-    // ISO 8601 times in UTC compare as strings.
-    const at = new Date(line.time).toISOString();
-    const day = at.slice(0, 10);
-    const id = JSON.stringify([day, line.key, line.action]);
-    const row = rows.get(id);
-    if (row === undefined) {
-      rows.set(id, { day, key: line.key, action: line.action, count: 1, first: at, last: at });
-      continue;
-    }
-    row.count += 1;
-    if (at < row.first) row.first = at;
-    if (at > row.last) row.last = at;
-  }
-  const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  return [...rows.values()].sort(
-    (a, b) => compare(a.day, b.day) || compare(a.key, b.key) || compare(a.action, b.action),
-  );
+  const summary = createCallerSummary();
+  for (const text of lines) summary.add(text);
+  return summary.rows();
 }
 
 /** A CSV field: quoted when it holds a comma, a quote or a line break. */

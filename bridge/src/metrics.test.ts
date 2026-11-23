@@ -144,6 +144,49 @@ describe("the bridge's metrics", () => {
     expect(requestLines()[0]).toMatchObject({ action: "forwarded", path, status: "418" });
   });
 
+  it("counts a CORS preflight the bridge answers itself as action preflight, without a path", async () => {
+    const { bridge, registry, logs, requestLines } = await setup();
+    const answer = await send(`${bridge.url}/private/Surveys/getActive?accessKey=Preflight-Key`, {
+      method: "OPTIONS",
+      headers: [
+        ["Origin", "https://example.com"],
+        ["Access-Control-Request-Method", "GET"],
+      ],
+    });
+    expect(answer.status).toBe(204);
+    await expectSample(
+      registry,
+      'surveyjs_bridge_requests_total{action="preflight",method="OPTIONS",status="204"} 1',
+    );
+    expect(await registry.metrics()).not.toContain('action="forwarded"');
+    await expect.poll(() => requestLines()).toHaveLength(1);
+    const [line] = requestLines();
+    expect(line).toMatchObject({
+      action: "preflight",
+      method: "OPTIONS",
+      status: "204",
+      key: hashCredential("Preflight-Key", "legacy-key").slice(0, 16),
+    });
+    expect(line!.path).toBeUndefined();
+    expect(logs().toLowerCase()).not.toContain("preflight-key");
+    expect(legacy.requests).toEqual([]);
+  });
+
+  it("counts an OPTIONS request that is no preflight as forwarded", async () => {
+    const { bridge, registry, requestLines } = await setup();
+    const answer = await send(`${bridge.url}/private/Surveys/getActive`, { method: "OPTIONS" });
+    expect(answer.status).toBe(418);
+    await expectSample(
+      registry,
+      'surveyjs_bridge_requests_total{action="forwarded",method="OPTIONS",status="418"} 1',
+    );
+    await expect.poll(() => requestLines()).toHaveLength(1);
+    expect(requestLines()[0]).toMatchObject({
+      action: "forwarded",
+      path: "/private/Surveys/getActive",
+    });
+  });
+
   it("never answers /metrics on the main port: the path is forwarded", async () => {
     const { bridge } = await setup();
     const answer = await send(`${bridge.url}/metrics`);

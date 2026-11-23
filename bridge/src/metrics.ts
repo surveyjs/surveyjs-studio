@@ -11,6 +11,7 @@ import {
 import type { Registry } from "@surveyjs-studio/metrics";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { keyHashPrefix } from "./callers.js";
+import { isPreflight } from "./cors.js";
 import { keyOf } from "./key.js";
 
 /** How a `getSurvey` definition was read (`definitionText`). */
@@ -93,9 +94,16 @@ export function createBridgeMetrics(registry: Registry): BridgeMetrics {
   };
 }
 
-/** The `action` label: the route's old action, or `forwarded` for any path the bridge forwards. */
+/** Requests the router refused before routing (`observeUnrouted`): no hook, CORS included, ran. */
+const unrouted = new WeakSet<FastifyRequest>();
+
+/**
+ * The `action` label: `preflight` for a CORS preflight the bridge answers itself (cors.ts, before
+ * routing), the route's old action, or `forwarded` for any path the bridge forwards.
+ */
 function actionOf(request: FastifyRequest): string {
-  // A request the router refused (frameworkErrors) has a context without a config.
+  if (unrouted.has(request)) return "forwarded";
+  if (isPreflight(request)) return "preflight";
   return (request.routeOptions.config as { action?: string } | undefined)?.action ?? "forwarded";
 }
 
@@ -109,7 +117,7 @@ const observed = new WeakMap<FastifyRequest, { cache?: CacheResult }>();
 /**
  * The request's log line, written once its answer is done or abandoned: action, method, status,
  * milliseconds, the cache result, the key's hash prefix (only with a key), and for a forwarded
- * request its path without the query. Never the key, the query or the caller's address.
+ * request (not a preflight) its path without the query. Never the key, the query or the caller's address.
  */
 function logRequest(request: FastifyRequest, reply: FastifyReply, startedAt: bigint): void {
   const action = actionOf(request);
@@ -163,6 +171,7 @@ export function observeUnrouted(
   reply: FastifyReply,
   metrics: BridgeMetrics,
 ): void {
+  unrouted.add(request);
   const startedAt = process.hrtime.bigint();
   reply.raw.once("close", () => {
     const labels = labelsOf(request);
