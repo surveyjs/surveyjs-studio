@@ -18,6 +18,10 @@
 #                          GHCR_TOKEN, the file named by GHCR_TOKEN_FILE, or a prompt
 #   --readyz-allow "IPS"   addresses (space separated) that may call /readyz, e.g. a monitor
 #   --restrict-to "IPS"    serve only these addresses, everyone else gets 403 (rollout step 1)
+#   --trusted-proxies "IPS" addresses (space separated) whose X-Forwarded-For Caddy trusts, e.g. the
+#                          servers that call this one through the internet before a DNS switch
+#   --print-caddyfile      print the Caddyfile these options produce and exit; changes nothing, needs
+#                          no root, --tag or --env-file
 #   --auto-update          every minute, deploy the image Actions › Deploy tagged "production"
 #                          (update.sh --auto); a run without it turns this off
 #   --deploy-user NAME     the everyday user (default deploy); --no-deploy-user skips it
@@ -43,6 +47,8 @@ IMAGE=ghcr.io/surveyjs/surveyjs-studio-hosted
 GHCR_USER=""
 READYZ_ALLOW=""
 RESTRICT_TO=""
+TRUSTED_PROXIES=""
+PRINT_CADDYFILE=no
 AUTO_UPDATE=no
 DEPLOY_USER=deploy
 SSH_HARDENING=yes
@@ -68,6 +74,8 @@ parse_args() {
       --ghcr-user) GHCR_USER="${2:?--ghcr-user needs a value}" && shift ;;
       --readyz-allow) READYZ_ALLOW="${2:?--readyz-allow needs a value}" && shift ;;
       --restrict-to) RESTRICT_TO="${2:?--restrict-to needs a value}" && shift ;;
+      --trusted-proxies) TRUSTED_PROXIES="${2:?--trusted-proxies needs a value}" && shift ;;
+      --print-caddyfile) PRINT_CADDYFILE=yes ;;
       --auto-update) AUTO_UPDATE=yes ;;
       --deploy-user) DEPLOY_USER="${2:?--deploy-user needs a value}" && shift ;;
       --no-deploy-user) DEPLOY_USER="" ;;
@@ -79,6 +87,13 @@ parse_args() {
   done
 }
 
+# Checks the options' values; runs before anything else, also for --print-caddyfile.
+check_values() {
+  [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "not a host name: $DOMAIN"
+  local ips="$READYZ_ALLOW $RESTRICT_TO $TRUSTED_PROXIES" ip_list='^[0-9A-Fa-f:./ ]*$'
+  [[ "$ips" =~ $ip_list ]] || die "--readyz-allow, --restrict-to and --trusted-proxies take IP addresses or CIDR ranges"
+}
+
 check_inputs() {
   [[ $EUID -eq 0 ]] || die "run it as root: sudo $0 ..."
   [[ -f "$SCRIPT_DIR/update.sh" ]] || die "update.sh must be next to this script"
@@ -87,9 +102,6 @@ check_inputs() {
   if [[ -r /etc/os-release ]] && . /etc/os-release && [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
     warn "written for Ubuntu 24.04; this is ${PRETTY_NAME:-unknown}"
   fi
-  [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "not a host name: $DOMAIN"
-  local ips="$READYZ_ALLOW $RESTRICT_TO" ip_list='^[0-9A-Fa-f:./ ]*$'
-  [[ "$ips" =~ $ip_list ]] || die "--readyz-allow and --restrict-to take IP addresses or CIDR ranges"
 
   if [[ -z "$TAG" ]]; then
     TAG="$(sed -n 's/^TAG=//p' "$APP_DIR/.env" 2>/dev/null | tail -n 1 || true)"
@@ -116,8 +128,8 @@ check_env_file() {
   value="$(sed -n 's/^PUBLIC_BASE_URL=//p' "$file" | tail -n 1 | tr -d "'\"")"
   [[ "$value" == "https://$DOMAIN" ]] || die "PUBLIC_BASE_URL is $value, expected https://$DOMAIN"
   value="$(sed -n 's/^TRUST_PROXY=//p' "$file" | tail -n 1 | tr -d "'\"")"
-  [[ "$value" == "$NETWORK_SUBNET" ]] ||
-    warn "TRUST_PROXY is '${value}'; behind this Caddy it should be $NETWORK_SUBNET, or every user shares the proxy's rate limits"
+  [[ " $value " == *"$NETWORK_SUBNET"* ]] ||
+    warn "TRUST_PROXY is '${value}'; behind this Caddy it should hold $NETWORK_SUBNET, or every user shares the proxy's rate limits"
   # Compose expands $ in unquoted and double-quoted values.
   if grep -E '^[A-Z_]+=[^'"'"'].*\$' "$file" >/dev/null; then
     warn "a value in $file holds \$ without single quotes; Compose would expand it. Quote it: KEY='value'"
@@ -199,6 +211,37 @@ install_docker() {
   docker compose version
 }
 
+# The Caddyfile for the options; write_files writes exactly this, --print-caddyfile prints it.
+caddyfile_content() {
+  local restrict="" global=""
+  if [[ -n "$RESTRICT_TO" ]]; then
+    restrict=$'\t@outsiders not remote_ip '"$RESTRICT_TO"$'\n\trespond @outsiders "Not available yet" 403\n'
+  fi
+  if [[ -n "$TRUSTED_PROXIES" ]]; then
+    global=$'{
+	servers {
+		trusted_proxies static '"$TRUSTED_PROXIES"$'
+	}
+}
+'
+  fi
+  cat <<EOF
+# Written by setup.sh; run it again to change this file.
+${global}$DOMAIN {
+	# Not the survey documents: compressing rewrites their ETag ("v" becomes "v-zstd"), and every
+	# save with it would fail as "changed by someone else". The app also asks with no-transform.
+	@compressible not path /api/v1/surveys/*/definition /api/v1/surveys/*/theme /api/v1/public/surveys/*/definition
+	encode @compressible zstd gzip
+	@readyz_blocked {
+		path /readyz
+		not remote_ip 127.0.0.1${READYZ_ALLOW:+ $READYZ_ALLOW}
+	}
+	respond @readyz_blocked 404
+${restrict}	reverse_proxy app:3000
+}
+EOF
+}
+
 write_files() {
   log "Files in $APP_DIR and $ETC_DIR"
   install -d -m 755 "$APP_DIR"
@@ -238,28 +281,8 @@ volumes:
   caddy_config:
 EOF
 
-  local restrict=""
-  if [[ -n "$RESTRICT_TO" ]]; then
-    restrict=$'\t@outsiders not remote_ip '"$RESTRICT_TO"$'\n\trespond @outsiders "Not available yet" 403\n'
-  fi
   local caddyfile
-  caddyfile="$(
-    cat <<EOF
-# Written by setup.sh; run it again to change this file.
-$DOMAIN {
-	# Not the survey documents: compressing rewrites their ETag ("v" becomes "v-zstd"), and every
-	# save with it would fail as "changed by someone else". The app also asks with no-transform.
-	@compressible not path /api/v1/surveys/*/definition /api/v1/surveys/*/theme
-	encode @compressible zstd gzip
-	@readyz_blocked {
-		path /readyz
-		not remote_ip 127.0.0.1${READYZ_ALLOW:+ $READYZ_ALLOW}
-	}
-	respond @readyz_blocked 404
-${restrict}	reverse_proxy app:3000
-}
-EOF
-  )"
+  caddyfile="$(caddyfile_content)"
   CADDY_CHANGED=no
   if [[ "$(cat "$APP_DIR/Caddyfile" 2>/dev/null)" != "$caddyfile" ]]; then
     printf '%s\n' "$caddyfile" >"$APP_DIR/Caddyfile"
@@ -362,6 +385,11 @@ EOF
 
 main() {
   parse_args "$@"
+  check_values
+  if [[ "$PRINT_CADDYFILE" == yes ]]; then
+    caddyfile_content
+    exit 0
+  fi
   check_inputs
   install_packages
   create_deploy_user
