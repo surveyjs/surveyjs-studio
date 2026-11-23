@@ -1,5 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "types": ["node"], "lib": ["ES2023", "DOM"] },
-  "include": ["src", "scripts", "vitest.config.ts"]
+  // The replay imports the bridge's mapping table by path; its handlers' request fields are
+  // declared in the bridge's app.ts.
+  "include": ["src", "scripts", "vitest.config.ts", "../bridge/src/app.ts"]
 }
