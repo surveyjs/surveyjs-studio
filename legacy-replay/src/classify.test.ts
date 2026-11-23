@@ -50,28 +50,6 @@ describe("classify", () => {
     expect(strictestLimit([])).toBeNull();
   });
 
-  it("classifies the path fetch sends: a dot segment or backslash that leaves the action is a write", () => {
-    const keyed = "/private/Surveys/getSurveyResults";
-    for (const path of [
-      `${keyed}/..\\generateAccessKey`,
-      `${keyed}/%2E%2E\\publish`,
-      `${keyed}/%2e%2e`,
-      `${keyed}/..`,
-    ]) {
-      expect(classify(row("GET", path)), path).toEqual({ kind: "skip", reason: "write" });
-    }
-    // Two segments where the route takes one: forwarded as recorded, so not sent either.
-    expect(classify(row("GET", `${keyed}/../getActive`))).toEqual({
-      kind: "skip",
-      reason: "forwarded",
-    });
-    expect(classify(row("GET", `${keyed}/.`))).toMatchObject({
-      kind: "replay",
-      action: "getSurveyResults",
-    });
-    expect(classify(row("GET", `${keyed}/${ID}`))).toMatchObject({ kind: "replay" });
-  });
-
   it("finds the URL fetch sends, on the base origin only", () => {
     expect(requestUrl("https://old.example", { path: "/a/b/../c", query: "x=1" })?.href).toBe(
       "https://old.example/a/c?x=1",
@@ -88,7 +66,7 @@ describe("classify", () => {
     expect(classify(row("GET", "/elsewhere/page"))).toEqual({ kind: "skip", reason: "forwarded" });
     expect(classify(row("GET", "@elsewhere/public/Survey/getSurvey"))).toEqual({
       kind: "skip",
-      reason: "forwarded",
+      reason: "unsafe-path",
     });
   });
 
@@ -107,6 +85,54 @@ describe("classify", () => {
         reason: "write",
       });
     }
+  });
+
+  it("skips a path outside the allowlist as unsafe, before anything else", () => {
+    const keyed = "/private/Surveys/getSurveyResults";
+    for (const path of [
+      `${keyed}/..%2FgenerateAccessKey`,
+      `${keyed}/..%2fgenerateAccessKey`,
+      `${keyed}/..%5CgenerateAccessKey`,
+      `${keyed}/%2E%2E%2FgenerateAccessKey`,
+      `${keyed}/..\\generateAccessKey`,
+      `${keyed}/%2E%2E\\publish`,
+      `${keyed}/..`,
+      `${keyed}/.`,
+      `${keyed}/x#y`,
+      `${keyed}/x?y`,
+      `${keyed}/x;y`,
+      `${keyed}/x y`,
+      `${keyed}/x\ny`,
+      `${keyed}//`,
+      "/private//Surveys/getActive",
+      "private/Surveys/getActive",
+      "",
+    ]) {
+      for (const method of ["GET", "POST", "BREW"]) {
+        expect(classify(row(method, path)), `${method} ${path}`).toEqual({
+          kind: "skip",
+          reason: "unsafe-path",
+        });
+      }
+    }
+    for (const query of ["a=1#b", "a=\u0000", "a=\u007f", "a=\r\n"]) {
+      expect(classify({ method: "GET", path: keyed, query }), query).toEqual({
+        kind: "skip",
+        reason: "unsafe-path",
+      });
+    }
+  });
+
+  it("replays GUIDs with or without dashes or braces, and one trailing slash", () => {
+    for (const id of [ID, `{${ID}}`, ID.replaceAll("-", ""), `${ID}/`]) {
+      const path = `/private/Surveys/getSurveyResults/${id}`;
+      expect(classify({ method: "GET", path, query: "accessKey=a%2Fb&x=y z" }), id).toEqual({
+        kind: "replay",
+        action: "getSurveyResults",
+        limit: null,
+      });
+    }
+    expect(classify(row("GET", "/public/Survey/getSurvey/"))).toMatchObject({ kind: "replay" });
   });
 
   it("skips a method no router knows", () => {

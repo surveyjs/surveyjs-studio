@@ -40,7 +40,7 @@ const RESULTS: CaseResult[] = [
     differences: [],
   },
 ];
-const SKIPPED = { write: 3, forwarded: 2, "unknown-method": 1 };
+const SKIPPED = { write: 3, forwarded: 2, "unknown-method": 1, "unsafe-path": 5 };
 
 describe("summarize", () => {
   it("counts the outcomes by action, the skips by reason, and fails on a difference", () => {
@@ -89,7 +89,7 @@ describe("formatSummary", () => {
   it("holds counts and the verdict only", () => {
     const text = formatSummary(summarize(RESULTS, SKIPPED, 4));
     expect(text).toContain("getActive");
-    expect(text).toMatch(/write 3, forwarded 2, unknown-method 1/);
+    expect(text).toMatch(/write 3, forwarded 2, unknown-method 1, unsafe-path 5/);
     expect(text).toMatch(/not selected 4/);
     expect(text).toMatch(/verdict: fail \(1 different, 1 error\)/);
     expect(text).not.toContain("/private/");

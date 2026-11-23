@@ -6,7 +6,7 @@
 // replaced by its hash prefix, answers are scrubbed of the key before they are compared, and so
 // are the differences and errors.
 import { keyHashPrefix } from "../../bridge/src/callers.js";
-import { classify, requestUrl } from "./classify.js";
+import { classify, isSafeRequest, requestUrl, sendsAction } from "./classify.js";
 import { compareAnswers, type Answer, type Difference } from "./compare.js";
 import type { Pacer } from "./pace.js";
 import type { SampleRow } from "./sample.js";
@@ -49,6 +49,11 @@ export interface ReplayOptions {
 
 /** How long one request may take: an export of many results is slow. */
 const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * The shortest key masked in answers: a shorter one (`accessKey=1`) is no credential and would mask
+ * unrelated text. It is still masked in the request and in errors.
+ */
+const MIN_SCRUBBED_KEY = 8;
 /** The wait after a `429` without a `Retry-After` in seconds. */
 const DEFAULT_RETRY_AFTER_S = 60;
 
@@ -191,15 +196,19 @@ export async function* replay(
     // The URL as fetch sends it must still be the classified action (dot segments, backslashes).
     const oldTarget = requestUrl(options.oldUrl, row);
     const bridgeTarget = requestUrl(options.bridgeUrl, row);
-    const sendsAction = (url: URL | undefined) => {
-      const sent = url && classify({ method: "GET", path: url.pathname });
-      return sent?.kind === "replay" && sent.action === action;
-    };
-    if (!oldTarget || !bridgeTarget || !sendsAction(oldTarget) || !sendsAction(bridgeTarget)) {
+    if (
+      !isSafeRequest(row) ||
+      !oldTarget ||
+      !bridgeTarget ||
+      !sendsAction(oldTarget, action) ||
+      !sendsAction(bridgeTarget, action)
+    ) {
       continue;
     }
     const keys = keysOf(row.query);
-    const scrub = scrubberOf(keys);
+    // Answers and differences: only keys long enough not to mask unrelated text. Errors: every key.
+    const scrub = scrubberOf(keys.filter(({ key }) => key.length >= MIN_SCRUBBED_KEY));
+    const scrubAll = scrubberOf(keys);
     const get = async (url: URL) =>
       scrub.answer(
         await readAnswer(
@@ -219,7 +228,7 @@ export async function* replay(
       };
       // The request's key as the bridge reads it (`accessKeyOf`): the first value, if not empty.
       if (keys[0]?.key) out.keyPrefix = keyHashPrefix(keys[0].key);
-      if (error !== undefined) out.error = scrub.value(error);
+      if (error !== undefined) out.error = scrubAll.value(error);
       return out;
     };
 

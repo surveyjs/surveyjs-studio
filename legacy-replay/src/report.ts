@@ -5,7 +5,12 @@ import { writeFile } from "node:fs/promises";
 import type { SkipReason } from "./classify.js";
 import { OUTCOMES, type CaseResult, type Outcome } from "./run.js";
 
-export const SKIP_REASONS: readonly SkipReason[] = ["write", "forwarded", "unknown-method"];
+export const SKIP_REASONS: readonly SkipReason[] = [
+  "write",
+  "forwarded",
+  "unknown-method",
+  "unsafe-path",
+];
 
 export interface Summary {
   /** By action (sorted), the number of cases of each outcome. */

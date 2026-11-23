@@ -17,8 +17,9 @@ export const USAGE = `Usage: pnpm legacy:replay --sample <csv> --old <url> --bri
          [--public-limit 60] [--file-limit 600] [--summary-limit 10]
 
 Sends each sampled GET whose action the bridge's mapping table marks as a read to the old service,
-the bridge, and the old service again, and compares the answers. Writes, forwarded paths and other
-methods are never sent. Keys in the sample are sent as recorded; the report shows only their hash
+the bridge, and the old service again, and compares the answers. Writes, forwarded paths, other
+methods and paths outside a plain pattern (letters, digits, _ - { } segments) are never sent.
+Keys in the sample are sent as recorded; the report shows only their hash
 prefixes, and the console only counts and the verdict.
 
 Options:
@@ -202,6 +203,7 @@ const emptySkips = (): Record<SkipReason, number> => ({
   write: 0,
   forwarded: 0,
   "unknown-method": 0,
+  "unsafe-path": 0,
 });
 
 /** Runs the command; returns the exit code. Nothing is sent before every check has passed. */

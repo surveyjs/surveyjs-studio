@@ -20,6 +20,7 @@ const SAMPLE = [
   "2026-11-21T10:00:01Z,POST,/public/Survey/post,,200",
   "2026-11-21T10:00:02Z,GET,/elsewhere/page,,200",
   "2026-11-21T10:00:03Z,BREW,/public/Survey/getSurvey,,200",
+  `2026-11-21T10:00:04Z,GET,/private/Surveys/getSurveyResults/..%2FgenerateAccessKey,accessKey=${KEY},200`,
 ].join("\n");
 
 let dir: string;
@@ -81,7 +82,7 @@ describe("legacy:replay", () => {
     expect(result.code).toBe(0);
     expect(result.requests).toHaveLength(6);
     expect(result.out).toMatch(/getSurveyResults/);
-    expect(result.out).toMatch(/write 1, forwarded 1, unknown-method 1/);
+    expect(result.out).toMatch(/write 1, forwarded 1, unknown-method 1, unsafe-path 1/);
     expect(result.out).toMatch(/verdict: pass/);
     const console = result.out + result.err;
     expect(console).not.toMatch(new RegExp(KEY, "i"));

@@ -153,6 +153,9 @@ describe("replay", () => {
     const { results, calls } = await collect(
       [
         sampleRow(`${keyed}/..\\generateAccessKey`, `accessKey=${KEY}`),
+        sampleRow(`${keyed}/..%2FgenerateAccessKey`, `accessKey=${KEY}`),
+        sampleRow(`${keyed}/..%5CgenerateAccessKey`, `accessKey=${KEY}`),
+        sampleRow(`${keyed}/{5af48e08-a0a5-44a5-83f4-1c90e8e98de1}`, "x=1#y"),
         sampleRow(`${keyed}/%2E%2E\\publish`, `accessKey=${KEY}`),
         sampleRow(`${keyed}/..`, `accessKey=${KEY}`),
       ],
@@ -162,16 +165,40 @@ describe("replay", () => {
     expect(results).toEqual([]);
   });
 
-  it("sends the path as fetch normalises it, when it stays on the same action", async () => {
-    const { calls } = await collect(
-      [sampleRow("/private/Surveys/getSurveyResults/.", `accessKey=${KEY}`)],
-      { old: [{ body: "{}" }, { body: "{}" }], bridge: [{ body: "{}" }] },
-    );
-    expect(calls.map((call) => call.url)).toEqual([
-      `${OLD}/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
-      `https://bridge.example/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
-      `${OLD}/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
+  it("sends a GUID in braces as recorded", async () => {
+    const path = "/private/Surveys/getSurveyResults/{5af48e08-a0a5-44a5-83f4-1c90e8e98de1}";
+    const { calls } = await collect([sampleRow(path, `accessKey=${KEY}`)], {
+      old: [{ body: "{}" }, { body: "{}" }],
+      bridge: [{ body: "{}" }],
+    });
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/private/Surveys/getSurveyResults/%7B5af48e08-a0a5-44a5-83f4-1c90e8e98de1%7D",
+      "/private/Surveys/getSurveyResults/%7B5af48e08-a0a5-44a5-83f4-1c90e8e98de1%7D",
+      "/private/Surveys/getSurveyResults/%7B5af48e08-a0a5-44a5-83f4-1c90e8e98de1%7D",
     ]);
+  });
+
+  it("masks a short key only in the request and errors, not in answers", async () => {
+    const { results } = await collect(
+      [
+        sampleRow("/private/Surveys/getActive", "accessKey=1"),
+        sampleRow("/private/Surveys/getActive", "accessKey=1"),
+      ],
+      {
+        old: [
+          { body: "version 1.2", headers: { "content-type": "text/plain" } },
+          { body: "version 1.2", headers: { "content-type": "text/plain" } },
+          new Error("refused key 1"),
+        ],
+        bridge: [{ body: "version 1.3", headers: { "content-type": "text/plain" } }],
+      },
+    );
+    const mask = `${keyHashPrefix("1")}…`;
+    expect(results[0]?.row.query).toBe(`accessKey=${mask}`);
+    expect(results[0]?.differences).toEqual([
+      { at: "body.text[10]", expected: "version 1.2", actual: "version 1.3" },
+    ]);
+    expect(results[1]?.error).toBe(`Error: refused key ${mask}`);
   });
 
   it("scrubs the key from both bodies before cutting a window around their difference", async () => {
