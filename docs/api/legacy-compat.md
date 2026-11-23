@@ -365,6 +365,7 @@ incidental bytes listed at the top, and not otherwise.
 | The CSV export never quotes a cell, so a comma in an answer splits it                              | Quotes a cell that holds a comma, a quote or a line break; every other cell is as the old export wrote it                             |
 | `setGenerationJSONType` stores a setting                                                           | Checks the key and stores nothing (nothing in the API reads it back)                                                                  |
 | `changeJson` and `changeTheme` drop the survey's card image; `uploadFiles` keeps a card image name | No card images; every upload gets a new name (Studio has no card images, and any key could overwrite another survey's card)           |
+| `uploadFiles` takes any number of files from a key's owner                                         | A user may hold up to `LIMIT_MAX_LEGACY_FILES_PER_USER` (default 1000) files of no survey; past it the answer is an empty `400`       |
 
 ### Access-key actions: smaller differences
 

@@ -466,6 +466,24 @@ describe("uploadLegacyFile", () => {
     expect(saved).toHaveLength(1);
   });
 
+  it("answers 409 legacy-file-limit at the cap, before it reads the body, and counts only the user's files", async () => {
+    const { providers, uploadLegacy } = await start({
+      env: { LIMIT_MAX_LEGACY_FILES_PER_USER: "2" },
+    });
+    expect((await uploadLegacy(fileBody("a.png", png(10)))).statusCode).toBe(201);
+    expect((await uploadLegacy(fileBody("b.png", png(10)))).statusCode).toBe(201);
+    // Not even a form: the count is checked first.
+    const res = await uploadLegacy(Buffer.from("not a form"));
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: "legacy-file-limit",
+      title: "Too many files",
+      detail: "You have reached the limit of files uploaded outside a survey.",
+    });
+    expect(await providers.files.countUserFiles(USER.id)).toBe(2);
+    expect(await providers.files.countUserFiles("another-user")).toBe(0);
+  });
+
   it("answers 400 bad-request without a part named file", async () => {
     const { uploadLegacy } = await start();
     const res = await uploadLegacy(fileBody("a.png", png(20), "image"));

@@ -346,6 +346,7 @@ export async function buildApp(
         publicBaseUrl: config.publicBaseUrl,
         maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
         maxFileBytes: config.limits.maxFileBytes,
+        maxLegacyFilesPerUser: config.limits.maxLegacyFilesPerUser,
         ...(options.now && { now: options.now }),
       }),
       ...createCredentialHandlers({

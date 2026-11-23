@@ -65,6 +65,7 @@ describe("loadConfig", () => {
         maxFileBytes: 10485760,
         maxResponseBytes: 1048576,
         maxDocumentBytes: 30000000,
+        maxLegacyFilesPerUser: 1000,
       },
       apiDocs: true,
       identityProvider: "dev",
@@ -118,6 +119,7 @@ describe("loadConfig", () => {
       LIMIT_MAX_FILE_BYTES: "20",
       LIMIT_MAX_RESPONSE_BYTES: "30",
       LIMIT_MAX_DOCUMENT_BYTES: "40",
+      LIMIT_MAX_LEGACY_FILES_PER_USER: "50",
       // Not API_DOCS: the docs are shown only in the surveyjs-site shell (config-branding.test.ts).
     });
     expect(config).toMatchObject({
@@ -139,6 +141,7 @@ describe("loadConfig", () => {
         maxFileBytes: 20,
         maxResponseBytes: 30,
         maxDocumentBytes: 40,
+        maxLegacyFilesPerUser: 50,
       },
       apiDocs: false,
     });
@@ -178,6 +181,7 @@ describe("loadConfig", () => {
     ["LIMIT_MAX_FILE_BYTES", "-5"],
     ["LIMIT_MAX_RESPONSE_BYTES", "1.5"],
     ["LIMIT_MAX_DOCUMENT_BYTES", "0"],
+    ["LIMIT_MAX_LEGACY_FILES_PER_USER", "0"],
     ["API_DOCS", "yes"],
   ])("rejects %s=%j and names the variable", (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(ConfigError);

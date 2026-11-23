@@ -24,6 +24,9 @@ export const REFERENCE_SETTINGS: Readonly<Record<string, string>> = {
   LIMIT_MAX_DOCUMENT_BYTES: "262144",
   LIMIT_MAX_ASSET_BYTES_PER_SURVEY: "65536",
   LIMIT_MAX_FILE_BYTES: "65536",
+  // Small enough for the account-deleted test to reach the cap of files of no survey; large enough
+  // for the files the other tests upload as the same users (a persistent store keeps them).
+  LIMIT_MAX_LEGACY_FILES_PER_USER: "50",
   // The account-deleted webhook tests sign with the same secret.
   ACCOUNT_WEBHOOK_SECRET: REFERENCE_WEBHOOK_SECRET,
 };
