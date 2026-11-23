@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  // The bridge's mapping table is imported by path; its handlers' request fields are declared in
+  // the bridge's app.ts.
+  "include": ["src", "../bridge/src/app.ts"]
+}
