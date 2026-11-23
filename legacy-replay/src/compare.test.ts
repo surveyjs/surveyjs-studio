@@ -8,6 +8,29 @@ const json = (body: string, headers: Record<string, string> = {}, status = 200):
 });
 
 describe("compareAnswers", () => {
+  it("ignores the value of the top-level traceId, not its presence or any other traceId", () => {
+    const problem = (trace: string) =>
+      json(`{"title":"x","traceId":"${trace}","errors":{"traceId":"${trace}"}}`, {}, 400);
+    expect(compareAnswers(problem("00-a"), problem("00-a"), "x")).toEqual([]);
+    expect(compareAnswers(problem("00-a"), problem("00-b"), "x")).toEqual([
+      { at: "body.json.errors.traceId", expected: "00-a", actual: "00-b" },
+    ]);
+    expect(
+      compareAnswers(
+        json('{"title":"x","traceId":"00-a"}', {}, 400),
+        json('{"title":"x","traceId":"00-b"}', {}, 400),
+        "x",
+      ),
+    ).toEqual([]);
+    expect(
+      compareAnswers(
+        json('{"title":"x","traceId":"00-a"}', {}, 400),
+        json('{"title":"x"}', {}, 400),
+        "x",
+      ),
+    ).toEqual([{ at: "body.json", expected: ["title", "traceId"], actual: ["title"] }]);
+  });
+
   it("finds nothing in equal answers", () => {
     expect(compareAnswers(json('{"a":1}'), json('{"a":1}'), "getSurvey")).toEqual([]);
   });

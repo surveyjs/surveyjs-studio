@@ -73,8 +73,6 @@ describe("legacy:replay against the bridge", () => {
     folder = await mkdtemp(join(tmpdir(), "legacy-replay-test-"));
     for (const row of goldenRows()) {
       const answer = await send({ method: "GET", path: row.path, query: row.query });
-      // A ProblemDetails answer holds a trace id that differs on every call: no sample has one that compares.
-      if (answer.body.includes("traceId")) continue;
       const headers = Object.fromEntries(
         Object.entries(answer.headers).filter(([name]) => COMPARED.includes(name)),
       );
@@ -91,6 +89,9 @@ describe("legacy:replay against the bridge", () => {
     });
     expect(objects.length).toBeGreaterThanOrEqual(2);
     const altered = objects[0]!.url;
+    alteredProperty = Object.keys(
+      JSON.parse(objects[0]!.answer.body.toString("utf8")) as Record<string, unknown>,
+    )[0]!;
     const changing = objects[1]!.url;
 
     const calls = new Map<string, number>();
@@ -107,7 +108,6 @@ describe("legacy:replay against the bridge", () => {
       if (url === altered) {
         // A property moved: the old service names it differently.
         const json = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
-        alteredProperty = Object.keys(json)[0]!;
         const { [alteredProperty]: value, ...rest } = json;
         body = Buffer.from(JSON.stringify({ ...rest, [`moved_${alteredProperty}`]: value }));
       } else if (url === changing && call === 2) {
@@ -162,6 +162,10 @@ describe("legacy:replay against the bridge", () => {
     expect(count("error")).toBe(0);
     expect(count("rate-limited")).toBe(0);
     expect(count("same")).toBe(fixture.length - 2);
+    // At least one answer is a 4xx problem body, whose trace id differs on every call.
+    expect(
+      fixture.some(({ answer }) => answer.status >= 400 && answer.body.includes("traceId")),
+    ).toBe(true);
     for (const key of Object.values(KEYS)) {
       expect(report).not.toContain(key);
       expect(console_).not.toContain(key);

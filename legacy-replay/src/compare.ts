@@ -140,6 +140,9 @@ function compareJson(
       out.push({ at, expected: wantKeys, actual: gotKeys });
     }
     for (const key of wantKeys) {
+      // A ProblemDetails `traceId` differs on every call (ADR 0039 point 1): its presence and
+      // place in the order are compared above, its value is not.
+      if (pattern === "body.json" && key === "traceId") continue;
       if (Object.hasOwn(got, key)) {
         compareJson(want[key], got[key], `${at}.${key}`, `${pattern}.${key}`, unordered, out);
       }
