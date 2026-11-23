@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import net from "node:net";
 import Fastify from "fastify";
-import { Counter, Histogram } from "prom-client";
+import { Counter, Histogram } from "@prometheus-io/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { DURATION_BUCKETS, createRegistry, startMetricsServer, trackRequests } from "./index.js";
 
@@ -79,8 +79,10 @@ describe("trackRequests", () => {
 
   it('labels a request whose socket closes before any answer status="none"', async () => {
     const { app, registry } = await setup();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
     app.get("/slow", async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await released;
       return "late";
     });
     await app.listen({ port: 0, host: "127.0.0.1" });
@@ -93,6 +95,7 @@ describe("trackRequests", () => {
     await expect
       .poll(async () => await registry.metrics())
       .toContain('t_requests_total{route="/slow",status="none"} 1');
+    release();
   });
 });
 

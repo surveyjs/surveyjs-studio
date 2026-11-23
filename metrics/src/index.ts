@@ -2,10 +2,10 @@ import { createServer } from "node:http";
 import type { ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { Registry, collectDefaultMetrics } from "prom-client";
-import type { Counter, Histogram } from "prom-client";
+import { Registry, collectDefaultMetrics } from "@prometheus-io/client";
+import type { Counter, Histogram } from "@prometheus-io/client";
 
-export type { Counter, Histogram, Registry } from "prom-client";
+export type { Counter, Histogram, Registry } from "@prometheus-io/client";
 
 /** Request-duration histogram buckets, in seconds. */
 export const DURATION_BUCKETS: readonly number[] = [
