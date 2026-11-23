@@ -12,7 +12,7 @@ import { createPacer, realClock, type Clock } from "./pace.js";
 import { formatSummary, renderReport, summarize, writeReport } from "./report.js";
 import { replay, type CaseResult } from "./run.js";
 import { readSample, SampleError, type SampleRow } from "./sample.js";
-import { compareSmoke, formatSmoke, runSmoke } from "./smoke.js";
+import { compareSmoke, formatOldOnly, formatSmoke, runSmoke } from "./smoke.js";
 
 export const USAGE = `Usage: pnpm legacy:replay --sample <csv> --old <url> --bridge <url> --out <file.html>
          [--actions a,b] [--since ISO] [--limit n]
@@ -48,14 +48,16 @@ from the environment only and never printed): create, changeJson, changeName, pu
 (once with a client id), upload, getSurveyResults, deleteResult, deleteAllResults, archive, restore,
 delete. It runs against the old service, then against the bridge, each time on a new survey named
 "legacy-replay smoke <time>", and compares the answers with ids, dates and generated names
-replaced by placeholders. Each run deletes only the survey it created; a cleanup that fails is
-printed with the survey to remove by hand and does not change the outcome.
+replaced by placeholders. Differences documented in docs/api/legacy-compat.md are set aside only
+in their documented form, and each one set aside is printed. When the old service's create does
+not succeed, the bridge is not run. Each run deletes only the survey it created; a cleanup that
+fails is printed with the survey to remove by hand and does not change the outcome.
 
 Options:
   --old <url>      The old service's origin
   --bridge <url>   The bridge's origin
 
-Exit codes: 0 every step the same, 1 a difference or a failed request,
+Exit codes: 0 every step the same, 1 a difference, a failed request or the old create failing,
 2 usage error or no SMOKE_ACCESS_KEY (nothing sent).`;
 
 /** This checkout: the report must not be written into it. */
@@ -247,8 +249,9 @@ async function smoke(argv: readonly string[], io: CliIo, deps: CliDeps): Promise
           help: { type: "boolean" },
         },
       }));
-    } catch (error) {
-      throw new UsageError((error as Error).message);
+    } catch {
+      // Fixed texts only: a key pasted as an argument must not be printed back.
+      throw new UsageError("smoke takes only --old <url>, --bridge <url> and --help");
     }
     if (values.help) {
       io.out(`${SMOKE_USAGE}\n`);
@@ -257,8 +260,17 @@ async function smoke(argv: readonly string[], io: CliIo, deps: CliDeps): Promise
     for (const name of ["old", "bridge"] as const) {
       if (!values[name]) throw new UsageError(`--${name} is required`);
     }
-    oldUrl = origin("old", values.old!);
-    bridgeUrl = origin("bridge", values.bridge!);
+    const originOf = (name: "old" | "bridge") => {
+      try {
+        return origin(name, values[name]!);
+      } catch {
+        throw new UsageError(
+          `--${name} must be an http or https origin, without a path, query or fragment`,
+        );
+      }
+    };
+    oldUrl = originOf("old");
+    bridgeUrl = originOf("bridge");
     const fromEnv = (deps.env ?? process.env).SMOKE_ACCESS_KEY;
     if (!fromEnv)
       throw new UsageError("SMOKE_ACCESS_KEY is not set: the test account's access key");
@@ -273,6 +285,11 @@ async function smoke(argv: readonly string[], io: CliIo, deps: CliDeps): Promise
   const options = deps.fetch ? { fetch: deps.fetch } : {};
   io.err("smoke: the old service\n");
   const old = await runSmoke(oldUrl, key, options);
+  if (old.surveyId === undefined) {
+    // A wrong key or a service that is down: the bridge would write through for nothing.
+    io.out(formatOldOnly(old));
+    return 1;
+  }
   io.err("smoke: the bridge\n");
   const bridge = await runSmoke(bridgeUrl, key, options);
   const comparison = compareSmoke(old, bridge);

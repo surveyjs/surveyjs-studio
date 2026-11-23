@@ -20,6 +20,10 @@ interface ServiceOptions {
   override?: (action: string, url: URL) => Response | Error | undefined;
   /** The old service's quirks: all-zero `CreatorId`, `IsPublished` null, the newest response first. */
   old?: boolean;
+  /** `create`'s `IsPublished`, instead of the side's own (`null` old, `true` bridge). */
+  isPublished?: unknown;
+  /** The key the service accepts (default `KEY`). */
+  key?: string;
 }
 
 /** The action of a legacy API path: `/private/v1/Surveys/publish/{id}` → `publish`. */
@@ -55,7 +59,7 @@ function fakeService(options: ServiceOptions = {}) {
     if (overridden instanceof Error) throw overridden;
     if (overridden) return overridden;
     const routeId = segments[segments[1] === "v1" ? 4 : 3];
-    if (url.searchParams.get("accessKey") !== KEY && segments[0] === "private") {
+    if (url.searchParams.get("accessKey") !== (options.key ?? KEY) && segments[0] === "private") {
       return new Response(`The accessKey '${url.searchParams.get("accessKey")}' is incorrect.`, {
         status: 400,
       });
@@ -74,7 +78,7 @@ function fakeService(options: ServiceOptions = {}) {
           PostId: postId,
           ResultId: randomUUID(),
           PublishId: null,
-          IsPublished: options.old ? null : true,
+          IsPublished: "isPublished" in options ? options.isPublished : options.old ? null : true,
           UseCookies: false,
           UpdatedOn: date(),
           CreatedAt: date(),
@@ -239,7 +243,57 @@ describe("runSmoke", () => {
     });
     const transcript = await runSmoke(OLD, KEY, { fetch: service.fetch });
     expect(service.calls).toHaveLength(1);
+    expect(transcript.stopped).toBe("create: status 401");
+    expect(transcript.surveyId).toBeUndefined();
     expect(transcript.cleanup).toEqual({ outcome: "not needed" });
+  });
+
+  it("takes no id from a create that did not succeed, even one that names ids", async () => {
+    const service = fakeService({
+      override: (action) =>
+        action === "create" ? json({ Id: randomUUID(), PostId: randomUUID() }, 500) : undefined,
+    });
+    const transcript = await runSmoke(OLD, KEY, { fetch: service.fetch });
+    expect(service.calls).toHaveLength(1);
+    expect(transcript.stopped).toBe("create: status 500");
+    expect(transcript.surveyId).toBeUndefined();
+    expect(transcript.cleanup).toEqual({ outcome: "not needed" });
+  });
+
+  it("deletes nothing by an instance id that is not a GUID, and cleans up its survey", async () => {
+    const service = fakeService({
+      override: (action) =>
+        action === "getSurveyResults"
+          ? json({ Data: [{ ClientId: "legacy-replay-smoke", InstanceId: "../delete" }] })
+          : undefined,
+    });
+    const transcript = await runSmoke(OLD, KEY, { fetch: service.fetch });
+    expect(steps(transcript).at(-1)).toBe("getSurveyResults");
+    expect(transcript.stopped).toBe(
+      "getSurveyResults: the answer lists no response with the client id",
+    );
+    expect(service.calls.map((call) => actionOf(call.url)).slice(-2)).toEqual([
+      "getSurveyResults",
+      "delete",
+    ]);
+    expect(transcript.cleanup).toEqual({ outcome: "deleted", surveyId: transcript.surveyId });
+  });
+
+  it("masks the key as the query carries it, form-encoded", async () => {
+    const key = "Smoke Key+0001/x=y";
+    const service = fakeService({
+      key,
+      override: (action, url) =>
+        action === "changeName"
+          ? new Response(`refused: ${url.search}`, { status: 400 })
+          : undefined,
+    });
+    const transcript = await runSmoke(OLD, key, { fetch: service.fetch });
+    const formEncoded = new URLSearchParams({ k: key }).toString().slice(2);
+    expect(formEncoded).toBe("Smoke+Key%2B0001%2Fx%3Dy");
+    expect(service.calls[2]!.url.search).toContain(formEncoded);
+    const body = transcript.steps.find((step) => step.step === "changeName")!.answer!.body;
+    expect(body.toString("utf8")).toMatch(/^refused: \?accessKey=[0-9a-f]{16}…&id=/);
   });
 
   it("never keeps the key, even where an answer echoes it", async () => {
@@ -277,7 +331,78 @@ describe("normalize and compareSmoke", () => {
     const comparison = compareSmoke(old, bridge);
     expect(comparison.steps.map((step) => step.step)).toEqual(SMOKE_STEPS);
     expect(comparison.steps.filter((step) => step.outcome !== "same")).toEqual([]);
+    expect(comparison.explained).toEqual([
+      "create IsPublished null→boolean",
+      "getSurveyResults Data compared without order",
+    ]);
     expect(comparison.verdict).toBe("pass");
+  });
+
+  it("explains nothing it did not need to", async () => {
+    const old = await runSmoke(OLD, KEY, { fetch: fakeService().fetch });
+    const bridge = await runSmoke(BRIDGE, KEY, { fetch: fakeService().fetch });
+    const comparison = compareSmoke(old, bridge);
+    expect(comparison.explained).toEqual([]);
+    expect(comparison.verdict).toBe("pass");
+  });
+
+  it("sets IsPublished aside only for an old null and a bridge boolean", async () => {
+    for (const [oldValue, bridgeValue] of [
+      [null, false],
+      [null, true],
+      [true, false],
+      [false, null],
+      [null, "true"],
+      ["null", true],
+    ] as const) {
+      const old = await runSmoke(OLD, KEY, {
+        fetch: fakeService({ old: true, isPublished: oldValue }).fetch,
+      });
+      const bridge = await runSmoke(BRIDGE, KEY, {
+        fetch: fakeService({ isPublished: bridgeValue }).fetch,
+      });
+      const comparison = compareSmoke(old, bridge);
+      const create = comparison.steps.find((step) => step.step === "create")!;
+      if (oldValue === null && typeof bridgeValue === "boolean") {
+        expect(create.outcome).toBe("same");
+        expect(comparison.explained).toContain("create IsPublished null→boolean");
+      } else {
+        expect(create.differences).toEqual([
+          { at: "body.json.IsPublished", expected: oldValue, actual: bridgeValue },
+        ]);
+        expect(comparison.explained).not.toContain("create IsPublished null→boolean");
+      }
+    }
+  });
+
+  it("compares rows without order only when their order alone differs", async () => {
+    const old = await runSmoke(OLD, KEY, { fetch: fakeService({ old: true }).fetch });
+    const bridge = await runSmoke(BRIDGE, KEY, {
+      fetch: fakeService({
+        override: (action) =>
+          action === "getSurveyResults"
+            ? json({
+                Data: [
+                  { satisfaction: 5, HappendAt: "2026-11-23T10:00:00Z", InstanceId: randomUUID() },
+                  {
+                    satisfaction: 2,
+                    HappendAt: "2026-11-23T10:00:01Z",
+                    ClientId: "legacy-replay-smoke",
+                    InstanceId: randomUUID(),
+                  },
+                ],
+                ResultCount: 2,
+              })
+            : undefined,
+      }).fetch,
+    });
+    const comparison = compareSmoke(old, bridge);
+    const results = comparison.steps.find((step) => step.step === "getSurveyResults")!;
+    expect(results.outcome).toBe("different");
+    expect(results.differences.map((difference) => difference.at)).toContain(
+      "body.json.Data[0].satisfaction",
+    );
+    expect(comparison.explained).not.toContain("getSurveyResults Data compared without order");
   });
 
   it("replaces ids, dates, file names and the name's time by placeholders", () => {
@@ -316,8 +441,8 @@ describe("normalize and compareSmoke", () => {
         Name: "legacy-replay smoke <time>",
         Id: "<guid>",
         CreatedAt: "<iso>",
-        // The old create left it null (docs/api/legacy-compat.md, survey records).
-        IsPublished: "<not compared>",
+        // Compared by compareSmoke, against the other side's value.
+        IsPublished: null,
       },
       "dxsfile:<name>.pdf",
       { Data: [{ HappendAt: "<iso>Z" }] },
@@ -393,10 +518,49 @@ describe("legacy:replay smoke", () => {
     expect(result.order).toEqual([...Array(13).fill("old"), ...Array(13).fill("bridge")]);
     for (const step of SMOKE_STEPS)
       expect(result.out).toMatch(new RegExp(`^${step.replace(/[()]/g, "\\$&")} +same$`, "m"));
-    expect(result.out).toContain("cleanup old: not needed");
-    expect(result.out).toContain("cleanup bridge: not needed");
-    expect(result.out).toMatch(/^verdict: pass$/m);
+    expect(result.out).toContain(
+      [
+        "explained (docs/api/legacy-compat.md): create IsPublished null→boolean",
+        "explained (docs/api/legacy-compat.md): getSurveyResults Data compared without order",
+        "cleanup old: not needed",
+        "cleanup bridge: not needed",
+        "verdict: pass",
+      ].join("\n"),
+    );
     expect(result.out + result.err).not.toMatch(new RegExp(KEY, "i"));
+  });
+
+  it("does not run the bridge when the old service's create did not succeed", async () => {
+    const result = await run(ARGS, {
+      old: { override: (action) => (action === "create" ? empty(401) : undefined) },
+    });
+    expect(result.code).toBe(1);
+    expect(result.order).toEqual(["old"]);
+    expect(result.out).toBe(
+      [
+        "stopped old: create: status 401",
+        "bridge: not run (the old service's create did not succeed)",
+        "cleanup old: not needed",
+        "verdict: fail (the old service's create did not succeed)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("never prints an argument back, where a key may have been pasted", async () => {
+    for (const args of [
+      ["smoke", KEY, "--old", OLD, "--bridge", BRIDGE],
+      ["smoke", "--old", KEY, "--bridge", BRIDGE],
+      ["smoke", "--old", `${OLD}/${KEY}`, "--bridge", BRIDGE],
+      ["smoke", "--old", OLD, "--bridge", `${BRIDGE}?accessKey=${KEY}`],
+      ["smoke", `--${KEY}`, "--old", OLD, "--bridge", BRIDGE],
+      ["smoke", `--old=${OLD}`, `--bridge=${KEY}`],
+    ]) {
+      const result = await run(args);
+      expect(result.code).toBe(2);
+      expect(result.order).toEqual([]);
+      expect(result.out + result.err).not.toContain(KEY);
+    }
   });
 
   it("reports a failed cleanup apart, and exits by the comparison", async () => {

@@ -77,6 +77,8 @@ export interface SmokeTranscript {
   readonly name: string;
   /** The steps that ran, in order. */
   readonly steps: readonly SmokeStep[];
+  /** The survey's id, when `create` succeeded with a survey id and a post id. */
+  readonly surveyId?: string;
   /** Why the sequence stopped before its last step. */
   readonly stopped?: string;
   readonly cleanup: Cleanup;
@@ -128,7 +130,10 @@ export async function runSmoke(
   options: SmokeOptions = {},
 ): Promise<SmokeTranscript> {
   const fetch = options.fetch ?? globalThis.fetch;
-  const scrub = scrubberOf([{ key, recorded: encodeURIComponent(key) }]);
+  // The key as `searchParams.set` sends it (form-encoded); scrubberOf adds the other forms.
+  const scrub = scrubberOf([
+    { key, recorded: new URLSearchParams({ k: key }).toString().slice(2) },
+  ]);
   const name = `${SMOKE_NAME} ${new Date().toISOString()}`;
   const steps: SmokeStep[] = [];
   let stopped: string | undefined;
@@ -136,6 +141,8 @@ export async function runSmoke(
   /** Whether a survey may exist without its id: `create` failed, or succeeded without an id. */
   let createdUnknown = true;
   let deleted = false;
+  /** Whether `create` gave both ids: the run's survey exists and the steps after it ran on it. */
+  let hasSurvey = false;
 
   const send = async (request: SmokeRequest): Promise<Answer> => {
     const url = new URL(request.path, baseUrl);
@@ -179,13 +186,18 @@ export async function runSmoke(
       keyed: true,
       query: { name },
     });
+    if (!isSuccess(created)) {
+      createdUnknown = false;
+      throw new Stop(`create: status ${created.status}`);
+    }
     const record = jsonOf(created);
     surveyId = guidOf(field(record, "Id"));
     const postId = guidOf(field(record, "PostId"));
-    createdUnknown = isSuccess(created) && surveyId === undefined;
+    createdUnknown = surveyId === undefined;
     if (surveyId === undefined || postId === undefined) {
       throw new Stop("create: the answer names no survey id and post id");
     }
+    hasSurvey = true;
 
     await step("changeJson", "changeJson", {
       method: "PUT",
@@ -225,8 +237,8 @@ export async function runSmoke(
     const row = Array.isArray(rows)
       ? (rows.find((item) => field(item, "ClientId") === CLIENT_ID) as unknown)
       : undefined;
-    const instanceId = field(row, "InstanceId");
-    if (typeof instanceId !== "string" || instanceId === "") {
+    const instanceId = guidOf(field(row, "InstanceId"));
+    if (instanceId === undefined) {
       throw new Stop("getSurveyResults: the answer lists no response with the client id");
     }
     await step("deleteResult", "deleteResult", {
@@ -255,7 +267,13 @@ export async function runSmoke(
   } finally {
     cleanup = await cleanUp();
   }
-  return { name, steps, ...(stopped !== undefined && { stopped }), cleanup };
+  return {
+    name,
+    steps,
+    ...(hasSurvey && { surveyId }),
+    ...(stopped !== undefined && { stopped }),
+    cleanup,
+  };
 
   async function cleanUp(): Promise<Cleanup> {
     if (deleted) return { outcome: "not needed" };
@@ -291,20 +309,43 @@ const TEXT_RULES: readonly (readonly [RegExp, string])[] = [
   [/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?/g, "<iso>"],
 ];
 
-/**
- * By action, the answer's top-level JSON properties not compared, each a difference listed in
- * docs/api/legacy-compat.md: `create`'s `IsPublished` was `null` in the old API until the survey was
- * published or unpublished once; the bridge answers Studio's flag.
- */
-const NOT_COMPARED: Readonly<Record<string, readonly string[]>> = { create: ["IsPublished"] };
+/** Where the differences the comparison explains are documented. */
+const EXPLAINED_IN = "docs/api/legacy-compat.md";
 
 /**
- * The arrays `compareAnswers` compares as multisets: the old `getSurveyResults` listed rows in its
- * storage's order, random by row key; the bridge lists them oldest first (docs/api/legacy-compat.md).
+ * The arrays compared as multisets: the old `getSurveyResults` listed rows in its storage's order,
+ * random by row key; the bridge lists them oldest first. Applied, and printed as explained, only
+ * when the rows differ in their order alone.
  */
 const SMOKE_UNORDERED: Readonly<Record<string, readonly string[]>> = {
   getSurveyResults: ["body.json.Data"],
 };
+
+const withJson = (answer: Answer, value: unknown): Answer => ({
+  ...answer,
+  body: Buffer.from(JSON.stringify(value), "utf8"),
+});
+
+/**
+ * `create`'s `IsPublished`: the old API answered `null` until the survey was published or
+ * unpublished once; the bridge answers Studio's flag. Only that pattern, old `null` and bridge a
+ * boolean, is set aside; any other value on either side stays a difference.
+ */
+function explainIsPublished(
+  expected: Answer,
+  actual: Answer,
+): { expected: Answer; actual: Answer } | undefined {
+  const old = jsonOf(expected);
+  const bridge = jsonOf(actual);
+  if (field(old, "IsPublished") !== null || typeof field(bridge, "IsPublished") !== "boolean") {
+    return undefined;
+  }
+  const placeholder = "<null or boolean>";
+  return {
+    expected: withJson(expected, { ...(old as object), IsPublished: placeholder }),
+    actual: withJson(actual, { ...(bridge as object), IsPublished: placeholder }),
+  };
+}
 
 const normalizeText = (text: string) =>
   TEXT_RULES.reduce((result, [pattern, placeholder]) => result.replace(pattern, placeholder), text);
@@ -320,7 +361,7 @@ function normalizeJson(value: unknown): unknown {
   return value;
 }
 
-function normalizeAnswer(answer: Answer, action: string): Answer {
+function normalizeAnswer(answer: Answer): Answer {
   const headers = Object.fromEntries(
     Object.entries(answer.headers).map(([name, value]) => [name, normalizeText(value)]),
   );
@@ -333,14 +374,11 @@ function normalizeAnswer(answer: Answer, action: string): Answer {
       body: Buffer.from(normalizeText(answer.body.toString("utf8")), "utf8"),
     };
   }
-  const value = normalizeJson(parsed);
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    for (const name of NOT_COMPARED[action] ?? []) {
-      if (Object.hasOwn(record, name)) record[name] = "<not compared>";
-    }
-  }
-  return { status: answer.status, headers, body: Buffer.from(JSON.stringify(value), "utf8") };
+  return {
+    status: answer.status,
+    headers,
+    body: Buffer.from(JSON.stringify(normalizeJson(parsed))),
+  };
 }
 
 /** The transcript with its answers' ids, dates and generated names replaced by placeholders. */
@@ -348,7 +386,7 @@ export function normalize(transcript: SmokeTranscript): SmokeTranscript {
   return {
     ...transcript,
     steps: transcript.steps.map((step) =>
-      step.answer ? { ...step, answer: normalizeAnswer(step.answer, step.action) } : step,
+      step.answer ? { ...step, answer: normalizeAnswer(step.answer) } : step,
     ),
   };
 }
@@ -366,6 +404,8 @@ export interface SmokeStepResult {
 
 export interface SmokeComparison {
   readonly steps: readonly SmokeStepResult[];
+  /** The documented differences the comparison set aside, as printed (`EXPLAINED_IN`). */
+  readonly explained: readonly string[];
   /** `pass` only when every step is `same`. */
   readonly verdict: "pass" | "fail";
 }
@@ -374,6 +414,7 @@ export interface SmokeComparison {
 export function compareSmoke(old: SmokeTranscript, bridge: SmokeTranscript): SmokeComparison {
   const oldSteps = normalize(old).steps;
   const bridgeSteps = normalize(bridge).steps;
+  const explained: string[] = [];
   const steps = SMOKE_STEPS.map((name): SmokeStepResult => {
     const expected = oldSteps.find((step) => step.step === name);
     const actual = bridgeSteps.find((step) => step.step === name);
@@ -387,15 +428,33 @@ export function compareSmoke(old: SmokeTranscript, bridge: SmokeTranscript): Smo
     if (!expected?.answer || !actual?.answer) {
       return { step: name, outcome: "not run", differences: [] };
     }
-    const differences = compareAnswers(
-      expected.answer,
-      actual.answer,
-      expected.action,
-      SMOKE_UNORDERED,
-    );
+    let oldAnswer = expected.answer;
+    let bridgeAnswer = actual.answer;
+    if (expected.action === "create") {
+      const isPublished = explainIsPublished(oldAnswer, bridgeAnswer);
+      if (isPublished) {
+        ({ expected: oldAnswer, actual: bridgeAnswer } = isPublished);
+        explained.push(`${name} IsPublished null→boolean`);
+      }
+    }
+    let differences = compareAnswers(oldAnswer, bridgeAnswer, expected.action);
+    const unorderedPaths = SMOKE_UNORDERED[expected.action] ?? [];
+    if (differences.length > 0 && unorderedPaths.length > 0) {
+      const inArray = (difference: Difference) =>
+        unorderedPaths.some((path) => difference.at.startsWith(path));
+      const unordered = compareAnswers(oldAnswer, bridgeAnswer, expected.action, SMOKE_UNORDERED);
+      if (differences.some(inArray) && !unordered.some(inArray)) {
+        differences = unordered;
+        explained.push(`${name} Data compared without order`);
+      }
+    }
     return { step: name, outcome: differences.length === 0 ? "same" : "different", differences };
   });
-  return { steps, verdict: steps.every((step) => step.outcome === "same") ? "pass" : "fail" };
+  return {
+    steps,
+    explained,
+    verdict: steps.every((step) => step.outcome === "same") ? "pass" : "fail",
+  };
 }
 
 /** How much of a differing value the console shows. */
@@ -435,6 +494,7 @@ export function formatSmoke(
     }
   }
   lines.push("");
+  for (const text of comparison.explained) lines.push(`explained (${EXPLAINED_IN}): ${text}`);
   for (const [side, transcript] of [
     ["old", old],
     ["bridge", bridge],
@@ -452,4 +512,18 @@ export function formatSmoke(
     "",
   );
   return lines.join("\n");
+}
+
+/**
+ * The console's text when the old service's `create` did not succeed: the bridge was not run, so
+ * nothing is compared and the run fails.
+ */
+export function formatOldOnly(old: SmokeTranscript): string {
+  return [
+    `stopped old: ${old.stopped ?? "create did not succeed"}`,
+    "bridge: not run (the old service's create did not succeed)",
+    cleanupLine("old", old),
+    "verdict: fail (the old service's create did not succeed)",
+    "",
+  ].join("\n");
 }
