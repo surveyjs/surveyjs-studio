@@ -30,6 +30,7 @@ describe("matchAction", () => {
 
   it("matches a query-less path only: the query is not part of it", () => {
     expect(matchAction("GET", "/public/Survey/getSurvey")?.action).toBe("getSurvey");
+    expect(matchAction("GET", "/public/Survey/getSurvey?x=1")?.action).toBe("getSurvey");
   });
 
   it("forwards what no entry holds", () => {
@@ -86,12 +87,20 @@ describe("matchAction", () => {
         }
       }
       samples.push(["GET", "/public/Survey"], ["GET", "/private/Surveys/getSurvey"]);
-      for (const [method, path] of samples) {
+      // One bridge, one stub: send in batches, then check each sample's forwarding by its own
+      // path (the stub records the URL it was sent).
+      const BATCH = 20;
+      for (let i = 0; i < samples.length; i += BATCH) {
+        const batch = samples.slice(i, i + BATCH);
         legacy.requests.length = 0;
-        await send(`${bridge.url}${path}`, { method });
-        const forwarded = legacy.requests.length > 0;
-        expect(matchAction(method, path) === undefined, `${method} ${path}`).toBe(forwarded);
+        await Promise.all(batch.map(([method, path]) => send(`${bridge.url}${path}`, { method })));
+        const forwarded = new Set(legacy.requests.map((r) => `${r.method} ${r.url}`));
+        for (const [method, path] of batch) {
+          expect(matchAction(method, path) === undefined, `${method} ${path}`).toBe(
+            forwarded.has(`${method} ${path}`),
+          );
+        }
       }
-    });
+    }, 60_000);
   });
 });

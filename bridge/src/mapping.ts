@@ -79,8 +79,9 @@ export interface ActionEntry {
    */
   keyFrom?: KeySource;
   /**
-   * `read` when every operation the action calls is a `GET` in Studio's contract, else `write`
-   * (so a `GET` that makes a key, `generateAccessKey`, is a `write`). The replay sends only reads.
+   * `read` when every operation the action calls is a `GET` in Studio's contract and the action
+   * takes no method but GET, HEAD or OPTIONS; else `write` (so a `GET` that makes a key,
+   * `generateAccessKey`, and a `PUT` that calls only `GET`s are writes). The replay sends only reads.
    */
   effect: "read" | "write";
   /** The contract operations (operationIds) the action calls. */
@@ -221,7 +222,7 @@ export const ACTIONS: readonly ActionEntry[] = [
     methods: ["PUT"],
     paths: ["setGenerationJSONType"],
     key: "authorize",
-    effect: "read",
+    effect: "write",
     studio: ["getCurrentUser"],
     handler: setGenerationJSONType,
   },
@@ -361,7 +362,7 @@ export const ACTIONS: readonly ActionEntry[] = [
     methods: ["PUT"],
     paths: ["changeVersionTitle"],
     key: "authorize",
-    effect: "read",
+    effect: "write",
     studio: ["listSurveys"],
     handler: changeVersionTitle,
   },
@@ -625,7 +626,7 @@ export const ACTIONS: readonly ActionEntry[] = [
     methods: ANY_METHOD,
     paths: [""],
     key: "none",
-    effect: "read",
+    effect: "write",
     studio: [],
     handler: async (_request, reply) => sendEmpty(reply, 500),
   },

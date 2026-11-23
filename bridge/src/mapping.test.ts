@@ -46,10 +46,19 @@ describe("ACTIONS", () => {
     }
     for (const entry of ACTIONS) {
       const allGets = entry.studio.every((name) => methodOf.get(name) === "get");
-      expect(entry.effect, entry.action).toBe(allGets ? "read" : "write");
+      const safeMethods = entry.methods.every((m) => ["GET", "HEAD", "OPTIONS"].includes(m));
+      expect(entry.effect, entry.action).toBe(allGets && safeMethods ? "read" : "write");
+      if (entry.effect === "read") {
+        for (const m of entry.methods) {
+          expect(["GET", "HEAD", "OPTIONS"], `${entry.action} ${m}`).toContain(m);
+        }
+      }
     }
     expect(ACTIONS.find((e) => e.action === "generateAccessKey")?.effect).toBe("write");
     expect(ACTIONS.find((e) => e.action === "getSurvey")?.effect).toBe("read");
+    for (const name of ["setGenerationJSONType", "changeVersionTitle", "(root)"]) {
+      expect(ACTIONS.find((e) => e.action === name)?.effect, name).toBe("write");
+    }
   });
 
   it("gives no method and path to two entries", () => {
