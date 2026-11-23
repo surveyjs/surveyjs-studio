@@ -170,13 +170,14 @@ self-hosted image (mode 2b) is a second target of the same `Dockerfile` ([Self-h
 
 ### The images on ghcr.io
 
-Two private packages hold the built images. GitHub shows this README on both package pages; each image's own
+Three private packages hold the built images. GitHub shows this README on each package page; each image's own
 description comes from its `org.opencontainers.image.*` labels in the [`Dockerfile`](Dockerfile).
 
-| Package                                   | Dockerfile target            | Pushed by                                                                                                                                          | Tags                                                                               |
-| ----------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `ghcr.io/surveyjs/surveyjs-studio`        | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
-| `ghcr.io/surveyjs/surveyjs-studio-hosted` | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
+| Package                                   | Dockerfile target                | Pushed by                                                                                                                                          | Tags                                                                               |
+| ----------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `ghcr.io/surveyjs/surveyjs-studio`        | `self-hosted` (mode 2b)          | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
+| `ghcr.io/surveyjs/surveyjs-studio-hosted` | `runtime` (the hosted image)     | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
+| `ghcr.io/surveyjs/surveyjs-studio-bridge` | `bridge` (the legacy-API bridge) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id                                                                 |
 
 - **`surveyjs-studio`** is the self-hosted image, the one that will also be published on Docker Hub as
   `surveyjs/surveyjs-studio` ([Releasing the self-hosted image](docs/operations.md#releasing-the-self-hosted-image),
@@ -186,8 +187,9 @@ description comes from its `org.opencontainers.image.*` labels in the [`Dockerfi
   two, and rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green
   `master` commit ([Deployment](docs/operations.md#deployment),
   [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)).
-- Pulling either needs `docker login ghcr.io` with a GitHub token that has `read:packages` and access to the package.
-- Both images carry the repository's `LICENSE` and the dependency notice `/app/THIRD_PARTY_NOTICES.md`; the
+- **`surveyjs-studio-bridge`** is the bridge in front of the legacy API host; its operators deploy it by commit id.
+- Pulling any of them needs `docker login ghcr.io` with a GitHub token that has `read:packages` and access to the package.
+- The hosted and self-hosted images carry the repository's `LICENSE` and the dependency notice `/app/THIRD_PARTY_NOTICES.md`; the
   self-hosted image also carries `/app/DOCKER-IMAGE-TERMS.md` ([License](#license)).
 
 ## Repository layout
