@@ -233,6 +233,9 @@ importers:
       '@types/node':
         specifier: 24.19.0
         version: 24.19.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   conformance-tests:
     dependencies:

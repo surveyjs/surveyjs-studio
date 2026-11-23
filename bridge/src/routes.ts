@@ -12,7 +12,7 @@ import type {
 
 export type Controller = "public" | "private";
 
-const PREFIXES: Record<Controller, readonly string[]> = {
+export const PREFIXES: Record<Controller, readonly string[]> = {
   public: ["/public/Survey", "/public/v1/Survey"],
   private: ["/private/Surveys", "/private/v1/Surveys"],
 };

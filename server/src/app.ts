@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createEraseAccount } from "./accounts/erasure.js";
 import { createAdminHandlers } from "./admin/handlers.js";
 import { createAccountHandlers } from "./accounts/handlers.js";
+import { operationsOfRateLimitClass } from "./rate-limit-classes.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
 import { createSignInProviders, type SignInProviders } from "./auth/providers/index.js";
@@ -71,19 +72,6 @@ const HOSTED_OPERATIONS: readonly OperationId[] = [
   "getLegacyFile",
   "getPublicLayout",
   "uploadLegacyFile",
-];
-/** The respondent's operations, limited by `PUBLIC_RATE_LIMIT` per client IP and minute. */
-const PUBLIC_OPERATIONS: readonly OperationId[] = [
-  "getPublishedSurvey",
-  "submitResponse",
-  "uploadResponseFile",
-  "getPublicResults",
-  "getPublicDefinition",
-  "getRespondentState",
-  "getRespondentStateByResultId",
-  "submitResponseByPostId",
-  "uploadResponseFileByPostId",
-  "getPublicLayout",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = [
@@ -271,8 +259,8 @@ export async function buildApp(
   // Each call reads every completed response of the survey, unless its summary is cached.
   const summaryLimit: RateLimit = { ...publicLimit, max: config.publicSummaryRateLimitPerMinute };
   const omitted = config.edition === "hosted" ? [] : HOSTED_OPERATIONS;
-  const limited = (operations: readonly OperationId[]) =>
-    operations.filter((id) => !omitted.includes(id));
+  const limited = (operations: readonly string[]) =>
+    operations.filter((id): id is OperationId => !omitted.includes(id as OperationId));
   await app.register(apiRoutes, {
     prefix: "/api/v1",
     contract,
@@ -381,11 +369,15 @@ export async function buildApp(
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
-      ...Object.fromEntries(limited(PUBLIC_OPERATIONS).map((id) => [id, publicLimit])),
       ...Object.fromEntries(
-        limited(["downloadFile", "getLegacyFile"]).map((id) => [id, fileLimit]),
+        limited(operationsOfRateLimitClass("public")).map((id) => [id, publicLimit]),
       ),
-      ...Object.fromEntries(limited(["getQuestionSummary"]).map((id) => [id, summaryLimit])),
+      ...Object.fromEntries(
+        limited(operationsOfRateLimitClass("file")).map((id) => [id, fileLimit]),
+      ),
+      ...Object.fromEntries(
+        limited(operationsOfRateLimitClass("summary")).map((id) => [id, summaryLimit]),
+      ),
     },
     omittedOperations: omitted,
     // Survey documents may carry inline images: they get their own, larger limit.
