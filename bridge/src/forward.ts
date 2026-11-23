@@ -103,6 +103,21 @@ export function plainAddress(address: string | undefined): string {
   return /^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(address) ? address.slice(7) : address;
 }
 
+/** Why a forwarded request got no complete answer from the old service. */
+export type ForwardFailure = "timeout" | "network" | "aborted";
+
+export interface ForwarderOptions {
+  /** No answer, and no bytes of one, for this long: the old service is taken as failed. */
+  timeoutMs?: number;
+  /**
+   * Called once for a forwarded request without a complete answer, when the caller's answer
+   * closes: `timeout` (the old service sent nothing for `timeoutMs`), `network` (it could not be
+   * reached, or its answer broke off or could not be passed on) or `aborted` (the caller went away
+   * first).
+   */
+  onFailure?: (reason: ForwardFailure) => void;
+}
+
 export interface Forwarder {
   /**
    * Sends the request to the old service and streams its answer into `res`. `peer` is appended to
@@ -117,7 +132,8 @@ export interface Forwarder {
   close(): void;
 }
 
-export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_MS): Forwarder {
+export function createForwarder(legacyUrl: string, options: ForwarderOptions = {}): Forwarder {
+  const { timeoutMs = FORWARD_TIMEOUT_MS, onFailure } = options;
   const base = new URL(legacyUrl);
   const https = base.protocol === "https:";
   // Idle connections are kept for 5 s, as Node's own default agent does.
@@ -168,7 +184,19 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
       if (framing === "chunked") headers.push("Transfer-Encoding", "chunked");
       else if (framing !== "none") headers.push("Content-Length", framing);
 
-      let upstream: ReturnType<typeof send>;
+      let upstream: ReturnType<typeof send> | undefined;
+      // What went wrong, settled once the caller's answer closes.
+      let timedOut = false;
+      let oldServiceFailed = false;
+      res.once("close", () => {
+        const complete = res.writableFinished;
+        if (timedOut) onFailure?.("timeout");
+        else if (oldServiceFailed) onFailure?.("network");
+        else if (!complete) onFailure?.("aborted");
+        // The caller went away before the answer was complete: stop the old service's request too.
+        if (!complete) upstream?.destroy();
+      });
+
       try {
         upstream = send({
           protocol: base.protocol,
@@ -184,14 +212,17 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
         });
       } catch (error) {
         log.error({ err: error }, "cannot forward to the old service");
+        oldServiceFailed = true;
         fail(res, cors);
         return;
       }
 
-      upstream.setTimeout(timeoutMs, () => {
-        upstream.destroy(new Error(`the old service sent nothing for ${timeoutMs} ms`));
+      const outgoing = upstream;
+      outgoing.setTimeout(timeoutMs, () => {
+        timedOut = true;
+        outgoing.destroy(new Error(`the old service sent nothing for ${timeoutMs} ms`));
       });
-      upstream.on("response", (answer) => {
+      outgoing.on("response", (answer) => {
         try {
           res.writeHead(
             answer.statusCode ?? 500,
@@ -200,11 +231,17 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
           );
         } catch (error) {
           log.error({ err: error }, "the old service's answer cannot be passed on");
+          oldServiceFailed = true;
           answer.destroy();
-          upstream.destroy();
+          outgoing.destroy();
           fail(res, cors);
           return;
         }
+        // The old service's answer broke off (set before the pipeline closes the caller's answer).
+        answer.once("error", () => (oldServiceFailed = true));
+        // The pipeline adds seven "close" listeners to those of the bridge's hooks (metrics, the
+        // action's caller-gone signal); Node would warn past ten, though none of them leaks.
+        res.setMaxListeners(20);
         pipeline(answer, res, (error) => {
           if (error) {
             log.warn({ err: error }, "forwarded answer interrupted");
@@ -212,19 +249,16 @@ export function createForwarder(legacyUrl: string, timeoutMs = FORWARD_TIMEOUT_M
           }
         });
       });
-      upstream.on("error", (error) => {
-        // The caller went away (below): nothing to answer.
+      outgoing.on("error", (error) => {
+        // The caller went away (above): nothing to answer.
         if (res.destroyed || res.writableEnded) return;
+        oldServiceFailed = true;
         log.error({ err: error }, "forwarding to the old service failed");
         fail(res, cors);
       });
-      // The caller went away before the answer was complete: stop the old service's request too.
-      res.on("close", () => {
-        if (!res.writableFinished) upstream.destroy();
-      });
       // pipe, not pipeline: a failed request must not destroy the caller's socket before the 500.
-      req.on("error", (error) => upstream.destroy(error));
-      req.pipe(upstream);
+      req.on("error", (error) => outgoing.destroy(error));
+      req.pipe(outgoing);
     },
     close() {
       agent.destroy();

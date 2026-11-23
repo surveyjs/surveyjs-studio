@@ -29,6 +29,8 @@ export function oldRoute(
   handler: RouteHandlerMethod,
   options: {
     controller?: Controller;
+    /** The old action's name: the route's `config.action`, the metrics' `action` label. */
+    action?: string;
     bodyLimit?: number;
     /** Run before the body is read, in order (e.g. to refuse a request without reading it). */
     onRequest?: onRequestAsyncHookHandler | onRequestAsyncHookHandler[];
@@ -41,6 +43,7 @@ export function oldRoute(
         method: methods,
         url: name === "" ? prefix : `${prefix}/${name}`,
         handler,
+        ...(options.action !== undefined && { config: { action: options.action } }),
         ...(bodyLimit !== undefined && { bodyLimit }),
         ...(onRequest !== undefined && { onRequest }),
       });

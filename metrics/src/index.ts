@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Registry, collectDefaultMetrics } from "@prometheus-io/client";
 import type { Counter, Histogram } from "@prometheus-io/client";
 
-export { Counter, Histogram, Registry } from "@prometheus-io/client";
+export { Counter, Gauge, Histogram, Registry } from "@prometheus-io/client";
 
 /** Request-duration histogram buckets, in seconds. */
 export const DURATION_BUCKETS: readonly number[] = [

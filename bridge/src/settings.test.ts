@@ -18,6 +18,8 @@ describe("loadSettings", () => {
       fileTimeoutMs: 120_000,
       maxUploadBytes: 11_534_336,
       trustProxy: [],
+      metricsPort: null,
+      metricsHost: "127.0.0.1",
     });
   });
 
@@ -32,6 +34,8 @@ describe("loadSettings", () => {
         BRIDGE_FILE_TIMEOUT_MS: "30000",
         BRIDGE_MAX_UPLOAD_BYTES: "1048576",
         BRIDGE_TRUST_PROXY: " 10.0.0.1, 172.16.0.0/12 ,::1",
+        BRIDGE_METRICS_PORT: "9102",
+        BRIDGE_METRICS_HOST: "0.0.0.0",
       }),
     ).toEqual({
       studioUrl: "http://127.0.0.1:3000/api/v1",
@@ -43,6 +47,8 @@ describe("loadSettings", () => {
       fileTimeoutMs: 30_000,
       maxUploadBytes: 1_048_576,
       trustProxy: ["10.0.0.1", "172.16.0.0/12", "::1"],
+      metricsPort: 9102,
+      metricsHost: "0.0.0.0",
     });
   });
 
@@ -64,9 +70,21 @@ describe("loadSettings", () => {
     [{ ...REQUIRED, BRIDGE_MAX_UPLOAD_BYTES: "30000001" }, "BRIDGE_MAX_UPLOAD_BYTES"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.1,proxy.local" }, "BRIDGE_TRUST_PROXY"],
     [{ ...REQUIRED, BRIDGE_TRUST_PROXY: "10.0.0.0/33" }, "BRIDGE_TRUST_PROXY"],
+    [{ ...REQUIRED, BRIDGE_METRICS_PORT: "0" }, "BRIDGE_METRICS_PORT"],
+    [{ ...REQUIRED, BRIDGE_METRICS_PORT: "65536" }, "BRIDGE_METRICS_PORT"],
+    [{ ...REQUIRED, BRIDGE_METRICS_HOST: "" }, "BRIDGE_METRICS_HOST"],
   ])("refuses %j (%s)", (env, name) => {
     expect(() => loadSettings(env)).toThrow(SettingsError);
     expect(() => loadSettings(env)).toThrow(name);
+  });
+
+  it("refuses BRIDGE_METRICS_PORT equal to BRIDGE_PORT, the default one included", () => {
+    expect(() =>
+      loadSettings({ ...REQUIRED, BRIDGE_PORT: "9000", BRIDGE_METRICS_PORT: "9000" }),
+    ).toThrow("BRIDGE_METRICS_PORT must differ from BRIDGE_PORT");
+    expect(() => loadSettings({ ...REQUIRED, BRIDGE_METRICS_PORT: "3002" })).toThrow(
+      "BRIDGE_METRICS_PORT must differ from BRIDGE_PORT",
+    );
   });
 
   it("lists every problem at once", () => {

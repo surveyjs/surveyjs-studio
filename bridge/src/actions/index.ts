@@ -17,7 +17,7 @@ export const MAX_BODY_BYTES = 30_000_000;
 export function registerActions(
   app: FastifyInstance,
   settings: BridgeSettings,
-  deps: Pick<ActionContext, "studioFetch" | "forward">,
+  deps: Pick<ActionContext, "studioFetch" | "forward" | "metrics">,
 ): void {
   const context: ActionContext = {
     settings,
@@ -51,6 +51,7 @@ export function registerActions(
         withKeyRule(entry.key, entry.handler, entry.keyFrom),
         {
           controller: entry.controller,
+          action: entry.action,
           ...(bodyLimit !== undefined && { bodyLimit }),
           ...(onRequest.length > 0 && { onRequest }),
         },

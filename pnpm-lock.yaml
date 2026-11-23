@@ -214,6 +214,9 @@ importers:
 
   bridge:
     dependencies:
+      '@surveyjs-studio/metrics':
+        specifier: workspace:*
+        version: link:../metrics
       fastify:
         specifier: 5.12.6
         version: 5.12.6

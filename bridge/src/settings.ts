@@ -30,6 +30,13 @@ export interface BridgeSettings {
    * whose `X-Forwarded-For` names the caller. Empty: the caller is the socket's peer.
    */
   readonly trustProxy: readonly string[];
+  /**
+   * `BRIDGE_METRICS_PORT` (default none): the port of a second listener answering only
+   * `GET /metrics`; must differ from `BRIDGE_PORT`. Unset: no such listener.
+   */
+  readonly metricsPort: number | null;
+  /** `BRIDGE_METRICS_HOST` (default 127.0.0.1; the image sets 0.0.0.0): that listener's address. */
+  readonly metricsHost: string;
 }
 
 export class SettingsError extends Error {
@@ -98,6 +105,14 @@ export function loadSettings(env: Env): BridgeSettings {
   const host = env.BRIDGE_HOST ?? "127.0.0.1";
   if (host === "") problems.push("BRIDGE_HOST must not be empty");
 
+  const metricsPort =
+    env.BRIDGE_METRICS_PORT === undefined || env.BRIDGE_METRICS_PORT === ""
+      ? null
+      : integer("BRIDGE_METRICS_PORT", 0, 1, 65_535);
+  if (metricsPort === port) problems.push("BRIDGE_METRICS_PORT must differ from BRIDGE_PORT");
+  const metricsHost = env.BRIDGE_METRICS_HOST ?? "127.0.0.1";
+  if (metricsHost === "") problems.push("BRIDGE_METRICS_HOST must not be empty");
+
   const trustProxy = (env.BRIDGE_TRUST_PROXY ?? "")
     .split(",")
     .map((item) => item.trim())
@@ -119,5 +134,7 @@ export function loadSettings(env: Env): BridgeSettings {
     fileTimeoutMs,
     maxUploadBytes,
     trustProxy,
+    metricsPort,
+    metricsHost,
   };
 }

@@ -210,8 +210,10 @@ export async function uploadGate(
     return sendEmpty(reply.header("connection", "close"), 503);
   }
   uploads.set(context, active + 1);
+  context.metrics.uploads.inc();
   reply.raw.once("close", () => {
     uploads.set(context, (uploads.get(context) ?? 1) - 1);
+    context.metrics.uploads.dec();
   });
   return undefined;
 }

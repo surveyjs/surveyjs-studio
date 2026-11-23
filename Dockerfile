@@ -92,7 +92,10 @@ COPY --from=build /out/bridge /app/bridge
 # The notices of the server's and the web app's dependencies cover the bridge's (a subset).
 COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 COPY LICENSE /app/LICENSE
-ENV NODE_ENV=production BRIDGE_HOST=0.0.0.0 BRIDGE_PORT=3002
+ENV NODE_ENV=production BRIDGE_HOST=0.0.0.0 BRIDGE_PORT=3002 BRIDGE_METRICS_HOST=0.0.0.0
+# Sums the bridge's request log (stdin) into a CSV of callers per day, key hash prefix and action.
+RUN printf '%s\n' '#!/bin/sh' 'cd /app/bridge && exec node --import tsx src/cli/callers.ts "$@"' > /usr/local/bin/bridge-callers \
+    && chmod 755 /usr/local/bin/bridge-callers
 USER node
 WORKDIR /app/bridge
 EXPOSE 3002

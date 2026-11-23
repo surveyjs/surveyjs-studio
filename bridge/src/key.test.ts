@@ -1,6 +1,7 @@
 import { Writable } from "node:stream";
 import type { FastifyRequest } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { keyHashPrefix } from "./callers.js";
 import { accessKeyOf } from "./key.js";
 import {
   send,
@@ -236,8 +237,10 @@ describe("keyed actions", () => {
     await generate(`?ACCESSKEY=${LEGACY_KEY}&accessKey=${LEGACY_KEY}`);
     await setType(`?x=1&accessKey=${encodeURIComponent(SCRIPT_KEY)}`);
     await send(`${bridge.url}/private/Surveys/getActive?accessKey=${TOKEN}`);
-    expect(logs).toContain("generateAccessKey");
-    expect(logs).toContain("accessKey=[redacted]");
+    // One line per request, written when its answer closes; the key only as its hash prefix.
+    await expect.poll(() => logs.match(/"msg":"request"/g)?.length).toBe(4);
+    expect(logs).toContain('"action":"generateAccessKey"');
+    expect(logs).toContain(`"key":"${keyHashPrefix(LEGACY_KEY)}"`);
     for (const key of [TOKEN, LEGACY_KEY, "script", "sjs_rotated"]) {
       expect(logs).not.toContain(key);
     }

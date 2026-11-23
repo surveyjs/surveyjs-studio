@@ -2,7 +2,9 @@
 // Studio's public API, and forwards everything else to the old service.
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
+import { createRegistry } from "@surveyjs-studio/metrics";
 import Fastify, {
+  LogController,
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
@@ -13,6 +15,12 @@ import { sendEmpty } from "./answers.js";
 import { registerCors } from "./cors.js";
 import { createForwarder, MAX_HEADER_BYTES, plainAddress, type Forwarder } from "./forward.js";
 import { withoutKey } from "./key.js";
+import {
+  createBridgeMetrics,
+  observeRequests,
+  observeUnrouted,
+  type BridgeMetrics,
+} from "./metrics.js";
 import type { BridgeSettings } from "./settings.js";
 import { studioClient, StudioFailure, type StudioClient } from "./studio.js";
 
@@ -37,6 +45,8 @@ export interface BridgeDeps {
   forwardTimeoutMs?: number;
   /** Whether to register the old API's actions (default true; tests of the skeleton add their own). */
   actions?: boolean;
+  /** Where requests are counted (main.ts serves their registry); a private set when absent. */
+  metrics?: BridgeMetrics;
 }
 
 /**
@@ -124,11 +134,19 @@ function answerClientError(error: Error & { code?: string }, socket: Duplex): vo
 const callerGone = new WeakMap<object, AbortSignal>();
 
 export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): FastifyInstance {
-  const forwarder = createForwarder(settings.legacyUrl, deps.forwardTimeoutMs);
+  const metrics =
+    deps.metrics ??
+    createBridgeMetrics(createRegistry({ prefix: "surveyjs_bridge_", processMetrics: false }));
+  const forwarder = createForwarder(settings.legacyUrl, {
+    ...(deps.forwardTimeoutMs !== undefined && { timeoutMs: deps.forwardTimeoutMs }),
+    onFailure: (reason) => metrics.forwardFailures.inc({ reason }),
+  });
   const fetchImpl = deps.fetch ?? fetch;
 
   const app = Fastify({
     logger: loggerOptions(deps.logger),
+    // Each request is logged once, when its answer closes (metrics.ts), without its query.
+    logController: new LogController({ disableRequestLogging: true }),
     routerOptions: {
       // The old API's routing: any letter case, one trailing slash or none.
       caseSensitive: false,
@@ -144,8 +162,12 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
     // Empty trusts nobody: `request.ip` is the socket's peer, whatever X-Forwarded-For says.
     ...(settings.trustProxy.length > 0 && { trustProxy: [...settings.trustProxy] }),
     // A path the router cannot take (malformed escapes, an over-long segment) is not an action's.
-    // forward() never throws: this handler runs outside Fastify's error handling.
-    frameworkErrors: (_error, request, reply) => forward(forwarder, request, reply),
+    // forward() never throws: this handler runs outside Fastify's error handling. No hook sees
+    // such a request: it is counted here.
+    frameworkErrors: (_error, request, reply) => {
+      observeUnrouted(request, reply, metrics);
+      forward(forwarder, request, reply);
+    },
     // A request Node's parser refuses: an empty answer, as the bridge's other errors.
     clientErrorHandler: answerClientError,
     // A request (headers and body) must arrive within 5 minutes, Node's own default, which Fastify
@@ -176,7 +198,10 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   });
   app.decorateRequest("studio", {
     getter(this: FastifyRequest): StudioClient {
-      return studioClient(settings, callerOf(this), fetchImpl, callerGone.get(this.raw));
+      return studioClient(settings, callerOf(this), fetchImpl, {
+        callerGone: callerGone.get(this.raw),
+        metrics,
+      });
     },
   });
   app.decorateRequest("callerGone", {
@@ -186,16 +211,16 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   });
   app.decorateRequest("studioFiles", {
     getter(this: FastifyRequest): StudioClient {
-      return studioClient(
-        settings,
-        callerOf(this),
-        fetchImpl,
-        callerGone.get(this.raw),
-        settings.fileTimeoutMs,
-      );
+      return studioClient(settings, callerOf(this), fetchImpl, {
+        callerGone: callerGone.get(this.raw),
+        bodyTimeoutMs: settings.fileTimeoutMs,
+        metrics,
+      });
     },
   });
 
+  // First: a request another hook answers (a preflight, a forwarded path) is counted too.
+  observeRequests(app, metrics);
   registerCors(app);
 
   // Before body parsing, so a forwarded body is streamed untouched.
@@ -231,6 +256,7 @@ export function buildBridge(settings: BridgeSettings, deps: BridgeDeps = {}): Fa
   if (deps.actions !== false) {
     registerActions(app, settings, {
       studioFetch: fetchImpl,
+      metrics,
       forward: (request, reply) => forward(forwarder, request, reply),
     });
   }

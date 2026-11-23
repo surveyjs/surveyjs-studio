@@ -1,7 +1,8 @@
 // What the old API's actions share within one bridge: its settings, the `getSurvey` cache, the way
-// to Studio and the way to the old service. Set on the actions' Fastify context (actions/index.ts),
+// to Studio, the way to the old service and the metrics. Set on the actions' Fastify context (actions/index.ts),
 // so the handlers of the mapping table (mapping.ts) read it from the request.
 import type { FastifyReply, FastifyRequest } from "fastify";
+import type { BridgeMetrics } from "./metrics.js";
 import type { BridgeSettings } from "./settings.js";
 import type { SurveyCache } from "./survey-cache.js";
 
@@ -15,6 +16,7 @@ export interface ActionContext {
    * body must not have been read: only for methods without a body (`GET`).
    */
   forward(request: FastifyRequest, reply: FastifyReply): void;
+  readonly metrics: BridgeMetrics;
 }
 
 declare module "fastify" {
