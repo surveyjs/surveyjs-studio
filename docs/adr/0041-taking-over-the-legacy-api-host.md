@@ -82,13 +82,16 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
 - **Input:** a sample of the old service's requests in a neutral CSV (`time`, `method`, `path`, `query`, `status`),
   produced by a query kept in the private location. The code knows no monitoring product's column names.
 - **What is replayed:** requests whose action is marked `effect: "read"` in the bridge's mapping table, a new field
-  that every entry carries (checked by a test; `GET generateAccessKey` is a `write`). Forwarded paths are not
+  that every entry carries (checked by a test; `GET generateAccessKey` is a `write`). An action is a `write` when any
+  Studio operation it calls is not a `GET` or when it takes any method other than `GET`, `HEAD` and `OPTIONS`. Only a
+  `GET` on a path of plain segments (letters, digits, `_`, `-`, `{`, `}`) is replayed. Forwarded paths are not
   replayed: some of the site's paths may change something on a `GET`, and forwarding passes bytes through unchanged
   (covered by the bridge's forwarding tests and by the demo). Everything else is skipped and counted by reason
-  (`write`, `forwarded`, `unknown path`).
+  (`write`, `forwarded`, `unknown-method`, `unsafe-path`).
 - **Paced under Studio's per-address limits.** Every replayed request reaches Studio from the operator's one address.
   The replay knows which Studio limit each action falls under (from the mapping table's `studio` operations) and
-  stays below it (`--public-limit`, `--summary-limit`, defaulting to Studio's defaults of 60 and 10 a minute). A `429`
+  stays below it (`--public-limit`, `--summary-limit`, `--file-limit`, defaulting to Studio's defaults of 60, 10 and
+  600 a minute). A `429`
   from the bridge is retried once after its `Retry-After`; a second one counts as `rate-limited`, a skip reason, not a
   difference.
 - **Keys are replayed as recorded** (the user's choice, 2026-11-23): the keyed reads (`getSurveyResults`, `getActive`,
@@ -96,9 +99,11 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
   hex digits of its hash (as Studio hashes legacy keys, `hashCredential`).
 - **Each request goes to the old service, then the bridge, then the old service again.** When the two old answers
   differ, the data moved between calls (a new response, an edit) and the case counts as `changed`, not as a difference.
+  Each case ends `same`, `different`, `changed`, `rate-limited` or `error`; the verdict fails on any `different` or
+  `error`, and an action whose cases are mostly `changed` is flagged, since nothing of it was compared.
 - **Comparison rules** (one module, unit-tested): status; content type; the headers callers read (ADR 0039 point 1);
   JSON with property names, order and values exact; arrays in order, except those the old service orders by nothing
-  (listed in the module, each with its reason); text bodies exact. Ignored: trace ids, `Date`, `Server`, platform
+  (listed in the module, each with its reason); text bodies exact. Ignored: trace ids (`traceId` in problem bodies), `Date`, `Server`, platform
   headers, whitespace between JSON tokens, chunking. Each difference is reported with a path into the body.
 - **Selection options:** `--actions`, `--since`, `--limit`. A sample of a few thousand requests takes hours at these
   rates, which is acceptable for a gate run once or twice.
@@ -115,8 +120,9 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
 
 ### 4. Metrics: `/metrics` in Studio and in the bridge
 
-- **A shared workspace package, `metrics/`**, on `prom-client`: the registry, the Node process metrics, request
-  timing as a Fastify plugin with a label function, and a listener on its own port. Both images include it.
+- **A shared workspace package, `metrics/`**, on `@prometheus-io/client` (0.16.1, the maintained successor of the
+  deprecated `prom-client`): a registry per app, the Node process metrics, request timing as a Fastify hook with a
+  label function, and a listener on its own port. Both images include it.
 - **Off unless asked for, and never on the main port.** `METRICS_PORT` (Studio) and `BRIDGE_METRICS_PORT` (the bridge)
   start a second HTTP listener that answers `GET /metrics` and nothing else, on `METRICS_HOST` / `BRIDGE_METRICS_HOST`
   (default `127.0.0.1`; the images set `0.0.0.0`, and no Compose file publishes the port). No token: whoever reaches
@@ -132,10 +138,12 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
   - the Node process metrics (CPU, memory, event-loop lag, garbage collection), with the prefix.
 - **The bridge** (prefix `surveyjs_bridge_`):
   - `requests_total{action, method, status}` and `request_duration_seconds{action, method}`. `action` is the mapping
-    table's action name, or `forwarded` for every forwarded path (the site's paths are not named in this repository;
+    table's action name, `preflight` for a CORS preflight the bridge answers itself, or `forwarded` for every forwarded
+    path (the site's paths are not named in this repository;
     the log line has the path, without its query, for a breakdown).
-  - `studio_calls_total{operation, status}` and `studio_call_duration_seconds{operation}`; `status` is `timeout` or
-    `network` when no answer came.
+  - `studio_calls_total{operation, status}` and `studio_call_duration_seconds{operation}`. `operation` is the method and
+    the contract's path template (`GET /public/surveys/{surveyId}/definition`), not an `operationId`; `status` is
+    `timeout` or `network` when no answer came, `aborted` when the caller left first.
   - `survey_cache_total{result}`: `hit` (Studio's `304`), `miss` (`200`), `stale` (the cached copy served on a
     `429`), `none` (not cached and refused).
   - `forward_failures_total{reason}`: `timeout`, `network`, `aborted`.
@@ -157,7 +165,7 @@ writes one log line per request (`action`, `status`, `ms`, `cache`, and `key`: t
 hash, absent when there is no key). A command in the bridge image, `bridge-callers`, reads such lines (the container's
 log) and writes one CSV row per day, key prefix and action: the count, the first and the last time. A daily job on the
 server appends yesterday's rows to a file kept until the bridge is retired. No addresses, no full keys. The hash is
-Studio's `hashCredential` for a legacy key (SHA-256 of the lower-cased key), the one `legacy_access_keys` will hold
+Studio's `hashCredential` for a legacy key (SHA-256 of the lower-cased key; of an `sjs_` token as sent), the one `legacy_access_keys` will hold
 from the migration on (Steps 8–9); until then the owners are found by hashing the site's keys the same way.
 
 ### 6. Fixed before the switch
@@ -197,9 +205,23 @@ are in the private deployment notes.
 - The target server exists, without data, from Step 7. Step 8 (provider readiness) and Step 11 (rehearsal) use it.
 - Until the cutover each bridge call crosses from the target server to today's Studio, which reaches the legacy
   stores: the replay report shows the added latency per action, and the runbook watches it.
-- Studio and the bridge gain a dependency (`prom-client`) and a second, optional listener each.
+- Studio and the bridge gain a dependency (`@prometheus-io/client`) and a second, optional listener each.
 - The mapping table gains `effect`; the migration guide's table is unchanged.
 - The private playbooks gain the bridge, Prometheus, the two sites and the daily caller job; that change is made in the
   private repository, outside this ADR's PR.
 - Today's server is set up again with `setup.sh` (the trusted proxies, the compression exception, `METRICS_PORT`)
   before the switch.
+
+## Corrections from the build
+
+Made on 2026-11-23, while the step was built; the points above are amended in place.
+
+- **The metrics library** is `@prometheus-io/client` 0.16.1, not `prom-client`, which is deprecated in its favour.
+  Request timing is a hook, and each app owns its registry.
+- **Labels.** The bridge's `action` has a third kind of value, `preflight`, so CORS preflights neither dilute an
+  action's error share nor count as forwarded. The Studio-call `operation` is `"<METHOD> <path template>"`, since the
+  bridge's client knows the path, not the `operationId`; its `status` also has `aborted`. The duration histograms
+  carry no `status` label.
+- **The replay** sends only allowlisted paths, and its skip reasons are `write`, `forwarded`, `unknown-method` and
+  `unsafe-path`. The `effect` rule is stated, `--file-limit` paces the file reads, and `traceId` values in problem
+  bodies are not compared.

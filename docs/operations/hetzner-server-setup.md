@@ -122,7 +122,12 @@ from here on, `ssh deploy@<server-ip>` and `sudo`.
 **Running it again** is safe, also on a server set up by hand before: each step checks what is there. It rewrites
 `compose.yaml`, the `Caddyfile` and `.env` in `/opt/surveyjs-studio`, keeps `/etc/surveyjs-studio/app.env` unless
 `--env-file` is given, and keeps the running tag unless `--tag` is given. That is how to change the domain, the
-`/readyz` addresses or the restriction: run it again with other options. A changed `Caddyfile` is applied by
+`/readyz` addresses or the restriction: run it again with other options. **The address options are not remembered:**
+give `--readyz-allow`, `--restrict-to` and `--trusted-proxies` again on every run, or the new `Caddyfile` is written
+without them (a run without `--trusted-proxies` makes Caddy replace the bridge's `X-Forwarded-For` again, and every
+caller of the old API then shares one rate limit). Check the result first with the same options and
+`--print-caddyfile`. The servers in `--trusted-proxies` also go into `TRUST_PROXY` in `app.env`, after the Docker
+subnet ([Taking over `api.surveyjs.io`](legacy-api-takeover.md#1-preconditions)). A changed `Caddyfile` is applied by
 restarting Caddy, so a new version of the script (such as the one that stopped compressing the survey documents) takes
 effect when it is run again with the same options.
 

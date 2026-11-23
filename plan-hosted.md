@@ -418,49 +418,58 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 ## Step 7: Taking over `api.surveyjs.io` traffic
 
-**Goal:** `api.surveyjs.io` points at the bridge while the data is still on the legacy stores: the bridge answers the My Surveys actions through Studio, which still runs on the Azure legacy provider, and forwards the site's paths to the old service. The old service is out of the My Surveys request path before any data moves, and the bridge does not change at the cutover.
+> **Changed 2026-11-23 by [ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md).** There is no staging copy of
+> the data, and the old service's logs hold no request bodies: the replay compares reads only, on production, and the
+> writes are checked by `pnpm legacy:replay smoke` with the test account. The bridge runs on the cutover target server
+> from the switch on, calling today's Studio by its public URL until the cutover. Studio and the bridge gain `/metrics`.
+
+**Goal:** `api.surveyjs.io` points at the bridge while the data is still on the legacy stores: the bridge answers the My Surveys actions through Studio, which still runs on today's server on the legacy stores, and forwards the site's paths to the old service. The old service is out of the My Surveys request path before any data moves. At the cutover only the bridge's `BRIDGE_STUDIO_URL` changes; the DNS record is not switched again.
 
 **Inputs needed:**
 
 - **the DNS switch, made by the SurveyJS team** ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)). The host also serves the site's demos and jobs ([Legacy API usage › Results](docs/architecture/legacy-api-usage.md#results-2026-11-13)); the bridge forwards them to the old service by that service's own host name, so they keep working without a proxy by path;
-- an access-log sample, kept private (rule 6): the old service's HTTP logs, on since 2026-11-13;
+- **the cutover target server**, built before this step by the private deployment playbooks and tested empty: the bridge image at the app's tag, Prometheus, and a web front with one site for `api.surveyjs.io` and one for a test host name that reaches the same bridge before the switch (and stays after it, for checks that must not depend on DNS);
+- **a recent sample of the old service's requests** (its HTTP logs, on since 2026-11-13), as a neutral CSV made by a query kept private (rule 6);
+- **the test account's access key** for `smoke`, used for nothing else;
+- **the recordings** of Steps 5 and 6, made with the SurveyJS team and reviewed, which replace the derived golden files before the switch;
 - **the load to take over:** most `getSurvey` traffic is one scheduled server-side job that re-reads a fixed set of
   surveys every few minutes ([Legacy API usage › Client types](docs/architecture/legacy-api-usage.md#client-types-preview-2026-11-17)).
   The bridge's cache and Studio serve that steady rate from the first minute of the switch; the SurveyJS team found its owner (2026-11-18) and contacts them before
-  the cutover;
-- the staging environment. The production app runs on the Hetzner server in mode 1.1 ([Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)); the bridge runs on the same server, with its own site and certificate for `api.surveyjs.io` (private infrastructure notes).
+  the cutover.
 
 **References**
 
-- ADR 0035; HS › Routing `api.surveyjs.io` (changed by ADR 0035); plan.md Step 14 (the production image and staging).
+- ADR 0035, ADR 0041; HS › Routing `api.surveyjs.io` (changed by ADR 0035).
 - H18, H19.
 
 **Build**
 
-- **`pnpm legacy:replay`:**
-  - reads an access-log sample;
-  - replays read requests against both the old service and the bridge, compares the answers, and writes an HTML report of differences;
-  - with `--writes`, replays write requests only against staging.
-- **The bridge in production:** the playbooks or Compose file run the bridge image next to the app, at the same version; the server's web front serves `api.surveyjs.io` and gets its certificate. The certificate needs the DNS record, so the first one is requested at the switch (or by a DNS challenge before it).
-- **Switching the host:** the DNS record of `api.surveyjs.io` moves to the server, with the time-to-live lowered days before, so switching back is fast. Switching back restores the old record; the bridge holds no data, so nothing is lost.
-- **`docs/operations/legacy-api-takeover.md`:**
-  - the replay gate: no unexplained differences;
-  - the switch, and what to watch: error rate and latency per action, the forwarded paths' errors, the cache hit rate;
-  - rollback.
-- **Operating the bridge:** structured logs and metrics per old action, with the caller's key reduced to a hash, so remaining users of each action can be found and contacted before the bridge is retired.
+- **`pnpm legacy:replay`** (a workspace package, run from an operator's machine, never in CI with real data):
+  - reads the sample (`time,method,path,query,status`) and replays only the `GET`s of actions the bridge's mapping table marks `effect: "read"`, on allowlisted paths; writes, forwarded paths, other methods and unsafe paths are counted and never sent;
+  - sends each request to the old service, the bridge, then the old service again (`changed` when the two old answers differ), paced under Studio's per-address limits, with keys as recorded;
+  - writes an HTML report outside the repository (key hashes only) and prints counts and the verdict;
+  - `smoke`: the write actions with the test account's key against both, on a new survey each, compared with ids, dates and generated names normalised.
+- **`effect` in the mapping table:** every action is a `read` or a `write`.
+- **Metrics:** `/metrics` on a separate port in Studio (`METRICS_PORT`) and the bridge (`BRIDGE_METRICS_PORT`), never on the main port, with bounded labels only (a shared `metrics/` package); Studio times every store call; the self-hosted Compose examples gain a `monitoring` profile with Prometheus.
+- **The caller log:** one bridge log line per request with the key only as a hash prefix, and `bridge-callers` in the bridge image to sum a day of it per key prefix and action, so the remaining callers can be found before the bridge is retired.
+- **Before the switch:** the bridge cuts an upload whose body is not read within `BRIDGE_UPLOAD_READ_TIMEOUT_MS` (`408`); uploads that belong to no survey count against `LIMIT_MAX_LEGACY_FILES_PER_USER`; `setup.sh` gains `--trusted-proxies` (the target server's addresses, so today's server keeps the caller's address) and keeps the public definition's `ETag` (no compression), so the bridge's cache works across the two servers.
+- **The bridge image** is published by CI beside the app's, at the same commit.
+- **`docs/operations/legacy-api-takeover.md`:** the preconditions, the gate (the replay with no unexplained difference, and `smoke`), the switch at a quiet hour and the certificate, what to watch with the Prometheus queries, `LEGACY_KEY_REVOKE` on after a day, switching back, and the cutover's one change. In general terms; the server-specific steps stay in the private deployment notes.
 
 **Tests**
 
-- **Back-end unit:** the comparison rules (ordering, the date formats the legacy service emits).
-- **Back-end e2e:** replay of a recorded fixture log against two local servers (the bridge and a golden-file stub) produces the expected report.
-- **Staging:** the replay of the real sample, run manually. The report stays private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
+- **Back-end unit:** the comparison rules, the classification and pacing of the replay, the sample parser, the report, `smoke`'s normalisation; the metrics' labels (no key, id or path; forwarded requests and callers that leave are counted); the caller log and `bridge-callers`; the upload deadline; the generated web-front configuration.
+- **Back-end e2e:** the replay and `smoke` of a fixture sample against two local servers (`legacy-compat-tests`); conformance for the legacy-file cap.
+- **On production, run manually:** the replay of a recent sample and `smoke`. The reports stay private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
 
-**Documentation:** the takeover runbook, `docs/operations.md` (bridge monitoring), `docs/demo/hosted-07.md`.
+**Documentation:** the takeover runbook, `docs/operations.md` (metrics, the caller log), `docs/self-hosting.md` (metrics), `docs/api/legacy-compat.md`, `docs/demo/hosted-07.md`.
 
 **Demo checklist**
 
-1. The replay report for the staging sample shows no unexplained differences.
-2. On staging, point a staging host name at the bridge, check that a v1.x page still works and that a site path reaches the old service, and switch back. Both moves take effect without downtime.
+1. Locally: Studio's and the bridge's `/metrics` answer on their own ports only, and a second `getSurvey` is a cache `hit`.
+2. With the SurveyJS team: the replay of a recent sample through the test host name shows no unexplained difference, and `smoke` passes.
+3. With the SurveyJS team: the switch. A page built for Form Library v1 with `surveyId` still works, a site path reaches the old service, and the runbook's queries show no rise in errors over the first hour.
+4. A day later: `LEGACY_KEY_REVOKE` is on, a key revoked on the API tokens page gets the old API's wrong-key answer through `api.surveyjs.io`, and `bridge-callers` lists the previous day's callers.
 
 ---
 

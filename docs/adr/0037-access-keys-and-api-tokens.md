@@ -61,7 +61,8 @@ The SurveyJS team's wishes (2026-11-18):
      would not stop the key. Until then the row links to the site's own "generate new key". From Step 7 (a setting the
      Step 7 deployment turns on) Revoke switches the key off in Studio and the bridge, recorded in an app-owned store
      before the cutover and in `legacy_access_keys` after it. A key the owner later regenerates on the site is a new key
-     and works.
+     and works. The setting (`LEGACY_KEY_REVOKE`) goes on once the DNS switch has held for a day, and off again first
+     on a switch back ([ADR 0041](0041-taking-over-the-legacy-api-host.md), point 2).
    - The value is never shown in Studio. After the cutover only its hash exists; the cutover announcement tells
      integrators to copy their key from the site beforehand.
 5. **The old `generateAccessKey`, answered by the bridge** (Step 6):

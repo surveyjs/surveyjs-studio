@@ -1,7 +1,8 @@
 # Self-hosting
 
 For admins who run SurveyJS Studio on their own server with the free Docker image (mode 2b). It covers the first start,
-the settings you set, running behind an https proxy, PostgreSQL and S3, backups, upgrades and the Compose examples.
+the settings you set, running behind an https proxy, PostgreSQL and S3, backups, upgrades, metrics and the Compose
+examples.
 
 **The image.** Release builds go to `ghcr.io/surveyjs/surveyjs-studio`, private until the image is published on
 Docker Hub as `surveyjs/surveyjs-studio` (until then, pulling it needs `docker login ghcr.io` with a GitHub token that
@@ -79,6 +80,7 @@ port 8080 and a session secret it creates once in `/data/session-secret`. Every 
 | `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` | The total size of the images and files of one survey's editor uploads; default 50 MB                   |
 | `LIMIT_MAX_RESPONSE_BYTES`         | The largest response; default 1 MB                                                                     |
 | `LIMIT_MAX_DOCUMENT_BYTES`         | The largest survey definition or theme; default 30 MB                                                  |
+| `METRICS_PORT`                     | Serves Prometheus metrics on this port, `GET /metrics` only ([below](#metrics)); unset: none           |
 
 Branding in detail: [Branding and the licence key](customizing/branding.md).
 
@@ -213,6 +215,30 @@ The server applies the database migrations at start-up, under a lock, and logs t
 image refuses a database that a newer version migrated. To go back, restore the backup you made before the upgrade with
 the older image.
 
+## Metrics
+
+Set `METRICS_PORT` (for example `9464`) and the server starts a second listener on that port that answers
+`GET /metrics` and nothing else, in the Prometheus text format. The app's own port never serves metrics. The image
+listens on all addresses (`METRICS_HOST=0.0.0.0`), so a Prometheus on the same Docker network reaches it; **do not
+publish the port** (no `-p` for it): it has no password, and what it shows is counts only.
+
+What you get, with the prefix `surveyjs_studio_`: requests by API operation, method and status
+(`http_requests_total`), their duration (`http_request_duration_seconds`), the duration of every call into the
+database and file store (`store_call_duration_seconds`), and the Node process (CPU, memory, event-loop lag, garbage
+collection). The labels never hold an id, a path, an email address or an IP address. Every metric and label:
+[Operations › Metrics](operations.md#metrics).
+
+The Compose examples set `METRICS_PORT=9464` and have a `monitoring` profile that also starts Prometheus, scraping the
+app every 15 seconds and keeping 15 days:
+
+```sh
+docker compose -f compose.sqlite.yml --profile monitoring up -d
+```
+
+Prometheus is then at <http://127.0.0.1:9090> on the Docker host only (from elsewhere, through an SSH tunnel). Its
+configuration is `deploy/compose/prometheus.yml`; point your own Prometheus at `app:9464` on the Compose network
+instead, if you have one. Without the profile, Prometheus does not run and nothing else changes.
+
 ## The Compose examples
 
 [`deploy/compose/`](../deploy/compose/) has two examples. Copy `.env.example` to `.env` next to them and replace every
@@ -229,7 +255,8 @@ cp .env.example .env    # then edit .env
 docker compose -f compose.sqlite.yml up -d
 ```
 
-Neither PostgreSQL nor RustFS is published on the host. `SURVEYJS_STUDIO_IMAGE` in `.env` picks another image (such as
+Neither PostgreSQL nor RustFS is published on the host, nor is the app's metrics port; `--profile monitoring` adds
+Prometheus ([Metrics](#metrics)). `SURVEYJS_STUDIO_IMAGE` in `.env` picks another image (such as
 `surveyjs-studio:self-hosted`), and `SURVEYJS_STUDIO_PORT` another host port.
 
 The default image, `ghcr.io/surveyjs/surveyjs-studio:latest`, does not exist until the first release that

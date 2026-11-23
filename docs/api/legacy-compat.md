@@ -164,21 +164,26 @@ service, whatever the method. That covers the site's own paths
 ## Settings
 
 The bridge reads environment variables. A wrong value stops it at start with every problem listed. The
-[image](../operations.md#running-the-bridge) sets `BRIDGE_HOST` and `BRIDGE_PORT`.
+[image](../operations.md#running-the-bridge) sets `BRIDGE_HOST`, `BRIDGE_PORT` and `BRIDGE_METRICS_HOST`.
 
-| Variable                   | Default     | Meaning                                                                                                                                                                                                                                           |
-| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BRIDGE_STUDIO_URL`        | (required)  | Studio's API base URL, with `/api/v1` (for example `http://studio:3000/api/v1`). `http` or `https`; no query, fragment or credentials                                                                                                             |
-| `BRIDGE_LEGACY_URL`        | (required)  | The old service's base URL, for the forwarded paths. Same rules. Use `https:`: the forwarded requests carry the callers' headers, and a plain `http:` hop shows them on the network                                                               |
-| `BRIDGE_CACHE_ENTRIES`     | `10000`     | How many surveys the `getSurvey` cache keeps (0 to 10,000,000; 0 turns it off). The cache is bounded by the **number** of entries, not by their size                                                                                              |
-| `BRIDGE_PORT`              | `3002`      | The port to listen on (1 to 65,535)                                                                                                                                                                                                               |
-| `BRIDGE_HOST`              | `127.0.0.1` | The address to listen on. The image sets `0.0.0.0`                                                                                                                                                                                                |
-| `BRIDGE_STUDIO_TIMEOUT_MS` | `10000`     | A call to Studio taking longer, its answer's body included, is answered with an empty `500` (1 to 600,000)                                                                                                                                        |
-| `BRIDGE_MAX_UPLOAD_BYTES`  | `11534336`  | The largest `upload` body (1 to 30,000,000): Studio's default file limit of 10 MiB and 1 MiB for the form around it. A larger body is an empty `413`, unread. Raise it with Studio's `LIMIT_MAX_FILE_BYTES`                                       |
-| `BRIDGE_FILE_TIMEOUT_MS`   | `120000`    | How long a file's bytes (`image`, `file`, `files?name=`) may take to stream through once Studio has answered (1 to 3,600,000). Studio's headers must still come within `BRIDGE_STUDIO_TIMEOUT_MS`; a file still streaming at the limit is cut off |
-| `BRIDGE_TRUST_PROXY`       | none        | Comma-separated IP addresses or CIDR ranges of the reverse proxy in front of the bridge. Empty: the caller is the connection's peer. Set: the caller is the address that proxy's `X-Forwarded-For` names                                          |
+| Variable                        | Default     | Meaning                                                                                                                                                                                                                                           |
+| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BRIDGE_STUDIO_URL`             | (required)  | Studio's API base URL, with `/api/v1` (for example `http://studio:3000/api/v1`). `http` or `https`; no query, fragment or credentials                                                                                                             |
+| `BRIDGE_LEGACY_URL`             | (required)  | The old service's base URL, for the forwarded paths. Same rules. Use `https:`: the forwarded requests carry the callers' headers, and a plain `http:` hop shows them on the network                                                               |
+| `BRIDGE_CACHE_ENTRIES`          | `10000`     | How many surveys the `getSurvey` cache keeps (0 to 10,000,000; 0 turns it off). The cache is bounded by the **number** of entries, not by their size                                                                                              |
+| `BRIDGE_PORT`                   | `3002`      | The port to listen on (1 to 65,535)                                                                                                                                                                                                               |
+| `BRIDGE_HOST`                   | `127.0.0.1` | The address to listen on. The image sets `0.0.0.0`                                                                                                                                                                                                |
+| `BRIDGE_STUDIO_TIMEOUT_MS`      | `10000`     | A call to Studio taking longer, its answer's body included, is answered with an empty `500` (1 to 600,000)                                                                                                                                        |
+| `BRIDGE_MAX_UPLOAD_BYTES`       | `11534336`  | The largest `upload` body (1 to 30,000,000): Studio's default file limit of 10 MiB and 1 MiB for the form around it. A larger body is an empty `413`, unread. Raise it with Studio's `LIMIT_MAX_FILE_BYTES`                                       |
+| `BRIDGE_UPLOAD_READ_TIMEOUT_MS` | `60000`     | How long an `upload` body may take to arrive in full (1 to 3,600,000). An upload still being read then is answered an empty `408` and its connection is closed, which frees its slot ([Operator notes](#operator-notes))                          |
+| `BRIDGE_FILE_TIMEOUT_MS`        | `120000`    | How long a file's bytes (`image`, `file`, `files?name=`) may take to stream through once Studio has answered (1 to 3,600,000). Studio's headers must still come within `BRIDGE_STUDIO_TIMEOUT_MS`; a file still streaming at the limit is cut off |
+| `BRIDGE_TRUST_PROXY`            | none        | Comma-separated IP addresses or CIDR ranges of the reverse proxy in front of the bridge. Empty: the caller is the connection's peer. Set: the caller is the address that proxy's `X-Forwarded-For` names                                          |
+| `BRIDGE_METRICS_PORT`           | none        | The port of a second listener that answers `GET /metrics` only ([Operations › Metrics](../operations.md#metrics)); must differ from `BRIDGE_PORT`. Unset: no such listener                                                                        |
+| `BRIDGE_METRICS_HOST`           | `127.0.0.1` | That listener's address. The image sets `0.0.0.0`; do not publish the port                                                                                                                                                                        |
 
-There is no setting for the log level (it is `info`) and no health endpoint: an address the bridge answered itself would
+There is no setting for the log level (it is `info`; one `"msg":"request"` line per request, with the action, the status,
+the time and the key only as a hash prefix: [The callers of each action](../operations.md#the-callers-of-each-action))
+and no health endpoint: an address the bridge answered itself would
 differ from the old host, which answers every unknown `GET` with its start page. A probe can use a forwarded path.
 
 ## Operator notes
@@ -207,7 +212,10 @@ differ from the old host, which answers every unknown `GET` with its start page.
   `413`. Keep `BRIDGE_MAX_UPLOAD_BYTES` about 1 MiB above `LIMIT_MAX_FILE_BYTES`.
 - **Uploads at once.** The bridge reads at most 8 `upload` requests at a time, each held in memory up to
   `BRIDGE_MAX_UPLOAD_BYTES`; one more is answered with an empty `503` before its body is read, as the old host answered
-  when overloaded. A client retries it as any `503`.
+  when overloaded. A client retries it as any `503`. An upload whose body has not arrived in full within
+  `BRIDGE_UPLOAD_READ_TIMEOUT_MS` (60 seconds by default) is answered an empty `408` and its connection is closed, so a
+  caller that trickles its body holds a slot no longer than that. `surveyjs_bridge_uploads_in_progress` shows the slots
+  in use.
 - **Slow public results and a proxy in front.** `getSurveyPublicResults` streams a large set slowly: on Studio's `429`
   for a later page the bridge waits up to 120 seconds before the next page, sending nothing meanwhile (see
   [below](#getsurveypublicresults)). A reverse proxy or CDN in front of the bridge needs a read-idle (response) timeout
@@ -290,6 +298,8 @@ files finds a `difference` note on each case that records one ([Testing](../test
   body with an empty `413` before it is read: with the defaults, an upload of about 10 to 28.6 MB, which the old host
   took, now gets `413`.
 - More than 8 uploads at once: the next one gets an empty `503` (see [Operator notes](#operator-notes)).
+- A body that has not arrived in full within `BRIDGE_UPLOAD_READ_TIMEOUT_MS` (60 seconds by default) gets an empty `408`
+  and the connection is closed, so a slow caller cannot hold one of the 8 slots.
 - **The extension** of the uploaded name is kept only when it has letters, digits, `_` and `-`; any other extension is
   answered without one.
 - A malformed multipart body answers an empty `500`.
@@ -356,16 +366,16 @@ incidental bytes listed at the top, and not otherwise.
 
 ### Access-key actions: on purpose
 
-| Old behaviour                                                                                      | The bridge                                                                                                                            |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| The bad-key text repeats the key unencoded as `text/html`                                          | The same text with the key HTML-encoded (the old answer let a crafted key inject markup into the page)                                |
-| The empty `401` carries a `Location` to the site's sign-in page, with the key in it                | An empty `401` without `Location` (the key leaked into redirects and logs; the sign-in page goes at the cutover)                      |
-| Any member of a project may change its surveys; the site's administrators may change any survey    | Studio's permissions: the owner, a project admin, or the survey's creator. `archive`, `restore` and `delete` need the same            |
-| `changeOrganization` moves a survey to any ID                                                      | To the caller's personal space (their own ID) or to a project the caller may move it to; any other ID gets the "Access denied" answer |
-| The CSV export never quotes a cell, so a comma in an answer splits it                              | Quotes a cell that holds a comma, a quote or a line break; every other cell is as the old export wrote it                             |
-| `setGenerationJSONType` stores a setting                                                           | Checks the key and stores nothing (nothing in the API reads it back)                                                                  |
-| `changeJson` and `changeTheme` drop the survey's card image; `uploadFiles` keeps a card image name | No card images; every upload gets a new name (Studio has no card images, and any key could overwrite another survey's card)           |
-| `uploadFiles` takes any number of files from a key's owner                                         | A user may hold up to `LIMIT_MAX_LEGACY_FILES_PER_USER` (default 1000) files of no survey; past it the answer is an empty `400`       |
+| Old behaviour                                                                                      | The bridge                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The bad-key text repeats the key unencoded as `text/html`                                          | The same text with the key HTML-encoded (the old answer let a crafted key inject markup into the page)                                                                                                    |
+| The empty `401` carries a `Location` to the site's sign-in page, with the key in it                | An empty `401` without `Location` (the key leaked into redirects and logs; the sign-in page goes at the cutover)                                                                                          |
+| Any member of a project may change its surveys; the site's administrators may change any survey    | Studio's permissions: the owner, a project admin, or the survey's creator. `archive`, `restore` and `delete` need the same                                                                                |
+| `changeOrganization` moves a survey to any ID                                                      | To the caller's personal space (their own ID) or to a project the caller may move it to; any other ID gets the "Access denied" answer                                                                     |
+| The CSV export never quotes a cell, so a comma in an answer splits it                              | Quotes a cell that holds a comma, a quote or a line break; every other cell is as the old export wrote it                                                                                                 |
+| `setGenerationJSONType` stores a setting                                                           | Checks the key and stores nothing (nothing in the API reads it back)                                                                                                                                      |
+| `changeJson` and `changeTheme` drop the survey's card image; `uploadFiles` keeps a card image name | No card images; every upload gets a new name (Studio has no card images, and any key could overwrite another survey's card)                                                                               |
+| `uploadFiles` takes any number of files from a key's owner                                         | A user may hold up to `LIMIT_MAX_LEGACY_FILES_PER_USER` (default 1000) files of no survey; past it Studio answers `409 legacy-file-limit` and the bridge an empty `400`, as for its other refused uploads |
 
 ### Access-key actions: smaller differences
 
