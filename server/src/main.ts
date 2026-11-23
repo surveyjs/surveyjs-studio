@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
 import { s3EndpointWarning, startupSummary, storageWarning } from "./logging.js";
-import { createStudioMetrics } from "./metrics.js";
+import { createStudioMetrics, instrumentProviders } from "./metrics.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { PendingMigrationsError } from "./providers/sql.js";
 import { withSessionSecret } from "./session-secret.js";
@@ -41,7 +41,13 @@ try {
 }
 // Every request is counted; the numbers are served only on the separate METRICS_PORT listener.
 const registry = createRegistry({ prefix: "surveyjs_studio_", processMetrics: true });
-const app = await buildApp(config, providers, { metrics: createStudioMetrics(registry) });
+const metrics = createStudioMetrics(registry);
+// Store calls are timed only when the numbers are served; closing still closes the real providers.
+const app = await buildApp(
+  config,
+  config.metrics.port === null ? providers : instrumentProviders(providers, metrics.storeDuration),
+  { metrics },
+);
 appLog = app.log;
 if (config.sessionSecretIsDevDefault) {
   app.log.warn("SESSION_SECRET is not set: using the development-only session secret");

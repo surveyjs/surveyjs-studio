@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createRegistry } from "@surveyjs-studio/metrics";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { createStudioMetrics, operationLabel } from "./metrics.js";
-import { createProviders } from "./providers/index.js";
+import { createStudioMetrics, instrumentProviders, operationLabel } from "./metrics.js";
+import { createProviders, type ProviderSet } from "./providers/index.js";
 
 const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
 
@@ -100,5 +100,92 @@ describe("request metrics", () => {
     expect(await registry.metrics()).toContain(
       'surveyjs_studio_store_call_duration_seconds_count{store="surveys",method="getSurvey",outcome="ok"} 1',
     );
+  });
+});
+
+describe("instrumentProviders", () => {
+  function setup() {
+    const registry = createRegistry({ prefix: "surveyjs_studio_", processMetrics: false });
+    const { storeDuration } = createStudioMetrics(registry);
+    return { registry, storeDuration };
+  }
+  /** A provider set of empty stores, with the given members replaced. */
+  const fakeSet = (members: Record<string, unknown>) =>
+    ({
+      users: {},
+      accounts: null,
+      invitations: null,
+      projects: {},
+      files: {},
+      results: {},
+      views: {},
+      credentials: {},
+      notices: {},
+      surveys: {},
+      ...members,
+    }) as unknown as ProviderSet;
+  const memoryConfig = () =>
+    loadConfig({ NODE_ENV: "test", IDENTITY_PROVIDER: "dev", MEMORY_SEED: "legacy-fixtures" });
+
+  it("times a store call by store, method and outcome", async () => {
+    const { registry, storeDuration } = setup();
+    const providers = await createProviders(memoryConfig());
+    const wrapped = instrumentProviders(providers, storeDuration);
+    expect(await wrapped.surveys.getSurvey(FEEDBACK)).not.toBeNull();
+    const text = await registry.metrics();
+    expect(text).toContain(
+      'surveyjs_studio_store_call_duration_seconds_count{store="surveys",method="getSurvey",outcome="ok"} 1',
+    );
+    await providers.close();
+  });
+
+  it("records a rejection as error and rethrows the same error", async () => {
+    const { registry, storeDuration } = setup();
+    const failure = new Error("boom");
+    const fake = fakeSet({ surveys: { getSurvey: () => Promise.reject(failure) } });
+    const wrapped = instrumentProviders(fake, storeDuration);
+    await expect(wrapped.surveys.getSurvey("x")).rejects.toBe(failure);
+    expect(await registry.metrics()).toContain(
+      'surveyjs_studio_store_call_duration_seconds_count{store="surveys",method="getSurvey",outcome="error"} 1',
+    );
+  });
+
+  it("keeps this as the original store and leaves other results unobserved", async () => {
+    const { registry, storeDuration } = setup();
+    const store = {
+      inner() {
+        return Promise.resolve(7);
+      },
+      outer() {
+        return this.inner();
+      },
+      sync() {
+        return 5;
+      },
+    };
+    const fake = fakeSet({ surveys: store });
+    const wrapped = instrumentProviders(fake, storeDuration);
+    const surveys = wrapped.surveys as unknown as typeof store;
+    expect(await surveys.outer()).toBe(7);
+    expect(surveys.sync()).toBe(5);
+    const text = await registry.metrics();
+    expect(text).toContain('method="outer",outcome="ok"} 1');
+    expect(text).not.toContain('method="sync"');
+  });
+
+  it("leaves a null store null and the lifecycle members alone", async () => {
+    const { storeDuration } = setup();
+    let closed = 0;
+    const fake = fakeSet({
+      name: "fake",
+      readinessNames: ["memory"],
+      close: async () => void closed++,
+    });
+    const wrapped = instrumentProviders(fake, storeDuration);
+    expect(wrapped.accounts).toBeNull();
+    expect(wrapped.name).toBe("fake");
+    expect(wrapped.readinessNames).toBe(fake.readinessNames);
+    await wrapped.close();
+    expect(closed).toBe(1);
   });
 });
