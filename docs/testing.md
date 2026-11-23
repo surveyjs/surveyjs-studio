@@ -278,6 +278,10 @@ membership, relative order and values computed from what they created, and walk 
 rule for test data is in [Test data](#test-data) below. `pnpm legacy:load` reloads the fixtures and
 removes everything else, which resets a replica.
 
+The conformance reference server caps uploads outside a survey at 50 per user, and the admin's test uploads accumulate
+on a persistent Azurite store. After many local runs, reset it with `pnpm demo:azurite:down`, then
+`pnpm demo:azurite:up`.
+
 ### Signing in from the conformance suite
 
 Private operations need a session, so the suite signs in over HTTP only, the way a browser does

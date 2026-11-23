@@ -113,18 +113,28 @@ jobs:
           python3 -m http.server 3009 --bind 127.0.0.1 --directory bridge-smoke > /dev/null 2>&1 &
           docker run -d --name bridge --network host \
             -e BRIDGE_STUDIO_URL=http://127.0.0.1:3000/api/v1 -e BRIDGE_LEGACY_URL=http://127.0.0.1:3009 \
+            -e BRIDGE_METRICS_PORT=9465 \
             surveyjs-studio-bridge:ci
+          ok=""
           for i in $(seq 1 30); do
             if body="$(curl -fsS http://127.0.0.1:3002/)"; then
               echo "$body"
-              test "$body" = "old service" && exit 0
-              exit 1
+              test "$body" = "old service" || { docker logs bridge >&2; exit 1; }
+              ok=1
+              break
             fi
             sleep 1
           done
-          echo "The bridge did not answer within 30 s" >&2
-          docker logs bridge >&2
-          exit 1
+          if [ -z "$ok" ]; then
+            echo "The bridge did not answer within 30 s" >&2
+            docker logs bridge >&2
+            exit 1
+          fi
+          # The metrics listener answers, and the caller summary command is in the image.
+          metrics="$(curl -fsS http://127.0.0.1:9465/metrics)"
+          echo "$metrics" | grep -q '^surveyjs_bridge_' || { echo "No surveyjs_bridge_ metrics" >&2; exit 1; }
+          header="$(printf '' | docker exec -i bridge bridge-callers)"
+          test "$header" = "day,key,action,count,first,last" || { echo "bridge-callers printed: $header" >&2; exit 1; }
 
       - name: Stop the bridge
         if: always()

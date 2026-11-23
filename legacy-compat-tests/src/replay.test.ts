@@ -66,7 +66,7 @@ const COMPARED = [
 describe("legacy:replay against the bridge", () => {
   let folder: string;
   let server: Server;
-  let fixture: { url: string; row: Row; answer: Answer }[] = [];
+  const fixture: { url: string; row: Row; answer: Answer }[] = [];
   let alteredProperty = "";
 
   beforeAll(async () => {

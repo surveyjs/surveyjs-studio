@@ -205,7 +205,9 @@ docker logs --since 2026-11-22T00:00:00Z --until 2026-11-23T00:00:00Z bridge 2>/
   | docker exec -i bridge bridge-callers > callers-2026-11-22.csv
 ```
 
-Keep the daily files until the bridge is retired. To find a key's owner, hash the owner's key the same way (until the
+The hourly job on the hosted server runs this over the last full hour and appends the rows to that day's file, so a
+day has up to 24 rows per key and action (sum them); lines of a container replaced mid-hour, and hours the server was
+down, are not counted. Keep the files until the bridge is retired. To find a key's owner, hash the owner's key the same way (until the
 migration, the site's keys; afterwards `legacy_access_keys` holds the same hash).
 
 ## Releasing the self-hosted image
@@ -433,8 +435,8 @@ that restarts.
 Studio and the bridge serve Prometheus metrics ([ADR 0041](adr/0041-taking-over-the-legacy-api-host.md)), **only on a
 second listener of their own, never on the main port**. The listener answers `GET /metrics` and nothing else (any
 other path or method is an empty `404`) and needs no token: whoever reaches the port reaches nothing but counts, so
-publish it to nobody but the Prometheus server. A request for `/metrics` on Studio's main port is an ordinary unknown
-path (`404`); on the bridge's it is forwarded to the old service like any other path the bridge does not own.
+publish it to nobody but the Prometheus server. A request for `/metrics` on Studio's main port answers `404`, or the web app's page when `WEB_ROOT` is set (both
+images set it); on the bridge's it is forwarded to the old service like any other path the bridge does not own.
 
 | Setting                            | Default     | Meaning                                                                        |
 | ---------------------------------- | ----------- | ------------------------------------------------------------------------------ |

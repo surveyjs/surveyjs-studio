@@ -731,7 +731,7 @@ describe("upload", () => {
       quick = await startBridge({
         studioUrl: `${studio.url}/api/v1`,
         legacyUrl: legacy.url,
-        uploadReadTimeoutMs: 200,
+        uploadReadTimeoutMs: 1000,
       });
     });
     afterAll(async () => {
@@ -771,7 +771,10 @@ describe("upload", () => {
         }
         expectEmpty(refused!, 503);
 
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        for (let attempt = 0; attempt < 400; attempt++) {
+          if (stalled.every(({ received }) => received().startsWith("HTTP/1.1 408 "))) break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
         for (const { received } of stalled) {
           const text = received();
           expect(text).toMatch(/^HTTP\/1\.1 408 /);
@@ -796,7 +799,7 @@ describe("upload", () => {
             res
               .writeHead(201, { "content-type": "application/json" })
               .end(JSON.stringify(studio.storedFile)),
-          400,
+          1400,
         );
         return true;
       };

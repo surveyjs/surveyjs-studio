@@ -312,7 +312,7 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
    - changes after the pre-copy are carried by `delta`;
    - deletions are carried by `reconcile`;
    - the provider-level reads match between source and target.
-5. **Replay** against staging, plus a **rehearsal** on a production-sized copy. Both are manual, with documented results.
+5. **Replay** of the reads on production, plus `pnpm legacy:replay smoke` for the writes (there is no staging copy; [ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)), plus a **rehearsal** on a production-sized copy. Both are manual, with documented results.
 6. **Playwright:**
    - the maintenance states (read-only notice, temporarily-unavailable run page);
    - the API tokens page;

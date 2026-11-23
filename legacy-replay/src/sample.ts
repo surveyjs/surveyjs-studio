@@ -85,7 +85,9 @@ export function readSample(csv: string): SampleRow[] {
   const names = header?.fields ?? [];
   names.forEach((name, at) => {
     if (!(COLUMNS as readonly string[]).includes(name)) {
-      throw new SampleError(`the sample has a column "${name}" (want ${COLUMNS.join(",")})`);
+      // A headerless sample's first line is a record: its field is never echoed unless it looks like a name.
+      const shown = /^[a-z_]{1,20}$/i.test(name) ? `"${name}"` : "that is not a column name";
+      throw new SampleError(`the sample has a column ${shown} (want ${COLUMNS.join(",")})`);
     }
     if (names.indexOf(name) !== at) throw new SampleError(`the sample has two "${name}" columns`);
   });

@@ -32,7 +32,7 @@ Check each item; the switch waits until all of them hold.
 4. **The target server is set up** by the private playbooks: the bridge at the app's tag, with `BRIDGE_METRICS_PORT`
    set, `BRIDGE_TRUST_PROXY` set to its web front, and `BRIDGE_LEGACY_URL` an `https:` URL of the old service's own host
    name; Prometheus scraping the bridge; the web front's read-idle timeout for the bridge's sites above 120 seconds
-   ([why](../api/legacy-compat.md#operator-notes)); the daily caller job ([section 6](#6-the-days-after)).
+   ([why](../api/legacy-compat.md#operator-notes)); the hourly caller job ([section 6](#6-the-days-after)).
 5. **The test host name answers through the bridge.** From a machine outside both servers:
    - `curl -i https://<test host>/public/Survey/getSurvey` answers `400` from the bridge (no survey ID);
    - `getSurvey` of a published survey, twice, answers the definition both times, and the bridge's log shows
@@ -203,7 +203,7 @@ How to read them:
   them on one action points at a slow Studio call.
 - **Latency of streaming actions** (`getSurveyPublicResults`, the file reads, `upload`) includes the time the body
   takes to stream, so their p95 is high by nature; watch it for change, not for its level.
-- **The cache's hit share** is high from the first minutes, as one scheduled job re-reads a fixed set of surveys. A
+- **The cache's hit share** is high from the first minutes, as callers that re-read the same surveys often hit it. A
   share near zero means `If-None-Match` never matches: check the compression exception on today's server
   ([section 1](#1-preconditions), item 3).
 - **Studio's `429`s** on the public operations mean many callers share one address: check that Studio's log shows the
@@ -236,9 +236,11 @@ A switch back is for emergencies only.
 - **After a day without trouble, turn on `LEGACY_KEY_REVOKE=true`** in today's Studio's settings and re-create its
   container ([ADR 0037](../adr/0037-access-keys-and-api-tokens.md)). Earlier, a key revoked in Studio would still work
   for callers whose resolvers still pointed at the old service.
-- **The remaining callers.** A daily job on the target server sums yesterday's request lines with `bridge-callers` and
-  appends the rows to a file kept, in the private location, until the bridge is retired:
-  `day,key,action,count,first,last`, one row per UTC day, key hash prefix and action
+- **The remaining callers.** An hourly job on the target server runs `bridge-callers` over the last full hour's request
+  lines and appends the rows to that day's file, kept in the private location until the bridge is retired:
+  `day,key,action,count,first,last`, one row per UTC day, key hash prefix and action in each run, so a day has up to
+  24 rows per key and action (sum them). Lines of a container replaced mid-hour, and hours the server was down, are not
+  counted
   ([the caller log](../operations.md#the-callers-of-each-action)).
 - **The time-to-live** of the record can go back up once the switch is settled.
 

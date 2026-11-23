@@ -163,8 +163,8 @@ A new workspace package, `legacy-replay/`, run from an operator's machine, never
 Metrics cannot say who still calls an action: a label per key would let any caller create series at will. The bridge
 writes one log line per request (`action`, `status`, `ms`, `cache`, and `key`: the 16-hex-digit prefix of the key's
 hash, absent when there is no key). A command in the bridge image, `bridge-callers`, reads such lines (the container's
-log) and writes one CSV row per day, key prefix and action: the count, the first and the last time. A daily job on the
-server appends yesterday's rows to a file kept until the bridge is retired. No addresses, no full keys. The hash is
+log) and writes one CSV row per day, key prefix and action: the count, the first and the last time. An hourly job on the
+server runs it over the last full hour and appends the rows to that day's file, kept until the bridge is retired. No addresses, no full keys. The hash is
 Studio's `hashCredential` for a legacy key (SHA-256 of the lower-cased key; of an `sjs_` token as sent), the one
 `legacy_access_keys` will hold from the migration on (Steps 8–9); until then the owners are found by hashing the
 site's keys the same way.
@@ -223,6 +223,9 @@ Made on 2026-11-23, while the step was built; the points above are amended in pl
   action's error share nor count as forwarded. The Studio-call `operation` is `"<METHOD> <path template>"`, since the
   bridge's client knows the path, not the `operationId`; its `status` also has `aborted`. The duration histograms
   carry no `status` label.
+- **The caller summaries** are hourly, not daily (point 5): the job runs `bridge-callers` over the last full hour and
+  appends to a per-day CSV, so a day has up to 24 rows per key and action, to be summed. Lines of a container replaced
+  mid-hour, and hours the server was down, are not counted.
 - **The replay** sends only allowlisted paths, and its skip reasons are `write`, `forwarded`, `unknown-method` and
   `unsafe-path`. The `effect` rule is stated, `--file-limit` paces the file reads, and `traceId` values in problem
   bodies are not compared.

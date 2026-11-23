@@ -126,8 +126,12 @@ describe("notices check", () => {
   });
 
   it("names the packages the notice must list that it does not", () => {
-    expect(missingFromNotices("## survey-core@3.2.2\n## react@19.3.0\n")).toEqual([]);
-    expect(missingFromNotices("## survey-core@3.2.2\n")).toEqual(["react@"]);
-    expect(missingFromNotices("")).toEqual(["survey-core@", "react@"]);
+    const all = "## survey-core@3.2.2\n## react@19.3.0\n## @prometheus-io/client@0.16.1\n";
+    expect(missingFromNotices(all)).toEqual([]);
+    expect(missingFromNotices("## survey-core@3.2.2\n")).toEqual([
+      "react@",
+      "@prometheus-io/client@",
+    ]);
+    expect(missingFromNotices("")).toEqual(["survey-core@", "react@", "@prometheus-io/client@"]);
   });
 });

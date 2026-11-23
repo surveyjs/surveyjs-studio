@@ -25,6 +25,7 @@ const COMPARED_HEADERS = [
   "content-disposition",
   "location",
   "access-control-allow-origin",
+  "access-control-allow-credentials",
   "access-control-expose-headers",
   "cache-control",
   "etag",

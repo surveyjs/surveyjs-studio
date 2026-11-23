@@ -649,7 +649,7 @@ const compose: Check = async (run, { image }) => {
 };
 
 /** What a real notice always lists: the SurveyJS form library and React. */
-const NOTICE_MARKERS = ["survey-core@", "react@"] as const;
+const NOTICE_MARKERS = ["survey-core@", "react@", "@prometheus-io/client@"] as const;
 
 export function missingFromNotices(text: string): string[] {
   return NOTICE_MARKERS.filter((marker) => !text.includes(marker));

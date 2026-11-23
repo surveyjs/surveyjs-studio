@@ -38,6 +38,19 @@ describe("readSample", () => {
     );
   });
 
+  it("never echoes a header field that looks like content", () => {
+    const error = (() => {
+      try {
+        readSample("key=abc123SECRET,GET,/x,,200\n");
+      } catch (e) {
+        return e as Error;
+      }
+    })();
+    expect(error).toBeInstanceOf(SampleError);
+    expect(error!.message).not.toContain("SECRET");
+    expect(error!.message).toContain("that is not a column name");
+  });
+
   it("refuses a column given twice", () => {
     expect(() => readSample("time,method,path,query,status,time\n")).toThrow(
       new SampleError('the sample has two "time" columns'),
