@@ -148,6 +148,70 @@ describe("replay", () => {
     expect(results).toEqual([]);
   });
 
+  it("never sends a read whose path fetch would turn into another action", async () => {
+    const keyed = "/private/Surveys/getSurveyResults";
+    const { results, calls } = await collect(
+      [
+        sampleRow(`${keyed}/..\\generateAccessKey`, `accessKey=${KEY}`),
+        sampleRow(`${keyed}/%2E%2E\\publish`, `accessKey=${KEY}`),
+        sampleRow(`${keyed}/..`, `accessKey=${KEY}`),
+      ],
+      { old: [], bridge: [] },
+    );
+    expect(calls).toEqual([]);
+    expect(results).toEqual([]);
+  });
+
+  it("sends the path as fetch normalises it, when it stays on the same action", async () => {
+    const { calls } = await collect(
+      [sampleRow("/private/Surveys/getSurveyResults/.", `accessKey=${KEY}`)],
+      { old: [{ body: "{}" }, { body: "{}" }], bridge: [{ body: "{}" }] },
+    );
+    expect(calls.map((call) => call.url)).toEqual([
+      `${OLD}/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
+      `https://bridge.example/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
+      `${OLD}/private/Surveys/getSurveyResults/?accessKey=${KEY}`,
+    ]);
+  });
+
+  it("scrubs the key from both bodies before cutting a window around their difference", async () => {
+    const pieces = (text: string) =>
+      Array.from({ length: KEY.length - 7 }, (_, i) => text.slice(i, i + 8).toLowerCase());
+    // The first difference is at 1000: the window runs from 960 to 1160.
+    const atEnd = `${"x".repeat(1000)}A${"y".repeat(150)}${KEY}${"z".repeat(100)}`;
+    const atStart = `${"x".repeat(955)}${KEY}${"x".repeat(29)}A${"y".repeat(200)}`;
+    for (const body of [atEnd, atStart]) {
+      const { results } = await collect(
+        [sampleRow("/private/Surveys/getActive", `accessKey=${KEY}`)],
+        {
+          old: [
+            { body, headers: { "content-type": "text/plain" } },
+            { body, headers: { "content-type": "text/plain" } },
+          ],
+          bridge: [{ body: body.replace("A", "B"), headers: { "content-type": "text/plain" } }],
+        },
+      );
+      expect(results[0]?.outcome).toBe("different");
+      const text = JSON.stringify(results).toLowerCase();
+      for (const piece of pieces(KEY)) expect(text).not.toContain(piece);
+    }
+  });
+
+  it("scrubs the key as it was recorded, before decoding", async () => {
+    const recorded = "Secret0Key0%56alue"; // %56 is "V": the key, decoded.
+    const { results } = await collect(
+      [sampleRow("/private/Surveys/getActive", `accessKey=${recorded}`)],
+      {
+        old: [new Error(`Failed to parse URL from ${OLD}/x?accessKey=${recorded}`)],
+        bridge: [],
+      },
+    );
+    expect(results[0]?.keyPrefix).toBe(keyHashPrefix(KEY));
+    expect(results[0]?.error).toBe(
+      `Error: Failed to parse URL from ${OLD}/x?accessKey=${keyHashPrefix(KEY)}…`,
+    );
+  });
+
   it("keeps the key out of the result: only its hash prefix, in differences and errors too", async () => {
     const lower = KEY.toLowerCase();
     const { results } = await collect(

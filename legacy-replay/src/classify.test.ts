@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTIONS } from "../../bridge/src/mapping.js";
 import { PREFIXES } from "../../bridge/src/routes.js";
-import { classify, strictestLimit } from "./classify.js";
+import { classify, requestUrl, strictestLimit } from "./classify.js";
 
 const ID = "5af48e08-a0a5-44a5-83f4-1c90e8e98de1";
 const row = (method: string, path: string) => ({ method, path });
@@ -48,6 +48,40 @@ describe("classify", () => {
     expect(strictestLimit(["getSurvey", "downloadFile"])).toBe("file");
     expect(strictestLimit(["getSurvey", "listResults"])).toBeNull();
     expect(strictestLimit([])).toBeNull();
+  });
+
+  it("classifies the path fetch sends: a dot segment or backslash that leaves the action is a write", () => {
+    const keyed = "/private/Surveys/getSurveyResults";
+    for (const path of [
+      `${keyed}/..\\generateAccessKey`,
+      `${keyed}/%2E%2E\\publish`,
+      `${keyed}/%2e%2e`,
+      `${keyed}/..`,
+    ]) {
+      expect(classify(row("GET", path)), path).toEqual({ kind: "skip", reason: "write" });
+    }
+    // Two segments where the route takes one: forwarded as recorded, so not sent either.
+    expect(classify(row("GET", `${keyed}/../getActive`))).toEqual({
+      kind: "skip",
+      reason: "forwarded",
+    });
+    expect(classify(row("GET", `${keyed}/.`))).toMatchObject({
+      kind: "replay",
+      action: "getSurveyResults",
+    });
+    expect(classify(row("GET", `${keyed}/${ID}`))).toMatchObject({ kind: "replay" });
+  });
+
+  it("finds the URL fetch sends, on the base origin only", () => {
+    expect(requestUrl("https://old.example", { path: "/a/b/../c", query: "x=1" })?.href).toBe(
+      "https://old.example/a/c?x=1",
+    );
+    expect(requestUrl("https://old.example", { path: "//elsewhere.example/a", query: "" })).toBe(
+      undefined,
+    );
+    expect(requestUrl("https://old.example", { path: "\\\\elsewhere.example/a", query: "" })).toBe(
+      undefined,
+    );
   });
 
   it("skips a path the bridge forwards", () => {

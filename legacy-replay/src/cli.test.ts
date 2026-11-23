@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { keyHashPrefix } from "../../bridge/src/callers.js";
@@ -35,13 +35,17 @@ afterAll(async () => {
 });
 
 /** Runs the command with a fetch that answers `bridgeBody` from the bridge, `{}` from the old service. */
-async function run(args: string[], options: { cwd?: string; bridgeBody?: string } = {}) {
+async function run(
+  args: string[],
+  options: { cwd?: string; bridgeBody?: string; bridgeFails?: boolean } = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const requests: string[] = [];
   const fetch = (async (input: string | URL | Request) => {
     const url = String(input);
     requests.push(url);
+    if (options.bridgeFails && url.startsWith(BRIDGE)) throw new Error("connection refused");
     const body = url.startsWith(BRIDGE) ? (options.bridgeBody ?? "{}") : "{}";
     return new Response(body, { headers: { "content-type": "application/json" } });
   }) as typeof globalThis.fetch;
@@ -78,7 +82,7 @@ describe("legacy:replay", () => {
     expect(result.requests).toHaveLength(6);
     expect(result.out).toMatch(/getSurveyResults/);
     expect(result.out).toMatch(/write 1, forwarded 1, unknown-method 1/);
-    expect(result.out).toMatch(/verdict: no differences/);
+    expect(result.out).toMatch(/verdict: pass/);
     const console = result.out + result.err;
     expect(console).not.toMatch(new RegExp(KEY, "i"));
     expect(console).not.toContain(SURVEY);
@@ -91,9 +95,15 @@ describe("legacy:replay", () => {
   it("exits 1 when the bridge answers differently", async () => {
     const result = await run(required(join(dir, "different.html")), { bridgeBody: '{"a":1}' });
     expect(result.code).toBe(1);
-    expect(result.out).toMatch(/verdict: different/);
+    expect(result.out).toMatch(/verdict: fail \(2 different, 0 errors\)/);
     expect(result.out + result.err).not.toMatch(new RegExp(KEY, "i"));
     expect(result.out + result.err).not.toContain(SURVEY);
+  });
+
+  it("exits 1 when a request fails", async () => {
+    const result = await run(required(join(dir, "error.html")), { bridgeFails: true });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/verdict: fail \(0 different, 2 errors\)/);
   });
 
   it("selects by action, time and number", async () => {
@@ -115,6 +125,18 @@ describe("legacy:replay", () => {
   it.each([
     ["no --sample", ["--old", OLD, "--bridge", BRIDGE, "--out", "x.html"]],
     ["a bad URL", ["--sample", "s.csv", "--old", "old", "--bridge", BRIDGE, "--out", "x.html"]],
+    [
+      "an old URL with a path",
+      ["--sample", "s.csv", "--old", `${OLD}/api`, "--bridge", BRIDGE, "--out", "x.html"],
+    ],
+    [
+      "a bridge URL with a query",
+      ["--sample", "s.csv", "--old", OLD, "--bridge", `${BRIDGE}/?a=1`, "--out", "x.html"],
+    ],
+    [
+      "a bridge URL with a fragment",
+      ["--sample", "s.csv", "--old", OLD, "--bridge", `${BRIDGE}#x`, "--out", "x.html"],
+    ],
     [
       "a bad limit",
       ["--sample", "s.csv", "--old", OLD, "--bridge", BRIDGE, "--out", "x.html", "--limit", "0"],
@@ -154,8 +176,14 @@ describe("legacy:replay", () => {
       ["--sample", "s.csv", "--old", OLD, "--bridge", BRIDGE, "--out", "x.html", "--yes"],
     ],
   ])("is a usage error with %s (exit 2)", async (_name, args) => {
-    const result = await run(args);
+    // A readable sample and a writable report: only the option at fault can stop the run.
+    const result = await run(
+      args.map((arg) =>
+        arg === "s.csv" ? samplePath : arg === "x.html" ? join(dir, "usage.html") : arg,
+      ),
+    );
     expect(result.code).toBe(2);
+    expect(result.err.split("\n")[0]).not.toMatch(/cannot be|folder|inside the repository/);
     expect(result.err).toMatch(/Usage: pnpm legacy:replay/);
     expect(result.requests).toEqual([]);
   });
@@ -177,7 +205,7 @@ describe("legacy:replay", () => {
       ["./x.html from the repository root", "./x.html", repo],
       ["./reports/x.html, a folder not made yet", "./reports/x.html", repo],
       ["src/x.html from a package folder", "src/x.html", join(repo, "legacy-replay")],
-      ["<outside>/../<repo>/x.html", join(tmpdir(), toRepoFromOutside, "x.html"), tmpdir()],
+      ["<outside>/../<repo>/x.html", `${tmpdir()}${sep}${toRepoFromOutside}${sep}x.html`, tmpdir()],
       [
         "the repository root in another letter case",
         `${repo.charAt(0).toLowerCase()}${repo.slice(1)}/x.html`,

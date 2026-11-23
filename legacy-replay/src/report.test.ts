@@ -52,8 +52,36 @@ describe("summarize", () => {
     });
     expect(summary.skipped).toEqual(SKIPPED);
     expect(summary.notSelected).toBe(4);
-    expect(summary.verdict).toBe("different");
-    expect(summarize(RESULTS.slice(1), SKIPPED, 0).verdict).toBe("no differences");
+    expect(summary.verdict).toBe("fail");
+  });
+
+  it("fails on an error too, but not on changed or rate-limited cases", () => {
+    expect(summarize(RESULTS.slice(1), SKIPPED, 0).verdict).toBe("fail");
+    expect(summarize(RESULTS.slice(1, 2), SKIPPED, 0).verdict).toBe("pass");
+    const unsettled: CaseResult[] = [
+      { ...RESULTS[3]!, outcome: "changed" },
+      { ...RESULTS[3]!, outcome: "rate-limited" },
+    ];
+    expect(summarize(unsettled, SKIPPED, 0).verdict).toBe("pass");
+  });
+
+  it("names an action whose old answers mostly vary (more than half of at least 5 cases)", () => {
+    const cases = (action: string, changed: number, same: number): CaseResult[] => [
+      ...Array.from({ length: changed }, () => ({
+        ...RESULTS[3]!,
+        action,
+        outcome: "changed" as const,
+      })),
+      ...Array.from({ length: same }, () => ({ ...RESULTS[3]!, action, outcome: "same" as const })),
+    ];
+    const summary = summarize(
+      [...cases("a", 3, 2), ...cases("b", 4, 0), ...cases("c", 3, 3)],
+      SKIPPED,
+      0,
+    );
+    expect(summary.varies).toEqual(["a"]);
+    expect(formatSummary(summary)).toMatch(/^a .*old service varies — compared nothing$/m);
+    expect(formatSummary(summary)).not.toMatch(/^[bc] .*varies/m);
   });
 });
 
@@ -63,7 +91,7 @@ describe("formatSummary", () => {
     expect(text).toContain("getActive");
     expect(text).toMatch(/write 3, forwarded 2, unknown-method 1/);
     expect(text).toMatch(/not selected 4/);
-    expect(text).toMatch(/verdict: different/);
+    expect(text).toMatch(/verdict: fail \(1 different, 1 error\)/);
     expect(text).not.toContain("/private/");
     expect(text).not.toContain(PREFIX);
   });

@@ -13,8 +13,25 @@ export interface Summary {
   skipped: Record<SkipReason, number>;
   /** Replayable rows left out by `--actions`, `--since` or `--limit`. */
   notSelected: number;
-  /** `different` when any case is; the command then exits 1. */
-  verdict: "different" | "no differences";
+  /**
+   * `fail` when any case is `different` or an `error` (the command then exits 1); `changed` and
+   * `rate-limited` cases are counted but do not fail.
+   */
+  verdict: "pass" | "fail";
+  /** The actions whose old answers mostly changed between their two calls (`VARIES`). */
+  varies: string[];
+}
+
+/** An action varies when more than half of its cases, and at least this many, are `changed`. */
+const VARIES_MIN_CASES = 5;
+
+/** The verdict line's reason: the counts that decide it. */
+function verdictText(summary: Summary): string {
+  const total = (outcome: Outcome) =>
+    Object.values(summary.actions).reduce((sum, counts) => sum + counts[outcome], 0);
+  const errors = total("error");
+  if (summary.verdict === "pass") return "pass";
+  return `fail (${total("different")} different, ${errors} error${errors === 1 ? "" : "s"})`;
 }
 
 export function summarize(
@@ -30,22 +47,36 @@ export function summarize(
     >;
   }
   for (const result of results) actions[result.action]![result.outcome] += 1;
-  const different = results.some((result) => result.outcome === "different");
+  const fails = results.some(
+    (result) => result.outcome === "different" || result.outcome === "error",
+  );
+  const varies = Object.entries(actions)
+    .filter(([, counts]) => {
+      const cases = OUTCOMES.reduce((sum, outcome) => sum + counts[outcome], 0);
+      return cases >= VARIES_MIN_CASES && counts.changed * 2 > cases;
+    })
+    .map(([action]) => action);
   return {
     actions,
     skipped: { ...skipped },
     notSelected,
-    verdict: different ? "different" : "no differences",
+    verdict: fails ? "fail" : "pass",
+    varies,
   };
 }
 
-/** The console's text: counts per action and outcome, the skips, and the verdict; nothing else. */
+/**
+ * The console's text: counts per action and outcome (an action whose old answers mostly vary is
+ * flagged, as nothing of it was compared), the skips, and the verdict; nothing else.
+ */
 export function formatSummary(summary: Summary): string {
   const header = ["action", ...OUTCOMES];
   const rows = Object.entries(summary.actions).map(([action, counts]) => [
     action,
     ...OUTCOMES.map((outcome) => String(counts[outcome])),
   ]);
+  const flag = (row: string[]) =>
+    summary.varies.includes(row[0]!) ? "  old service varies — compared nothing" : "";
   const widths = header.map((name, column) =>
     Math.max(name.length, ...rows.map((row) => row[column]!.length)),
   );
@@ -58,10 +89,10 @@ export function formatSummary(summary: Summary): string {
   const skipped = SKIP_REASONS.map((reason) => `${reason} ${summary.skipped[reason]}`).join(", ");
   return [
     line(header),
-    ...rows.map(line),
+    ...rows.map((row) => line(row) + flag(row)),
     "",
     `skipped: ${skipped}; not selected ${summary.notSelected}`,
-    `verdict: ${summary.verdict}`,
+    `verdict: ${verdictText(summary)}`,
     "",
   ].join("\n");
 }
@@ -108,16 +139,18 @@ export function renderReport(results: readonly CaseResult[], summary: Summary): 
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>Legacy replay</title><style>${STYLE}</style></head><body><main>`,
     "<h1>Legacy replay</h1>",
-    `<p>Verdict: <strong class="${summary.verdict === "different" ? "different" : "same"}">${escapeHtml(summary.verdict)}</strong></p>`,
+    `<p>Verdict: <strong class="${summary.verdict === "fail" ? "different" : "same"}">${escapeHtml(verdictText(summary))}</strong></p>`,
     '<div class="wide"><table><tr><th>Action</th>',
     ...OUTCOMES.map((outcome) => `<th>${outcome}</th>`),
-    "</tr>",
+    "<th></th></tr>",
   ];
   for (const [action, counts] of Object.entries(summary.actions)) {
     parts.push(
       `<tr><td><a href="#action-${escapeHtml(action)}">${escapeHtml(action)}</a></td>`,
       ...OUTCOMES.map((outcome) => `<td class="n">${counts[outcome]}</td>`),
-      "</tr>",
+      summary.varies.includes(action)
+        ? '<td class="changed">old service varies — compared nothing</td></tr>'
+        : "<td></td></tr>",
     );
   }
   parts.push(

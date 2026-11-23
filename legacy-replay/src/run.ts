@@ -1,10 +1,12 @@
 // The replay itself (ADR 0041 point 3): each sampled read goes to the old service, then to the
 // bridge, then to the old service again, one request at a time. Only what `classify` replays is
-// ever sent, always as a `GET` that follows no redirect. The key a request carries is replayed as
-// recorded but never leaves this module: a result holds the request with each key replaced by its
-// hash prefix, and every text taken from an answer or an error has the key scrubbed the same way.
+// ever sent, at the URL fetch sends only when that is still the same action (dot segments and
+// backslashes resolved), always as a `GET` that follows no redirect. The key a request carries is
+// replayed as recorded but never leaves this module: a result holds the request with each key
+// replaced by its hash prefix, answers are scrubbed of the key before they are compared, and so
+// are the differences and errors.
 import { keyHashPrefix } from "../../bridge/src/callers.js";
-import { classify } from "./classify.js";
+import { classify, requestUrl } from "./classify.js";
 import { compareAnswers, type Answer, type Difference } from "./compare.js";
 import type { Pacer } from "./pace.js";
 import type { SampleRow } from "./sample.js";
@@ -52,11 +54,15 @@ const DEFAULT_RETRY_AFTER_S = 60;
 
 const isKeyName = (name: string | undefined) => name?.toLowerCase() === "accesskey";
 
-/** Every `accessKey` value of a query (name in any letter case), decoded, in order. */
-function keysOf(query: string): string[] {
-  return [...new URLSearchParams(query)]
-    .filter(([name]) => isKeyName(name))
-    .map(([, value]) => value);
+/** Every `accessKey` parameter of a query (name in any letter case), in order: decoded and as recorded. */
+function keysOf(query: string): { key: string; recorded: string }[] {
+  if (query === "") return [];
+  return query.split("&").flatMap((parameter) => {
+    const [[name, key] = []] = new URLSearchParams(parameter);
+    if (!isKeyName(name) || key === undefined) return [];
+    const equals = parameter.indexOf("=");
+    return [{ key, recorded: equals < 0 ? "" : parameter.slice(equals + 1) }];
+  });
 }
 
 const masked = (key: string) => `${keyHashPrefix(key)}…`;
@@ -78,26 +84,57 @@ function withKeysMasked(query: string): string {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Replaces each key, as sent, URL-encoded or HTML-encoded and in any letter case, by its mask. */
-function scrubberOf(keys: readonly string[]): <T>(value: T) => T {
-  const rules = keys.map((key) => {
-    const html = key.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-    const variants = new Set([
-      key,
-      encodeURIComponent(key),
-      html,
-      key
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#x27;"),
-    ]);
-    const pattern = new RegExp([...variants].map(escapeRegExp).join("|"), "gi");
-    return { pattern, mask: masked(key) };
-  });
+/** A string whose characters are `text`'s UTF-8 bytes, to search bytes read as `latin1`. */
+const asBytes = (text: string) => Buffer.from(text, "utf8").toString("latin1");
+
+interface Scrubber {
+  /** Strings, array items and object keys and values, with each key masked. */
+  value<T>(value: T): T;
+  /** An answer with each key masked in its headers and body bytes (the same on every answer). */
+  answer(answer: Answer): Answer;
+}
+
+/**
+ * Masks each key: decoded, as recorded in the query, URL-encoded or HTML-encoded, in any letter
+ * case. Answers are scrubbed before they are compared, so no window cut around a difference can
+ * hold part of a key.
+ */
+function scrubberOf(keys: readonly { key: string; recorded: string }[]): Scrubber {
+  const rules = keys
+    .filter(({ key }) => key !== "")
+    .map(({ key, recorded }) => {
+      const variants = new Set(
+        [
+          key,
+          recorded,
+          encodeURIComponent(key),
+          key.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`),
+          key
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#x27;"),
+        ].filter((variant) => variant !== ""),
+      );
+      const alternatives = (map: (text: string) => string) =>
+        new RegExp([...variants].map((variant) => escapeRegExp(map(variant))).join("|"), "gi");
+      return {
+        text: alternatives((variant) => variant),
+        bytes: alternatives(asBytes),
+        mask: masked(key),
+      };
+    });
   const text = (value: string) =>
-    rules.reduce((result, rule) => result.replace(rule.pattern, rule.mask), value);
+    rules.reduce((result, rule) => result.replace(rule.text, rule.mask), value);
+  const bytes = (body: Buffer) => {
+    if (rules.length === 0) return body;
+    const latin1 = rules.reduce(
+      (result, rule) => result.replace(rule.bytes, asBytes(rule.mask)),
+      body.toString("latin1"),
+    );
+    return Buffer.from(latin1, "latin1");
+  };
   const scrub = (value: unknown): unknown => {
     if (typeof value === "string") return text(value);
     if (Array.isArray(value)) return value.map(scrub);
@@ -108,7 +145,16 @@ function scrubberOf(keys: readonly string[]): <T>(value: T) => T {
     }
     return value;
   };
-  return scrub as <T>(value: T) => T;
+  return {
+    value: scrub as <T>(value: T) => T,
+    answer: (answer) => ({
+      status: answer.status,
+      headers: Object.fromEntries(
+        Object.entries(answer.headers).map(([name, value]) => [name, text(value)]),
+      ),
+      body: bytes(answer.body),
+    }),
+  };
 }
 
 function describeError(error: unknown): string {
@@ -137,52 +183,60 @@ export async function* replay(
   const fetch = options.fetch ?? globalThis.fetch;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const oldBase = options.oldUrl.replace(/\/+$/, "");
-  const bridgeBase = options.bridgeUrl.replace(/\/+$/, "");
 
   for (const row of rows) {
     const classification = classify(row);
     if (classification.kind !== "replay") continue;
     const { action, limit } = classification;
-    // A path the mapping table matches starts with `/`, so it stays on the base URL's host.
-    const target = row.path + (row.query === "" ? "" : `?${row.query}`);
-    const get = async (base: string) =>
-      readAnswer(
-        await fetch(base + target, {
-          method: "GET",
-          redirect: "manual",
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        }),
-      );
+    // The URL as fetch sends it must still be the classified action (dot segments, backslashes).
+    const oldTarget = requestUrl(options.oldUrl, row);
+    const bridgeTarget = requestUrl(options.bridgeUrl, row);
+    const sendsAction = (url: URL | undefined) => {
+      const sent = url && classify({ method: "GET", path: url.pathname });
+      return sent?.kind === "replay" && sent.action === action;
+    };
+    if (!oldTarget || !bridgeTarget || !sendsAction(oldTarget) || !sendsAction(bridgeTarget)) {
+      continue;
+    }
     const keys = keysOf(row.query);
-    const scrub = scrubberOf(keys.filter((key) => key !== ""));
+    const scrub = scrubberOf(keys);
+    const get = async (url: URL) =>
+      scrub.answer(
+        await readAnswer(
+          await fetch(url.href, {
+            method: "GET",
+            redirect: "manual",
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          }),
+        ),
+      );
     const result = (outcome: Outcome, differences: Difference[] = [], error?: string) => {
       const out: CaseResult = {
         row: { ...row, query: withKeysMasked(row.query) },
         action,
         outcome,
-        differences: scrub(differences),
+        differences: scrub.value(differences),
       };
       // The request's key as the bridge reads it (`accessKeyOf`): the first value, if not empty.
-      if (keys[0]) out.keyPrefix = keyHashPrefix(keys[0]);
-      if (error !== undefined) out.error = scrub(error);
+      if (keys[0]?.key) out.keyPrefix = keyHashPrefix(keys[0].key);
+      if (error !== undefined) out.error = scrub.value(error);
       return out;
     };
 
     try {
-      const firstOld = await get(oldBase);
+      const firstOld = await get(oldTarget);
       await options.pacer(limit);
-      let bridge = await get(bridgeBase);
+      let bridge = await get(bridgeTarget);
       if (bridge.status === 429) {
         await sleep(retryAfterMs(bridge));
         await options.pacer(limit);
-        bridge = await get(bridgeBase);
+        bridge = await get(bridgeTarget);
         if (bridge.status === 429) {
           yield result("rate-limited");
           continue;
         }
       }
-      const secondOld = await get(oldBase);
+      const secondOld = await get(oldTarget);
       if (compareAnswers(firstOld, secondOld, action).length > 0) {
         yield result("changed");
         continue;

@@ -33,7 +33,8 @@ Options:
   --file-limit <n>      ... under its file download limit (default 600)
   --summary-limit <n>   ... under its question summary limit (default 10)
 
-Exit codes: 0 no difference, 1 a difference, 2 usage error (nothing sent)`;
+Exit codes: 0 no difference and no error, 1 a difference or a failed request,
+2 usage error (nothing sent). Changed and rate-limited cases are counted but do not fail.`;
 
 /** This checkout: the report must not be written into it. */
 export const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -88,7 +89,11 @@ function origin(name: string, value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new UsageError(`--${name} must be an http or https URL`);
   }
-  return value;
+  // The sampled path is sent as recorded: a base path, query or fragment would change it.
+  if (url.pathname !== "/" || url.search !== "" || url.hash !== "" || /[?#]/.test(value)) {
+    throw new UsageError(`--${name} must be an origin, without a path, query or fragment`);
+  }
+  return url.origin;
 }
 
 function positive(name: string, value: string | undefined, fallback: number, integer: boolean) {
@@ -272,7 +277,7 @@ export async function main(
   const summary = summarize(results, skipped, notSelected);
   await writeReport(out, results, summary);
   io.out(formatSummary(summary));
-  return summary.verdict === "different" ? 1 : 0;
+  return summary.verdict === "fail" ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
