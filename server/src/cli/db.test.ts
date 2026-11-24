@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +13,18 @@ import {
   surveyFeedback,
 } from "../providers/suite/expected.js";
 import { describeTarget, run } from "./db.js";
+
+/**
+ * What `migrate` prints for a new database: every migration file of the folder, read here rather
+ * than counted by hand, so a later migration does not break this test.
+ */
+const APPLIED_ALL = (() => {
+  const names = readdirSync(new URL("../../sql/sqlite/", import.meta.url))
+    .filter((file) => file.endsWith(".sql"))
+    .map((file) => file.slice(0, -".sql".length))
+    .sort();
+  return `Applied ${names.length} migrations: ${names.join(", ")}`;
+})();
 
 function capture() {
   let out = "";
@@ -61,9 +73,8 @@ describe("db CLI", () => {
 
     const first = capture();
     expect(await run(["migrate"], first.io, { env })).toBe(0);
-    expect(first.out).toMatch(
-      /^Database: sqlite, .+test\.db\nApplied 10 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses, 0008-legacy-files, 0009-bridge-access-key, 0010-hosted-sign-in\n$/,
-    );
+    expect(first.out).toMatch(/^Database: sqlite, .+test\.db\n/);
+    expect(first.out.split("\n").slice(1)).toEqual([APPLIED_ALL, ""]);
 
     const second = capture();
     expect(await run(["migrate", "--"], second.io, { env })).toBe(0);
@@ -101,9 +112,12 @@ describe("db CLI", () => {
     const env = sqliteEnv();
     const result = capture();
     expect(await run(["seed"], result.io, { env })).toBe(0);
-    expect(result.out).toMatch(
-      /^Database: sqlite, .+\nApplied 10 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses, 0008-legacy-files, 0009-bridge-access-key, 0010-hosted-sign-in\nSeeded 9 surveys and 2 projects\.\n$/,
-    );
+    expect(result.out).toMatch(/^Database: sqlite, .+\n/);
+    expect(result.out.split("\n").slice(1)).toEqual([
+      APPLIED_ALL,
+      "Seeded 9 surveys and 2 projects.",
+      "",
+    ]);
     const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
     const store = createSqlSurveyStore(database);
     expect(await store.getSurvey(surveyFeedback.id)).toEqual(surveyFeedback);
