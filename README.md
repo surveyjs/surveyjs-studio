@@ -247,14 +247,12 @@ Run from the repository root.
 | `pnpm legacy:load`                                               | Loads the golden fixtures into a running replica                                                                                                                                      |
 | `pnpm inspect:legacy`                                            | Read-only inspector: lists one user's surveys from the configured store                                                                                                               |
 | `pnpm inspect:legacy-schema`                                     | Read-only schema check of the legacy `Surveys` table (theme, triggers, `ispublished`)                                                                                                 |
-| `pnpm user-api:stub`                                             | A local stand-in for the surveyjs.io user API (port 4010)                                                                                                                             |
 | `pnpm account:erase`                                             | Erases one account's data (dry run without `--yes`; needs a persistent store)                                                                                                         |
 | `pnpm smoke:legacy`                                              | Production check that `api.surveyjs.io` reads what the app writes ([how](docs/operations/smoke-test.md))                                                                              |
 | `pnpm legacy:replay`                                             | Compares the old service's answers with the bridge's, for reads from a sample; `smoke` runs the writes with a test account ([how](docs/operations/legacy-api-takeover.md#2-the-gate)) |
 | `pnpm account:reconcile`                                         | Lists, and with `--apply` erases, owners the user directory no longer knows                                                                                                           |
 | `pnpm webhook:account-deleted`                                   | Sends a signed account-deleted webhook to a running server (a demo tool)                                                                                                              |
 | `pnpm test:conformance:read-only`                                | Conformance suite with the server in `READ_ONLY=true`                                                                                                                                 |
-| `pnpm test:conformance:user-api`                                 | Conformance suite with the server on the user-API stub                                                                                                                                |
 | `pnpm test:providers:azurite`                                    | Provider suite on the replica (needs `demo:azurite:up`)                                                                                                                               |
 | `pnpm test:conformance:azurite`                                  | Conformance suite on the `azure-legacy` provider and the replica                                                                                                                      |
 | `pnpm test:compat`, `pnpm test:compat:azurite`                   | Compatibility suite: the bridge in front of Studio, against golden files (`:azurite` on the replica)                                                                                  |
@@ -348,7 +346,7 @@ Run from the repository root.
   - [authentication, sessions and CSRF](docs/api/authentication.md);
   - [concurrent editing](docs/api/concurrency.md) and [uploads](docs/api/uploads.md);
   - [public endpoints](docs/api/public-endpoints.md) and [exporting results](docs/api/exporting-results.md).
-- For the surveyjs.io team: the [user API and the account-deleted webhook](docs/integrations/surveyjs-user-api.md) and the [redirect map for old My Surveys addresses](docs/operations/surveyjs-redirects.md).
+- For the surveyjs.io team: the [sign-in claims and the account-deleted webhook](docs/integrations/surveyjs-user-api.md) and the [redirect map for old My Surveys addresses](docs/operations/surveyjs-redirects.md).
 
 ## License
 

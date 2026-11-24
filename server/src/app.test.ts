@@ -65,7 +65,7 @@ describe("health", () => {
     const broken: ProviderSet = {
       ...createMemoryProviders(),
       name: "broken",
-      readinessNames: ["sql", "surveys-storage", "results-storage", "user-api"],
+      readinessNames: ["sql", "surveys-storage", "results-storage"],
       ready: () => Promise.reject(new Error("Password=canary-secret")),
       close: () => Promise.resolve(),
     };
@@ -73,7 +73,7 @@ describe("health", () => {
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({
       status: "unavailable",
-      failing: ["sql", "surveys-storage", "results-storage", "user-api"],
+      failing: ["sql", "surveys-storage", "results-storage"],
     });
     expect(res.body).not.toContain("canary-secret");
   });

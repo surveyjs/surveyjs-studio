@@ -40,7 +40,7 @@ export const AUTH_METHODS = ["surveyjs", "password", "google", "github", "facebo
 export type AuthMethod = (typeof AUTH_METHODS)[number];
 
 /** `USER_DIRECTORY` values (R8). */
-export const USER_DIRECTORIES = ["memory", "surveyjs-sql", "surveyjs-api", "local"] as const;
+export const USER_DIRECTORIES = ["memory", "surveyjs-sql", "local"] as const;
 export type UserDirectorySetting = (typeof USER_DIRECTORIES)[number];
 
 /** The sign-in methods that go through an external provider (everything but a local password). */
@@ -77,13 +77,6 @@ export interface BootstrapAdmin {
    * an OAuth2 method using the email.
    */
   readonly password: string | null;
-}
-
-export interface UserApiConfig {
-  /** `USER_API_URL` without a trailing slash. */
-  readonly url: string;
-  /** Secret: never log or echo. */
-  readonly token: string;
 }
 
 /** The instance's branding (`/config.branding`, the self-hosted shell). */
@@ -181,8 +174,6 @@ export interface AppConfig {
   readonly accountNotices: AccountNoticesSetting;
   /** `USER_DIRECTORY`, or its default for the storage provider (R7, R8). */
   readonly userDirectory: UserDirectorySetting;
-  /** Set only when userDirectory is `surveyjs-api`. */
-  readonly userApi: UserApiConfig | null;
   /** `ACCOUNT_WEBHOOK_SECRET` (`whsec_...`); null: the webhook answers 404. Secret: never log or echo. */
   readonly accountWebhookSecret: string | null;
   /** Optional account links merged over the shell's built-in ones. */
@@ -399,9 +390,6 @@ const envSchema = z.object({
   PUBLIC_SUMMARY_RATE_LIMIT: positiveInt.default(10),
   ACCOUNT_NOTICES: z.enum(ACCOUNT_NOTICES).default("none"),
   USER_DIRECTORY: z.enum(USER_DIRECTORIES).optional(),
-  USER_API_URL: httpUrl.optional(),
-  // Plain strings (checked in loadConfig): a schema check here could echo the secret.
-  USER_API_TOKEN: z.string().optional(),
   ACCOUNT_WEBHOOK_SECRET: z.string().optional(),
   SHELL_LINKS: shellLinks.optional(),
   // Checked for an index.html at start-up (registerWebApp), not here.
@@ -514,22 +502,6 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   if (directory === "local" && storage !== "memory" && !SQL_PROVIDERS.includes(storage)) {
     problems.push("USER_DIRECTORY: local requires STORAGE_PROVIDER=memory, sqlite or postgres");
   }
-  if (directory === "surveyjs-api") {
-    for (const name of ["USER_API_URL", "USER_API_TOKEN"]) {
-      if (env[name] === undefined) {
-        problems.push(`${name}: required when USER_DIRECTORY=surveyjs-api`);
-      }
-    }
-    const url = env.USER_API_URL;
-    if (
-      url !== undefined &&
-      URL.canParse(url) &&
-      new URL(url).protocol === "http:" &&
-      !isLoopback(url)
-    ) {
-      problems.push("USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]");
-    }
-  }
   for (const method of csvItems(env.AUTH_METHODS)) {
     if (method === "password" && directory !== "local") {
       problems.push("AUTH_METHODS: password requires USER_DIRECTORY=local");
@@ -549,14 +521,8 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   problems.push(...joinPolicyProblems(env));
   problems.push(...bootstrapProblems(env));
   const effective = directory ?? (storage === "azure-legacy" ? "surveyjs-sql" : "memory");
-  if (
-    env.ACCOUNT_NOTICES === "surveyjs-licenses" &&
-    effective !== "surveyjs-sql" &&
-    effective !== "surveyjs-api"
-  ) {
-    problems.push(
-      "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql or surveyjs-api",
-    );
+  if (env.ACCOUNT_NOTICES === "surveyjs-licenses" && effective !== "surveyjs-sql") {
+    problems.push("ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql");
   }
   if (env.ACCOUNT_NOTICES === "sign-in-licence" && effective !== "local") {
     problems.push("ACCOUNT_NOTICES: sign-in-licence requires USER_DIRECTORY=local");
@@ -949,12 +915,6 @@ export function loadConfig(
           : e.ADMIN_PASSWORD !== undefined
             ? Object.freeze({ email: e.ADMIN_EMAIL.toLowerCase(), password: e.ADMIN_PASSWORD })
             : null,
-    userApi:
-      e.USER_DIRECTORY === "surveyjs-api" &&
-      e.USER_API_URL !== undefined &&
-      e.USER_API_TOKEN !== undefined
-        ? Object.freeze({ url: e.USER_API_URL.replace(/\/+$/, ""), token: e.USER_API_TOKEN })
-        : null,
     accountWebhookSecret: e.ACCOUNT_WEBHOOK_SECRET ?? null,
     shellLinks: Object.freeze({ ...e.SHELL_LINKS }),
     webRoot: e.WEB_ROOT ?? null,

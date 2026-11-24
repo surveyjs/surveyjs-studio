@@ -875,7 +875,7 @@ export interface ProviderSet {
 }
 
 export type ReadinessName =
-  "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory" | "database" | "files";
+  "sql" | "surveys-storage" | "results-storage" | "memory" | "database" | "files";
 
 export interface ReadinessCheck {
   readonly name: ReadinessName;

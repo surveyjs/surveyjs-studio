@@ -11,12 +11,6 @@ const oidc = {
 };
 const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
 const WEBHOOK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
-const api = {
-  USER_DIRECTORY: "surveyjs-api",
-  USER_API_URL: "https://users.example.com",
-  USER_API_TOKEN: "token-Value-31",
-};
-
 function loadConfig(env: Record<string, string | undefined>) {
   return load({ ...identity, ...env });
 }
@@ -80,7 +74,6 @@ describe("loadConfig", () => {
       publicSummaryRateLimitPerMinute: 10,
       accountNotices: "none",
       userDirectory: "memory",
-      userApi: null,
       accountWebhookSecret: null,
       shellLinks: {},
       webRoot: null,
@@ -107,9 +100,7 @@ describe("loadConfig", () => {
       APP_EDITION: "hosted",
       APP_SHELL: "acme",
       AUTH_METHODS: " surveyjs ",
-      USER_DIRECTORY: "surveyjs-api",
-      USER_API_URL: "https://users.example.com/api/",
-      USER_API_TOKEN: "token-Value-31",
+      USER_DIRECTORY: "memory",
       ACCOUNT_WEBHOOK_SECRET: WEBHOOK_SECRET,
       SURVEYJS_LICENSE_KEY: "key-1",
       STORAGE_PROVIDER: "memory",
@@ -130,8 +121,7 @@ describe("loadConfig", () => {
       edition: "hosted",
       shell: "acme",
       authMethods: ["surveyjs"],
-      userDirectory: "surveyjs-api",
-      userApi: { url: "https://users.example.com/api", token: "token-Value-31" },
+      userDirectory: "memory",
       accountWebhookSecret: WEBHOOK_SECRET,
       surveyjsLicenseKey: "key-1",
       memorySeed: "legacy-fixtures",
@@ -172,7 +162,6 @@ describe("loadConfig", () => {
     ["AUTH_METHODS", ","],
     ["AUTH_METHODS", "oidc"],
     ["USER_DIRECTORY", "ldap"],
-    ["USER_API_URL", "not a url"],
     ["STORAGE_PROVIDER", "postgres"],
     ["MEMORY_SEED", "demo"],
     ["PUBLIC_BASE_URL", "not a url"],
@@ -628,8 +617,6 @@ describe("loadConfig", () => {
         SIGN_IN_RATE_LIMIT: "",
         ACCOUNT_NOTICES: "",
         USER_DIRECTORY: " ",
-        USER_API_URL: "",
-        USER_API_TOKEN: "",
         ACCOUNT_WEBHOOK_SECRET: " ",
         SHELL_LINKS: " ",
         READ_ONLY: "",
@@ -894,9 +881,9 @@ describe("loadConfig", () => {
       expect(() => loadConfig({ ACCOUNT_NOTICES: "banner" })).toThrow(/ACCOUNT_NOTICES/);
     });
 
-    it("accepts surveyjs-licenses only with an SQL or API user directory", () => {
+    it("accepts surveyjs-licenses only with the SQL user directory", () => {
       expect(messageOf(() => loadConfig({ ACCOUNT_NOTICES: "surveyjs-licenses" }))).toContain(
-        "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql or surveyjs-api",
+        "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql",
       );
       const config = load({
         ...oidc,
@@ -907,9 +894,6 @@ describe("loadConfig", () => {
         LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "c",
       });
       expect(config.accountNotices).toBe("surveyjs-licenses");
-      expect(loadConfig({ ...api, ACCOUNT_NOTICES: "surveyjs-licenses" }).accountNotices).toBe(
-        "surveyjs-licenses",
-      );
     });
   });
 
@@ -924,7 +908,6 @@ describe("loadConfig", () => {
     it("defaults to the directory that fits the storage provider", () => {
       expect(load({ ...oidc, ...legacy }).userDirectory).toBe("surveyjs-sql");
       expect(loadConfig({}).userDirectory).toBe("memory");
-      expect(load({ ...oidc, ...legacy }).userApi).toBeNull();
     });
 
     it("accepts the surveyjs method on the local directory with the dev sign-in only", () => {
@@ -940,10 +923,6 @@ describe("loadConfig", () => {
       expect(load({ ...oidc, ...legacy, USER_DIRECTORY: "surveyjs-sql" }).userDirectory).toBe(
         "surveyjs-sql",
       );
-      expect(loadConfig(api).userApi).toEqual({
-        url: "https://users.example.com",
-        token: "token-Value-31",
-      });
     });
 
     it.each([
@@ -958,18 +937,6 @@ describe("loadConfig", () => {
       [
         { USER_DIRECTORY: "local", ...legacy },
         "USER_DIRECTORY: local requires STORAGE_PROVIDER=memory, sqlite or postgres",
-      ],
-      [
-        { USER_DIRECTORY: "surveyjs-api", USER_API_TOKEN: "t" },
-        "USER_API_URL: required when USER_DIRECTORY=surveyjs-api",
-      ],
-      [
-        { USER_DIRECTORY: "surveyjs-api", USER_API_URL: "https://u.example.com" },
-        "USER_API_TOKEN: required when USER_DIRECTORY=surveyjs-api",
-      ],
-      [
-        { ...api, USER_API_URL: "http://users.example.com" },
-        "USER_API_URL: must be https unless its host is localhost, 127.0.0.1 or [::1]",
       ],
       [{ AUTH_METHODS: "password" }, "AUTH_METHODS: password requires USER_DIRECTORY=local"],
       [{ AUTH_METHODS: "google" }, "AUTH_METHODS: google requires USER_DIRECTORY=local"],
@@ -1037,13 +1004,6 @@ describe("loadConfig", () => {
     ])("refuses %j with its message", (env, line) => {
       expect(messageOf(() => load({ ...oidc, ...env }))).toContain(`  - ${line}`);
     });
-
-    it.each(["http://127.0.0.1:4010", "http://localhost:4010"])(
-      "accepts USER_API_URL=%s",
-      (url) => {
-        expect(loadConfig({ ...api, USER_API_URL: url }).userApi?.url).toBe(url);
-      },
-    );
 
     it("names every method that cannot start on its own line", () => {
       const message = messageOf(() =>
@@ -1182,14 +1142,11 @@ describe("loadConfig", () => {
     it("never echoes the secrets next to other problems", () => {
       const message = messageOf(() =>
         loadConfig({
-          ...api,
-          USER_API_TOKEN: "token-Secret-Value-77",
           ACCOUNT_WEBHOOK_SECRET: "whsec_short-Secret-Value-99",
           PORT: "99999",
         }),
       );
       expect(message).toContain("PORT");
-      expect(message).not.toContain("token-Secret-Value-77");
       expect(message).not.toContain("short-Secret-Value-99");
     });
   });

@@ -16,7 +16,6 @@ They are the **shared seed** of every mode:
 - the local Azurite and SQL Server replica is loaded from them (`pnpm legacy:load`);
 - the sandbox's browser seed (`web/src/sandbox/seed.json`) is generated from a subset of them by
   `pnpm sandbox:seed`; the subset is listed in `server/fixtures/sandbox.json`;
-- the surveyjs.io user-API stub (`pnpm user-api:stub`) answers from their users and licences;
 - the shared provider suite (`server/src/providers/suite`) and the conformance suite run against them.
 
 Two seed entries are added in code, not here, and only where the user directory is local: the instance

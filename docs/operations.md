@@ -390,7 +390,6 @@ share one run of the checks, and its answer, ready or not, is reused for 5 s: th
 | `sql`             | `STORAGE_PROVIDER=azure-legacy`         | `SELECT 1` on the site database (also the `surveyjs-sql` users)                                              |
 | `surveys-storage` | `STORAGE_PROVIDER=azure-legacy`         | Reads the surveys account's properties and lists one table                                                   |
 | `results-storage` | `STORAGE_PROVIDER=azure-legacy`         | The same on the results account                                                                              |
-| `user-api`        | `USER_DIRECTORY=surveyjs-api`           | Looks up an id that never exists: `404` is ready, anything else is not                                       |
 | `memory`          | `STORAGE_PROVIDER=memory`               | Always ready                                                                                                 |
 | `database`        | `STORAGE_PROVIDER=sqlite` or `postgres` | `select 1` on the database, waiting at most 3 s                                                              |
 | `files`           | `STORAGE_PROVIDER=sqlite` or `postgres` | `FILE_STORE=local`: the folder can be written; `s3`: `HeadBucket` on the bucket (a missing one is not ready) |
@@ -631,27 +630,24 @@ hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md
 Users come from a **user directory**. Which one is a setting, and some combinations cannot work: the server then
 refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deployment-mode.md)).
 
-| Variable                        | Values                                                                                    | Meaning                                                                                                                                                                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `surveyjs-api`, `local`                                         | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts))                              |
-| `ADMIN_EMAIL`                   | An email                                                                                  | `local` only: the first admin ([below](#local-accounts)). With `password` in `AUTH_METHODS` it comes with `ADMIN_PASSWORD`, or neither is set; without it, required                                               |
-| `ADMIN_PASSWORD`                | A password; **secret**                                                                    | `local` with `password` in `AUTH_METHODS` only, with `ADMIN_EMAIL`: the first admin's password, changed at the first sign-in                                                                                      |
-| `USER_API_URL`                  | An http(s) URL, such as `https://users.example.com/api`                                   | The base URL of the surveyjs.io user API. Required for `surveyjs-api`. https unless the host is `localhost`, `127.0.0.1` or `[::1]`. A trailing slash is dropped                                                  |
-| `USER_API_TOKEN`                | A string; **secret**                                                                      | The bearer token for the user API. Required for `surveyjs-api`. Never logged                                                                                                                                      |
-| `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`, `sign-in-licence` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql` or `surveyjs-api`. `sign-in-licence` shows the licence date the site sent at the last sign-in and needs `local` |
-| `GOOGLE_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | Google's OAuth2 client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `google`. Never logged                                                                                    |
-| `GITHUB_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | GitHub's OAuth2 client (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `github`. Never logged                                                                                    |
-| `FACEBOOK_CLIENT_ID`, `_SECRET` | Strings; the secret is **secret**                                                         | Facebook's OAuth2 client (`FACEBOOK_CLIENT_ID`, `FACEBOOK_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `facebook`. Never logged                                                                            |
-| `SIGN_UP_DOMAINS`               | Comma-separated domains                                                                   | `local` only: an email on one of these domains may create an account by signing in. Default none                                                                                                                  |
-| `OPEN_SIGN_UP`                  | `on`, `off`                                                                               | `local` only: `on` lets anyone with a verified email create an account through an OAuth2 method. Default `off`                                                                                                    |
-| `OAUTH_STUB_URL`                | An http(s) URL                                                                            | Development and tests: points Google, GitHub and Facebook at a stub. Refused in production                                                                                                                        |
-| `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                                      | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                                                   |
+| Variable                        | Values                                                                                    | Meaning                                                                                                                                                                                         |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `local`                                                         | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts))            |
+| `ADMIN_EMAIL`                   | An email                                                                                  | `local` only: the first admin ([below](#local-accounts)). With `password` in `AUTH_METHODS` it comes with `ADMIN_PASSWORD`, or neither is set; without it, required                             |
+| `ADMIN_PASSWORD`                | A password; **secret**                                                                    | `local` with `password` in `AUTH_METHODS` only, with `ADMIN_EMAIL`: the first admin's password, changed at the first sign-in                                                                    |
+| `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`, `sign-in-licence` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql`. `sign-in-licence` shows the licence date the site sent at the last sign-in and needs `local` |
+| `GOOGLE_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | Google's OAuth2 client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `google`. Never logged                                                                  |
+| `GITHUB_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | GitHub's OAuth2 client (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `github`. Never logged                                                                  |
+| `FACEBOOK_CLIENT_ID`, `_SECRET` | Strings; the secret is **secret**                                                         | Facebook's OAuth2 client (`FACEBOOK_CLIENT_ID`, `FACEBOOK_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `facebook`. Never logged                                                          |
+| `SIGN_UP_DOMAINS`               | Comma-separated domains                                                                   | `local` only: an email on one of these domains may create an account by signing in. Default none                                                                                                |
+| `OPEN_SIGN_UP`                  | `on`, `off`                                                                               | `local` only: `on` lets anyone with a verified email create an account through an OAuth2 method. Default `off`                                                                                  |
+| `OAUTH_STUB_URL`                | An http(s) URL                                                                            | Development and tests: points Google, GitHub and Facebook at a stub. Refused in production                                                                                                      |
+| `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                                      | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                                 |
 
 **The rules, all reported together at start-up:**
 
 - `USER_DIRECTORY=memory` needs `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`; `surveyjs-sql` needs `STORAGE_PROVIDER=azure-legacy`. These
   apply to an explicit value only: the default always fits.
-- `surveyjs-api` needs `USER_API_URL` and `USER_API_TOKEN`.
 - `AUTH_METHODS` may list `surveyjs`, `password`, `google`, `github` and `facebook`. `password` needs
   `USER_DIRECTORY=local`; so do `google`, `github` and `facebook`, and each also needs its `<METHOD>_CLIENT_ID` and
   `<METHOD>_CLIENT_SECRET`. The `OIDC_*` settings are required only when the list has `surveyjs`. `oidc` is no longer
@@ -666,7 +662,7 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
   `ADMIN_PASSWORD` is refused: the first admin signs in with an OAuth2 method ([below](#local-accounts)). The dev
   sign-in (`IDENTITY_PROVIDER=dev`) needs no `ADMIN_EMAIL`.
 - With `NODE_ENV=production`, `sqlite` and `postgres` need `USER_DIRECTORY=local`.
-- `ACCOUNT_NOTICES=surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql` or `surveyjs-api`.
+- `ACCOUNT_NOTICES=surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql`.
 - `ACCOUNT_NOTICES=sign-in-licence` needs `USER_DIRECTORY=local`.
 
 **The usual settings in mode 1** (the hosted app for surveyjs.io users):
@@ -675,18 +671,8 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
 # Now (1.1): read the site's users from its SQL database
 STORAGE_PROVIDER=azure-legacy        # with the three LEGACY_* connection strings
 ACCOUNT_NOTICES=surveyjs-licenses    # USER_DIRECTORY defaults to surveyjs-sql
-
-# Local tests of the surveyjs-api client only: the user API will not be built (ADR 0022)
-USER_DIRECTORY=surveyjs-api
-USER_API_URL=https://<the site's API address>
-USER_API_TOKEN=<the service key>     # secret
-ACCOUNT_NOTICES=surveyjs-licenses
 ACCOUNT_WEBHOOK_SECRET=whsec_…       # secret; the same one the site signs with
 ```
-
-With the user API, a failed call (a time-out, a network error, any status but `200` and `404`) is an error and never
-read as "unknown". `/readyz` then checks the API too (`user-api`): a lookup of an id that never exists must answer
-`404` within 5 s.
 
 ### Branding (self-hosted)
 
@@ -763,8 +749,7 @@ name them, `creatorId` on project surveys, and the legacy `postdelete` copies
 ([ADR 0018, Open](adr/0018-accounts-by-deployment-mode.md#open)).
 
 Both commands need a **persistent store** (`STORAGE_PROVIDER=azure-legacy`): a memory store lives inside the server
-process, so they refuse it and say so. They read the same settings as the server, including `USER_DIRECTORY` (and
-`USER_API_URL` and `USER_API_TOKEN` for the API), but skip the sign-in settings. Put the settings in the shell, or in a
+process, so they refuse it and say so. They read the same settings as the server, including `USER_DIRECTORY`, but skip the sign-in settings. Put the settings in the shell, or in a
 file given with `--env-file` (variables already set win). **Keep that file outside the repository** and never commit it.
 
 ### `pnpm account:erase`
@@ -823,7 +808,7 @@ who signed in, so "unknown" there is not "deleted".
 
 **Scheduling it.** It is a command for the operator's scheduler, not a timer inside the server: several instances
 would race. A daily run is enough. Give the job the same settings as the server (the `LEGACY_*` connection strings, and
-`USER_DIRECTORY` with `USER_API_URL` and `USER_API_TOKEN`), through its environment or an env file kept outside the
+and `USER_DIRECTORY`), through its environment or an env file kept outside the
 repository with restricted permissions. For example, a cron job that first only reports, and that you change to
 `--apply --max 10` after you have reviewed the first list:
 
@@ -885,9 +870,6 @@ repository. The demo secret in `server/demo.env` is a local test value; **never 
 2. Set the new secret in `ACCOUNT_WEBHOOK_SECRET` and [re-create the container](#running-the-image). The new
    signature now matches.
 3. The site stops signing with the old secret.
-
-The same applies to the user API token: the site accepts two tokens at a time, so change `USER_API_TOKEN` between the
-two steps ([the API document](integrations/surveyjs-user-api.md#authentication)).
 
 ## The header policy
 
@@ -965,7 +947,6 @@ the current one has run without problems for as long as the team wants.
 | The run page's "Disclaimer of liability" (ADR 0020, ADR 0014 S13)          | Product owner          | 3    |
 | The redirects and the new links on the site                                | Site team              | 3    |
 | The webhook secret, and the site's call on account deletion                | Operator and site team | 4    |
-| The user API's address and token, once the site has built it               | Site team              | Any  |
 
 There is no staging copy of the data: the compatibility smoke test runs on production with the dedicated test account
 (product owner's decision, 2026-10-21), and touches only that account's data.
@@ -1112,9 +1093,8 @@ The hosted-migration track ([plan](../plan-hosted.md)) starts from this state. C
 - [ ] **`api.surveyjs.io` still serves legacy clients** on the same data (D1). `pnpm smoke:legacy` protects it until
       1.3 replaces it with the compatibility layer (D18).
 - [ ] **The running configuration**: the image tag and its commit, the env file's variable names (not values), and
-      who holds each secret (the session secret, the OIDC client, the connection strings, the webhook secret, the user
-      API token).
-- [ ] **The user directory** in use (`surveyjs-sql` or `surveyjs-api`) and the state of the site's user API.
+      who holds each secret (the session secret, the OIDC client, the connection strings, the webhook secret).
+- [ ] **The user directory** in use (`surveyjs-sql` or `local`).
 - [ ] **The scheduled jobs**: `account:reconcile`, its schedule and its alert.
 - [ ] **The redirects** and where they live on the site; 1.3 keeps them.
 - [ ] **Open items carried over**: least-privilege store credentials (above); the race between creating or moving a
