@@ -123,6 +123,30 @@ export function describeLocalAccountSuite(
         });
       });
 
+      it("raises the session epoch only when the site's block turns on", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        const holder = await store.accounts.createAccount(newAccount());
+        const refresh = (siteBlocked: boolean, email = account.user.email) =>
+          store.accounts.refreshFromSignIn(account.user.id, {
+            email,
+            displayName: account.user.displayName,
+            siteBlocked,
+            licenceExpiresAt: null,
+          });
+        const epoch = async () => (await store.accounts.account(account.user.id))?.sessionEpoch;
+        expect(await refresh(false)).toMatchObject({ account: { sessionEpoch: 0 } });
+        // Turned on: the account's other sessions end at their next request.
+        expect(await refresh(true)).toMatchObject({ account: { sessionEpoch: 1 } });
+        expect(await epoch()).toBe(1);
+        // Still on, and turned off: no change.
+        expect(await refresh(true)).toMatchObject({ account: { sessionEpoch: 1 } });
+        expect(await refresh(false)).toMatchObject({ account: { sessionEpoch: 1 } });
+        // Turned on with an email another account holds: the block is stored, the epoch raised.
+        const taken = await refresh(true, holder.user.email);
+        expect(taken).toMatchObject({ outcome: "email-taken", account: { sessionEpoch: 2 } });
+        expect(await epoch()).toBe(2);
+      });
+
       it("keeps the old email when another account has the new one, and updates the rest", async () => {
         const holder = await store.accounts.createAccount(newAccount());
         const account = await store.accounts.createAccount(newAccount());

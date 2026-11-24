@@ -212,6 +212,8 @@ export function createMemoryLocalAccounts(
         siteBlocked: change.siteBlocked,
         licenceExpiresAt: change.licenceExpiresAt,
         email: taken ? found.email : email,
+        // The site's block turning on ends the account's other sessions (the session check).
+        sessionEpoch: found.sessionEpoch + (change.siteBlocked && !found.siteBlocked ? 1 : 0),
       };
       byId.set(found.id, updated);
       if (!taken && email !== found.email) {

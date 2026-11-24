@@ -789,6 +789,42 @@ describe("resolveExternalSignIn, hosted sign-in through surveyjs.io (ADR 0043)",
     expect(env.infos).toEqual([]);
   });
 
+  describe("a deleted account's placeholder: refused (failed), nothing written", () => {
+    it("the own-account branch: the placeholder's id is the sub", async () => {
+      const env = hosted();
+      const who = site();
+      const admin = await env.accounts.createAccount(
+        newAccount({ id: who.sub.toLowerCase(), instanceRole: "admin", passwordHash: null }),
+      );
+      await env.accounts.tombstoneAccount(admin.user.id);
+      const placeholder = await env.accounts.account(admin.user.id);
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.resolve(who, true)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.accounts.account(admin.user.id)).toEqual(placeholder);
+      expect(await env.accounts.listIdentities(admin.user.id)).toEqual([]);
+      expect(env.warnings.map((line) => line.obj)).toEqual([
+        { userId: admin.user.id },
+        { userId: admin.user.id },
+      ]);
+    });
+
+    it("the email branch: the claim names the placeholder's email, even once enabled", async () => {
+      const env = hosted();
+      const admin = await env.accounts.createAccount(
+        newAccount({ instanceRole: "admin", passwordHash: null }),
+      );
+      await env.accounts.tombstoneAccount(admin.user.id);
+      // Enabled again by an admin: still nobody's account.
+      await env.accounts.updateAccount(admin.user.id, { status: "active" });
+      const placeholder = await env.accounts.account(admin.user.id);
+      const who = site({ email: placeholder?.user.email ?? "" });
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.accounts.account(admin.user.id)).toEqual(placeholder);
+      expect(await env.accounts.listIdentities(admin.user.id)).toEqual([]);
+      expect(await env.accounts.countAccounts()).toBe(1);
+    });
+  });
+
   it("makes no other email admin", async () => {
     const env = hosted({ adminEmail: "root@example.com" });
     expect(await env.resolve(site())).toMatchObject({

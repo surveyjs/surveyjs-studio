@@ -320,6 +320,26 @@ describe("a browser's callback without a provider button that fails", () => {
     expectRefused(await browserCallback(server), "disabled");
   });
 
+  it("hosted with a directory other than local: sends a blocked user to the refused page (blocked)", async () => {
+    // No Studio admin disabled this account: the directory (the site's) says it is blocked.
+    const env = { ...oidcEnv, APP_EDITION: "hosted", PUBLIC_BASE_URL: "http://localhost:5173" };
+    const server = await start(
+      { ...env, MEMORY_SEED: "legacy-fixtures" },
+      { identity: fixedClaims({ sub: blockedUser.id }) },
+    );
+    expectRefused(await browserCallback(server), "blocked");
+    const login = transactionOf(await server.inject("/api/v1/auth/login"));
+    const client = await server.inject({
+      url: `/api/v1/auth/callback?code=x&state=${login.state}`,
+      headers: { cookie: login.cookie },
+    });
+    expect(client.statusCode).toBe(403);
+    expect(client.json()).toMatchObject({
+      title: "Account blocked",
+      detail: "This account is blocked.",
+    });
+  });
+
   it("sends an identity without an email to the refused page (email-unverified)", async () => {
     const server = await start(devEnv, { identity: fixedClaims({ sub: "new-user" }) });
     expectRefused(await browserCallback(server), "email-unverified");

@@ -264,10 +264,12 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
       return db.transaction().execute(async (trx) => {
         const current = await trx
           .selectFrom("users")
-          .select(["id", "email"])
+          .select(["id", "email", "site_blocked"])
           .where("id", "=", userId)
           .executeTakeFirst();
         if (!current) return { outcome: "not-found" as const };
+        // The site's block turning on ends the account's other sessions (the session check).
+        const blocking = change.siteBlocked && !flagOf(current.site_blocked);
         // Checked first: a unique violation would abort a PostgreSQL transaction.
         const holder =
           email === current.email
@@ -281,13 +283,14 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         const taken = holder !== undefined;
         const updated = await trx
           .updateTable("users")
-          .set({
+          .set((eb) => ({
             display_name: change.displayName,
             site_blocked: change.siteBlocked,
             licence_expires_at:
               change.licenceExpiresAt === null ? null : isoOf(change.licenceExpiresAt),
             ...(taken ? {} : { email }),
-          })
+            session_epoch: blocking ? eb("session_epoch", "+", 1) : eb.ref("session_epoch"),
+          }))
           .where("id", "=", userId)
           .returningAll()
           .executeTakeFirstOrThrow();

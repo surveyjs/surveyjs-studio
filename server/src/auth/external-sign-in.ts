@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig, ExternalMethod } from "../config.js";
+import { isDeletedAccountEmail } from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { InvitationStore, LocalAccount, LocalAccountStore } from "../providers/types.js";
 import { readOnlyError } from "../read-only.js";
@@ -163,7 +164,8 @@ export async function resolveExternalSignIn(
  * account an admin created); one with another surveyjs.io id is `identity-conflict`. (3) Else a
  * new account with the sub as its id, when the join policy lets the email join. After a sign-in,
  * ADMIN_EMAIL becomes instance admin while the instance has never had one (logged with the user id):
- * a deleted admin's placeholder still counts, so a new owner of that address is not promoted.
+ * a deleted admin's placeholder still counts, so a new owner of that address is not promoted. A
+ * placeholder is never signed in to, linked or refreshed: found by the sub or the email, `failed`.
  *
  * With `readOnly` nothing is written: the claims decide the block, a linked active account signs
  * in unchanged, and the steps that would write throw `503 read-only`.
@@ -278,6 +280,19 @@ async function resolveHostedSignIn(
     return "other";
   };
 
+  /**
+   * A deleted account's placeholder (ADR 0043 point 2) is nobody's account: a late sign-in of the
+   * deleted id, or a claim naming its address, must not fill it again. Warned, by user id only.
+   */
+  const placeholder = (account: LocalAccount): boolean => {
+    if (!isDeletedAccountEmail(account.user.email)) return false;
+    log?.warn(
+      { userId: account.user.id },
+      "sign-in refused: the account is a deleted account's placeholder",
+    );
+    return true;
+  };
+
   const attempt = async (): Promise<ExternalSignIn | typeof LOST_RACE> => {
     const linked = await known();
     if (linked) return linked;
@@ -286,6 +301,7 @@ async function resolveHostedSignIn(
     // same person, so it is linked again and treated as a linked account.
     const own = await accounts.account(sub);
     if (own) {
+      if (placeholder(own)) return refused("failed");
       const held = await siteIdentity(own);
       if (held === "ours") return (await known()) ?? LOST_RACE;
       if (held === "other") return refused("identity-conflict");
@@ -307,6 +323,7 @@ async function resolveHostedSignIn(
 
     const existing = await accounts.accountByEmail(email);
     if (existing) {
+      if (placeholder(existing)) return refused("failed");
       const held = await siteIdentity(existing);
       if (held === "ours") return (await known()) ?? LOST_RACE;
       if (held === "other") return refused("identity-conflict");

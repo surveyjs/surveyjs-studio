@@ -112,11 +112,14 @@ const acceptsHtml = (accept: string | undefined): boolean => /\btext\/html\b/i.t
 
 /**
  * The account in the user directory wins over the provider's claims; without one, the claims are used.
- * A blocked account, or an identity without an email address, gets no session.
+ * A blocked account, or an identity without an email address, gets no session. On the hosted
+ * edition the directory's block is the site's (no Studio admin disabled it): the reason is
+ * `blocked`; elsewhere it stays `disabled`.
  */
 async function sessionUser(
   users: UserDirectory,
   claims: IdentityClaims,
+  hosted: boolean,
 ): Promise<SessionUser | Refusal> {
   const user = await users.signInUser(claims);
   if (user?.blocked) {
@@ -126,7 +129,7 @@ async function sessionUser(
       title: "Account blocked",
       detail: "This account is blocked.",
     });
-    return { reason: "disabled", problem };
+    return { reason: hosted ? "blocked" : "disabled", problem };
   }
   const email = user?.email || claims.email;
   if (!email) {
@@ -301,7 +304,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
           };
           epoch = account.sessionEpoch;
         } else {
-          const found = await sessionUser(users, claims);
+          const found = await sessionUser(users, claims, config.edition === "hosted");
           if ("problem" in found) return fail(found);
           user = found;
         }
