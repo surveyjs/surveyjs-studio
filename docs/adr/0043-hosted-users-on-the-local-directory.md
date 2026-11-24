@@ -73,9 +73,11 @@ know is acknowledged (`204`) and changes nothing.
 
 ### 4. The site sends the webhook through an outbox
 
-Every place the site deletes an account (the user's own "Delete account", and the admin) records the deletion in a
-durable outbox in the same transaction; a background sender in the site delivers it as the contract describes
-(signed, same `webhook-id` on retries) and retries with back-off until Studio answers `2xx`. A `400` stops the retries
+The site's account deletion (the user's own "Delete account"; the site's admin only blocks) records the deletion in
+a durable outbox **before** it deletes anything: the site's storage has no transactions. A background sender in the
+site sends an entry only once the account is really gone, and drops an entry whose account still exists after a grace
+period (a deletion that failed), so a crash never erases a living person's data in Studio. It delivers as the contract
+describes (signed, same `webhook-id` on retries) and retries with back-off until Studio answers `2xx`. A `400` stops the retries
 and is logged; `503` (Studio read-only, as in the cutover window) and other failures are retried. The site-side design
 details stay in the site's repository.
 
