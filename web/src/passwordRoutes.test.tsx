@@ -217,6 +217,14 @@ describe("the refused sign-in page", () => {
       "This account is disabled. Ask the person who runs this instance.",
     ],
     [
+      "?reason=blocked&provider=surveyjs",
+      "This surveyjs.io account is blocked. Contact SurveyJS support if you think this is a mistake.",
+    ],
+    [
+      "?reason=identity-conflict&provider=surveyjs",
+      "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.",
+    ],
+    [
       "?reason=cancelled&provider=facebook",
       "You cancelled the sign-in at Facebook. Sign in again, or choose another way.",
     ],

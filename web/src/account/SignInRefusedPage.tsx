@@ -24,6 +24,14 @@ function refusalText(
       ? HOSTED_BLOCKED
       : "This account is disabled. Ask the person who runs this instance.";
   }
+  // Hosted sign-in through surveyjs.io (ADR 0043): the site's block, and an email whose account
+  // belongs to another surveyjs.io id.
+  if (reason === "blocked") {
+    return "This surveyjs.io account is blocked. Contact SurveyJS support if you think this is a mistake.";
+  }
+  if (reason === "identity-conflict") {
+    return "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.";
+  }
   if (reason === "cancelled") {
     const at = name === undefined ? "" : ` at ${name}`;
     return `You cancelled the sign-in${at}. Sign in again, or choose another way.`;

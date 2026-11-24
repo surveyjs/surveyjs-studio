@@ -59,6 +59,8 @@ interface Person {
   readonly name?: string;
   /** `omitted`: the provider's answers leave `email_verified` out. */
   readonly verified?: boolean | "omitted";
+  /** surveyjs.io's UserInfo `blocked`. */
+  readonly blocked?: boolean;
 }
 
 /**
@@ -82,6 +84,7 @@ async function authorizeAtStub(
   form.set("name", person.name ?? "Ada");
   if (person.verified === "omitted") form.set("omit_email_verified", "on");
   else if (person.verified ?? true) form.set("email_verified", "on");
+  if (person.blocked) form.set("blocked", "on");
   if (deny) form.set("deny", "1");
   const authorize = await fetch(`${stub?.url}${authorizePath}`, {
     method: "POST",
@@ -705,5 +708,100 @@ describe("a browser's sign-in without a provider button: surveyjs.io alone", () 
     const client = await callbackOf(server, await authorizeAtStub(server, person, hosted));
     expectProblem(client, 503);
     expect(client.json()).toMatchObject({ code: "read-only" });
+  });
+});
+
+describe("hosted sign-in through surveyjs.io (ADR 0043)", () => {
+  const hostedEnv = {
+    APP_EDITION: "hosted",
+    AUTH_METHODS: "surveyjs",
+    OIDC_ISSUER_URL: "STUB/surveyjs",
+    OIDC_CLIENT_ID: "s-client",
+    OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    OPEN_SIGN_UP: "on",
+    ADMIN_EMAIL: "admin@example.com",
+  };
+  const atSite = { query: "", authorizePath: "/surveyjs/authorize" };
+
+  it("creates the account with the surveyjs.io id, and signs in to it", async () => {
+    const { server, providers, config } = await start(hostedEnv);
+    const sub = randomUUID();
+    const callback = await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub, email: "val@example.com", name: "Val" }, atSite),
+    );
+    expect(String(callback.headers.location)).toBe(`${PUBLIC_BASE_URL}/`);
+    expect(await providers.accounts?.account(sub)).toMatchObject({
+      user: { email: "val@example.com", displayName: "Val" },
+    });
+    expect(decodeSession(config.sessionSecret, cookieValue(callback, "msid"))).toMatchObject({
+      sub,
+    });
+  });
+
+  it("refuses a blocked person: the refused page for a browser, 403 for an API client", async () => {
+    const { server, providers } = await start(hostedEnv);
+    const person = { sub: randomUUID(), email: "wyn@example.com", blocked: true };
+    const browser = await callbackOf(
+      server,
+      await authorizeAtStub(server, person, atSite),
+      BROWSER_ACCEPT,
+    );
+    expectRefused(browser, "blocked", "surveyjs");
+    const client = await callbackOf(server, await authorizeAtStub(server, person, atSite));
+    expectProblem(client, 403);
+    expect(client.json()).toMatchObject({
+      title: "Account blocked",
+      detail: "This account is blocked.",
+    });
+    expect(await providers.accounts?.countAccounts()).toBe(0);
+  });
+
+  it("refuses an email another surveyjs.io id holds: the refused page, 409, no address logged", async () => {
+    const lines: string[] = [];
+    const { server, providers } = await start(hostedEnv, lines);
+    const first = await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub: randomUUID(), email: "xia@example.com" }, atSite),
+    );
+    expect(cookieValue(first, "msid")).toBeTruthy();
+    const recreated = { sub: randomUUID(), email: "xia@example.com" };
+    const browser = await callbackOf(
+      server,
+      await authorizeAtStub(server, recreated, atSite),
+      BROWSER_ACCEPT,
+    );
+    expectRefused(browser, "identity-conflict", "surveyjs");
+    const client = await callbackOf(server, await authorizeAtStub(server, recreated, atSite));
+    expectProblem(client, 409);
+    expect(client.json()).toMatchObject({
+      title: "Email in use",
+      detail:
+        "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.",
+    });
+    expect(await providers.accounts?.countAccounts()).toBe(1);
+    expect(lines.join("\n")).not.toContain("xia@example.com");
+  });
+
+  it("refuses a sub that is not a GUID (failed)", async () => {
+    const { server, providers } = await start(hostedEnv);
+    const browser = await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub: "u-42", email: "yan@example.com" }, atSite),
+      BROWSER_ACCEPT,
+    );
+    expectRefused(browser, "failed", "surveyjs");
+    expect(await providers.accounts?.countAccounts()).toBe(0);
+  });
+
+  it("makes ADMIN_EMAIL admin at its first sign-in", async () => {
+    const { server, providers } = await start({ ...hostedEnv, ADMIN_EMAIL: "Zed@Example.com" });
+    expect(await providers.accounts?.countAccounts()).toBe(0);
+    const sub = randomUUID();
+    await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub, email: "zed@example.com" }, atSite),
+    );
+    expect(await providers.accounts?.account(sub)).toMatchObject({ instanceRole: "admin" });
   });
 });

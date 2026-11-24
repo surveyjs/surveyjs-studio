@@ -72,7 +72,31 @@ type RefusalReason =
   | "expired"
   | "failed"
   | "disabled"
-  | "email-unverified";
+  | "email-unverified"
+  | "blocked"
+  | "identity-conflict";
+
+/**
+ * The problems of hosted sign-in's refusals (ADR 0043), which an API client gets in place of the
+ * refused page. The other refusals of `resolveExternalSignIn` go to the page for every client.
+ */
+const HOSTED_REFUSALS = {
+  blocked: () =>
+    new AppError({
+      code: "forbidden",
+      status: 403,
+      title: "Account blocked",
+      detail: "This account is blocked.",
+    }),
+  "identity-conflict": () =>
+    new AppError({
+      code: "email-taken",
+      status: 409,
+      title: "Email in use",
+      detail:
+        "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.",
+    }),
+} as const;
 
 /** A sign-in the callback refuses: the problem an API client gets, and the browser's reason. */
 interface Refusal {
@@ -233,6 +257,8 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         let user: SessionUser;
         let epoch: number | undefined;
         if (accounts && invitations && method !== null) {
+          // Hosted sign-in (ADR 0043): the surveyjs.io id and the site's claims make the account.
+          const hosted = config.edition === "hosted" && method === "surveyjs";
           let result: Awaited<ReturnType<typeof resolveExternalSignIn>>;
           try {
             result = await resolveExternalSignIn(method, claims, {
@@ -241,13 +267,24 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
               policy: config.joinPolicy,
               now: nowIso,
               readOnly: config.readOnly,
+              ...(hosted && {
+                hosted,
+                adminEmail: config.bootstrapAdmin?.email ?? null,
+                log: request.log,
+              }),
             });
           } catch (cause) {
             const readOnly = cause instanceof AppError && cause.code === "read-only";
             if (readOnly && (browser || button)) return refuse("read-only");
             throw cause;
           }
-          if (!result.ok) return refuse(result.reason);
+          if (!result.ok) {
+            const { reason } = result;
+            if (reason === "blocked" || reason === "identity-conflict") {
+              return fail({ reason, problem: HOSTED_REFUSALS[reason]() });
+            }
+            return refuse(reason);
+          }
           const { account } = result;
           if (!config.readOnly) {
             await invitations.claimInvitations(account.user.id, account.user.email, {
