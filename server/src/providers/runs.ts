@@ -61,10 +61,31 @@ export function responseOfRun(run: readonly SurveyResponse[]): SurveyResponse {
   };
 }
 
+/** The times a page's responses are placed within (ResponsePageQuery `from` and `till`). */
+export type ResponseWindow = Pick<ResponsePageQuery, "from" | "till">;
+
+/**
+ * Whether a row placed at `submittedAt` is inside the window: strictly after `from` and strictly
+ * before `till`, compared as instants (so a bound written with an offset or without milliseconds
+ * still matches).
+ */
+export function isInWindow(submittedAt: string, window: ResponseWindow): boolean {
+  const at = Date.parse(submittedAt);
+  if (window.from !== undefined && !(at > Date.parse(window.from))) return false;
+  return window.till === undefined || at < Date.parse(window.till);
+}
+
 /** Rows a page of runs reads from (the SQL store; memory and Azure fold all rows directly). */
 export interface RunRows {
-  /** Rows strictly after `after`, in submission order, at most `limit`. */
-  rowsAfter(after: ResponsePosition | undefined, limit: number): Promise<SurveyResponse[]>;
+  /**
+   * Rows strictly after `after` and inside `window`, in submission order, at most `limit`: the
+   * read starts at the later of `after` and `from` and stops before `till`.
+   */
+  rowsAfter(
+    after: ResponsePosition | undefined,
+    limit: number,
+    window: ResponseWindow,
+  ): Promise<SurveyResponse[]>;
   /** Every row of those of `clientIds` that have at least one partial row, in submission order. */
   partialClientRows(clientIds: readonly string[]): Promise<SurveyResponse[]>;
 }
@@ -78,13 +99,18 @@ const positionOf = (row: PlacedRow): ResponsePosition => ({
 const isComplete = (run: readonly PlacedRow[]): boolean => run.at(-1)?.partial === false;
 
 /**
- * A page of responses, each a run placed at its first row: runs that start after `after`, with
- * `completedOnly` applied, at most `limit`. Reads rows in chunks of `limit + 1` and each read
- * client's whole history once per call; a row that continues a run is skipped, since the run's
- * response was taken at its first row (or on an earlier page).
+ * A page of responses, each a run placed at its first row: runs that start after `after` and
+ * inside `from`–`till`, with `completedOnly` applied, at most `limit`. Reads rows in chunks of
+ * `limit + 1` and each read client's whole history once per call; a row that continues a run is
+ * skipped, since the run's response was taken at its first row (on an earlier page, or before
+ * `from`, which leaves the run out).
  */
 export async function pageOfRuns(source: RunRows, query: ResponsePageQuery): Promise<ResponsePage> {
-  const { after, limit, completedOnly = false } = query;
+  const { after, limit, completedOnly = false, from, till } = query;
+  const window: ResponseWindow = {
+    ...(from !== undefined && { from }),
+    ...(till !== undefined && { till }),
+  };
   const chunk = limit + 1;
   const found: SurveyResponse[] = [];
   /** Clients asked for; each with its runs by first-row id, or null when it has no partial row. */
@@ -114,7 +140,7 @@ export async function pageOfRuns(source: RunRows, query: ResponsePageQuery): Pro
 
   let cursor = after;
   while (found.length < chunk) {
-    const rows = await source.rowsAfter(cursor, chunk);
+    const rows = await source.rowsAfter(cursor, chunk, window);
     if (rows.length === 0) break;
     const fresh = new Set<string>();
     for (const row of rows) {
@@ -143,7 +169,8 @@ export async function pageOfRuns(source: RunRows, query: ResponsePageQuery): Pro
 
 /**
  * Pages already-folded runs (memory; Azure on positions before reading full rows): runs whose
- * first row is after `after`, `completedOnly` applied, at most `limit`; `next` as in ResponsePage.
+ * first row is after `after` and inside `from`–`till`, `completedOnly` applied, at most `limit`;
+ * `next` as in ResponsePage.
  */
 export function pageOfFoldedRuns<T extends PlacedRow>(
   runs: readonly T[][],
@@ -154,6 +181,7 @@ export function pageOfFoldedRuns<T extends PlacedRow>(
     const first = run[0];
     if (!first) return false;
     if (after && !isAfterResponse(first, after)) return false;
+    if (!isInWindow(first.submittedAt, query)) return false;
     return !completedOnly || isComplete(run);
   });
   const page = matching.slice(0, limit);

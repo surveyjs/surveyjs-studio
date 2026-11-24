@@ -1,0 +1,33 @@
+{
+  "source": "derived",
+  "description": "a truncated body: the old reader's text",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "text": "{\"postId\":\"99999999-9999-4999-8999-999999999999\",\"surveyResult\":\"ab\""
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "surveyResult": [
+            "Unexpected end when deserializing object. Path 'surveyResult', line 1, position 68."
+          ]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

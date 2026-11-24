@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "a post with isPartialCompleted but no clientId is listed as a complete response",
+  "setup": {
+    "survey": { "settings": { "publicResults": true } },
+    "posts": [{ "surveyResult": "{\"satisfaction\":3}", "isPartialCompleted": true }]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/{{survey.surveyId}}"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json; charset=utf-8" },
+    "body": {
+      "json": {
+        "Data": [{ "satisfaction": 3, "HappendAt": "<iso>Z", "InstanceId": null }],
+        "ResultCount": 1
+      }
+    }
+  }
+}

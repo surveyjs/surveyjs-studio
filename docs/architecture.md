@@ -782,7 +782,11 @@ costs little. `api.ts` gives each route of a limited operation its own `rateLimi
 window of 60 seconds and an `errorResponseBuilder` that makes the `429 rate-limited` Problem with the
 operation's own detail text. `app.ts` limits `getPublishedSurvey`, `submitResponse`, `uploadResponseFile` and (Step 10) `getPublicResults`
 by `PUBLIC_RATE_LIMIT` (default 60), `downloadFile` by `PUBLIC_FILE_RATE_LIMIT` (default 600) and the sign-in
-operations by `SIGN_IN_RATE_LIMIT` (default 30). Each route has its own counter, keyed by the address.
+operations by `SIGN_IN_RATE_LIMIT` (default 30). Each route has its own counter, keyed by the address. The operations
+for the bridge (hosted Step 5, `HOSTED_OPERATIONS` in `app.ts`) are routes only when `APP_EDITION=hosted`; there
+`getLegacyFile` shares `PUBLIC_FILE_RATE_LIMIT`, `getQuestionSummary` has `PUBLIC_SUMMARY_RATE_LIMIT` (default 10) and
+the others `PUBLIC_RATE_LIMIT`. Elsewhere `apiRoutes` skips them (`omittedOperations`), so their paths answer `404` as
+unknown ones.
 
 ## Identity and session
 

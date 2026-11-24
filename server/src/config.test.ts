@@ -75,6 +75,7 @@ describe("loadConfig", () => {
       trustProxy: [],
       publicRateLimitPerMinute: 60,
       publicFileRateLimitPerMinute: 600,
+      publicSummaryRateLimitPerMinute: 10,
       accountNotices: "none",
       userDirectory: "memory",
       userApi: null,
@@ -837,11 +838,22 @@ describe("loadConfig", () => {
     });
 
     it("reads the limits and refuses zero and fractions", () => {
-      expect(loadConfig({ PUBLIC_RATE_LIMIT: "5", PUBLIC_FILE_RATE_LIMIT: "7" })).toMatchObject({
+      expect(
+        loadConfig({
+          PUBLIC_RATE_LIMIT: "5",
+          PUBLIC_FILE_RATE_LIMIT: "7",
+          PUBLIC_SUMMARY_RATE_LIMIT: "3",
+        }),
+      ).toMatchObject({
         publicRateLimitPerMinute: 5,
         publicFileRateLimitPerMinute: 7,
+        publicSummaryRateLimitPerMinute: 3,
       });
-      for (const name of ["PUBLIC_RATE_LIMIT", "PUBLIC_FILE_RATE_LIMIT"]) {
+      for (const name of [
+        "PUBLIC_RATE_LIMIT",
+        "PUBLIC_FILE_RATE_LIMIT",
+        "PUBLIC_SUMMARY_RATE_LIMIT",
+      ]) {
         for (const value of ["0", "1.5"]) {
           expect(() => loadConfig({ [name]: value })).toThrow(name);
         }

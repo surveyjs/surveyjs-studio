@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatEtag, ifMatchAllows } from "./etag.js";
+import { formatEtag, ifMatchAllows, ifNoneMatchHits } from "./etag.js";
 
 const VERSION = "abc-123_XYZ";
 
@@ -29,5 +29,20 @@ describe("ifMatchAllows", () => {
     ["* inside a list", `*, "${VERSION}"`, false],
   ])("%s", (_name, header, expected) => {
     expect(ifMatchAllows(header, VERSION)).toBe(expected);
+  });
+});
+
+describe("ifNoneMatchHits", () => {
+  it.each([
+    ["the exact tag", `"${VERSION}"`, true],
+    ["a weak tag of the same value", `W/"${VERSION}"`, true],
+    ["a list containing it", `"other", "${VERSION}"`, true],
+    ["*", "*", true],
+    ["another tag", '"other"', false],
+    ["an unquoted value", VERSION, false],
+    ["an empty header", "", false],
+    ["a list that is cut", `"${VERSION}" "x"`, false],
+  ])("%s", (_name, header, expected) => {
+    expect(ifNoneMatchHits(header, VERSION)).toBe(expected);
   });
 });

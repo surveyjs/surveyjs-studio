@@ -26,6 +26,8 @@ export interface ApiOptions {
   readonly authentication: AuthenticationOptions;
   /** Operations limited per client IP (needs `@fastify/rate-limit` registered with `global: false`). */
   readonly rateLimits?: Partial<Record<OperationId, RateLimit>>;
+  /** Operations of the contract not registered as routes: their paths answer as unknown ones. */
+  readonly omittedOperations?: readonly OperationId[];
   /** Request body limit in bytes of the operations that need more (or less) than the server's. */
   readonly bodyLimits?: Partial<Record<OperationId, number>>;
   /**
@@ -109,6 +111,7 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
     handlers,
     authentication,
     rateLimits = {},
+    omittedOperations = [],
     bodyLimits = {},
     rawBodyOperations = [],
     readOnly = false,
@@ -182,10 +185,12 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
     });
   };
 
-  for (const op of contract.operations) {
+  const omitted = new Set<string>(omittedOperations);
+  const operations = contract.operations.filter((op) => !omitted.has(op.operationId));
+  for (const op of operations) {
     if (!raw.has(op.operationId)) route(api, op, false);
   }
-  const rawOperations = contract.operations.filter((op) => raw.has(op.operationId));
+  const rawOperations = operations.filter((op) => raw.has(op.operationId));
   if (rawOperations.length > 0) {
     await api.register(async (scope) => {
       scope.removeAllContentTypeParsers();

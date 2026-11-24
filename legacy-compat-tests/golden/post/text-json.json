@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "Content-Type text/json is accepted",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "text/json"
+    },
+    "body": {
+      "json": {
+        "postId": "{{survey.postId}}",
+        "surveyResult": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

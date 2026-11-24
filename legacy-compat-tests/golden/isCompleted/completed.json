@@ -1,0 +1,30 @@
+{
+  "source": "derived",
+  "description": "after a complete post with the client ID: \"completed\"",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-completed"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/isCompleted",
+    "query": {
+      "resultId": "{{survey.resultId}}",
+      "clientId": "client-completed"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "completed"
+    }
+  }
+}

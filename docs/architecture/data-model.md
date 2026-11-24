@@ -220,6 +220,19 @@ Bearer credentials for the API (ADR 0037). Only the SHA-256 hash of the value is
 `last_used_at` (null), `revoked_at` (null). Index `api_tokens_creator` (`creator_id`, `project_id`). A revoked token
 keeps its row, so a presented value answers as revoked, not unknown.
 
+### `legacy_files` (0008)
+
+Files under the old service's names ([ADR 0039](../adr/0039-bridge-public-actions.md) point 3), which sites still
+reference: `kind` (`asset`, an editor image, or `response`, a respondent upload), `legacy_name` (as stored, case
+included), `file_id` (FK to `files`, cascade: deleting the file deletes its names); primary key (`kind`,
+`legacy_name`); index `legacy_files_file` (`file_id`). `getFileByLegacyName` reads the file through it, with the legacy
+name as the file's name and the type of its extension as its content type (`application/octet-stream` without one, for
+an unknown extension, and for HTML and script). A name that is not one path segment of letters, digits, `.`, `-` and
+`_` (at most 100 characters, not only dots) is unknown without a query. The hosted migration fills the table;
+`pnpm seed` adds the fixtures' two files as `files` rows of the all-zero survey (their ids are derived from kind and
+name, so a second seed replaces them), with their bytes in the byte store, when `FILES_PATH` or `FILE_STORE` is set;
+otherwise it skips them and says so.
+
 ## Planned
 
 Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
@@ -235,11 +248,10 @@ event log, and the audit log can use it later.
 
 Empty and unused in the self-hosted image.
 
-| Table                | Columns                                                         | Purpose                                                                  |
-| -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `legacy_files`       | `legacy_name` (primary key), `file_id` (FK to `files`, cascade) | Legacy editor images and `dxsfile:`/`dxsimage:` uploads                  |
-| `legacy_access_keys` | `key_hash` (primary key), `user_id`, `revoked` (boolean)        | The `accessKey` API of the compatibility layer                           |
-| `deleted_responses`  | `survey_id`, `id`, `submitted_at`, `data` (JSON), `deleted_at`  | The legacy `postdelete{postId}` copies, purged 30 days after the cutover |
+| Table                | Columns                                                        | Purpose                                                                  |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `legacy_access_keys` | `key_hash` (primary key), `user_id`, `revoked` (boolean)       | The `accessKey` API of the compatibility layer                           |
+| `deleted_responses`  | `survey_id`, `id`, `submitted_at`, `data` (JSON), `deleted_at` | The legacy `postdelete{postId}` copies, purged 30 days after the cutover |
 
 ## Mapping to the provider interfaces
 
@@ -249,7 +261,7 @@ Empty and unused in the self-hosted image.
 | `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built           |
 | `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built           |
 | `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built           |
-| `FileStore`                                 | `files` and the byte store                               | Built           |
+| `FileStore`                                 | `files`, `legacy_files` and the byte store               | Built           |
 | `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |
 | `InvitationStore`                           | `project_invitations`                                    | Built (`local`) |
 | `CredentialStore`                           | `api_tokens` (legacy access keys: hosted provider only)  | Built           |

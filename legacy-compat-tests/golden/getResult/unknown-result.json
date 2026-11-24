@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "an unknown resultId: 400 \"Check parameter values.\", with Cache-Control",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "99999999-9999-4999-8999-999999999999",
+      "name": "satisfaction"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": "Check parameter values."
+    }
+  }
+}

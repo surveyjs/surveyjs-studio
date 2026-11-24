@@ -1,0 +1,16 @@
+{
+  "source": "derived",
+  "description": "no filePath: an empty 500",
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/file"
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

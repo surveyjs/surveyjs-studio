@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "/public/Survey/file, the parameter in lower case",
+  "setup": {
+    "survey": {},
+    "uploads": [
+      {
+        "as": "doc",
+        "filename": "report.pdf",
+        "contentType": "application/pdf",
+        "base64": "JVBERi0xLjQKJSBsZWdhY3kgY29tcGF0IHRlc3QgZmlsZQo="
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/file",
+    "query": {
+      "filepath": "{{doc.name}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-disposition": "attachment; filename=<hex64>.pdf; filename*=UTF-8''<hex64>.pdf"
+    },
+    "body": {
+      "base64": "JVBERi0xLjQKJSBsZWdhY3kgY29tcGF0IHRlc3QgZmlsZQo="
+    }
+  }
+}

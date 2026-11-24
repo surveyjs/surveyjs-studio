@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "a file uploaded through upload, named as answered without dxsimage:",
+  "setup": {
+    "survey": {},
+    "uploads": [
+      {
+        "as": "photo",
+        "filename": "photo.png",
+        "contentType": "image/png",
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/image",
+    "query": {
+      "filePath": "{{photo.name}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "image/png",
+      "content-disposition": null
+    },
+    "body": {
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+  }
+}

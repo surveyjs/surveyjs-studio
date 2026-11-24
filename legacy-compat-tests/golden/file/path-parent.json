@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "a name with a path: 404, nothing looked up",
+  "difference": "Only names of letters, digits, '.', '-' and '_' are looked up (ADR 0039 point 2); the old API passed the name to the file share, which could also answer an empty 500.",
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/file",
+    "query": {
+      "filePath": "../x.pdf"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+        "title": "Not Found",
+        "status": 404,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

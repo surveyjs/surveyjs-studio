@@ -42,6 +42,7 @@ import type {
 import { safeErrorCategory } from "../../safe-error.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { createAzureFileStore } from "./files.js";
+import { createLegacyShareReader, type LegacyShareReader } from "./legacy-shares.js";
 import { createAzureResultStore } from "./results.js";
 import { createAzureCredentialStore } from "./credentials.js";
 import { createAzureViewStore } from "./views.js";
@@ -122,6 +123,11 @@ export interface AzureLegacyOptions {
   readonly now?: Clock;
   /** Blob container of the editor files in the surveys account; default `my-surveys-files`. Tests only. */
   readonly filesContainer?: string;
+  /**
+   * Reads the legacy file shares; default: over the accounts' connection strings, absent for the
+   * local emulator (no file service). Tests only (a stub on Azurite).
+   */
+  readonly legacyShares?: LegacyShareReader | null;
 }
 
 /** The editor files' container (Step 7, R2), invisible to legacy code. */
@@ -786,6 +792,29 @@ export function createAzureLegacyProviders(
     surveys: {
       getSurvey,
 
+      async findSurveyByKey(key: { readonly postId: string } | { readonly resultId: string }) {
+        const [column, value] =
+          "postId" in key
+            ? (["postid", key.postId] as const)
+            : (["resultid", key.resultId] as const);
+        if (!isGuid(value)) return null;
+        const rows = await select<SurveyQueryRow>(
+          "survey key lookup",
+          `${SURVEY_SELECT} WHERE s.${column} = @key`,
+          (request) => request.input("key", sql.UniqueIdentifier, value),
+        );
+        const surveys = mapRows(rows, (row) =>
+          surveyFromLegacy(row, row.isproject === 1 ? "project" : "personal"),
+        );
+        if (rows.length > 1) {
+          throw new LegacyStoreError(
+            "survey key lookup",
+            new Error(`${rows.length} surveys share one ${column}`),
+          );
+        }
+        return surveys[0] ?? null;
+      },
+
       async listSurveys(owner: SurveyOwner) {
         const ownerId = ownerIdOf(owner);
         if (!isGuid(ownerId)) return [];
@@ -829,6 +858,10 @@ export function createAzureLegacyProviders(
 
     files: createAzureFileStore(surveysAccount.blobs, {
       container: options.filesContainer ?? FILES_CONTAINER,
+      shares:
+        options.legacyShares === undefined
+          ? createLegacyShareReader(legacy, logger)
+          : options.legacyShares,
     }),
 
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),

@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "a name with a colon: an empty 500",
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/image",
+    "query": {
+      "filePath": "a:b.png"
+    }
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

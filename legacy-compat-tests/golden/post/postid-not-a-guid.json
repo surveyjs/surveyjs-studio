@@ -1,0 +1,33 @@
+{
+  "source": "derived",
+  "description": "postId \"zz\": the old reader's conversion text and position",
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/post/",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "text": "{\"postId\":\"zz\",\"surveyResult\":\"{}\"}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "postId": [
+            "Error converting value \"zz\" to type 'System.Guid'. Path 'postId', line 1, position 14."
+          ]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

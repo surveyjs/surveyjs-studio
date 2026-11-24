@@ -1,0 +1,39 @@
+{
+  "source": "derived",
+  "description": "an unpublished survey is served (the old read ignored the publish state)",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getSurvey",
+    "query": {
+      "surveyId": "22222222-0000-4000-8000-a00000000006"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "json": {
+        "title": "Engineering retro",
+        "pages": [
+          {
+            "name": "page1",
+            "elements": [
+              {
+                "type": "rating",
+                "name": "satisfaction",
+                "title": "How satisfied are you?"
+              },
+              {
+                "type": "file",
+                "name": "receipt",
+                "title": "Upload your receipt"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

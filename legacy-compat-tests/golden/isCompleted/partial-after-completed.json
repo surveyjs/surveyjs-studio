@@ -1,0 +1,35 @@
+{
+  "source": "derived",
+  "description": "a partial post after completing makes the respondent partial again",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-completed-then-partial"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":5}",
+        "clientId": "client-completed-then-partial",
+        "isPartialCompleted": true
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/isCompleted",
+    "query": {
+      "resultId": "{{survey.resultId}}",
+      "clientId": "client-completed-then-partial"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "partial"
+    }
+  }
+}

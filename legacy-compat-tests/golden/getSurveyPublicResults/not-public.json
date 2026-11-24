@@ -1,0 +1,17 @@
+{
+  "source": "derived",
+  "description": "a survey without Grant Access: 400 with the refusal text",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/22222222-0000-4000-8000-a00000000002"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to get results of the survey 22222222-0000-4000-8000-a00000000002"
+    }
+  }
+}

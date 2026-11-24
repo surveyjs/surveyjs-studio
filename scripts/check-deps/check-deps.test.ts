@@ -96,6 +96,29 @@ describe("checkDependencies", () => {
     ]);
   });
 
+  it("leaves the legacy compatibility suite's Form Library v1 out of the one-version rule", () => {
+    const result = checkDependencies([
+      manifest({ dependencies: { "survey-core": "3.2.5" } }, "web/package.json"),
+      manifest(
+        { devDependencies: { "survey-core": "1.12.67" } },
+        "legacy-compat-tests/package.json",
+      ),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it("still wants an exact version in the legacy compatibility suite", () => {
+    const result = checkDependencies([
+      manifest(
+        { devDependencies: { "survey-core": "^1.12.67" } },
+        "legacy-compat-tests/package.json",
+      ),
+    ]);
+    expect(result.map((v) => [v.dependency, v.rule])).toEqual([
+      ["survey-core", "core-dependency-must-be-exact"],
+    ]);
+  });
+
   it("accepts survey-* packages at the same version", () => {
     const result = checkDependencies([
       manifest({ dependencies: { "survey-core": "2.0.1", "survey-react-ui": "2.0.1" } }),

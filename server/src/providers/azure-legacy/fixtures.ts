@@ -361,6 +361,22 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     const key = optStr(row, "accesskey");
     if (key !== null && key !== "") legacyAccessKeys[str(row, "id").toLowerCase()] = key;
   }
+  // The legacy file shares: editor images in `surveyfiles`, respondent uploads in `files`.
+  const shareKinds: Record<string, "asset" | "response"> = {
+    "surveys/surveyfiles": "asset",
+    "results/files": "response",
+  };
+  const legacyFiles: NonNullable<MemorySeed["legacyFiles"]> = fixtures.files
+    .filter((file) => shareKinds[`${file.account}/${file.share}`] !== undefined)
+    .map((file) => ({
+      kind: shareKinds[`${file.account}/${file.share}`]!,
+      name: file.name,
+      content: file.content,
+    }))
+    .sort((a, b) => {
+      const [x, y] = [`${a.kind}/${a.name}`, `${b.kind}/${b.name}`];
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
   return {
     users: fixtures.users.map(userFromLegacy),
     surveys: fixtures.surveys.map((row) =>
@@ -393,5 +409,6 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     legacyViews,
     privateResultQuestions,
     legacyAccessKeys,
+    legacyFiles,
   };
 }

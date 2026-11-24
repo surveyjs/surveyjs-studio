@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "an error answer also carries Access-Control-Allow-Origin",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/isCompleted",
+    "query": {
+      "resultId": "GUID"
+    },
+    "headers": {
+      "origin": "https://example.com"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8",
+      "access-control-allow-origin": "*"
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "resultId": ["The value 'GUID' is not valid."]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

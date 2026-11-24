@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "an empty file: 415 (Studio refuses empty files; the old API stored them)",
+  "difference": "Studio refuses an empty file; the old API stored it and answered its name.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/upload/",
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "empty.png",
+          "contentType": "image/png",
+          "base64": ""
+        },
+        {
+          "name": "postId",
+          "value": "{{survey.postId}}"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 415,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.16",
+        "title": "Unsupported Media Type",
+        "status": 415,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

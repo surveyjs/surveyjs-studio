@@ -39,6 +39,7 @@ export default defineConfig({
           hookTimeout: 60_000,
         },
       },
+      { test: { name: "bridge", include: ["bridge/src/**/*.test.ts"] } },
       "web",
       {
         test: {

@@ -1,0 +1,30 @@
+{
+  "source": "derived",
+  "description": "the start page's example (resultId=GUID): the validation problem, without Cache-Control",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "GUID",
+      "name": "satisfaction"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/problem+json; charset=utf-8",
+      "cache-control": null
+    },
+    "body": {
+      "json": {
+        "errors": {
+          "resultId": ["The value 'GUID' is not valid."]
+        },
+        "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "traceId": "<any>"
+      }
+    }
+  }
+}

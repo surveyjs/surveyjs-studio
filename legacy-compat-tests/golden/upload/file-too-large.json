@@ -1,0 +1,34 @@
+{
+  "source": "derived",
+  "description": "a file over Studio's file limit: an empty 413",
+  "difference": "Studio's file limit (LIMIT_MAX_FILE_BYTES, 65536 in this suite); the old API had only the host's 30,000,000-byte request limit.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/upload/",
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "big.pdf",
+          "contentType": "application/pdf",
+          "text": "{{a*70000}}"
+        },
+        {
+          "name": "postId",
+          "value": "{{survey.postId}}"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 413,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

@@ -45,3 +45,4 @@ and add each one to this index.
 | [0036](0036-history-snapshots-above-a-size-limit.md)       | History snapshots above a size limit go to the byte store                       | Accepted           |
 | [0037](0037-access-keys-and-api-tokens.md)                 | Access keys and API tokens                                                      | Accepted           |
 | [0038](0038-partial-responses.md)                          | Partial responses                                                               | Accepted           |
+| [0039](0039-bridge-public-actions.md)                      | The bridge's public actions and what Studio's public API adds for them          | Accepted           |

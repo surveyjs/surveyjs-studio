@@ -29,6 +29,10 @@ export const UNKNOWN_ID = "99999999-9999-4999-8999-999999999999";
 export const PROJECT_A_ID = "55555555-0000-4000-8000-a00000000001";
 export const PROJECT_B_ID = "55555555-0000-4000-8000-a00000000002";
 
+/** The legacy file names of the fixtures: an editor asset (no extension) and a respondent file. */
+export const LEGACY_ASSET_NAME = "99999999-0000-4000-8000-a00000000001";
+export const LEGACY_RESPONSE_NAME = "99999999-0000-4000-8000-a00000000002.png";
+
 // ---- Users ----
 
 /** The owner of project A and of the personal surveys. */

@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "the zero GUID (the old logo, never found): an empty 400",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/files",
+    "query": {
+      "name": "00000000-0000-0000-0000-000000000000"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

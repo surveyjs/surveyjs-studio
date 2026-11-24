@@ -1,0 +1,34 @@
+{
+  "source": "derived",
+  "description": "file answers: object properties become \"[key, value]\" keys",
+  "difference": "ADR 0039: Studio counts completed responses folded by ADR 0038. The old API counted every stored row merged by client, so also the partial save of client-0001 (ResultCount 5).",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/getResult",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000001",
+      "name": "receipt"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, max-age=3600, must-revalidate"
+    },
+    "body": {
+      "json": {
+        "AnswersCount": 2,
+        "QuestionResult": {
+          "[name, receipt.png]": 1,
+          "[type, image/png]": 1,
+          "[content, data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==]": 1,
+          "dxsimage:99999999-0000-4000-8000-a00000000002.png": 1
+        },
+        "FirstResultAt": "2026-04-01T08:00:00.5",
+        "LastResultAt": "2026-04-01T12:00:00",
+        "ResultCount": 4
+      }
+    }
+  }
+}

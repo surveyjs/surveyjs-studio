@@ -67,8 +67,9 @@ makes the recording. _Forwarded_: the bridge passes the request unchanged to the
 | `POST …/upload` | Stores a respondent file (multipart `file`, `postId`); answers `dxsimage:{name}` or `dxsfile:{name}` | Form Library v1.x (file questions with the service)                                                                                          | Step 5; recorded on purpose if not caught |
 
 **`post/page-number` is not an action of the old API.** idea §2.8 and the Form Library documentation's
-`onCurrentPageChanging` example name it, but the old API has only `post`. A request to it gets `404` today,
-and the bridge answers it the same way.
+`onCurrentPageChanging` example name it, but the old API has only `post`. The bridge has no route for it: like every
+unknown path it is [forwarded to the old service](#forwarded-to-the-old-service), so it answers exactly as the old
+service does today (`404` or `405` as its routing decides) and keeps doing so while the old service runs.
 
 ### Unauthenticated reads under `private/Surveys`
 
@@ -78,7 +79,8 @@ and the bridge answers it the same way.
 | `GET private/Surveys/getSurveyPublicResults/{id}` | `{ Data, ResultCount }` when Grant Access is on (`from`, `till`); `InstanceId` nulled, columns limited by the saved layout. No key | Dashboard examples and customer pages; direct callers                                                              | Step 5; recorded |
 
 The other unauthenticated reads of the results layouts (`getIsResultPublic`, `getResultPublicColumns`,
-`getPublicResultSummaryState`, `getPublicResultTableState`) are built in Step 6 with the layout actions.
+`getPublicResultSummaryState`, `getPublicResultTableState`) moved from Step 5 to Step 6 ([ADR 0039](../adr/0039-bridge-public-actions.md)):
+they are built with the layout actions, and until then the bridge forwards them to the old service.
 
 ### Access-key actions under `private/Surveys`
 
@@ -119,7 +121,10 @@ All are built in Step 6, most used first.
 ### Forwarded to the old service
 
 These serve the surveyjs.io site's demos and jobs, not My Surveys (SurveyJS team, 2026-11-13). The bridge forwards them
-unchanged to the old service, which keeps their data in Azure (ADR 0035, point 5):
+unchanged to the old service, which keeps their data in Azure (ADR 0035, point 5). It forwards **every path it has no
+route for** the same way, whatever the method: the unknown paths (including `post/page-number`, and the old service's start
+page for an unknown `GET`) answer as the old service does. What is sent on is in
+[the bridge's guide](../api/legacy-compat.md#what-is-forwarded).
 
 - under `private/Surveys`: `getTempFile`, `tempFiles` (GET, POST, DELETE), `uploadTempFiles`, `deleteTempFile`, `nps`,
   `getSurveyNPCResults`, `getSurveyNPSResults`, `getSurveyPublicDemoResults[/{id}]`;
@@ -155,7 +160,7 @@ private location; this section holds shares and plain words only.
 | `…/image`                                                                                          | < 0.1 % | Some days; **no request succeeds**, as layout gap 14 expected                                     | Step 5; made to work                             |
 | `…/file`                                                                                           | 0.1 %   | Every day, nearly all on `v1`; most succeed (whether with the file's bytes is not in the data)    | Step 5                                           |
 | `…/post`                                                                                           | 0.9 %   | Every day, nearly all on `v1`; most succeed; called from web pages (preflights)                   | Step 5, early                                    |
-| `…/post/page-number`                                                                               | none    | Not seen: not an action of the old API                                                            | `404`, as today                                  |
+| `…/post/page-number`                                                                               | none    | Not seen: not an action of the old API                                                            | Forwarded: answers as the old service does       |
 | `…/upload`                                                                                         | < 0.1 % | One day                                                                                           | Step 5                                           |
 | `private/Surveys/files?name=`                                                                      | 2.8 %   | Every day, never with a key; nearly all succeed                                                   | Step 5, early                                    |
 | `private/Surveys/getSurveyPublicResults/{id}`                                                      | < 0.1 % | A few days                                                                                        | Step 5                                           |

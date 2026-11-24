@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "an Accept naming text/json without */*: Content-Type text/json",
+  "request": {
+    "method": "GET",
+    "path": "/public/Survey/isCompleted",
+    "query": {
+      "resultId": "44444444-0000-4000-8000-a00000000001",
+      "clientId": "client-0001"
+    },
+    "headers": {
+      "accept": "text/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/json; charset=utf-8"
+    },
+    "body": {
+      "json": "partial"
+    }
+  }
+}

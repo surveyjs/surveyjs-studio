@@ -1,0 +1,35 @@
+{
+  "source": "derived",
+  "description": "the extension's letter case is kept; JPG is an image",
+  "difference": "The old API named the stored file with a new GUID (dxsimage:{guid}.png); the bridge answers Studio's file ID, 64 hex digits. Callers keep the name as an opaque answer value.",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "POST",
+    "path": "/public/v1/Survey/upload/",
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "photo.JPG",
+          "contentType": "image/jpeg",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        },
+        {
+          "name": "postId",
+          "value": "{{survey.postId}}"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "dxsimage:<hex64>.JPG"
+    }
+  }
+}

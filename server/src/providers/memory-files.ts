@@ -1,16 +1,28 @@
 import { Readable } from "node:stream";
 import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../domain/file-id.js";
+import { isLegacyFileName, legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, StoredFileRecord } from "../domain/types.js";
 import type { FileStore } from "./types.js";
+
+/** A file stored under the old service's name (the seed's `legacyFiles`). */
+export interface MemoryLegacyFile {
+  readonly kind: FileKind;
+  readonly name: string;
+  readonly content: Buffer;
+}
 
 interface Stored {
   readonly file: StoredFileRecord;
   readonly bytes: Buffer;
 }
 
-/** Files in process memory, like all memory data. */
-export function createMemoryFileStore(): FileStore {
+/** Files in process memory, like all memory data; the legacy files are the seed's, read only. */
+export function createMemoryFileStore(legacyFiles: readonly MemoryLegacyFile[] = []): FileStore {
   const files = new Map<string, Stored>();
+  const legacyKey = (kind: FileKind, name: string): string => `${kind}/${name}`;
+  const legacy = new Map(
+    legacyFiles.map((f) => [legacyKey(f.kind, f.name), Buffer.from(f.content)] as const),
+  );
 
   const put = (file: StoredFileRecord, content: Buffer): void => {
     if (!FILE_ID_PATTERN.test(file.id) || surveyIdOfFile(file.id) !== file.surveyId) {
@@ -64,6 +76,17 @@ export function createMemoryFileStore(): FileStore {
         copied.set(s.file.id, id);
       }
       return Promise.resolve(copied);
+    },
+    getFileByLegacyName: (kind, name) => {
+      const bytes = isLegacyFileName(name) ? legacy.get(legacyKey(kind, name)) : undefined;
+      return Promise.resolve(
+        bytes
+          ? {
+              file: legacyFileRecord(kind, name, bytes.length),
+              content: Readable.from(Buffer.from(bytes)),
+            }
+          : null,
+      );
     },
   };
 }

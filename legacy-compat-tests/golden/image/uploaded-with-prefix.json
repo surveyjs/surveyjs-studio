@@ -1,0 +1,33 @@
+{
+  "source": "derived",
+  "description": "a file uploaded through upload, named with dxsimage: (the old API answered 500)",
+  "difference": "The old API failed with an empty 500 on the dxsimage: prefix; the bridge accepts a Studio file name with or without it.",
+  "setup": {
+    "survey": {},
+    "uploads": [
+      {
+        "as": "photo",
+        "filename": "photo.png",
+        "contentType": "image/png",
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/public/v1/Survey/image",
+    "query": {
+      "filePath": "{{photo}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "image/png",
+      "content-disposition": null
+    },
+    "body": {
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+  }
+}

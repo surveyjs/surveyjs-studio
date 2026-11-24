@@ -32,3 +32,24 @@ export function ifMatchAllows(header: string, version: string): boolean {
     rest = rest.slice(1).trimStart();
   }
 }
+
+/**
+ * Whether an `If-None-Match` header matches the document at `version` (RFC 9110 section 13.1.2):
+ * `*` matches any current version, otherwise one tag of the comma-separated list equals the tag of
+ * the version by weak comparison (a `W/` prefix is ignored). A header that is not a valid list
+ * matches nothing.
+ */
+export function ifNoneMatchHits(header: string, version: string): boolean {
+  let rest = header.trim();
+  if (rest === "*") return true;
+  let hit = false;
+  for (;;) {
+    const tag = readTag(rest);
+    if (!tag) return false;
+    if (tag.value === version) hit = true;
+    rest = tag.rest.trimStart();
+    if (rest === "") return hit;
+    if (!rest.startsWith(",")) return false;
+    rest = rest.slice(1).trimStart();
+  }
+}

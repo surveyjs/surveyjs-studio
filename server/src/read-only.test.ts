@@ -48,6 +48,8 @@ const REFUSED = [
   "resetResultsView",
   "submitResponse",
   "uploadResponseFile",
+  "submitResponseByPostId",
+  "uploadResponseFileByPostId",
   "receiveAccountDeleted",
 ];
 
@@ -125,13 +127,16 @@ describe("READ_ONLY=true", () => {
   const lines: string[] = [];
 
   beforeAll(async () => {
-    const config = loadConfig({
+    const loaded = loadConfig({
       NODE_ENV: "test",
       IDENTITY_PROVIDER: "dev",
       MEMORY_SEED: "legacy-fixtures",
       ACCOUNT_WEBHOOK_SECRET: SECRET,
       READ_ONLY: "true",
     });
+    // Hosted, so the bridge's writes are routed too (set after loading: the dev sign-in the test
+    // uses is refused with APP_EDITION=hosted).
+    const config = { ...loaded, edition: "hosted" as const };
     providers = await createProviders(config);
     app = await buildApp(config, providers, {
       now: () => NOW_MS,

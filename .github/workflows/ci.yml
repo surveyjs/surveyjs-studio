@@ -82,6 +82,11 @@ jobs:
       - name: Conformance tests (sandbox mock, msw/node)
         run: pnpm test:conformance:sandbox
 
+      # The bridge in front of in-memory Studio, against the derived golden files, and the Form
+      # Library v1 in jsdom; forwarded paths go to a local stub, never the old service.
+      - name: Legacy API compatibility tests (the bridge on in-memory Studio)
+        run: pnpm test:compat
+
   # The production image, saved for the jobs that run suites on it (docker run --network host) and,
   # on master, for the publish job.
   image:
@@ -95,6 +100,35 @@ jobs:
 
       - name: Build the production image
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio-hosted:ci .
+
+      # The bridge's image (its tests run in the unit job); it shares the build stage built above.
+      - name: Build the bridge image
+        run: docker build --target bridge --label "org.opencontainers.image.revision=$GITHUB_SHA" -t surveyjs-studio-bridge:ci .
+
+      # The image starts, and forwards a path it has no action for to the "old service" (here a
+      # static file server, on the runner).
+      - name: Check that the bridge image starts and forwards
+        run: |
+          mkdir -p bridge-smoke && echo "old service" > bridge-smoke/index.html
+          python3 -m http.server 3009 --bind 127.0.0.1 --directory bridge-smoke > /dev/null 2>&1 &
+          docker run -d --name bridge --network host \
+            -e BRIDGE_STUDIO_URL=http://127.0.0.1:3000/api/v1 -e BRIDGE_LEGACY_URL=http://127.0.0.1:3009 \
+            surveyjs-studio-bridge:ci
+          for i in $(seq 1 30); do
+            if body="$(curl -fsS http://127.0.0.1:3002/)"; then
+              echo "$body"
+              test "$body" = "old service" && exit 0
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "The bridge did not answer within 30 s" >&2
+          docker logs bridge >&2
+          exit 1
+
+      - name: Stop the bridge
+        if: always()
+        run: docker rm -f bridge || true
 
       - name: Save the image
         run: docker save surveyjs-studio-hosted:ci | gzip -1 > surveyjs-studio-hosted-image.tar.gz
@@ -132,6 +166,9 @@ jobs:
         run: pnpm test:conformance:azurite
         env:
           CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
+
+      - name: Legacy API compatibility tests (the bridge on Azure legacy, Azurite)
+        run: pnpm test:compat:azurite
 
       # Cached; each attempt is time-limited and retried, because the download sometimes hangs.
       - name: Install Playwright browsers

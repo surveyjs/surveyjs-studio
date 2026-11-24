@@ -1,0 +1,45 @@
+{
+  "source": "derived",
+  "description": "a malformed from is ignored",
+  "difference": "The old API returned every stored row merged by client, so also the partial save of client-0001 (satisfaction 2, with its ClientId), and with this survey's saved column layout it left only the listed question (no HappendAt or InstanceId). The bridge returns Studio's completed responses (ADR 0038), hides HappendAt and InstanceId only when privateResultQuestions names them, and never adds ClientId or IPAddress (ADR 0039).",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys/getSurveyPublicResults/22222222-0000-4000-8000-a00000000001",
+    "query": {
+      "from": "not a date"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "2026-04-01T08:00:00.5Z",
+            "InstanceId": null
+          },
+          {
+            "satisfaction": 5,
+            "HappendAt": "2026-04-01T10:30:00Z",
+            "InstanceId": null
+          },
+          {
+            "satisfaction": 3,
+            "HappendAt": "2026-04-01T11:45:00Z",
+            "InstanceId": null
+          },
+          {
+            "satisfaction": 1,
+            "HappendAt": "2026-04-01T12:00:00Z",
+            "InstanceId": null
+          }
+        ],
+        "ResultCount": 4
+      }
+    }
+  }
+}

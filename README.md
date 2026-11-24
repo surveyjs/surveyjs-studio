@@ -192,17 +192,19 @@ description comes from its `org.opencontainers.image.*` labels in the [`Dockerfi
 
 ## Repository layout
 
-| Directory            | Package                              | Purpose                                                            |
-| -------------------- | ------------------------------------ | ------------------------------------------------------------------ |
-| `contract/`          | `@surveyjs-studio/contract`          | `openapi.yaml`, generated TypeScript types, API reference build    |
-| `server/`            | `@surveyjs-studio/server`            | Fastify server; routes and validation are built from the contract  |
-| `web/`               | `@surveyjs-studio/web`               | React app built with Vite                                          |
-| `conformance-tests/` | `@surveyjs-studio/conformance-tests` | HTTP suite that checks any server against the contract             |
-| `e2e/`               | `@surveyjs-studio/e2e`               | Playwright browser tests (Chromium, Firefox, WebKit)               |
-| `scripts/`           | (root)                               | Repository checks, for example `check:deps`                        |
-| `docker/`            |                                      | The legacy replica, the mock OIDC server, and the prod-like setup  |
-| `deploy/`            |                                      | The Hetzner server scripts, the Compose examples, the sandbox host |
-| `docs/`              |                                      | Documentation                                                      |
+| Directory              | Package                                | Purpose                                                                                                                         |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `contract/`            | `@surveyjs-studio/contract`            | `openapi.yaml`, generated TypeScript types, API reference build                                                                 |
+| `server/`              | `@surveyjs-studio/server`              | Fastify server; routes and validation are built from the contract                                                               |
+| `web/`                 | `@surveyjs-studio/web`                 | React app built with Vite                                                                                                       |
+| `conformance-tests/`   | `@surveyjs-studio/conformance-tests`   | HTTP suite that checks any server against the contract                                                                          |
+| `bridge/`              | `@surveyjs-studio/bridge`              | The old API's public actions on Studio's public API; the rest is forwarded ([guide](docs/api/legacy-compat.md))                 |
+| `legacy-compat-tests/` | `@surveyjs-studio/legacy-compat-tests` | HTTP suite that checks the bridge against golden files and Form Library v1 ([Testing](docs/testing.md#the-compatibility-suite)) |
+| `e2e/`                 | `@surveyjs-studio/e2e`                 | Playwright browser tests (Chromium, Firefox, WebKit)                                                                            |
+| `scripts/`             | (root)                                 | Repository checks, for example `check:deps`                                                                                     |
+| `docker/`              |                                        | The legacy replica, the mock OIDC server, and the prod-like setup                                                               |
+| `deploy/`              |                                        | The Hetzner server scripts, the Compose examples, the sandbox host                                                              |
+| `docs/`                |                                        | Documentation                                                                                                                   |
 
 ## Scripts
 
@@ -222,6 +224,7 @@ Run from the repository root.
 | `pnpm demo:azurite`                                              | Like `pnpm demo`, on the replica, with sign-in through the mock OIDC server (needs `demo:azurite:up`)                      |
 | `pnpm demo:azurite:down`                                         | Stops the replica and deletes its data                                                                                     |
 | `pnpm dev:sqlite`                                                | Like `pnpm demo`, with the data and files under `server/.data/`; users stay in memory                                      |
+| `pnpm dev:bridge`                                                | The bridge on port 3002, in front of `pnpm demo`'s server (port 3000); settings in `bridge/demo.env`                       |
 | `pnpm dev:postgres`                                              | Like `pnpm demo`, with the data in PostgreSQL in Docker (starts it); users stay in memory                                  |
 | `pnpm dev:s3`                                                    | Like `pnpm dev:sqlite`, with the files in RustFS (starts it)                                                               |
 | `pnpm s3:up`, `pnpm s3:down`, `pnpm s3:bucket`                   | Starts RustFS and creates the dev bucket; stops it and deletes its data; creates or removes a bucket                       |
@@ -249,6 +252,7 @@ Run from the repository root.
 | `pnpm test:conformance:user-api`                                 | Conformance suite with the server on the user-API stub                                                                     |
 | `pnpm test:providers:azurite`                                    | Provider suite on the replica (needs `demo:azurite:up`)                                                                    |
 | `pnpm test:conformance:azurite`                                  | Conformance suite on the `azure-legacy` provider and the replica                                                           |
+| `pnpm test:compat`, `pnpm test:compat:azurite`                   | Compatibility suite: the bridge in front of Studio, against golden files (`:azurite` on the replica)                       |
 | `pnpm test:providers:postgres`                                   | Provider and migrator suites on PostgreSQL (needs `postgres:up`)                                                           |
 | `pnpm test:providers:s3`                                         | Byte-store and provider suites with files in S3 (needs `s3:up`)                                                            |
 | `pnpm test:conformance:sqlite`, `pnpm test:conformance:postgres` | Conformance suite on the SQL providers, a new seeded database per run (`postgres` needs `postgres:up`)                     |

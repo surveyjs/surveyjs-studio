@@ -123,6 +123,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "api_tokens",
         "completion_markers",
         "files",
+        "legacy_files",
         "legacy_views",
         "password_links",
         "private_questions",

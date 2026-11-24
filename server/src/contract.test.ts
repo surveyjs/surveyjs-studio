@@ -96,6 +96,37 @@ describe("loadContract", () => {
     expect(SurveyResponse.properties.partial).not.toHaveProperty("x-phase");
   });
 
+  it("declares the bridge's public operations as unauthenticated and hosted only", async () => {
+    const contract = await loadContract(openapiPath);
+    const appSource = await readFile(new URL("./app.ts", import.meta.url), "utf8");
+    const listed = /const HOSTED_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
+    const bridgeOperations = [
+      "getPublicDefinition",
+      "getRespondentState",
+      "getRespondentStateByResultId",
+      "submitResponseByPostId",
+      "uploadResponseFileByPostId",
+      "getQuestionSummary",
+      "getLegacyFile",
+    ];
+    for (const id of bridgeOperations) {
+      const op = contract.operations.find((o) => o.operationId === id);
+      expect(op, id).toBeDefined();
+      expect(op?.security, id).toEqual([]);
+      expect(listed, id).toContain(`"${id}"`);
+    }
+  });
+
+  it("lets getPublicResults filter by from and till", async () => {
+    const source = parse(await readFile(openapiPath, "utf8")) as {
+      paths: Record<string, { get?: { operationId: string; parameters?: { name: string }[] } }>;
+    };
+    const get = source.paths["/public/surveys/{surveyId}/results"]?.get;
+    expect(get?.operationId).toBe("getPublicResults");
+    const names = get?.parameters?.map((p) => p.name) ?? [];
+    expect(names).toEqual(expect.arrayContaining(["from", "till"]));
+  });
+
   it("reads a missing top-level security as public", async () => {
     const source = await readFile(openapiPath, "utf8");
     const withoutTopLevel = source.replace(/^security:\r?\n( {2}- .*\r?\n)+/m, "");
