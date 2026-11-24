@@ -2,6 +2,8 @@
 // one after masking. Pure apart from reading the files; shared by the tests (src/harness.ts) and
 // the recording script (scripts/record.ts).
 import { readdirSync, readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,16 +66,65 @@ export interface SetupUpload {
   readonly base64: string;
 }
 
+/** The kinds of a survey's shared results layout (ADR 0040 point 4). */
+export type LayoutKind = "table" | "summary" | "columns";
+
+/** The case's own survey: made by the owner with the feedback definition, then changed so. */
+export interface SetupSurvey {
+  /** Studio's settings (publicResults, storeRespondentIp, privateResultQuestions, useCookies). */
+  readonly settings?: Readonly<Record<string, unknown>>;
+  /** The fixture project to make it in (the owner is one of its admins); Personal without. */
+  readonly projectId?: string;
+  /** Its theme. */
+  readonly theme?: Readonly<Record<string, unknown>>;
+  /** Its shared results layouts, each text as stored. */
+  readonly layouts?: Readonly<Partial<Record<LayoutKind, string>>>;
+  /** Archived after everything else. */
+  readonly archived?: boolean;
+}
+
 /**
  * State a case needs: a survey of its own (`{{survey.surveyId}}`, `{{survey.postId}}`,
- * `{{survey.resultId}}`), created with the fixture feedback definition and these settings, then
- * posts and uploads. An upload answered `"dxsimage:x.png"` sets `{{<as>}}` to `dxsimage:x.png` and
- * `{{<as>.name}}` to `x.png`.
+ * `{{survey.resultId}}`), created with the fixture feedback definition and set up as `survey`
+ * says, then posts and uploads. After the posts, `{{survey.responseId}}` is the ID of the first
+ * stored response (its `InstanceId`). An upload answered `"dxsimage:x.png"` sets `{{<as>}}` to
+ * `dxsimage:x.png` and `{{<as>.name}}` to `x.png`.
  */
 export interface GoldenSetup {
-  readonly survey: { readonly settings?: Readonly<Record<string, unknown>> };
+  readonly survey: SetupSurvey;
   readonly posts?: readonly SetupPost[];
   readonly uploads?: readonly SetupUpload[];
+}
+
+/** The definition of the fixture "Customer feedback", given to the cases' own surveys. */
+export const FEEDBACK_DEFINITION = {
+  title: "Customer feedback",
+  pages: [
+    {
+      name: "page1",
+      elements: [
+        { type: "rating", name: "satisfaction", title: "How satisfied are you?" },
+        { type: "file", name: "receipt", title: "Upload your receipt" },
+      ],
+    },
+  ],
+};
+
+/** The name of the cases' own surveys. */
+export const SETUP_SURVEY_NAME = "Legacy compat";
+
+/**
+ * The variables naming access keys (ADR 0040): `{{accessKey}}` is the survey owner's key (the
+ * test account's when recording), `{{memberKey}}` a project member's who is neither a project
+ * admin nor the survey's creator, and `{{revokedKey}}` a key that no longer works. A request
+ * that holds one is a keyed request.
+ */
+export const KEY_VARIABLES = ["accessKey", "memberKey", "revokedKey"] as const;
+
+/** Whether the request carries an access key variable. */
+export function isKeyed(request: GoldenRequest): boolean {
+  const text = JSON.stringify(request);
+  return KEY_VARIABLES.some((name) => text.includes(`{{${name}}}`));
 }
 
 export interface Golden {
@@ -85,10 +136,26 @@ export interface Golden {
    * the reviewers of recordings; not compared.
    */
   readonly difference?: string;
+  /**
+   * A mismatch between the bridge and the old answer that no listed difference explains, reported
+   * and not yet settled: the case is expected to fail until the bridge answers as the golden says
+   * (then the note goes).
+   */
+  readonly knownMismatch?: string;
+  /**
+   * Why the recording script must not replay the case against the old API (it would leave
+   * something there that no action removes); the script skips it.
+   */
+  readonly noRecording?: string;
   /** The Studio providers the case can run on (default: all), with why when limited. */
   readonly providers?: readonly ("memory" | "azure-legacy")[];
   readonly providersNote?: string;
   readonly setup?: GoldenSetup;
+  /**
+   * The request makes surveys (`create`, `clone`): every survey that appears while it runs is
+   * removed afterwards.
+   */
+  readonly creates?: boolean;
   readonly request: GoldenRequest;
   readonly response: GoldenResponse;
 }
@@ -283,6 +350,45 @@ export interface Answer {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Buffer;
+}
+
+/**
+ * Sends a golden request to `baseUrl` and reads the whole answer. `fetch` cannot send a body with
+ * a `GET` (a form body the old API's form binding could read), so such a request goes through
+ * `node:http`.
+ */
+export async function sendRequest(baseUrl: string, request: GoldenRequest): Promise<Answer> {
+  const url = requestUrl(baseUrl, request);
+  const init = requestInit(request);
+  if (init.body === undefined || (request.method !== "GET" && request.method !== "HEAD")) {
+    return readAnswer(await fetch(url, init));
+  }
+  const body = Buffer.from(init.body as Uint8Array);
+  const send = url.startsWith("https:") ? httpsRequest : httpRequest;
+  return new Promise<Answer>((resolve, reject) => {
+    const outgoing = send(
+      url,
+      {
+        method: request.method,
+        headers: { ...(init.headers as Record<string, string>), "content-length": body.length },
+      },
+      (incoming) => {
+        const chunks: Buffer[] = [];
+        incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+        incoming.on("error", reject);
+        incoming.on("end", () => {
+          const headers: Record<string, string> = {};
+          for (const [name, value] of Object.entries(incoming.headers)) {
+            if (value !== undefined)
+              headers[name] = Array.isArray(value) ? value.join(", ") : value;
+          }
+          resolve({ status: incoming.statusCode ?? 0, headers, body: Buffer.concat(chunks) });
+        });
+      },
+    );
+    outgoing.on("error", reject);
+    outgoing.end(body);
+  });
 }
 
 export async function readAnswer(response: Response): Promise<Answer> {

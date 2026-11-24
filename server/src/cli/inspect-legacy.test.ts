@@ -10,6 +10,7 @@ function survey(over: Partial<SurveyRecord>): SurveyRecord {
     creatorId: null,
     postId: "p",
     resultId: "r",
+    legacyPublishId: null,
     published: true,
     archived: false,
     createdAt: "2026-01-01T00:00:00.000Z",

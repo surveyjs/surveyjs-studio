@@ -4,7 +4,12 @@ import type { RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { responseIdFor } from "../domain/response-id.js";
 import { AppError } from "../errors.js";
-import type { CompletionState, SurveyDefinition, SurveyRecord } from "../domain/types.js";
+import type {
+  CompletionState,
+  LayoutKind,
+  SurveyDefinition,
+  SurveyRecord,
+} from "../domain/types.js";
 import { respondentIp } from "../ip.js";
 import {
   ResponseTooLargeError,
@@ -36,6 +41,7 @@ export type ResultStatsJson = components["schemas"]["ResultStats"];
 export type ResponsePageJson = components["schemas"]["ResponsePage"];
 export type PublicResultPageJson = components["schemas"]["PublicResultPage"];
 export type QuestionSummaryJson = components["schemas"]["QuestionSummary"];
+export type PublicLayoutJson = components["schemas"]["PublicLayout"];
 
 export interface ExportFile {
   /** `exportFileName(survey.name, format)`. */
@@ -75,16 +81,24 @@ export interface ResultsService {
   /** One question's answers counted over the completed responses; `survey-not-available` for an unknown result ID. */
   questionSummary(resultId: string, name: string): Promise<QuestionSummaryJson>;
   stats(user: RequestUser, surveyId: string): Promise<ResultStatsJson>;
-  /** One page of every stored response, oldest first; answers included. */
+  /**
+   * One page of every stored response, oldest first; answers included. `from` and `till` as on
+   * `publicPage`.
+   */
   list(
     user: RequestUser,
     surveyId: string,
-    page: { limit: number; cursor?: string },
+    page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<ResponsePageJson>;
   /** Every stored response as a file, by `format`, streamed. */
   exportResults(user: RequestUser, surveyId: string, format: ExportFormat): Promise<ExportFile>;
   /** Deletes every response, marker and respondent file; needs modify permission. */
   deleteResults(user: RequestUser, surveyId: string): Promise<void>;
+  /**
+   * Deletes one response, the run holding the save `responseId` (`ResultStore.deleteResponse`);
+   * needs modify permission. `not-found` when no save of the survey has that id.
+   */
+  deleteResponse(user: RequestUser, surveyId: string, responseId: string): Promise<void>;
   /**
    * One page of public results (Grant Access on); private questions' answers left out. `from` and
    * `till` (ISO 8601) keep responses placed strictly between them; one a Date cannot read (a leap
@@ -94,6 +108,11 @@ export interface ResultsService {
     surveyId: string,
     page: { limit: number; cursor?: string; from?: string; till?: string },
   ): Promise<PublicResultPageJson>;
+  /**
+   * The survey's shared layout of this kind (`null` when none is saved) and its private question
+   * names, while public results are on; `survey-not-available` otherwise and for an unknown survey.
+   */
+  publicLayout(surveyId: string, kind: LayoutKind): Promise<PublicLayoutJson>;
 }
 
 export interface ResultsServiceOptions {
@@ -102,7 +121,7 @@ export interface ResultsServiceOptions {
   readonly results: ResultStore;
   /** Respondent files: deleted with the results. */
   readonly files: FileStore;
-  /** The private-question lists. */
+  /** The private-question lists and the shared layouts. */
   readonly views: ViewStore;
   /** The clock for submission times; default `Date.now`. */
   readonly now?: Clock;
@@ -127,11 +146,11 @@ const tooLarge = (cause: unknown): AppError =>
   });
 
 /**
- * `from` and `till` of public results as instants in `toISOString` form. A value the contract's
+ * `from` and `till` of a results page as instants in `toISOString` form. A value the contract's
  * `date-time` accepts but Date cannot read (a leap second, `23:59:60`) is refused with the answer
  * the validator gives for any other malformed date-time.
  */
-function publicWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
+function resultsWindow(page: { from?: string; till?: string }): { from?: string; till?: string } {
   const window: { from?: string; till?: string } = {};
   const unreadable: string[] = [];
   for (const name of ["from", "till"] as const) {
@@ -286,12 +305,15 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
     },
 
     async list(user, surveyId, page) {
+      // Before any lookup, as the validator refuses a malformed date-time.
+      const window = resultsWindow(page);
       const { survey } = await access.visible(user, surveyId);
       const after =
         page.cursor === undefined ? undefined : decodeResultsCursor(page.cursor, survey.id);
       const { items, next } = await results.listResponsePage(survey, {
         limit: page.limit,
         ...(after && { after }),
+        ...window,
       });
       return {
         items: items.map(responseJson),
@@ -325,9 +347,14 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       await results.deleteAll(survey);
     },
 
+    async deleteResponse(user, surveyId, responseId) {
+      const { survey } = await access.modifiable(user, surveyId);
+      if (!(await results.deleteResponse(survey, responseId))) throw notFound();
+    },
+
     async publicPage(surveyId, page) {
       // Before any lookup, as the validator refuses a malformed date-time.
-      const window = publicWindow(page);
+      const window = resultsWindow(page);
       const survey = await surveys.getSurvey(surveyId);
       if (!survey?.settings.publicResults) throw surveyNotAvailable();
       const after =
@@ -357,6 +384,16 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         })),
         nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
       };
+    },
+
+    async publicLayout(surveyId, kind) {
+      const survey = await surveys.getSurvey(surveyId);
+      if (!survey?.settings.publicResults) throw surveyNotAvailable();
+      const [text, privateQuestions] = await Promise.all([
+        views.getLayout(survey.id, kind),
+        views.getPrivateQuestions(survey.id),
+      ]);
+      return { text, privateQuestions };
     },
   };
 }

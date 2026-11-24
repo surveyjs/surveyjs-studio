@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "an ownerId that is no GUID: the caller's own surveys",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getactive",
+    "query": {
+      "ACCESSKEY": "{{memberKey}}",
+      "ownerId": "marketing"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": [
+        {
+          "Name": "XSS in question name <img src=x onerror=alert(1)>",
+          "IsArchived": false,
+          "UserId": "11111111-0000-4000-8000-a00000000003",
+          "CreatorId": "11111111-0000-4000-8000-a00000000003",
+          "PostId": "33333333-0000-4000-8000-a00000000009",
+          "ResultId": "44444444-0000-4000-8000-a00000000009",
+          "PublishId": null,
+          "IsPublished": true,
+          "UseCookies": false,
+          "UpdatedOn": "2026-03-01T09:00:00Z",
+          "CreatedAt": "2026-03-01T09:00:00Z",
+          "AllowAccessResult": false,
+          "StoreIPAddress": false,
+          "Theme": null,
+          "Json": null,
+          "Id": "22222222-0000-4000-8000-a00000000009"
+        }
+      ]
+    }
+  }
+}

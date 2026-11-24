@@ -243,3 +243,43 @@ describe("getLegacyFile", () => {
     }
   });
 });
+
+describe("getPublicLayout", () => {
+  const publicLayout = (id: string, kind: string) => `/public/surveys/${id}/layouts/${kind}`;
+
+  it("serves the layout text and the private question names while public results are on", async () => {
+    const { call } = setupSandbox({}, "hosted");
+    const response = await call(publicLayout(SURVEYS.feedback, "table"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = (await response.json()) as { text: string; privateQuestions: string[] };
+    expect(Object.keys(body)).toEqual(["text", "privateQuestions"]);
+    expect(body.privateQuestions).toEqual(["receipt"]);
+    expect(JSON.parse(body.text)).toMatchObject({ pageSize: 10 });
+  });
+
+  it("answers 404 survey-not-available when public results are off, 400 for a bad kind", async () => {
+    const { call } = setupSandbox({}, "hosted");
+    const patch = {
+      method: "PATCH",
+      user: USERS.owner,
+      json: { settings: { publicResults: false } },
+    };
+    expect((await call(publicLayout(SURVEYS.feedback, "summary"))).status).toBe(200);
+    const none = await (await call(publicLayout(SURVEYS.feedback, "columns"))).json();
+    expect(none.text).not.toBeNull();
+    expect((await call(`/surveys/${SURVEYS.feedback}`, patch)).status).toBe(200);
+    const off = await call(publicLayout(SURVEYS.feedback, "summary"));
+    expect(off.status).toBe(404);
+    expect(await off.json()).toMatchObject({ code: "survey-not-available" });
+    expect((await call(publicLayout(SURVEYS.feedback, "charts"))).status).toBe(400);
+    expect((await call(publicLayout("nope", "table"))).status).toBe(404);
+  });
+
+  it("is not routed outside the hosted edition", async () => {
+    const { call } = setupSandbox();
+    const response = await call(publicLayout(SURVEYS.feedback, "table"));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "not-found" });
+  });
+});

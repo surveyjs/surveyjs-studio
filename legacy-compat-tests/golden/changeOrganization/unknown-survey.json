@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: the access-denied text",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeOrganization",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "12345678-90ab-4cde-8f01-234567890abc",
+      "organizationId": "55555555-0000-4000-8000-a00000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "Something going wrong. Access denied."
+    }
+  }
+}

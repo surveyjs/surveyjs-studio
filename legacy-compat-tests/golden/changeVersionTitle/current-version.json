@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "the current version of the caller's survey: true",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeVersionTitle",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "versionId": "dddddddd-0000-4000-8000-a00000000001",
+      "title": "Version 1"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": true
+    }
+  }
+}

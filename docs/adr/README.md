@@ -46,3 +46,4 @@ and add each one to this index.
 | [0037](0037-access-keys-and-api-tokens.md)                 | Access keys and API tokens                                                      | Accepted           |
 | [0038](0038-partial-responses.md)                          | Partial responses                                                               | Accepted           |
 | [0039](0039-bridge-public-actions.md)                      | The bridge's public actions and what Studio's public API adds for them          | Accepted           |
+| [0040](0040-bridge-access-key-actions.md)                  | The bridge's access-key actions and what Studio's public API adds for them      | Accepted           |

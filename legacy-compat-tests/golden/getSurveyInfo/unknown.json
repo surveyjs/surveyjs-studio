@@ -1,0 +1,20 @@
+{
+  "source": "derived",
+  "description": "an unknown survey: an empty 400",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyInfo",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "surveyId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

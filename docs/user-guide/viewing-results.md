@@ -113,12 +113,17 @@ the page, the layout is back.
 - If a save fails, a quiet line says "Your layout could not be saved. It is saved again with your next
   change." Nothing else is lost.
 
+**The survey's shared layout.** A survey also has one **shared layout** of the Summary and one of the Table, the same for
+everybody. It is the **default**: anyone who has not saved a layout of their own, and has not reset it, sees the shared
+layout. Your own layout, once saved, replaces it for you only, and the other users keep seeing theirs or the shared one.
+The pages of this application do not change the shared layout. An integration can, through the
+[API](../api/migrating-from-api-surveyjs-io.md#layouts-and-permissions) or the old API's layout actions.
+
 **A survey you had laid out on the old site.** The old site kept one layout of the Summary and one of the
-Table for the whole survey. The first time you open such a survey here, you see **that layout**, as it
-was. It stays what you see until you change something (your own layout is then saved, and the old one is
-no longer used for you) or reset the layout. The old layouts are only read: this application never
-changes them, so the old site still shows its own. The old site's own list of table columns
-(`surveyresultcolumns`) and its "public" marks are not used.
+Table for the whole survey. That is the shared layout of the survey here: the first time you open such a survey you see
+**that layout**, as it was. It stays what you see until you change something (your own layout is then saved, and the
+shared one is no longer used for you) or reset the layout. The old site's own list of table columns and its "public"
+marks are not shown as layouts here: which questions public results hide is the survey's list of private questions.
 
 **A question added or removed later.** If you add a question to the survey after you saved a layout, its
 chart (on the Summary) or its column (on the Table) is shown at the end of your layout. A question you
@@ -132,8 +137,8 @@ sure that you want to remove table state ?" (or "summary state ?"). On **OK** yo
 deleted, and the tab shows its default layout from then on. The page then says "The table layout is reset." or
 "The summary layout is reset.". If the reset fails, it says "The layout was not reset. Please try again."
 
-A reset also hides an old-site layout from you: after **Reset Summary State** you see the default
-Summary, also for a survey that had an old-site layout. Other users are not affected.
+A reset also hides the shared layout from you: after **Reset Summary State** you see the default
+Summary, also for a survey that has a shared (or old-site) layout. Other users are not affected.
 
 The rest of the Details tab (the response count, the download of all the data, public results, the IP
 setting and deleting all responses) is described in [Downloading, sharing and deleting

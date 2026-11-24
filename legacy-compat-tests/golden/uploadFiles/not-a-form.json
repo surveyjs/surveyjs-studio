@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "a body that is not a form: an empty 400",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "file": "x"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

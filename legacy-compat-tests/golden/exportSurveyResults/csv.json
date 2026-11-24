@@ -1,0 +1,33 @@
+{
+  "source": "derived",
+  "description": "format=csv: a byte order mark, the column titles, a row per response; every column",
+  "difference": "The old line ending was the server platform's; the bridge writes CRLF and quotes a cell holding a comma, a quote or a line break (ADR 0040 point 1). The old sort of the columns was unstable (Submitted and Client Id, neither a question, could come in either order); the bridge keeps the order they were found in.",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/exportSurveyResults",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "format": "csv"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-disposition": "attachment; filename=\"Legacy compat.csv\"; filename*=UTF-8''Legacy%20compat.csv"
+    },
+    "body": {
+      "text": "﻿Submitted,Client Id,How satisfied are you?\r\n<any> +00:00,client-a,4\r\n"
+    }
+  }
+}

@@ -33,6 +33,8 @@ export interface SurveysTable {
   public_results: Flag;
   store_respondent_ip: Flag;
   use_cookies: Flag;
+  /** The publish ID the old service gave the survey, lower-case (0009). */
+  legacy_publish_id: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
   /** null: no definition stored (read as `{}`). */
@@ -77,10 +79,11 @@ export interface SavedViewsTable {
   updated_at: Timestamp;
 }
 
-export interface LegacyViewsTable {
+/** A survey's shared results layout (0009), the text verbatim. */
+export interface SurveyLayoutsTable {
   survey_id: string;
-  view: "summary" | "table";
-  state: Json;
+  kind: "table" | "summary" | "columns";
+  text: string;
 }
 
 export interface PrivateQuestionsTable {
@@ -108,7 +111,10 @@ export interface ProjectMembersTable {
 export interface FilesTable {
   /** 64 lower-case hex digits. */
   id: string;
-  survey_id: string;
+  /** Exactly one of survey_id and owner_user_id is set (0009). */
+  survey_id: string | null;
+  /** The user an editor file of no survey belongs to (0009). */
+  owner_user_id: string | null;
   kind: "asset" | "response";
   name: string;
   content_type: string;
@@ -187,7 +193,7 @@ export interface DatabaseSchema {
   survey_responses: SurveyResponsesTable;
   completion_markers: CompletionMarkersTable;
   saved_views: SavedViewsTable;
-  legacy_views: LegacyViewsTable;
+  survey_layouts: SurveyLayoutsTable;
   private_questions: PrivateQuestionsTable;
   projects: ProjectsTable;
   project_members: ProjectMembersTable;

@@ -98,6 +98,7 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
           ? { kind: "personal", userId: s.owner.userId }
           : { kind: "project", projectId: s.owner.projectId },
       creatorId: s.creatorId,
+      legacyPublishId: s.legacyPublishId,
       postId: s.postId,
       resultId: s.resultId,
       published: s.published,
@@ -132,7 +133,7 @@ export async function sandboxSeed(): Promise<SandboxSeed> {
       ]),
     ),
     completions: bySurvey(seed.completions, surveys),
-    legacyViews: bySurvey(seed.legacyViews, surveys),
+    layouts: bySurvey(seed.layouts, surveys),
     privateResultQuestions: bySurvey(seed.privateResultQuestions, surveys),
   };
 }

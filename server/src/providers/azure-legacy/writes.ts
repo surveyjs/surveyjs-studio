@@ -14,9 +14,11 @@ import type {
   ContainerClient,
 } from "@azure/storage-blob";
 import sql from "mssql";
-import { FILE_ID_PATTERN, newFileId, surveyIdOfFile } from "../../domain/file-id.js";
+import { FILE_ID_PATTERN, newFileId, newUserFileId, surveyIdOfFile } from "../../domain/file-id.js";
+import { newLegacyFileName } from "../../domain/legacy-file.js";
 import type {
   FileKind,
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -41,12 +43,21 @@ import {
   type AddMemberOutcome,
   type AppendOutcome,
   type MemberErasure,
+  type NewFile,
+  type StoredUserFile,
   type RemovalOutcome,
   type RoleChangeOutcome,
 } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import type { LegacyWarningLogger } from "./index.js";
-import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy, userFromLegacy } from "./mapping.js";
+import {
+  LAYOUT_CONTAINERS_BY_KIND,
+  UPLOADS_PREFIX,
+  fileRecordFromBlob,
+  isGuid,
+  privateQuestionsToLegacy,
+  userFromLegacy,
+} from "./mapping.js";
 
 /**
  * The only module allowed to write to the legacy stores; ESLint keeps the rest of the
@@ -55,7 +66,9 @@ import { fileRecordFromBlob, isGuid, privateQuestionsToLegacy, userFromLegacy } 
  * legacy code never reads) and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of
  * our own; Step 10: deleting all results and the public-question list; Step 11: projects and
  * members (Organizations and OrganizationUsers rows, project deletion), in SQL transactions;
- * Step 12: member erasure (an erased account's membership rows, a successor made admin). Each
+ * Step 12: member erasure (an erased account's membership rows, a successor made admin); Hosted
+ * Step 6: deleting one result, the shared results layouts (the old per-survey layouts) and editor
+ * files of no survey (in the editor files' container, never the legacy shares). Each
  * survey write uses the format the legacy site
  * writes (layout section 5.3).
  *
@@ -109,13 +122,11 @@ const MAX_RESULT_LENGTH = 32_768;
 /** Container of the public-question lists (layout section 10), each blob named by the survey id. */
 export const PERMISSIONS_CONTAINER = "surveyresultpermissions";
 
-/** Containers of the saved results layouts; each blob is named by the survey id (layout 3.10). */
-const LAYOUT_CONTAINERS = [
-  "surveyresulttablestate",
-  "surveyresultsummarystate",
-  PERMISSIONS_CONTAINER,
-  "surveyresultcolumns",
-] as const;
+/**
+ * Containers of the old per-survey results layouts and the public-question list; each blob is
+ * named by the survey id (layout 3.10).
+ */
+const LAYOUT_CONTAINERS = [...Object.values(LAYOUT_CONTAINERS_BY_KIND), PERMISSIONS_CONTAINER];
 
 type SqlType = (() => sql.ISqlType) | sql.ISqlType;
 
@@ -611,6 +622,10 @@ export async function writeSurveyChanges(
     // The type legacy writes for this change (layout section 5.1), misspelling included.
     event("SURVEY_POSTRESUTL", { storeipaddress: settings.storeRespondentIp });
   }
+  if (settings.useCookies !== undefined) {
+    columns.push(["usecookies", sql.TinyInt, flag(settings.useCookies)]);
+    event("SURVEY_USECOOKIES", { usecookies: settings.useCookies });
+  }
 
   try {
     const request = (await targets.pool()).request().input("id", sql.UniqueIdentifier, id);
@@ -881,22 +896,26 @@ export async function writeThemeSave(
 }
 
 /**
- * Put Blob of block blob `{surveyId}/{fileId}` in `files`, refusing to replace a blob (R2). A
- * missing container is created (private) and the upload tried once more.
+ * Put Blob of block blob `blobName` (`{surveyId}/{fileId}`, or `uploads/{fileId}`) in `files`,
+ * refusing to replace a blob (R2). A missing container is created (private) and the upload tried
+ * once more. `owner` (a user's file of no survey) is added to the metadata.
  */
 async function uploadNewFile(
   files: ContainerClient,
+  blobName: string,
   file: StoredFileRecord,
   content: Buffer,
+  more: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const upload = () =>
-    files.getBlockBlobClient(`${file.surveyId}/${file.id}`).uploadData(content, {
+    files.getBlockBlobClient(blobName).uploadData(content, {
       blobHTTPHeaders: { blobContentType: file.contentType },
       // Metadata is ASCII only, so the name is URI-encoded.
       metadata: {
         kind: file.kind,
         name: encodeURIComponent(file.name),
         createdat: new Date(file.createdAt).toISOString(),
+        ...more,
       },
       conditions: { ifNoneMatch: "*" },
     });
@@ -923,17 +942,118 @@ export async function writeFile(
   file: StoredFileRecord,
   content: Buffer,
 ): Promise<void> {
-  if (!FILE_ID_PATTERN.test(file.id) || surveyIdOfFile(file.id) !== file.surveyId) {
+  const { surveyId } = file;
+  if (!FILE_ID_PATTERN.test(file.id) || surveyId === null || surveyIdOfFile(file.id) !== surveyId) {
     throw new Error("File upload refused: the file id must belong to the file's survey");
   }
   if (content.length !== file.size) {
     throw new Error("File upload refused: the size does not match the content");
   }
   try {
-    await uploadNewFile(blobs.getContainerClient(container), file, content);
+    await uploadNewFile(
+      blobs.getContainerClient(container),
+      `${surveyId}/${file.id}`,
+      file,
+      content,
+    );
   } catch (error) {
     throw new LegacyStoreError("file upload", error);
   }
+}
+
+/**
+ * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) as block
+ * blob `{container}/uploads/{fileId}`, with a new random id (`newUserFileId()`: it is the public
+ * legacy name, so it does not name the owner), the type and metadata `kind` (`asset`), `name` and
+ * `createdat` of a survey's file, and metadata `owner` (the owner's lower-case GUID). Studio's own
+ * container, never the legacy file shares. Refuses an owner id that is not a GUID.
+ *
+ * Store failures reject with LegacyStoreError, which names the file operation only.
+ */
+export async function writeUserFile(
+  blobs: BlobServiceClient,
+  container: string,
+  ownerUserId: string,
+  { name, contentType, createdAt, content }: NewFile,
+): Promise<StoredUserFile> {
+  if (!isGuid(ownerUserId)) {
+    throw new Error("File upload refused: a file of no survey needs its owner's GUID");
+  }
+  const owner = ownerUserId.toLowerCase();
+  const file: StoredFileRecord = {
+    id: newUserFileId(),
+    surveyId: null,
+    kind: "asset",
+    name,
+    contentType,
+    size: content.length,
+    createdAt,
+  };
+  const legacyName = newLegacyFileName();
+  try {
+    await uploadNewFile(
+      blobs.getContainerClient(container),
+      `${UPLOADS_PREFIX}${legacyName}`,
+      file,
+      content,
+      { owner, fileid: file.id },
+    );
+  } catch (error) {
+    throw new LegacyStoreError("file upload", error);
+  }
+  return { file, legacyName };
+}
+
+/**
+ * Deletes every blob under `{container}/uploads/` whose `owner` metadata is the owner (any case);
+ * returns how many. 0 for a non-GUID id. The listing reads every user's uploads: the blob names do
+ * not name their owners.
+ */
+export async function writeUserFilesDeletion(
+  blobs: BlobServiceClient,
+  container: string,
+  ownerUserId: string,
+): Promise<number> {
+  if (!isGuid(ownerUserId)) return 0;
+  const owner = ownerUserId.toLowerCase();
+  try {
+    return await deleteBlobsUnder(
+      blobs.getContainerClient(container),
+      UPLOADS_PREFIX,
+      (metadata) => metadata?.owner?.toLowerCase() === owner,
+    );
+  } catch (error) {
+    throw new LegacyStoreError("file delete", error);
+  }
+}
+
+/**
+ * Deletes the blobs under `prefix` whose metadata `matches` (every blob without it); returns how
+ * many were deleted. A missing container holds none; a blob deleted by someone else since the
+ * listing is not counted.
+ */
+async function deleteBlobsUnder(
+  files: ContainerClient,
+  prefix: string,
+  matches?: (metadata: Readonly<Record<string, string>> | undefined) => boolean,
+): Promise<number> {
+  const names: string[] = [];
+  await ignoringNotFound(async () => {
+    const listing = files.listBlobsFlat({ prefix, includeMetadata: matches !== undefined });
+    for await (const blob of listing) {
+      if (matches === undefined || matches(blob.metadata)) names.push(blob.name);
+    }
+  });
+  let deleted = 0;
+  for (const name of names) {
+    try {
+      await files.getBlobClient(name).delete({ deleteSnapshots: "include" });
+      deleted += 1;
+    } catch (error) {
+      if (statusOf(error) !== 404) throw error;
+    }
+  }
+  return deleted;
 }
 
 /** Deletes blob `{container}/{surveyId}/{fileId}`; false when there was none. */
@@ -969,29 +1089,11 @@ export async function writeSurveyFilesDeletion(
 ): Promise<number> {
   const id = checkedId("file delete", surveyId);
   try {
-    const names: string[] = [];
-    await ignoringNotFound(async () => {
-      const listing = blobs.getContainerClient(container).listBlobsFlat({
-        prefix: `${id}/`,
-        includeMetadata: kind !== undefined,
-      });
-      for await (const blob of listing) {
-        if (kind === undefined || blob.metadata?.kind === kind) names.push(blob.name);
-      }
-    });
-    let deleted = 0;
-    for (const name of names) {
-      try {
-        await blobs.getContainerClient(container).getBlobClient(name).delete({
-          deleteSnapshots: "include",
-        });
-        deleted += 1;
-      } catch (error) {
-        // Deleted by someone else since the listing.
-        if (statusOf(error) !== 404) throw error;
-      }
-    }
-    return deleted;
+    return await deleteBlobsUnder(
+      blobs.getContainerClient(container),
+      `${id}/`,
+      kind === undefined ? undefined : (metadata) => metadata?.kind === kind,
+    );
   } catch (error) {
     throw new LegacyStoreError("file delete", error);
   }
@@ -1030,7 +1132,7 @@ export async function writeSurveyAssetsCopy(
         size: content.length,
         createdAt: copiedAt,
       };
-      await uploadNewFile(files, copy, content);
+      await uploadNewFile(files, `${to}/${copy.id}`, copy, content);
       copied.set(source.id, copy.id);
     }
     return copied;
@@ -1188,6 +1290,83 @@ export async function writeResultsDeletion(
   await appendEventBestEffort(targets, id, event, "the results are deleted.");
 }
 
+/** A row of `post{postId}` to delete with `writeResponseDeletion`, as read. */
+export interface DeletedResultRow {
+  /** As stored (keys are case-sensitive). */
+  readonly rowKey: string;
+  readonly result?: unknown;
+  readonly clientid?: unknown;
+  readonly ispartialcompleted?: unknown;
+}
+
+/** The marker `writeResponseDeletion` deletes: only while its ETag is the one read. */
+export interface DeletedMarker {
+  readonly clientId: string;
+  readonly etag: string;
+}
+
+/**
+ * Deletes one response (a run of rows, ADR 0038) as the old single delete did (layout section
+ * 3.8): first one `SURVEY_DELETEPOSTRESUTL` row per deleted row in `postdelete{postKey}` (created
+ * when missing) with a copy of its `result`, `clientid` and `ispartialcompleted`, `instanceid` the
+ * row's key, `postid`, `happendat` = `deletedAt` and a random `surveyid`; then the rows of
+ * `post{postKey}` (a row already gone is fine); then, when `marker` is given, that client's row of
+ * `SurveyCompletion{surveyKey}` if its ETag is still `marker.etag` (a save stored meanwhile wrote
+ * the marker again, and it stays). The copies are required, not best effort: a failure there
+ * deletes nothing. Store failures reject with LegacyStoreError.
+ */
+export async function writeResponseDeletion(
+  targets: LegacyWriteTargets,
+  survey: SurveyRecord,
+  rows: readonly DeletedResultRow[],
+  marker: DeletedMarker | null,
+  deletedAt: string,
+): Promise<void> {
+  const surveyKey = checkedId("response delete", survey.id).replaceAll("-", "");
+  const postId = checkedId("response delete", survey.postId);
+  const postKey = postId.replaceAll("-", "");
+  try {
+    const copies = targets.resultTable(`postdelete${postKey}`);
+    for (const row of rows) {
+      const copyId = randomUUID();
+      await createEntityInTable(copies, {
+        partitionKey: "*",
+        rowKey: copyId,
+        id: guid(copyId),
+        type: "SURVEY_DELETEPOSTRESUTL",
+        happendat: { type: "DateTime", value: deletedAt } satisfies Edm<"DateTime">,
+        // Legacy never sets it: a random GUID, not the survey (layout section 3.6).
+        surveyid: guid(randomUUID()),
+        postid: guid(postId),
+        instanceid: guid(row.rowKey),
+        ...(typeof row.result === "string" && { result: row.result }),
+        ...(typeof row.clientid === "string" && { clientid: row.clientid }),
+        ...(typeof row.ispartialcompleted === "boolean" && {
+          ispartialcompleted: row.ispartialcompleted,
+        }),
+      } satisfies TableEntity<Record<string, unknown>>);
+    }
+    await deleteKeys(
+      targets.resultTable(`post${postKey}`),
+      rows.map((row) => ({ partitionKey: "*", rowKey: row.rowKey })),
+    );
+  } catch (error) {
+    throw new LegacyStoreError("response delete", error);
+  }
+  if (marker === null) return;
+  try {
+    await targets
+      .resultTable(`SurveyCompletion${surveyKey}`)
+      .deleteEntity("*", marker.clientId, { etag: marker.etag });
+  } catch (error) {
+    // Gone already (404), or written again by a save stored meanwhile (412): it stays.
+    const status = statusOf(error);
+    if (status !== 404 && status !== 412) {
+      throw new LegacyStoreError("completion marker delete", error);
+    }
+  }
+}
+
 /**
  * Replaces the survey's public-question list: append blob `surveyresultpermissions/{surveyId}`, as
  * the legacy writers do (layout section 10). No SQL change and no audit row.
@@ -1210,6 +1389,52 @@ export async function writePrivateQuestions(
     }
   } catch (error) {
     throw new LegacyStoreError("public questions save", error);
+  }
+}
+
+/**
+ * Replaces the survey's shared layout of this kind (ADR 0040 point 4): the old per-survey layout
+ * blob `{container}/{surveyId}` of `LAYOUT_CONTAINERS_BY_KIND`, an append blob holding the text in
+ * UTF-8 without a byte-order mark, overwritten in full, as the old service writes it (layout 3.10).
+ * A `404` for the container runs `createIfNotExists()` and the write once more. No SQL change, no
+ * audit row (ADR 0015 R7). The text is never logged.
+ */
+export async function writeLayout(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  kind: LayoutKind,
+  text: string,
+): Promise<void> {
+  const id = checkedId("layout save", surveyId);
+  const container = LAYOUT_CONTAINERS_BY_KIND[kind];
+  const content = Buffer.from(text, "utf8");
+  try {
+    try {
+      await replaceAppendBlob(blobs, container, id, content);
+    } catch (error) {
+      if (statusOf(error) !== 404) throw error;
+      await blobs.getContainerClient(container).createIfNotExists();
+      await replaceAppendBlob(blobs, container, id, content);
+    }
+  } catch (error) {
+    throw new LegacyStoreError("layout save", error);
+  }
+}
+
+/**
+ * Deletes the survey's shared layout of this kind, as the old service's reset of a layout deletes
+ * its blob (layout 3.10); a missing blob or container is fine. No SQL change, no audit row.
+ */
+export async function writeLayoutDeletion(
+  blobs: BlobServiceClient,
+  surveyId: string,
+  kind: LayoutKind,
+): Promise<void> {
+  const id = checkedId("layout delete", surveyId);
+  try {
+    await deleteBlobIfPresent(blobs, LAYOUT_CONTAINERS_BY_KIND[kind], id);
+  } catch (error) {
+    throw new LegacyStoreError("layout delete", error);
   }
 }
 

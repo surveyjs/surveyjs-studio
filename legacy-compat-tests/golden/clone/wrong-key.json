@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "a wrong key: an empty 401",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/clone",
+    "query": {
+      "surveyId": "12345678-90ab-4cde-8f01-234567890abc",
+      "accessKey": "wrong-access-key"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": null,
+      "content-length": "0",
+      "location": null,
+      "www-authenticate": null
+    },
+    "body": null
+  }
+}

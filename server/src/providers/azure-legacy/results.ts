@@ -1,12 +1,18 @@
 import { odata, type TableClient, type TableEntityResult } from "@azure/data-tables";
 import type { SurveyRecord, SurveyResponse } from "../../domain/types.js";
 import { responseOrder } from "../ordering.js";
-import { foldRuns, pageOfFoldedRuns, responseOfRun, type PlacedRow } from "../runs.js";
+import { foldRuns, pageOfFoldedRuns, responseOfRun, runHolding, type PlacedRow } from "../runs.js";
 import type { ResponsePosition, ResultStore } from "../types.js";
 import { LegacyStoreError, statusOf } from "./errors.js";
 import { UnmappableLegacyRowError, isGuid, responseFromLegacy } from "./mapping.js";
 import type { LegacyResultEntity } from "./rows.js";
-import { writeResponse, writeResultsDeletion, type LegacyWriteTargets } from "./writes.js";
+import {
+  writeResponse,
+  writeResponseDeletion,
+  writeResultsDeletion,
+  type DeletedResultRow,
+  type LegacyWriteTargets,
+} from "./writes.js";
 
 /**
  * Results in the results account (layout sections 3.6 and 3.7): rows of `post{postId}` and
@@ -293,5 +299,49 @@ export function createAzureResultStore(options: AzureResultStoreOptions): Result
     },
 
     deleteAll: (survey) => writeResultsDeletion(targets, survey, new Date(now()).toISOString()),
+
+    async deleteResponse(survey, responseId) {
+      if (!isGuid(responseId)) return false;
+      const table = rows(survey);
+      /** The rows of `filter` placed for folding, in submission order. */
+      const placedRows = async (filter?: string): Promise<PlacedLegacyRow[]> =>
+        mapRows(
+          await entitiesOf("response removal", table, POSITION_COLUMNS, filter),
+          placedForFolding,
+        ).sort(responseOrder);
+
+      const key = responseId.toLowerCase();
+      // Row keys are case-sensitive: the id is found among the placed rows, not by a point read.
+      const target = (await placedRows()).find((row) => row.id === key);
+      if (!target) return false;
+      let run: readonly PlacedLegacyRow[] = [target];
+      let marker: { clientId: string; etag: string } | null = null;
+      const { clientId } = target;
+      if (clientId !== undefined) {
+        // The marker before the client's rows: a save stored after this read either has its row
+        // in the read below or writes the marker again, which then stays (see writes.ts).
+        const found = await entityAt("response removal", markers(survey), clientId);
+        const held = runHolding(await placedRows(odata`clientid eq ${clientId}`), key);
+        if (!held) return false;
+        run = held.run;
+        const etag = found?.etag;
+        if (!held.laterRun && typeof etag === "string") marker = { clientId, etag };
+      }
+      // The full rows, for the audit copies; a row deleted meanwhile is skipped.
+      const full: DeletedResultRow[] = [];
+      for (let i = 0; i < run.length; i += POINT_READS_AT_ONCE) {
+        const read = await Promise.all(
+          run.slice(i, i + POINT_READS_AT_ONCE).map(async (row) => ({
+            row,
+            entity: await entityAt("response removal", table, row.rowKey),
+          })),
+        );
+        for (const { row, entity } of read) {
+          if (entity !== null) full.push({ ...entity, rowKey: row.rowKey });
+        }
+      }
+      await writeResponseDeletion(targets, survey, full, marker, new Date(now()).toISOString());
+      return true;
+    },
   };
 }

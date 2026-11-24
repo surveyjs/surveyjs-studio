@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "no Table state but a column layout: its columns as the elements",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "columns": "{\"columns\":[{\"name\":\"satisfaction\",\"visibility\":0}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultTableState",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{\"elements\":[{\"name\":\"satisfaction\",\"isVisible\":true,\"isPublic\":true}]}"
+    }
+  }
+}

@@ -1,10 +1,11 @@
 // The old API's survey reads (reference behaviour: ADR 0039): `getSurvey`, `getSurveyAndIsCompleted`
 // and `isCompleted`, through Studio's `getPublicDefinition`, `getRespondentState` and
 // `getRespondentStateByResultId`.
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { sendEmpty, sendJsonString, jsonContentType } from "../answers.js";
 import { EMPTY_GUID, guidParameter, isStudioClientId } from "../binding.js";
-import { oldRoute, queryValue } from "../routes.js";
+import { contextOf } from "../context.js";
+import { queryValue } from "../routes.js";
 import { StudioFailure, unexpectedStatus } from "../studio.js";
 import type { SurveyCache } from "../survey-cache.js";
 
@@ -25,10 +26,10 @@ const OLD_STATES: Record<"none" | "partial" | "completed", OldState> = {
  */
 async function definitionText(
   request: FastifyRequest,
-  cache: SurveyCache,
   surveyId: string,
 ): Promise<string | undefined> {
   if (surveyId === EMPTY_GUID) return undefined;
+  const cache: SurveyCache = contextOf(request).cache;
   const cached = cache.get(surveyId);
   let read;
   try {
@@ -82,46 +83,53 @@ async function respondentState(
   return unexpectedStatus(response);
 }
 
-export function registerSurveyActions(app: FastifyInstance, cache: SurveyCache): void {
-  oldRoute(app, ["GET"], ["getSurvey"], async (request, reply) => {
-    const surveyId = guidParameter(request, reply, "surveyId");
-    if (surveyId === undefined) return reply;
-    const body = await definitionText(request, cache, surveyId);
-    if (body === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
-    // The old API sent the stored text with this fixed type, without a charset (a Buffer, so
-    // Fastify adds none).
-    return reply.code(200).header("content-type", "application/json").send(Buffer.from(body));
-  });
+export async function getSurvey(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const surveyId = guidParameter(request, reply, "surveyId");
+  if (surveyId === undefined) return reply;
+  const body = await definitionText(request, surveyId);
+  if (body === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
+  // The old API sent the stored text with this fixed type, without a charset (a Buffer, so
+  // Fastify adds none).
+  return reply.code(200).header("content-type", "application/json").send(Buffer.from(body));
+}
 
-  oldRoute(app, ["GET"], ["getSurveyAndIsCompleted"], async (request, reply) => {
-    const surveyId = guidParameter(request, reply, "surveyId");
-    if (surveyId === undefined) return reply;
-    const clientId = queryValue(request, "clientId") ?? "";
-    if (clientId === "") return sendJsonString(reply, 400, "Check 'clientId' parameter");
-    // Both reads at once; when both fail, the state read's failure answers, as it came first.
-    const [state, definition] = await Promise.allSettled([
-      respondentState(request, { surveyId }, clientId),
-      definitionText(request, cache, surveyId),
-    ]);
-    if (state.status === "rejected") throw state.reason;
-    if (definition.status === "rejected") throw definition.reason;
-    const isCompleted = state.value;
-    const survey = definition.value;
-    if (survey === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
-    // The old API parsed the definition as a JSON object and failed on anything else.
-    if (!survey.startsWith("{")) return sendEmpty(reply, 500);
-    return reply
-      .code(200)
-      .header("content-type", jsonContentType(request.headers.accept))
-      .send(`{"survey":${survey},"isCompleted":${JSON.stringify(isCompleted)}}`);
-  });
+export async function getSurveyAndIsCompleted(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const surveyId = guidParameter(request, reply, "surveyId");
+  if (surveyId === undefined) return reply;
+  const clientId = queryValue(request, "clientId") ?? "";
+  if (clientId === "") return sendJsonString(reply, 400, "Check 'clientId' parameter");
+  // Both reads at once; when both fail, the state read's failure answers, as it came first.
+  const [state, definition] = await Promise.allSettled([
+    respondentState(request, { surveyId }, clientId),
+    definitionText(request, surveyId),
+  ]);
+  if (state.status === "rejected") throw state.reason;
+  if (definition.status === "rejected") throw definition.reason;
+  const isCompleted = state.value;
+  const survey = definition.value;
+  if (survey === undefined) return sendJsonString(reply, 400, CHECK_PARAMETERS);
+  // The old API parsed the definition as a JSON object and failed on anything else.
+  if (!survey.startsWith("{")) return sendEmpty(reply, 500);
+  return reply
+    .code(200)
+    .header("content-type", jsonContentType(request.headers.accept))
+    .send(`{"survey":${survey},"isCompleted":${JSON.stringify(isCompleted)}}`);
+}
 
-  oldRoute(app, ["GET"], ["isCompleted"], async (request, reply) => {
-    const resultId = guidParameter(request, reply, "resultId");
-    if (resultId === undefined) return reply;
-    // ADR 0039 point 1: without a client ID the old API answered another respondent's state.
-    const clientId = queryValue(request, "clientId") ?? "";
-    const state = clientId === "" ? "no" : await respondentState(request, { resultId }, clientId);
-    return sendJsonString(reply, 200, state);
-  });
+export async function isCompleted(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const resultId = guidParameter(request, reply, "resultId");
+  if (resultId === undefined) return reply;
+  // ADR 0039 point 1: without a client ID the old API answered another respondent's state.
+  const clientId = queryValue(request, "clientId") ?? "";
+  const state = clientId === "" ? "no" : await respondentState(request, { resultId }, clientId);
+  return sendJsonString(reply, 200, state);
 }

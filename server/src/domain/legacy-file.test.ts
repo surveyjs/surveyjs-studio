@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { surveyIdOfFile } from "./file-id.js";
-import { isLegacyFileName, legacyContentType, legacyFileRecord } from "./legacy-file.js";
+import {
+  isLegacyFileName,
+  isUploadLegacyName,
+  legacyContentType,
+  legacyFileRecord,
+  newLegacyFileName,
+} from "./legacy-file.js";
 
 describe("isLegacyFileName", () => {
   it.each([
@@ -72,5 +78,18 @@ describe("legacyFileRecord", () => {
     expect(legacyFileRecord("response", "a.png", 1).id).toBe(record.id);
     expect(legacyFileRecord("asset", "a.png", 12).id).not.toBe(record.id);
     expect(legacyFileRecord("response", "A.png", 12).id).not.toBe(record.id);
+  });
+});
+
+describe("newLegacyFileName", () => {
+  it("is a new random lower-case GUID with dashes, a legacy name of an upload", () => {
+    const name = newLegacyFileName();
+    expect(name).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(newLegacyFileName()).not.toBe(name);
+    expect(isLegacyFileName(name)).toBe(true);
+    expect(isUploadLegacyName(name)).toBe(true);
+    expect(isUploadLegacyName(name.toUpperCase())).toBe(false);
+    expect(isUploadLegacyName(name.replaceAll("-", ""))).toBe(false);
+    expect(isUploadLegacyName(`${name}.png`)).toBe(false);
   });
 });

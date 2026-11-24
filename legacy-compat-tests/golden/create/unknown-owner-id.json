@@ -1,0 +1,41 @@
+{
+  "source": "derived",
+  "description": "ownerId naming no project of the caller: made in the caller's own surveys",
+  "difference": "The old API's create left CreatorId all zeros and IsPublished null until the survey was published or unpublished; the bridge answers the real creator and Studio's published flag (never null), as docs/api/legacy-compat.md lists. The old CreatedAt was the server's local time; the bridge's is UTC.",
+  "creates": true,
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/create",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "name": "Legacy compat created",
+      "ownerId": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Name": "Legacy compat created",
+        "IsArchived": false,
+        "UserId": "{{owner.userId}}",
+        "CreatorId": "{{owner.userId}}",
+        "PostId": "<guid>",
+        "ResultId": "<guid>",
+        "PublishId": null,
+        "IsPublished": true,
+        "UseCookies": false,
+        "UpdatedOn": "<iso>",
+        "CreatedAt": "<iso>",
+        "AllowAccessResult": false,
+        "StoreIPAddress": false,
+        "Theme": null,
+        "Json": null,
+        "Id": "<guid>"
+      }
+    }
+  }
+}

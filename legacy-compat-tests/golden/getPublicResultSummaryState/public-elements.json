@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "public results: only the elements whose isPublic is true",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      },
+      "layouts": {
+        "summary": "{\"elements\":[{\"name\":\"satisfaction\",\"isPublic\":true},{\"name\":\"receipt\",\"isPublic\":false}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getPublicResultSummaryState/{{survey.surveyId}}"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{\"elements\":[{\"name\":\"satisfaction\",\"isPublic\":true}]}"
+    }
+  }
+}

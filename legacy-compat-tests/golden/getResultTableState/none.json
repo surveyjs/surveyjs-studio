@@ -1,0 +1,23 @@
+{
+  "source": "derived",
+  "description": "no Table state and no column layout: null",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultTableState/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": null
+    }
+  }
+}

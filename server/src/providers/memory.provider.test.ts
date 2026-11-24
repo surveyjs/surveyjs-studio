@@ -90,6 +90,7 @@ describe("erasure with orphan memberships", () => {
     creatorId: ERASED,
     postId: "eeeeeeee-0000-4000-8000-0000000000b2",
     resultId: "eeeeeeee-0000-4000-8000-0000000000c2",
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-08-01T10:00:00.000Z",
@@ -150,6 +151,7 @@ describe("erasure with orphan memberships", () => {
       projectsLeft: 1,
       projectsDeleted: 1,
       adminsPromoted: 1,
+      uploadsDeleted: 0,
     });
     expect(await set.projects.listUserProjects(ERASED)).toEqual([]);
     expect(await set.projects.listMemberUserIds()).toEqual([user.id]);

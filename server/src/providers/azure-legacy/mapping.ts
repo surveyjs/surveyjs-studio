@@ -1,7 +1,9 @@
+import { isUploadLegacyName } from "../../domain/legacy-file.js";
 import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
   FileKind,
   HistoryEntryRecord,
+  LayoutKind,
   ProjectMembership,
   ProjectRecord,
   SurveyDefinition,
@@ -81,6 +83,7 @@ export function surveyFromLegacy(
     creatorId: creatorId === ZERO_GUID ? null : creatorId,
     postId,
     resultId,
+    legacyPublishId: row.publishid === null ? null : guid(row.publishid),
     published: publishedFlag(row.ispublished),
     archived: flag(row.isarchived),
     createdAt: createdAt.toISOString(),
@@ -188,25 +191,37 @@ function decodedFileName(value: string | undefined): string | null {
 }
 
 /**
+ * Where the users' editor files of no survey are, in the files container: `uploads/{legacyName}`,
+ * the file id and the owner in the blob's `fileid` and `owner` metadata (the name is public, so it
+ * does not name the owner).
+ */
+export const UPLOADS_PREFIX = "uploads/";
+
+/**
  * A stored file from a blob of the files container (Step 7, R2). Only `{surveyId}/{fileId}` in
- * lower case, with the survey part equal to the one the id names, is a file; so is only a blob
- * with a known `kind` metadata, a content type and a length. Other blobs give null (treated as
- * missing). The name is the decoded `name` metadata, else the file id; the time is the
- * `createdat` metadata when it is ISO 8601 UTC, else the epoch.
+ * lower case, with the survey part equal to the one the id names, is a survey's file; a user's
+ * editor file of no survey (`saveUserFile`) is `uploads/{legacyName}` (a lower-case GUID), its id
+ * in metadata `fileid`, and has no survey. Only a blob with a known `kind` metadata, a content
+ * type and a length is a file. Other blobs give null (treated as missing). The name is the decoded
+ * `name` metadata, else the file id; the time is the `createdat` metadata when it is ISO 8601 UTC,
+ * else the epoch.
  */
 export function fileRecordFromBlob(
-  name: string,
+  blobName: string,
   properties: {
     readonly contentType?: string | undefined;
     readonly contentLength?: number | undefined;
   },
   metadata: Readonly<Record<string, string | undefined>> | undefined,
 ): StoredFileRecord | null {
-  const slash = name.indexOf("/");
-  const id = name.slice(slash + 1);
+  const slash = blobName.indexOf("/");
+  const folder = blobName.slice(0, slash + 1);
+  const upload = folder === UPLOADS_PREFIX;
+  if (upload && !isUploadLegacyName(blobName.slice(slash + 1))) return null;
+  const id = upload ? (metadata?.fileid ?? "") : blobName.slice(slash + 1);
   if (slash < 0 || !FILE_ID_PATTERN.test(id)) return null;
-  const surveyId = surveyIdOfFile(id);
-  if (surveyId === null || name.slice(0, slash) !== surveyId) return null;
+  const surveyId = upload ? null : surveyIdOfFile(id);
+  if (surveyId !== null && folder !== `${surveyId}/`) return null;
   const kind = metadata?.kind;
   const { contentType, contentLength } = properties;
   if (!isFileKind(kind) || !contentType || contentLength === undefined) return null;
@@ -315,6 +330,16 @@ export function licenceExpiriesFromLegacy(rows: readonly LegacyLicenceRow[]): (D
     return row.parentexpirationdate;
   });
 }
+
+/**
+ * The surveys-account container of each shared results layout kind (layout section 3.10; ADR 0040
+ * point 4): the old service's per-survey layouts, one append blob `{surveyId}` (lower case) each.
+ */
+export const LAYOUT_CONTAINERS_BY_KIND: Readonly<Record<LayoutKind, string>> = {
+  table: "surveyresulttablestate",
+  summary: "surveyresultsummarystate",
+  columns: "surveyresultcolumns",
+};
 
 /**
  * The names of the questions a legacy `surveyresultpermissions` blob hides from public results: the

@@ -4,6 +4,7 @@ import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
 import { hashCredential } from "../../credentials/format.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -12,6 +13,7 @@ import type {
   SurveyRecord,
 } from "../../domain/types.js";
 import { readLegacyFixtures } from "../azure-legacy/fixtures.js";
+import { LAYOUT_CONTAINERS_BY_KIND } from "../azure-legacy/mapping.js";
 import { surveyListOrder } from "../ordering.js";
 import type {
   AppendOutcome,
@@ -128,6 +130,7 @@ const storedRecord = (survey: NewSurvey): SurveyRecord => ({
   creatorId: survey.creatorId.toLowerCase(),
   postId: survey.postId.toLowerCase(),
   resultId: survey.resultId.toLowerCase(),
+  legacyPublishId: null,
   published: true,
   archived: false,
   createdAt: survey.createdAt,
@@ -219,6 +222,21 @@ export function describeProviderSuite(
             resultId: surveyFeedback.resultId.toUpperCase(),
           }),
         ).toEqual(surveyFeedback);
+      });
+
+      it("finds a survey by its legacy publish ID, upper case too", async () => {
+        const publishId = surveyOldPoll.legacyPublishId!;
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: publishId })).toEqual(
+          surveyOldPoll,
+        );
+        expect(
+          await providers.surveys.findSurveyByKey({ legacyPublishId: publishId.toUpperCase() }),
+        ).toEqual(surveyOldPoll);
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: UNKNOWN_ID })).toBeNull();
+        expect(
+          await providers.surveys.findSurveyByKey({ legacyPublishId: "not-a-guid" }),
+        ).toBeNull();
+        expect(await providers.surveys.findSurveyByKey({ legacyPublishId: "" })).toBeNull();
       });
 
       it("finds an archived survey", async () => {
@@ -879,6 +897,11 @@ export function describeProviderSuite(
           { settings: { storeRespondentIp: true } },
           { settings: { publicResults: false, storeRespondentIp: true, useCookies: false } },
         ],
+        [
+          "settings.useCookies",
+          { settings: { useCookies: true } },
+          { settings: { publicResults: false, storeRespondentIp: false, useCookies: true } },
+        ],
       ] as const)("changes %s alone", async (_field, changes, expected) => {
         const survey = await created();
         const updated = await providers.surveys.updateSurvey(survey.id, {
@@ -920,6 +943,21 @@ export function describeProviderSuite(
           storeRespondentIp: true,
           useCookies: false,
         });
+      });
+
+      it("turns the one-response setting on and off again", async () => {
+        const survey = await created();
+        const on = await providers.surveys.updateSurvey(survey.id, {
+          settings: { useCookies: true },
+          updatedAt: UPDATED_AT,
+        });
+        expect(on?.settings.useCookies).toBe(true);
+        const off = await providers.surveys.updateSurvey(survey.id, {
+          settings: { useCookies: false },
+          updatedAt: UPDATED_AT,
+        });
+        expect(off?.settings.useCookies).toBe(false);
+        expect((await providers.surveys.getSurvey(survey.id))?.settings.useCookies).toBe(false);
       });
 
       it("takes updatedAt even when nothing else changes", async () => {
@@ -1404,6 +1442,97 @@ export function describeProviderSuite(
         });
       });
 
+      describe("delete one response", () => {
+        const at = (hour: number): string =>
+          `2026-08-03T${String(hour).padStart(2, "0")}:00:00.000Z`;
+        const ids = async (survey: SurveyRecord): Promise<string[]> =>
+          (await providers.results.listResponses(survey)).map((row) => row.id);
+        /** Two partial saves and a complete one of `client-del`, between two other responses. */
+        const runSurvey = async (): Promise<SurveyRecord> => {
+          const survey = await freshSurvey();
+          await append(survey, sid(1), { submittedAt: at(9) });
+          for (const [n, hour, partial] of [
+            [2, 10, true],
+            [3, 11, true],
+            [4, 12, false],
+          ] as const) {
+            await append(survey, sid(n), {
+              submittedAt: at(hour),
+              clientId: "client-del",
+              ...(partial && { partial }),
+            });
+          }
+          await append(survey, sid(5), { submittedAt: at(13), clientId: "client-other" });
+          return survey;
+        };
+
+        it.each([
+          ["third", 4],
+          ["second", 3],
+          ["first", 2],
+        ])(
+          "deletes the whole run by its %s save's id (any letter case), clearing the client's state",
+          async (_which, n) => {
+            const survey = await runSurvey();
+            expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+
+            expect(await providers.results.deleteResponse(survey, sid(n).toUpperCase())).toBe(true);
+
+            expect(await ids(survey)).toStrictEqual([sid(1), sid(5)]);
+            expect(await providers.results.completion(survey, "client-del")).toBe("none");
+            expect(await providers.results.completion(survey, "client-other")).toBe("completed");
+            expect(
+              (await providers.results.listResponsePage(survey, { limit: 10 })).items.map(
+                (item) => item.id,
+              ),
+            ).toStrictEqual([sid(1), sid(5)]);
+            expect(await providers.results.stats(survey)).toEqual({
+              count: 2,
+              firstSubmittedAt: at(9),
+              lastSubmittedAt: at(13),
+            });
+          },
+        );
+
+        it("answers false for an id no save has, and for a non-GUID id, changing nothing", async () => {
+          const survey = await runSurvey();
+          const other = await freshSurvey();
+          await append(other, sid(9), { submittedAt: at(9) });
+          for (const id of [sid(8), sid(9), "not-a-guid", ""]) {
+            expect(await providers.results.deleteResponse(survey, id), id).toBe(false);
+          }
+          expect(await ids(survey)).toStrictEqual([sid(1), sid(2), sid(3), sid(4), sid(5)]);
+          expect(await ids(other)).toStrictEqual([sid(9)]);
+          expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+        });
+
+        it("deletes a response without a client id by its id, and only that one", async () => {
+          const survey = await runSurvey();
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([sid(2), sid(3), sid(4), sid(5)]);
+          expect(await providers.results.completion(survey, "client-del")).toBe("completed");
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(false);
+        });
+
+        it("deletes an open run and keeps the marker of a client's later run", async () => {
+          const survey = await freshSurvey();
+          const client = { clientId: "client-two" };
+          await append(survey, sid(1), { submittedAt: at(9), ...client });
+          await append(survey, sid(2), { submittedAt: at(10), ...client, partial: true });
+          expect(await providers.results.completion(survey, "client-two")).toBe("partial");
+
+          // The first run (one complete save): the later open run still holds the client's state.
+          expect(await providers.results.deleteResponse(survey, sid(1))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([sid(2)]);
+          expect(await providers.results.completion(survey, "client-two")).toBe("partial");
+
+          expect(await providers.results.deleteResponse(survey, sid(2))).toBe(true);
+          expect(await ids(survey)).toStrictEqual([]);
+          expect(await providers.results.completion(survey, "client-two")).toBe("none");
+          expect(await providers.results.hasPartial(survey)).toBe(false);
+        });
+      });
+
       describe("partial responses", () => {
         const at = (hour: number): string =>
           `2026-08-02T${String(hour).padStart(2, "0")}:00:00.000Z`;
@@ -1851,6 +1980,117 @@ export function describeProviderSuite(
         ).rejects.toThrow();
       });
 
+      describe("shared layouts", () => {
+        // Whitespace, key order and a duplicate key are part of the text, kept as given.
+        const text = ' {\n  "b": 2,  "a": [1, { "z": "Ünïcødé 😀" }],\n "b": 3 }\n';
+        const fresh = () => providers.surveys.createSurvey(newSurvey(freshScope()));
+        const layout = (surveyId: string, kind: LayoutKind) =>
+          providers.views.getLayout(surveyId, kind);
+        /** The text of the fixture's old layout of this kind for survey …a01. */
+        const fixtureText = async (kind: LayoutKind): Promise<string> => {
+          const { blobs } = await readLegacyFixtures();
+          const container = LAYOUT_CONTAINERS_BY_KIND[kind];
+          const found = blobs.find(
+            (b) => b.container === container && b.name === surveyFeedback.id,
+          );
+          if (!found) throw new Error(`No fixture layout ${kind} of ${surveyFeedback.id}`);
+          return found.content.toString("utf8");
+        };
+
+        it("reads the fixture layouts of survey …a01 verbatim, and null elsewhere", async () => {
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(surveyFeedback.id, kind)).toBe(await fixtureText(kind));
+          }
+          expect(await layout(surveyFeedback.id.toUpperCase(), "table")).toBe(
+            await fixtureText("table"),
+          );
+          expect(await layout(surveyCampaign.id, "summary")).toBeNull();
+          expect(await layout(surveyCampaign.id, "columns")).toBeNull();
+        });
+
+        it("saves, reads verbatim, replaces and deletes, per survey and kind", async () => {
+          const survey = await fresh();
+          const other = await fresh();
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBeNull();
+            await providers.views.saveLayout(survey.id, kind, `${kind}${text}`);
+          }
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBe(`${kind}${text}`);
+            expect(await layout(other.id, kind)).toBeNull();
+          }
+          expect(await layout(survey.id.toUpperCase(), "summary")).toBe(`summary${text}`);
+
+          await providers.views.saveLayout(survey.id.toUpperCase(), "summary", "x");
+          expect(await layout(survey.id, "summary")).toBe("x");
+
+          await providers.views.deleteLayout(survey.id, "summary");
+          expect(await layout(survey.id, "summary")).toBeNull();
+          expect(await layout(survey.id, "table")).toBe(`table${text}`);
+          await providers.views.deleteLayout(survey.id, "summary");
+          await providers.views.deleteLayout(other.id, "columns");
+          expect(await layout(survey.id, "summary")).toBeNull();
+        });
+
+        it("does not change the survey record", async () => {
+          const survey = await fresh();
+          await providers.views.saveLayout(survey.id, "table", text);
+          expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+          await providers.views.deleteLayout(survey.id, "table");
+          expect(await providers.surveys.getSurvey(survey.id)).toEqual(survey);
+        });
+
+        it("is each user's view until they save or reset their own", async () => {
+          const survey = await fresh();
+          const state = { elements: [{ name: "q1", isVisible: false }], pageSize: 5 };
+          await providers.views.saveLayout(survey.id, "table", JSON.stringify(state, null, 2));
+          const [none, own, reset] = [randomUUID(), randomUUID(), randomUUID()];
+          await providers.views.saveView(survey.id, own, "table", { mine: true });
+          await providers.views.resetView(survey.id, reset, "table");
+          expect(await get(survey.id, none, "table")).toEqual(state);
+          expect(await get(survey.id, own, "table")).toEqual({ mine: true });
+          expect(await get(survey.id, reset, "table")).toBeNull();
+          expect(await get(survey.id, none, "summary")).toBeNull();
+
+          await providers.views.saveLayout(survey.id, "summary", '{"s":1}');
+          expect(await get(survey.id, none, "summary")).toEqual({ s: 1 });
+          await providers.views.deleteLayout(survey.id, "table");
+          expect(await get(survey.id, none, "table")).toBeNull();
+        });
+
+        it("is no view when it is not a JSON object, and stays readable as text", async () => {
+          const survey = await fresh();
+          const user = randomUUID();
+          for (const stored of ["[1]", '"x"', "not json", "null"]) {
+            await providers.views.saveLayout(survey.id, "summary", stored);
+            expect(await get(survey.id, user, "summary")).toBeNull();
+            expect(await layout(survey.id, "summary")).toBe(stored);
+          }
+        });
+
+        it("is not copied by a clone and is deleted with the survey", async () => {
+          const survey = await fresh();
+          for (const kind of ["table", "summary", "columns"] as const) {
+            await providers.views.saveLayout(survey.id, kind, text);
+          }
+          const copy = await providers.surveys.cloneSurvey(survey.id, newSurvey(freshScope()));
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(copy!.id, kind)).toBeNull();
+            expect(await layout(survey.id, kind)).toBe(text);
+          }
+          expect(await providers.surveys.deleteSurvey(survey.id)).toBe(true);
+          for (const kind of ["table", "summary", "columns"] as const) {
+            expect(await layout(survey.id, kind)).toBeNull();
+          }
+        });
+
+        it("reads null and refuses writes for an id that is not a GUID", async () => {
+          expect(await layout("not-a-guid", "table")).toBeNull();
+          await expect(providers.views.saveLayout("not-a-guid", "table", text)).rejects.toThrow();
+          await expect(providers.views.deleteLayout("not-a-guid", "table")).rejects.toThrow();
+        });
+      });
+
       describe("private questions", () => {
         const names = ["q2", "q1", "Ünïcødé 😀"];
         const fresh = () => providers.surveys.createSurvey(newSurvey(freshScope()));
@@ -2075,6 +2315,14 @@ export function describeProviderSuite(
         ]).toEqual([]);
       });
 
+      const readLegacy = async (kind: "asset" | "response", name: string) => {
+        const found = await providers.files.getFileByLegacyName(kind, name);
+        if (!found) return null;
+        const chunks: Buffer[] = [];
+        for await (const chunk of found.content) chunks.push(chunk as Buffer);
+        return { file: found.file, bytes: Buffer.concat(chunks) };
+      };
+
       describe("getFileByLegacyName", () => {
         /** The fixtures' editor asset (no extension) and respondent file. */
         const fixtureFile = async (share: string, name: string): Promise<Buffer> => {
@@ -2082,13 +2330,6 @@ export function describeProviderSuite(
           const found = files.find((f) => f.share === share && f.name === name);
           if (!found) throw new Error(`No fixture file ${share}/${name}`);
           return found.content;
-        };
-        const readLegacy = async (kind: "asset" | "response", name: string) => {
-          const found = await providers.files.getFileByLegacyName(kind, name);
-          if (!found) return null;
-          const chunks: Buffer[] = [];
-          for await (const chunk of found.content) chunks.push(chunk as Buffer);
-          return { file: found.file, bytes: Buffer.concat(chunks) };
         };
 
         it("returns the seeded editor asset as stored, octet-stream without an extension", async () => {
@@ -2139,6 +2380,123 @@ export function describeProviderSuite(
         ])("answers null for the name %j, which is no legacy name", async (name) => {
           expect(await readLegacy("asset", name)).toBeNull();
           expect(await readLegacy("response", name)).toBeNull();
+        });
+      });
+
+      describe("files of no survey (saveUserFile, deleteUserFiles)", () => {
+        const SAVED_AT = "2026-11-20T10:00:00.000Z";
+        /** A fresh owner id (the store does not need the user to exist), files removed at the end. */
+        const owners: string[] = [];
+        const freshOwner = (): string => {
+          const id = randomUUID();
+          owners.push(id);
+          return id;
+        };
+        afterAll(async () => {
+          for (const id of owners) await providers.files.deleteUserFiles(id);
+        });
+        const save = (
+          ownerUserId: string,
+          content: Buffer = PNG,
+          over: { name?: string; contentType?: string } = {},
+        ) =>
+          providers.files.saveUserFile(ownerUserId, {
+            name: "logo.png",
+            contentType: "image/png",
+            createdAt: SAVED_AT,
+            content,
+            ...over,
+          });
+
+        /** A lower-case GUID, as the old service named its uploads. */
+        const LOWER_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+        it("stores an editor file under a random GUID name, served as an asset by it with its type", async () => {
+          const owner = freshOwner();
+          const { file, legacyName } = await save(owner.toUpperCase());
+          expect(file).toEqual({
+            id: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+            surveyId: null,
+            kind: "asset",
+            name: "logo.png",
+            contentType: "image/png",
+            size: PNG.length,
+            createdAt: SAVED_AT,
+          });
+          // The name is public: a random GUID, not the file id, without the owner's id in it.
+          expect(legacyName).toMatch(LOWER_GUID);
+          expect(legacyName).not.toBe(owner);
+          expect(legacyName.replaceAll("-", "")).not.toBe(file.id.slice(0, 32));
+          for (const value of [legacyName, file.id]) {
+            expect(value).not.toContain(owner.replaceAll("-", ""));
+            expect(value).not.toContain(owner);
+          }
+          expect(surveyIdOfFile(file.id)).not.toBe(owner);
+          const found = await readLegacy("asset", legacyName);
+          expect(found?.bytes.equals(PNG)).toBe(true);
+          expect(found?.file).toEqual({ ...file, name: legacyName });
+          // Only by its name: not by the file id, nor in another case or as a response.
+          expect(await readLegacy("asset", file.id)).toBeNull();
+          expect(await readLegacy("asset", legacyName.toUpperCase())).toBeNull();
+          expect(await readLegacy("response", legacyName)).toBeNull();
+
+          // The type is the one given, not the name's.
+          const pdf = Buffer.from("%PDF-1.4\n");
+          const other = await save(owner, pdf, {
+            name: "doc.png",
+            contentType: "application/octet-stream",
+          });
+          expect(other.legacyName).not.toBe(legacyName);
+          expect(other.file.id).not.toBe(file.id);
+          const read = await readLegacy("asset", other.legacyName);
+          expect(read?.bytes.equals(pdf)).toBe(true);
+          expect(read?.file).toMatchObject({
+            contentType: "application/octet-stream",
+            size: pdf.length,
+          });
+        });
+
+        it("stores an empty file", async () => {
+          const { legacyName } = await save(freshOwner(), Buffer.alloc(0));
+          const found = await readLegacy("asset", legacyName);
+          expect(found?.file.size).toBe(0);
+          expect(found?.bytes.length).toBe(0);
+        });
+
+        it("is no survey's file: not read by id, nor counted or deleted with one", async () => {
+          const owner = freshOwner();
+          const { file, legacyName } = await save(owner);
+          expect(await providers.files.getFile(file.id)).toBeNull();
+          expect(await providers.files.usage(owner, "asset")).toBe(0);
+          expect(await providers.files.deleteSurveyFiles(owner)).toBe(0);
+          expect(await providers.files.deleteFile(file.id)).toBe(false);
+          expect((await readLegacy("asset", legacyName))?.bytes.equals(PNG)).toBe(true);
+        });
+
+        it("deletes the owner's files, in any id case, and leaves another's", async () => {
+          const owner = freshOwner();
+          const other = freshOwner();
+          const mine = [await save(owner), await save(owner)];
+          const theirs = await save(other);
+          expect(await providers.files.countUserFiles(owner.toUpperCase())).toBe(2);
+          expect(await providers.files.countUserFiles(other)).toBe(1);
+          expect(await providers.files.deleteUserFiles(owner.toUpperCase())).toBe(2);
+          for (const { legacyName } of mine) {
+            expect(await readLegacy("asset", legacyName)).toBeNull();
+          }
+          expect((await readLegacy("asset", theirs.legacyName))?.bytes.equals(PNG)).toBe(true);
+          expect(await providers.files.countUserFiles(owner)).toBe(0);
+          expect(await providers.files.countUserFiles(other)).toBe(1);
+          // Nothing left, an owner without files and a malformed id: nothing to do.
+          expect(await providers.files.deleteUserFiles(owner)).toBe(0);
+          expect(await providers.files.deleteUserFiles(freshOwner())).toBe(0);
+          expect(await providers.files.deleteUserFiles("not-a-guid")).toBe(0);
+          expect(await providers.files.countUserFiles("not-a-guid")).toBe(0);
+          expect((await readLegacy("asset", theirs.legacyName))?.bytes.equals(PNG)).toBe(true);
+        });
+
+        it("rejects an owner id that is not a GUID", async () => {
+          await expect(save("not-a-guid")).rejects.toThrow();
         });
       });
     });
@@ -2636,7 +2994,16 @@ export function describeProviderSuite(
           projectsLeft: 0,
           projectsDeleted: 0,
           adminsPromoted: 0,
+          uploadsDeleted: 0,
         };
+        /** Stores an editor file of no survey (uploadLegacyFile) for the user. */
+        const saveUpload = (userId: string) =>
+          providers.files.saveUserFile(userId, {
+            name: "logo.png",
+            contentType: "image/png",
+            createdAt: CREATED_AT,
+            content: PNG,
+          });
 
         /** Stores an editor asset of the survey and returns its id. */
         const putAsset = async (surveyId: string): Promise<string> => {
@@ -2659,6 +3026,13 @@ export function describeProviderSuite(
           await providers.surveys.updateSurvey(archived.id, { archived: true, updatedAt: NOW });
           const withFile = await providers.surveys.createSurvey(newSurvey(scope));
           const fileId = await putAsset(withFile.id);
+          // An editor file of no survey (uploadLegacyFile) is the user's too; another's stays.
+          const ownFile = await saveUpload(scope.userId);
+          const bystander = randomUUID();
+          onTestFinished(async () => {
+            await providers.files.deleteUserFiles(bystander);
+          });
+          const othersFile = await saveUpload(bystander);
           const eraseAccount = createEraseAccount(providers);
 
           expect(await eraseAccount(scope.userId, options)).toEqual({
@@ -2667,11 +3041,17 @@ export function describeProviderSuite(
             projectsLeft: 0,
             projectsDeleted: 0,
             adminsPromoted: 0,
+            uploadsDeleted: 1,
           });
           expect(await providers.surveys.listSurveys(scope)).toEqual([]);
           expect(await providers.surveys.getSurvey(archived.id)).toBeNull();
           expect(await providers.surveys.getSurvey(withFile.id)).toBeNull();
           expect(await providers.files.getFile(fileId)).toBeNull();
+          expect(await providers.files.getFileByLegacyName("asset", ownFile.legacyName)).toBeNull();
+          const kept = await providers.files.getFileByLegacyName("asset", othersFile.legacyName);
+          kept?.content.destroy();
+          expect(kept?.file.id).toBe(othersFile.file.id);
+          expect(await providers.files.countUserFiles(bystander)).toBe(1);
           expect(await eraseAccount(scope.userId, options)).toEqual({
             userId: scope.userId,
             ...noCounts,
@@ -2707,6 +3087,7 @@ export function describeProviderSuite(
           const p2File = await putAsset(p2Survey.id);
           const p3 = await ownProject({ name: `Erasure 3 ${tag}` });
           await providers.projects.addMember(p3.id, ERASABLE_ID, "user", options);
+          const upload = await saveUpload(ERASABLE_ID);
 
           const expectedPreview = {
             userId: ERASABLE_ID,
@@ -2721,6 +3102,7 @@ export function describeProviderSuite(
               { id: p2.id, name: p2.name, decision: { kind: "last-member" }, surveyCount: 1 },
               { id: p3.id, name: p3.name, decision: { kind: "remove" }, surveyCount: 0 },
             ],
+            uploads: 1,
           };
           expect(await previewErasure(providers, ERASABLE_ID.toUpperCase())).toEqual(
             expectedPreview,
@@ -2734,8 +3116,10 @@ export function describeProviderSuite(
             projectsLeft: 2,
             projectsDeleted: 1,
             adminsPromoted: 1,
+            uploadsDeleted: 1,
           });
           expect(await providers.surveys.getSurvey(personal.id)).toBeNull();
+          expect(await providers.files.getFileByLegacyName("asset", upload.legacyName)).toBeNull();
           expect(await providers.surveys.getSurvey(p1Survey.id)).toEqual(p1Survey);
           expect((await providers.projects.getUserProject(MEMBER_ID, p1.id))?.role).toBe("admin");
           expect(await providers.projects.getUserProject(ERASABLE_ID, p2.id)).toBeNull();

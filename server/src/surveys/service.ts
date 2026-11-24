@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { components } from "@surveyjs-studio/contract";
-import { scopeOf, type RequestUser } from "../auth/authenticate.js";
+import { type RequestUser } from "../auth/authenticate.js";
 import type { Clock } from "../auth/session.js";
 import { inScope, membershipIn } from "../credentials/scope.js";
 import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
@@ -12,7 +12,7 @@ import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
 import { surveyChangesFromPatch } from "./patch.js";
-import { canModify } from "./permissions.js";
+import { canModify, canSee } from "./permissions.js";
 
 type SurveyCreate = components["schemas"]["SurveyCreate"];
 type SurveyPage = components["schemas"]["SurveyPage"];
@@ -41,6 +41,15 @@ export interface SurveyListQuery {
   readonly archived: boolean;
   readonly limit: number;
   readonly cursor?: string;
+  /** `theme`: each item carries its theme (the object, or null when the survey has none). */
+  readonly include?: "theme";
+  /**
+   * With `postId` or `legacyPublishId` the answer holds the one survey with that id that the caller
+   * can see in the credential's scope, archived or not, or none; `project` and `archived` are
+   * ignored. Both given: the survey must have both.
+   */
+  readonly postId?: string;
+  readonly legacyPublishId?: string;
 }
 
 /** Where a request's warnings go (the request's logger). */
@@ -157,7 +166,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
    * (403). Outside the credential's scope either answers 404, as an unknown project.
    */
   async function targetScope(user: RequestUser, projectId: string | null): Promise<Scope> {
-    const credential = scopeOf(user);
+    const credential = user.scope;
     if (projectId === null) {
       if (!inScope(credential, personalOwner(user))) throw notFound();
       return personalScope(user);
@@ -169,7 +178,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
 
   /** The scope used when a request names none: a project token's project, else Personal. */
   async function ownScope(user: RequestUser): Promise<Scope> {
-    const credential = scopeOf(user);
+    const credential = user.scope;
     if (credential.kind !== "project") return personalScope(user);
     // The token's project is gone: as an unknown project.
     const membership = await membershipOf(user, credential.projectId);
@@ -180,7 +189,7 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
   /** The scope `listSurveys` names: `personal` or a project; anything out of reach answers 404. */
   async function listedScope(user: RequestUser, project: string): Promise<Scope> {
     if (project === PERSONAL) {
-      if (!inScope(scopeOf(user), personalOwner(user))) throw notFound();
+      if (!inScope(user.scope, personalOwner(user))) throw notFound();
       return personalScope(user);
     }
     // An unknown id, text that is no id and a project of others all look the same.
@@ -189,8 +198,58 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
     return projectScope(membership);
   }
 
+  /** The items of a list, with their themes when asked (`include=theme`). */
+  async function withThemes(
+    items: readonly SurveyJson[],
+    include: "theme" | undefined,
+  ): Promise<SurveyJson[]> {
+    if (include !== "theme") return [...items];
+    return Promise.all(
+      items.map(async (item) => {
+        const theme = (await surveys.getTheme(item.id))?.content;
+        // A survey without a theme reads as {}; the answer says null.
+        return { ...item, theme: theme && Object.keys(theme).length > 0 ? theme : null };
+      }),
+    );
+  }
+
+  /** The one survey `postId` / `legacyPublishId` names, when the caller can see it; else none. */
+  async function surveysByKey(
+    user: RequestUser,
+    keys: { postId?: string; legacyPublishId?: string },
+  ): Promise<SurveyJson[]> {
+    const { postId, legacyPublishId } = keys;
+    const found = await surveys.findSurveyByKey(
+      postId !== undefined ? { postId } : { legacyPublishId: legacyPublishId! },
+    );
+    if (!found || !inScope(user.scope, found.owner)) return [];
+    if (
+      postId !== undefined &&
+      legacyPublishId !== undefined &&
+      found.legacyPublishId?.toLowerCase() !== legacyPublishId.toLowerCase()
+    ) {
+      return [];
+    }
+    const membership =
+      found.owner.kind === "project" ? await membershipOf(user, found.owner.projectId) : null;
+    if (!canSee(found, user, membership)) return [];
+    return [surveyJson(found, canModify(found, user, membership))];
+  }
+
   return {
-    async list(user, { project, archived, limit, cursor }) {
+    async list(user, { project, archived, limit, cursor, include, postId, legacyPublishId }) {
+      if (postId !== undefined || legacyPublishId !== undefined) {
+        return {
+          items: await withThemes(
+            await surveysByKey(user, {
+              ...(postId !== undefined && { postId }),
+              ...(legacyPublishId !== undefined && { legacyPublishId }),
+            }),
+            include,
+          ),
+          nextCursor: null,
+        };
+      }
       const scope = project === undefined ? await ownScope(user) : await listedScope(user, project);
       const list: SurveyList = { scope: scope.key, archived };
       const page = await surveys.listSurveyPage({
@@ -200,8 +259,9 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
         ...(cursor !== undefined && { after: decodeSurveyCursor(cursor, list) }),
       });
       return {
-        items: page.items.map((survey) =>
-          surveyJson(survey, canModify(survey, user, scope.membership)),
+        items: await withThemes(
+          page.items.map((survey) => surveyJson(survey, canModify(survey, user, scope.membership))),
+          include,
         ),
         nextCursor: page.next ? encodeSurveyCursor(page.next, list) : null,
       };

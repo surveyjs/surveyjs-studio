@@ -7,7 +7,7 @@ const lowerOwner = (owner: SurveyOwner): SurveyOwner =>
     ? { kind: "personal", userId: owner.userId.toLowerCase() }
     : { kind: "project", projectId: owner.projectId.toLowerCase() };
 
-/** The record after `changes`; ids stay lower-case; `settings.useCookies` is never changed. */
+/** The record after `changes`; ids stay lower-case; settings change as given. */
 export function applySurveyChanges(record: SurveyRecord, changes: SurveyChanges): SurveyRecord {
   const { name, move, published, archived, settings, updatedAt } = changes;
   return {
@@ -25,6 +25,7 @@ export function applySurveyChanges(record: SurveyRecord, changes: SurveyChanges)
       ...(settings?.storeRespondentIp !== undefined && {
         storeRespondentIp: settings.storeRespondentIp,
       }),
+      ...(settings?.useCookies !== undefined && { useCookies: settings.useCookies }),
     },
     updatedAt,
   };
@@ -41,6 +42,7 @@ export const newSurveyRecord = (survey: NewSurvey): SurveyRecord => ({
   creatorId: lowerId(survey.creatorId),
   postId: lowerId(survey.postId),
   resultId: lowerId(survey.resultId),
+  legacyPublishId: null,
   published: true,
   archived: false,
   createdAt: survey.createdAt,

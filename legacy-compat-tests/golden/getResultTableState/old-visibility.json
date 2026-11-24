@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a Table state with the old visibility numbers: rewritten as isVisible and isPublic",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "table": "{\"elements\":[{\"name\":\"satisfaction\",\"visibility\":2}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultTableState",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{\"elements\":[{\"name\":\"satisfaction\",\"isVisible\":true,\"isPublic\":false}]}"
+    }
+  }
+}

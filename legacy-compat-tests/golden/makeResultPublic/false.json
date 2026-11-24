@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "makeResultPublic=false: the stored value, false",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      }
+    }
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/makeResultPublic/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "makeResultPublic": "false"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": false
+    }
+  }
+}

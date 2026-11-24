@@ -86,6 +86,9 @@ export const sampleSurvey: Survey = {
   postId: "11111111-0000-4000-8000-0000000000a1",
   resultId: "11111111-0000-4000-8000-0000000000b1",
   permissions: { canModify: true },
+  useCookies: false,
+  creatorId: null,
+  legacyPublishId: null,
   settings: { publicResults: false, storeRespondentIp: false },
 };
 

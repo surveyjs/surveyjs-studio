@@ -124,7 +124,6 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "completion_markers",
         "files",
         "legacy_files",
-        "legacy_views",
         "password_links",
         "private_questions",
         "project_invitations",
@@ -132,12 +131,95 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "projects",
         "saved_views",
         "survey_history",
+        "survey_layouts",
         "survey_responses",
         "surveys",
         "user_identities",
         "users",
       ]);
       expect((await migrationStatus(database)).pending).toEqual([]);
+    });
+
+    it("moves the old per-survey layouts into survey_layouts (0009)", async () => {
+      const { database } = await fresh();
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 9),
+      );
+      const surveyId = "22222222-0000-4000-8000-a00000000001";
+      await sql`insert into legacy_views (survey_id, view, state)
+        values (${surveyId}, 'table', ${'{"pageSize":10}'})`.execute(database.db);
+      await migrate(database, shipped);
+      const { rows } = await sql<{
+        survey_id: string;
+        kind: string;
+        text: string;
+      }>`select survey_id, kind, text from survey_layouts`.execute(database.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ survey_id: surveyId, kind: "table" });
+      expect(JSON.parse(rows[0]!.text)).toEqual({ pageSize: 10 });
+    });
+
+    it("keeps the files and their legacy names when files gains an owner (0009)", async () => {
+      const { database } = await fresh();
+      const { db } = database;
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 9),
+      );
+      const surveyId = "22222222-0000-4000-8000-a00000000001";
+      const ownerId = "11111111-0000-4000-8000-a00000000001";
+      const fileId = `${surveyId.replaceAll("-", "")}${"ab".repeat(16)}`;
+      const createdAt = "2026-09-01T10:00:00.000Z";
+      await sql`insert into files (id, survey_id, kind, name, content_type, size, created_at)
+        values (${fileId}, ${surveyId}, 'asset', 'logo.png', 'image/png', 12, ${createdAt})`.execute(
+        db,
+      );
+      await sql`insert into legacy_files (kind, legacy_name, file_id)
+        values ('asset', 'a.png', ${fileId})`.execute(db);
+
+      await migrate(database, shipped);
+      const files = await sql<{
+        id: string;
+        survey_id: string | null;
+        owner_user_id: string | null;
+        name: string;
+        size: number | string;
+      }>`select id, survey_id, owner_user_id, name, size from files`.execute(db);
+      expect(files.rows.map((row) => ({ ...row, size: Number(row.size) }))).toEqual([
+        { id: fileId, survey_id: surveyId, owner_user_id: null, name: "logo.png", size: 12 },
+      ]);
+      const names = await sql`select kind, legacy_name, file_id from legacy_files`.execute(db);
+      expect(names.rows).toEqual([{ kind: "asset", legacy_name: "a.png", file_id: fileId }]);
+      if (dialect === "sqlite") {
+        expect((await sql`pragma foreign_key_check`.execute(db)).rows).toEqual([]);
+        const keys = await sql<{
+          table: string;
+        }>`select "table" from pragma_foreign_key_list('legacy_files')`.execute(db);
+        expect(keys.rows).toEqual([{ table: "files" }]);
+      }
+
+      // Exactly one of the survey and the owner.
+      const insertFile = (id: string, survey: string | null, owner: string | null) =>
+        sql`insert into files (id, survey_id, owner_user_id, kind, name, content_type, size, created_at)
+          values (${id}, ${survey}, ${owner}, 'asset', 'x.png', 'image/png', 1, ${createdAt})`.execute(
+          db,
+        );
+      const ownerFileId = `${ownerId.replaceAll("-", "")}${"cd".repeat(16)}`;
+      await expect(insertFile(ownerFileId, null, null)).rejects.toThrow();
+      await expect(insertFile(ownerFileId, surveyId, ownerId)).rejects.toThrow();
+      await insertFile(ownerFileId, null, ownerId);
+
+      // The legacy names still refer to files: an unknown file is refused, and a file's names go
+      // with it.
+      await expect(
+        sql`insert into legacy_files (kind, legacy_name, file_id)
+          values ('asset', 'b.png', ${"f".repeat(64)})`.execute(db),
+      ).rejects.toThrow();
+      await sql`delete from files where id = ${fileId}`.execute(db);
+      expect((await sql`select legacy_name from legacy_files`.execute(db)).rows).toEqual([]);
     });
 
     if (dialect === "postgres") {

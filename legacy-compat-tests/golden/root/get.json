@@ -1,0 +1,16 @@
+{
+  "source": "derived",
+  "description": "GET private/Surveys: an empty 500 (no single action matched)",
+  "request": {
+    "method": "GET",
+    "path": "/private/Surveys"
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

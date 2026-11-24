@@ -5,15 +5,22 @@ import { expect, inject, it } from "vitest";
 import {
   compareAnswer,
   loadGoldens,
-  readAnswer,
-  requestInit,
-  requestUrl,
+  sendRequest,
   substitute,
   type Answer,
   type Golden,
   type GoldenRequest,
 } from "./golden.js";
-import { createSurvey, removeSurvey } from "./studio.js";
+import {
+  archiveSurvey,
+  createSurvey,
+  listResults,
+  OWNER_ID,
+  ownerSurveyIds,
+  removeSurvey,
+  saveLayout,
+  saveTheme,
+} from "./studio.js";
 
 export { compareAnswer, matchesText, readAnswer } from "./golden.js";
 
@@ -28,23 +35,43 @@ export const LEGACY_STUB_URL = inject("legacyStubUrl");
 
 /** Sends a request to the old API's host and reads the whole answer. */
 export async function send(request: GoldenRequest): Promise<Answer> {
-  return readAnswer(await fetch(requestUrl(BASE_URL, request), requestInit(request)));
+  return sendRequest(BASE_URL, request);
 }
+
+/**
+ * The fixtures' access keys (server/fixtures/legacy): the owner's, a Marketing member's (role
+ * `user`, so neither a project admin nor a creator of the cases' surveys), and the erasure user's,
+ * which is revoked.
+ */
+export const KEYS = {
+  accessKey: "access-key-1",
+  memberKey: "access-key-3",
+  revokedKey: "access-key-6",
+} as const;
+
+/** The variables every case has: the keys and the owner's user ID. */
+const BASE_VARS: Readonly<Record<string, string>> = { ...KEYS, "owner.userId": OWNER_ID };
 
 /** Sets up the case's state; returns its variables and the cleanup. */
 async function prepare(
   golden: Golden,
 ): Promise<{ vars: Record<string, string>; cleanUp: () => Promise<void> }> {
   const setup = golden.setup;
-  if (setup === undefined) return { vars: {}, cleanUp: () => Promise.resolve() };
-  const survey = await createSurvey(setup.survey.settings);
+  if (setup === undefined) return { vars: { ...BASE_VARS }, cleanUp: () => Promise.resolve() };
+  const { settings, projectId, theme, layouts, archived } = setup.survey;
+  const survey = await createSurvey(settings, undefined, projectId);
   const vars: Record<string, string> = {
+    ...BASE_VARS,
     "survey.surveyId": survey.surveyId,
     "survey.postId": survey.postId,
     "survey.resultId": survey.resultId,
   };
   const cleanUp = () => removeSurvey(survey.surveyId);
   try {
+    if (theme !== undefined) await saveTheme(survey.surveyId, theme);
+    for (const [kind, text] of Object.entries(layouts ?? {})) {
+      await saveLayout(survey.surveyId, kind as keyof typeof layouts, text);
+    }
     for (const post of setup.posts ?? []) {
       const answer = await send({
         method: "POST",
@@ -53,6 +80,10 @@ async function prepare(
         body: { json: { postId: survey.postId, ...post } },
       });
       if (answer.status !== 200) throw new Error(`the setup post answered ${answer.status}`);
+    }
+    if ((setup.posts ?? []).length > 0) {
+      const [first] = await listResults(survey.surveyId);
+      if (first !== undefined) vars["survey.responseId"] = first.id;
     }
     for (const upload of setup.uploads ?? []) {
       const answer = await send({
@@ -75,6 +106,7 @@ async function prepare(
       vars[upload.as] = name;
       vars[`${upload.as}.name`] = name.slice(name.indexOf(":") + 1);
     }
+    if (archived === true) await archiveSurvey(survey.surveyId);
   } catch (error) {
     await cleanUp();
     throw error;
@@ -82,17 +114,26 @@ async function prepare(
   return { vars, cleanUp };
 }
 
+/** Removes every survey the owner sees that `before` does not hold. */
+async function removeNewSurveys(before: ReadonlySet<string>): Promise<void> {
+  for (const id of await ownerSurveyIds()) if (!before.has(id)) await removeSurvey(id);
+}
+
 /** One test per golden file of the actions; a case limited to other providers is skipped. */
 export function goldenTests(actions: readonly string[]): void {
   for (const { name, golden } of loadGoldens(actions)) {
     const runs = golden.providers === undefined || golden.providers.includes(PROVIDER);
-    it.skipIf(!runs)(`${name}: ${golden.description}`, async () => {
+    // A known mismatch must still fail: when the bridge is fixed, the note has to go.
+    const test = !runs ? it.skip : golden.knownMismatch === undefined ? it : it.fails;
+    test(`${name}: ${golden.description}`, async () => {
+      const before = golden.creates === true ? await ownerSurveyIds() : undefined;
       const { vars, cleanUp } = await prepare(golden);
       try {
         const answer = await send(substitute(golden.request, vars));
         expect(compareAnswer(substitute(golden.response, vars), answer)).toEqual([]);
       } finally {
         await cleanUp();
+        if (before !== undefined) await removeNewSurveys(before);
       }
     });
   }

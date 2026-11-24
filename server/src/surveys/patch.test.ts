@@ -14,6 +14,7 @@ function survey(owner: SurveyOwner): SurveyRecord {
     creatorId: "aaaaaaaa-0000-4000-8000-000000000009",
     postId: "dddddddd-0000-4000-8000-000000000001",
     resultId: "eeeeeeee-0000-4000-8000-000000000001",
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-01-01T00:00:00.000Z",

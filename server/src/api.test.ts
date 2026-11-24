@@ -17,6 +17,7 @@ import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import {
   feedbackHistoryIds,
+  feedbackResponses,
   MEMBER_ID,
   ownerUser,
   PROJECT_A_ID,
@@ -398,6 +399,7 @@ function contractOperations(): ContractOperation[] {
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,
     entryId: feedbackHistoryIds[0] ?? "",
+    responseId: feedbackResponses[0]?.id ?? "",
     tokenId: OWNER_TOKEN.id,
     // The fixtures' legacy editor image (getLegacyFile); also a question name nothing answered.
     kind: "asset",
@@ -510,6 +512,8 @@ const HOSTED_ONLY = [
   "uploadResponseFileByPostId",
   "getQuestionSummary",
   "getLegacyFile",
+  "getPublicLayout",
+  "uploadLegacyFile",
 ];
 
 describe("/api/docs", () => {

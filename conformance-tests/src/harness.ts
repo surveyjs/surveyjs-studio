@@ -34,6 +34,8 @@ export const HOSTED_OPERATIONS: readonly string[] = [
   "uploadResponseFileByPostId",
   "getQuestionSummary",
   "getLegacyFile",
+  "getPublicLayout",
+  "uploadLegacyFile",
 ];
 
 /** The answer to a path no route takes: `404 not-found`. */

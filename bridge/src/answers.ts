@@ -33,7 +33,7 @@ export function jsonContentType(accept: string | undefined): string {
 }
 
 /** A JSON body already serialized; the content type follows the request's `Accept`. */
-function sendJsonText(reply: FastifyReply, status: number, text: string): FastifyReply {
+export function sendJsonText(reply: FastifyReply, status: number, text: string): FastifyReply {
   return reply
     .code(status)
     .header("content-type", jsonContentType(reply.request.headers.accept))
@@ -55,12 +55,30 @@ export function sendJson(reply: FastifyReply, status: number, value: unknown): F
   return sendJsonText(reply, status, JSON.stringify(value) ?? "null");
 }
 
-/** **Empty 200/400/404/413/429/500/503**: no body, `Content-Length: 0`, no `Content-Type`. */
+/** **Empty 200/400/401/404/413/415/429/500/503**: no body, `Content-Length: 0`, no `Content-Type`. */
 export function sendEmpty(
   reply: FastifyReply,
-  status: 200 | 400 | 404 | 413 | 429 | 500 | 503,
+  status: 200 | 400 | 401 | 404 | 413 | 415 | 429 | 500 | 503,
 ): FastifyReply {
   return reply.code(status).removeHeader("content-type").send();
+}
+
+/** **Text-200**: the old API's service error, a message as raw `text/html`. */
+export function sendText(reply: FastifyReply, text: string): FastifyReply {
+  return reply.code(200).header("content-type", "text/html; charset=utf-8").send(text);
+}
+
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+/** The text with `&`, `<`, `>`, `"` and `'` as HTML entities, safe inside `text/html`. */
+export function htmlEncode(text: string): string {
+  return text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]!);
 }
 
 /** A per-request trace ID in the W3C form the old API's monitoring gave its error bodies. */

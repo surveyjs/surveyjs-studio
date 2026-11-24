@@ -1,0 +1,19 @@
+{
+  "source": "derived",
+  "description": "PUT private/v1/Surveys/: an empty 500",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

@@ -216,14 +216,31 @@ const rawJson = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
 
 /**
  * A value parsed by {@link parseStudioJson}, written as the old serializer wrote stored answers:
- * numbers as {@link oldNumberText}, date-like strings as dates; property names as they are.
+ * numbers as {@link oldNumberText} (a plain number, which a lenient parse gives, as an integer or a
+ * double), date-like strings as dates (with `strings: "as-stored"`, every string as it is); property
+ * names as they are. Compact, or with `indented` as its indented form (two spaces, Windows line
+ * ends).
  */
-export function oldJson(value: unknown): string {
-  return JSON.stringify(value, (_key: string, inner: unknown) => {
-    if (inner instanceof JsonNumber) return rawJson(oldNumberText(inner.text));
-    if (typeof inner === "string") return oldStringText(inner);
-    return inner;
-  });
+export function oldJson(
+  value: unknown,
+  indented = false,
+  options: { strings?: "dates" | "as-stored" } = {},
+): string {
+  const asStored = options.strings === "as-stored";
+  const text = JSON.stringify(
+    value,
+    (_key: string, inner: unknown) => {
+      if (inner instanceof JsonNumber) return rawJson(oldNumberText(inner.text));
+      if (typeof inner === "number" && Number.isFinite(inner)) {
+        return rawJson(Number.isSafeInteger(inner) ? String(inner) : dotnetDouble(inner));
+      }
+      if (typeof inner === "string" && !asStored) return oldStringText(inner);
+      return inner;
+    },
+    indented ? 2 : undefined,
+  );
+  // A line break inside a string is escaped, so every one left is the indentation's.
+  return indented ? text.replace(/\n/g, "\r\n") : text;
 }
 
 /** The text with at most 7 fractional digits after its seconds (a scan). */

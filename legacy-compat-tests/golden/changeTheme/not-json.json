@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "a form body: an empty 415",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeTheme",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "text": "Id=12345678-90ab-4cde-8f01-234567890abc&ThemeJson=%7B%7D"
+    }
+  },
+  "response": {
+    "status": 415,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

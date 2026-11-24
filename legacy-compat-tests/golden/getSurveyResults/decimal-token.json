@@ -1,0 +1,46 @@
+{
+  "source": "derived",
+  "description": "a decimal token from the old offset engine: rows from that offset, no token after the last",
+  "difference": "The old rows came in the storage's order (random by row key); the bridge's in Studio's order, oldest first (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      },
+      {
+        "surveyResult": "{\"satisfaction\":2}"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyResults",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}",
+      "take": "1",
+      "continuationToken": "1"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "ContinuationToken": null,
+        "ResultCount": 1,
+        "Data": [
+          {
+            "satisfaction": 2,
+            "HappendAt": "<iso>Z",
+            "InstanceId": "<guid>"
+          }
+        ]
+      }
+    }
+  }
+}

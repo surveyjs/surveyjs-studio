@@ -30,6 +30,7 @@ import {
 import { guarded, notFound, ProblemError, type ProblemFieldError } from "./problems";
 import {
   canModify,
+  canSee,
   membershipOf,
   modifiableSurvey,
   PERSONAL,
@@ -90,8 +91,29 @@ export function surveyHandlers(ctx: HandlerContext) {
     http.get("/surveys", ({ request, cookies }) =>
       guarded(() => {
         requireSession(ctx, cookies);
-        const { project, archived, limit, cursor } = parseListQuery(new URL(request.url));
+        const { project, archived, limit, cursor, include, postId, legacyPublishId } =
+          parseListQuery(new URL(request.url));
         return view(ctx, cookies, (data, user) => {
+          // A theme is null for a survey without one (an empty object reads as none).
+          const withTheme = (survey: SandboxSurvey, json: ReturnType<typeof surveyJson>) => {
+            if (include !== "theme") return json;
+            const theme = data.themes[survey.id];
+            return { ...json, theme: theme && Object.keys(theme).length > 0 ? theme : null };
+          };
+          if (postId !== undefined || legacyPublishId !== undefined) {
+            // The one visible survey with these IDs, archived or not, or none; the scope is ignored.
+            const found = data.surveys.find(
+              (s) =>
+                (postId === undefined || s.postId === lower(postId)) &&
+                (legacyPublishId === undefined || s.legacyPublishId === lower(legacyPublishId)),
+            );
+            const membership = found ? surveyMembership(data, user, found) : null;
+            const items =
+              found && canSee(found, user, membership)
+                ? [withTheme(found, surveyJson(found, canModify(found, user, membership)))]
+                : [];
+            return HttpResponse.json({ items, nextCursor: null });
+          }
           let scope = personalScope(user);
           if (project !== PERSONAL) {
             // An unknown id, text that is no id and a project of others all look the same.
@@ -108,7 +130,9 @@ export function surveyHandlers(ctx: HandlerContext) {
           const items = matching.slice(0, limit);
           const last = items.at(-1);
           return HttpResponse.json({
-            items: items.map((s) => surveyJson(s, canModify(s, user, scope.membership))),
+            items: items.map((s) =>
+              withTheme(s, surveyJson(s, canModify(s, user, scope.membership))),
+            ),
             nextCursor:
               matching.length > items.length && last
                 ? encodeSurveyCursor({ updatedAt: last.updatedAt, id: last.id }, list)
@@ -195,6 +219,7 @@ export function surveyHandlers(ctx: HandlerContext) {
           | {
               publicResults?: boolean;
               storeRespondentIp?: boolean;
+              useCookies?: boolean;
               privateResultQuestions?: string[];
             }
           | undefined;
@@ -222,6 +247,7 @@ export function surveyHandlers(ctx: HandlerContext) {
           if (settings?.storeRespondentIp !== undefined) {
             survey.settings.storeRespondentIp = settings.storeRespondentIp;
           }
+          if (settings?.useCookies !== undefined) survey.settings.useCookies = settings.useCookies;
           survey.updatedAt = ctx.now().toISOString();
           if (settings?.privateResultQuestions !== undefined) {
             data.privateResultQuestions[survey.id] = [...settings.privateResultQuestions];

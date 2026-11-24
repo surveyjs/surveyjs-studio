@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "PUT with the key in a form body: the copy is made, an empty 200",
+  "setup": {
+    "survey": {}
+  },
+  "creates": true,
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/clone/{{survey.surveyId}}",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "text": "accessKey={{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

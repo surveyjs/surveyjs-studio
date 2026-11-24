@@ -1,0 +1,8 @@
+[
+  {
+    "PartitionKey": "legacyrevoked",
+    "RowKey": "05f56a06c14f0616bc3c407399f3c0a8cb1ae87a90e8e1389eb9b046455e9ee9",
+    "userId": "11111111-0000-4000-8000-a00000000006",
+    "at": "2026-06-01T12:00:00.000Z"
+  }
+]

@@ -75,8 +75,25 @@ export function describeByteStoreSuite(
       expect((await read(to))?.toString()).toBe("copied");
     });
 
-    it("refuses a key that is not {survey id}/{file id}", async () => {
-      for (const key of ["../outside", `${randomUUID()}/../x`, newKey().toUpperCase(), ""]) {
+    it("stores, reads and deletes a user's file under uploads/{file id}", async () => {
+      const key = `uploads/${randomBytes(32).toString("hex")}`;
+      await store.put(key, Buffer.from("own"), "image/png");
+      expect((await read(key))?.toString()).toBe("own");
+      await store.delete([key]);
+      expect(await store.get(key)).toBeNull();
+    });
+
+    it("refuses a key that is not {survey id}/{file id} or uploads/{file id}", async () => {
+      for (const key of [
+        "../outside",
+        `${randomUUID()}/../x`,
+        newKey().toUpperCase(),
+        "",
+        `projects/${newKey()}`,
+        `users/${newKey()}`,
+        `uploads/${newKey()}`,
+        `uploads/../${randomBytes(32).toString("hex")}`,
+      ]) {
         await expect(store.put(key, Buffer.from("x"), "text/plain")).rejects.toThrow(
           "Not a file key",
         );

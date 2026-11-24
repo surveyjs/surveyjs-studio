@@ -28,6 +28,7 @@ function personal(userId: string): SurveyRecord {
     creatorId: userId,
     postId: `eeeeeeee-0000-4000-8001-${tail}`,
     resultId: `eeeeeeee-0000-4000-8002-${tail}`,
+    legacyPublishId: null,
     published: false,
     archived: false,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -89,8 +90,8 @@ async function ghostData(providers: ProviderSet) {
 }
 
 const LISTED = `Users the directory does not know: 2\n  ${G1}\n  ${G2}\n`;
-const ERASED_G1 = `Erased ${G1}: 1 surveys deleted, 0 projects left, 0 projects deleted, 0 admins promoted.\n`;
-const ERASED_G2 = `Erased ${G2}: 0 surveys deleted, 1 projects left, 0 projects deleted, 0 admins promoted.\n`;
+const ERASED_G1 = `Erased ${G1}: 1 surveys deleted, 0 projects left, 0 projects deleted, 0 admins promoted, 0 uploads deleted.\n`;
+const ERASED_G2 = `Erased ${G2}: 0 surveys deleted, 1 projects left, 0 projects deleted, 0 admins promoted, 0 uploads deleted.\n`;
 
 describe("account:reconcile", () => {
   it("lists the ids the directory does not know and erases nothing without --apply", async () => {

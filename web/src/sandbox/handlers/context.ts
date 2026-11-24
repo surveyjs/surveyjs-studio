@@ -36,3 +36,17 @@ export function newFileId(surveyId: string): string {
   const hex = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return surveyId.replaceAll("-", "").toLowerCase() + hex;
 }
+
+/** A new id for an editor file of no survey: 64 random hex digits, no survey or user id in it (`newUserFileId`). */
+export function newUserFileId(): string {
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * A new legacy name for an editor file of no survey: a random lower-case GUID, as the old service
+ * named uploads (`newLegacyFileName` in server/src/domain/legacy-file.ts).
+ */
+export function newLegacyFileName(): string {
+  return crypto.randomUUID().toLowerCase();
+}

@@ -1,0 +1,23 @@
+{
+  "source": "derived",
+  "description": "results not public: the get-results refusal",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultPublicColumns",
+    "query": {
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "You are not authorized to get results of the survey {{survey.surveyId}}"
+    }
+  }
+}

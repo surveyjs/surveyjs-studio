@@ -1,5 +1,7 @@
 /**
- * Respondent file uploads (`uploadResponseFile`) and their downloads against the legacy fixtures.
+ * Respondent file uploads (`uploadResponseFile`) and their downloads against the legacy fixtures;
+ * files by their legacy names (`getLegacyFile`) and the editor files of no survey that get one
+ * (`uploadLegacyFile`).
  *
  * The data is shared by all test files and never reset (the Azurite replica and its file container
  * keep it between runs), so every test that uploads creates its own survey in the admin's Personal
@@ -345,5 +347,96 @@ describe("getLegacyFile", () => {
       expect(response.status, path).toBe(404);
       expect(await codeOf(response), path).toBe("not-found");
     }
+  });
+});
+
+describe("uploadLegacyFile", () => {
+  const LEGACY_FILES = "/legacy-files";
+  /** Uploads as the signed-in user (session cookies and CSRF header in `headers`). */
+  const uploadLegacy = (headers: Record<string, string>, form: FormData) =>
+    upload(LEGACY_FILES, { headers, form });
+  /** Without cookies, as a site referencing the file does. */
+  const served = (legacyName: string) =>
+    call("GET", "/public/legacy-files/{kind}/{name}", {
+      path: `/public/legacy-files/asset/${legacyName}`,
+    });
+  /** The file is the uploader's until their account goes: account-deleted.test.ts deletes it. */
+  async function legacyNameOf(response: Response): Promise<string> {
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { legacyName: string };
+    expect(Object.keys(body)).toEqual(["legacyName"]);
+    // A random lower-case GUID, as the old service named uploads; it names no user (it is public).
+    expect(body.legacyName).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(body.legacyName).not.toContain(admin.id.toLowerCase());
+    expect(body.legacyName).not.toContain(admin.id.toLowerCase().replaceAll("-", ""));
+    return body.legacyName;
+  }
+
+  it.skipIf(hosted)("is not routed outside the hosted edition", async (ctx) => {
+    const headers = await as(ctx, admin);
+    await expectNotRouted(await uploadLegacy(headers, fileForm(PNG_1X1, "dot.png")));
+  });
+
+  it.runIf(hosted)(
+    "stores an editor file of no survey, served by its legacy name with the detected type",
+    async (ctx) => {
+      const headers = await as(ctx, admin);
+      const legacyName = await legacyNameOf(
+        await uploadLegacy(headers, fileForm(PNG_1X1, "dot.png", "application/octet-stream")),
+      );
+      const file = await served(legacyName);
+      expect(file.status).toBe(200);
+      expect(file.headers.get("content-type")).toBe("image/png");
+      expect(file.headers.get("content-disposition")).toMatch(/^inline; /);
+      expect(Buffer.from(await file.arrayBuffer())).toStrictEqual(PNG_1X1);
+      // A name of the asset kind only.
+      const other = await call("GET", "/public/legacy-files/{kind}/{name}", {
+        path: `/public/legacy-files/response/${legacyName}`,
+      });
+      expect(other.status).toBe(404);
+    },
+  );
+
+  it.runIf(hosted)("stores any other type, and an empty file, as octet-stream", async (ctx) => {
+    const headers = await as(ctx, admin);
+    for (const bytes of [PDF_LIKE, Buffer.alloc(0)]) {
+      const legacyName = await legacyNameOf(
+        await uploadLegacy(headers, fileForm(bytes, "doc.pdf", "application/pdf")),
+      );
+      const file = await served(legacyName);
+      expect(file.status).toBe(200);
+      expect(file.headers.get("content-type")).toBe("application/octet-stream");
+      expect(file.headers.get("content-disposition")).toMatch(/^attachment;/);
+      expect(Buffer.from(await file.arrayBuffer())).toStrictEqual(bytes);
+    }
+  });
+
+  it.runIf(hosted)(
+    "answers 413 payload-too-large for a file over limits.maxAssetBytesPerSurvey",
+    async (ctx) => {
+      const headers = await as(ctx, admin);
+      const config = await call("GET", "/config");
+      const limit = ((await config.json()) as { limits: { maxAssetBytesPerSurvey: number } }).limits
+        .maxAssetBytesPerSurvey;
+      const response = await uploadLegacy(headers, fileForm(pngOfSize(limit + 1)));
+      expect(response.status).toBe(413);
+      expect(await codeOf(response)).toBe("payload-too-large");
+    },
+  );
+
+  it.runIf(hosted)("answers 400 for a form without a file part", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const text = new FormData();
+    text.append("file", "not a file");
+    const response = await uploadLegacy(headers, text);
+    expect(response.status).toBe(400);
+    expect(await codeOf(response)).toBe("bad-request");
+  });
+
+  it.runIf(hosted)("answers 401 without a session", async () => {
+    const response = await upload(LEGACY_FILES, { form: fileForm(PNG_1X1) });
+    expect(response.status).toBe(401);
   });
 });

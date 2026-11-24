@@ -1,0 +1,29 @@
+{
+  "source": "derived",
+  "description": "an element without isPublic: an empty 400",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      },
+      "layouts": {
+        "summary": "{\"elements\":[{\"name\":\"satisfaction\"}]}"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getPublicResultSummaryState",
+    "query": {
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

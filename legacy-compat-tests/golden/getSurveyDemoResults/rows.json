@@ -1,0 +1,40 @@
+{
+  "source": "derived",
+  "description": "the responses with their InstanceId, {ResultCount, Data}",
+  "difference": "The old API took the first 1,000 rows in the storage's order (random by row key); the bridge takes the oldest 1,000 (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyDemoResults/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "ResultCount": 1,
+        "Data": [
+          {
+            "satisfaction": 4,
+            "HappendAt": "<iso>Z",
+            "ClientId": "client-a",
+            "InstanceId": "<guid>"
+          }
+        ]
+      }
+    }
+  }
+}

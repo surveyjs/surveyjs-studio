@@ -1,0 +1,26 @@
+{
+  "source": "derived",
+  "description": "an Accept-Language whose first entry is no culture name: an empty 400",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultColumns",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    },
+    "headers": {
+      "accept-language": "en;q=0.9, de"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

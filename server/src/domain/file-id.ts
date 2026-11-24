@@ -20,3 +20,11 @@ export function surveyIdOfFile(fileId: string): string | null {
   const h = id.slice(0, 32);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+
+/**
+ * A new id for an editor file of no survey (`FileStore.saveUserFile`): 64 random lower-case hex
+ * digits, with no survey or user id in it. Its public name is another, `newLegacyFileName()`.
+ */
+export function newUserFileId(random: (size: number) => Uint8Array = randomBytes): string {
+  return Buffer.from(random(32)).toString("hex");
+}

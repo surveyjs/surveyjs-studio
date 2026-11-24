@@ -1,0 +1,28 @@
+{
+  "source": "derived",
+  "description": "a Table state: the text as stored, as a JSON string",
+  "setup": {
+    "survey": {
+      "layouts": {
+        "table": "{ \"pageSize\": 25 }"
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultTableState",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": "{ \"pageSize\": 25 }"
+    }
+  }
+}

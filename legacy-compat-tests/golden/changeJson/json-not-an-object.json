@@ -1,0 +1,32 @@
+{
+  "source": "derived",
+  "description": "a Json that is no JSON object: an empty 400",
+  "difference": "The old API stored any text as the definition and answered an empty 200; the bridge refuses a Json that is not a JSON object (ADR 0040 point 1).",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeJson",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "{{survey.surveyId}}",
+        "Json": "[1,2]"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

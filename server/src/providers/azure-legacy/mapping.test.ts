@@ -40,6 +40,7 @@ const surveyRow = (over: Partial<LegacySurveyRow> = {}): LegacySurveyRow => ({
   allowaccessresult: 1,
   storeipaddress: "1",
   usecookies: 1,
+  publishid: "DDDDDDDD-0000-4000-8000-000000000001",
   ...over,
 });
 
@@ -337,6 +338,39 @@ describe("fileRecordFromBlob", () => {
       "",
     ]) {
       expect(fileRecordFromBlob(blob, properties, metadata), blob).toBeNull();
+    }
+  });
+
+  it("reads a user's file of no survey from uploads/{legacyName}, its id in metadata", () => {
+    const random = "cd".repeat(32);
+    const legacyName = "3f2c9a1e-0000-4000-8000-a00000000077";
+    const more = { ...metadata, owner: "11111111-0000-4000-8000-a00000000001", fileid: random };
+    expect(fileRecordFromBlob(`uploads/${legacyName}`, properties, more)).toEqual({
+      id: random,
+      surveyId: null,
+      kind: "asset",
+      name: 'Логотип "ü" 1.png',
+      contentType: "image/png",
+      size: 1234,
+      createdAt: "2026-09-01T10:00:05.123Z",
+    });
+    for (const blob of [
+      `Uploads/${legacyName}`,
+      `uploads/${legacyName.toUpperCase()}`,
+      `uploads/${legacyName}/x`,
+      `uploads/uploads/${legacyName}`,
+      `uploads/${random}`,
+      `users/${name}`,
+      `uploads/${name}`,
+    ]) {
+      expect(fileRecordFromBlob(blob, properties, more), blob).toBeNull();
+    }
+    // Without a well-formed file id in the metadata it is no file.
+    for (const fileid of [undefined, "", random.toUpperCase(), random.slice(1)]) {
+      expect(
+        fileRecordFromBlob(`uploads/${legacyName}`, properties, { ...more, fileid }),
+        String(fileid),
+      ).toBeNull();
     }
   });
 

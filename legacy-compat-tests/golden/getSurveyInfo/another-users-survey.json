@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "another user's survey: an empty 400",
+  "difference": "The old API answered a survey of another user with an empty 500 (its refusal itself failed); the bridge cannot see the survey and answers as for an unknown one, an empty 400 (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyInfo",
+    "query": {
+      "accessKey": "{{memberKey}}",
+      "surveyId": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

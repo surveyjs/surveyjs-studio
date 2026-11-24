@@ -5,12 +5,13 @@
  * fixtures). Every erasure case lives in this one file, so no other file erases her while it runs.
  * Adam Admin is added to Erin's project, is promoted when she is erased, and receives the project's
  * surveys when he deletes it at the end; he then deletes them. Erin's API tokens are revoked by the
- * erasure (or by her session at the end, when it never happened). The refusal cases name fresh random
- * ids, so a refusal that wrongly succeeded would erase nobody.
+ * erasure (or by her session at the end, when it never happened). In the hosted edition she also
+ * uploads an editor file of no survey (`uploadLegacyFile`), which goes with her account. The refusal
+ * cases name fresh random ids, so a refusal that wrongly succeeded would erase nobody.
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, inject, it, onTestFinished } from "vitest";
-import { as, call, cleanUp, codeOf } from "./harness.js";
+import { as, call, cleanUp, codeOf, hosted, upload } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 import { randomWebhookKey, signWebhook, webhookKey } from "./webhook.js";
 
@@ -58,6 +59,13 @@ function patchSurvey(headers: Headers, id: string, body: unknown): Promise<Respo
 
 function getSurvey(headers: Headers, id: string): Promise<Response> {
   return call("GET", "/surveys/{surveyId}", { path: `/surveys/${id}`, headers });
+}
+
+/** The editor file of no survey by its legacy name, without cookies. */
+function legacyFile(legacyName: string): Promise<Response> {
+  return call("GET", "/public/legacy-files/{kind}/{name}", {
+    path: `/public/legacy-files/asset/${legacyName}`,
+  });
 }
 
 function getProject(headers: Headers, id: string): Promise<Response> {
@@ -193,6 +201,19 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
       tokens.push(value);
     }
 
+    // Hosted: an editor file of no survey (uploadLegacyFile), which is hers.
+    let legacyName: string | null = null;
+    if (hosted) {
+      const form = new FormData();
+      form.append("file", new Blob([new Uint8Array(Buffer.from("%PDF-1.4\n"))]), "doc.pdf");
+      legacyName = (
+        await created<{ legacyName: string }>(
+          await upload("/legacy-files", { headers: erin, form }),
+        )
+      ).legacyName;
+      expect((await legacyFile(legacyName)).status).toBe(200);
+    }
+
     // An event of another type changes nothing.
     const other = await deliverSigned(event("account.created", { userId: erasable.id }));
     expect(other.status).toBe(204);
@@ -214,6 +235,9 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
       const path = `/surveys?project=personal&archived=${archived}&limit=200`;
       expect(await itemsOf(erin, "/surveys", path)).toEqual([]);
     }
+
+    // Her editor file of no survey is gone.
+    if (legacyName !== null) expect((await legacyFile(legacyName)).status).toBe(404);
 
     // Her tokens stop, the shared project's one too.
     for (const value of tokens) {

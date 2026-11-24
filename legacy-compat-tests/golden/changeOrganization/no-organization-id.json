@@ -1,0 +1,24 @@
+{
+  "source": "derived",
+  "description": "no organizationId: the access-denied text",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeOrganization",
+    "query": {
+      "accessKey": "{{accessKey}}",
+      "id": "{{survey.surveyId}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "Something going wrong. Access denied."
+    }
+  }
+}

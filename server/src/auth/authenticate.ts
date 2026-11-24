@@ -30,14 +30,9 @@ export interface RequestUser {
   readonly avatarUrl: string | null;
   /** A local account's instance role (USER_DIRECTORY=local), from the session check. */
   readonly instanceRole?: InstanceRole;
-  /** What the credential reaches; absent means everything (read it with `scopeOf`). */
-  readonly scope?: CredentialScope;
+  /** What the credential reaches; a session reaches everything, and a producer must say so. */
+  readonly scope: CredentialScope;
   readonly credential?: RequestCredential;
-}
-
-/** The request's scope: everything for a user without one. */
-export function scopeOf(user: RequestUser): CredentialScope {
-  return user.scope ?? { kind: "all" };
 }
 
 /** Turns an `Authorization: Bearer` value into its user; throws `401 unauthenticated`. */

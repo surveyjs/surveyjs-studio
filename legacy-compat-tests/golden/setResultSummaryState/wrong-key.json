@@ -1,0 +1,31 @@
+{
+  "source": "derived",
+  "description": "a wrong key: an empty 401",
+  "difference": "The old API answered a missing, wrong or blocked user's key on this action with the cookie challenge: an empty 401 with a Location header to the site's sign-in page whose ReturnUrl carried the key. The bridge's empty 401 has no Location (ADR 0040 point 1).",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/setResultSummaryState",
+    "query": {
+      "accessKey": "wrong-access-key"
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Id": "12345678-90ab-4cde-8f01-234567890abc",
+        "Json": "{}"
+      }
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": null,
+      "content-length": "0",
+      "location": null,
+      "www-authenticate": null
+    },
+    "body": null
+  }
+}

@@ -7,7 +7,13 @@ import { HttpResponse } from "msw";
 import type { SandboxSurvey } from "../seed-types";
 import type { SandboxData, SandboxFile } from "../store";
 import { checkPathId, mutate, requireSession, view } from "./common";
-import { newFileId, requireHosted, type HandlerContext } from "./context";
+import {
+  newFileId,
+  newLegacyFileName,
+  newUserFileId,
+  requireHosted,
+  type HandlerContext,
+} from "./context";
 import { http } from "./http";
 import { checkMultipart, readFirstFile } from "./multipart";
 import {
@@ -126,6 +132,21 @@ function fromBase64(text: string): Uint8Array<ArrayBuffer> {
 }
 
 // ---------------------------------------------------------------- handlers
+
+/** A stored file with the download headers (handlers.ts `sendFile`). */
+const fileResponse = (file: SandboxFile): Response =>
+  new HttpResponse(fromBase64(file.base64), {
+    status: 200,
+    headers: {
+      "Content-Type": file.contentType,
+      "Content-Length": String(file.size),
+      "Content-Disposition": contentDisposition(file),
+      "Cache-Control": CACHE_CONTROL,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+      "Cross-Origin-Resource-Policy": "cross-origin",
+    },
+  });
 
 const created = (file: SandboxFile, origin: string): Response =>
   HttpResponse.json(
@@ -287,32 +308,70 @@ export function fileHandlers(ctx: HandlerContext) {
       }),
     ),
 
-    // The sandbox keeps no legacy files (they belong to a migrated deployment), so every name is
-    // unknown: server/src/files/service.ts `downloadLegacy` answers the same without a share.
-    http.get("/public/legacy-files/{kind}/{name}", () =>
+    // Hosted only (service.ts `uploadLegacyFile`): an editor file of no survey, the user's, under a
+    // random 64-hex id and named by a random GUID. Any file is stored, an empty one too; the size
+    // limit is the asset one.
+    http.post("/legacy-files", ({ request, cookies }) =>
+      guarded(async () => {
+        requireHosted(ctx);
+        requireSession(ctx, cookies);
+        checkMultipart(request);
+        const part = await readFirstFile(request);
+        if (part?.fieldName !== FILE_FIELD) {
+          throw badRequest("Send one file in the part named file.");
+        }
+        if (part.bytes.length > quota) throw fileTooLarge(quota);
+        const name = fileNameOf(part.fileName);
+        const contentType = typeOfName(name) ?? "application/octet-stream";
+        const base64 = toBase64(part.bytes);
+        const legacyName = newLegacyFileName();
+        await mutate(ctx, cookies, (data, user) => {
+          data.files.push({
+            id: newUserFileId(),
+            surveyId: null,
+            ownerId: user.id,
+            legacyName,
+            kind: "asset",
+            name,
+            contentType,
+            size: part.bytes.length,
+            base64,
+            createdAt: ctx.now().toISOString(),
+          });
+        });
+        return HttpResponse.json({ legacyName }, { status: 201 });
+      }),
+    ),
+
+    // The sandbox keeps no migrated legacy files, only the editor files of no survey, which the
+    // `asset` kind finds by their name (service.ts `downloadLegacy`).
+    http.get("/public/legacy-files/{kind}/{name}", ({ params }) =>
       guarded(() => {
         requireHosted(ctx);
-        throw notFound();
+        if (params.kind !== "asset") throw notFound();
+        const file = ctx.store
+          .read()
+          .files.find(
+            (candidate) =>
+              candidate.surveyId === null &&
+              candidate.ownerId !== undefined &&
+              candidate.legacyName === params.name,
+          );
+        if (!file) throw notFound();
+        return fileResponse(file);
       }),
     ),
 
     http.get("/public/files/{fileId}", ({ params }) =>
       guarded(() => {
         const id = params.fileId.toLowerCase();
-        const file = ctx.store.read().files.find((candidate) => candidate.id === id);
+        // Only files of a survey: an editor file of no survey is served by its legacy name alone
+        // (server `getFile` leaves out files with no survey).
+        const file = ctx.store
+          .read()
+          .files.find((candidate) => candidate.id === id && candidate.surveyId !== null);
         if (!file) throw notFound();
-        return new HttpResponse(fromBase64(file.base64), {
-          status: 200,
-          headers: {
-            "Content-Type": file.contentType,
-            "Content-Length": String(file.size),
-            "Content-Disposition": contentDisposition(file),
-            "Cache-Control": CACHE_CONTROL,
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": CONTENT_SECURITY_POLICY,
-            "Cross-Origin-Resource-Policy": "cross-origin",
-          },
-        });
+        return fileResponse(file);
       }),
     ),
   ];

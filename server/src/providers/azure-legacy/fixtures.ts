@@ -2,10 +2,12 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SurveyDefinition, SurveyTheme, ViewName, ViewState } from "../../domain/types.js";
+import type { LayoutKind, SurveyDefinition, SurveyTheme } from "../../domain/types.js";
+import { hashCredential } from "../../credentials/format.js";
 import type { MemorySeed } from "../memory.js";
 import { LARGE_SURVEY_TABLE, largeSurveyTable } from "./large-survey.js";
 import {
+  LAYOUT_CONTAINERS_BY_KIND,
   membershipFromLegacy,
   privateQuestionsFromLegacy,
   projectFromLegacy,
@@ -13,6 +15,7 @@ import {
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
+import { API_TOKENS_TABLE, REVOKED_KEY_PARTITION } from "./writes.js";
 import type {
   LegacyOrganizationRow,
   LegacyOrganizationUserRow,
@@ -153,6 +156,7 @@ function surveyRow(row: Record<string, unknown>): LegacySurveyRow {
     allowaccessresult: optNum(row, "allowaccessresult"),
     storeipaddress: optStr(row, "storeipaddress"),
     usecookies: optNum(row, "usecookies"),
+    publishid: optStr(row, "publishid"),
   };
 }
 
@@ -313,18 +317,19 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     if (text === null || text.trim() === "") continue;
     themes[str(row, "id").toLowerCase()] = JSON.parse(text) as SurveyTheme;
   }
-  const legacyViews: NonNullable<MemorySeed["legacyViews"]> = {};
-  const viewContainers: Record<string, ViewName> = {
-    surveyresultsummarystate: "summary",
-    surveyresulttablestate: "table",
-  };
+  // The old per-survey layouts are the shared layouts, the text as stored (ADR 0040 point 4).
+  const layouts: NonNullable<MemorySeed["layouts"]> = {};
+  const layoutKinds = new Map(
+    Object.entries(LAYOUT_CONTAINERS_BY_KIND).map(([kind, container]) => [
+      container,
+      kind as LayoutKind,
+    ]),
+  );
   for (const blob of fixtures.blobs) {
-    const view = viewContainers[blob.container];
+    const kind = layoutKinds.get(blob.container);
     const surveyId = blob.name.toLowerCase();
-    if (blob.account !== "surveys" || view === undefined || !surveyRows.has(surveyId)) continue;
-    const state: unknown = JSON.parse(blob.content.toString("utf8"));
-    if (typeof state !== "object" || state === null || Array.isArray(state)) continue;
-    (legacyViews[surveyId] ??= {})[view] = state as ViewState;
+    if (blob.account !== "surveys" || kind === undefined || !surveyRows.has(surveyId)) continue;
+    (layouts[surveyId] ??= {})[kind] = blob.content.toString("utf8");
   }
   const privateResultQuestions: NonNullable<MemorySeed["privateResultQuestions"]> = {};
   for (const blob of fixtures.blobs) {
@@ -361,6 +366,17 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     const key = optStr(row, "accesskey");
     if (key !== null && key !== "") legacyAccessKeys[str(row, "id").toLowerCase()] = key;
   }
+  // Revoked keys, as the provider keeps them: `legacyrevoked/{hash}` rows of its own table.
+  const revokedHashes = new Set(
+    fixtures.tables
+      .filter((t) => t.account === "surveys" && t.name === API_TOKENS_TABLE)
+      .flatMap((t) => t.entities)
+      .filter((e) => e.PartitionKey === REVOKED_KEY_PARTITION)
+      .map((e) => String(e.RowKey)),
+  );
+  const revokedLegacyKeys = Object.entries(legacyAccessKeys)
+    .filter(([, key]) => revokedHashes.has(hashCredential(key, "legacy-key")))
+    .map(([userId]) => userId);
   // The legacy file shares: editor images in `surveyfiles`, respondent uploads in `files`.
   const shareKinds: Record<string, "asset" | "response"> = {
     "surveys/surveyfiles": "asset",
@@ -406,9 +422,10 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     history,
     responses,
     completions,
-    legacyViews,
+    layouts,
     privateResultQuestions,
     legacyAccessKeys,
+    revokedLegacyKeys,
     legacyFiles,
   };
 }

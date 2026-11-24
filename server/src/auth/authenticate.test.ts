@@ -12,7 +12,6 @@ import type { UserDirectory } from "../providers/types.js";
 import {
   accessRule,
   authenticationHook,
-  scopeOf,
   type AuthenticationOptions,
   type RequestUser,
 } from "./authenticate.js";
@@ -45,11 +44,11 @@ describe("accessRule", () => {
   });
 });
 
-describe("scopeOf", () => {
-  it("is everything for a user without a scope", () => {
+describe("RequestUser", () => {
+  it("must carry a scope", () => {
+    // @ts-expect-error a request user without a scope no longer type-checks
     const user: RequestUser = { id: "u", displayName: "U", email: "u@x", avatarUrl: null };
-    expect(scopeOf(user)).toEqual({ kind: "all" });
-    expect(scopeOf({ ...user, scope: { kind: "personal" } })).toEqual({ kind: "personal" });
+    expect(user.id).toBe("u");
   });
 });
 
@@ -146,7 +145,7 @@ async function setup(): Promise<Setup> {
       method,
       url,
       ...(onRequest && { onRequest }),
-      handler: (request) => ({ ...request.user, scope: scopeOf(request.user!) }),
+      handler: (request) => request.user,
     });
   }
   await app.ready();

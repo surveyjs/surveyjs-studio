@@ -1,0 +1,34 @@
+{
+  "source": "derived",
+  "description": "the key as a form field (read before the query): stored",
+  "noRecording": "the old API would keep the file in its share; no action removes it",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "body": {
+      "multipart": [
+        {
+          "name": "accessKey",
+          "value": "{{accessKey}}"
+        },
+        {
+          "name": "anything",
+          "filename": "logo.png",
+          "contentType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "logo.png": "<guid>"
+      }
+    }
+  }
+}

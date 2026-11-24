@@ -1,9 +1,11 @@
 // The old API's results reads (reference behaviour: ADR 0039): `getResult`, one question's counts
 // through Studio's `getQuestionSummary`, and `getSurveyPublicResults`, every public result through
-// Studio's `getPublicResults`, paged to the end and streamed as the pages come.
+// Studio's `getPublicResults`, paged to the end and streamed as the pages come. The page walk, its
+// waits for Studio's rate limit and the streamed answer are shared with the response actions
+// (responses.ts).
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { jsonContentType, sendJsonString, sendProblem } from "../answers.js";
 import { EMPTY_GUID, guidParameter, parseGuid } from "../binding.js";
 import {
@@ -14,7 +16,7 @@ import {
   parseStudioJson,
   questionResultEntries,
 } from "../dotnet-format.js";
-import { oldRoute, queryValue } from "../routes.js";
+import { queryValue } from "../routes.js";
 import { StudioFailure, unexpectedStatus } from "../studio.js";
 
 /** The old `getResult`'s response header (its answers, refusals included, but not its errors). */
@@ -73,7 +75,10 @@ function sendGetResult(reply: FastifyReply, status: 200 | 400, body: string): Fa
     .send(body);
 }
 
-async function getResult(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+export async function getResult(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
   const resultId = guidParameter(request, reply, "resultId");
   if (resultId === undefined) return reply;
   const name = queryValue(request, "name");
@@ -104,7 +109,10 @@ async function getResult(request: FastifyRequest, reply: FastifyReply): Promise<
   );
 }
 
-interface ResultPage {
+/** A page of Studio's public results. */
+export interface ResultPage {
+  /** The survey's definition, its numbers with their text. */
+  definition: unknown;
   privateQuestions: readonly string[];
   items: { submittedAt: string; data: Record<string, unknown> }[];
   nextCursor: string | null;
@@ -118,11 +126,16 @@ function readPage(text: string): ResultPage {
   if (!Array.isArray(items) || (nextCursor !== null && typeof nextCursor !== "string")) {
     throw new Error("Studio sent no page of results");
   }
-  const survey = page!.survey as { privateQuestions?: unknown } | undefined;
+  const survey = page!.survey as { definition?: unknown; privateQuestions?: unknown } | undefined;
   const privateQuestions = Array.isArray(survey?.privateQuestions)
     ? (survey.privateQuestions as unknown[]).filter((name) => typeof name === "string")
     : [];
-  return { privateQuestions, items: items as ResultPage["items"], nextCursor };
+  return {
+    definition: survey?.definition,
+    privateQuestions,
+    items: items as ResultPage["items"],
+    nextCursor,
+  };
 }
 
 /**
@@ -168,10 +181,53 @@ export function retryDelayMs(retryAfter: string | null, now = Date.now()): numbe
   return Math.min(Math.max(seconds, MIN_RETRY_WAIT_S), MAX_RETRY_WAIT_S) * 1000;
 }
 
+/**
+ * `read` again and again while Studio answers `429` (a `StudioFailure`), waiting as it asks
+ * between reads, for as long as the caller stays: once an answer has started (or a read walks
+ * Studio's pages), the rate limit can no longer be passed on. When the caller leaves, the wait
+ * ends and nothing more is read. `what` names the read in the log.
+ */
+export async function patiently<T>(
+  request: FastifyRequest,
+  read: () => Promise<T>,
+  what: Record<string, unknown>,
+): Promise<T> {
+  for (;;) {
+    request.callerGone.throwIfAborted();
+    try {
+      return await read();
+    } catch (error) {
+      if (!(error instanceof StudioFailure) || error.status !== 429) throw error;
+      const waitMs = retryDelayMs(error.retryAfter);
+      request.log.info({ ...what, waitMs }, "Studio's rate limit, waiting");
+      await sleep(waitMs, undefined, { signal: request.callerGone });
+    }
+  }
+}
+
+/**
+ * Studio's pages from `first` to the last: each later page read with `read` from the cursor before
+ * it, {@link patiently}. One page at a time in memory.
+ */
+export async function* pagesFrom<P extends { nextCursor: string | null }>(
+  request: FastifyRequest,
+  first: P,
+  read: (cursor: string) => Promise<P>,
+  what: Record<string, unknown>,
+): AsyncGenerator<P> {
+  let page = first;
+  for (;;) {
+    yield page;
+    const cursor = page.nextCursor;
+    if (cursor === null) return;
+    page = await patiently(request, () => read(cursor), what);
+  }
+}
+
 /** The largest page Studio gives. */
 const PAGE_LIMIT = 1000;
 
-async function getSurveyPublicResults(
+export async function getSurveyPublicResults(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<FastifyReply> {
@@ -185,66 +241,84 @@ async function getSurveyPublicResults(
   // A malformed bound is no bound, as the old API ignored it.
   const from = parseDateArgument(queryValue(request, "from") ?? "");
   const till = parseDateArgument(queryValue(request, "till") ?? "");
-  const fetchPage = (cursor: string | undefined) =>
-    request.studio.GET("/public/surveys/{surveyId}/results", {
+  const read = publicPageReader(request, surveyId, { from, till });
+
+  const firstPage = await read(undefined);
+  // Unknown, or its results are not public: the old refusal.
+  if (firstPage === "refused") return sendJsonString(reply, 400, refusal);
+  const hidden = new Set(firstPage.privateQuestions);
+
+  // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
+  // answer has started cuts it off, as the old API's failures mid-stream did.
+  const pages = publicPagesFrom(request, read, firstPage, surveyId);
+  return sendStreamedRows(reply, pages, (item) => resultRow(item, hidden));
+}
+
+/**
+ * One page of the survey's public results from `cursor` (none: the first), within `bounds`;
+ * `refused` when Studio does not show them (unknown, or its results are not public).
+ */
+export type PublicPageReader = (cursor: string | undefined) => Promise<ResultPage | "refused">;
+
+export function publicPageReader(
+  request: FastifyRequest,
+  surveyId: string,
+  bounds: { from?: string | undefined; till?: string | undefined } = {},
+): PublicPageReader {
+  return async (cursor) => {
+    const { data, response } = await request.studio.GET("/public/surveys/{surveyId}/results", {
       params: {
         path: { surveyId },
         query: {
           limit: PAGE_LIMIT,
           ...(cursor !== undefined && { cursor }),
-          ...(from !== undefined && { from }),
-          ...(till !== undefined && { till }),
+          ...(bounds.from !== undefined && { from: bounds.from }),
+          ...(bounds.till !== undefined && { till: bounds.till }),
         },
       },
       parseAs: "text",
     });
+    if (response.status === 404) return "refused";
+    if (response.status !== 200 || data === undefined) return unexpectedStatus(response);
+    return readPage(data);
+  };
+}
 
-  const first = await fetchPage(undefined);
-  // Unknown, or its results are not public: the old refusal.
-  if (first.response.status === 404) return sendJsonString(reply, 400, refusal);
-  if (first.response.status !== 200 || first.data === undefined) {
-    return unexpectedStatus(first.response);
-  }
-  const firstPage = readPage(first.data);
-  const hidden = new Set(firstPage.privateQuestions);
+/**
+ * The public result pages from `first` to the last; a later page waits out Studio's `429`, and one
+ * Studio refuses (its results stopped being public) fails as an unexpected answer.
+ */
+export function publicPagesFrom(
+  request: FastifyRequest,
+  read: PublicPageReader,
+  first: ResultPage,
+  surveyId: string,
+): AsyncGenerator<ResultPage> {
+  const laterPage = async (cursor: string): Promise<ResultPage> => {
+    const page = await read(cursor);
+    if (page === "refused") throw new StudioFailure(500, "Studio refused a later page of results");
+    return page;
+  };
+  return pagesFrom(request, first, laterPage, { surveyId, read: "public results" });
+}
 
-  /**
-   * A page after the first. The answer has started, so Studio's rate limit (`429`) can no longer
-   * be passed on: the bridge waits as Studio asks and reads the page again, for as long as the
-   * caller stays; when the caller leaves, the wait ends and nothing more is read.
-   */
-  async function laterPage(cursor: string): Promise<ResultPage> {
-    for (;;) {
-      request.callerGone.throwIfAborted();
-      try {
-        const next = await fetchPage(cursor);
-        if (next.response.status !== 200 || next.data === undefined) {
-          return unexpectedStatus(next.response);
-        }
-        return readPage(next.data);
-      } catch (error) {
-        if (!(error instanceof StudioFailure) || error.status !== 429) throw error;
-        const waitMs = retryDelayMs(error.retryAfter);
-        request.log.info({ surveyId, waitMs }, "public results: Studio's rate limit, waiting");
-        await sleep(waitMs, undefined, { signal: request.callerGone });
-      }
-    }
-  }
-
-  // Streamed as Studio's pages come: one page at a time in memory. A page that fails after the
-  // answer has started cuts it off, as the old API's failures mid-stream did.
+/**
+ * The old streamed results answer, `{"Data":[…],"ResultCount":N}`, written as `pages` come, each
+ * item as `row` writes it. `200`, chunked.
+ */
+export function sendStreamedRows<T>(
+  reply: FastifyReply,
+  pages: AsyncIterable<{ items: readonly T[] }>,
+  row: (item: T) => string,
+): FastifyReply {
   async function* body(): AsyncGenerator<string> {
     yield '{"Data":[';
     let written = 0;
-    let page = firstPage;
-    for (;;) {
-      if (page.items.length > 0) {
-        const rows = page.items.map((item) => resultRow(item, hidden)).join(",");
-        yield written > 0 ? `,${rows}` : rows;
-        written += page.items.length;
-      }
-      if (page.nextCursor === null) break;
-      page = await laterPage(page.nextCursor);
+    for await (const page of pages) {
+      if (page.items.length === 0) continue;
+      const rows = page.items.map((item) => row(item)).join(",");
+      yield written > 0 ? `,${rows}` : rows;
+      written += page.items.length;
     }
     yield `],"ResultCount":${written}}`;
   }
@@ -253,15 +327,4 @@ async function getSurveyPublicResults(
     .code(200)
     .header("content-type", "application/json; charset=utf-8")
     .send(Readable.from(body(), { objectMode: false }));
-}
-
-export function registerResultActions(app: FastifyInstance): void {
-  oldRoute(app, ["GET"], ["getResult"], getResult);
-  oldRoute(
-    app,
-    ["GET"],
-    ["getSurveyPublicResults", "getSurveyPublicResults/:id"],
-    getSurveyPublicResults,
-    { controller: "private" },
-  );
 }

@@ -493,6 +493,13 @@ Facts that matter for the new app:
   place**. They are not counted against the quota, not copied by a clone and not deleted with the survey.
   They stop working when `api.surveyjs.io` is retired; a migration belongs to the rollout.
 - Deleting a survey now deletes its files in the new container. A clone copies them.
+- **Hosted Step 6** ([ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3): an editor file that belongs to no
+  survey (`uploadLegacyFile`, the bridge's `uploadFiles`) is block blob `uploads/{legacyName}` of the same
+  container, with the same content type and metadata plus `fileid` (its 64 random hex digit id) and `owner` (the
+  uploader's lower-case GUID). The legacy name is a random lower-case GUID, as the old `uploadFiles` gave, with no
+  survey or user id in it. `getLegacyFile` (`asset`) looks there first, then in the share `surveyfiles`, which is
+  never written (a GUID there and a new one being equal is a 2^-122 chance). Erasing the account lists `uploads/` and
+  deletes the blobs whose `owner` is the user.
 
 ### 3.10 Results layouts (the only saved UI state)
 
@@ -879,10 +886,10 @@ is listed here with how it is done:
   `timestamp`, in the same `UPDATE` (no delete and rewrite of the row); audit row `SURVEY_TRANSFER` with
   `userid` and `creatorid` (`Edm.Guid`). Unlike the legacy code, the server first checks that the acting
   user belongs to the target project.
-- **Settings:** `allowaccessresult` (1 / 0) and `storeipaddress` (`"1"` / `"0"`, a text column) and
-  `timestamp`; audit rows `SURVEY_ACCESSRESUTL` with `grantaccess` and `SURVEY_POSTRESUTL` with
-  `storeipaddress` (both `Edm.Boolean`; the type codes keep the legacy spelling). `usecookies` is not
-  written.
+- **Settings:** `allowaccessresult` (1 / 0), `storeipaddress` (`"1"` / `"0"`, a text column), `usecookies`
+  (1 / 0) and `timestamp`; audit rows `SURVEY_ACCESSRESUTL` with `grantaccess`, `SURVEY_POSTRESUTL` with
+  `storeipaddress` and `SURVEY_USECOOKIES` with `usecookies` (all `Edm.Boolean`; the type codes keep the
+  legacy spelling). `publishid` is read (as `legacyPublishId`), never written.
 - **Delete:** the three results-account tables (`post{postId}`, `SurveyCompletion{surveyId}`,
   `postdelete{postId}`), the blobs `surveyjson/{id}` and `surveytext/{id}`, every history blob under
   `surveyjsonhistory/{id}/`, and the four results-layout blobs of section 3.10 (legacy leaves these
@@ -914,7 +921,13 @@ the copy's definition text and theme.
 **Implemented in Step 9** (`writes.ts`; [ADR 0015](../adr/0015-results-summary-table-and-views.md)): the
 per-user layout save and reset in the new container `my-surveys-views` (section 3.10). They write **no**
 audit row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them: the
-old per-survey blobs are read only.
+old per-survey blobs are read only by views.
+
+**Implemented in hosted Step 6** (`writes.ts`; [ADR 0040](../adr/0040-bridge-access-key-actions.md) point 4): the
+shared layouts write the old per-survey blobs `surveyresulttablestate/{id}`, `surveyresultsummarystate/{id}` and
+`surveyresultcolumns/{id}` in place (section 3.10): an append blob, the text as given in UTF-8 without a byte-order
+mark, overwritten in full; a delete removes the blob, as the old reset does. Like the views they write **no** audit
+row and leave `timestamp` alone, so the "Save / reset layouts" row below is not followed for them either.
 
 **Implemented in Step 10** (`writes.ts`; [ADR 0016](../adr/0016-results-details-exports-and-public-results.md)): the
 delete-all-results rows (batched, tables kept, with the `SURVEY_DELETEALLRESULTS` audit row of this section's
@@ -950,7 +963,7 @@ audit row, except the survey move of a delete.
 
 All of these (but not the layout writes of Step 9) set `timestamp` to the time the server's clock gives,
 once per request, and an update that changes no value still rewrites it. Every audit row is best effort (a
-failure is logged with the survey id and the type only). Still to build: the setting `usecookies`.
+failure is logged with the survey id and the type only)..
 
 | Operation                         | Required writes                                                                                                                                                                                                                                                                                                                                                                                                                          | Recommended audit row         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
@@ -1192,7 +1205,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | `Surveys.theme`                                                      | `SurveyTheme`                     | Parse JSON; `{}` when empty.                                                                                                                                                                                                                                                                 |
 | `Surveys.usecookies`                                                 | (none yet)                        | "Limit to one response" lives in the survey JSON in the new app; keep reading this flag for parity.                                                                                                                                                                                          |
 | blob `surveyjsonhistory/{id}/{pointId}` `LastModified`               | `HistoryEntry.at`                 | `user` = `null` for all legacy entries.                                                                                                                                                                                                                                                      |
-| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`)  | **Decided in Step 9** (per user): a user's view is read from the container `my-surveys-views`; until the user saves or resets, the survey's blob is returned as stored (section 3.10).                                                                                                       |
+| blobs `surveyresultsummarystate/{id}`, `surveyresulttablestate/{id}` | `ViewState` (`summary`, `table`)  | **Decided in Step 9** (per user), hosted Step 6: these and `surveyresultcolumns/{id}` are the shared layouts (`getLayout`, text verbatim); a user's view is read from `my-surveys-views`, and until the user saves or resets, the shared layout parsed as JSON.                              |
 | blob `surveyresultpermissions/{id}`                                  | `settings.privateResultQuestions` | **Decided in Step 10 (R1):** the names of the elements with `isPublic` false; any other element is public. Read with the old defaults, written for the private ones only (section 3.10). `getSurvey`, `updateSurvey`, `createSurvey` and `cloneSurvey` carry it; `listSurveys` items do not. |
 
 ### 9.2 Response (`SurveyResponse`, `ResultStats`)
@@ -1241,6 +1254,7 @@ Contract field names come from `contract/openapi.yaml` (`components.schemas`).
 | Share `surveyfiles`, name `{guid}` | editor asset `id`; `url` = legacy URL | Read only; size from the share; no content type or name stored.                                                                                                              |
 | Share `files`, name `{guid}{ext}`  | respondent file (legacy)              | Read only; content type from the extension.                                                                                                                                  |
 | Container `my-surveys-files`       | `StoredFile` for new uploads          | Blob `{surveyId}/{fileId}`: the survey ID is in the name, the content type is the blob's own, the size is its length; metadata `kind`, `name` (URI-encoded) and `createdat`. |
+| Container `my-surveys-files`       | editor file of no survey (hosted)     | Blob `uploads/{legacyName}` (a GUID), as above plus metadata `fileid` and `owner` (the uploader); no survey.                                                                 |
 
 ## 10. Replica plan
 

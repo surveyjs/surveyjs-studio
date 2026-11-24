@@ -1,0 +1,22 @@
+{
+  "source": "derived",
+  "description": "PUT with a revoked key: the text answer",
+  "difference": "The old API had no revoked keys: a key replaced by generateAccessKey was unknown and answered the same.",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/clone",
+    "query": {
+      "accessKey": "{{revokedKey}}",
+      "id": "12345678-90ab-4cde-8f01-234567890abc"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey '{{revokedKey}}' is incorrect."
+    }
+  }
+}

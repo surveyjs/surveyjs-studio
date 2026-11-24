@@ -10,6 +10,8 @@ export interface SurveyRecord {
   readonly creatorId: string | null; // legacy all-zero GUID -> null
   readonly postId: string;
   readonly resultId: string;
+  /** The publish ID the old service gave the survey; null for surveys made in Studio. */
+  readonly legacyPublishId: string | null;
   readonly published: boolean; // legacy NULL -> true (only 0 is unpublished, ADR 0014 S1)
   readonly archived: boolean;
   readonly createdAt: string; // ISO 8601 UTC, Date#toISOString() format
@@ -32,7 +34,11 @@ export interface SurveyChanges {
   readonly move?: { readonly owner: SurveyOwner; readonly creatorId: string };
   readonly published?: boolean;
   readonly archived?: boolean;
-  readonly settings?: { readonly publicResults?: boolean; readonly storeRespondentIp?: boolean };
+  readonly settings?: {
+    readonly publicResults?: boolean;
+    readonly storeRespondentIp?: boolean;
+    readonly useCookies?: boolean;
+  };
   /** ISO 8601 UTC; always set. */
   readonly updatedAt: string;
 }
@@ -153,8 +159,11 @@ export type FileKind = "asset" | "response";
 export interface StoredFileRecord {
   /** 64 lower-case hex digits (R1). */
   readonly id: string;
-  /** Lower-case GUID of the owning survey (equals surveyIdOfFile(id)). */
-  readonly surveyId: string;
+  /**
+   * Lower-case GUID of the owning survey (equals surveyIdOfFile(id)); null for an editor file that
+   * belongs to no survey (`FileStore.saveUserFile`), whose id is random (`newUserFileId`).
+   */
+  readonly surveyId: string | null;
   readonly kind: FileKind;
   /** The uploaded name (R12), any Unicode, 1–255 UTF-16 code units. */
   readonly name: string;
@@ -166,8 +175,17 @@ export interface StoredFileRecord {
   readonly createdAt: string;
 }
 
+/** A survey's stored file. */
+export type SurveyFileRecord = StoredFileRecord & { readonly surveyId: string };
+
 /** A saved results layout: `summary` (Dashboard) or `table` (Table) (contract `view`). */
 export type ViewName = "summary" | "table";
 
 /** Opaque SurveyJS Dashboard or Table state (contract ViewState): any JSON object. */
 export type ViewState = Record<string, unknown>;
+
+/**
+ * A survey's shared results layout (contract `LayoutKind`, ADR 0040 point 4): the Table state,
+ * the Summary (Dashboard) state, or the old column layout. Its text is opaque and kept verbatim.
+ */
+export type LayoutKind = "table" | "summary" | "columns";

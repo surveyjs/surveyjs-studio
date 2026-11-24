@@ -18,6 +18,7 @@ import { ALLOWED_TYPES_TEXT, detectFileType, fileNameOf } from "./file-type.js";
 import { formatBytes, remainingQuota } from "./quota.js";
 
 export type StoredFileJson = components["schemas"]["StoredFile"];
+export type LegacyFileNameJson = components["schemas"]["LegacyFileName"];
 
 export interface FilesServiceOptions {
   readonly surveys: SurveyStore;
@@ -25,7 +26,10 @@ export interface FilesServiceOptions {
   readonly files: FileStore;
   /** The origin the `url` of a stored file starts with. */
   readonly publicBaseUrl: string;
-  /** Total bytes of assets one survey may hold (R5). */
+  /**
+   * Total bytes of assets one survey may hold (R5); also the largest editor file of no survey
+   * (`uploadLegacyFile`).
+   */
   readonly maxAssetBytesPerSurvey: number;
   /** Largest respondent file, in bytes (S11). */
   readonly maxFileBytes: number;
@@ -68,6 +72,17 @@ export interface FilesService {
     postId: string,
     read: (maxBytes: number) => Promise<IncomingFile | undefined>,
   ): Promise<StoredFileJson>;
+  /**
+   * `uploadLegacyFile` (ADR 0040 point 3): an editor file that belongs to no survey, the user's,
+   * served by `getLegacyFile` (`asset`) under the answered name. `read(maxBytes)` as for
+   * `uploadAsset`, with `maxAssetBytesPerSurvey`; a file over it → 413 payload-too-large. A form
+   * without a part named `file` is 400 bad-request. Any file is stored, an empty one too; one that
+   * is not an allowed image or video type as application/octet-stream.
+   */
+  uploadLegacyFile(
+    user: RequestUser,
+    read: (maxBytes: number) => Promise<IncomingFile | undefined>,
+  ): Promise<LegacyFileNameJson>;
   /** 404 not-found for an unknown or malformed id. */
   download(fileId: string): Promise<StoredFileContent>;
   /**
@@ -109,6 +124,14 @@ const invalidFile = (detail: string): AppError =>
     status: 422,
     title: "Validation failed",
     errors: [{ pointer: `/${FILE_FIELD}`, detail }],
+  });
+
+const noFilePart = (): AppError =>
+  new AppError({
+    code: "bad-request",
+    status: 400,
+    title: "Bad request",
+    detail: "Send one file in the part named file.",
   });
 
 const unsupportedType = (): AppError =>
@@ -185,6 +208,19 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
       return storeResponseFile(survey, read, async () => {
         if (!(await surveys.getSurvey(survey.id))) throw surveyNotAvailable();
       });
+    },
+
+    async uploadLegacyFile(user, read) {
+      const incoming = await read(quota);
+      if (incoming?.fieldName !== FILE_FIELD) throw noFilePart();
+      const { bytes } = incoming;
+      const { legacyName } = await files.saveUserFile(user.id, {
+        name: fileNameOf(incoming.fileName),
+        contentType: detectFileType(bytes)?.contentType ?? "application/octet-stream",
+        createdAt: new Date(now()).toISOString(),
+        content: bytes,
+      });
+      return { legacyName };
     },
 
     async download(fileId) {

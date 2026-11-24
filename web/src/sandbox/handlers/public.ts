@@ -111,7 +111,7 @@ function instantOf(value: string): number | null {
  * value the contract's `date-time` accepts but Date cannot read (a leap second) is refused as any
  * other malformed date-time is.
  */
-function publicWindow(query: URLSearchParams): ResponseWindow {
+export function publicWindow(query: URLSearchParams): ResponseWindow {
   const window: { from?: number; till?: number } = {};
   const unreadable: ProblemFieldError[] = [];
   for (const name of ["from", "till"] as const) {
@@ -425,6 +425,30 @@ export function publicHandlers(ctx: HandlerContext) {
           firstSubmittedAt: rows[0]?.submittedAt ?? null,
           lastSubmittedAt: rows.at(-1)?.submittedAt ?? null,
         });
+      }),
+    ),
+
+    // Hosted only (service.ts `publicLayout`): the shared layout (null when none) and the private
+    // question names, while public results are on.
+    http.get("/public/surveys/{surveyId}/layouts/{kind}", ({ params }) =>
+      guarded(() => {
+        requireHosted(ctx);
+        checkPathId(params.surveyId, "surveyId");
+        if (params.kind !== "table" && params.kind !== "summary" && params.kind !== "columns") {
+          throw badRequest(undefined, [
+            { pointer: "/kind", detail: "must be equal to one of the allowed values" },
+          ]);
+        }
+        const data = ctx.store.read();
+        const survey = data.surveys.find((s) => s.id === params.surveyId.toLowerCase());
+        if (!survey?.settings.publicResults) throw surveyNotAvailable();
+        return HttpResponse.json(
+          {
+            text: data.layouts[survey.id]?.[params.kind] ?? null,
+            privateQuestions: [...(data.privateResultQuestions[survey.id] ?? [])],
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
       }),
     ),
 

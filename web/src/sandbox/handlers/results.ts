@@ -2,11 +2,20 @@
 // signed-in side of a survey's results. A response is returned as results/export.ts `responseJson`
 // does (`partial: true` only when true; runs fold, ADR 0038). The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
-import { mutate, parsePagingQuery, requireSession, RESULTS_PAGE, view } from "./common";
+import { runHolding } from "../runs";
+import {
+  checkPathId,
+  lower,
+  mutate,
+  parsePagingQuery,
+  requireSession,
+  RESULTS_PAGE,
+  view,
+} from "./common";
 import type { HandlerContext } from "./context";
 import { http } from "./http";
-import { guarded } from "./problems";
-import { responseOrder, responsePage } from "./public";
+import { guarded, notFound } from "./problems";
+import { publicWindow, responseOrder, responsePage } from "./public";
 import { modifiableSurvey, visibleSurvey } from "./survey-access";
 
 export function resultsHandlers(ctx: HandlerContext) {
@@ -14,10 +23,13 @@ export function resultsHandlers(ctx: HandlerContext) {
     http.get("/surveys/{surveyId}/results", ({ params, request, cookies }) =>
       guarded(() => {
         requireSession(ctx, cookies);
-        const { limit, cursor } = parsePagingQuery(new URL(request.url), RESULTS_PAGE);
+        const url = new URL(request.url);
+        const { limit, cursor } = parsePagingQuery(url, RESULTS_PAGE);
+        // Before any lookup, as the validator refuses a malformed date-time.
+        const window = publicWindow(url.searchParams);
         return view(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
-          const { items, nextCursor } = responsePage(data, survey.id, limit, cursor);
+          const { items, nextCursor } = responsePage(data, survey.id, limit, cursor, false, window);
           return HttpResponse.json({
             items: items.map(
               ({ id, submittedAt, data: answers, clientId, respondentIp, partial }) => ({
@@ -64,6 +76,28 @@ export function resultsHandlers(ctx: HandlerContext) {
           delete data.completions[survey.id];
           // A key points at a response that is gone; keeping it would only take up storage.
           delete data.idempotencyKeys[survey.id];
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    ),
+
+    // The whole run holding the save, and its client's completion marker unless a later run exists.
+    http.delete("/surveys/{surveyId}/results/{responseId}", ({ params, cookies }) =>
+      guarded(async () => {
+        requireSession(ctx, cookies);
+        checkPathId(params.responseId, "responseId");
+        await mutate(ctx, cookies, (data, user) => {
+          const { survey } = modifiableSurvey(data, user, params.surveyId);
+          const rows = [...(data.responses[survey.id] ?? [])].sort(responseOrder);
+          const found = runHolding(rows, params.responseId);
+          if (!found) throw notFound();
+          const gone = new Set(found.run.map((row) => lower(row.id)));
+          data.responses[survey.id] = (data.responses[survey.id] ?? []).filter(
+            (row) => !gone.has(lower(row.id)),
+          );
+          const clientId = found.run[0]?.clientId;
+          if (clientId !== undefined && !found.laterRun)
+            delete data.completions[survey.id]?.[clientId];
         });
         return new HttpResponse(null, { status: 204 });
       }),

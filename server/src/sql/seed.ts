@@ -1,5 +1,6 @@
 import type { ByteStore } from "../bytes/types.js";
 import { legacyFileRecord } from "../domain/legacy-file.js";
+import type { LayoutKind } from "../domain/types.js";
 import type { MemorySeed } from "../providers/memory.js";
 import { seedInstanceAdmin } from "../providers/seed-instance-admin.js";
 import type { SqlDatabase } from "./database.js";
@@ -97,16 +98,12 @@ export async function seedSqlStores(
           )
           .execute();
       }
-      const legacyViews = Object.entries(byId(seed.legacyViews, id) ?? {});
-      if (legacyViews.length > 0) {
+      const layouts = Object.entries(byId(seed.layouts, id) ?? {});
+      if (layouts.length > 0) {
         await trx
-          .insertInto("legacy_views")
+          .insertInto("survey_layouts")
           .values(
-            legacyViews.map(([view, state]) => ({
-              survey_id: id,
-              view: view as "summary" | "table",
-              state: jsonText(database.dialect, state),
-            })),
+            layouts.map(([kind, text]) => ({ survey_id: id, kind: kind as LayoutKind, text })),
           )
           .execute();
       }
@@ -162,6 +159,7 @@ export async function seedSqlStores(
         .values({
           id: record.id,
           survey_id: record.surveyId,
+          owner_user_id: null,
           kind: record.kind,
           name: record.name,
           content_type: record.contentType,

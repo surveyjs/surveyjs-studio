@@ -1,0 +1,29 @@
+{
+  "source": "derived",
+  "description": "the key only in a form body (the action read it from the query only): an empty key",
+  "setup": {
+    "survey": {}
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/exportSurveyResults",
+    "query": {
+      "id": "{{survey.surveyId}}"
+    },
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "text": "accessKey={{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey '' is incorrect."
+    }
+  }
+}

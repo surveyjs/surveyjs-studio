@@ -42,7 +42,7 @@ describe("sandbox store", () => {
   it("seeds on the first read", () => {
     const storage = memoryStorage();
     const data = make(storage).read();
-    expect(data.version).toBe(1);
+    expect(data.version).toBe(seed.version);
     expect(data.surveys).toEqual(seed.surveys);
     expect(data.files).toEqual([]);
     // Stored holding the lock; without one (here) at once.
@@ -81,7 +81,7 @@ describe("sandbox store", () => {
 
   it.each([
     ["unparsable JSON", "{"],
-    ["a missing collection", JSON.stringify({ version: 1, users: [] })],
+    ["a missing collection", JSON.stringify({ version: seed.version, users: [] })],
     ["a non-object", "null"],
   ])("reseeds a stored document with %s", async (_name, stored) => {
     const storage = memoryStorage();
@@ -98,7 +98,7 @@ describe("sandbox store", () => {
     it.each([
       ["an empty storage", null],
       ["unparsable JSON", "{"],
-      ["a document without collections", JSON.stringify({ version: 1 })],
+      ["a document without collections", JSON.stringify({ version: seed.version })],
     ])("is fresh for %s", (_name, text) => {
       const storage = memoryStorage();
       if (text !== null) storage.setItem(STORAGE_KEY, text);
@@ -126,7 +126,7 @@ describe("sandbox store", () => {
 
     it("is outdated for a newer version too", () => {
       const storage = memoryStorage();
-      storage.setItem(STORAGE_KEY, stored(2));
+      storage.setItem(STORAGE_KEY, stored(seed.version + 1));
       expect(make(storage).status()).toBe("outdated");
     });
   });

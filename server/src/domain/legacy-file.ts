@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import type { FileKind, StoredFileRecord } from "./types.js";
+import { createHash, randomUUID } from "node:crypto";
+import type { FileKind, SurveyFileRecord } from "./types.js";
 
 /**
  * Files stored under the old service's names (ADR 0039 point 3): editor images (`asset`) and
@@ -14,6 +14,20 @@ const LEGACY_NAME = /^[A-Za-z0-9._-]+$/;
  */
 const MAX_LEGACY_NAME_LENGTH = 100;
 const ZERO_GUID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * A new legacy name for an editor file of no survey (`uploadLegacyFile`): a random lower-case GUID
+ * with dashes, the form the old service gave its uploads. It is public, so it names no survey or
+ * user.
+ */
+export function newLegacyFileName(): string {
+  return randomUUID().toLowerCase();
+}
+
+/** A legacy name `newLegacyFileName` could have made: a lower-case GUID with dashes. */
+export function isUploadLegacyName(name: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(name);
+}
 
 /**
  * Whether `name` can be a legacy file name. Anything else (a path, `.` or `..`, a space, a
@@ -77,7 +91,7 @@ export function legacyContentType(name: string): string {
  * seed): its id is 32 zeros and 32 hex digits of the SHA-256 of `{kind}/{name}`, so it belongs to
  * the all-zero survey, which no survey has; created at the epoch (the time is not known).
  */
-export function legacyFileRecord(kind: FileKind, name: string, size: number): StoredFileRecord {
+export function legacyFileRecord(kind: FileKind, name: string, size: number): SurveyFileRecord {
   const hash = createHash("sha256").update(`${kind}/${name}`).digest("hex");
   return {
     id: `${"0".repeat(32)}${hash.slice(0, 32)}`,

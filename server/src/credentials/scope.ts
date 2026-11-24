@@ -4,7 +4,7 @@
  * user can. Outside the scope a survey or project answers like an unknown one (404), so a token
  * cannot probe what exists.
  */
-import { scopeOf, type CredentialScope, type RequestUser } from "../auth/authenticate.js";
+import { type CredentialScope, type RequestUser } from "../auth/authenticate.js";
 import type { ProjectMembership, ProjectRecord, SurveyOwner } from "../domain/types.js";
 import type { ProjectStore } from "../providers/types.js";
 
@@ -35,7 +35,7 @@ export async function scopedMembership(
   lookup: (userId: string, projectId: string) => Promise<ProjectMembership | null>,
   project: (id: string) => Promise<ProjectRecord | null>,
 ): Promise<ProjectMembership | null> {
-  const scope = scopeOf(user);
+  const scope = user.scope;
   if (scope.kind === "all") return lookup(user.id, projectId);
   if (scope.kind === "personal" || !sameId(projectId, scope.projectId)) return null;
   const record = await project(projectId);

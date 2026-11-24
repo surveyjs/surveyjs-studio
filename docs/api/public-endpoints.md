@@ -375,23 +375,24 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
 
 ## Operations for the bridge
 
-Seven more unauthenticated operations, and two query parameters, serve [the bridge](legacy-compat.md), which answers the
-old API's public actions through them ([ADR 0039](../adr/0039-bridge-public-actions.md)). They work on every provider.
+Eight more unauthenticated operations, and two query parameters, serve [the bridge](legacy-compat.md), which answers the
+old API's public actions through them ([ADR 0039](../adr/0039-bridge-public-actions.md); `getPublicLayout` is from
+[ADR 0040](../adr/0040-bridge-access-key-actions.md)). They work on every provider.
 They are addressed by the keys the old API used: a survey's post ID and result ID, and the legacy file names. A survey's
 answers and aggregates are reachable only through its result ID, and posting only through its post ID, as before.
 
-**Hosted edition only.** The seven operations exist only when `APP_EDITION=hosted`. On any other server they are not
+**Hosted edition only.** The eight operations exist only when `APP_EDITION=hosted`. On any other server they are not
 routes: each answers `404 not-found`, as an unknown path does, and has no rate limit. (They read unpublished and
 archived definitions and post to unpublished surveys, which only surveys built for the old service need.) `from` and
 `till` on `getPublicResults` work in every edition.
 
 **Rate limits**, per client IP address and minute, each operation with its own counter:
 
-| Operations                                                                                                                          | Setting                     | Default |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- |
-| `getPublicDefinition`, `getRespondentState`, `getRespondentStateByResultId`, `submitResponseByPostId`, `uploadResponseFileByPostId` | `PUBLIC_RATE_LIMIT`         | 60      |
-| `getLegacyFile`                                                                                                                     | `PUBLIC_FILE_RATE_LIMIT`    | 600     |
-| `getQuestionSummary`                                                                                                                | `PUBLIC_SUMMARY_RATE_LIMIT` | 10      |
+| Operations                                                                                                                                             | Setting                     | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- | ------- |
+| `getPublicDefinition`, `getRespondentState`, `getRespondentStateByResultId`, `submitResponseByPostId`, `uploadResponseFileByPostId`, `getPublicLayout` | `PUBLIC_RATE_LIMIT`         | 60      |
+| `getLegacyFile`                                                                                                                                        | `PUBLIC_FILE_RATE_LIMIT`    | 600     |
+| `getQuestionSummary`                                                                                                                                   | `PUBLIC_SUMMARY_RATE_LIMIT` | 10      |
 
 The operations:
 
@@ -404,6 +405,7 @@ The operations:
 | `getRespondentStateByResultId` | `GET /public/results/{resultId}/respondents/{clientId}` | As `getRespondentState`; `404` for an unknown result ID                                                        |
 | `getQuestionSummary`           | `GET /public/results/{resultId}/questions/{name}`       | `200` `{ answered, values: [{ value, count }], responseCount, firstSubmittedAt, lastSubmittedAt }`             |
 | `getLegacyFile`                | `GET /public/legacy-files/{kind}/{name}`                | `200` the file's bytes with `downloadFile`'s headers; `404` when unknown                                       |
+| `getPublicLayout`              | `GET /public/surveys/{surveyId}/layouts/{kind}`         | `200` `{ text, privateQuestions }`; `404 survey-not-available` unless Grant Access is on                       |
 
 - **`getPublicDefinition`** is the read for surveys built for the old service: the **working definition** (what the editor
   last saved), **whatever the publish state** and for archived surveys too. An unknown or deleted survey is `404`. A
@@ -427,6 +429,13 @@ The operations:
   The bytes are returned as stored, with the content type of the name's extension, or `application/octet-stream` without
   one. A SQL provider looks the name up in its `legacy_files` table; the Azure legacy provider reads the old file shares
   directly, read-only; the memory provider uses its seed.
+- **`getPublicLayout`** gives the survey's shared results layout of one kind (`table`, `summary` or `columns`; see
+  [the layouts](../user-guide/viewing-results.md#your-layout-is-saved)) while **Grant Access** is on, whether or not the
+  survey is published or archived. `text` is the layout as it was saved, `null` when none is, and `privateQuestions`
+  names the questions public results hide (`settings.privateResultQuestions`). Any other state, and an unknown survey,
+  answer `404 survey-not-available`. It serves the old API's public layout reads (`getResultPublicColumns`,
+  `getPublicResultTableState`, `getPublicResultSummaryState`); a client that does its own layout needs only
+  `getPublicResults`.
 - **`getPublicResults`** gains `from` and `till` (date-times): only responses submitted after `from` and before `till`.
 
 ## Errors

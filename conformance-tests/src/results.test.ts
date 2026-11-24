@@ -1,6 +1,7 @@
 /**
- * `listResults` against the legacy fixtures: paging walks over the generated survey `…a08` (1,500
- * rows) and `…a01` (5 rows), project members, refusals, and responses submitted during a walk.
+ * `listResults` and `deleteResponse` against the legacy fixtures: paging walks over the generated
+ * survey `…a08` (1,500 rows) and `…a01` (5 rows), `from` and `till`, project members, refusals,
+ * responses submitted during a walk, and deleting a run of saves.
  *
  * The data is shared by all test files and never reset (the Azurite replica keeps its result tables
  * between runs), so every test that submits creates its own survey in the admin's Personal scope
@@ -188,5 +189,151 @@ describe("listResults", () => {
     }
     expect((await list(LARGE)).status).toBe(401);
     expect((await list("x".repeat(65), "", olivia)).status).toBe(400);
+  });
+});
+
+describe("listResults from and till", () => {
+  // Customer feedback: …a01 08:00:00.500, …a02 09:15 (an open partial run), …a03 10:30, …a04 11:45,
+  // …a05 12:00 on 2026-04-01.
+  const row = (n: number) => `66666666-0000-4000-8000-a0000000000${String(n)}`;
+  const ids = async (query: string, headers: Headers): Promise<string[]> =>
+    (await page(FEEDBACK, query, headers)).items.map((item) => item.id);
+
+  it("keeps responses whose first save is strictly between from and till, paging inside them", async (ctx) => {
+    const olivia = await as(ctx, owner);
+    expect(await ids("?from=2026-04-01T09:00:00Z", olivia)).toEqual([
+      row(2),
+      row(3),
+      row(4),
+      row(5),
+    ]);
+    expect(await ids("?till=2026-04-01T10:30:00Z", olivia)).toEqual([row(1), row(2)]);
+    expect(
+      await ids("?from=2026-04-01T08:00:00.500Z&till=2026-04-01T12:00:00.000Z", olivia),
+    ).toEqual([row(2), row(3), row(4)]);
+    // 10:30Z written with an offset: compared as an instant, and exactly at the bound.
+    expect(await ids(`?from=${encodeURIComponent("2026-04-01T12:30:00+02:00")}`, olivia)).toEqual([
+      row(4),
+      row(5),
+    ]);
+
+    const pages = await walkPages<Item>(
+      RESULTS,
+      `/surveys/${FEEDBACK}/results?limit=1&from=2026-04-01T08:00:00.500Z&till=2026-04-01T12:00:00Z`,
+      olivia,
+    );
+    expect(pages.map((p) => p.items.map((item) => item.id))).toEqual([
+      [row(2)],
+      [row(3)],
+      [row(4)],
+    ]);
+  });
+
+  it("refuses a from or till that is not a date-time, a leap second as any other", async (ctx) => {
+    const olivia = await as(ctx, owner);
+    for (const query of ["?from=yesterday", "?till=2026-04-01", "?from=2026-13-01T00:00:00Z"]) {
+      const response = await list(FEEDBACK, query, olivia);
+      expect(response.status).toBe(400);
+      expect(await codeOf(response)).toBe("bad-request");
+    }
+    for (const [name, value] of [
+      ["from", "2026-04-01T23:59:60Z"],
+      ["till", encodeURIComponent("2026-04-01T00:00:60+00:01")],
+    ] as const) {
+      const malformed = await list(FEEDBACK, `?${name}=not-a-date`, olivia);
+      const leap = await list(FEEDBACK, `?${name}=${value}`, olivia);
+      expect(leap.status).toBe(400);
+      expect(leap.headers.get("content-type")).toBe(malformed.headers.get("content-type"));
+      expect(await leap.json()).toStrictEqual(await malformed.json());
+    }
+  });
+});
+
+describe("deleteResponse", () => {
+  const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+  const RESPONSE = "/surveys/{surveyId}/results/{responseId}";
+
+  const remove = (surveyId: string, responseId: string, headers?: Headers): Promise<Response> =>
+    call("DELETE", RESPONSE, {
+      path: `/surveys/${surveyId}/results/${responseId}`,
+      ...(headers && { headers }),
+    });
+
+  /** Whether the run page treats the client as having completed the survey. */
+  const completed = async (surveyId: string, clientId: string): Promise<boolean> => {
+    const response = await call("GET", "/public/surveys/{surveyId}", {
+      path: `/public/surveys/${surveyId}?clientId=${clientId}`,
+    });
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { completed: boolean }).completed;
+  };
+
+  it("deletes the whole run by its last save's id and clears the respondent's state; then 404", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await ownSurvey(adam);
+    const before = await submitted(surveyId, { data: { q1: "before" } });
+    const run = { clientId: "c-run" };
+    const first = await submitted(surveyId, { data: { q1: "a" }, ...run, partial: true });
+    await submitted(surveyId, { data: { q1: "b" }, ...run, partial: true });
+    const last = await submitted(surveyId, { data: { q1: "c" }, ...run });
+    const after = await submitted(surveyId, { data: { q1: "after" }, clientId: "c-other" });
+    expect((await page(surveyId, "", adam)).items.map((item) => item.id)).toEqual([
+      before,
+      first,
+      after,
+    ]);
+    expect(await completed(surveyId, "c-run")).toBe(true);
+
+    const deleted = await remove(surveyId, last.toUpperCase(), adam);
+    expect(deleted.status).toBe(204);
+    expect(await deleted.text()).toBe("");
+
+    expect((await page(surveyId, "", adam)).items.map((item) => item.id)).toEqual([before, after]);
+    expect(await completed(surveyId, "c-run")).toBe(false);
+    expect(await completed(surveyId, "c-other")).toBe(true);
+    for (const id of [last, first]) {
+      const again = await remove(surveyId, id, adam);
+      expect(again.status).toBe(404);
+      expect(await codeOf(again)).toBe("not-found");
+    }
+  });
+
+  it("refuses without a CSRF token or a session, for outsiders and for unknown ids", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await ownSurvey(adam);
+    const id = await submitted(surveyId, { data: { q1: "a" } });
+
+    // The sandbox has no CSRF token (D3 of self-hosted Step 9): its session is the msid cookie alone.
+    if (!sandbox) {
+      const noCsrf = await remove(surveyId, id, { cookie: adam.cookie ?? "" });
+      expect(noCsrf.status).toBe(403);
+      expect(await codeOf(noCsrf)).toBe("csrf-token-invalid");
+    }
+    expect((await remove(surveyId, id)).status).toBe(401);
+    for (const response of [
+      await remove(surveyId, id, await as(ctx, outsider)),
+      await remove(UNKNOWN_ID, id, adam),
+      await remove(surveyId, UNKNOWN_ID, adam),
+      await remove(surveyId, "not-a-guid", adam),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await codeOf(response)).toBe("not-found");
+    }
+    expect((await remove(surveyId, "x".repeat(65), adam)).status).toBe(400);
+    expect((await page(surveyId, "", adam)).items.map((item) => item.id)).toEqual([id]);
+  });
+
+  it("answers 403 forbidden to a user who can see the survey but not modify it", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const surveyId = await ownHarnessSurvey(adam, {
+      definition: ONE_QUESTION,
+      projectId: ENGINEERING,
+    });
+    const id = await submitted(surveyId, { data: { q1: "a" } });
+    const olivia = await as(ctx, owner);
+    const refused = await remove(surveyId, id, olivia);
+    expect(refused.status).toBe(403);
+    expect(await codeOf(refused)).toBe("forbidden");
+    expect((await page(surveyId, "", olivia)).items.map((item) => item.id)).toEqual([id]);
   });
 });

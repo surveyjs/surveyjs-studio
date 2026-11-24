@@ -1,0 +1,54 @@
+{
+  "source": "derived",
+  "description": "public results: the columns, no key needed",
+  "difference": "The old columns also held Client Id (hidden from public reads, Visibility 2); public results carry no client IDs, so the bridge has no such column (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      }
+    },
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultPublicColumns/{{survey.surveyId}}",
+    "headers": {
+      "accept-language": "de-DE"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Columns": [
+          {
+            "Name": "HappendAt",
+            "DisplayName": "Submitted",
+            "DataType": 0,
+            "Visibility": 0,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          },
+          {
+            "Name": "satisfaction",
+            "DisplayName": "How satisfied are you?",
+            "DataType": 0,
+            "Visibility": 0,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          }
+        ],
+        "Id": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

@@ -24,6 +24,7 @@ const seeded = () =>
         creatorId: USER.id,
         postId: "eeeeeeee-0000-4000-8000-0000000000d4",
         resultId: "eeeeeeee-0000-4000-8000-0000000000d5",
+        legacyPublishId: null,
         published: false,
         archived: false,
         createdAt: "2026-08-01T10:00:00.000Z",
@@ -82,6 +83,7 @@ describe("eraseAccount", () => {
       projectsLeft: 0,
       projectsDeleted: 1,
       adminsPromoted: 0,
+      uploadsDeleted: 0,
     });
     expect(lines).toEqual([{ details: summary, message: "Erased the data of an account." }]);
     expect(Object.keys(lines[0]!.details).sort()).toEqual([
@@ -89,6 +91,7 @@ describe("eraseAccount", () => {
       "projectsDeleted",
       "projectsLeft",
       "surveysDeleted",
+      "uploadsDeleted",
       "userId",
     ]);
     expect(JSON.stringify(lines)).not.toMatch(
@@ -111,6 +114,7 @@ describe("eraseAccount and reconciliation", () => {
     creatorId: GONE,
     postId: `eeeeeeee-0000-4000-8001-00000000f${String(n).padStart(3, "0")}`,
     resultId: `eeeeeeee-0000-4000-8002-00000000f${String(n).padStart(3, "0")}`,
+    legacyPublishId: null,
     published: false,
     archived,
     createdAt: NOW,
@@ -145,6 +149,7 @@ describe("eraseAccount and reconciliation", () => {
       projectsLeft: 1,
       projectsDeleted: 1,
       adminsPromoted: 0,
+      uploadsDeleted: 0,
     });
 
     // OTHER_GONE's only row went with the project nobody visible was left in.

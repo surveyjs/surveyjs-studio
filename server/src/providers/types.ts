@@ -3,6 +3,7 @@ import type {
   CompletionState,
   FileKind,
   HistoryEntryRecord,
+  LayoutKind,
   NewProject,
   NewResponse,
   NewSurvey,
@@ -155,8 +156,47 @@ export interface FileStore {
    * `file.name` is the legacy name and `file.contentType` the type of its extension
    * (`legacyContentType`), whatever the provider keeps. A provider that holds the file by name
    * only gives it the record of `legacyFileRecord`.
+   *
+   * An `asset` name is first looked up among the files of no survey (`saveUserFile`, by the
+   * `legacyName` it gave): such a file has its stored record, with `file.name` the legacy name and
+   * its stored type. Then among the old service's files.
    */
   getFileByLegacyName(kind: FileKind, name: string): Promise<StoredFileContent | null>;
+  /**
+   * Stores an editor file that belongs to no survey (`uploadLegacyFile`, ADR 0040 point 3) for its
+   * owner (a GUID, any case; rejects otherwise): kind `asset`, `surveyId` null, a new random id
+   * (`newUserFileId()`), and a new legacy name (`newLegacyFileName()`: a random lower-case GUID, as
+   * the old service named uploads) by which `getFileByLegacyName("asset", legacyName)` finds it.
+   * Neither names the owner or a survey: the name is public. Studio's own file store on every
+   * provider, never the old service's. Such a file is no survey's: `getFile`, `deleteFile`,
+   * `usage` and `deleteSurveyFiles` do not see it.
+   */
+  saveUserFile(ownerUserId: string, file: NewFile): Promise<StoredUserFile>;
+  /** How many files `saveUserFile` stored for the owner (any id case); 0 for a non-GUID id. */
+  countUserFiles(ownerUserId: string): Promise<number>;
+  /**
+   * Deletes every file `saveUserFile` stored for the owner (any id case) and returns how many; 0
+   * for a non-GUID id.
+   */
+  deleteUserFiles(ownerUserId: string): Promise<number>;
+}
+
+/** What `FileStore.saveUserFile` stored: the record and the file's legacy name. */
+export interface StoredUserFile {
+  readonly file: StoredFileRecord;
+  /** A lower-case GUID; `getFileByLegacyName("asset", legacyName)` reads the file. */
+  readonly legacyName: string;
+}
+
+/** A file to store for a user (`FileStore.saveUserFile`). */
+export interface NewFile {
+  /** The uploaded name (R12). */
+  readonly name: string;
+  /** The detected type. */
+  readonly contentType: string;
+  /** ISO 8601 UTC. */
+  readonly createdAt: string;
+  readonly content: Buffer;
 }
 
 export type AppendOutcome = "stored" | "exists";
@@ -213,16 +253,27 @@ export interface ResultStore {
    * stored normally (azure: the tables are kept, never dropped).
    */
   deleteAll(survey: SurveyRecord): Promise<void>;
+  /**
+   * Deletes one response: the whole run (ADR 0038) holding the stored row `responseId`, which may
+   * be any row of the run (ids compared case-insensitively; `runHolding`). Then the client's
+   * marker is deleted, so `completion` answers "none", unless the client has a later run, whose
+   * state the marker holds. Other responses, the survey record and respondent files stay. An
+   * audit copy is kept as `deleteAll` keeps one: azure-legacy first copies each row to the old
+   * service's table of deleted results, as its single delete did; memory and SQL keep none.
+   * false (nothing changed) when no row of the survey has the id, a non-GUID id included.
+   * azure-legacy deletes exactly the rows it folded into the run: a save stored meanwhile stays,
+   * and so does the marker it wrote (the marker is deleted only if unchanged since it was read).
+   */
+  deleteResponse(survey: SurveyRecord, responseId: string): Promise<boolean>;
 }
 
 export interface ViewStore {
   /**
    * The user's saved state of this view of the survey. When the user has none and has not reset
-   * it since, the survey's legacy per-survey state as stored (R4): azure-legacy blob
-   * `surveyresultsummarystate/{surveyId}` (summary) or `surveyresulttablestate/{surveyId}`
-   * (table); memory the seed's `legacyViews`. null when there is neither, after a reset, for a
-   * stored value that is not a JSON object, and for a non-GUID survey or user id. Ids match
-   * case-insensitively.
+   * it since, the survey's shared layout of the same kind (`getLayout`, ADR 0040 point 4) parsed
+   * as JSON. null when there is neither, after a reset, for a stored value that is not a JSON
+   * object (azure-legacy logs a warning with the ids), and for a non-GUID survey or user id. Ids
+   * match case-insensitively.
    */
   getView(surveyId: string, userId: string, view: ViewName): Promise<ViewState | null>;
   /**
@@ -237,6 +288,22 @@ export interface ViewStore {
    * Rejects for a non-GUID survey or user id, like `saveView`.
    */
   resetView(surveyId: string, userId: string, view: ViewName): Promise<void>;
+  /**
+   * The survey's shared layout of this kind (ADR 0040 point 4), the text exactly as saved; null
+   * when none is saved, for an empty stored text and for a non-GUID id. Ids match
+   * case-insensitively. azure-legacy: the old service's per-survey layout itself, so the old site
+   * and Studio read one copy; memory: the seed's `layouts`, then saves.
+   */
+  getLayout(surveyId: string, kind: LayoutKind): Promise<string | null>;
+  /**
+   * Stores `text` as the survey's layout of this kind, replacing the previous one. No history, no
+   * audit entry, no change of the survey record (ADR 0015 R7). Rejects (nothing written) for a
+   * non-GUID id; does not check that the survey exists. Deleted with the survey, not copied by a
+   * clone.
+   */
+  saveLayout(surveyId: string, kind: LayoutKind, text: string): Promise<void>;
+  /** Deletes the layout of this kind; idempotent. Rejects for a non-GUID id, like `saveLayout`. */
+  deleteLayout(surveyId: string, kind: LayoutKind): Promise<void>;
   /**
    * The names of the survey's questions hidden from public results (R1), in stored order, no
    * duplicates; [] when none are stored, for an unknown survey and for a non-GUID id. Ids match
@@ -260,11 +327,15 @@ export interface SurveyStore {
   /** null when no survey has this id. */
   getSurvey(id: string): Promise<SurveyRecord | null>;
   /**
-   * The survey with this post ID or result ID (GUIDs, compared case-insensitively); null when
-   * none has it or the value is not a GUID. Archived surveys are found.
+   * The survey with this post ID, result ID or legacy publish ID (GUIDs, compared
+   * case-insensitively); null when none has it or the value is not a GUID. Archived surveys are
+   * found.
    */
   findSurveyByKey(
-    key: { readonly postId: string } | { readonly resultId: string },
+    key:
+      | { readonly postId: string }
+      | { readonly resultId: string }
+      | { readonly legacyPublishId: string },
   ): Promise<SurveyRecord | null>;
   /** Archived included. Ordered by updatedAt descending, then id ascending. */
   listSurveys(owner: SurveyOwner): Promise<SurveyRecord[]>;

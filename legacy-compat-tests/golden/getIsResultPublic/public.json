@@ -1,0 +1,27 @@
+{
+  "source": "derived",
+  "description": "results made public: true",
+  "setup": {
+    "survey": {
+      "settings": {
+        "publicResults": true
+      }
+    }
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getIsResultPublic/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": true
+    }
+  }
+}

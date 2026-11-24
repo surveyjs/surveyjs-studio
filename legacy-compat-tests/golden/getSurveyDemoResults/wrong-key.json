@@ -1,0 +1,21 @@
+{
+  "source": "derived",
+  "description": "a wrong key: 200 text/html \"The accessKey '…' is incorrect.\"",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getSurveyDemoResults",
+    "query": {
+      "id": "12345678-90ab-4cde-8f01-234567890abc",
+      "accessKey": "wrong-access-key"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey 'wrong-access-key' is incorrect."
+    }
+  }
+}

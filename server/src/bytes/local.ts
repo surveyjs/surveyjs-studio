@@ -7,14 +7,12 @@ import { checkKey, type ByteStore } from "./types.js";
 
 /**
  * File bytes in a folder (FILE_STORE=local, FILES_PATH; /data/files in the image), at
- * `{root}/{survey id}/{file id}`. A write goes to a temporary file in the same folder and is then
- * renamed into place, so a reader sees the old bytes or the new ones, never a part.
+ * `{root}/{survey id}/{file id}` or `{root}/uploads/{file id}`. A write goes to a temporary
+ * file in the same folder and is then renamed into place, so a reader sees the old bytes or the
+ * new ones, never a part.
  */
 export function createLocalByteStore(root: string): ByteStore {
-  const pathOf = (key: string): string => {
-    const [survey, file] = checkKey(key).split("/") as [string, string];
-    return join(root, survey, file);
-  };
+  const pathOf = (key: string): string => join(root, ...checkKey(key).split("/"));
 
   /** Writes through a temporary file next to `path`, then renames it into place. */
   const writeAtomically = async (

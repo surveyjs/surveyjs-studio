@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import type { Handlers } from "../api.js";
 import { requireUser } from "../auth/authenticate.js";
 import { formatEtag, ifNoneMatchHits } from "../content/etag.js";
+import type { LayoutKind } from "../domain/types.js";
 import { contentDisposition } from "../files/file-type.js";
 import { negotiateExportFormat, notAcceptable, type ExportFormat } from "./export-format.js";
 import { createResultsService, type ResultsServiceOptions } from "./service.js";
@@ -82,10 +83,17 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
 
     listResults: (request) => {
       const { surveyId } = request.params as { surveyId: string };
-      const query = request.query as { limit: number; cursor?: string };
+      const query = request.query as {
+        limit: number;
+        cursor?: string;
+        from?: string;
+        till?: string;
+      };
       return service.list(requireUser(request), surveyId, {
         limit: query.limit,
         ...(query.cursor !== undefined && { cursor: query.cursor }),
+        ...(query.from !== undefined && { from: query.from }),
+        ...(query.till !== undefined && { till: query.till }),
       });
     },
 
@@ -118,6 +126,12 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
       return reply.code(204).send();
     },
 
+    deleteResponse: async (request, reply) => {
+      const { surveyId, responseId } = request.params as { surveyId: string; responseId: string };
+      await service.deleteResponse(requireUser(request), surveyId, responseId);
+      return reply.code(204).send();
+    },
+
     getPublicResults: (request, reply) => {
       const { surveyId } = request.params as { surveyId: string };
       const query = request.query as {
@@ -133,6 +147,12 @@ export function createResultHandlers(options: ResultsServiceOptions): Handlers {
         ...(query.from !== undefined && { from: query.from }),
         ...(query.till !== undefined && { till: query.till }),
       });
+    },
+
+    getPublicLayout: (request, reply) => {
+      const { surveyId, kind } = request.params as { surveyId: string; kind: LayoutKind };
+      void reply.header("cache-control", "no-store");
+      return service.publicLayout(surveyId, kind);
     },
   };
 }

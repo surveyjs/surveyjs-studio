@@ -22,9 +22,13 @@ export interface MemoryCredentials {
   seedLegacyKey(userId: string, key: string): void;
 }
 
-/** In-memory credentials. `seedKeys` maps a user id to that user's legacy access key. */
+/**
+ * In-memory credentials. `seedKeys` maps a user id to that user's legacy access key;
+ * `revokedUsers` are the users among them whose key is revoked.
+ */
 export function createMemoryCredentials(
   seedKeys: Readonly<Record<string, string>> = {},
+  revokedUsers: readonly string[] = [],
 ): MemoryCredentials {
   const tokens: StoredToken[] = [];
   const keys = new Map<string, StoredLegacyKey>();
@@ -36,6 +40,10 @@ export function createMemoryCredentials(
     });
   };
   for (const [userId, key] of Object.entries(seedKeys)) seedLegacyKey(userId, key);
+  for (const userId of revokedUsers) {
+    const key = keys.get(lower(userId));
+    if (key) key.revokedHash = key.hash;
+  }
 
   const byId = (id: string) => tokens.find((t) => t.record.id === lower(id));
   const revokeAll = (matches: (t: ApiTokenRecord) => boolean, at: string): number => {

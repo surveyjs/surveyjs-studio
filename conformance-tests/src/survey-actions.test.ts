@@ -41,9 +41,12 @@ interface Survey {
   postId: string;
   resultId: string;
   permissions: { canModify: boolean };
+  useCookies: boolean;
+  creatorId: string | null;
   settings: {
     publicResults: boolean;
     storeRespondentIp: boolean;
+    useCookies: boolean;
     /** Present on create, get, update and clone; `listSurveys` items leave it out. */
     privateResultQuestions?: string[];
   };
@@ -173,6 +176,7 @@ describe("updateSurvey", () => {
     expect(first.settings).toEqual({
       publicResults: true,
       storeRespondentIp: false,
+      useCookies: false,
       privateResultQuestions: [],
     });
     await tick();
@@ -180,6 +184,7 @@ describe("updateSurvey", () => {
     expect(second.settings).toEqual({
       publicResults: true,
       storeRespondentIp: true,
+      useCookies: false,
       privateResultQuestions: [],
     });
     await tick();
@@ -187,9 +192,31 @@ describe("updateSurvey", () => {
     expect(third.settings).toEqual({
       publicResults: false,
       storeRespondentIp: true,
+      useCookies: false,
       privateResultQuestions: [],
     });
     expect(Date.parse(third.updatedAt)).toBeGreaterThan(Date.parse(first.updatedAt));
+  });
+
+  it("sets the one-response setting, which reads back on get and on list items", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { name: "Actions: one response" });
+    expect(survey.useCookies).toBe(false);
+    await tick();
+    const on = await patched(headers, survey.id, { settings: { useCookies: true } });
+    expect(on.useCookies).toBe(true);
+    expect(on.settings.useCookies).toBe(true);
+    expect(on.settings.publicResults).toBe(false);
+    expect((await read(headers, survey.id)).useCookies).toBe(true);
+    const listed = await call("GET", "/surveys", {
+      path: `/surveys?postId=${survey.postId}`,
+      headers,
+    });
+    expect(((await listed.json()) as SurveyPage).items[0]).toMatchObject({ useCookies: true });
+    await tick();
+    expect(
+      (await patched(headers, survey.id, { settings: { useCookies: false } })).useCookies,
+    ).toBe(false);
   });
 
   it("replaces the private-question list, keeps it across other patches and clears it", async (ctx) => {
@@ -203,6 +230,7 @@ describe("updateSurvey", () => {
     expect(first.settings).toEqual({
       publicResults: false,
       storeRespondentIp: false,
+      useCookies: false,
       privateResultQuestions: ["q2", "q1"],
     });
     expect(Date.parse(first.updatedAt)).toBeGreaterThan(Date.parse(survey.updatedAt));
@@ -212,6 +240,7 @@ describe("updateSurvey", () => {
     expect(second.settings).toEqual({
       publicResults: true,
       storeRespondentIp: false,
+      useCookies: false,
       privateResultQuestions: ["q2", "q1"],
     });
 
@@ -223,7 +252,11 @@ describe("updateSurvey", () => {
     const items = ((await listed.json()) as SurveyPage).items;
     const item = items.find(({ id }) => id === survey.id);
     expect(item).toBeDefined();
-    expect(item?.settings).toEqual({ publicResults: true, storeRespondentIp: false });
+    expect(item?.settings).toEqual({
+      publicResults: true,
+      storeRespondentIp: false,
+      useCookies: false,
+    });
 
     const cleared = await patched(headers, survey.id, { settings: { privateResultQuestions: [] } });
     expect(cleared.settings.privateResultQuestions).toEqual([]);
@@ -309,6 +342,7 @@ describe("updateSurvey", () => {
     // Adam is now its creator; Olivia is a plain member of Engineering.
     expect((await read(olivia, survey.id)).permissions.canModify).toBe(false);
     expect((await read(adam, survey.id)).permissions.canModify).toBe(true);
+    expect((await read(adam, survey.id)).creatorId).toBe(admin.id);
   });
 
   it("changes nothing but updatedAt when moved to the current scope", async (ctx) => {

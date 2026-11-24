@@ -1,0 +1,25 @@
+{
+  "source": "derived",
+  "description": "an empty JSON body: an empty 400",
+  "request": {
+    "method": "PUT",
+    "path": "/private/v1/Surveys/changeJson",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "text": ""
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": null,
+      "content-length": "0"
+    },
+    "body": null
+  }
+}

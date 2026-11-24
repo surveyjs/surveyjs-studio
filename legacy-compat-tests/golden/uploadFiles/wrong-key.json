@@ -1,0 +1,30 @@
+{
+  "source": "derived",
+  "description": "a wrong key: 200 text/html \"The accessKey '…' is incorrect.\"",
+  "request": {
+    "method": "POST",
+    "path": "/private/v1/Surveys/uploadFiles",
+    "query": {
+      "accessKey": "wrong-access-key"
+    },
+    "body": {
+      "multipart": [
+        {
+          "name": "file",
+          "filename": "logo.png",
+          "contentType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey 'wrong-access-key' is incorrect."
+    }
+  }
+}

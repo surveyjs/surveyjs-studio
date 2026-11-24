@@ -1,0 +1,61 @@
+{
+  "source": "derived",
+  "description": "the columns of the definition and the responses, titles in en",
+  "difference": "The old sort of the columns was unstable: columns of the same place (Submitted and Client Id, neither a question) could come in either order; the bridge keeps them in the order they were found (docs/api/legacy-compat.md).",
+  "setup": {
+    "survey": {},
+    "posts": [
+      {
+        "surveyResult": "{\"satisfaction\":4}",
+        "clientId": "client-a"
+      }
+    ]
+  },
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/getResultColumns/{{survey.surveyId}}",
+    "query": {
+      "accessKey": "{{accessKey}}"
+    },
+    "headers": {
+      "accept-language": "en-US,en;q=0.9"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "json": {
+        "Columns": [
+          {
+            "Name": "HappendAt",
+            "DisplayName": "Submitted",
+            "DataType": 0,
+            "Visibility": 0,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          },
+          {
+            "Name": "ClientId",
+            "DisplayName": "Client Id",
+            "DataType": 0,
+            "Visibility": 2,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          },
+          {
+            "Name": "satisfaction",
+            "DisplayName": "How satisfied are you?",
+            "DataType": 0,
+            "Visibility": 0,
+            "Location": 0,
+            "Id": "00000000-0000-0000-0000-000000000000"
+          }
+        ],
+        "Id": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

@@ -367,6 +367,12 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 ## Step 6: The bridge: access-key actions and the migration guide
 
+> **Changed 2026-11-20 by [ADR 0040](docs/adr/0040-bridge-access-key-actions.md).** Exact wherever a caller can depend on
+> it, with the listed differences (a project's members no longer all change its surveys, `changeOrganization` is
+> checked, the CSV export quotes, bad-key answers lose the redirect and encode the key). Studio's public API gains the
+> operations the actions need, among them a survey's shared results layout; no setting is stored "as given", and the
+> request's credential scope becomes required. The recordings still replace the derived golden files before Step 7.
+
 **Goal:**
 
 - every access-key action of the old API answers exactly as before, through Studio's public API with the caller's key, used or not;

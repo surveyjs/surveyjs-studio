@@ -37,7 +37,13 @@ const OLDEST = "2020-01-01T00:00:00.000Z";
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const NOW = "2026-10-19T10:00:00.000Z";
-const NO_COUNTS = { surveysDeleted: 0, projectsLeft: 0, projectsDeleted: 0, adminsPromoted: 0 };
+const NO_COUNTS = {
+  surveysDeleted: 0,
+  projectsLeft: 0,
+  projectsDeleted: 0,
+  adminsPromoted: 0,
+  uploadsDeleted: 0,
+};
 
 /** Runs `use` with a pool of the replica's database, closed afterwards. */
 async function onReplica<T>(use: (pool: sql.ConnectionPool) => Promise<T>): Promise<T> {
@@ -220,6 +226,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
       creatorId: null,
       postId: "eeeeeeee-0000-4000-8000-0000000000d1",
       resultId: "eeeeeeee-0000-4000-8000-0000000000c1",
+      legacyPublishId: null,
       // An empty published flag means published (ADR 0014 S1).
       published: true,
       archived: false,
@@ -391,6 +398,7 @@ describe("azure-legacy provider with NULL legacy columns (local replica)", () =>
         projectsLeft: 1,
         projectsDeleted: 1,
         adminsPromoted: 0,
+        uploadsDeleted: 0,
       });
 
       expect(await memberRows(ERASABLE_ID)).toBe(0);

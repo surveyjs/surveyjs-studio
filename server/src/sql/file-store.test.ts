@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createLocalByteStore } from "../bytes/local.js";
 import type { ByteStore } from "../bytes/types.js";
 import { newFileId } from "../domain/file-id.js";
-import type { StoredFileRecord } from "../domain/types.js";
+import type { SurveyFileRecord } from "../domain/types.js";
 import { openDatabase, type SqlDatabase } from "./database.js";
 import { createSqlFileStore } from "./file-store.js";
 import { migrate } from "./migrator.js";
@@ -14,7 +14,7 @@ import { scratchSqlite } from "./scratch-databases.js";
 
 const CONTENT = Buffer.from("respondent's file");
 
-const fileOf = (surveyId: string): StoredFileRecord => ({
+const fileOf = (surveyId: string): SurveyFileRecord => ({
   id: newFileId(surveyId),
   surveyId,
   kind: "response",

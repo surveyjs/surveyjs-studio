@@ -1,0 +1,17 @@
+{
+  "source": "derived",
+  "description": "no key: the text answer with an empty key",
+  "request": {
+    "method": "GET",
+    "path": "/private/v1/Surveys/generateAccessKey"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {
+      "text": "The accessKey '' is incorrect."
+    }
+  }
+}

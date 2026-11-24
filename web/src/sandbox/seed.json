@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "users": [
     {
       "id": "11111111-0000-4000-8000-a00000000001",
@@ -85,6 +85,7 @@
         "userId": "11111111-0000-4000-8000-a00000000001"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000001",
       "resultId": "44444444-0000-4000-8000-a00000000001",
       "published": true,
@@ -105,6 +106,7 @@
         "userId": "11111111-0000-4000-8000-a00000000001"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000002",
       "resultId": "44444444-0000-4000-8000-a00000000002",
       "published": true,
@@ -125,6 +127,7 @@
         "userId": "11111111-0000-4000-8000-a00000000001"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "legacyPublishId": "dddddddd-0000-4000-8000-a00000000001",
       "postId": "33333333-0000-4000-8000-a00000000003",
       "resultId": "44444444-0000-4000-8000-a00000000003",
       "published": false,
@@ -145,6 +148,7 @@
         "projectId": "55555555-0000-4000-8000-a00000000001"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000003",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000004",
       "resultId": "44444444-0000-4000-8000-a00000000004",
       "published": true,
@@ -165,6 +169,7 @@
         "projectId": "55555555-0000-4000-8000-a00000000001"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000001",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000005",
       "resultId": "44444444-0000-4000-8000-a00000000005",
       "published": true,
@@ -185,6 +190,7 @@
         "projectId": "55555555-0000-4000-8000-a00000000002"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000002",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000006",
       "resultId": "44444444-0000-4000-8000-a00000000006",
       "published": false,
@@ -205,6 +211,7 @@
         "userId": "11111111-0000-4000-8000-a00000000004"
       },
       "creatorId": "11111111-0000-4000-8000-a00000000004",
+      "legacyPublishId": null,
       "postId": "33333333-0000-4000-8000-a00000000007",
       "resultId": "44444444-0000-4000-8000-a00000000007",
       "published": true,
@@ -461,38 +468,11 @@
       }
     }
   },
-  "legacyViews": {
+  "layouts": {
     "22222222-0000-4000-8000-a00000000001": {
-      "summary": {
-        "elements": [
-          {
-            "name": "satisfaction",
-            "isPublic": true
-          },
-          {
-            "name": "receipt",
-            "isPublic": false
-          }
-        ]
-      },
-      "table": {
-        "locale": "",
-        "elements": [
-          {
-            "name": "satisfaction",
-            "displayName": "How satisfied are you?",
-            "isVisible": true,
-            "isPublic": true
-          },
-          {
-            "name": "receipt",
-            "displayName": "Upload your receipt",
-            "isVisible": true,
-            "isPublic": false
-          }
-        ],
-        "pageSize": 10
-      }
+      "columns": "{\n  \"columns\": [\n    {\n      \"name\": \"satisfaction\",\n      \"displayname\": \"How satisfied are you?\",\n      \"visibility\": 0,\n      \"location\": 0\n    },\n    {\n      \"name\": \"receipt\",\n      \"displayname\": \"Upload your receipt\",\n      \"visibility\": 2,\n      \"location\": 1\n    }\n  ],\n  \"newcolumnsvisibility\": 0\n}",
+      "summary": "{\n  \"elements\": [\n    {\n      \"name\": \"satisfaction\",\n      \"isPublic\": true\n    },\n    {\n      \"name\": \"receipt\",\n      \"isPublic\": false\n    }\n  ]\n}",
+      "table": "{\n  \"locale\": \"\",\n  \"elements\": [\n    {\n      \"name\": \"satisfaction\",\n      \"displayName\": \"How satisfied are you?\",\n      \"isVisible\": true,\n      \"isPublic\": true\n    },\n    {\n      \"name\": \"receipt\",\n      \"displayName\": \"Upload your receipt\",\n      \"isVisible\": true,\n      \"isPublic\": false\n    }\n  ],\n  \"pageSize\": 10\n}"
     }
   },
   "privateResultQuestions": {

@@ -40,26 +40,27 @@ names in both. The table `schema_migrations` (`version` integer key, `name`, `ap
 
 One row per survey: the record, the definition and the theme. `SurveyStore` (`server/src/sql/survey-store.ts`).
 
-| Column                | Type              | Notes                                                                                                                                     |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | GUID, primary key |                                                                                                                                           |
-| `name`                | text              |                                                                                                                                           |
-| `owner_user_id`       | GUID, null        | Set for a personal survey. Exactly one of the two owner columns is set (`surveys_one_owner`).                                             |
-| `owner_project_id`    | GUID, null        | Set for a project survey. No foreign key to `projects` in the migrations (one was planned for self-hosted Step 2); hosted Step 8 decides. |
-| `creator_id`          | GUID, null        | null for legacy rows whose creator is the all-zero GUID                                                                                   |
-| `post_id`             | GUID, unique      | The legacy public id; the hosted compatibility layer looks surveys up by it                                                               |
-| `result_id`           | GUID, unique      | The legacy public results id                                                                                                              |
-| `published`           | boolean           | A new survey is published (ADR 0014 S1)                                                                                                   |
-| `archived`            | boolean           |                                                                                                                                           |
-| `public_results`      | boolean           |                                                                                                                                           |
-| `store_respondent_ip` | boolean           |                                                                                                                                           |
-| `use_cookies`         | boolean           | Legacy only: never changed by the app                                                                                                     |
-| `created_at`          | timestamp         |                                                                                                                                           |
-| `updated_at`          | timestamp         | Moves on every record change and every definition or theme save                                                                           |
-| `definition`          | JSON, null        | null: none stored, read as `{}`                                                                                                           |
-| `definition_version`  | text              | The version token of `definition` (the hash of `""` when none)                                                                            |
-| `theme`               | JSON, null        | null: none stored, read as `{}`                                                                                                           |
-| `theme_version`       | text              | The version token of `theme`                                                                                                              |
+| Column                | Type              | Notes                                                                                                                                                                    |
+| --------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                  | GUID, primary key |                                                                                                                                                                          |
+| `name`                | text              |                                                                                                                                                                          |
+| `owner_user_id`       | GUID, null        | Set for a personal survey. Exactly one of the two owner columns is set (`surveys_one_owner`).                                                                            |
+| `owner_project_id`    | GUID, null        | Set for a project survey. No foreign key to `projects` in the migrations (one was planned for self-hosted Step 2); hosted Step 8 decides.                                |
+| `creator_id`          | GUID, null        | null for legacy rows whose creator is the all-zero GUID                                                                                                                  |
+| `post_id`             | GUID, unique      | The legacy public id; the hosted compatibility layer looks surveys up by it                                                                                              |
+| `result_id`           | GUID, unique      | The legacy public results id                                                                                                                                             |
+| `published`           | boolean           | A new survey is published (ADR 0014 S1)                                                                                                                                  |
+| `archived`            | boolean           |                                                                                                                                                                          |
+| `public_results`      | boolean           |                                                                                                                                                                          |
+| `store_respondent_ip` | boolean           |                                                                                                                                                                          |
+| `use_cookies`         | boolean           | "Limit to one response"; set by `updateSurvey` (`settings.useCookies`)                                                                                                   |
+| `legacy_publish_id`   | text, null        | 0009. The publish ID the old service gave the survey (lower-case GUID text); filled by the hosted migration, never changed by the app; index `surveys_legacy_publish_id` |
+| `created_at`          | timestamp         |                                                                                                                                                                          |
+| `updated_at`          | timestamp         | Moves on every record change and every definition or theme save                                                                                                          |
+| `definition`          | JSON, null        | null: none stored, read as `{}`                                                                                                                                          |
+| `definition_version`  | text              | The version token of `definition` (the hash of `""` when none)                                                                                                           |
+| `theme`               | JSON, null        | null: none stored, read as `{}`                                                                                                                                          |
+| `theme_version`       | text              | The version token of `theme`                                                                                                                                             |
 
 Indexes: `surveys_personal_list` (`owner_user_id`, `archived`, `updated_at` desc, `id`) and `surveys_project_list`
 (`owner_project_id`, …), both partial on their owner column. They serve the survey list and its keyed paging
@@ -111,16 +112,20 @@ marker.
 `survey_id` (FK, cascade), `client_id` (text, matched exactly), `partial` (boolean); primary key (`survey_id`,
 `client_id`). `completion` reads it: no row is `none`.
 
-### `saved_views`, `legacy_views` and `private_questions` (0002)
+### `saved_views`, `survey_layouts` and `private_questions` (0002, 0009)
 
-| Table               | Columns                                                                                                                  | Notes                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `saved_views`       | `survey_id`, `user_id` (GUIDs), `view` (`summary` or `table`), `state` (JSON, null), `updated_at`; primary key all three | A user's layout; a null `state` is a reset marker                                                    |
-| `legacy_views`      | `survey_id`, `view`, `state` (JSON); primary key (`survey_id`, `view`)                                                   | The legacy per-survey layout, `getView`'s fallback (R4); filled by the seed and the hosted migration |
-| `private_questions` | `survey_id` (primary key), `names` (JSON array, no duplicates)                                                           | The questions hidden from public results                                                             |
+| Table               | Columns                                                                                                                  | Notes                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `saved_views`       | `survey_id`, `user_id` (GUIDs), `view` (`summary` or `table`), `state` (JSON, null), `updated_at`; primary key all three | A user's layout; a null `state` is a reset marker                                                                                                                                |
+| `survey_layouts`    | `survey_id` (GUID), `kind` (`table`, `summary` or `columns`), `text` (text); primary key (`survey_id`, `kind`)           | 0009. A survey's shared layout (ADR 0040 point 4), the text verbatim; `getView`'s fallback when it parses to a JSON object. Filled by the app, the seed and the hosted migration |
+| `private_questions` | `survey_id` (primary key), `names` (JSON array, no duplicates)                                                           | The questions hidden from public results                                                                                                                                         |
 
 The view store does not check that a survey exists, so these tables have **no foreign key**; `deleteSurvey` deletes
-their rows in its transaction. A clone copies none of them; "delete all results" keeps them.
+their rows in its transaction. A clone copies none of them; "delete all results" keeps them. Saving or deleting a
+shared layout writes no history and leaves the survey's `updated_at` alone (ADR 0015 R7).
+
+0009 replaced `legacy_views` (0002: `survey_id`, `view`, `state` JSON, the old per-survey layouts as the fallback of
+a user's view): its rows moved into `survey_layouts` as text and the table was dropped.
 
 ### `projects` and `project_members` (0002)
 
@@ -144,24 +149,37 @@ other; on SQLite every transaction already runs alone. `deleteProject` moves the
 personal scope (`updated_at` = now; id, creator, published, archived and settings unchanged) and deletes the project
 with its members.
 
-### `files` (0003)
+### `files` (0003, 0009)
 
 The metadata of stored files ([ADR 0025](../adr/0025-file-storage-for-the-sql-providers.md)); the bytes are in the
-byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}`.
+byte store (`FILE_STORE`: a folder or an S3 bucket) under `{survey id}/{file id}`, or `uploads/{file id}` for an editor
+file of no survey.
 
-| Column         | Type              | Notes                                                                                   |
-| -------------- | ----------------- | --------------------------------------------------------------------------------------- |
-| `id`           | text, primary key | 64 lower-case hex digits ([ADR 0013](../adr/0013-editor-uploads-and-files.md)), checked |
-| `survey_id`    | GUID              | No foreign key: the service deletes a survey's files first (R10)                        |
-| `kind`         | text              | `asset` (editor) or `response` (respondent)                                             |
-| `name`         | text              | The uploaded name                                                                       |
-| `content_type` | text              | One of the allowed types                                                                |
-| `size`         | bigint / integer  | Bytes                                                                                   |
-| `created_at`   | timestamp         |                                                                                         |
+| Column          | Type              | Notes                                                                                   |
+| --------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `id`            | text, primary key | 64 lower-case hex digits ([ADR 0013](../adr/0013-editor-uploads-and-files.md)), checked |
+| `survey_id`     | GUID, nullable    | No foreign key: the service deletes a survey's files first (R10)                        |
+| `owner_user_id` | GUID, nullable    | 0009. The uploader of an editor file of no survey; no foreign key                       |
+| `kind`          | text              | `asset` (editor) or `response` (respondent)                                             |
+| `name`          | text              | The uploaded name                                                                       |
+| `content_type`  | text              | One of the allowed types, or `application/octet-stream`                                 |
+| `size`          | bigint / integer  | Bytes                                                                                   |
+| `created_at`    | timestamp         |                                                                                         |
+
+Exactly one of `survey_id` and `owner_user_id` is set (a check). `application/octet-stream` is the type of a respondent
+file or an editor file of no survey that is not an allowed type.
 
 Index `files_survey` (`survey_id`, `kind`) serves `usage` (the quota), per-survey deletes and asset copies. A new
 file's row is written before its bytes and read again after them (a delete in between removes the bytes too); a delete
 removes the bytes, then the rows, so a failed delete can be retried.
+
+An editor file of no survey (`uploadLegacyFile`, [ADR 0040](../adr/0040-bridge-access-key-actions.md) point 3) has
+`owner_user_id` instead of `survey_id`, kind `asset`, and a random id (64 hex digits, no survey or user id in it); a
+`legacy_files` row (`asset`, a random lower-case GUID, the form the old service gave its uploads) names it, so
+`getLegacyFile` serves it by that public name, with its stored type. The survey operations (`getFile`,
+`deleteFile`, `usage`, per-survey deletes and copies) never see it; the account erasure deletes a user's files by index
+`files_owner` (`owner_user_id`). Migration 0009 made `survey_id` nullable: on SQLite by rebuilding `files` and
+`legacy_files` (`legacy_files` first, so dropping the old `files` cascades to nothing), keeping every row.
 
 ### `users` and `password_links` (0004)
 
@@ -227,7 +245,7 @@ reference: `kind` (`asset`, an editor image, or `response`, a respondent upload)
 included), `file_id` (FK to `files`, cascade: deleting the file deletes its names); primary key (`kind`,
 `legacy_name`); index `legacy_files_file` (`file_id`). `getFileByLegacyName` reads the file through it, with the legacy
 name as the file's name and the type of its extension as its content type (`application/octet-stream` without one, for
-an unknown extension, and for HTML and script). A name that is not one path segment of letters, digits, `.`, `-` and
+an unknown extension, and for HTML and script); an editor file of no survey keeps its stored type. A name that is not one path segment of letters, digits, `.`, `-` and
 `_` (at most 100 characters, not only dots) is unknown without a query. The hosted migration fills the table;
 `pnpm seed` adds the fixtures' two files as `files` rows of the all-zero survey (their ids are derived from kind and
 name, so a second seed replaces them), with their bytes in the byte store, when `FILES_PATH` or `FILE_STORE` is set;
@@ -259,7 +277,7 @@ Empty and unused in the self-hosted image.
 | ------------------------------------------- | -------------------------------------------------------- | --------------- |
 | `SurveyStore`                               | `surveys`, `survey_history`                              | Built           |
 | `ResultStore`                               | `survey_responses`, `completion_markers`                 | Built           |
-| `ViewStore`                                 | `saved_views`, `legacy_views`, `private_questions`       | Built           |
+| `ViewStore`                                 | `saved_views`, `survey_layouts`, `private_questions`     | Built           |
 | `ProjectStore`                              | `projects`, `project_members`, (`surveys` for the moves) | Built           |
 | `FileStore`                                 | `files`, `legacy_files` and the byte store               | Built           |
 | `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |

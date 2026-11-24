@@ -25,6 +25,7 @@ export function surveyChangesFromPatch(
     ...(settings?.storeRespondentIp !== undefined && {
       storeRespondentIp: settings.storeRespondentIp,
     }),
+    ...(settings?.useCookies !== undefined && { useCookies: settings.useCookies }),
   };
   return {
     ...(name !== undefined && { name }),
