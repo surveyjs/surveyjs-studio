@@ -1,6 +1,6 @@
 # Implementation plan: hosted migration track (deployment mode 1.3)
 
-Status: draft · 2026-10-19 · refreshed 2026-11-12 against what the self-hosted track built
+Status: draft · 2026-10-19 · refreshed 2026-11-12 against what the self-hosted track built · the path to the cutover revised 2026-11-24 ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md))
 Implements: [spec-hosted.md](spec-hosted.md), within [idea.md](idea.md) (§3.0, D16–D22) and the contract [contract/openapi.yaml](contract/openapi.yaml).
 Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It was planned to run beside [plan-self-hosted.md](plan-self-hosted.md); the self-hosted track finished first (all 11 steps merged by 2026-11-08), so this track starts on its results ([What the self-hosted track already built](#what-the-self-hosted-track-already-built)).
 
@@ -8,6 +8,7 @@ Starts after: Phase 1 ([plan.md](plan.md) Steps 1–14, done 2026-10-23). It was
 
 - Everything in [plan.md › How to use this plan](plan.md#how-to-use-this-plan) applies: one prompt per step, the steps in order, one branch and one PR per step, and the same reference notation.
 - **Branches** are named `hosted/NN-short-name`. Demo scripts go in `docs/demo/hosted-NN.md`.
+- **Two lines of code** ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)): `master` is the new server, and every step merges into it. `production` is today's server (from `master` at `15e30d8`): fixes only, each merged into `master` too, and deleted with today's server. Today's server never runs Steps 3 onwards.
 - **Additional reference notation:**
   - `HS › Compatibility layer` means spec-hosted.md, that heading;
   - `H5` is a user story in spec-hosted.md;
@@ -72,11 +73,13 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 | 7    | Taking over `api.surveyjs.io` traffic                          | ☐      |
 | 8    | Target provider readiness                                      | ☐      |
 | 9    | The migration tool                                             | ☐      |
-| 10   | Maintenance states and the cutover kit                         | ☐      |
-| 11   | Rehearsal and the cutover runbook                              | ☐      |
+| 10   | The cutover kit                                                | ☐      |
+| 11   | The test migration and the cutover runbook                     | ☐      |
 | 12   | Retiring the legacy code in this repository                    | ☐      |
 
 Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted foundation. The cutover itself is an operational event between Steps 11 and 12. It is run from the Step 11 runbook and is not a code step.
+
+**The path to the cutover** ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)): the new server is built and checked empty (Step 8); about 10 % of the data, as whole accounts, is migrated to it and tested through its test host names, functionally and under load, then wiped (Step 11); everything is pre-copied while the old side runs, with a daily `delta`; in the window the old service stops, today's Studio is read-only, and the final `delta` is verified; then `studio.surveyjs.io` and `api.surveyjs.io` switch to the new server together. Step 2 and the site's own host for its demos and housekeeping (`demoapi.surveyjs.io`) come before the test migration.
 
 ---
 
@@ -135,6 +138,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 ---
 
 ## Step 2: Users from sign-in: profiles, invitations and licence notices
+
+**Needed before the test migration** (Step 11, [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)): the new server reads no site user table.
 
 **Goal:** after the cutover the app needs nothing from the site's user tables. Users come from sign-in, members are added by email through profiles or invitations, licence notices come from a site endpoint, and deleted accounts arrive by the webhook ([ADR 0022](docs/adr/0022-users-from-sign-in.md)). Until the cutover the hosted configuration stays on `surveyjs-sql`.
 
@@ -422,20 +427,25 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 > the data, and the old service's logs hold no request bodies: the replay compares reads only, on production, and the
 > writes are checked by `pnpm legacy:replay smoke` with the test account. The bridge runs on the cutover target server
 > from the switch on, calling today's Studio by its public URL until the cutover. Studio and the bridge gain `/metrics`.
+>
+> **Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md).** There is no early switch. The
+> tools below are built (this step's PR); the switch of `api.surveyjs.io` happens at the cutover, together with
+> `studio.surveyjs.io`, and the bridge calls the Studio on its own server from the start. The replay gate, the switch
+> and what to watch move into the cutover runbook (Step 11).
 
-**Goal:** `api.surveyjs.io` points at the bridge while the data is still on the legacy stores: the bridge answers the My Surveys actions through Studio, which still runs on today's server on the legacy stores, and forwards the site's paths to the old service. The old service is out of the My Surveys request path before any data moves. At the cutover only the bridge's `BRIDGE_STUDIO_URL` changes; the DNS record is not switched again.
+**Goal:** the tools to check the bridge on real traffic and to watch it after the switch: the replay and `smoke`, `/metrics` in Studio and the bridge, the caller log, and the fixes the switch needs. The switch itself is part of the cutover.
 
-**Inputs needed:**
+**Inputs needed** (by the test migration, Step 11):
 
-- **the DNS switch, made by the SurveyJS team** ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)). The host also serves the site's demos and jobs ([Legacy API usage › Results](docs/architecture/legacy-api-usage.md#results-2026-11-13)); the bridge forwards them to the old service by that service's own host name, so they keep working without a proxy by path;
-- **the cutover target server**, built before this step by the private deployment playbooks and tested empty: the bridge image at the app's tag, Prometheus, and a web front with one site for `api.surveyjs.io` and one for a test host name that reaches the same bridge before the switch (and stays after it, for checks that must not depend on DNS);
+- **`demoapi.surveyjs.io`**, built and deployed by the SurveyJS team for the site's demos and housekeeping, which share `api.surveyjs.io` today ([Legacy API usage › Results](docs/architecture/legacy-api-usage.md#results-2026-11-13)); the bridge forwards those paths there (`BRIDGE_LEGACY_URL`);
+- **the new server** with the bridge, Prometheus and test host names, from the private deployment playbooks;
 - **a recent sample of the old service's requests** (its HTTP logs, on since 2026-11-13), as a neutral CSV made by a query kept private (rule 6);
 - **the test account's access key** for `smoke`, used for nothing else;
-- **the recordings** of Steps 5 and 6, made with the SurveyJS team and reviewed, which replace the derived golden files before the switch;
+- **the recordings** of Steps 5 and 6, made with the SurveyJS team and reviewed, which replace the derived golden files before the cutover;
 - **the load to take over:** most `getSurvey` traffic is one scheduled server-side job that re-reads a fixed set of
   surveys every few minutes ([Legacy API usage › Client types](docs/architecture/legacy-api-usage.md#client-types-preview-2026-11-17)).
-  The bridge's cache and Studio serve that steady rate from the first minute of the switch; the SurveyJS team found its owner (2026-11-18) and contacts them before
-  the cutover.
+  The bridge's cache and Studio serve that steady rate from the first minute of the switch, and Step 11's load test
+  includes it; the SurveyJS team found its owner (2026-11-18) and contacts them before the cutover.
 
 **References**
 
@@ -460,22 +470,24 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 - **Back-end unit:** the comparison rules, the classification and pacing of the replay, the sample parser, the report, `smoke`'s normalisation; the metrics' labels (no key, id or path; forwarded requests and callers that leave are counted); the caller log and `bridge-callers`; the upload deadline; the generated web-front configuration.
 - **Back-end e2e:** the replay and `smoke` of a fixture sample against two local servers (`legacy-compat-tests`); conformance for the legacy-file cap.
-- **On production, run manually:** the replay of a recent sample and `smoke`. The reports stay private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
+- **On the new server, run manually** (Step 11): the replay of a recent sample, limited to the migrated sample, and `smoke`. The reports stay private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
 
-**Documentation:** the takeover runbook, `docs/operations.md` (metrics, the caller log), `docs/self-hosting.md` (metrics), `docs/api/legacy-compat.md`, `docs/demo/hosted-07.md`.
+**Documentation:** the takeover runbook (its checks and Prometheus queries; the cutover runbook takes over its sequence), `docs/operations.md` (metrics, the caller log), `docs/self-hosting.md` (metrics), `docs/api/legacy-compat.md`, `docs/demo/hosted-07.md`.
 
 **Demo checklist**
 
 1. Locally: Studio's and the bridge's `/metrics` answer on their own ports only, and a second `getSurvey` is a cache `hit`.
-2. With the SurveyJS team: the replay of a recent sample through the test host name shows no unexplained difference, and `smoke` passes.
-3. With the SurveyJS team: the switch. A page built for Form Library v1 with `surveyId` still works, a site path reaches the old service, and the runbook's queries show no rise in errors over the first hour.
-4. A day later: `LEGACY_KEY_REVOKE` is on, a key revoked on the API tokens page gets the old API's wrong-key answer through `api.surveyjs.io`, and `bridge-callers` lists the previous day's callers.
+2. Locally: the replay and `smoke` of the fixture sample against two local servers (`docs/demo/hosted-07.md`).
+
+The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it are in Step 11 and the cutover.
 
 ---
 
 ## Step 8: Target provider readiness
 
 **Goal:** the chosen SQL provider and file store are ready to hold the hosted data at production size, including the hosted-only tables.
+
+**Inputs needed:** the new server ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)), built by the private deployment playbooks: Studio on PostgreSQL and the provider's object storage, the bridge, Prometheus, test host names for Studio and the API, and the backups set up. It is checked empty in this step.
 
 **References**
 
@@ -487,8 +499,7 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 - **If the choice is not PostgreSQL with S3-compatible storage:** the chosen provider, built against the existing provider and conformance suites. The step grows by that work.
   **Already built** (SH Steps 1–3): the PostgreSQL provider, its migrations `0001`–`0005`, the S3-compatible file store, and `surveyjs-studio backup`/`restore`, which cover SQLite and local files only. A PostgreSQL deployment is backed up with the database's own tools ([Self-hosting › Backups](docs/self-hosting.md#backups)).
 
-- **Hosted-only tables as SQL migrations** after Step 3's:
-  - `legacy_files`;
+- **Hosted-only tables as SQL migrations** after Step 6's (`legacy_files` is built: migration `0008`, Step 5):
   - `legacy_access_keys`;
   - `survey_events`;
   - `deleted_responses`, and a job that purges it 30 days after the cutover.
@@ -517,6 +528,7 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 1. `pnpm dev:<provider>` runs the full Phase 1 demo on the chosen provider.
 2. The scale report shows the largest survey's export and paging within the agreed times.
 3. A restore into a scratch instance brings back a deleted survey.
+4. On the new server, empty: Studio and the bridge answer on their test host names, and Prometheus scrapes both.
 
 ---
 
@@ -540,7 +552,9 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   - `copy`: full, with checkpoints;
   - `delta`: since the high-water marks. It must not list every blob or file: listing the production history alone takes hours. It reads only what belongs to surveys changed after the pre-copy, and only the responses added since ([ADR 0033 › Window estimate](docs/adr/0033-hosted-target-stores.md#window-estimate));
   - `reconcile`: key-set comparison and deletions;
-  - `verify`: counts, checksums, sample deep compares through both providers' interfaces.
+  - `verify`: counts, checksums, sample deep compares through both providers' interfaces;
+  - **`--sample`** for `plan`, `copy`, `delta`, `reconcile` and `verify`: whole accounts only (an account's surveys, results, history, files, projects with their members), chosen by a given share and a list of accounts that must be in it (the test account, a few large surveys' owners). `verify` and `reconcile` then compare that set only, and `plan` writes the sample's survey IDs and key hashes for the replay's filter ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md));
+  - **`wipe`:** empties the target's database and file store after the test migration, with a typed confirmation of the target's name.
 - **Safety:**
   - every run reads the source only;
   - a dry run into a scratch target is the default unless `--target` is given;
@@ -560,7 +574,9 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   - a second `copy` changes nothing;
   - a run killed halfway and restarted ends identical;
   - edits, new responses and deletions after `copy` are carried by `delta` and `reconcile`;
-  - after migration, the conformance and compatibility suites pass against the target.
+  - after migration, the conformance and compatibility suites pass against the target;
+  - a `--sample` copy holds whole accounts only (no survey whose owner or project is missing), and `verify --sample` is green on it;
+  - `wipe` refuses without the confirmation and leaves an empty target with it.
 
 **Documentation:** `docs/operations/hosted-migration.md` (commands, report fields, what a failed `verify` means), `hosted-migration-mapping.md` (final), `docs/demo/hosted-09.md`.
 
@@ -569,38 +585,35 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 1. `pnpm migrate:hosted copy` from the replica into a local target, then `verify`: all green.
 2. Change a survey, add a response and delete another survey in the replica. `delta`, `reconcile`, `verify`: green, and the changes are visible in the app on the target.
 3. Kill `copy` midway and run it again. It resumes, and `verify` is green.
+4. `copy --sample` of a share of the replica's accounts, `verify --sample` green, then `wipe`: the target is empty.
 
 ---
 
-## Step 10: Maintenance states and the cutover kit
+## Step 10: The cutover kit
 
-**Goal:** during the window, users and respondents see clear maintenance states, and the operator has one scripted path to switch over, or back.
+> **Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md).** In the window today's Studio
+> is frozen with its existing `READ_ONLY` mode (plan.md Step 14: the banner on the list and the run page, the
+> read-only editor) and the old service is stopped. The new server is not live until the switch, so no new maintenance
+> states are built, and `production` needs no new code for the window.
+
+**Goal:** the operator has one scripted path through the window, with a go or no-go on evidence, and a deploy on the new server can roll back once its database has migrations.
 
 **References**
 
-- HS › Cutover; plan.md Step 14 (`READ_ONLY`).
-- H3, H4, H23, H26.
+- HS › Cutover; ADR 0042; plan.md Step 14 (`READ_ONLY`).
+- H3 and H4 (met by today's read-only mode), H23, H26.
 
 **Build**
 
-- **Maintenance states:**
-  - with `READ_ONLY=true`, `/config` reports `maintenance` (Step 14's `/config` has only the `readOnly` flag);
-  - the signed-in app shows a banner ("Saving is paused for maintenance until about …"), and editors are read-only;
-  - the run page shows "temporarily unavailable, please try again shortly";
-  - legacy `post` answers a legacy-shaped error.
-  - `MAINTENANCE_UNTIL` sets the time shown.
-- **`pnpm cutover`,** a guided script:
-  1. preflight (target ready, user API ready, `verify` of the pre-copy);
-  2. read-only on;
+- **`pnpm cutover`,** a guided script run against the new server through its test host names. Each step asks for confirmation and appends to a cutover record, which stays private (rule 6); `--resume` continues from the record's last step:
+  1. preflight: the target is ready (migrations applied, Studio and the bridge healthy), `demoapi.surveyjs.io` answers a forwarded path, and the last daily `delta` and its time are shown;
+  2. the freeze: today's Studio reports `readOnly` in `/config`, and the old service no longer answers. People make both changes; the script checks them;
   3. `delta` and `reconcile`;
   4. `verify`;
-  5. switch the configuration;
-  6. read-only off;
-  7. post-checks.
+  5. the integrity checks: `smoke` with the test account, and a fixed set of user-story checks on the test host names;
+  6. go or no-go: the evidence, then the next manual step. Go: switch both DNS records. No-go: start the old service and turn `READ_ONLY` off; the legacy stores were only read.
 
-  `pnpm cutover --rollback` restores the old configuration. Each step asks for confirmation and logs to a cutover record.
-
-- **Rollback on the server.** Today a deploy rolls back by image tag because the app has no database migrations ([Setting up a Hetzner server › Update, roll back, status](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)). On the target stores it has. The step decides how `update.sh` and the auto-update timer treat an image whose migrations ran (for example: migrations are only ever additive, so the previous image still runs), and documents it in that page.
+- **Rollback of a deploy on the new server.** Today a deploy rolls back by image tag because the app has no database migrations ([Setting up a Hetzner server › Update, roll back, status](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)). On the new server it has. The step decides how a deploy and its rollback treat an image whose migrations ran (for example: migrations are only ever additive, so the previous image still runs), with the backup before each deploy ([ADR 0033](docs/adr/0033-hosted-target-stores.md)), and documents it.
 
 - **`docs/operations/legacy-azure-resources.md`:** every legacy resource the cutover leaves unused, for the SurveyJS team to remove when it chooses:
   - each storage account with its tables, blob containers and file shares;
@@ -610,46 +623,59 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 **Tests**
 
-- **Back-end unit:** the cutover state machine (each step's preconditions; rollback from each state).
-- **Back-end e2e:** conformance in maintenance (every write refused with the maintenance Problem, reads work); the compatibility suite's `post` in maintenance.
-- **Front-end unit:** the banner and the read-only editor.
-- **Front-end e2e:** the maintenance banner, the read-only editor and the run page's maintenance state; after `READ_ONLY` is turned off, they return to normal without a reload beyond the next navigation.
+- **Back-end unit:** the cutover state machine (each step's preconditions, `--resume`, a no-go from each state).
+- **Back-end e2e:** `pnpm cutover` from the replica to a local target, with a read-only Studio and a stopped stand-in for the old service: go; and a no-go at `verify` after a row changed in the target, with nothing written to the replica.
 
-**Documentation:** `docs/operations/hosted-cutover.md` (the script, every prompt, rollback), the user guide note on maintenance, `docs/demo/hosted-10.md`.
+**Documentation:** `docs/operations/hosted-cutover.md` (the script, every prompt, the record, no-go), `docs/demo/hosted-10.md`.
 
 **Demo checklist**
 
-1. Locally, `pnpm cutover` from the replica to a target. The app shows maintenance during the run and serves the target afterwards.
-2. Run it again on a fresh setup and choose rollback after `verify`. The app is back on the replica, and nothing was written there.
+1. Locally, `pnpm cutover` from the replica to a target with a read-only Studio: every step green, then go.
+2. Again with a row changed in the target before `verify`: no-go at `verify`, and the replica was not written.
 
 ---
 
-## Step 11: Rehearsal and the cutover runbook
+## Step 11: The test migration and the cutover runbook
 
-**Goal:** a full rehearsal on a production-sized copy proves the window length, the verification and the rollback. The runbook is final.
+> **Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md).** There is no staging copy.
+> About 10 % of the data on the new server replaces the rehearsal, and the daily `delta` before the window measures its
+> length.
+
+**Goal:** the new server is proven on real data, functionally and under load, before the final migration; the window's length is measured; the runbook is final.
 
 **Inputs needed:**
 
-- a production-sized staging copy of the legacy stores;
-- the target environment at production size ([ADR 0033](docs/adr/0033-hosted-target-stores.md#the-volumes-2026-11-18); the size is in the private infrastructure notes). The rehearsal server is built at that size; the production server is resized before its first `copy` (one-way: the disk cannot shrink again);
-- the SurveyJS team for the rehearsal;
+- Steps 2, 8, 9 and 10 merged and deployed on the new server;
+- `demoapi.surveyjs.io` live, with the bridge forwarding the site's paths to it;
+- Step 7's request sample and the test account's key;
+- the new server at production size before the full pre-copy ([ADR 0033](docs/adr/0033-hosted-target-stores.md#the-volumes-2026-11-18); the size is in the private infrastructure notes). The resize is one-way: the disk cannot shrink again;
+- the SurveyJS team for the checks and the window;
 - a date for the announcement, one to two weeks before the window.
 
 **References**
 
-- HS › Cutover; › Retirement (the site team's part); Steps 7–10.
-- H24, H26, H28.
+- HS › Cutover; › Retirement (the site team's part); ADR 0041, ADR 0042; Steps 7–10.
+- H18, H19, H24, H26, H28.
 
 **Build**
 
-- **The rehearsal:** pre-copy, a simulated day of changes, the window, verification, a rollback, and a second, successful window. Measured timings go into the runbook.
-- **Fixes** found in the rehearsal, in this step's PR or follow-up PRs before the cutover.
+- **The test migration:** `pnpm migrate:hosted copy --sample` of about 10 % of the accounts into the new server, then `verify --sample`. Then, on the test host names:
+  - the compatibility, conformance and Phase 1 user-story suites;
+  - `delta --sample`, then `pnpm legacy:replay` limited to the sample (the replay gains a filter of survey IDs and key hashes, written by `plan --sample`), so stale data does not read as a difference;
+  - `pnpm legacy:replay smoke`;
+  - the load test.
+
+  Then `wipe`: test writes never reach the final data.
+
+- **The load test** (`load-tests/`, k6 scripts, run from an operator's machine and never in CI against a real server): the scheduled job's `getSurvey` rate through the bridge, bursts of `post`, and Studio's survey list, results pages and export on the largest sampled survey, with the thresholds of Step 8's scale ADR. The results stay private; the PR states pass or fail.
+- **Fixes** found in the test migration, in this step's PR or follow-up PRs before the cutover. A fix that changes what is copied repeats the test migration.
+- **The full pre-copy and the daily `delta`,** after the resize and while the old side runs: each `delta`'s time is recorded, and the last ones give the window estimate.
 - **`docs/operations/hosted-cutover-runbook.md`:**
   - announcements one to two weeks ahead, with templates for users and integrators. The integrator template says that access keys can no longer be viewed after the cutover. Both say the data moves to another provider, and the privacy statement is updated in the same release ([ADR 0033](docs/adr/0033-hosted-target-stores.md));
   - roles and the go/no-go criteria;
-  - the window timeline, preceded by the production server's resize to production size and the pre-copy, with a full backup right after it;
-  - rollback;
-  - post-cutover checks;
+  - the timeline: the time-to-live of both DNS records lowered at least two days before; the window (the old service stopped by the SurveyJS team, today's Studio on `READ_ONLY`, `pnpm cutover`); the switch of `studio.surveyjs.io` and `api.surveyjs.io` at a quiet hour, with the certificates issued over HTTP; what to watch in the first hour and the first day ([the takeover runbook's](docs/operations/legacy-api-takeover.md) Prometheus queries); `LEGACY_KEY_REVOKE` on a day later;
+  - no-go before the switch; after it, problems are fixed on the new server;
+  - post-cutover checks; the one-month checking period, after which today's server and the `production` branch are removed (the old service is not started again);
   - the purge date of `deleted_responses`;
   - the **handover to the site team**:
     - removing the My Surveys code from surveyjs.io and `api.surveyjs.io`;
@@ -658,16 +684,17 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 **Tests**
 
-- **Rehearsal:** the reports from `verify`, the compatibility suite and the Phase 1 user-story suites against the rehearsed target. They stay private (rule 6); the PR states pass or fail and the window time against the limit.
+- **On the new server:** the reports from `verify`, the suites, the replay, `smoke` and the load test on the sample. They stay private (rule 6); the PR states pass or fail, and the window estimate against the limit.
 
-**Documentation:** the runbook (timings rounded), a rehearsal summary without production figures, `docs/demo/hosted-11.md`.
+**Documentation:** the runbook (timings rounded), a test-migration summary without production figures, `docs/demo/hosted-11.md`.
 
 **Demo checklist**
 
-1. The rehearsal report shows the window time under the agreed limit, `verify` green, and rollback tested.
-2. The SurveyJS team signs off the runbook and sets a date.
+1. The test-migration report: `verify` green; the suites, the replay and `smoke` pass; the load test within its thresholds; after `wipe` the target is empty.
+2. The daily `delta` puts the window under the agreed limit.
+3. The SurveyJS team signs off the runbook and sets a date.
 
-**After this step: the cutover.** The SurveyJS team runs it from the runbook. Mode 1.3 is live when the post-cutover checks pass. Step 12 starts after the stabilisation period.
+**After this step: the cutover.** The SurveyJS team runs it from the runbook. Mode 1.3 is live when the post-cutover checks pass. Step 12 starts after the one-month checking period.
 
 ---
 
@@ -690,7 +717,8 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
   - the golden legacy fixtures and the inspector;
   - the legacy-format rules (event rows, ADR 0010 writes);
   - the Azure SDK dependencies;
-  - `pnpm demo:azurite`.
+  - `pnpm demo:azurite`;
+  - the `production` branch and the CI path that publishes from it ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)), once today's server is gone.
 - **Keep:**
   - the migration tool's importer and NDJSON format, which are reusable for provider-to-provider moves;
   - the bridge and `legacy-compat-tests`, which call only Studio's public API, until the bridge's traffic has gone and it is retired on its own (ADR 0035);
@@ -716,22 +744,24 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 **User stories:** all 30 are assigned.
 
-| Steps | Stories               |
-| ----- | --------------------- |
-| 1     | H16, H17              |
-| 2     | H27                   |
-| 3     | H12, H13, H14, H15    |
-| 4     | H6                    |
-| 5     | H5, H6, H7, H8, H30   |
-| 6     | H9, H11               |
-| 7     | H18, H19              |
-| 8     | H25                   |
-| 9     | H1, H2, H20, H21, H22 |
-| 10    | H3, H4, H23, H26      |
-| 11    | H24, H26, H28         |
-| 12    | H29                   |
+| Steps | Stories                 |
+| ----- | ----------------------- |
+| 1     | H16, H17                |
+| 2     | H27                     |
+| 3     | H12, H13, H14, H15      |
+| 4     | H6                      |
+| 5     | H5, H6, H7, H8, H30     |
+| 6     | H9, H11                 |
+| 7     | H19 (the tools)         |
+| 8     | H25                     |
+| 9     | H1, H2, H20, H21, H22   |
+| 10    | H3, H4, H23, H26        |
+| 11    | H18, H19, H24, H26, H28 |
+| 12    | H29                     |
 
 H10 (a clear `410` for a retired endpoint) no longer applies: under ADR 0035 nothing is retired.
+
+H18 and H24 are met as [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md) changes them: both host names switch once, and before the switch a no-go restores the old side; the test migration on the new server stands in for the staging copy.
 
 **Decisions:**
 
@@ -756,9 +786,10 @@ H10 (a clear `410` for a retired endpoint) no longer applies: under ADR 0035 not
   - the user API (Step 2);
   - logs and statistics (Step 1);
   - golden responses (Step 5);
-  - the DNS change of `api.surveyjs.io` (Step 7);
+  - `demoapi.surveyjs.io` for the site's demos and housekeeping, live before the test migration (Step 11, [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md));
+  - stopping the old service in the window, and the DNS change of `studio.surveyjs.io` and `api.surveyjs.io` at its end (the cutover);
   - **the largest survey** (before Step 9): one customer's survey holds about two thirds of all responses. The SurveyJS team talks to its owner before the cutover: the move to another provider, and whether all of its responses must move. (The site's demo results, checked 2026-11-18, are not an issue);
   - removing the access key from the manage account page (cutover);
-  - the staging copy (Step 11);
+  - no staging copy: the test migration on the new server replaces it (Step 11);
   - removing the legacy code after the cutover.
 - **The self-hosted track's SQL foundation** for Step 8: built (2026-11-08).
