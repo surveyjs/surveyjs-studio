@@ -194,6 +194,44 @@ describe("account:reconcile", () => {
     expect(r.out).toBe("Users the directory does not know: 0\nNothing to erase.\n");
   });
 
+  it("refuses on hosted with the local directory, before opening any store", async () => {
+    const providers = seeded();
+    const r = await reconcile(["--apply"], providers, {
+      STORAGE_PROVIDER: "sqlite",
+      APP_EDITION: "hosted",
+      USER_DIRECTORY: "local",
+      ADMIN_EMAIL: "admin@example.com",
+    });
+    expect(r.code).toBe(1);
+    expect(r.made).toBe(0);
+    expect(r.out).toBe("");
+    expect(r.err).toContain(
+      "account:reconcile is not available with hosted sign-in: deleted accounts arrive by the webhook",
+    );
+    expect(await ghostData(providers)).toEqual({ g1Surveys: 1, g2Projects: 1 });
+  });
+
+  it("refuses the dry run on hosted too", async () => {
+    const r = await reconcile([], seeded(), {
+      STORAGE_PROVIDER: "sqlite",
+      APP_EDITION: "hosted",
+      USER_DIRECTORY: "local",
+      ADMIN_EMAIL: "admin@example.com",
+    });
+    expect(r.code).toBe(1);
+    expect(r.made).toBe(0);
+  });
+
+  it("still runs on self-hosted with the local directory", async () => {
+    const r = await reconcile([], seeded(), {
+      STORAGE_PROVIDER: "sqlite",
+      USER_DIRECTORY: "local",
+      ADMIN_EMAIL: "admin@example.com",
+    });
+    expect(r.code).toBe(0);
+    expect(r.made).toBe(1);
+  });
+
   it("refuses the memory store", async () => {
     const out: string[] = [];
     const err: string[] = [];

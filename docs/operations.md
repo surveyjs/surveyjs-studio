@@ -794,6 +794,9 @@ project membership, asks the user directory which of them it **positively does n
 without `--apply` first.** With `--apply` it erases each listed id as `account:erase` does, **unless there are more than
 `--max`** (default 10): then it erases nothing, prints `Refused: …` and exits 1. If the directory fails, the run stops
 with nothing erased and exits 1; a failure is never read as "unknown".
+On the hosted edition with `USER_DIRECTORY=local` it refuses before it opens any store (`account:reconcile is not
+available with hosted sign-in: deleted accounts arrive by the webhook`, exit 1): the local directory only knows people
+who signed in, so "unknown" there is not "deleted".
 
 - **The list can hold more than people.** It names owner ids the directory does not know. When surveys still point at
   a project whose row is gone (a "dangling project id"), that id is listed too, and `--apply` would delete those

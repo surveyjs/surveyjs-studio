@@ -1,3 +1,4 @@
+import type { AppConfig } from "../config.js";
 import type { ProjectStore, SurveyStore, UserDirectory } from "../providers/types.js";
 
 export interface ReconcileStores {
@@ -20,4 +21,23 @@ export async function findErasureCandidates(stores: ReconcileStores): Promise<st
   const members = await stores.projects.listMemberUserIds();
   const ids = [...new Set([...owners, ...members])].sort(ascending);
   return [...(await stores.users.missingUsers(ids))].sort(ascending);
+}
+
+/** Hosted sign-in keeps no full user list, so "the directory does not know" is not "deleted". */
+export class ReconcileUnavailable extends Error {
+  constructor() {
+    super(
+      "account:reconcile is not available with hosted sign-in: deleted accounts arrive by the webhook",
+    );
+    this.name = "ReconcileUnavailable";
+  }
+}
+
+/** Throws ReconcileUnavailable on the hosted edition with the local directory. */
+export function assertReconcileAvailable(
+  config: Pick<AppConfig, "edition" | "userDirectory">,
+): void {
+  if (config.edition === "hosted" && config.userDirectory === "local") {
+    throw new ReconcileUnavailable();
+  }
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
-import { ConfigError, loadConfig } from "../config.js";
+import { ReconcileUnavailable } from "../accounts/reconcile.js";
+import { ConfigError, loadConfig, type AppConfig } from "../config.js";
 import { LegacyStoreError } from "../providers/azure-legacy/index.js";
 import { createProviders, type ProviderSet } from "../providers/index.js";
 import { DatabaseTooNewError, MigrationMismatchError } from "../sql/migrator.js";
@@ -78,6 +79,7 @@ export function describeUnexpected(error: unknown): string {
 export function safeErrorText(error: unknown): string {
   const safe =
     error instanceof ConfigError ||
+    error instanceof ReconcileUnavailable ||
     error instanceof LegacyStoreError ||
     error instanceof UserApiError ||
     error instanceof DatabaseTooNewError ||
@@ -130,7 +132,12 @@ export async function withProviders(
   envFile: string | null,
   io: CliIo,
   deps: StoreCommandDeps,
-  options: { readonly writes: boolean; readonly readOnlyRefusal?: string },
+  options: {
+    readonly writes: boolean;
+    readonly readOnlyRefusal?: string;
+    /** Runs on the loaded config before the stores open; a throw is exit 1. */
+    readonly guard?: (config: AppConfig) => void;
+  },
   body: (providers: ProviderSet) => Promise<number>,
 ): Promise<number> {
   let env: CliEnv = deps.env ?? process.env;
@@ -150,6 +157,7 @@ export async function withProviders(
   let providers: ProviderSet | null = null;
   try {
     const config = loadConfig({ ...env }, { skipIdentityRules: true });
+    options.guard?.(config);
     if (options.writes && config.readOnly) {
       io.err(`${options.readOnlyRefusal ?? READ_ONLY_REFUSAL}\n`);
       return 2;
