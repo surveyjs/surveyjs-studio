@@ -1,0 +1,274 @@
+import { describe, expect, it } from "vitest";
+import type { SurveyResponse } from "../domain/types.js";
+import { isAfterResponse } from "./ordering.js";
+import { foldRuns, pageOfFoldedRuns, pageOfRuns, responseOfRun, type RunRows } from "./runs.js";
+import type { ResponsePosition } from "./types.js";
+
+/** A row submitted `minute` minutes into the day. */
+const r = (
+  id: string,
+  minute: number,
+  clientId?: string,
+  partial = false,
+  data: Record<string, unknown> = {},
+  respondentIp?: string,
+): SurveyResponse => ({
+  id,
+  submittedAt: new Date(Date.UTC(2026, 10, 19, 0, minute)).toISOString(),
+  data,
+  partial,
+  ...(clientId === undefined ? {} : { clientId }),
+  ...(respondentIp === undefined ? {} : { respondentIp }),
+});
+
+const ids = (runs: readonly (readonly { id: string }[])[]) =>
+  runs.map((run) => run.map((row) => row.id));
+const at = (row: SurveyResponse): ResponsePosition => ({
+  submittedAt: row.submittedAt,
+  id: row.id,
+});
+
+describe("foldRuns", () => {
+  it("folds partial rows and the complete row after them into one run", () => {
+    expect(
+      ids(foldRuns([r("p1", 1, "c", true), r("p2", 2, "c", true), r("done3", 3, "c")])),
+    ).toEqual([["p1", "p2", "done3"]]);
+  });
+
+  it("keeps two complete rows of one client as two runs", () => {
+    expect(ids(foldRuns([r("done1", 1, "c"), r("done2", 2, "c")]))).toEqual([["done1"], ["done2"]]);
+  });
+
+  it("starts a new run with a partial row after a complete one", () => {
+    expect(
+      ids(foldRuns([r("p1", 1, "c", true), r("done2", 2, "c"), r("p3", 3, "c", true)])),
+    ).toEqual([["p1", "done2"], ["p3"]]);
+  });
+
+  it("never folds rows without a client id", () => {
+    expect(ids(foldRuns([r("p1", 1, undefined, true), r("done2", 2)]))).toEqual([
+      ["p1"],
+      ["done2"],
+    ]);
+  });
+
+  it("folds interleaved clients separately, ordered by first row", () => {
+    expect(
+      ids(
+        foldRuns([
+          r("p1", 1, "a", true),
+          r("p2", 2, "b", true),
+          r("done3", 3, "a"),
+          r("done4", 4, "b"),
+        ]),
+      ),
+    ).toEqual([
+      ["p1", "done3"],
+      ["p2", "done4"],
+    ]);
+  });
+});
+
+describe("responseOfRun", () => {
+  it("has the id and time of the first row", () => {
+    const first = r("p1", 1, "c", true);
+    const response = responseOfRun([first, r("done2", 2, "c")]);
+    expect(response.id).toBe("p1");
+    expect(response.submittedAt).toBe(first.submittedAt);
+    expect(response.clientId).toBe("c");
+  });
+
+  it("merges the data in order, later keys winning", () => {
+    const run = [r("p1", 1, "c", true, { q1: 1 }), r("done2", 2, "c", false, { q1: 2, q2: 3 })];
+    expect(responseOfRun(run).data).toEqual({ q1: 2, q2: 3 });
+  });
+
+  it("takes the respondent IP of the last row having one", () => {
+    const run = [
+      r("p1", 1, "c", true, {}, "10.0.0.1"),
+      r("p2", 2, "c", true, {}, "10.0.0.2"),
+      r("done3", 3, "c", false, {}),
+    ];
+    expect(responseOfRun(run).respondentIp).toBe("10.0.0.2");
+    expect(responseOfRun([r("p1", 1, "c", true)])).not.toHaveProperty("respondentIp");
+  });
+
+  it("is partial only without a complete row", () => {
+    expect(responseOfRun([r("p1", 1, "c", true), r("p2", 2, "c", true)]).partial).toBe(true);
+    expect(responseOfRun([r("p1", 1, "c", true), r("done2", 2, "c")]).partial).toBe(false);
+    expect(responseOfRun([r("done1", 1, "c")]).partial).toBe(false);
+  });
+
+  it("does not change the rows", () => {
+    const run = [r("p1", 1, "c", true, { q1: 1 }), r("done2", 2, "c", false, { q2: 2 })];
+    const before = structuredClone(run);
+    const response = responseOfRun(run);
+    expect(run).toEqual(before);
+    expect(response.data).not.toBe(run[0]!.data);
+  });
+});
+
+/** An in-memory RunRows that records the client ids it was asked for. */
+function fakeRows(rows: SurveyResponse[]): RunRows & { asked: string[][] } {
+  const asked: string[][] = [];
+  return {
+    asked,
+    rowsAfter: (after, limit) =>
+      Promise.resolve(rows.filter((row) => !after || isAfterResponse(row, after)).slice(0, limit)),
+    partialClientRows: (clientIds) => {
+      asked.push([...clientIds]);
+      const partialClients = new Set(
+        rows.filter((row) => row.partial && row.clientId).map((row) => row.clientId),
+      );
+      return Promise.resolve(
+        rows.filter((row) => clientIds.includes(row.clientId!) && partialClients.has(row.clientId)),
+      );
+    },
+  };
+}
+
+describe("pageOfRuns", () => {
+  const p1 = r("p1", 1, "c", true, { q1: 1 });
+  const done2 = r("done2", 2, "c", false, { q2: 2 });
+  const done3 = r("done3", 3);
+  const done4 = r("done4", 4, "c", false, { q4: 4 });
+
+  it("pages runs by their first row", async () => {
+    const source = fakeRows([p1, done2, done3]);
+    const page1 = await pageOfRuns(source, { limit: 1 });
+    expect(page1.items).toEqual([
+      {
+        id: "p1",
+        submittedAt: p1.submittedAt,
+        clientId: "c",
+        data: { q1: 1, q2: 2 },
+        partial: false,
+      },
+    ]);
+    expect(page1.next).toEqual(at(p1));
+
+    const page2 = await pageOfRuns(source, { limit: 1, after: page1.next! });
+    expect(page2.items.map((item) => item.id)).toEqual(["done3"]);
+    expect(page2.next).toBeNull();
+  });
+
+  it("skips the rest of a run that started before the page", async () => {
+    const page = await pageOfRuns(fakeRows([p1, done2, done3]), { limit: 10, after: at(p1) });
+    expect(page.items.map((item) => item.id)).toEqual(["done3"]);
+    expect(page.next).toBeNull();
+  });
+
+  it("leaves out open runs with completedOnly and still pages to the end", async () => {
+    const source = fakeRows([
+      r("open1", 1, "a", true),
+      r("open2", 2, "b", true),
+      r("done3", 3),
+      r("open4", 4, "d", true),
+      r("done5", 5),
+    ]);
+    const page1 = await pageOfRuns(source, { limit: 1, completedOnly: true });
+    expect(page1.items.map((item) => item.id)).toEqual(["done3"]);
+    expect(page1.next).toEqual(at(r("done3", 3)));
+
+    const page2 = await pageOfRuns(source, { limit: 1, completedOnly: true, after: page1.next! });
+    expect(page2.items.map((item) => item.id)).toEqual(["done5"]);
+    expect(page2.next).toBeNull();
+  });
+
+  it("keeps a completed run and the partial run after it as two responses", async () => {
+    const page = await pageOfRuns(
+      fakeRows([r("p1", 1, "c", true), r("done2", 2, "c"), r("p3", 3, "c", true)]),
+      { limit: 10 },
+    );
+    expect(page.items.map((item) => [item.id, item.partial])).toEqual([
+      ["p1", false],
+      ["p3", true],
+    ]);
+  });
+
+  it("asks for partial rows only of clients whose rows it read", async () => {
+    const source = fakeRows([p1, done2, done3, r("x4", 4, "x", true), r("y5", 5, "y")]);
+    await pageOfRuns(source, { limit: 1 });
+    const askedFor = source.asked.flat();
+    expect(askedFor).toContain("c");
+    expect(askedFor).not.toContain("y");
+    expect(new Set(askedFor).size).toBe(askedFor.length);
+  });
+
+  it("takes a whole run whose complete row is past the rows read", async () => {
+    const source = fakeRows([p1, r("x2", 2), r("x3", 3), done4]);
+    const page1 = await pageOfRuns(source, { limit: 1 });
+    expect(page1.items).toEqual([
+      {
+        id: "p1",
+        submittedAt: p1.submittedAt,
+        clientId: "c",
+        data: { q1: 1, q4: 4 },
+        partial: false,
+      },
+    ]);
+    const page2 = await pageOfRuns(source, { limit: 10, after: page1.next! });
+    expect(page2.items.map((item) => item.id)).toEqual(["x2", "x3"]);
+  });
+
+  it("asks again for a client whose row was stored after its history was read", async () => {
+    const late = r("p3", 3, "c", true, { q3: 3 });
+    const all = [p1, done2, late];
+    let reads = 0;
+    const source: RunRows = {
+      rowsAfter: (after, limit) =>
+        Promise.resolve(all.filter((row) => !after || isAfterResponse(row, after)).slice(0, limit)),
+      // The first read misses the late row, as if it was stored right after.
+      partialClientRows: () => Promise.resolve((reads += 1) === 1 ? [p1, done2] : all),
+    };
+    const page = await pageOfRuns(source, { limit: 1 });
+    expect(page.items.map((item) => item.id)).toEqual(["p1"]);
+    expect(page.next).toEqual(at(p1));
+    expect(reads).toBe(2);
+  });
+
+  it("stops when the rows read fall short of the chunk", async () => {
+    const source = fakeRows([p1, done2]);
+    let calls = 0;
+    const counting: RunRows = {
+      rowsAfter: (after, limit) => {
+        calls += 1;
+        return source.rowsAfter(after, limit);
+      },
+      partialClientRows: (clientIds) => source.partialClientRows(clientIds),
+    };
+    const page = await pageOfRuns(counting, { limit: 5 });
+    expect(page.items.map((item) => item.id)).toEqual(["p1"]);
+    expect(page.next).toBeNull();
+    expect(calls).toBe(1);
+  });
+});
+
+describe("pageOfFoldedRuns", () => {
+  const runs = foldRuns([
+    r("p1", 1, "c", true),
+    r("open2", 2, "o", true),
+    r("done3", 3, "c"),
+    r("done4", 4),
+  ]);
+
+  it("pages runs after the position by their first row", () => {
+    const page1 = pageOfFoldedRuns(runs, { limit: 2 });
+    expect(ids(page1.runs)).toEqual([["p1", "done3"], ["open2"]]);
+    expect(page1.next).toEqual(at(r("open2", 2)));
+
+    const page2 = pageOfFoldedRuns(runs, { limit: 2, after: page1.next! });
+    expect(ids(page2.runs)).toEqual([["done4"]]);
+    expect(page2.next).toBeNull();
+  });
+
+  it("leaves out open runs with completedOnly", () => {
+    const page1 = pageOfFoldedRuns(runs, { limit: 1, completedOnly: true });
+    expect(ids(page1.runs)).toEqual([["p1", "done3"]]);
+    expect(page1.next).toEqual(at(r("p1", 1)));
+
+    const page2 = pageOfFoldedRuns(runs, { limit: 1, completedOnly: true, after: page1.next! });
+    expect(ids(page2.runs)).toEqual([["done4"]]);
+    expect(page2.next).toBeNull();
+  });
+});

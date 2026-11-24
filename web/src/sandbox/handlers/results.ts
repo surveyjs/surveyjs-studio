@@ -1,6 +1,6 @@
 // Mirrors server/src/results/service.ts (`list`, `stats`, `deleteResults`) and handlers.ts: the
 // signed-in side of a survey's results. A response is returned as results/export.ts `responseJson`
-// does (no `partial`). The sandbox code does not import server/src.
+// does (`partial: true` only when true; runs fold, ADR 0038). The sandbox code does not import server/src.
 import { HttpResponse } from "msw";
 import { mutate, parsePagingQuery, requireSession, RESULTS_PAGE, view } from "./common";
 import type { HandlerContext } from "./context";
@@ -19,13 +19,16 @@ export function resultsHandlers(ctx: HandlerContext) {
           const { survey } = visibleSurvey(data, user, params.surveyId);
           const { items, nextCursor } = responsePage(data, survey.id, limit, cursor);
           return HttpResponse.json({
-            items: items.map(({ id, submittedAt, data: answers, clientId, respondentIp }) => ({
-              id,
-              submittedAt,
-              data: answers,
-              ...(clientId !== undefined && { clientId }),
-              ...(respondentIp !== undefined && { respondentIp }),
-            })),
+            items: items.map(
+              ({ id, submittedAt, data: answers, clientId, respondentIp, partial }) => ({
+                id,
+                submittedAt,
+                data: answers,
+                ...(clientId !== undefined && { clientId }),
+                ...(respondentIp !== undefined && { respondentIp }),
+                ...(partial && { partial: true }),
+              }),
+            ),
             nextCursor,
           });
         });
@@ -36,7 +39,10 @@ export function resultsHandlers(ctx: HandlerContext) {
       guarded(() =>
         view(ctx, cookies, (data, user) => {
           const { survey } = visibleSurvey(data, user, params.surveyId);
-          const rows = [...(data.responses[survey.id] ?? [])].sort(responseOrder);
+          // The complete rows only: a partial row is not a response yet (ADR 0038).
+          const rows = (data.responses[survey.id] ?? [])
+            .filter((row) => !row.partial)
+            .sort(responseOrder);
           return HttpResponse.json({
             count: rows.length,
             firstSubmittedAt: rows[0]?.submittedAt ?? null,

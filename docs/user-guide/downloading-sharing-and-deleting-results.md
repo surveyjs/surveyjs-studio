@@ -18,6 +18,8 @@ The top left of the tab shows:
 | **First response at:** | When the oldest response was sent     |
 | **Last response at:**  | When the newest response was sent     |
 
+- **Only completed responses count.** A response that is still [partial](viewing-results.md#partial-responses) is not
+  in the total, and the two dates are of completed responses (the time each was completed).
 - **The total is the true count.** The old page counted the first 1,000 responses and showed that number.
   This page asks the server, so a survey with 1,500 responses shows 1500.
 - **The dates are in your browser's format.** They use your language and time zone, for example
@@ -67,13 +69,14 @@ A CSV file opens in a spreadsheet program. It is UTF-8 with a byte order mark, s
 non-Latin letters correctly. Fields are separated by commas, and a field that contains a comma, a quote or
 a line break is put in quotes.
 
-| Column                  | Holds                                                                                    |
-| ----------------------- | ---------------------------------------------------------------------------------------- |
-| `Submitted`             | When the response was sent, in UTC, as `2026-05-01T08:00:00.000Z`                        |
-| `IPAddress`             | The respondent's IP address. The column is there **only while Save Respondent IP is on** |
-| One column per question | The answer. The header is the question's **name** (for example `color`), not its title   |
-| `<name>-Comment`        | The comment or "other" text of a question that has one, right after that question        |
-| `ClientId`              | The browser's id for that survey. It is always the last column                           |
+| Column                  | Holds                                                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Submitted`             | When the response was sent, in UTC, as `2026-05-01T08:00:00.000Z`                                                                                        |
+| `IPAddress`             | The respondent's IP address. The column is there **only while Save Respondent IP is on**                                                                 |
+| One column per question | The answer. The header is the question's **name** (for example `color`), not its title                                                                   |
+| `<name>-Comment`        | The comment or "other" text of a question that has one, right after that question                                                                        |
+| `ClientId`              | The browser's id for that survey                                                                                                                         |
+| `Partial`               | `true` for a [partial response](viewing-results.md#partial-responses). The column is there **only while the survey has one** and is then the last column |
 
 - The columns follow the order of the survey. A survey with no responses gives the header line only.
 - A question with several answers (a checkbox, a matrix) is one cell with the answer as JSON text, for
@@ -112,6 +115,7 @@ What a visitor sees:
   menu (**CSV**, **Excel** and **PDF**), as on your own page; the file holds what the visitor's Table shows,
   so it leaves out the private questions too. There is no Details tab and no download of all the data, and
   nothing can be changed. The page needs no sign-in and shows no menu of this application.
+- **Completed responses only.** A response that is still partial is left out of the Summary and the Table.
 - **Every response**, not the first 1,000. A survey with many responses takes a moment to load. While it
   loads the page says "Loading the results…". If it cannot be loaded it says "The results could not be loaded.
   Check your connection and try again." with **Try again**.

@@ -8,7 +8,7 @@ export type SurveyResponseJson = components["schemas"]["SurveyResponse"];
 /** Rows per store read of an export: the largest `listResults` page (R5). */
 export const EXPORT_PAGE_SIZE = 1000;
 
-/** A response as `listResults` and the JSON export return it: no `partial` (Step 9 R1). */
+/** A response as `listResults` and the JSON export return it: `partial: true` only when true. */
 export function responseJson(response: SurveyResponse): SurveyResponseJson {
   return {
     id: response.id,
@@ -16,6 +16,7 @@ export function responseJson(response: SurveyResponse): SurveyResponseJson {
     data: response.data,
     ...(response.clientId !== undefined && { clientId: response.clientId }),
     ...(response.respondentIp !== undefined && { respondentIp: response.respondentIp }),
+    ...(response.partial && { partial: true }),
   };
 }
 

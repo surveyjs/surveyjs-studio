@@ -112,6 +112,8 @@ export interface NewResponse {
   readonly clientId?: string;
   /** Only when the survey's storeRespondentIp is on (S8). */
   readonly respondentIp?: string;
+  /** A partial save (ADR 0038); the service sets it only with a `clientId`. Absent: complete. */
+  readonly partial?: boolean;
 }
 
 /** A client's completion marker (S3): none, a legacy partial marker, or a complete one. */

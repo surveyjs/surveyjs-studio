@@ -41,7 +41,7 @@ describe("db CLI", () => {
     const first = capture();
     expect(await run(["migrate"], first.io, { env })).toBe(0);
     expect(first.out).toMatch(
-      /^Database: sqlite, .+test\.db\nApplied 6 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens\n$/,
+      /^Database: sqlite, .+test\.db\nApplied 7 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses\n$/,
     );
 
     const second = capture();
@@ -81,7 +81,7 @@ describe("db CLI", () => {
     const result = capture();
     expect(await run(["seed"], result.io, { env })).toBe(0);
     expect(result.out).toMatch(
-      /^Database: sqlite, .+\nApplied 6 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens\nSeeded 9 surveys and 2 projects\.\n$/,
+      /^Database: sqlite, .+\nApplied 7 migrations: 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses\nSeeded 9 surveys and 2 projects\.\n$/,
     );
     const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
     const store = createSqlSurveyStore(database);

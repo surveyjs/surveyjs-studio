@@ -15,6 +15,7 @@ import { surveyListOrder } from "../ordering.js";
 import type {
   AppendOutcome,
   ProviderSet,
+  ResponsePageQuery,
   ResponsePosition,
   SurveyPosition,
   UserDirectoryKind,
@@ -1172,13 +1173,14 @@ export function describeProviderSuite(
         expect(await providers.results.listResponses(surveyCampaign)).toStrictEqual(
           campaignResponses,
         );
+        // Row 02 of fixtures 01 and 04 is an open partial run: not counted.
         expect(await providers.results.stats(surveyFeedback)).toEqual({
-          count: 5,
+          count: 4,
           firstSubmittedAt: "2026-04-01T08:00:00.500Z",
           lastSubmittedAt: "2026-04-01T12:00:00.000Z",
         });
         expect(await providers.results.stats(surveyCampaign)).toEqual({
-          count: 5,
+          count: 4,
           firstSubmittedAt: "2026-04-02T08:00:00.500Z",
           lastSubmittedAt: "2026-04-02T12:00:00.000Z",
         });
@@ -1357,6 +1359,114 @@ export function describeProviderSuite(
           await providers.results.deleteAll(survey);
           expect(await providers.views.getView(survey.id, user, "summary")).toEqual(layout);
           expect(await providers.views.getPrivateQuestions(survey.id)).toEqual(["q1"]);
+        });
+      });
+
+      describe("partial responses", () => {
+        const at = (hour: number): string =>
+          `2026-08-02T${String(hour).padStart(2, "0")}:00:00.000Z`;
+        const client = { clientId: "client-run" };
+        const post = (survey: SurveyRecord, n: number, hour: number, over: Partial<NewResponse>) =>
+          append(survey, sid(n), { submittedAt: at(hour), ...client, ...over });
+        const folded = (survey: SurveyRecord, query: ResponsePageQuery) =>
+          providers.results.listResponsePage(survey, query);
+
+        it("lists the five responses of fixture 01, row 02 partial", async () => {
+          expect(await folded(surveyFeedback, { limit: 10 })).toStrictEqual({
+            items: feedbackResponses,
+            next: null,
+          });
+          expect(feedbackResponses[1]?.partial).toBe(true);
+        });
+
+        it("reads a run as one response", async () => {
+          const survey = await freshSurvey();
+          await post(survey, 1, 10, { data: { a: 1, b: 1 }, partial: true });
+          expect(await providers.results.completion(survey, "client-run")).toBe("partial");
+          await post(survey, 2, 11, { data: { b: 2 }, partial: true });
+          await post(survey, 3, 12, { data: { c: 3 } });
+          expect(await providers.results.completion(survey, "client-run")).toBe("completed");
+          expect((await folded(survey, { limit: 10 })).items).toStrictEqual([
+            {
+              id: sid(1),
+              submittedAt: at(10),
+              data: { a: 1, b: 2, c: 3 },
+              ...client,
+              partial: false,
+            },
+          ]);
+          expect((await providers.results.listResponses(survey)).map((r) => r.id)).toStrictEqual([
+            sid(1),
+            sid(2),
+            sid(3),
+          ]);
+          expect(await providers.results.stats(survey)).toEqual({
+            count: 1,
+            firstSubmittedAt: at(12),
+            lastSubmittedAt: at(12),
+          });
+        });
+
+        it("keeps a run on one page when a page ends in it", async () => {
+          const survey = await freshSurvey();
+          await post(survey, 1, 10, { data: { a: 1 }, partial: true });
+          await post(survey, 2, 11, { data: { b: 2 } });
+          await append(survey, sid(4), { submittedAt: at(13) });
+          const first = await folded(survey, { limit: 1 });
+          expect(first.items.map((item) => [item.id, item.partial, item.data])).toStrictEqual([
+            [sid(1), false, { a: 1, b: 2 }],
+          ]);
+          expect(first.next).toEqual({ submittedAt: at(10), id: sid(1) });
+          const second = await folded(survey, { limit: 1, after: first.next! });
+          expect(second.items.map((item) => item.id)).toStrictEqual([sid(4)]);
+          expect(second.next).toBeNull();
+        });
+
+        it("starts a new response when a client saves again after completing", async () => {
+          const survey = await freshSurvey();
+          await post(survey, 1, 10, { data: { a: 1 } });
+          await post(survey, 2, 11, { data: { a: 2 }, partial: true });
+          const { items } = await folded(survey, { limit: 10 });
+          expect(items.map((item) => [item.id, item.partial])).toStrictEqual([
+            [sid(1), false],
+            [sid(2), true],
+          ]);
+          expect(await providers.results.completion(survey, "client-run")).toBe("partial");
+        });
+
+        it("leaves an open run out with completedOnly", async () => {
+          const survey = await freshSurvey();
+          await post(survey, 1, 10, { partial: true });
+          await append(survey, sid(2), { submittedAt: at(11) });
+          const ids = async (completedOnly: boolean) =>
+            (await folded(survey, { limit: 10, completedOnly })).items.map((item) => item.id);
+          expect(await ids(false)).toStrictEqual([sid(1), sid(2)]);
+          expect(await ids(true)).toStrictEqual([sid(2)]);
+        });
+
+        it("lists a partial post without a client id as complete and counts it", async () => {
+          const survey = await freshSurvey();
+          await append(survey, sid(1), { submittedAt: at(10), partial: true });
+          const page = await folded(survey, { limit: 10 });
+          expect(page.items.map((item) => item.id)).toStrictEqual([sid(1)]);
+          expect(page.items[0]?.partial).not.toBe(true);
+          expect((await providers.results.stats(survey)).count).toBe(1);
+        });
+
+        it("tells whether a client's marker is partial", async () => {
+          const survey = await freshSurvey();
+          expect(await providers.results.hasPartial(survey)).toBe(false);
+          await post(survey, 1, 10, { partial: true });
+          expect(await providers.results.hasPartial(survey)).toBe(true);
+          await post(survey, 2, 11, {});
+          expect(await providers.results.hasPartial(survey)).toBe(false);
+        });
+
+        it("writes the marker of an existing row with the posted state", async () => {
+          const survey = await freshSurvey();
+          await post(survey, 1, 10, { partial: true });
+          expect(await post(survey, 1, 10, {})).toBe("exists");
+          expect(await providers.results.completion(survey, "client-run")).toBe("completed");
         });
       });
 

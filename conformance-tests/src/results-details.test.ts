@@ -125,7 +125,10 @@ describe("exportResults of the fixtures", () => {
     expect(body).toStrictEqual(await listAll(FEEDBACK, olivia));
     expect(body[1]?.clientId).toBe("client-0001");
     expect(body[2]?.respondentIp).toBe("203.0.113.7");
-    for (const item of body) expect(item).not.toHaveProperty("partial");
+    expect(body[1]).toMatchObject({ partial: true });
+    for (const item of body.filter((_, index) => index !== 1)) {
+      expect(item).not.toHaveProperty("partial");
+    }
   });
 
   it("downloads Customer feedback as CSV with a byte order mark and CRLF lines", async (ctx) => {
@@ -135,12 +138,12 @@ describe("exportResults of the fixtures", () => {
     expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
     expect(await csvOf(response)).toBe(
       [
-        "Submitted,IPAddress,satisfaction,receipt,ClientId",
-        "2026-04-01T08:00:00.500Z,,4,,",
-        "2026-04-01T09:15:00.000Z,,2,,client-0001",
-        "2026-04-01T10:30:00.000Z,203.0.113.7,5,,",
-        `2026-04-01T11:45:00.000Z,,3,"[{""name"":""receipt.png"",""type"":""image/png"",""content"":""${RECEIPT_PNG}""}]",`,
-        "2026-04-01T12:00:00.000Z,,1,dxsimage:99999999-0000-4000-8000-a00000000002.png,",
+        "Submitted,IPAddress,satisfaction,receipt,ClientId,Partial",
+        "2026-04-01T08:00:00.500Z,,4,,,",
+        "2026-04-01T09:15:00.000Z,,2,,client-0001,true",
+        "2026-04-01T10:30:00.000Z,203.0.113.7,5,,,",
+        `2026-04-01T11:45:00.000Z,,3,"[{""name"":""receipt.png"",""type"":""image/png"",""content"":""${RECEIPT_PNG}""}]",,`,
+        "2026-04-01T12:00:00.000Z,,1,dxsimage:99999999-0000-4000-8000-a00000000002.png,,",
       ]
         .map((line) => `${line}\r\n`)
         .join(""),

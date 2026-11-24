@@ -260,6 +260,10 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 
 ## Step 4: Partial responses
 
+> **Changed 2026-11-19 by [ADR 0038](docs/adr/0038-partial-responses.md).** Results fold a client's partial saves into
+> one response when reading; storage stays append-only. The ADR is the step's record of differences from the legacy
+> readers.
+
 **Goal:** partial saves are stored and reported as the legacy service did, through the contract's `partial` and `lastPageIndex`.
 
 **References**

@@ -16,12 +16,12 @@ and add each one to this index.
 | [0007](0007-dev-identity-provider.md)                      | A development identity provider, outside the contract                           | Accepted           |
 | [0008](0008-surveyjs-auth-oauth2-userinfo.md)              | Sign in to auth.surveyjs.io as an OAuth 2.0 client, with identity from UserInfo | Accepted           |
 | [0009](0009-survey-permissions-follow-legacy.md)           | Survey permissions follow the legacy rules                                      | Accepted           |
-| [0010](0010-writing-to-the-legacy-stores.md)               | Writing to the legacy stores                                                    | Accepted           |
+| [0010](0010-writing-to-the-legacy-stores.md)               | Writing to the legacy stores (its partial-flag rule changed by 0038)            | Accepted           |
 | [0011](0011-survey-actions.md)                             | Survey actions: who may do what, and what each one changes                      | Accepted           |
 | [0012](0012-editor-content-and-history.md)                 | The editor, survey content and history (its "No JSON view" superseded by 0023)  | Accepted           |
 | [0013](0013-editor-uploads-and-files.md)                   | Editor uploads and file serving                                                 | Accepted           |
-| [0014](0014-run-page-and-response-collection.md)           | Run page and response collection                                                | Accepted           |
-| [0015](0015-results-summary-table-and-views.md)            | Results: Summary, Table and saved layouts                                       | Accepted           |
+| [0014](0014-run-page-and-response-collection.md)           | Run page and response collection (its S6 changed by 0038)                       | Accepted           |
+| [0015](0015-results-summary-table-and-views.md)            | Results: Summary, Table and saved layouts (its R1 changed by 0038)              | Accepted           |
 | [0016](0016-results-details-exports-and-public-results.md) | Results: Details, exports and public results                                    | Accepted           |
 | [0017](0017-projects-and-members.md)                       | Projects and members                                                            | Accepted           |
 | [0018](0018-accounts-by-deployment-mode.md)                | Accounts by deployment mode (its user API superseded by 0022)                   | Accepted           |
@@ -44,3 +44,4 @@ and add each one to this index.
 | [0035](0035-legacy-api-bridge.md)                          | A compatibility bridge in front of Studio's public API                          | Accepted           |
 | [0036](0036-history-snapshots-above-a-size-limit.md)       | History snapshots above a size limit go to the byte store                       | Accepted           |
 | [0037](0037-access-keys-and-api-tokens.md)                 | Access keys and API tokens                                                      | Accepted           |
+| [0038](0038-partial-responses.md)                          | Partial responses                                                               | Accepted           |

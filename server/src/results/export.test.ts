@@ -93,7 +93,7 @@ describe("jsonExport", () => {
     expect(await collect(jsonExport(fromArray([])))).toBe("[]");
   });
 
-  it("writes the responses as JSON items, leaving out partial and unset optional fields", async () => {
+  it("writes the responses as JSON items, marking only partial responses and leaving out unset optional fields", async () => {
     const first = response(0);
     const second: SurveyResponse = {
       ...response(1),
@@ -110,6 +110,7 @@ describe("jsonExport", () => {
         data: second.data,
         clientId: "c-1",
         respondentIp: "203.0.113.7",
+        partial: true,
       },
     ]);
   });

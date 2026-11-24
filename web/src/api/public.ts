@@ -9,7 +9,7 @@ export type PublishedSurvey = components["schemas"]["PublishedSurvey"];
 export type PublicResultPage = components["schemas"]["PublicResultPage"];
 type ResponseSubmission = components["schemas"]["ResponseSubmission"];
 
-/** A response as the run page sends it (`partial` and `lastPageIndex` are Phase 1 and unused). */
+/** A response as the run page sends it (the API also takes `partial` to save progress of a client; the run page does not use it). */
 export interface ResponseBody {
   readonly data: Record<string, unknown>;
   readonly clientId?: string;

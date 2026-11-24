@@ -3,10 +3,13 @@ export interface ResultItem {
   readonly submittedAt: string;
   readonly data: Record<string, unknown>;
   readonly respondentIp?: string;
+  /** An open run of a client (ADR 0038); the public pages get none. */
+  readonly partial?: boolean;
 }
 
 export const SUBMITTED_COLUMN = "HappendAt";
 export const IP_COLUMN = "IPAddress";
+export const PARTIAL_COLUMN = "Partial";
 
 /** One table row per response: its answers plus the submission time and, when stored, the IP. */
 export function tableRows(
@@ -19,6 +22,8 @@ export function tableRows(
     if (response.respondentIp !== undefined && !questionNames.has(IP_COLUMN)) {
       row[IP_COLUMN] = response.respondentIp;
     }
+    if (response.partial === true && !questionNames.has(PARTIAL_COLUMN))
+      row[PARTIAL_COLUMN] = "Yes";
     return row;
   });
 }
@@ -38,9 +43,15 @@ export function extraTableColumns(
   ) {
     columns.push({ name: IP_COLUMN, displayName: IP_COLUMN, isVisible: true });
   }
+  if (
+    !questionNames.has(PARTIAL_COLUMN) &&
+    responses.some((response) => response.partial === true)
+  ) {
+    columns.push({ name: PARTIAL_COLUMN, displayName: PARTIAL_COLUMN, isVisible: true });
+  }
   return columns;
 }
 
-/** What the Summary charts read: the answers only. */
+/** What the Summary charts read: the answers of the complete responses (ADR 0038). */
 export const summaryData = (responses: readonly ResultItem[]) =>
-  responses.map((response) => response.data);
+  responses.filter((response) => response.partial !== true).map((response) => response.data);

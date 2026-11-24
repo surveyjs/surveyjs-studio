@@ -1,5 +1,6 @@
 import type { CompletionState, SurveyRecord, SurveyResponse } from "../domain/types.js";
-import { isAfterResponse, responseOrder } from "./ordering.js";
+import { responseOrder } from "./ordering.js";
+import { foldRuns, pageOfFoldedRuns, responseOfRun } from "./runs.js";
 import type { ResultStore } from "./types.js";
 import { GUID } from "../domain/guid.js";
 
@@ -35,10 +36,10 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
   const sorted = (survey: SurveyRecord): SurveyResponse[] =>
     [...(responses.get(survey.id.toLowerCase())?.values() ?? [])].sort(responseOrder);
 
-  const mark = (survey: SurveyRecord, clientId: string): void => {
+  const mark = (survey: SurveyRecord, clientId: string, partial: boolean): void => {
     const key = survey.id.toLowerCase();
     const byClient = markers.get(key) ?? new Map<string, { partial: boolean }>();
-    byClient.set(clientId, { partial: false });
+    byClient.set(clientId, { partial });
     markers.set(key, byClient);
   };
 
@@ -63,11 +64,12 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
           data: structuredClone(response.data),
           ...(response.clientId !== undefined && { clientId: response.clientId }),
           ...(response.respondentIp !== undefined && { respondentIp: response.respondentIp }),
-          partial: false,
+          partial: response.partial === true && response.clientId !== undefined,
         });
         responses.set(key, rows);
       }
-      if (response.clientId !== undefined) mark(survey, response.clientId);
+      if (response.clientId !== undefined)
+        mark(survey, response.clientId, response.partial === true);
       return Promise.resolve(exists ? "exists" : "stored");
     },
     hasResponse: (survey, id) =>
@@ -76,24 +78,20 @@ export function createMemoryResultStore(seed: MemoryResultsSeed = {}): MemoryRes
       ),
     listResponses: (survey) => Promise.resolve(structuredClone(sorted(survey))),
     stats: (survey) => {
-      const rows = sorted(survey);
+      const rows = sorted(survey).filter((row) => !row.partial);
       return Promise.resolve({
         count: rows.length,
         firstSubmittedAt: rows[0]?.submittedAt ?? null,
         lastSubmittedAt: rows.at(-1)?.submittedAt ?? null,
       });
     },
-    listResponsePage: (survey, { after, limit }) => {
-      const matching = sorted(survey).filter((row) => !after || isAfterResponse(row, after));
-      const items = matching.slice(0, limit);
-      const last = items.at(-1);
-      return Promise.resolve({
-        items: structuredClone(items),
-        next:
-          matching.length > items.length && last
-            ? { submittedAt: last.submittedAt, id: last.id }
-            : null,
-      });
+    hasPartial: (survey) =>
+      Promise.resolve(
+        [...(markers.get(survey.id.toLowerCase())?.values() ?? [])].some((m) => m.partial),
+      ),
+    listResponsePage: (survey, query) => {
+      const { runs, next } = pageOfFoldedRuns(foldRuns(sorted(survey)), query);
+      return Promise.resolve({ items: runs.map(responseOfRun), next });
     },
     completion: (survey, clientId): Promise<CompletionState> => {
       const found = markers.get(survey.id.toLowerCase())?.get(clientId);

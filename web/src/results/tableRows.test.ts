@@ -48,3 +48,30 @@ describe("summaryData", () => {
     expect(summaryData([base, withIp])).toEqual([{ q1: 1 }, { q1: 1 }]);
   });
 });
+
+describe("partial responses", () => {
+  const partial = { ...base, id: "r3", partial: true };
+
+  it("adds the Partial column after IPAddress only with a partial response", () => {
+    expect(extraTableColumns([base], new Set()).map((c) => c.name)).not.toContain("Partial");
+    expect(extraTableColumns([withIp, partial], new Set()).map((c) => c.name)).toEqual([
+      "HappendAt",
+      "IPAddress",
+      "Partial",
+    ]);
+    expect(extraTableColumns([partial], new Set(["Partial"]))).toEqual([
+      { name: "HappendAt", displayName: "Submitted", isVisible: true },
+    ]);
+  });
+
+  it('fills "Yes" for a partial response and nothing otherwise', () => {
+    expect(tableRows([base, partial], new Set(["q1"]))).toEqual([
+      { q1: 1, HappendAt: base.submittedAt },
+      { q1: 1, HappendAt: base.submittedAt, Partial: "Yes" },
+    ]);
+  });
+
+  it("leaves partial responses out of the summary", () => {
+    expect(summaryData([base, { ...partial, data: { q1: 9 } }])).toEqual([{ q1: 1 }]);
+  });
+});

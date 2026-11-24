@@ -72,6 +72,19 @@ describe("csvColumns and csvRow", () => {
     ]);
   });
 
+  it("adds a last Partial column only when asked, true for partial responses and empty otherwise", () => {
+    const columns = csvColumns(definition, { storeRespondentIp: false, partial: true });
+    expect(columns.map((column) => column.header).slice(-2)).toStrictEqual(["ClientId", "Partial"]);
+    expect(csvRow(columns, response({ clientId: "c-1", partial: true, data: { q1: "x" } }))).toBe(
+      "2026-04-01T10:30:00.000Z,x,,,c-1,true\r\n",
+    );
+    expect(csvRow(columns, response({ clientId: "c-1", data: { q1: "x" } }))).toBe(
+      "2026-04-01T10:30:00.000Z,x,,,c-1,\r\n",
+    );
+    const without = csvColumns(definition, { storeRespondentIp: false });
+    expect(without.map((column) => column.header)).not.toContain("Partial");
+  });
+
   it("leaves out IPAddress when the survey does not store respondent IPs", () => {
     const columns = csvColumns(definition, { storeRespondentIp: false });
     expect(columns.map((column) => column.header)).not.toContain("IPAddress");

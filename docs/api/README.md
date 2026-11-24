@@ -338,12 +338,12 @@ deleting a survey deletes its files. A clone copies them. Everything is in
 
 ### Step 8: the run page's operations
 
-| Operation            | Behaviour                                                                                                                                                                                           |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getPublishedSurvey` | `GET /public/surveys/{surveyId}`, optional `clientId`. No session. `200` with the definition, the theme and, with a `clientId`, `completed`. `404 survey-not-available` when unknown or unpublished |
-| `submitResponse`     | `POST /public/surveys/{surveyId}/responses`, `{ data, clientId? }`, optional `Idempotency-Key`. No session. `201 { id }`; `409` when the one-response limit is on and the client has completed      |
-| `uploadResponseFile` | `POST /public/surveys/{surveyId}/files`, multipart part `file`. No session. `201`, `Location` and the stored file; any type, up to `limits.maxFileBytes`                                            |
-| `getResultStats`     | `GET /surveys/{surveyId}/results/stats`. Needs a session. `200 { count, firstSubmittedAt, lastSubmittedAt }`; `404` for an unknown survey or one the user cannot see                                |
+| Operation            | Behaviour                                                                                                                                                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getPublishedSurvey` | `GET /public/surveys/{surveyId}`, optional `clientId`. No session. `200` with the definition, the theme and, with a `clientId`, `completed`. `404 survey-not-available` when unknown or unpublished                                                                                            |
+| `submitResponse`     | `POST /public/surveys/{surveyId}/responses`, `{ data, clientId?, partial?, lastPageIndex? }`, optional `Idempotency-Key`. No session. `201 { id }`; `409` when the one-response limit is on and the client has completed. Partial saves: [Public endpoints](public-endpoints.md#partial-saves) |
+| `uploadResponseFile` | `POST /public/surveys/{surveyId}/files`, multipart part `file`. No session. `201`, `Location` and the stored file; any type, up to `limits.maxFileBytes`                                                                                                                                       |
+| `getResultStats`     | `GET /surveys/{surveyId}/results/stats`. Needs a session. `200 { count, firstSubmittedAt, lastSubmittedAt }`, of completed responses only; `404` for an unknown survey or one the user cannot see                                                                                              |
 
 A survey runs while it is published, archived or not. The three public operations are rate limited per
 address. The rules, `curl` examples, the idempotency scheme, the `cookieName` convention, `TRUST_PROXY` and
@@ -365,8 +365,13 @@ All four need a session. `saveResultsView` and `resetResultsView` also need the 
 
 Rules for `listResults`:
 
-- Every stored response is one item `{ id, submittedAt, data, clientId?, respondentIp? }`, **oldest first**
-  (`submittedAt`, then `id`). Rows of one client are **not merged**, and `partial` is not returned. There
+- Every response is one item `{ id, submittedAt, data, clientId?, respondentIp?, partial? }`, **oldest first**
+  (`submittedAt`, then `id`). The [partial saves](public-endpoints.md#partial-saves) of one client are **one item**:
+  the `id` and `submittedAt` of its first save, the answers merged in order, and `partial: true` until the client
+  completes (the field is there only when true). A run ends at the client's next complete response: two complete
+  answers from one client stay two items, and a partial save after completing starts a new one. Rows without a
+  `clientId` are never folded. Unlike the old readers, this does not merge across complete answers, and public results
+  and the Summary leave partial responses out. `getResultStats` counts completed responses only. There
   is no cap on the total; the dashboard walks every page. Paging and the cursor are in
   [Paging](paging.md#results-oldest-first-one-survey); the `curl` walk there uses a survey with 1,500
   responses.

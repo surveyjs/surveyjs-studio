@@ -217,10 +217,10 @@ describe("getPublicResults", () => {
     const next = await (
       await call(`${path(SURVEYS.feedback)}?limit=3&cursor=${page.nextCursor}`)
     ).json();
-    expect(next.items).toHaveLength(3);
+    expect(next.items).toHaveLength(2);
     expect(next.nextCursor).toBeNull();
     for (const item of next.items) expect(item.data).not.toHaveProperty("receipt");
-    expect(next.items[2].data).toHaveProperty("satisfaction");
+    expect(next.items[1].data).toHaveProperty("satisfaction");
     expect((await call(`${path(SURVEYS.feedback)}?limit=1001`)).status).toBe(400);
     expect((await call(`${path(SURVEYS.feedback)}?cursor=bad`)).status).toBe(400);
   });
