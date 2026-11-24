@@ -56,6 +56,9 @@ Move everything except users into the app's own stores, and retire the legacy co
 **How it is done**
 
 1. **The compatibility layer goes live first, on the legacy stores.** It is built on the provider interfaces, so it runs on any provider. `api.surveyjs.io` traffic is routed to it path by path, and routing back is the rollback. When the data moves, the old service is already out of the way.
+
+   **Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md):** the compatibility layer (the bridge) is tested on the new server with about 10 % of the data, functionally and under load, and `api.surveyjs.io` switches together with `studio.surveyjs.io` after the final migration. Before the switch, a no-go restores the old side.
+
 2. **A migration tool copies data over in two passes:**
    - before the window: a bulk **pre-copy** of all data;
    - inside the window: a **delta** copy of what changed since.
@@ -91,13 +94,13 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 - H16. As an operator, I want a documented shortlist of target databases and file stores, with the criteria behind the choice, so that the decision is reviewable.
 - H17. As an operator, I want measured traffic for every `api.surveyjs.io` My Surveys endpoint, so that the compatibility layer covers what is actually used and nothing more.
-- H18. As an operator, I want to route `api.surveyjs.io` paths to the app one group at a time and route them back instantly, so that taking over legacy traffic is reversible.
+- H18. As an operator, I want to route `api.surveyjs.io` paths to the app one group at a time and route them back instantly, so that taking over legacy traffic is reversible. (Met by one switch after a tested go/no-go: [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md).)
 - H19. As an operator, I want to replay sampled real legacy requests against both the old service and the app and see the differences, so that I trust the compatibility layer before routing.
 - H20. As an operator, I want a migration tool that is **resumable, idempotent and verifiable**, with a dry run, so that an interrupted or repeated run never corrupts data.
 - H21. As an operator, I want to pre-copy days before the window and copy only the changes during it, so that the window stays short.
 - H22. As an operator, I want a verification report (counts, checksums, sample deep compares) before reopening writes, so that I can decide go or no-go on evidence.
 - H23. As an operator, I want to roll back inside the window by switching configuration, with the legacy stores untouched, so that a failed cutover costs only time.
-- H24. As an operator, I want a full rehearsal on a production-sized staging copy, with a measured window length, so that the real cutover has no surprises.
+- H24. As an operator, I want a full rehearsal on a production-sized staging copy, with a measured window length, so that the real cutover has no surprises. (There is no staging copy: a test migration of about 10 % of the data on the new server, and the daily `delta` before the window, take its place: [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md).)
 - H25. As an operator, I want documented and tested backup and restore for the new stores, so that we never depend on the legacy stores as a backup.
 - H26. As the SurveyJS team, I want a complete list of the legacy Azure resources and site-database tables that the cutover leaves unused, so that I can remove them myself when I decide to.
 
@@ -233,6 +236,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
   Each group is reversible by restoring the rule.
 
 - **Without a proxy,** the whole host switches at once through DNS. The DNS time-to-live is lowered days before, so switching back is fast.
+- **Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md):** `api.surveyjs.io` switches at the cutover, together with `studio.surveyjs.io`, to the new server. The site's demos and housekeeping move first to their own host, `demoapi.surveyjs.io`, built by the site team; the bridge forwards their paths there.
 
 - **A replay tool** (`pnpm legacy:replay`) takes a sample of real requests from the access logs. It sends each read request to both the old service and the app and reports differences in the JSON. Reads are replayed on production; writes, which the logs cannot replay, are checked by `pnpm legacy:replay smoke` with a test account ([ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)).
 
@@ -256,8 +260,10 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### Cutover (H3, H4, H23, H24, H26)
 
+**Changed 2026-11-24 by [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md):** a test migration of about 10 % of the data comes first and is wiped; in the window the old service is stopped, today's Studio is read-only, and the new server is checked through test host names; then both host names switch to it. The points below hold with those changes.
+
 1. **Announce** the window to users and integrators **one to two weeks** before.
-2. **Pre-copy** a few days before, then run `verify` against the live data. Differences are expected only from recent changes.
+2. **Pre-copy** a few days before, then run `verify` against the live data. Differences are expected only from recent changes. `delta` runs daily up to the window and measures it.
 3. **In the window:**
    - Turn on `READ_ONLY=true` (plan Step 14) for the app and the compatibility layer.
      - Respondents see the "temporarily unavailable" page.
@@ -312,7 +318,7 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
    - changes after the pre-copy are carried by `delta`;
    - deletions are carried by `reconcile`;
    - the provider-level reads match between source and target.
-5. **Replay** of the reads on production, plus `pnpm legacy:replay smoke` for the writes (there is no staging copy; [ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)), plus a **rehearsal** on a production-sized copy. Both are manual, with documented results.
+5. **Replay** of the reads, plus `pnpm legacy:replay smoke` for the writes (there is no staging copy; [ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)), against the new server after the **test migration** of about 10 % of the data, with a **load test** ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)). All manual, with documented results.
 6. **Playwright:**
    - the maintenance states (read-only notice, temporarily-unavailable run page);
    - the API tokens page;
@@ -341,10 +347,11 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
 
 - the account-deleted webhook, built to `docs/integrations/surveyjs-user-api.md` (plan Step 12), and the licence endpoint ([ADR 0022](docs/adr/0022-users-from-sign-in.md));
 - 30 days of `api.surveyjs.io` access logs, or per-endpoint statistics;
-- the reverse-proxy rule, or the DNS change, for `api.surveyjs.io`;
+- `demoapi.surveyjs.io` for the site's demos and housekeeping, before the test migration;
+- stopping the old service in the window, and the DNS change of `studio.surveyjs.io` and `api.surveyjs.io`;
 - removing the access key from the manage account page at the cutover;
 - read access to the Azure file shares `surveyfiles` and `files`, which Azurite does not emulate (ADR 0006);
-- a production-sized staging copy for the rehearsal;
+- the SurveyJS team for the test migration's checks (there is no staging copy);
 - removing the legacy code after the cutover.
 
 **Shared with the self-hosted track**

@@ -1,5 +1,11 @@
 # Taking over `api.surveyjs.io`: the runbook
 
+> **Changed 2026-11-24 by [ADR 0042](../adr/0042-one-switch-to-the-new-server.md).** There is no early switch:
+> `api.surveyjs.io` moves to the new server together with `studio.surveyjs.io` at the cutover, and the bridge calls the
+> Studio on its own server from the start. The cutover runbook (hosted Step 11) takes over the sequence below; its
+> checks, what to watch and the Prometheus queries still apply. The preconditions about today's server (Steps 3–6
+> deployed there, `--trusted-proxies`) no longer do.
+
 This runbook moves the old API's host, `api.surveyjs.io`, to the bridge while the data is still in the legacy stores
 (hosted Step 7, [ADR 0041](../adr/0041-taking-over-the-legacy-api-host.md)). It is written in general terms: the
 server-specific commands and every address are in the private deployment notes (plan-hosted.md, rule 6). Run it with

@@ -1,6 +1,8 @@
 # ADR 0041: Taking over the old API's host, and metrics for Studio and the bridge
 
-Status: Accepted (hosted Step 7, 2026-11-23). Builds on [ADR 0035](0035-legacy-api-bridge.md) (the bridge),
+Status: Accepted (hosted Step 7, 2026-11-23); points 1, 2 and 7 changed by
+[ADR 0042](0042-one-switch-to-the-new-server.md) (2026-11-24): no early switch, both host names move together after
+the final migration, and the bridge calls the Studio on its own server from the start. Builds on [ADR 0035](0035-legacy-api-bridge.md) (the bridge),
 [ADR 0039](0039-bridge-public-actions.md) and [ADR 0040](0040-bridge-access-key-actions.md) (its actions). Settles
 where the bridge runs from the DNS switch on, how its answers are checked against the old service before the switch,
 and how Studio and the bridge are monitored.
