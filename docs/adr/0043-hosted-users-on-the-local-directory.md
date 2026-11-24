@@ -99,8 +99,9 @@ webhook.
 
 ### 5. Reconciliation is refused on hosted
 
-With the hosted edition on `local`, `missingUsers` rejects and `account:reconcile` says it is not available: a person
-who has not signed in since the migration is unknown, not deleted. Deleted accounts arrive by the webhook only.
+With the hosted edition on `local`, `account:reconcile` says it is not available and stops before it opens any store:
+a person who has not signed in since the migration is unknown, not deleted. Deleted accounts arrive by the webhook
+only.
 
 ### 6. What the migration seeds (hosted Step 9)
 

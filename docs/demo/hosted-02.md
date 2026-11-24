@@ -145,7 +145,8 @@ recreated: `sub` `aaaaaaaa-0000-4000-8000-000000000003`, `olivia@example.com`.
 
 1. Sign in as the admin: `sub` `aaaaaaaa-0000-4000-8000-0000000000a1`, `admin@example.com`. `ADMIN_EMAIL` makes this
    account admin at its sign-in, because the instance has never had an admin.
-   - **Check:** the account menu has **Users**; the list shows Olivia (recreated) and the admin.
+   - **Check:** the account menu has **Users**; the list shows Olivia (recreated), Blake (from his unblocked sign-in in
+     section 3) and the admin.
 2. Sign out, sign in as Bob (`sub` `aaaaaaaa-0000-4000-8000-000000000004`, `bob@example.com`), and sign out again. He is
    an ordinary user.
 3. Delete the admin's surveyjs.io account:

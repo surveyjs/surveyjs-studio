@@ -47,7 +47,8 @@ sequenceDiagram
    exchanges the code (PKCE, and the client secret), and reads the user's identity (`sub`, `email`,
    `name`, optional `picture`).
 4. The directory is asked for the user `sub`. If it has the user, its display name and email win over
-   the provider's. A **blocked** user gets `403 forbidden` and no session. An identity without an
+   the provider's. A **blocked** user gets `403 forbidden` and no session (a browser's reason is `disabled`, on the
+   hosted edition `blocked`: there the directory's block is the site's). An identity without an
    email address gets `400 bad-request` and no session. A browser goes to the refused page instead
    ([below](#outcomes-of-the-two-sign-in-operations)). A `picture` that is not an absolute http(s)
    URL is dropped.
@@ -95,7 +96,7 @@ answers `302` to `PUBLIC_BASE_URL/` instead of `400`.
 | `login`         | 500    | `internal-error` | The identity provider cannot be reached for discovery                                                                                   |
 | `loginCallback` | 302    |                  | Signed in; cookies are set. Or: no valid transaction, but already signed in (to `/`). Or: refused, to `/sign-in/refused` (below)        |
 | `loginCallback` | 400    | `bad-request`    | No valid transaction cookie (missing, expired, tampered), `state` mismatch, the provider refuses the code, or the identity has no email |
-| `loginCallback` | 403    | `forbidden`      | The account is blocked. No session is created                                                                                           |
+| `loginCallback` | 403    | `forbidden`      | The account is blocked ("Account blocked"). Hosted: the site blocked it (reason `blocked`). No session is created                       |
 | `loginCallback` | 409    | `email-taken`    | Hosted: the email belongs to an account of another surveyjs.io id. No session is created                                                |
 | `loginCallback` | 429    | `rate-limited`   | Too many requests                                                                                                                       |
 | `loginCallback` | 500    | `internal-error` | The identity provider could not be reached, or rejected the server's client credentials                                                 |
@@ -107,18 +108,18 @@ The callback does not show a browser a problem. A request whose `Accept` header 
 following a redirect sends one) goes to `PUBLIC_BASE_URL/sign-in/refused?reason=<reason>&provider=<method>` for every
 failure, with no session. `provider` is the method of the sign-in (`surveyjs` when it is the only method), or empty.
 
-| Reason              | When                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `expired`           | No valid transaction cookie (missing, expired, tampered) or a `state` mismatch                                          |
-| `cancelled`         | The provider sent `error=access_denied`                                                                                 |
-| `unavailable`       | The provider could not be reached, rejected the client credentials, or sent `server_error` or `temporarily_unavailable` |
-| `failed`            | The provider refused the code or sent another `error`, the method is no longer enabled, or the server failed            |
-| `disabled`          | The account is blocked or disabled                                                                                      |
-| `blocked`           | Hosted: surveyjs.io blocked the account                                                                                 |
-| `identity-conflict` | Hosted: the email belongs to an account of another surveyjs.io id                                                       |
-| `email-unverified`  | The identity has no email, or (with a local directory) no verified one                                                  |
-| `not-invited`       | A local directory has no account for the identity, and the join rules make none                                         |
-| `read-only`         | `READ_ONLY=true`, and the sign-in would write                                                                           |
+| Reason              | When                                                                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expired`           | No valid transaction cookie (missing, expired, tampered) or a `state` mismatch                                                                            |
+| `cancelled`         | The provider sent `error=access_denied`                                                                                                                   |
+| `unavailable`       | The provider could not be reached, rejected the client credentials, or sent `server_error` or `temporarily_unavailable`                                   |
+| `failed`            | The provider refused the code or sent another `error`, the method is no longer enabled, or the server failed                                              |
+| `disabled`          | An instance admin disabled the account; self-hosted, also a user directory that marks the user blocked. Hosted, it is always an admin's disable in Studio |
+| `blocked`           | Hosted: surveyjs.io blocked the account (the sign-in's `blocked` claim, or the user directory's block)                                                    |
+| `identity-conflict` | Hosted: the email belongs to an account of another surveyjs.io id                                                                                         |
+| `email-unverified`  | The identity has no email, or (with a local directory) no verified one                                                                                    |
+| `not-invited`       | A local directory has no account for the identity, and the join rules make none                                                                           |
+| `read-only`         | `READ_ONLY=true`, and the sign-in would write                                                                                                             |
 
 A client that does not ask for HTML gets the problem answers in the table above. The exceptions go to the page for
 every client: a local directory's refusals (`not-invited`, `email-unverified`, `disabled`; hosted `blocked` and
