@@ -91,4 +91,33 @@ describe("the surveyjs.io email rule", () => {
     );
     expect(unverified.emailVerified).toBe(false);
   });
+
+  it("round-trips blocked and license_expires_at from the stub's form", async () => {
+    stub = await startOAuthStub();
+    const provider = createOidcIdentityProvider({
+      oidc: {
+        issuerUrl: `${stub.url}/surveyjs`,
+        clientId: "s-client",
+        clientSecret: "stub-secret-surveyjs",
+        discovery: "oauth-authorization-server",
+        scopes: "profile email",
+      },
+      publicBaseUrl: PUBLIC_BASE_URL,
+      emailVerified: verifiedUnlessFalse,
+    });
+    const plain = await provider.finishSignIn(await authorizeAtStub(provider), transaction);
+    expect(plain).not.toHaveProperty("blocked");
+    expect(plain).not.toHaveProperty("licenseExpiresAt");
+    const flagged = await provider.finishSignIn(
+      await authorizeAtStub(provider, { blocked: true, licenseExpiresAt: "2020-01-01T00:00:00Z" }),
+      transaction,
+    );
+    expect(flagged.blocked).toBe(true);
+    expect(flagged.licenseExpiresAt).toBe("2020-01-01T00:00:00.000Z");
+    const never = await provider.finishSignIn(
+      await authorizeAtStub(provider, { licenseExpiresAt: null }),
+      transaction,
+    );
+    expect(never.licenseExpiresAt).toBeNull();
+  });
 });

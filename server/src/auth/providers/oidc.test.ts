@@ -317,6 +317,59 @@ describe("surveyjs-oidc provider against an auth.surveyjs.io-like server (OAuth 
     });
   });
 
+  describe("blocked and license_expires_at", () => {
+    async function claimsFor(userInfo: Record<string, unknown>) {
+      issuer = await new FakeIssuer({ kind: "oauth2" }).listen();
+      issuer.userInfoClaims = { email: "a@example.com", ...userInfo };
+      const provider = createOidcIdentityProvider({
+        oidc: {
+          issuerUrl: issuer.issuer,
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          discovery: "oauth-authorization-server",
+          scopes: "profile email",
+        },
+        publicBaseUrl: PUBLIC_BASE_URL,
+        emailVerified: verifiedUnlessFalse,
+      });
+      const url = await provider.authorizationUrl(params);
+      const authorize = await fetch(url, { redirect: "manual" });
+      return provider.finishSignIn(new URL(authorize.headers.get("location") ?? ""), params);
+    }
+
+    it("takes blocked: true, and nothing else as blocked", async () => {
+      expect((await claimsFor({ blocked: true })).blocked).toBe(true);
+      await issuer?.close();
+      expect(await claimsFor({ blocked: "true" })).not.toHaveProperty("blocked");
+      await issuer?.close();
+      expect(await claimsFor({ blocked: false })).not.toHaveProperty("blocked");
+    });
+
+    it.each([
+      ["2027-03-01T10:00:00+02:00", "2027-03-01T08:00:00.000Z"],
+      ["2027-03-01T08:00:00Z", "2027-03-01T08:00:00.000Z"],
+      [null, null],
+    ])("license_expires_at %j gives %j", async (value, expected) => {
+      const claims = await claimsFor({ license_expires_at: value });
+      expect(claims.licenseExpiresAt).toBe(expected);
+    });
+
+    it.each(["soon", "2027", "March 1", "2027-03-01", 12345, ""])(
+      "license_expires_at %j is left out",
+      async (value) => {
+        expect(await claimsFor({ license_expires_at: value })).not.toHaveProperty(
+          "licenseExpiresAt",
+        );
+      },
+    );
+
+    it("leaves both out when UserInfo has neither", async () => {
+      const claims = await claimsFor({});
+      expect(claims).not.toHaveProperty("blocked");
+      expect(claims).not.toHaveProperty("licenseExpiresAt");
+    });
+  });
+
   it("signs in with the UserInfo identity, uses the directory's user, and logs out at end_session_endpoint", async () => {
     const { server, fake } = await startWithIssuer();
     const callback = await signInThroughIssuer(server, "/surveys?view=1");

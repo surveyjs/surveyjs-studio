@@ -33,6 +33,10 @@ export interface Person {
   readonly name?: string;
   /** `omitted`: the provider's answers leave `email_verified` out. */
   readonly verified?: boolean | "omitted";
+  /** surveyjs.io's UserInfo `blocked`. */
+  readonly blocked?: boolean;
+  /** surveyjs.io's UserInfo `license_expires_at`; `null` sends an explicit null. */
+  readonly licenseExpiresAt?: string | null;
 }
 
 /**
@@ -50,6 +54,11 @@ export async function authorizeAtStub(
   form.set("name", person.name ?? "Ada Lovelace");
   if (person.verified === "omitted") form.set("omit_email_verified", "on");
   else if (person.verified ?? true) form.set("email_verified", "on");
+  if (person.blocked) form.set("blocked", "on");
+  if (person.licenseExpiresAt === null) form.set("license_expires_at", "null");
+  else if (person.licenseExpiresAt !== undefined) {
+    form.set("license_expires_at", person.licenseExpiresAt);
+  }
   const response = await fetch(url.origin + url.pathname, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },

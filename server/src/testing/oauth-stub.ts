@@ -29,6 +29,10 @@ interface Identity {
   readonly name: string;
   /** null: the answers leave `email_verified` (GitHub's `verified`) out. */
   readonly emailVerified: boolean | null;
+  /** surveyjs.io only: UserInfo `blocked`. */
+  readonly blocked: boolean;
+  /** surveyjs.io only: undefined leaves `license_expires_at` out; null sends an explicit null. */
+  readonly licenseExpiresAt: string | null | undefined;
 }
 
 /** The form fields the stub reads itself; any other query parameter is echoed as hidden. */
@@ -38,6 +42,8 @@ const OWN_FIELDS = new Set([
   "name",
   "email_verified",
   "omit_email_verified",
+  "blocked",
+  "license_expires_at",
   "deny",
 ]);
 
@@ -87,6 +93,13 @@ function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/** The form's `license_expires_at`: empty leaves it out, "null" sends null, else sent as typed. */
+function licenseExpiresAt(field: string | null): string | null | undefined {
+  const value = (field ?? "").trim();
+  if (value === "") return undefined;
+  return value === "null" ? null : value;
 }
 
 function escapeHtml(value: string): string {
@@ -222,6 +235,8 @@ export async function startOAuthStub(
       .join("\n");
     const text = (name: string) =>
       `<p><label>${name} <input type="text" name="${name}" value="${escapeHtml(params.get(name) ?? "")}"></label></p>`;
+    const checkbox = (name: string) =>
+      `<p><label><input type="checkbox" name="${name}"${params.has(name) ? " checked" : ""}> ${name}</label></p>`;
     return html(
       200,
       `<!doctype html>
@@ -234,7 +249,13 @@ ${hidden}
 ${text("sub")}
 ${text("email")}
 ${text("name")}
-<p><label><input type="checkbox" name="email_verified" checked> email_verified</label></p>
+${
+  provider === "surveyjs"
+    ? `${checkbox("blocked")}
+${text("license_expires_at")}
+`
+    : ""
+}<p><label><input type="checkbox" name="email_verified" checked> email_verified</label></p>
 <p><label><input type="checkbox" name="omit_email_verified"> leave email_verified out</label></p>
 <p><button type="submit" name="allow" value="1">Sign in</button> <button type="submit" name="deny" value="1">Deny</button></p>
 </form>
@@ -278,6 +299,8 @@ ${text("name")}
         email,
         name: (params.get("name") ?? "").trim(),
         emailVerified: params.has("omit_email_verified") ? null : params.has("email_verified"),
+        blocked: params.has("blocked"),
+        licenseExpiresAt: licenseExpiresAt(params.get("license_expires_at")),
       },
       clientId: params.get("client_id") ?? "",
       redirectUri,
@@ -371,8 +394,17 @@ ${text("name")}
     switch (path) {
       case "/google/userinfo":
         return json(200, { sub, email, ...verifiedClaim(emailVerified), name });
-      case "/surveyjs/userinfo":
-        return json(200, { sub, email, ...verifiedClaim(emailVerified), name });
+      case "/surveyjs/userinfo": {
+        const { blocked, licenseExpiresAt: expires } = entry.identity;
+        return json(200, {
+          sub,
+          email,
+          ...verifiedClaim(emailVerified),
+          name,
+          ...(blocked && { blocked }),
+          ...(expires !== undefined && { license_expires_at: expires }),
+        });
+      }
       case "/github-api/user": {
         const login = (email.split("@")[0] || sub).replace(/[^A-Za-z0-9-]/g, "-");
         return json(200, {

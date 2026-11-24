@@ -5,6 +5,34 @@ import { publicUrl, type IdentityClaims, type IdentityProvider } from "../identi
 import type { SignInParameters } from "../transaction.js";
 import { unavailable } from "./sign-in-error.js";
 
+const RFC_3339 =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/;
+
+/** An RFC 3339 date-time as ISO 8601 UTC with milliseconds; `undefined` for anything else. */
+function utcInstant(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = RFC_3339.exec(value);
+  if (match === null) return undefined;
+  const [month, day, hour, minute, second, offsetHour, offsetMinute] = match
+    .slice(2)
+    .map((part) => Number(part ?? 0));
+  if (
+    month! < 1 ||
+    month! > 12 ||
+    day! < 1 ||
+    day! > 31 ||
+    hour! > 23 ||
+    minute! > 59 ||
+    second! > 60 ||
+    (offsetHour ?? 0) > 23 ||
+    (offsetMinute ?? 0) > 59
+  ) {
+    return undefined;
+  }
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? undefined : time.toISOString();
+}
+
 /** Where the identity provider sends the browser back (the `loginCallback` operation). */
 export const CALLBACK_PATH = "/api/v1/auth/callback";
 
@@ -161,12 +189,16 @@ export function createOidcIdentityProvider(options: OidcIdentityOptions): Identi
       const email = optionalString(userInfo.email);
       const name = optionalString(userInfo.name);
       const picture = optionalString(userInfo.picture);
+      const licenseExpiresAt =
+        userInfo.license_expires_at === null ? null : utcInstant(userInfo.license_expires_at);
       return {
         sub: userInfo.sub,
         ...(email && { email }),
         emailVerified: email !== undefined && emailVerified(userInfo),
         ...(name && { name }),
         ...(picture && { picture }),
+        ...(userInfo.blocked === true && { blocked: true }),
+        ...(licenseExpiresAt !== undefined && { licenseExpiresAt }),
       };
     },
 
