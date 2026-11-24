@@ -2,7 +2,7 @@
 # Deploys one image tag of SurveyJS Studio on a server that setup.sh prepared. When the new
 # container does not become healthy it goes back to the tag that ran before.
 #
-#   sudo ./update.sh <tag>      deploy a tag: the full commit id of a master commit whose CI passed
+#   sudo ./update.sh <tag>      deploy a tag: the full commit id of a master or production commit whose CI passed
 #   sudo ./update.sh --status   show the running tag, the container's health and /readyz
 #   sudo ./update.sh --auto     deploy the commit the image tagged "production" was built from, once
 #                               per commit (setup.sh --auto-update runs it every minute)
