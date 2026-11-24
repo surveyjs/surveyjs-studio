@@ -468,6 +468,10 @@ jobs:
       - name: End-to-end tests (OAuth mode)
         run: pnpm e2e:oauth
 
+      # The hosted edition's sign-in: the surveyjs method against the stub's surveyjs.io (port 5180).
+      - name: End-to-end tests (hosted OAuth mode)
+        run: pnpm e2e:hosted-oauth
+
       # The tsx server on a new SQLite file, in the self-hosted shell with an instance's branding.
       - name: End-to-end tests (self-hosted mode)
         run: pnpm e2e:self-hosted

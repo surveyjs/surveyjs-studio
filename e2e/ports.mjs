@@ -51,11 +51,11 @@ export function usesAzuriteConfig(args) {
 
 /**
  * Whether the arguments pick a SQL config (`--config playwright.sqlite.config.ts`, `postgres`,
- * `password`, `oauth` or `self-hosted`).
+ * `password`, `oauth`, `hosted-oauth` or `self-hosted`).
  */
 export function usesSqlConfig(args) {
   return args.some((arg) =>
-    /(^|[\\/=])playwright\.(sqlite|postgres|password|oauth|self-hosted)\.config(\.[cm]?[jt]s)?$/.test(
+    /(^|[\\/=])playwright\.(sqlite|postgres|password|oauth|hosted-oauth|self-hosted)\.config(\.[cm]?[jt]s)?$/.test(
       arg,
     ),
   );

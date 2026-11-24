@@ -38,11 +38,14 @@ if (!externalSandbox)
       azurite: usesAzuriteConfig(process.argv.slice(2)) || env["E2E_MODE"] === "azurite",
       sql:
         usesSqlConfig(process.argv.slice(2)) ||
-        ["sqlite", "postgres", "password", "oauth", "self-hosted"].includes(env["E2E_MODE"] ?? ""),
+        ["sqlite", "postgres", "password", "oauth", "hosted-oauth", "self-hosted"].includes(
+          env["E2E_MODE"] ?? "",
+        ),
       sandbox,
       oauth:
         env["E2E_MODE"] === "oauth" ||
-        process.argv.slice(2).some((a) => /playwright.oauth.config/.test(a)),
+        env["E2E_MODE"] === "hosted-oauth" ||
+        process.argv.slice(2).some((a) => /playwright\.(hosted-)?oauth\.config/.test(a)),
     }),
   );
 // The sandbox mode serves its own build (`build:sandbox`, into dist-sandbox/) and starts no server.

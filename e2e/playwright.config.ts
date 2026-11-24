@@ -40,6 +40,10 @@ stripAppVariables(process.env);
 //   ADMIN_PASSWORD); the password spec, on Chromium.
 // - oauth (E2E_MODE=oauth, `pnpm e2e:oauth`): password mode plus GitHub and Google sign-in against the
 //   OAuth stub (`pnpm oauth-stub`, started by Playwright); the oauth spec, on Chromium.
+// - hosted-oauth (E2E_MODE=hosted-oauth, `pnpm e2e:hosted-oauth`): the hosted edition's sign-in: the
+//   surveyjs method only, against the OAuth stub's surveyjs.io (`pnpm oauth-stub`, started by
+//   Playwright), accounts in the local user directory on SQLite, sign-up open, and the licence notice
+//   from the sign-in claim; the hosted-sign-in spec, on Chromium.
 // - self-hosted (E2E_MODE=self-hosted, `pnpm e2e:self-hosted`): the sqlite provider as in sqlite mode, in
 //   the self-hosted shell with an instance's branding (BRAND_*, TERMS_URL), local accounts with
 //   passwords and the dev sign-in; the self-hosted spec, on Chromium.
@@ -54,6 +58,7 @@ const postgres = process.env["E2E_MODE"] === "postgres";
 const password = process.env["E2E_MODE"] === "password";
 const selfHosted = process.env["E2E_MODE"] === "self-hosted";
 const oauth = process.env["E2E_MODE"] === "oauth";
+const hostedOauth = process.env["E2E_MODE"] === "hosted-oauth";
 const sandbox = process.env["E2E_MODE"] === "sandbox";
 // E2E_SANDBOX_URL (sandbox mode; `pnpm e2e:sandbox:url`): an already running host of the sandbox
 // build, such as `pnpm sandbox:serve` or the published demo. No server starts, and the host spec
@@ -196,6 +201,22 @@ const oauthServerEnv = {
   GOOGLE_CLIENT_SECRET: "stub-secret-google",
   SIGN_UP_DOMAINS: "allowed.example",
 };
+// Hosted OAuth mode: the hosted edition with surveyjs.io sign-in only (the stub's /surveyjs), accounts
+// in the local directory, anyone may sign up. ADMIN_EMAIL is required with local accounts and no
+// password method; the specs keep it out of their scenarios.
+const hostedOauthServerEnv = {
+  ...serverEnv,
+  APP_EDITION: "hosted",
+  APP_SHELL: "surveyjs-site",
+  USER_DIRECTORY: "local",
+  AUTH_METHODS: "surveyjs",
+  OPEN_SIGN_UP: "on",
+  ACCOUNT_NOTICES: "sign-in-licence",
+  ADMIN_EMAIL: "hosted-admin@example.com",
+  OIDC_ISSUER_URL: `http://127.0.0.1:${ports.oauthStub}/surveyjs`,
+  OIDC_CLIENT_ID: "e2e-surveyjs",
+  OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+};
 // Self-hosted mode: the dev sign-in signs the seed's users in; AUTH_METHODS=password gives the app's
 // own sign-in page, whose branding the spec checks.
 const selfHostedServerEnv = {
@@ -209,7 +230,7 @@ const selfHostedServerEnv = {
   PRIVACY_URL: brand.privacyUrl,
 };
 const sqlWebServers = (): WebServers => [
-  ...(oauth
+  ...(oauth || hostedOauth
     ? [
         {
           command: `pnpm --dir .. oauth-stub --port ${ports.oauthStub}`,
@@ -227,14 +248,16 @@ const sqlWebServers = (): WebServers => [
     reuseExistingServer: false,
     timeout: 60_000,
     env: {
-      ...(oauth
-        ? oauthServerEnv
-        : password
-          ? passwordServerEnv
-          : selfHosted
-            ? selfHostedServerEnv
-            : memoryServerEnv),
-      ...(sqlite || password || selfHosted || oauth
+      ...(hostedOauth
+        ? hostedOauthServerEnv
+        : oauth
+          ? oauthServerEnv
+          : password
+            ? passwordServerEnv
+            : selfHosted
+              ? selfHostedServerEnv
+              : memoryServerEnv),
+      ...(sqlite || password || selfHosted || oauth || hostedOauth
         ? {
             STORAGE_PROVIDER: "sqlite",
             SQLITE_PATH: join(process.env["E2E_SQLITE_DIR"] ?? "", "e2e.db"),
@@ -393,6 +416,7 @@ const allButNotices = [
   "password.spec.ts",
   "self-hosted.spec.ts",
   "oauth.spec.ts",
+  "hosted-sign-in.spec.ts",
   "sandbox.spec.ts",
   "sandbox-host.spec.ts",
   "sandbox-tabs.spec.ts",
@@ -409,6 +433,7 @@ function sandboxProjects(): PlaywrightTestConfig["projects"] {
           "password.spec.ts",
           "self-hosted.spec.ts",
           "oauth.spec.ts",
+          "hosted-sign-in.spec.ts",
           "sandbox.spec.ts",
           "sandbox-tabs.spec.ts",
           "sandbox-host.spec.ts",
@@ -460,111 +485,116 @@ export default defineConfig({
   },
   projects: sandbox
     ? sandboxProjects()
-    : oauth
-      ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
-      : selfHosted
-        ? [
-            {
-              name: "self-hosted-chromium",
-              testMatch: ["self-hosted.spec.ts"],
-              use: chromium,
-            },
-          ]
-        : password
+    : hostedOauth
+      ? [{ name: "hosted-oauth-chromium", testMatch: ["hosted-sign-in.spec.ts"], use: chromium }]
+      : oauth
+        ? [{ name: "oauth-chromium", testMatch: ["oauth.spec.ts"], use: chromium }]
+        : selfHosted
           ? [
               {
-                name: "password-chromium",
-                testMatch: ["password.spec.ts"],
+                name: "self-hosted-chromium",
+                testMatch: ["self-hosted.spec.ts"],
                 use: chromium,
               },
             ]
-          : sqlite
+          : password
             ? [
                 {
-                  name: "sqlite-chromium",
-                  // On the image: the postgres mode's specs, the full Phase 1 suites.
-                  ...(imageTarget
-                    ? { testIgnore: allButNotices }
-                    : {
+                  name: "password-chromium",
+                  testMatch: ["password.spec.ts"],
+                  use: chromium,
+                },
+              ]
+            : sqlite
+              ? [
+                  {
+                    name: "sqlite-chromium",
+                    // On the image: the postgres mode's specs, the full Phase 1 suites.
+                    ...(imageTarget
+                      ? { testIgnore: allButNotices }
+                      : {
+                          testMatch: [
+                            "survey-list.spec.ts",
+                            "survey-list-paging.spec.ts",
+                            "editor.spec.ts",
+                            "history.spec.ts",
+                            "uploads.spec.ts",
+                            "run.spec.ts",
+                          ],
+                        }),
+                    use: chromium,
+                  },
+                ]
+              : postgres
+                ? [
+                    {
+                      name: "postgres-chromium",
+                      testIgnore: allButNotices,
+                      use: chromium,
+                    },
+                  ]
+                : azurite
+                  ? [
+                      {
+                        name: "azurite-chromium",
                         testMatch: [
+                          "sign-in.spec.ts",
                           "survey-list.spec.ts",
-                          "survey-list-paging.spec.ts",
+                          "survey-actions.spec.ts",
                           "editor.spec.ts",
                           "history.spec.ts",
                           "uploads.spec.ts",
                           "run.spec.ts",
+                          "results.spec.ts",
+                          "results-details.spec.ts",
+                          "projects.spec.ts",
+                          "xss.spec.ts",
                         ],
-                      }),
-                  use: chromium,
-                },
-              ]
-            : postgres
-              ? [
-                  {
-                    name: "postgres-chromium",
-                    testIgnore: allButNotices,
-                    use: chromium,
-                  },
-                ]
-              : azurite
-                ? [
-                    {
-                      name: "azurite-chromium",
-                      testMatch: [
-                        "sign-in.spec.ts",
-                        "survey-list.spec.ts",
-                        "survey-actions.spec.ts",
-                        "editor.spec.ts",
-                        "history.spec.ts",
-                        "uploads.spec.ts",
-                        "run.spec.ts",
-                        "results.spec.ts",
-                        "results-details.spec.ts",
-                        "projects.spec.ts",
-                        "xss.spec.ts",
-                      ],
-                      use: chromiumOnline,
-                    },
-                  ]
-                : [
-                    // The password spec needs password mode's server.
-                    {
-                      name: "chromium",
-                      testIgnore: [
-                        "password.spec.ts",
-                        "self-hosted.spec.ts",
-                        "oauth.spec.ts",
-                        "sandbox.spec.ts",
-                        "sandbox-host.spec.ts",
-                        "sandbox-tabs.spec.ts",
-                      ],
-                      use: chromium,
-                    },
-                    {
-                      name: "firefox",
-                      testIgnore: [
-                        "password.spec.ts",
-                        "self-hosted.spec.ts",
-                        "oauth.spec.ts",
-                        "sandbox.spec.ts",
-                        "sandbox-host.spec.ts",
-                        "sandbox-tabs.spec.ts",
-                      ],
-                      use: { ...devices["Desktop Firefox"], viewport },
-                    },
-                    {
-                      name: "webkit",
-                      testIgnore: [
-                        "password.spec.ts",
-                        "self-hosted.spec.ts",
-                        "oauth.spec.ts",
-                        "sandbox.spec.ts",
-                        "sandbox-host.spec.ts",
-                        "sandbox-tabs.spec.ts",
-                      ],
-                      use: { ...devices["Desktop Safari"], viewport },
-                    },
-                  ],
+                        use: chromiumOnline,
+                      },
+                    ]
+                  : [
+                      // The password spec needs password mode's server.
+                      {
+                        name: "chromium",
+                        testIgnore: [
+                          "password.spec.ts",
+                          "self-hosted.spec.ts",
+                          "oauth.spec.ts",
+                          "hosted-sign-in.spec.ts",
+                          "sandbox.spec.ts",
+                          "sandbox-host.spec.ts",
+                          "sandbox-tabs.spec.ts",
+                        ],
+                        use: chromium,
+                      },
+                      {
+                        name: "firefox",
+                        testIgnore: [
+                          "password.spec.ts",
+                          "self-hosted.spec.ts",
+                          "oauth.spec.ts",
+                          "hosted-sign-in.spec.ts",
+                          "sandbox.spec.ts",
+                          "sandbox-host.spec.ts",
+                          "sandbox-tabs.spec.ts",
+                        ],
+                        use: { ...devices["Desktop Firefox"], viewport },
+                      },
+                      {
+                        name: "webkit",
+                        testIgnore: [
+                          "password.spec.ts",
+                          "self-hosted.spec.ts",
+                          "oauth.spec.ts",
+                          "hosted-sign-in.spec.ts",
+                          "sandbox.spec.ts",
+                          "sandbox-host.spec.ts",
+                          "sandbox-tabs.spec.ts",
+                        ],
+                        use: { ...devices["Desktop Safari"], viewport },
+                      },
+                    ],
   webServer: sandboxUrl
     ? undefined
     : sandbox
@@ -578,7 +608,7 @@ export default defineConfig({
         ]
       : imageTarget
         ? imageWebServers()
-        : sqlite || postgres || password || selfHosted || oauth
+        : sqlite || postgres || password || selfHosted || oauth || hostedOauth
           ? sqlWebServers()
           : azurite
             ? azuriteWebServers
