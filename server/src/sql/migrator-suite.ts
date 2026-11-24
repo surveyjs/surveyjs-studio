@@ -161,6 +161,31 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       expect(JSON.parse(rows[0]!.text)).toEqual({ pageSize: 10 });
     });
 
+    it("adds site_blocked and licence_expires_at and keeps the accounts (0010)", async () => {
+      const { database } = await fresh();
+      const { db } = database;
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 10),
+      );
+      const userId = "11111111-0000-4000-8000-a00000000001";
+      await sql`insert into users (id, email, display_name, instance_role, status,
+          must_change_password, session_epoch, created_at)
+        values (${userId}, 'old@example.com', 'Old', 'user', 'active', false, 0,
+          '2026-09-01T10:00:00.000Z')`.execute(db);
+      await migrate(database, shipped);
+      const { rows } = await sql<{
+        email: string;
+        site_blocked: boolean | number;
+        licence_expires_at: unknown;
+      }>`select email, site_blocked, licence_expires_at from users`.execute(db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.email).toBe("old@example.com");
+      expect(Number(rows[0]!.site_blocked)).toBe(0);
+      expect(rows[0]!.licence_expires_at).toBeNull();
+    });
+
     it("keeps the files and their legacy names when files gains an owner (0009)", async () => {
       const { database } = await fresh();
       const { db } = database;

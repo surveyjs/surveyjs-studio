@@ -67,6 +67,8 @@ export async function seedSqlStores(
           status: user.blocked ? "disabled" : "active",
           password_hash: null,
           must_change_password: false,
+          site_blocked: false,
+          licence_expires_at: null,
           session_epoch: 0,
           created_at: SEEDED_AT,
           last_sign_in_at: null,

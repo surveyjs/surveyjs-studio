@@ -451,6 +451,10 @@ export interface LocalAccount {
   /** null: no password set (an invited account, or one made for another sign-in method). */
   readonly passwordHash: string | null;
   readonly mustChangePassword: boolean;
+  /** The site blocks the account (set at sign-in); `user.blocked` is true for it too. */
+  readonly siteBlocked: boolean;
+  /** ISO 8601 UTC; when the licence ends, as the site reported it. */
+  readonly licenceExpiresAt: string | null;
   /** Raised by every password change and reset and by disabling: older sessions end (ADR 0026). */
   readonly sessionEpoch: number;
   /** ISO 8601 UTC; null before the first sign-in. */
@@ -479,8 +483,26 @@ export interface NewLocalAccount {
   readonly status: AccountStatus;
   readonly passwordHash: string | null;
   readonly mustChangePassword: boolean;
+  /** Default false. */
+  readonly siteBlocked?: boolean;
+  /** ISO 8601 UTC; default null. */
+  readonly licenceExpiresAt?: string | null;
   readonly createdAt: string;
 }
+
+/** What the site tells at a sign-in about the account (refreshFromSignIn). */
+export interface SignInRefresh {
+  /** Lower-case. */
+  readonly email: string;
+  readonly displayName: string;
+  readonly siteBlocked: boolean;
+  readonly licenceExpiresAt: string | null;
+}
+
+export type SignInRefreshResult =
+  | { readonly outcome: "updated"; readonly account: LocalAccount }
+  | { readonly outcome: "email-taken"; readonly account: LocalAccount }
+  | { readonly outcome: "not-found" };
 
 export type PasswordLinkPurpose = "setup" | "invitation" | "reset";
 
@@ -529,6 +551,13 @@ export interface LocalAccountStore {
    * an account that was not disabled raises its session epoch.
    */
   updateAccount(id: string, change: AccountChange): Promise<AccountUpdate>;
+  /**
+   * Stores what the site told at a sign-in: the display name, the block and the licence date, and
+   * the email (also in the account's `surveyjs` identity). An email another account holds is
+   * `email-taken`: the old email stays, the rest is written. Status, role and password are not
+   * changed.
+   */
+  refreshFromSignIn(id: string, change: SignInRefresh): Promise<SignInRefreshResult>;
   /** The account an external identity is linked to; null when none. */
   accountByIdentity(provider: ExternalMethod, subject: string): Promise<LocalAccount | null>;
   /** Links the identity to an account; `taken` when that (provider, subject) is linked already, to anyone. */

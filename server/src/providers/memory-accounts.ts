@@ -39,7 +39,7 @@ const userOf = (stored: StoredAccount): User => ({
   id: stored.id,
   email: stored.email,
   displayName: stored.displayName,
-  blocked: stored.status === "disabled",
+  blocked: stored.status === "disabled" || stored.siteBlocked,
 });
 
 const accountOf = (stored: StoredAccount): LocalAccount => ({
@@ -48,6 +48,8 @@ const accountOf = (stored: StoredAccount): LocalAccount => ({
   status: stored.status,
   passwordHash: stored.passwordHash,
   mustChangePassword: stored.mustChangePassword,
+  siteBlocked: stored.siteBlocked,
+  licenceExpiresAt: stored.licenceExpiresAt,
   sessionEpoch: stored.sessionEpoch,
   lastSignInAt: stored.lastSignInAt,
   createdAt: stored.createdAt,
@@ -84,6 +86,8 @@ export function createMemoryLocalAccounts(
       status: user.blocked ? "disabled" : "active",
       passwordHash: null,
       mustChangePassword: false,
+      siteBlocked: false,
+      licenceExpiresAt: null,
       sessionEpoch: 0,
       lastSignInAt: null,
       createdAt: SEED_CREATED_AT,
@@ -135,6 +139,8 @@ export function createMemoryLocalAccounts(
         status: account.status,
         passwordHash: account.passwordHash,
         mustChangePassword: account.mustChangePassword,
+        siteBlocked: account.siteBlocked ?? false,
+        licenceExpiresAt: account.licenceExpiresAt ?? null,
         sessionEpoch: 0,
         lastSignInAt: null,
         createdAt: account.createdAt,
@@ -183,6 +189,32 @@ export function createMemoryLocalAccounts(
       };
       byId.set(found.id, updated);
       return Promise.resolve({ outcome: "updated" as const, account: accountOf(updated) });
+    },
+    refreshFromSignIn: (id, change) => {
+      const found = find(id);
+      if (!found) return Promise.resolve({ outcome: "not-found" as const });
+      const email = change.email.toLowerCase();
+      const holder = findByEmail(email);
+      const taken = holder !== undefined && holder.id !== found.id;
+      const updated: StoredAccount = {
+        ...found,
+        displayName: change.displayName,
+        siteBlocked: change.siteBlocked,
+        licenceExpiresAt: change.licenceExpiresAt,
+        email: taken ? found.email : email,
+      };
+      byId.set(found.id, updated);
+      if (!taken && email !== found.email) {
+        for (const [identity, link] of identities) {
+          if (link.userId === found.id && link.provider === "surveyjs") {
+            identities.set(identity, { ...link, email });
+          }
+        }
+      }
+      return Promise.resolve({
+        outcome: taken ? ("email-taken" as const) : ("updated" as const),
+        account: accountOf(updated),
+      });
     },
     accountByIdentity: (provider, subject) => {
       const link = identities.get(identityKey(provider, subject));

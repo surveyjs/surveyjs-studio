@@ -56,6 +56,8 @@ export function describeLocalAccountSuite(
         passwordHash: newAccount().passwordHash,
         mustChangePassword: false,
         sessionEpoch: 0,
+        siteBlocked: false,
+        licenceExpiresAt: null,
         lastSignInAt: null,
         createdAt: "2026-10-29T10:00:00.000Z",
       };
@@ -83,6 +85,108 @@ export function describeLocalAccountSuite(
       ]);
       expect(await store.users.signInUser({ sub: active.user.id })).toEqual(active.user);
       expect(await store.users.findUserByEmail("")).toBeNull();
+    });
+
+    describe("refreshFromSignIn", () => {
+      const LICENCE = "2027-01-31T00:00:00.000Z";
+
+      it("updates the email, the name, the block and the licence date", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        const email = `new.${randomUUID()}@example.com`;
+        const result = await store.accounts.refreshFromSignIn(account.user.id.toUpperCase(), {
+          email,
+          displayName: "Renamed",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result.outcome).toBe("updated");
+        const stored = await store.accounts.account(account.user.id);
+        expect(stored).toMatchObject({
+          user: { email, displayName: "Renamed", blocked: true },
+          status: "active",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+          passwordHash: account.passwordHash,
+          instanceRole: "user",
+        });
+        expect(result).toEqual({ outcome: "updated", account: stored });
+        expect(await store.users.getUser(account.user.id)).toMatchObject({ blocked: true });
+        const cleared = await store.accounts.refreshFromSignIn(account.user.id, {
+          email,
+          displayName: "Renamed",
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        });
+        expect(cleared).toMatchObject({
+          outcome: "updated",
+          account: { siteBlocked: false, licenceExpiresAt: null, user: { blocked: false } },
+        });
+      });
+
+      it("keeps the old email when another account has the new one, and updates the rest", async () => {
+        const holder = await store.accounts.createAccount(newAccount());
+        const account = await store.accounts.createAccount(newAccount());
+        const result = await store.accounts.refreshFromSignIn(account.user.id, {
+          email: holder.user.email,
+          displayName: "Other Name",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result.outcome).toBe("email-taken");
+        const stored = await store.accounts.account(account.user.id);
+        expect(stored).toMatchObject({
+          user: { email: account.user.email, displayName: "Other Name" },
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result).toEqual({ outcome: "email-taken", account: stored });
+        expect(await store.accounts.account(holder.user.id)).toEqual(holder);
+      });
+
+      it("follows an email change in the account's surveyjs identity", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        await store.accounts.linkIdentity({
+          provider: "surveyjs",
+          subject: `sub-${randomUUID()}`,
+          userId: account.user.id,
+          email: account.user.email,
+          emailVerified: true,
+          createdAt: AT,
+        });
+        const email = `moved.${randomUUID()}@example.com`;
+        await store.accounts.refreshFromSignIn(account.user.id, {
+          email,
+          displayName: account.user.displayName,
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        });
+        const links = await store.accounts.listIdentities(account.user.id);
+        expect(links.map((link) => link.email)).toEqual([email]);
+      });
+
+      it("answers not-found for an unknown or malformed id", async () => {
+        const change = {
+          email: `x.${randomUUID()}@example.com`,
+          displayName: "X",
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        };
+        expect(await store.accounts.refreshFromSignIn(randomUUID(), change)).toEqual({
+          outcome: "not-found",
+        });
+        expect(await store.accounts.refreshFromSignIn("not-a-guid", change)).toEqual({
+          outcome: "not-found",
+        });
+      });
+
+      it("creates an account blocked by the site, with a licence date", async () => {
+        const account = await store.accounts.createAccount(
+          newAccount({ siteBlocked: true, licenceExpiresAt: LICENCE }),
+        );
+        expect(account).toMatchObject({ siteBlocked: true, licenceExpiresAt: LICENCE });
+        expect(account.user.blocked).toBe(true);
+        expect(account.status).toBe("active");
+      });
     });
 
     it("refuses a second account with an email or an id in use", async () => {

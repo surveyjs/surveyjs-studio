@@ -181,7 +181,7 @@ An editor file of no survey (`uploadLegacyFile`, [ADR 0040](../adr/0040-bridge-a
 `files_owner` (`owner_user_id`). Migration 0009 made `survey_id` nullable: on SQLite by rebuilding `files` and
 `legacy_files` (`legacy_files` first, so dropping the old `files` cascades to nothing), keeping every row.
 
-### `users` and `password_links` (0004)
+### `users` and `password_links` (0004, 0010)
 
 The accounts of the local user directory (`USER_DIRECTORY=local`,
 [ADR 0026](../adr/0026-revoking-stateless-sessions-with-an-epoch.md)). `pnpm seed` loads the fixture users here as
@@ -189,18 +189,20 @@ active accounts without a password (a blocked one disabled), and the seed's inst
 (`instance-admin@example.com`), also when the directory is `memory`. A seed row replaces an account with its id or
 email.
 
-| Column                 | Type              | Notes                                                                                     |
-| ---------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
-| `id`                   | GUID, primary key | The user id of projects, members and sessions                                             |
-| `email`                | text, unique      | Lower-case                                                                                |
-| `display_name`         | text              |                                                                                           |
-| `instance_role`        | text              | `admin` or `user`                                                                         |
-| `status`               | text              | `invited`, `active` or `disabled`. Only `active` signs in; `disabled` is a blocked user   |
-| `password_hash`        | text, null        | An argon2id PHC string; null before a password is set                                     |
-| `must_change_password` | boolean           | The first admin from `ADMIN_PASSWORD`: every operation but three answers `401` until then |
-| `session_epoch`        | integer           | Starts at 0; raised by each password change and set-password link. Sessions must match it |
-| `created_at`           | timestamp         |                                                                                           |
-| `last_sign_in_at`      | timestamp, null   | The last password sign-in (not written under `READ_ONLY=true`)                            |
+| Column                 | Type              | Notes                                                                                               |
+| ---------------------- | ----------------- | --------------------------------------------------------------------------------------------------- |
+| `id`                   | GUID, primary key | The user id of projects, members and sessions                                                       |
+| `email`                | text, unique      | Lower-case                                                                                          |
+| `display_name`         | text              |                                                                                                     |
+| `instance_role`        | text              | `admin` or `user`                                                                                   |
+| `status`               | text              | `invited`, `active` or `disabled`. Only `active` signs in; `disabled` is a blocked user             |
+| `password_hash`        | text, null        | An argon2id PHC string; null before a password is set                                               |
+| `must_change_password` | boolean           | The first admin from `ADMIN_PASSWORD`: every operation but three answers `401` until then           |
+| `session_epoch`        | integer           | Starts at 0; raised by each password change and set-password link. Sessions must match it           |
+| `site_blocked`         | boolean           | 0010. The site blocks the account (set at hosted sign-in); blocks like `disabled`, status unchanged |
+| `licence_expires_at`   | timestamp, null   | 0010. When the licence ends, as the site reported it at sign-in                                     |
+| `created_at`           | timestamp         |                                                                                                     |
+| `last_sign_in_at`      | timestamp, null   | The last password sign-in (not written under `READ_ONLY=true`)                                      |
 
 **`password_links`**: `token_hash` (text, primary key: the SHA-256 of the token, base64url; the token itself is never
 stored), `user_id` (FK to `users`, cascade), `purpose` (`setup`, `invitation` or `reset`), `created_at`,
