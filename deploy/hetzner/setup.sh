@@ -8,7 +8,7 @@
 #   sudo ./setup.sh --tag <tag> --env-file <app.env> [options]
 #
 # Required on the first run:
-#   --tag TAG              the image tag: the full commit id of a master commit whose CI passed
+#   --tag TAG              the image tag: the full commit id of a master or production commit whose CI passed
 #   --env-file PATH        the app's settings (start from app.env.example next to this script);
 #                          installed as /etc/surveyjs-studio/app.env, root only. Delete PATH after.
 # Options:
