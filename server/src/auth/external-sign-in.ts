@@ -36,8 +36,11 @@ export interface ExternalSignInDeps {
   readonly hosted?: boolean;
   /** Hosted: ADMIN_EMAIL, made instance admin at its sign-in while there is no active admin. */
   readonly adminEmail?: string | null;
-  /** Hosted: where the warnings go. They name the user id, never an email address. */
-  readonly log?: { warn(obj: object, msg: string): void };
+  /** Hosted: where the warnings and notes go. They name the user id, never an email address. */
+  readonly log?: {
+    warn(obj: object, msg: string): void;
+    info(obj: object, msg: string): void;
+  };
 }
 
 /** Another sign-in of the same identity or email won a write: look again from step (1). */
@@ -150,11 +153,13 @@ export async function resolveExternalSignIn(
  *
  * (0) A sub that is not a GUID is refused (`failed`). (1) The linked account is refreshed from the
  * claims (the email only when verified and free), then refused when the site blocks it or an admin
- * disabled it: neither clears the other. Without a linked account, a blocked claim is refused
- * before anything is written. (2) The account of the verified email is linked only when it has no
- * `surveyjs` identity yet (an account an admin created); one with another surveyjs.io id is
- * `identity-conflict`. (3) Else a new account with the sub as its id, when the join policy lets
- * the email join. After a sign-in, ADMIN_EMAIL becomes instance admin while there is none.
+ * disabled it: neither clears the other. The account whose id is the sub but whose identity is
+ * gone (an admin unlinked it) is linked again and treated the same; with another surveyjs.io id it
+ * is `identity-conflict`. Without either, a blocked claim is refused before anything is written.
+ * (2) The account of the verified email is linked only when it has no `surveyjs` identity yet (an
+ * account an admin created); one with another surveyjs.io id is `identity-conflict`. (3) Else a
+ * new account with the sub as its id, when the join policy lets the email join. After a sign-in,
+ * ADMIN_EMAIL becomes instance admin while there is none (logged with the user id).
  *
  * With `readOnly` nothing is written: the claims decide the block, a linked active account signs
  * in unchanged, and the steps that would write throw `503 read-only`.
@@ -176,7 +181,7 @@ async function resolveHostedSignIn(
     claims.emailVerified === true ? claims.email?.trim().toLowerCase() || undefined : undefined;
   const displayName = claims.name?.trim() || undefined;
 
-  /** Stores the claims on `account`: the email only when verified, and not when another holds it. */
+  /** Stores the claims on `account`; the email only when verified and no other account holds it. */
   const refresh = async (account: LocalAccount): Promise<LocalAccount | null> => {
     const result = await accounts.refreshFromSignIn(account.user.id, {
       email: verifiedEmail ?? account.user.email,
@@ -202,10 +207,15 @@ async function resolveHostedSignIn(
       return account;
     }
     const update = await accounts.updateAccount(account.user.id, { instanceRole: "admin" });
-    return update.outcome === "updated" ? update.account : account;
+    if (update.outcome !== "updated") return account;
+    log?.info(
+      { userId: account.user.id },
+      "made the ADMIN_EMAIL account an instance admin at sign-in",
+    );
+    return update.account;
   };
 
-  /** Signs in to `account`, unless the site blocks it or it is disabled; an invited one becomes active. */
+  /** Signs in to `account` unless the site blocks it or it is disabled; invited becomes active. */
   const signInTo = async (account: LocalAccount, created: boolean): Promise<ExternalSignIn> => {
     // The claims decide the block: under READ_ONLY the stored value is the last sign-in's.
     if (siteBlocked) return refused("blocked");
@@ -246,10 +256,46 @@ async function resolveHostedSignIn(
     return account ? signInLinked(account) : null;
   };
 
+  /**
+   * The `surveyjs` identities of an account that is not linked to this sign-in's: `ours` when this
+   * identity was linked to it by another sign-in of the same person since `known` looked, `other`
+   * when another surveyjs.io id holds it (warned, by user id only), `none` when it has none.
+   */
+  const siteIdentity = async (account: LocalAccount): Promise<"ours" | "other" | "none"> => {
+    const site = (await accounts.listIdentities(account.user.id)).filter(
+      (identity) => identity.provider === "surveyjs",
+    );
+    if (site.some((identity) => identity.subject.toLowerCase() === sub)) return "ours";
+    if (site.length === 0) return "none";
+    log?.warn(
+      { userId: account.user.id },
+      "sign-in refused: the account belongs to another surveyjs.io id",
+    );
+    return "other";
+  };
+
   const attempt = async (): Promise<ExternalSignIn | typeof LOST_RACE> => {
     const linked = await known();
     if (linked) return linked;
-    // A blocked person signing in without a linked account gets nothing written.
+
+    // The account with this surveyjs.io id whose identity is gone (an admin unlinked it): the
+    // same person, so it is linked again and treated as a linked account.
+    const own = await accounts.account(sub);
+    if (own) {
+      const held = await siteIdentity(own);
+      if (held === "ours") return (await known()) ?? LOST_RACE;
+      if (held === "other") return refused("identity-conflict");
+      if (readOnly) {
+        if (siteBlocked) return refused("blocked");
+        if (own.status === "disabled") return refused("disabled");
+        throw readOnlyError();
+      }
+      const linkEmail = verifiedEmail ?? own.user.email;
+      if ((await link(own.user.id, linkEmail)) === "taken") return (await known()) ?? LOST_RACE;
+      return signInLinked(own);
+    }
+
+    // A blocked person signing in without an account of their own gets nothing written.
     if (siteBlocked) return refused("blocked");
 
     const email = verifiedEmail;
@@ -257,20 +303,9 @@ async function resolveHostedSignIn(
 
     const existing = await accounts.accountByEmail(email);
     if (existing) {
-      const site = (await accounts.listIdentities(existing.user.id)).filter(
-        (identity) => identity.provider === "surveyjs",
-      );
-      // This identity, linked by another sign-in of the same person since `known` looked.
-      if (site.some((identity) => identity.subject.toLowerCase() === sub)) {
-        return (await known()) ?? LOST_RACE;
-      }
-      if (site.length > 0) {
-        log?.warn(
-          { userId: existing.user.id },
-          "sign-in refused: the email's account belongs to another surveyjs.io id",
-        );
-        return refused("identity-conflict");
-      }
+      const held = await siteIdentity(existing);
+      if (held === "ours") return (await known()) ?? LOST_RACE;
+      if (held === "other") return refused("identity-conflict");
       if (existing.status === "disabled") return refused("disabled");
       if (readOnly) throw readOnlyError();
       if ((await link(existing.user.id, email)) === "taken") return (await known()) ?? LOST_RACE;

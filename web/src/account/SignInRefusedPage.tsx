@@ -5,9 +5,9 @@ import { PROVIDER_NAMES, isExternalMethod } from "./authMethods";
 const NOT_INVITED =
   "This instance is open to invited people only. Ask a project admin or the person who runs it to invite your email address, then sign in again.";
 
-/** The hosted edition's accounts are surveyjs.io's: SurveyJS blocks them, not an instance admin. */
-const HOSTED_BLOCKED =
-  "This surveyjs.io account is blocked. Contact SurveyJS support at support@surveyjs.io.";
+/** The hosted edition: an admin disabled the account in Studio; the site's block is `blocked`. */
+const HOSTED_DISABLED =
+  "This account has been disabled in SurveyJS Studio. Contact the administrator.";
 
 function refusalText(
   reason: string | undefined,
@@ -21,7 +21,7 @@ function refusalText(
   }
   if (reason === "disabled") {
     return hosted
-      ? HOSTED_BLOCKED
+      ? HOSTED_DISABLED
       : "This account is disabled. Ask the person who runs this instance.";
   }
   // Hosted sign-in through surveyjs.io (ADR 0043): the site's block, and an email whose account
