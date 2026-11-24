@@ -5,6 +5,7 @@ import { openapiPath } from "@surveyjs-studio/contract";
 import { parse } from "yaml";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadContract } from "./contract.js";
+import { rateLimitClassOf } from "./rate-limit-classes.js";
 
 describe("loadContract", () => {
   let dir: string;
@@ -131,7 +132,6 @@ describe("loadContract", () => {
     const contract = await loadContract(openapiPath);
     const appSource = await readFile(new URL("./app.ts", import.meta.url), "utf8");
     const hostedList = /const HOSTED_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
-    const publicList = /const PUBLIC_OPERATIONS[^=]*=\s*\[([^\]]*)\]/.exec(appSource)?.[1] ?? "";
     for (const id of [
       "deleteResponse",
       "getSurveyLayout",
@@ -147,7 +147,7 @@ describe("loadContract", () => {
     }
     const op = (id: string) => contract.operations.find((o) => o.operationId === id);
     expect(op("getPublicLayout")?.security).toEqual([]);
-    expect(publicList).toContain('"getPublicLayout"');
+    expect(rateLimitClassOf("getPublicLayout")).toBe("public");
     expect(hostedList).toContain('"getPublicLayout"');
     expect(hostedList).toContain('"uploadLegacyFile"');
     expect(JSON.stringify(op("deleteResponse")?.security)).toContain("csrfToken");

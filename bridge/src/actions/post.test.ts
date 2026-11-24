@@ -724,4 +724,87 @@ describe("upload", () => {
     }
     expect(answer?.status).toBe(200);
   });
+
+  describe("a body that is not read in time (BRIDGE_UPLOAD_READ_TIMEOUT_MS)", () => {
+    let quick: RunningBridge;
+    beforeAll(async () => {
+      quick = await startBridge({
+        studioUrl: `${studio.url}/api/v1`,
+        legacyUrl: legacy.url,
+        uploadReadTimeoutMs: 1000,
+      });
+    });
+    afterAll(async () => {
+      await quick.close();
+    });
+
+    const uploadTo = (url: string, body: Buffer) =>
+      send(`${url}/public/Survey/upload`, {
+        method: "POST",
+        headers: [["Content-Type", `multipart/form-data; boundary=${boundary}`]],
+        body,
+      });
+
+    /** A caller that sends the headers and half the body, then stalls; collects what it is sent. */
+    function stall(body: Buffer): { socket: Socket; received: () => string } {
+      const { hostname, port } = new URL(quick.url);
+      const socket = connect(Number(port), hostname);
+      let data = "";
+      socket.on("data", (chunk: Buffer) => (data += chunk.toString("latin1")));
+      socket.on("error", () => undefined);
+      socket.write(head(body.length) + body.subarray(0, 10).toString("latin1"));
+      return { socket, received: () => data };
+    }
+
+    it("answers the stalled uploads an empty 408 and frees their slots", async () => {
+      const body = multipart([
+        { name: "postId", value: POST },
+        { name: "file", value: "x", filename: "a.png" },
+      ]);
+      const stalled = Array.from({ length: MAX_CONCURRENT_UPLOADS }, () => stall(body));
+      try {
+        let refused: Answer | undefined;
+        for (let attempt = 0; attempt < 100 && refused === undefined; attempt++) {
+          const answer = await uploadTo(quick.url, body);
+          if (answer.status === 503) refused = answer;
+          else await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        expectEmpty(refused!, 503);
+
+        for (let attempt = 0; attempt < 400; attempt++) {
+          if (stalled.every(({ received }) => received().startsWith("HTTP/1.1 408 "))) break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        for (const { received } of stalled) {
+          const text = received();
+          expect(text).toMatch(/^HTTP\/1\.1 408 /);
+          expect(text.toLowerCase()).toContain("content-length: 0");
+          expect(text.toLowerCase()).toContain("connection: close");
+        }
+        // The slots are free again.
+        expect((await uploadTo(quick.url, body)).status).toBe(200);
+      } finally {
+        for (const { socket } of stalled) socket.destroy();
+      }
+    });
+
+    it("leaves an upload that is read in time alone, even after the deadline would have passed", async () => {
+      const body = multipart([
+        { name: "postId", value: POST },
+        { name: "file", value: "x", filename: "a.png" },
+      ]);
+      studio.override = (_request, res) => {
+        setTimeout(
+          () =>
+            res
+              .writeHead(201, { "content-type": "application/json" })
+              .end(JSON.stringify(studio.storedFile)),
+          1400,
+        );
+        return true;
+      };
+      const answer = await uploadTo(quick.url, body);
+      expect(answer.status).toBe(200);
+    });
+  });
 });

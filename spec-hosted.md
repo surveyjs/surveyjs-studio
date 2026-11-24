@@ -234,7 +234,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 - **Without a proxy,** the whole host switches at once through DNS. The DNS time-to-live is lowered days before, so switching back is fast.
 
-- **A replay tool** (`pnpm legacy:replay`) takes a sample of real requests from the access logs. It sends each read request to both the old service and the app and reports differences in the JSON. Write requests are replayed only against a staging copy.
+- **A replay tool** (`pnpm legacy:replay`) takes a sample of real requests from the access logs. It sends each read request to both the old service and the app and reports differences in the JSON. Reads are replayed on production; writes, which the logs cannot replay, are checked by `pnpm legacy:replay smoke` with a test account ([ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)).
 
 ### Migration tool (H20–H23)
 
@@ -312,7 +312,7 @@ The rules of `spec.md` › Testing Decisions apply: test through public seams, a
    - changes after the pre-copy are carried by `delta`;
    - deletions are carried by `reconcile`;
    - the provider-level reads match between source and target.
-5. **Replay** against staging, plus a **rehearsal** on a production-sized copy. Both are manual, with documented results.
+5. **Replay** of the reads on production, plus `pnpm legacy:replay smoke` for the writes (there is no staging copy; [ADR 0041](docs/adr/0041-taking-over-the-legacy-api-host.md)), plus a **rehearsal** on a production-sized copy. Both are manual, with documented results.
 6. **Playwright:**
    - the maintenance states (read-only notice, temporarily-unavailable run page);
    - the API tokens page;

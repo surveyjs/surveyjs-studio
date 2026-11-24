@@ -1,5 +1,6 @@
 # SurveyJS Studio, self-hosted, with PostgreSQL and S3-compatible file storage (RustFS).
 # Copy .env.example to .env, fill it in, then run: docker compose -f compose.postgres.yml up -d
+# Metrics: add --profile monitoring to start Prometheus too (docker compose --profile monitoring up -d).
 # Neither PostgreSQL nor RustFS is published on the host.
 # Its own project name: `down -v` here never touches compose.sqlite.yml's volume.
 name: surveyjs-studio-postgres
@@ -65,6 +66,8 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env (the address people open, e.g. https://surveys.example.com)}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env (the first administrator)}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (the first administrator's one-time password)}
+      # Metrics for Prometheus, on their own port inside the Compose network.
+      METRICS_PORT: 9464
       STORAGE_PROVIDER: postgres
       DATABASE_URL: postgres://surveyjs:${POSTGRES_PASSWORD}@postgres:5432/surveyjs_studio
       FILE_STORE: s3
@@ -80,7 +83,23 @@ services:
       # The session secret (/data/session-secret) lives here.
       - surveyjs-studio-data:/data
 
+  # Optional, off by default: docker compose --profile monitoring up -d. Reachable only on this machine
+  # (127.0.0.1:9090); the app's metrics port (9464) is never published.
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
 volumes:
   postgres-data:
   s3-data:
   surveyjs-studio-data:
+  prometheus-data:

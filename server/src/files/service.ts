@@ -33,6 +33,8 @@ export interface FilesServiceOptions {
   readonly maxAssetBytesPerSurvey: number;
   /** Largest respondent file, in bytes (S11). */
   readonly maxFileBytes: number;
+  /** Files one user may hold that belong to no survey (`uploadLegacyFile`). */
+  readonly maxLegacyFilesPerUser: number;
   /** The clock for creation times; default `Date.now`. */
   readonly now?: Clock;
 }
@@ -117,6 +119,15 @@ export function fileTooLarge(max: number): AppError {
     detail: `A file can be up to ${formatBytes(max)}.`,
   });
 }
+
+/** 409: the user holds as many files of no survey as the limit allows. */
+const legacyFileLimit = (): AppError =>
+  new AppError({
+    code: "legacy-file-limit",
+    status: 409,
+    title: "Too many files",
+    detail: "You have reached the limit of files uploaded outside a survey.",
+  });
 
 const invalidFile = (detail: string): AppError =>
   new AppError({
@@ -211,6 +222,9 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
     },
 
     async uploadLegacyFile(user, read) {
+      if ((await files.countUserFiles(user.id)) >= options.maxLegacyFilesPerUser) {
+        throw legacyFileLimit();
+      }
       const incoming = await read(quota);
       if (incoming?.fieldName !== FILE_FIELD) throw noFilePart();
       const { bytes } = incoming;

@@ -1688,6 +1688,10 @@ paths:
         content as for `uploadSurveyAsset`; any other content is stored as
         `application/octet-stream`.
 
+        A user may hold up to `LIMIT_MAX_LEGACY_FILES_PER_USER` (default 1000) such files; at the
+        limit the upload is `409 legacy-file-limit`, checked before the body is read. The files go
+        when the account does.
+
         Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
         does.
       security:
@@ -1709,6 +1713,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '503': { $ref: '#/components/responses/ReadOnly' }
 
@@ -2491,7 +2496,8 @@ components:
       description: |
         The request conflicts with the current state. Codes:
         `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
-        `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`.
+        `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`,
+        `legacy-file-limit`.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -2664,6 +2670,7 @@ components:
             - last-instance-admin
             - legacy-key-revoke-unavailable
             - legacy-key-replace-unavailable
+            - legacy-file-limit
             - internal-error
         errors:
           type: array

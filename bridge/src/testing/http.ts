@@ -111,7 +111,10 @@ export const TEST_SETTINGS: Omit<BridgeSettings, "studioUrl" | "legacyUrl"> = {
   studioTimeoutMs: 2_000,
   fileTimeoutMs: 5_000,
   maxUploadBytes: 11_534_336,
+  uploadReadTimeoutMs: 60_000,
   trustProxy: [],
+  metricsPort: null,
+  metricsHost: "127.0.0.1",
 };
 
 export interface RunningBridge {

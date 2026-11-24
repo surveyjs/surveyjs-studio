@@ -164,8 +164,10 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
       url: op.url,
       schema,
       onRequest: onRequest ? [tagOperation, onRequest] : [tagOperation],
-      ...(rateLimit && {
-        config: {
+      // `operationId` is the metrics' `operation` label (metrics.ts).
+      config: {
+        operationId,
+        ...(rateLimit && {
           rateLimit: {
             max: rateLimit.max,
             timeWindow: rateLimit.timeWindow,
@@ -177,8 +179,8 @@ export const apiRoutes: FastifyPluginAsync<ApiOptions> = async (api, options) =>
                 detail: rateLimit.detail(context.after),
               }),
           },
-        },
-      }),
+        }),
+      },
       ...(bodyLimit !== undefined && { bodyLimit }),
       ...(op.requestBody && !rawBody && { preValidation: bodyGuard(op.requestBody) }),
       handler: handlers[operationId] ?? notImplemented(op.operationId),

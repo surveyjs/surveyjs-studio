@@ -1072,6 +1072,10 @@ export interface paths {
          *     content as for `uploadSurveyAsset`; any other content is stored as
          *     `application/octet-stream`.
          *
+         *     A user may hold up to `LIMIT_MAX_LEGACY_FILES_PER_USER` (default 1000) such files; at the
+         *     limit the upload is `409 legacy-file-limit`, checked before the body is read. The files go
+         *     when the account does.
+         *
          *     Hosted edition only: on any other server the path answers `404 not-found`, as an unknown path
          *     does.
          */
@@ -1583,7 +1587,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "layout-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "layout-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "legacy-file-limit" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -2293,7 +2297,8 @@ export interface components {
         /**
          * @description The request conflicts with the current state. Codes:
          *     `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
-         *     `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`.
+         *     `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`,
+         *     `legacy-file-limit`.
          */
         Conflict: {
             headers: {
@@ -4161,6 +4166,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             503: components["responses"]["ReadOnly"];
         };

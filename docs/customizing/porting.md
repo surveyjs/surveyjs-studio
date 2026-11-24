@@ -49,6 +49,7 @@ values from anywhere, but it must behave as if it had them.
 | `LIMIT_MAX_DOCUMENT_BYTES`         | `262144`                                                 | The `413` test reads the limit from `/config`, so it stays cheap.   |
 | `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` | `65536`                                                  | The quota tests read the limit from `/config`.                      |
 | `LIMIT_MAX_FILE_BYTES`             | `65536`                                                  | The file `413` test reads the limit from `/config`.                 |
+| `LIMIT_MAX_LEGACY_FILES_PER_USER`  | `50`                                                     | Hosted edition: the account-deleted test uploads up to the cap.     |
 | `ACCOUNT_WEBHOOK_SECRET`           | `whsec_bXktc3VydmV5cy1jb25mb3JtYW5jZS13ZWJob29rLWtleQ==` | The account-deleted webhook tests sign with it (a synthetic value). |
 | `HOST`, `PORT`, `PUBLIC_BASE_URL`  | `127.0.0.1`, your port, `http://127.0.0.1:<port>`        | Sign-in redirects point at the server under test.                   |
 

@@ -5,7 +5,9 @@ packages:
   - conformance-tests
   - e2e
   - bridge
+  - metrics
   - legacy-compat-tests
+  - legacy-replay
 
 allowBuilds:
   esbuild: true

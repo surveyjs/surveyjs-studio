@@ -2,6 +2,7 @@
 // breaking contract change fails the bridge's type check (ADR 0039 point 4).
 import createClient, { type Client } from "openapi-fetch";
 import type { paths } from "@surveyjs-studio/contract/types";
+import type { BridgeMetrics } from "./metrics.js";
 import type { BridgeSettings } from "./settings.js";
 
 export type StudioClient = Client<paths>;
@@ -92,26 +93,42 @@ export function withBodyDeadline(response: Response, timer: NodeJS.Timeout): Res
   });
 }
 
+export interface StudioClientOptions {
+  /** Aborted when the caller goes away: its calls stop. */
+  callerGone?: AbortSignal;
+  /**
+   * For file reads: only the answer's headers must come within `studioTimeoutMs`; its body then has
+   * this long to arrive, so a large file streamed through is not cut off.
+   */
+  bodyTimeoutMs?: number;
+  /**
+   * The caller's access key or API token: every call carries `Authorization: Bearer <bearer>`,
+   * and Studio's `401` throws a `KeyRefused`.
+   */
+  bearer?: string;
+  /** Where each call is counted and timed (`studio_calls_total`, `studio_call_duration_seconds`). */
+  metrics?: Pick<BridgeMetrics, "studioCalls" | "studioDuration">;
+}
+
+/** Why a Studio call has no answer: the call's deadline, the caller leaving, or anything else. */
+function failureStatus(error: unknown, callerGone: AbortSignal | undefined): string {
+  if ((error as { name?: unknown } | null)?.name === "TimeoutError") return "timeout";
+  return callerGone?.aborted === true ? "aborted" : "network";
+}
+
 /**
  * A client for one caller: `callerIp` goes to Studio in `X-Forwarded-For` (Studio trusts it only
  * from the bridge, `TRUST_PROXY`); an unknown address (`""`) sends no such header, so Studio
  * counts the call against the bridge's own address. Each call, its answer's body included, must finish within
  * `studioTimeoutMs`, and stops when `callerGone` aborts. Studio's `429` and `5xx` throw a `StudioFailure`.
- *
- * With `bodyTimeoutMs` (file reads), only the answer's headers must come within `studioTimeoutMs`;
- * its body then has `bodyTimeoutMs` to arrive, so a large file streamed through is not cut off.
- *
- * With `bearer` (the caller's access key or API token), every call carries
- * `Authorization: Bearer <bearer>`, and Studio's `401` throws a `KeyRefused`.
  */
 export function studioClient(
   settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
   callerIp: string,
   fetchImpl: (request: Request) => Promise<Response> = fetch,
-  callerGone?: AbortSignal,
-  bodyTimeoutMs?: number,
-  bearer?: string,
+  options: StudioClientOptions = {},
 ): StudioClient {
+  const { callerGone, bodyTimeoutMs, bearer, metrics } = options;
   const send = async (request: Request): Promise<Response> => {
     const signals = [request.signal, ...(callerGone === undefined ? [] : [callerGone])];
     if (bodyTimeoutMs === undefined) {
@@ -148,5 +165,32 @@ export function studioClient(
       );
     },
   });
+  if (metrics !== undefined) {
+    // Used last, so its `onResponse` runs first (openapi-fetch runs them in reverse): every
+    // answer is counted before the one above may throw.
+    const calls = new Map<string, { operation: string; stop: () => void }>();
+    const settle = (id: string, status: string): void => {
+      const call = calls.get(id);
+      if (call === undefined) return;
+      calls.delete(id);
+      call.stop();
+      metrics.studioCalls.inc({ operation: call.operation, status });
+    };
+    client.use({
+      onRequest({ request, schemaPath, id }) {
+        const operation = `${request.method} ${schemaPath}`;
+        calls.set(id, { operation, stop: metrics.studioDuration.startTimer({ operation }) });
+        return undefined;
+      },
+      onResponse({ response, id }) {
+        settle(id, String(response.status));
+        return undefined;
+      },
+      onError({ error, id }) {
+        settle(id, failureStatus(error, callerGone));
+        return undefined;
+      },
+    });
+  }
   return client;
 }

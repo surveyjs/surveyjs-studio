@@ -5,6 +5,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { sendEmpty, sendJsonString, jsonContentType } from "../answers.js";
 import { EMPTY_GUID, guidParameter, isStudioClientId } from "../binding.js";
 import { contextOf } from "../context.js";
+import type { CacheResult } from "../metrics.js";
 import { queryValue } from "../routes.js";
 import { StudioFailure, unexpectedStatus } from "../studio.js";
 import type { SurveyCache } from "../survey-cache.js";
@@ -19,10 +20,17 @@ const OLD_STATES: Record<"none" | "partial" | "completed", OldState> = {
   completed: "completed",
 };
 
+/** Notes how the definition was read, for the request's log line and the cache counter. */
+function noteCache(request: FastifyRequest, result: CacheResult): void {
+  request.observed.cache = result;
+  contextOf(request).metrics.cache.inc({ result });
+}
+
 /**
  * The survey's definition as JSON text, from the cache when Studio confirms it unchanged or
  * refuses the revalidation for rate reasons (`429`: a busy caller keeps its answer); `undefined`
- * when Studio has no such survey.
+ * when Studio has no such survey. The cache result is `hit` (`304`), `miss` (`200`), `stale` (the
+ * cached copy served on a `429`) or `none` (a `429` with nothing cached).
  */
 async function definitionText(
   request: FastifyRequest,
@@ -40,18 +48,23 @@ async function definitionText(
       },
     });
   } catch (error) {
-    if (error instanceof StudioFailure && error.status === 429 && cached !== undefined) {
-      return cached.body;
+    if (error instanceof StudioFailure && error.status === 429) {
+      noteCache(request, cached === undefined ? "none" : "stale");
+      if (cached !== undefined) return cached.body;
     }
     throw error;
   }
   const { data, response } = read;
-  if (response.status === 304 && cached !== undefined) return cached.body;
+  if (response.status === 304 && cached !== undefined) {
+    noteCache(request, "hit");
+    return cached.body;
+  }
   if (response.status === 404) {
     cache.delete(surveyId);
     return undefined;
   }
   if (response.status !== 200 || data === undefined) return unexpectedStatus(response);
+  noteCache(request, "miss");
   const body = JSON.stringify(data);
   const etag = response.headers.get("etag");
   if (etag === null || etag === "") cache.delete(surveyId);

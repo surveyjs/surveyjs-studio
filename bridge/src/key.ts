@@ -80,14 +80,12 @@ export function studioFor(
   settings: Pick<BridgeSettings, "studioUrl" | "studioTimeoutMs">,
   key: string | undefined = keyOf(request),
 ): StudioClient {
-  return studioClient(
-    settings,
-    request.callerIp,
-    contextOf(request).studioFetch,
-    request.callerGone,
-    undefined,
-    key,
-  );
+  const context = contextOf(request);
+  return studioClient(settings, request.callerIp, context.studioFetch, {
+    callerGone: request.callerGone,
+    ...(key !== undefined && { bearer: key }),
+    metrics: context.metrics,
+  });
 }
 
 /**

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import rateLimit from "@fastify/rate-limit";
 import { openapiPath } from "@surveyjs-studio/contract";
+import { trackRequests } from "@surveyjs-studio/metrics";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createEraseAccount } from "./accounts/erasure.js";
 import { createAdminHandlers } from "./admin/handlers.js";
 import { createAccountHandlers } from "./accounts/handlers.js";
+import { operationsOfRateLimitClass } from "./rate-limit-classes.js";
 import { apiRoutes, type OperationId, type RateLimit } from "./api.js";
 import type { IdentityProvider } from "./auth/identity.js";
 import { createSignInProviders, type SignInProviders } from "./auth/providers/index.js";
@@ -13,6 +15,7 @@ import { bootstrapFirstAdmin } from "./auth/bootstrap.js";
 import { createPasswordHandlers } from "./auth/password-handlers.js";
 import { createSessionCheck } from "./auth/session-check.js";
 import { createSessionHandlers } from "./auth/session-handlers.js";
+import { operationLabel, type StudioMetrics } from "./metrics.js";
 import { createLockout } from "./passwords/lockout.js";
 import { drainSmallOverflow } from "./body-limit.js";
 import type { AppConfig } from "./config.js";
@@ -51,6 +54,8 @@ export interface BuildOptions {
   readonly now?: Clock;
   /** Receives the JSON log lines, even when `NODE_ENV=test` (tests). */
   readonly logStream?: { write(line: string): void };
+  /** Counts and times every request (the `/metrics` listener is started by `main.ts`, not here). */
+  readonly metrics?: StudioMetrics;
 }
 
 /**
@@ -67,19 +72,6 @@ const HOSTED_OPERATIONS: readonly OperationId[] = [
   "getLegacyFile",
   "getPublicLayout",
   "uploadLegacyFile",
-];
-/** The respondent's operations, limited by `PUBLIC_RATE_LIMIT` per client IP and minute. */
-const PUBLIC_OPERATIONS: readonly OperationId[] = [
-  "getPublishedSurvey",
-  "submitResponse",
-  "uploadResponseFile",
-  "getPublicResults",
-  "getPublicDefinition",
-  "getRespondentState",
-  "getRespondentStateByResultId",
-  "submitResponseByPostId",
-  "uploadResponseFileByPostId",
-  "getPublicLayout",
 ];
 /** Limited by `SIGN_IN_RATE_LIMIT` per client IP and minute. */
 const SIGN_IN_OPERATIONS: readonly OperationId[] = [
@@ -145,6 +137,13 @@ export async function buildApp(
     // Empty trusts nobody: `request.ip` is then the socket's peer, whatever X-Forwarded-For says.
     ...(config.trustProxy.length > 0 && { trustProxy: [...config.trustProxy] }),
   });
+
+  if (options.metrics) {
+    trackRequests(app, options.metrics, (request) => ({
+      operation: operationLabel(request),
+      method: request.method,
+    }));
+  }
 
   const https = new URL(config.publicBaseUrl).protocol === "https:";
   /** With `WEB_ROOT`, any path but the server's own is the web app's and gets its policy (ADR 0021). */
@@ -260,8 +259,8 @@ export async function buildApp(
   // Each call reads every completed response of the survey, unless its summary is cached.
   const summaryLimit: RateLimit = { ...publicLimit, max: config.publicSummaryRateLimitPerMinute };
   const omitted = config.edition === "hosted" ? [] : HOSTED_OPERATIONS;
-  const limited = (operations: readonly OperationId[]) =>
-    operations.filter((id) => !omitted.includes(id));
+  const limited = (operations: readonly string[]) =>
+    operations.filter((id): id is OperationId => !omitted.includes(id as OperationId));
   await app.register(apiRoutes, {
     prefix: "/api/v1",
     contract,
@@ -335,6 +334,7 @@ export async function buildApp(
         publicBaseUrl: config.publicBaseUrl,
         maxAssetBytesPerSurvey: config.limits.maxAssetBytesPerSurvey,
         maxFileBytes: config.limits.maxFileBytes,
+        maxLegacyFilesPerUser: config.limits.maxLegacyFilesPerUser,
         ...(options.now && { now: options.now }),
       }),
       ...createCredentialHandlers({
@@ -369,11 +369,15 @@ export async function buildApp(
     },
     rateLimits: {
       ...Object.fromEntries(SIGN_IN_OPERATIONS.map((id) => [id, signInLimit])),
-      ...Object.fromEntries(limited(PUBLIC_OPERATIONS).map((id) => [id, publicLimit])),
       ...Object.fromEntries(
-        limited(["downloadFile", "getLegacyFile"]).map((id) => [id, fileLimit]),
+        limited(operationsOfRateLimitClass("public")).map((id) => [id, publicLimit]),
       ),
-      ...Object.fromEntries(limited(["getQuestionSummary"]).map((id) => [id, summaryLimit])),
+      ...Object.fromEntries(
+        limited(operationsOfRateLimitClass("file")).map((id) => [id, fileLimit]),
+      ),
+      ...Object.fromEntries(
+        limited(operationsOfRateLimitClass("summary")).map((id) => [id, summaryLimit]),
+      ),
     },
     omittedOperations: omitted,
     // Survey documents may carry inline images: they get their own, larger limit.

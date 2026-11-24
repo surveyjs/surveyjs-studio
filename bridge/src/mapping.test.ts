@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { openapiPath } from "@surveyjs-studio/contract";
+import { parse } from "yaml";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ACTIONS, type ActionEntry } from "./mapping.js";
 import { send, startBridge, startStub, type RunningBridge, type Stub } from "./testing/http.js";
@@ -30,6 +31,33 @@ describe("ACTIONS", () => {
       for (const name of entry.studio) {
         expect(operations, `${entry.action}: ${name}`).toContain(name);
       }
+    }
+  });
+
+  it("marks an action a read exactly when every Studio operation it calls is a GET", async () => {
+    const spec = parse(await readFile(openapiPath, "utf8")) as {
+      paths: Record<string, Record<string, { operationId?: string }>>;
+    };
+    const methodOf = new Map<string, string>();
+    for (const item of Object.values(spec.paths)) {
+      for (const [method, operation] of Object.entries(item)) {
+        if (operation?.operationId) methodOf.set(operation.operationId, method.toLowerCase());
+      }
+    }
+    for (const entry of ACTIONS) {
+      const allGets = entry.studio.every((name) => methodOf.get(name) === "get");
+      const safeMethods = entry.methods.every((m) => ["GET", "HEAD", "OPTIONS"].includes(m));
+      expect(entry.effect, entry.action).toBe(allGets && safeMethods ? "read" : "write");
+      if (entry.effect === "read") {
+        for (const m of entry.methods) {
+          expect(["GET", "HEAD", "OPTIONS"], `${entry.action} ${m}`).toContain(m);
+        }
+      }
+    }
+    expect(ACTIONS.find((e) => e.action === "generateAccessKey")?.effect).toBe("write");
+    expect(ACTIONS.find((e) => e.action === "getSurvey")?.effect).toBe("read");
+    for (const name of ["setGenerationJSONType", "changeVersionTitle", "(root)"]) {
+      expect(ACTIONS.find((e) => e.action === name)?.effect, name).toBe("write");
     }
   });
 

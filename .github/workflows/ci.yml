@@ -113,18 +113,28 @@ jobs:
           python3 -m http.server 3009 --bind 127.0.0.1 --directory bridge-smoke > /dev/null 2>&1 &
           docker run -d --name bridge --network host \
             -e BRIDGE_STUDIO_URL=http://127.0.0.1:3000/api/v1 -e BRIDGE_LEGACY_URL=http://127.0.0.1:3009 \
+            -e BRIDGE_METRICS_PORT=9465 \
             surveyjs-studio-bridge:ci
+          ok=""
           for i in $(seq 1 30); do
             if body="$(curl -fsS http://127.0.0.1:3002/)"; then
               echo "$body"
-              test "$body" = "old service" && exit 0
-              exit 1
+              test "$body" = "old service" || { docker logs bridge >&2; exit 1; }
+              ok=1
+              break
             fi
             sleep 1
           done
-          echo "The bridge did not answer within 30 s" >&2
-          docker logs bridge >&2
-          exit 1
+          if [ -z "$ok" ]; then
+            echo "The bridge did not answer within 30 s" >&2
+            docker logs bridge >&2
+            exit 1
+          fi
+          # The metrics listener answers, and the caller summary command is in the image.
+          metrics="$(curl -fsS http://127.0.0.1:9465/metrics)"
+          echo "$metrics" | grep -q '^surveyjs_bridge_' || { echo "No surveyjs_bridge_ metrics" >&2; exit 1; }
+          header="$(printf '' | docker exec -i bridge bridge-callers)"
+          test "$header" = "day,key,action,count,first,last" || { echo "bridge-callers printed: $header" >&2; exit 1; }
 
       - name: Stop the bridge
         if: always()
@@ -138,6 +148,18 @@ jobs:
         with:
           name: surveyjs-studio-hosted-image
           path: surveyjs-studio-hosted-image.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Save the bridge image
+        run: docker save surveyjs-studio-bridge:ci | gzip -1 > surveyjs-studio-bridge-image.tar.gz
+
+      - name: Upload the bridge image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: surveyjs-studio-bridge-image
+          path: surveyjs-studio-bridge-image.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -525,8 +547,8 @@ jobs:
     with:
       image-tag: ${{ github.sha }}
 
-  # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>. It runs no
-  # third-party code, so only this job gets write access to packages.
+  # Pushes the images the ci job tested to ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha> and
+  # ghcr.io/surveyjs/surveyjs-studio-bridge:<commit sha>. It runs no third-party code, so only this job gets write access to packages.
   publish:
     needs: ci
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
@@ -536,6 +558,7 @@ jobs:
       packages: write
     env:
       IMAGE: ghcr.io/surveyjs/surveyjs-studio-hosted
+      BRIDGE_IMAGE: ghcr.io/surveyjs/surveyjs-studio-bridge
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -543,6 +566,13 @@ jobs:
 
       - name: Load the image
         run: gunzip -c surveyjs-studio-hosted-image.tar.gz | docker load
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: surveyjs-studio-bridge-image
+
+      - name: Load the bridge image
+        run: gunzip -c surveyjs-studio-bridge-image.tar.gz | docker load
 
       # Inline rather than `pnpm image:checks --only secrets`: that needs a checkout and an install,
       # i.e. third-party code in the one job that can write packages.
@@ -554,6 +584,14 @@ jobs:
             exit 1
           fi
 
+      - name: Check that no settings file is in the bridge image
+        run: |
+          found="$(docker run --rm --entrypoint sh surveyjs-studio-bridge:ci -c 'find /app -name "*.env*"')"
+          if [ -n "$found" ]; then
+            echo "::error::settings files in the bridge image: $found"
+            exit 1
+          fi
+
       - name: Push to ghcr.io
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -561,5 +599,7 @@ jobs:
           docker tag surveyjs-studio-hosted:ci "$IMAGE:$GITHUB_SHA"
           echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE:$GITHUB_SHA"
+          docker tag surveyjs-studio-bridge:ci "$BRIDGE_IMAGE:$GITHUB_SHA"
+          docker push "$BRIDGE_IMAGE:$GITHUB_SHA"
           docker logout ghcr.io
-          echo "Pushed $IMAGE:$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed $IMAGE:$GITHUB_SHA and $BRIDGE_IMAGE:$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

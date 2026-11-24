@@ -12,6 +12,7 @@ COPY web/package.json web/
 COPY conformance-tests/package.json conformance-tests/
 COPY e2e/package.json e2e/
 COPY bridge/package.json bridge/
+COPY metrics/package.json metrics/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -54,7 +55,7 @@ COPY LICENSE /app/LICENSE
 # The free self-hosted image (mode 2b): build it with --target self-hosted.
 FROM app AS self-hosted
 COPY DOCKER-IMAGE-TERMS.md /app/DOCKER-IMAGE-TERMS.md
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 WEB_ROOT=/app/web \
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 WEB_ROOT=/app/web METRICS_HOST=0.0.0.0 \
     APP_EDITION=self-hosted APP_SHELL=self-hosted \
     STORAGE_PROVIDER=sqlite FILE_STORE=local AUTH_METHODS=password USER_DIRECTORY=local \
     SQLITE_PATH=/data/surveyjs-studio.db FILES_PATH=/data/files SESSION_SECRET_FILE=/data/session-secret \
@@ -91,7 +92,10 @@ COPY --from=build /out/bridge /app/bridge
 # The notices of the server's and the web app's dependencies cover the bridge's (a subset).
 COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 COPY LICENSE /app/LICENSE
-ENV NODE_ENV=production BRIDGE_HOST=0.0.0.0 BRIDGE_PORT=3002
+ENV NODE_ENV=production BRIDGE_HOST=0.0.0.0 BRIDGE_PORT=3002 BRIDGE_METRICS_HOST=0.0.0.0
+# Sums the bridge's request log (stdin) into a CSV of callers per day, key hash prefix and action.
+RUN printf '%s\n' '#!/bin/sh' 'cd /app/bridge && exec node --import tsx src/cli/callers.ts "$@"' > /usr/local/bin/bridge-callers \
+    && chmod 755 /usr/local/bin/bridge-callers
 USER node
 WORKDIR /app/bridge
 EXPOSE 3002
@@ -99,7 +103,7 @@ CMD ["node", "--import", "tsx", "src/main.ts"]
 
 # The hosted image (studio.surveyjs.io): keep this stage last, so a plain `docker build .` builds it.
 FROM app AS runtime
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 WEB_ROOT=/app/web
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 WEB_ROOT=/app/web METRICS_HOST=0.0.0.0
 # Shown on the package page of ghcr.io/surveyjs/surveyjs-studio-hosted (with the repository's README).
 LABEL org.opencontainers.image.title="SurveyJS Studio (hosted)" \
       org.opencontainers.image.description="SurveyJS Studio as it runs at studio.surveyjs.io: the server and the built web app, with no mode defaults; its settings choose the mode. Tagged by master commit id; :production is the deployed one." \

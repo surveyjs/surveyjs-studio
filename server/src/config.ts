@@ -116,6 +116,8 @@ export interface AppConfig {
   readonly nodeEnv: "development" | "test" | "production";
   readonly host: string;
   readonly port: number;
+  /** The separate `/metrics` listener (ADR 0041); `port` null: none. */
+  readonly metrics: { readonly port: number | null; readonly host: string };
   readonly logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   readonly edition: "hosted" | "self-hosted";
   readonly shell: string;
@@ -155,6 +157,8 @@ export interface AppConfig {
     readonly maxResponseBytes: number;
     /** Largest survey definition or theme body, in bytes (a per-route limit). */
     readonly maxDocumentBytes: number;
+    /** Files one user may hold that belong to no survey (hosted `uploadLegacyFile`). */
+    readonly maxLegacyFilesPerUser: number;
   };
   readonly apiDocs: boolean;
   readonly identityProvider: "surveyjs-oidc" | "dev";
@@ -317,6 +321,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().min(1).default("127.0.0.1"),
   PORT: decimalInt.transform(Number).pipe(z.number().int().min(0).max(65535)).default(3000),
+  // Metrics are served only on their own port, never on PORT (checked in loadConfig).
+  METRICS_PORT: decimalInt.transform(Number).pipe(z.number().int().min(1).max(65535)).optional(),
+  METRICS_HOST: z.string().min(1).default("127.0.0.1"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   APP_EDITION: z.enum(["hosted", "self-hosted"]).default("self-hosted"),
   APP_SHELL: z.string().min(1).default("surveyjs-site"),
@@ -356,6 +363,7 @@ const envSchema = z.object({
   LIMIT_MAX_FILE_BYTES: positiveInt.default(10485760),
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
   LIMIT_MAX_DOCUMENT_BYTES: positiveInt.default(30000000),
+  LIMIT_MAX_LEGACY_FILES_PER_USER: positiveInt.default(1000),
   API_DOCS: z.enum(["true", "false"]).optional(),
   IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
@@ -833,6 +841,9 @@ export function loadConfig(
       }
     }
   }
+  if (parsed.success && parsed.data.METRICS_PORT === parsed.data.PORT) {
+    problems.push("METRICS_PORT: must differ from PORT");
+  }
   problems.push(...databaseProblems(env));
   problems.push(...fileProblems(env));
   if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32) {
@@ -850,6 +861,7 @@ export function loadConfig(
     nodeEnv: e.NODE_ENV,
     host: e.HOST,
     port: e.PORT,
+    metrics: Object.freeze({ port: e.METRICS_PORT ?? null, host: e.METRICS_HOST }),
     logLevel: e.LOG_LEVEL,
     edition: e.APP_EDITION,
     shell: e.APP_SHELL,
@@ -894,6 +906,7 @@ export function loadConfig(
       maxFileBytes: e.LIMIT_MAX_FILE_BYTES,
       maxResponseBytes: e.LIMIT_MAX_RESPONSE_BYTES,
       maxDocumentBytes: e.LIMIT_MAX_DOCUMENT_BYTES,
+      maxLegacyFilesPerUser: e.LIMIT_MAX_LEGACY_FILES_PER_USER,
     }),
     apiDocs: apiDocsOf(e),
     identityProvider: e.IDENTITY_PROVIDER,

@@ -135,7 +135,8 @@ docker run -d --name bridge -p 3002:3002 \
 | Process  | `node --import tsx src/main.ts` in `/app/bridge`, as the user `node`                                                                                           |
 | Port     | `3002` (`BRIDGE_PORT`); the image listens on all addresses (`BRIDGE_HOST=0.0.0.0`). Put an https proxy in front of it                                          |
 | Settings | The `BRIDGE_*` variables in [the settings table](api/legacy-compat.md#settings). Two are required                                                              |
-| Logs     | JSON lines on standard output, level `info`                                                                                                                    |
+| Logs     | JSON lines on standard output, level `info`, one `"msg":"request"` line per request ([below](#the-callers-of-each-action))                                     |
+| Metrics  | With `BRIDGE_METRICS_PORT` set, `GET /metrics` on that port only ([Metrics](#metrics)); the image sets `BRIDGE_METRICS_HOST=0.0.0.0`                           |
 | Health   | None: the image has no `HEALTHCHECK`, because an address the bridge answered itself would differ from the old host. A probe can use a forwarded path (`GET /`) |
 
 - **Studio must be the hosted edition** (`APP_EDITION=hosted`). Only it routes the operations the bridge calls; any
@@ -158,6 +159,56 @@ docker run -d --name bridge -p 3002:3002 \
 - **Check it** with a request that needs no data: `curl -i <bridge>/public/Survey/getSurvey` answers `400` from the bridge
   itself (no survey ID), and a path the bridge does not own, for example `curl -i <bridge>/`, shows the old service's answer.
   To try it against a local Studio without Docker, follow [the Step 5 demo](demo/hosted-05.md).
+- **Taking over `api.surveyjs.io`** with the bridge has its own runbook:
+  [Taking over `api.surveyjs.io`](operations/legacy-api-takeover.md).
+
+### The callers of each action
+
+Metrics cannot say who still calls an action (a label per key would let any caller create series at will), so the
+bridge writes one log line per request, once its answer is done or the caller has left:
+
+```json
+{
+  "level": 30,
+  "time": 1795448061744,
+  "pid": 7,
+  "hostname": "bridge",
+  "reqId": "req-8",
+  "action": "getActive",
+  "method": "GET",
+  "status": "200",
+  "ms": 5.7,
+  "key": "c81dae3a7718687e",
+  "msg": "request"
+}
+```
+
+`action`, `method` and `status` are the metric's labels; `ms` is the duration; `cache` (`hit`, `miss`, `stale`, `none`)
+is there for a `getSurvey` read; `key` is the first 16 hex digits of the SHA-256 of the caller's key, lower-cased first
+unless it is an `sjs_` token (Studio's `hashCredential`), and is left out when there is no key; `path`, without its
+query, is there for a forwarded request. The line never holds the key, the query or the caller's address.
+
+`bridge-callers`, a command in the bridge image, reads such a log on standard input, line by line (any other line is
+skipped), and writes a CSV with one row per UTC day, key prefix and action:
+
+```text
+day,key,action,count,first,last
+2026-11-22,,getSurvey,4,2026-11-22T15:34:14.741Z,2026-11-22T15:34:21.744Z
+2026-11-22,c81dae3a7718687e,getActive,1,2026-11-22T15:34:14.931Z,2026-11-22T15:34:14.931Z
+```
+
+For one day of the container's log (`docker logs` writes the lines to standard output; the command reads them as a
+stream, so a long log is never held in memory):
+
+```sh
+docker logs --since 2026-11-22T00:00:00Z --until 2026-11-23T00:00:00Z bridge 2>/dev/null \
+  | docker exec -i bridge bridge-callers > callers-2026-11-22.csv
+```
+
+The hourly job on the hosted server runs this over the last full hour and appends the rows to that day's file, so a
+day has up to 24 rows per key and action (sum them); lines of a container replaced mid-hour, and hours the server was
+down, are not counted. Keep the files until the bridge is retired. To find a key's owner, hash the owner's key the same way (until the
+migration, the site's keys; afterwards `legacy_access_keys` holds the same hash).
 
 ## Releasing the self-hosted image
 
@@ -379,6 +430,56 @@ The server writes one JSON object per line (pino) to standard output; the contai
 Worth an alert: `/readyz` failing, a run of `5xx` answers (`"statusCode":5..` on `request completed`), and a container
 that restarts.
 
+### Metrics
+
+Studio and the bridge serve Prometheus metrics ([ADR 0041](adr/0041-taking-over-the-legacy-api-host.md)), **only on a
+second listener of their own, never on the main port**. The listener answers `GET /metrics` and nothing else (any
+other path or method is an empty `404`) and needs no token: whoever reaches the port reaches nothing but counts, so
+publish it to nobody but the Prometheus server. A request for `/metrics` on Studio's main port answers `404`, or the web app's page when `WEB_ROOT` is set (both
+images set it); on the bridge's it is forwarded to the old service like any other path the bridge does not own.
+
+| Setting                            | Default     | Meaning                                                                        |
+| ---------------------------------- | ----------- | ------------------------------------------------------------------------------ |
+| `METRICS_PORT` (Studio)            | unset       | Unset: no metrics listener. Set (1 to 65,535, not `PORT`): the listener's port |
+| `METRICS_HOST` (Studio)            | `127.0.0.1` | The listener's address. The hosted and self-hosted images set `0.0.0.0`        |
+| `BRIDGE_METRICS_PORT` (the bridge) | unset       | The same for the bridge; not `BRIDGE_PORT`                                     |
+| `BRIDGE_METRICS_HOST` (the bridge) | `127.0.0.1` | The same; the bridge image sets `0.0.0.0`                                      |
+
+The `starting` log line says `"metrics":"off"` or the listener's address. Inside a container, `0.0.0.0` is needed for
+a Prometheus on the same Docker network; do not publish the port on the host (no Compose file in this repository
+does). Each process owns its metrics, so two replicas are two scrape targets.
+
+**No label holds a key, an id, a path, an e-mail or an address;** every label's values come from a bounded set, so no
+caller can create new series. The duration histograms have the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+2.5, 5, 10 and 30 seconds and no `status` label.
+
+Studio (prefix `surveyjs_studio_`):
+
+| Metric                                                      | Labels                          | What it counts                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `surveyjs_studio_http_requests_total` (counter)             | `operation`, `method`, `status` | Every request, once its answer is done or the caller has left. `operation` is the contract's `operationId` (for example `saveSurveyDefinition`), `web` for the web app's pages and assets, `system` for the server's own paths (`/healthz`, `/readyz`, sign-in), `unmatched` for anything else. `status` is the answer's status, or `none` when no answer was started |
+| `surveyjs_studio_http_request_duration_seconds` (histogram) | `operation`, `method`           | The same requests' duration                                                                                                                                                                                                                                                                                                                                           |
+| `surveyjs_studio_store_call_duration_seconds` (histogram)   | `store`, `method`, `outcome`    | Every call into the storage provider: `store` is the provider interface (`surveys`, `users`, `accounts`, `invitations`, `projects`, `files`, `results`, `views`, `credentials`, `notices`), `method` its method, `outcome` `ok` or `error`. Timed only while `METRICS_PORT` is set                                                                                    |
+| `surveyjs_studio_process_*`, `surveyjs_studio_nodejs_*`     | (the library's)                 | The Node process: CPU, memory, event-loop lag, garbage collection, active handles                                                                                                                                                                                                                                                                                     |
+
+The bridge (prefix `surveyjs_bridge_`):
+
+| Metric                                                     | Labels                       | What it counts                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `surveyjs_bridge_requests_total` (counter)                 | `action`, `method`, `status` | Every request, once its answer is done or the caller has left. `action` is the old action's name in the mapping table (for example `getSurvey`), `forwarded` for every path forwarded to the old service, `preflight` for a CORS preflight the bridge answers itself. `status` as in Studio, `none` included |
+| `surveyjs_bridge_request_duration_seconds` (histogram)     | `action`, `method`           | The same requests' duration, the streaming of the answer included                                                                                                                                                                                                                                            |
+| `surveyjs_bridge_studio_calls_total` (counter)             | `operation`, `status`        | Every call to Studio. `operation` is the method and the contract's path template, for example `GET /public/surveys/{surveyId}/definition`. `status` is Studio's status, or `timeout`, `network` (no answer) or `aborted` (the caller left first)                                                             |
+| `surveyjs_bridge_studio_call_duration_seconds` (histogram) | `operation`                  | The same calls' duration, until Studio's answer's headers                                                                                                                                                                                                                                                    |
+| `surveyjs_bridge_survey_cache_total` (counter)             | `result`                     | `getSurvey` definition reads: `hit` (Studio answered `304`), `miss` (`200`), `stale` (the cached copy served on Studio's `429`), `none` (not cached and refused)                                                                                                                                             |
+| `surveyjs_bridge_forward_failures_total` (counter)         | `reason`                     | Forwarded requests the old service did not answer completely: `timeout`, `network`, `aborted`                                                                                                                                                                                                                |
+| `surveyjs_bridge_uploads_in_progress` (gauge)              | none                         | `upload` requests being read or answered; at 8 the next one is refused with an empty `503`                                                                                                                                                                                                                   |
+| `surveyjs_bridge_process_*`, `surveyjs_bridge_nodejs_*`    | (the library's)              | The Node process                                                                                                                                                                                                                                                                                             |
+
+A Prometheus scrape configuration needs only the target, for example `app:9464` on the Compose network
+([`deploy/compose/prometheus.yml`](../deploy/compose/prometheus.yml)). The self-hosted Compose examples have a
+`monitoring` profile that starts one ([Self-hosting › Metrics](self-hosting.md#metrics)). The queries used while the
+bridge takes over `api.surveyjs.io` are in [its runbook](operations/legacy-api-takeover.md#4-watch).
+
 ## Read-only mode
 
 `READ_ONLY=true` makes the app read-only: every operation that writes answers `503` with the Problem code `read-only`
@@ -413,25 +514,26 @@ repository, a ticket or a chat.
 The app at `https://studio.surveyjs.io` on the surveyjs.io SQL database and Azure storage accounts, with
 surveyjs.io sign-in, while the old My Surveys section still runs.
 
-| Variable                                   | Value                                                                                                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                                                                   |
-| `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                                                                           |
-| `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                                                                                  |
-| `STORAGE_PROVIDER`                         | Set: `azure-legacy` (the default is `memory`)                                                                                 |
-| `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                                                                   |
-| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                                                                             |
-| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                                                                             |
-| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, the default (`dev` is refused when `NODE_ENV=production`)                                                    |
-| `OIDC_ISSUER_URL`                          | Required: `https://auth.surveyjs.io`                                                                                          |
-| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`     | Required: the client registered there; the secret is **secret**                                                               |
-| `ACCOUNT_NOTICES`                          | Set: `surveyjs-licenses` (the default is `none`)                                                                              |
-| `USER_DIRECTORY`                           | Leave unset: the default `surveyjs-sql` reads the site's `Users` table                                                        |
-| `TRUST_PROXY`                              | Set: the reverse proxy's address ([above](#running-the-image))                                                                |
-| `READ_ONLY`                                | `true` in rollout step 1, then unset or `false` (the default)                                                                 |
-| `LEGACY_KEY_REVOKE`                        | `false` (the default) until the old API checks keys through Studio; see [API tokens](api/api-tokens.md#the-legacy-access-key) |
-| `SURVEYJS_LICENSE_KEY`                     | Set: the SurveyJS licence key; without it the licence banner shows                                                            |
-| `NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT`     | Set by the image; leave them                                                                                                  |
+| Variable                                   | Value                                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                                                                                                                                                                     |
+| `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                                                                                                                                                                             |
+| `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                                                                                                                                                                                    |
+| `STORAGE_PROVIDER`                         | Set: `azure-legacy` (the default is `memory`)                                                                                                                                                                                   |
+| `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                                                                                                                                                                     |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                                                                                                                                                                               |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                                                                                                                                                                               |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, the default (`dev` is refused when `NODE_ENV=production`)                                                                                                                                                      |
+| `OIDC_ISSUER_URL`                          | Required: `https://auth.surveyjs.io`                                                                                                                                                                                            |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`     | Required: the client registered there; the secret is **secret**                                                                                                                                                                 |
+| `ACCOUNT_NOTICES`                          | Set: `surveyjs-licenses` (the default is `none`)                                                                                                                                                                                |
+| `USER_DIRECTORY`                           | Leave unset: the default `surveyjs-sql` reads the site's `Users` table                                                                                                                                                          |
+| `TRUST_PROXY`                              | Set: the reverse proxy's address ([above](#running-the-image))                                                                                                                                                                  |
+| `READ_ONLY`                                | `true` in rollout step 1, then unset or `false` (the default)                                                                                                                                                                   |
+| `LEGACY_KEY_REVOKE`                        | `false` (the default) until `api.surveyjs.io` has been switched to the bridge for a day, then `true` ([the runbook](operations/legacy-api-takeover.md#6-the-days-after), [API tokens](api/api-tokens.md#the-legacy-access-key)) |
+| `METRICS_PORT`                             | Set (for example `9464`) for checks on the server; the port is never published ([Metrics](#metrics))                                                                                                                            |
+| `SURVEYJS_LICENSE_KEY`                     | Set: the SurveyJS licence key; without it the licence banner shows                                                                                                                                                              |
+| `NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT`     | Set by the image; leave them                                                                                                                                                                                                    |
 
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
 `OIDC_DISCOVERY` and `OIDC_SCOPES` (which fit `auth.surveyjs.io`), `API_DOCS` (off in production: the reference is

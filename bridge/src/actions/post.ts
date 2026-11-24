@@ -194,9 +194,18 @@ export async function upload(request: FastifyRequest, reply: FastifyReply): Prom
   }
 }
 
+/** The deadline timer of each `upload` whose body is being read. */
+const readDeadlines = new WeakMap<FastifyRequest, NodeJS.Timeout>();
+
+function stopReadDeadline(request: FastifyRequest): void {
+  clearTimeout(readDeadlines.get(request));
+  readDeadlines.delete(request);
+}
+
 /**
  * Before an `upload`'s body is read: refused while `MAX_CONCURRENT_UPLOADS` are being read, so a
- * refused upload is never buffered.
+ * refused upload is never buffered; one not read in full within `BRIDGE_UPLOAD_READ_TIMEOUT_MS` is
+ * answered an empty `408` and its connection is closed, which frees its slot (the close handler).
  */
 export async function uploadGate(
   request: FastifyRequest,
@@ -210,8 +219,27 @@ export async function uploadGate(
     return sendEmpty(reply.header("connection", "close"), 503);
   }
   uploads.set(context, active + 1);
+  context.metrics.uploads.inc();
+  const timer = setTimeout(() => {
+    readDeadlines.delete(request);
+    request.log.warn("upload: body not read in time");
+    // Fastify's reply cannot be used: the body is still streaming. Answer on the socket, then
+    // cut the connection once the answer is out.
+    const raw = reply.raw;
+    if (raw.headersSent || raw.writableEnded) return request.raw.destroy();
+    raw.writeHead(408, { "Content-Length": "0", Connection: "close" });
+    raw.end(() => request.raw.destroy());
+  }, context.settings.uploadReadTimeoutMs);
+  readDeadlines.set(request, timer);
   reply.raw.once("close", () => {
+    stopReadDeadline(request);
     uploads.set(context, (uploads.get(context) ?? 1) - 1);
+    context.metrics.uploads.dec();
   });
   return undefined;
+}
+
+/** After an `upload`'s body has been read in full: the deadline no longer applies. */
+export async function uploadBodyRead(request: FastifyRequest): Promise<void> {
+  stopReadDeadline(request);
 }

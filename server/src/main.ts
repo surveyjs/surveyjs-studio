@@ -1,7 +1,9 @@
+import { createRegistry, startMetricsServer } from "@surveyjs-studio/metrics";
 import type { FastifyBaseLogger } from "fastify";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
 import { s3EndpointWarning, startupSummary, storageWarning } from "./logging.js";
+import { createStudioMetrics, instrumentProviders } from "./metrics.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
 import { PendingMigrationsError } from "./providers/sql.js";
 import { withSessionSecret } from "./session-secret.js";
@@ -37,7 +39,15 @@ try {
   }
   throw error;
 }
-const app = await buildApp(config, providers);
+// Every request is counted; the numbers are served only on the separate METRICS_PORT listener.
+const registry = createRegistry({ prefix: "surveyjs_studio_", processMetrics: true });
+const metrics = createStudioMetrics(registry);
+// Store calls are timed only when the numbers are served; closing still closes the real providers.
+const app = await buildApp(
+  config,
+  config.metrics.port === null ? providers : instrumentProviders(providers, metrics.storeDuration),
+  { metrics },
+);
 appLog = app.log;
 if (config.sessionSecretIsDevDefault) {
   app.log.warn("SESSION_SECRET is not set: using the development-only session secret");
@@ -47,13 +57,14 @@ if (storage !== null) app.log.warn(storage);
 const s3Endpoint = s3EndpointWarning(config);
 if (s3Endpoint !== null) app.log.warn(s3Endpoint);
 
+let metricsServer: Awaited<ReturnType<typeof startMetricsServer>> | null = null;
 let shuttingDown = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     if (shuttingDown) return;
     shuttingDown = true;
     app.log.info({ signal }, "shutting down");
-    app.close().then(
+    Promise.all([app.close(), metricsServer?.close()]).then(
       () => process.exit(0),
       (error: unknown) => {
         app.log.error({ err: error }, "error during shutdown");
@@ -63,9 +74,17 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-app.log.info(startupSummary(config), "starting");
+const metricsAddress =
+  config.metrics.port === null ? "off" : `${config.metrics.host}:${config.metrics.port}`;
+app.log.info({ ...startupSummary(config), metrics: metricsAddress }, "starting");
 
 try {
+  if (config.metrics.port !== null) {
+    metricsServer = await startMetricsServer(registry, {
+      host: config.metrics.host,
+      port: config.metrics.port,
+    });
+  }
   await app.listen({ host: config.host, port: config.port });
 } catch (error) {
   app.log.error({ err: error }, "failed to start");

@@ -216,8 +216,8 @@ export async function uploadFiles(
     });
     if (data !== undefined) {
       names.set(value.name, data.legacyName);
-    } else if (response.status === 400 || response.status === 413) {
-      // A file Studio does not take: the old API's failed write.
+    } else if (response.status === 400 || response.status === 409 || response.status === 413) {
+      // A file Studio does not take, or the user's cap on such files: the old API's failed write.
       return sendEmpty(reply, 400);
     } else {
       return unexpectedStatus(response);

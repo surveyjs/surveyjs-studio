@@ -15,7 +15,7 @@ export function isPreflight(request: FastifyRequest): boolean {
   );
 }
 
-/** Registers the policy; call before any other `onRequest` hook. */
+/** Registers the policy; call before any other `onRequest` hook but those that only observe (metrics.ts). */
 export function registerCors(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
     if (!isPreflight(request)) return;

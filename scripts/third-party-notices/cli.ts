@@ -17,7 +17,12 @@ import {
 import { OVERRIDES } from "./overrides.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const WORKSPACES = ["@surveyjs-studio/server", "@surveyjs-studio/web"];
+const WORKSPACES = [
+  "@surveyjs-studio/server",
+  "@surveyjs-studio/web",
+  "@surveyjs-studio/metrics",
+  "@surveyjs-studio/bridge",
+];
 const FONT_DIRS = [
   ["Open Sans", "web/src/shell/surveyjs-site/assets/site/Content/Fonts/Google/OFL-OpenSans.txt"],
   ["Raleway", "web/src/shell/surveyjs-site/assets/site/Content/Fonts/Google/OFL-Raleway.txt"],

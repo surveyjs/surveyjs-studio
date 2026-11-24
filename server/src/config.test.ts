@@ -38,6 +38,7 @@ describe("loadConfig", () => {
       nodeEnv: "development",
       host: "127.0.0.1",
       port: 3000,
+      metrics: { port: null, host: "127.0.0.1" },
       logLevel: "info",
       edition: "self-hosted",
       shell: "surveyjs-site",
@@ -64,6 +65,7 @@ describe("loadConfig", () => {
         maxFileBytes: 10485760,
         maxResponseBytes: 1048576,
         maxDocumentBytes: 30000000,
+        maxLegacyFilesPerUser: 1000,
       },
       apiDocs: true,
       identityProvider: "dev",
@@ -117,6 +119,7 @@ describe("loadConfig", () => {
       LIMIT_MAX_FILE_BYTES: "20",
       LIMIT_MAX_RESPONSE_BYTES: "30",
       LIMIT_MAX_DOCUMENT_BYTES: "40",
+      LIMIT_MAX_LEGACY_FILES_PER_USER: "50",
       // Not API_DOCS: the docs are shown only in the surveyjs-site shell (config-branding.test.ts).
     });
     expect(config).toMatchObject({
@@ -138,6 +141,7 @@ describe("loadConfig", () => {
         maxFileBytes: 20,
         maxResponseBytes: 30,
         maxDocumentBytes: 40,
+        maxLegacyFilesPerUser: 50,
       },
       apiDocs: false,
     });
@@ -177,6 +181,7 @@ describe("loadConfig", () => {
     ["LIMIT_MAX_FILE_BYTES", "-5"],
     ["LIMIT_MAX_RESPONSE_BYTES", "1.5"],
     ["LIMIT_MAX_DOCUMENT_BYTES", "0"],
+    ["LIMIT_MAX_LEGACY_FILES_PER_USER", "0"],
     ["API_DOCS", "yes"],
   ])("rejects %s=%j and names the variable", (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(ConfigError);
@@ -1218,6 +1223,26 @@ describe("loadConfig", () => {
       expect(messageOf(() => loadConfig({ READ_ONLY: value }))).toContain(
         "READ_ONLY: must be true or false",
       );
+    });
+  });
+
+  describe("METRICS_PORT and METRICS_HOST", () => {
+    it("have no listener by default and read both settings", () => {
+      expect(loadConfig({}).metrics).toEqual({ port: null, host: "127.0.0.1" });
+      expect(loadConfig({ METRICS_PORT: "9100", METRICS_HOST: "0.0.0.0" }).metrics).toEqual({
+        port: 9100,
+        host: "0.0.0.0",
+      });
+    });
+
+    it("refuses the same port as PORT, also the default one", () => {
+      const message = messageOf(() => loadConfig({ METRICS_PORT: "3000", PORT: "3000" }));
+      expect(message).toContain("METRICS_PORT: must differ from PORT");
+      expect(messageOf(() => loadConfig({ METRICS_PORT: "3000" }))).toContain("must differ");
+    });
+
+    it.each(["0", "65536", "abc", "-1", "9100.5"])("refuses METRICS_PORT=%s", (value) => {
+      expect(messageOf(() => loadConfig({ METRICS_PORT: value }))).toContain("METRICS_PORT");
     });
   });
 

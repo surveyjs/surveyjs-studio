@@ -12,10 +12,13 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, inject, it, onTestFinished } from "vitest";
 import { as, call, cleanUp, codeOf, hosted, upload } from "./harness.js";
+import { REFERENCE_SETTINGS } from "./reference-settings.js";
 import { fixtureUsers } from "./sign-in.js";
 import { randomWebhookKey, signWebhook, webhookKey } from "./webhook.js";
 
 const { admin, erasable } = fixtureUsers;
+/** The reference setting `LIMIT_MAX_LEGACY_FILES_PER_USER`. */
+const LEGACY_FILE_LIMIT = Number(REFERENCE_SETTINGS.LIMIT_MAX_LEGACY_FILES_PER_USER);
 const secret = inject("webhookSecret");
 const PATH = "/webhooks/account-deleted";
 const MERGE_PATCH = "application/merge-patch+json";
@@ -212,6 +215,17 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
         )
       ).legacyName;
       expect((await legacyFile(legacyName)).status).toBe(200);
+      // Up to the cap (a leftover of an aborted run counts): the next upload is 409.
+      let refused: Response | null = null;
+      for (let i = 0; i <= LEGACY_FILE_LIMIT && refused === null; i++) {
+        const more = new FormData();
+        more.append("file", new Blob([new Uint8Array(Buffer.from("%PDF-1.4\n"))]), "more.pdf");
+        const response = await upload("/legacy-files", { headers: erin, form: more });
+        if (response.status === 409) refused = response;
+        else await created(response);
+      }
+      expect(refused, "the cap of files of no survey was not reached").not.toBeNull();
+      expect(await codeOf(refused!)).toBe("legacy-file-limit");
     }
 
     // An event of another type changes nothing.
@@ -239,6 +253,18 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     // Her editor file of no survey is gone.
     if (legacyName !== null) expect((await legacyFile(legacyName)).status).toBe(404);
 
+    // The erasure also frees her count: she can upload again (the repeat below erases that file).
+    let againName: string | null = null;
+    if (hosted) {
+      const form = new FormData();
+      form.append("file", new Blob([new Uint8Array(Buffer.from("%PDF-1.4\n"))]), "again.pdf");
+      againName = (
+        await created<{ legacyName: string }>(
+          await upload("/legacy-files", { headers: erin, form }),
+        )
+      ).legacyName;
+    }
+
     // Her tokens stop, the shared project's one too.
     for (const value of tokens) {
       expect((await call("GET", "/surveys", { headers: bearer(value) })).status).toBe(401);
@@ -258,5 +284,6 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
 
     // The same signed message again (a retry): nothing left to erase.
     expect((await deliver(deletedEvent, headers)).status).toBe(204);
+    if (againName !== null) expect((await legacyFile(againName)).status).toBe(404);
   });
 });

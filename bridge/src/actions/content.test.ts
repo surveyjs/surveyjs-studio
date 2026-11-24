@@ -482,6 +482,13 @@ describe("the content actions", () => {
         return true;
       };
       expectEmpty(await upload([{ name: "a", value: "1", filename: "x.png" }]), 400);
+      // The user's cap on files of no survey.
+      studio.override = (request, res) => {
+        if (!request.url.endsWith("/legacy-files")) return false;
+        res.writeHead(409, { "content-type": "application/problem+json" }).end("{}");
+        return true;
+      };
+      expectEmpty(await upload([{ name: "a", value: "1", filename: "x.png" }]), 400);
       studio.override = (request, res) => {
         if (!request.url.endsWith("/legacy-files")) return false;
         res.writeHead(404, { "content-type": "application/problem+json" }).end("{}");

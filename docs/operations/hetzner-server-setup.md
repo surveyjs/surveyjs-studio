@@ -104,23 +104,30 @@ It prints each step. At the end the app runs, healthy, and the script shows the 
 says `"readOnly":true`, `"storageProvider":"azure-legacy"` and the right `publicBaseUrl`. **Root sign-in is now off**:
 from here on, `ssh deploy@<server-ip>` and `sudo`.
 
-| Option                 | Default                                   | Meaning                                                                          |
-| ---------------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `--tag`                | (required on the first run)               | The image tag                                                                    |
-| `--env-file`           | (required on the first run)               | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root      |
-| `--domain`             | `studio.surveyjs.io`                      | Must match `PUBLIC_BASE_URL`                                                     |
-| `--image`              | `ghcr.io/surveyjs/surveyjs-studio-hosted` | The image without its tag                                                        |
-| `--ghcr-user`          | none                                      | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt   |
-| `--readyz-allow "IPS"` | none                                      | A monitor's addresses that may call `/readyz` through Caddy                      |
-| `--restrict-to "IPS"`  | none                                      | Serve only these addresses; others get `403` (rollout step 1, if wanted)         |
-| `--auto-update`        |                                           | Deploy what Actions › Deploy tags `production` ([below](#deploying-from-github)) |
-| `--deploy-user`        | `deploy`                                  | The everyday user; `--no-deploy-user` skips it                                   |
-| `--no-ssh-hardening`   |                                           | Keep password and root sign-in over SSH                                          |
+| Option                    | Default                                   | Meaning                                                                                                                |
+| ------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--tag`                   | (required on the first run)               | The image tag                                                                                                          |
+| `--env-file`              | (required on the first run)               | The settings; installed as `/etc/surveyjs-studio/app.env`, readable by root                                            |
+| `--domain`                | `studio.surveyjs.io`                      | Must match `PUBLIC_BASE_URL`                                                                                           |
+| `--image`                 | `ghcr.io/surveyjs/surveyjs-studio-hosted` | The image without its tag                                                                                              |
+| `--ghcr-user`             | none                                      | Sign in to ghcr.io; the token from `GHCR_TOKEN`, `GHCR_TOKEN_FILE` or a prompt                                         |
+| `--readyz-allow "IPS"`    | none                                      | A monitor's addresses that may call `/readyz` through Caddy                                                            |
+| `--restrict-to "IPS"`     | none                                      | Serve only these addresses; others get `403` (rollout step 1, if wanted)                                               |
+| `--trusted-proxies "IPS"` | none                                      | Addresses whose `X-Forwarded-For` Caddy trusts: the servers that call this one over the internet before the DNS switch |
+| `--print-caddyfile`       |                                           | Print the `Caddyfile` for the given options and exit; changes nothing, needs no root, `--tag` or `--env-file`          |
+| `--auto-update`           |                                           | Deploy what Actions › Deploy tags `production` ([below](#deploying-from-github))                                       |
+| `--deploy-user`           | `deploy`                                  | The everyday user; `--no-deploy-user` skips it                                                                         |
+| `--no-ssh-hardening`      |                                           | Keep password and root sign-in over SSH                                                                                |
 
 **Running it again** is safe, also on a server set up by hand before: each step checks what is there. It rewrites
 `compose.yaml`, the `Caddyfile` and `.env` in `/opt/surveyjs-studio`, keeps `/etc/surveyjs-studio/app.env` unless
 `--env-file` is given, and keeps the running tag unless `--tag` is given. That is how to change the domain, the
-`/readyz` addresses or the restriction: run it again with other options. A changed `Caddyfile` is applied by
+`/readyz` addresses or the restriction: run it again with other options. **The address options are not remembered:**
+give `--readyz-allow`, `--restrict-to` and `--trusted-proxies` again on every run, or the new `Caddyfile` is written
+without them (a run without `--trusted-proxies` makes the web front replace the bridge's `X-Forwarded-For` again, and every
+caller of the old API then shares one rate limit). Check the result first with the same options and
+`--print-caddyfile`. The servers in `--trusted-proxies` also go into `TRUST_PROXY` in `app.env`, after the Docker
+subnet ([Taking over `api.surveyjs.io`](legacy-api-takeover.md#1-preconditions)). A changed `Caddyfile` is applied by
 restarting Caddy, so a new version of the script (such as the one that stopped compressing the survey documents) takes
 effect when it is run again with the same options.
 

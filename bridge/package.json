@@ -13,12 +13,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@surveyjs-studio/metrics": "workspace:*",
     "fastify": "5.12.6",
     "openapi-fetch": "0.17.0",
     "tsx": "4.23.15"
   },
   "devDependencies": {
     "@surveyjs-studio/contract": "workspace:*",
-    "@types/node": "24.19.0"
+    "@types/node": "24.19.0",
+    "yaml": "2.9.1"
   }
 }
