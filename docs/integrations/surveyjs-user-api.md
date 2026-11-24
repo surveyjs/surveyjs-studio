@@ -95,6 +95,11 @@ When a user deletes their surveyjs.io account, the site sends one signed message
 user's data: their personal surveys with results and files, and their place in every project. A project that would
 lose its last admin passes to its next member; a project with no other member is deleted with its surveys.
 
+On the hosted service, `data.userId` is found as the surveyjs.io sign-in linked to a My Surveys account first, then as a
+My Surveys account id, and that account is deleted with its linked sign-ins after its data is erased
+([ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)). The last instance admin is the one exception: its
+data is erased, but the account stays and a warning is logged.
+
 `POST https://<app origin>/api/v1/webhooks/account-deleted`
 
 ### Signing
@@ -130,14 +135,14 @@ event types later.
 
 ### Answers
 
-| Status | Meaning                                                                                                                       |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `204`  | The erasure is **finished** (it is done before the answer), or the event was of another type                                  |
-| `400`  | The signature is valid, but the body is not an account event or `data.userId` is not an id                                    |
-| `401`  | `invalid-signature`: the signature is missing, wrong, or its timestamp is outside the window. Checked before the body is read |
-| `404`  | My Surveys has no webhook secret configured                                                                                   |
-| `413`  | The body is over 64 KiB                                                                                                       |
-| `5xx`  | A store failure; retry                                                                                                        |
+| Status | Meaning                                                                                                                                                                  |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `204`  | The erasure is **finished** (it is done before the answer), or the event was of another type. An id My Surveys does not know is acknowledged (`204`) and changes nothing |
+| `400`  | The signature is valid, but the body is not an account event or `data.userId` is not an id                                                                               |
+| `401`  | `invalid-signature`: the signature is missing, wrong, or its timestamp is outside the window. Checked before the body is read                                            |
+| `404`  | My Surveys has no webhook secret configured                                                                                                                              |
+| `413`  | The body is over 64 KiB                                                                                                                                                  |
+| `5xx`  | A store failure; retry                                                                                                                                                   |
 
 **Retries are welcome.** Erasing the same user twice does nothing the second time, so send again after any answer other
 than `204`. My Surveys does not keep the ids of messages it has seen; the five-minute window and the idempotent

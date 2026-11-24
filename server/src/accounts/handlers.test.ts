@@ -1,11 +1,14 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
+import { SESSION_COOKIE } from "../auth/cookies.js";
+import { createSession, encodeSession } from "../auth/session.js";
 import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
 import { createProviders } from "../providers/index.js";
-import { ERASABLE_ID } from "../providers/suite/expected.js";
+import { ERASABLE_ID, UNKNOWN_ID } from "../providers/suite/expected.js";
+import type { LocalAccountStore, ProviderSet } from "../providers/types.js";
 import { signWebhook } from "./webhook.js";
 import { webhookKey } from "./webhook-secret.js";
 
@@ -221,5 +224,241 @@ describe("receiveAccountDeleted: events", () => {
 
     const again = await deliver(server, { body: deleted(ERASABLE_ID) });
     expect(again.statusCode).toBe(204);
+  });
+});
+
+describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
+  const SESSION_SECRET = "a-test-only-session-secret-of-32-chars-or-more";
+  // The surveyjs.io id of an account an admin created with another id (synthetic).
+  const SITE_ID = "11111111-0000-4000-8000-000000000042";
+  const CREATED_AT = new Date(NOW_MS - 86_400_000).toISOString();
+  const HOSTED = {
+    APP_EDITION: "hosted",
+    USER_DIRECTORY: "local",
+    AUTH_METHODS: "surveyjs",
+    OIDC_ISSUER_URL: "https://auth.example.com",
+    OIDC_CLIENT_ID: "s-client",
+    OIDC_CLIENT_SECRET: "test-only-oidc-secret",
+    ADMIN_EMAIL: "admin@example.com",
+    ACCOUNT_WEBHOOK_SECRET: SECRET,
+  };
+  /** USER_DIRECTORY=local without APP_EDITION=hosted: the self-hosted edition. */
+  const SELF_HOSTED = {
+    USER_DIRECTORY: "local",
+    AUTH_METHODS: "password",
+    ADMIN_EMAIL: "admin@example.com",
+    ADMIN_PASSWORD: "first admin password",
+    ACCOUNT_WEBHOOK_SECRET: SECRET,
+  };
+
+  /** Empty memory with local accounts; `build` starts the app on them. */
+  async function startLocal(env: Record<string, string>) {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      PUBLIC_BASE_URL: "https://studio.example.com",
+      SESSION_SECRET,
+      ...env,
+    });
+    const providers = await createProviders(config);
+    const accounts = providers.accounts!;
+    const lines: string[] = [];
+    const build = async () => {
+      app = await buildApp(config, providers, {
+        now: () => NOW_MS,
+        logStream: { write: (line) => lines.push(line) },
+      });
+      return app;
+    };
+    return { build, providers, accounts, lines };
+  }
+
+  /** A local account for Erin, with a `surveyjs` identity whose subject is `subject` when given. */
+  async function seedErin(
+    accounts: LocalAccountStore,
+    { subject, instanceRole = "user" }: { subject?: string; instanceRole?: "admin" | "user" } = {},
+  ) {
+    await accounts.createAccount({
+      id: ERASABLE_ID,
+      email: ERASABLE_EMAIL,
+      displayName: "Erin Erasable",
+      instanceRole,
+      status: "active",
+      passwordHash: null,
+      mustChangePassword: false,
+      createdAt: CREATED_AT,
+    });
+    if (subject !== undefined) {
+      const linked = await accounts.linkIdentity({
+        provider: "surveyjs",
+        subject,
+        userId: ERASABLE_ID,
+        email: ERASABLE_EMAIL,
+        emailVerified: true,
+        createdAt: CREATED_AT,
+      });
+      expect(linked).toBe("linked");
+    }
+  }
+
+  /** A personal survey of Erin, stored directly; returns a function that lists Erin's surveys. */
+  async function erinsData(providers: ProviderSet) {
+    await providers.surveys.createSurvey({
+      id: "eeeeeeee-0000-4000-8000-0000000000f1",
+      name: "Erin's survey",
+      owner: { kind: "personal", userId: ERASABLE_ID },
+      creatorId: ERASABLE_ID,
+      postId: "eeeeeeee-0000-4000-8000-0000000000f2",
+      resultId: "eeeeeeee-0000-4000-8000-0000000000f3",
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+    });
+    const surveys = () =>
+      providers.surveys.listSurveyIds({ kind: "personal", userId: ERASABLE_ID });
+    expect(await surveys()).toHaveLength(1);
+    return surveys;
+  }
+
+  const logEntries = (lines: readonly string[]) =>
+    lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  it("erases the data and deletes the account whose id is the surveyjs.io id, with its identities", async () => {
+    const { build, providers, accounts, lines } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID });
+    const surveys = await erinsData(providers);
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(ERASABLE_ID.toUpperCase()) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toEqual([]);
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    expect(await accounts.listIdentities(ERASABLE_ID)).toEqual([]);
+    expect(await accounts.accountByIdentity("surveyjs", ERASABLE_ID)).toBeNull();
+    expect(lines.join("\n")).not.toContain(ERASABLE_EMAIL);
+  });
+
+  it("finds an account an admin created with another id by its surveyjs identity (Review Focus 3)", async () => {
+    const { build, providers, accounts, lines } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: SITE_ID });
+    const surveys = await erinsData(providers);
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(SITE_ID.toUpperCase()) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toEqual([]);
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    expect(await accounts.accountByIdentity("surveyjs", SITE_ID)).toBeNull();
+    const erased = logEntries(lines).filter((e) => e.msg === "Erased the data of an account.");
+    expect(erased.map((e) => e.userId)).toEqual([ERASABLE_ID]);
+  });
+
+  it("finds an account by its id when no identity names the surveyjs.io id", async () => {
+    const { build, providers, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts);
+    const surveys = await erinsData(providers);
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(ERASABLE_ID) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toEqual([]);
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+  });
+
+  it("acknowledges an id Studio does not know with 204, and changes nothing (Review Focus 3)", async () => {
+    const { build, providers, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: SITE_ID });
+    const surveys = await erinsData(providers);
+    const server = await build();
+    const before = await accounts.account(ERASABLE_ID);
+
+    const res = await deliver(server, { body: deleted(UNKNOWN_ID) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toHaveLength(1);
+    expect(await accounts.account(ERASABLE_ID)).toEqual(before);
+    expect(await accounts.accountByIdentity("surveyjs", SITE_ID)).toMatchObject({
+      user: { id: ERASABLE_ID },
+    });
+    expect(await accounts.countAccounts()).toBe(1);
+  });
+
+  it("erases the last instance admin's data but keeps the account, warning with the id only", async () => {
+    const { build, providers, accounts, lines } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    const surveys = await erinsData(providers);
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(ERASABLE_ID) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toEqual([]);
+    // The store refuses to disable the last active admin, as it refuses to delete it.
+    expect(await accounts.account(ERASABLE_ID)).toMatchObject({
+      user: { id: ERASABLE_ID },
+      instanceRole: "admin",
+      status: "active",
+    });
+    const warnings = logEntries(lines).filter((e) => e.level === 40);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        userId: ERASABLE_ID,
+        msg: "the deleted surveyjs.io account was the last instance admin: data erased, account kept active",
+      }),
+    ]);
+    expect(lines.join("\n")).not.toContain(ERASABLE_EMAIL);
+  });
+
+  it("ends the deleted account's sessions at once on this server", async () => {
+    const { build, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID });
+    const server = await build();
+    const csrf = "a-test-csrf-token";
+    const session = createSession(
+      { sub: ERASABLE_ID, name: "Erin Erasable", email: ERASABLE_EMAIL, avatarUrl: null },
+      csrf,
+      3600,
+      () => NOW_MS,
+      (await accounts.account(ERASABLE_ID))!.sessionEpoch,
+    );
+    const me = () =>
+      server.inject({
+        url: "/api/v1/me",
+        headers: { cookie: `${SESSION_COOKIE}=${encodeSession(SESSION_SECRET, session)}` },
+      });
+    // The session check now holds the account; the clock does not move, so only `forget` clears it.
+    expect((await me()).statusCode).toBe(200);
+
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+
+    expect((await me()).statusCode).toBe(401);
+  });
+
+  it("answers 500 when the account store fails, so the site retries", async () => {
+    const { build, providers, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID });
+    await erinsData(providers);
+    vi.spyOn(accounts, "deleteAccount").mockRejectedValue(new Error("the store is down"));
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(ERASABLE_ID) });
+
+    expect(res.statusCode).toBe(500);
+    // Disabled before the erasure: it can no longer sign in, and a retry finishes the delete.
+    expect(await accounts.account(ERASABLE_ID)).toMatchObject({ status: "disabled" });
+  });
+
+  it("keeps today's behaviour without APP_EDITION=hosted: the data is erased, the account stays", async () => {
+    const { build, providers, accounts } = await startLocal(SELF_HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID });
+    const surveys = await erinsData(providers);
+    const server = await build();
+
+    const res = await deliver(server, { body: deleted(ERASABLE_ID) });
+
+    expect(res.statusCode).toBe(204);
+    expect(await surveys()).toEqual([]);
+    expect(await accounts.account(ERASABLE_ID)).toMatchObject({ status: "active" });
   });
 });

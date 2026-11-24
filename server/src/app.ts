@@ -347,6 +347,9 @@ export async function buildApp(
       ...createAccountHandlers({
         webhookSecret: config.accountWebhookSecret,
         eraseAccount,
+        accounts,
+        hosted: config.edition === "hosted",
+        sessionCheck: local?.sessionCheck ?? null,
         ...(options.now && { now: options.now }),
       }),
     },
