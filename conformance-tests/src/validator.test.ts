@@ -177,7 +177,7 @@ describe("validator (real contract, smoke)", () => {
         privacyUrl: null,
         poweredBy: true,
       },
-      features: { embed: true, apiDocs: true, apiTokens: true },
+      features: { embed: true, apiDocs: true, apiTokens: true, legacyKeyRevoke: false },
     };
     expect(await v.check("GET", "/config", respond(200, config, JSON_TYPE))).toEqual([]);
     const bad = respond(200, { ...config, edition: "x" }, JSON_TYPE);

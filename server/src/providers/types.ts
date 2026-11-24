@@ -631,6 +631,60 @@ export interface ProjectStore {
   listUserProjectIds(userId: string): Promise<string[]>;
 }
 
+/** An API token as stored: never the value, only its last four characters. */
+export interface ApiTokenRecord {
+  readonly id: string;
+  readonly creatorId: string;
+  readonly projectId: string | null;
+  readonly name: string;
+  readonly lastFour: string;
+  readonly createdAt: string;
+  readonly lastUsedAt: string | null;
+  /** Null for a usable token; when it was revoked otherwise (it then does not authenticate). */
+  readonly revokedAt: string | null;
+}
+
+export interface LegacyKeyMatch {
+  readonly userId: string;
+  readonly revoked: boolean;
+}
+
+/** API tokens and the per-user access keys that predate them. Values are stored only as hashes. */
+export interface CredentialStore {
+  createApiToken(
+    token: Omit<ApiTokenRecord, "lastUsedAt" | "revokedAt">,
+    hash: string,
+  ): Promise<void>;
+  /** By the hash of the value; revoked tokens too (with `revokedAt`). */
+  findApiToken(hash: string): Promise<ApiTokenRecord | null>;
+  /** By id (any letter case); revoked tokens too. Null for an unknown id or one that is not a GUID. */
+  getApiToken(id: string): Promise<ApiTokenRecord | null>;
+  /** The scope's tokens that are not revoked, newest first (`createdAt` descending, then `id`). */
+  listApiTokens(
+    scope: { readonly creatorId: string } | { readonly projectId: string },
+  ): Promise<ApiTokenRecord[]>;
+  /** False when the token is unknown or already revoked (the first revocation time stays). */
+  revokeApiToken(id: string, at: string): Promise<boolean>;
+  /**
+   * Swaps the stored hash and last four of an unrevoked token. False when the token is unknown or
+   * revoked, also when a concurrent change left it revoked. Two concurrent replaces both succeed,
+   * one after the other: the last value wins and the earlier one no longer authenticates.
+   */
+  replaceApiTokenHash(id: string, hash: string, lastFour: string): Promise<boolean>;
+  touchApiToken(id: string, at: string): Promise<void>;
+  /** Revokes every unrevoked token the user created, project tokens too; returns how many. */
+  revokeApiTokensOfCreator(userId: string, at: string): Promise<number>;
+  /** Revokes every unrevoked token of the project; returns how many. */
+  revokeApiTokensOfProject(projectId: string, at: string): Promise<number>;
+  /** By the value, without regard to letter case. Null when no user has this key. */
+  findLegacyKey(value: string): Promise<LegacyKeyMatch | null>;
+  legacyKeyOf(
+    userId: string,
+  ): Promise<{ readonly lastFour: string; readonly revoked: boolean } | null>;
+  /** False when the user has no key. */
+  revokeLegacyKey(userId: string, at: string): Promise<boolean>;
+}
+
 export interface ProviderSet {
   readonly name: string;
   readonly surveys: SurveyStore;
@@ -645,6 +699,8 @@ export interface ProviderSet {
   readonly files: FileStore;
   readonly results: ResultStore;
   readonly views: ViewStore;
+  /** API tokens and legacy access keys. */
+  readonly credentials: CredentialStore;
   /** Selected by `ACCOUNT_NOTICES`. */
   readonly notices: AccountNotices;
   /** Every check `ready()` runs, by name: `/readyz` lists them all when `ready()` itself fails. */

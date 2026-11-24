@@ -199,6 +199,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace the credential of this request
+         * @description Bearer only. The API token that signs the request is rotated: the old value stops working and a
+         *     new one, with the same name and scope, comes back (shown once). A legacy access key cannot be
+         *     replaced here (`409 legacy-key-replace-unavailable`).
+         */
+        post: operations["replaceCurrentCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config": {
         parameters: {
             query?: never;
@@ -214,6 +236,81 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List API tokens
+         * @description Without `project`: the caller's Personal tokens and their legacy access key, if they have
+         *     one. With `project`: the tokens of that project, for its admins (`403 forbidden` for other
+         *     members, `404` for a project the caller does not belong to); `legacyKey` is then `null`.
+         *     The values are never returned.
+         */
+        get: operations["listApiTokens"];
+        put?: never;
+        /**
+         * Create an API token
+         * @description A Personal token (`projectId: null`) acts on the caller's personal surveys. A project token
+         *     acts with a project admin's rights and needs a project the caller administers (`403 forbidden`
+         *     for other members, `404` for a project the caller does not belong to). The value is in the
+         *     answer only; it cannot be read again.
+         */
+        post: operations["createApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-tokens/{tokenId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an API token
+         * @description The owner revokes a Personal token; a project admin revokes a project token. The token stops
+         *     working at once. Anyone else gets `404`.
+         */
+        delete: operations["revokeApiToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-tokens/legacy-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke the legacy access key
+         * @description Switches off the caller's legacy access key. `409 legacy-key-revoke-unavailable` while the
+         *     instance has not turned legacy key revocation on (`features.legacyKeyRevoke`); `404` when the
+         *     caller has no legacy key.
+         */
+        delete: operations["revokeLegacyAccessKey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -529,6 +626,8 @@ export interface paths {
          *     whose names are `New Survey N`. Without a `definition`, the survey starts
          *     from the default template. The default template is an empty survey (`{}`).
          *     A new survey is published: it runs at once, as on surveyjs.io.
+         *     Without `projectId` an API token creates in its own scope; a `projectId` outside that scope
+         *     answers `404`.
          */
         post: operations["createSurvey"];
         delete?: never;
@@ -1091,7 +1190,7 @@ export interface components {
              * @description Stable machine-readable error code. `internal-error` is used for unexpected server errors (`500`).
              * @enum {string}
              */
-            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "internal-error";
+            code: "bad-request" | "unauthenticated" | "invalid-signature" | "forbidden" | "csrf-token-invalid" | "not-found" | "survey-not-available" | "user-not-found" | "view-not-found" | "survey-not-archived" | "already-member" | "already-invited" | "last-admin" | "already-completed" | "edit-conflict" | "if-match-required" | "payload-too-large" | "quota-exceeded" | "unsupported-media-type" | "not-acceptable" | "validation-failed" | "rate-limited" | "not-implemented" | "read-only" | "invalid-credentials" | "account-locked" | "password-too-weak" | "password-change-required" | "link-invalid" | "email-taken" | "last-instance-admin" | "legacy-key-revoke-unavailable" | "legacy-key-replace-unavailable" | "internal-error";
             /** @description Present for `validation-failed`. */
             errors?: {
                 /** @description JSON Pointer to the invalid field. */
@@ -1314,6 +1413,48 @@ export interface components {
             apiDocs: boolean;
             /** @description The API tokens page (hosted track). */
             apiTokens: boolean;
+            /** @description Whether a user can revoke their legacy access key in the API tokens page. */
+            legacyKeyRevoke: boolean;
+        };
+        ApiToken: {
+            id: components["schemas"]["Id"];
+            name: string;
+            /** @description The project the token acts in, or `null` for a Personal token. */
+            projectId: components["schemas"]["Id"] | null;
+            /** @description The last four characters of the value. */
+            lastFour: string;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description When the token was last used, to the minute; `null` if never.
+             */
+            lastUsedAt: string | null;
+            createdBy: {
+                id: components["schemas"]["Id"];
+                displayName: string;
+            };
+        };
+        LegacyAccessKey: {
+            /** @description The last four characters of the key. */
+            lastFour: string;
+            /** @description Whether `DELETE /api-tokens/legacy-key` works on this instance (`features.legacyKeyRevoke`). */
+            revocable: boolean;
+        };
+        ApiTokenList: {
+            /** @description The caller's legacy access key; always `null` when the list is of a project. */
+            legacyKey: components["schemas"]["LegacyAccessKey"] | null;
+            tokens: components["schemas"]["ApiToken"][];
+        };
+        ApiTokenCreate: {
+            name: string;
+            /** @description A project the caller administers, or `null` for a Personal token. */
+            projectId: components["schemas"]["Id"] | null;
+        };
+        ApiTokenCreated: {
+            token: components["schemas"]["ApiToken"];
+            /** @description The token value (`sjs_` and 43 characters). Shown once; only a hash is kept. */
+            value: string;
         };
         /** @enum {string} */
         ProjectRole: "admin" | "user";
@@ -1695,7 +1836,7 @@ export interface components {
         /**
          * @description The request conflicts with the current state. Codes:
          *     `survey-not-archived`, `already-member`, `already-invited`, `last-admin`, `already-completed`, `email-taken`,
-         *     `last-instance-admin`.
+         *     `last-instance-admin`, `legacy-key-revoke-unavailable`, `legacy-key-replace-unavailable`.
          */
         Conflict: {
             headers: {
@@ -2117,6 +2258,33 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    replaceCurrentCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new value. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The new credential value, shown once. */
+                        value: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
     getConfig: {
         parameters: {
             query?: never;
@@ -2135,6 +2303,115 @@ export interface operations {
                     "application/json": components["schemas"]["AppConfig"];
                 };
             };
+        };
+    };
+    listApiTokens: {
+        parameters: {
+            query?: {
+                /** @description A project ID. Omit for the caller's Personal tokens. */
+                project?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            501: components["responses"]["NotImplemented"];
+        };
+    };
+    createApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    revokeApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
+        };
+    };
+    revokeLegacyAccessKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["ReadOnly"];
         };
     };
     listUsers: {
@@ -2647,7 +2924,11 @@ export interface operations {
     listSurveys: {
         parameters: {
             query?: {
-                /** @description `personal`, or the ID of a project the user belongs to. */
+                /**
+                 * @description `personal`, or the ID of a project the user belongs to. Absent: the caller's own space —
+                 *     Personal for sessions, legacy keys and Personal tokens; the token's project for a
+                 *     project token.
+                 */
                 project?: string;
                 /** @description `false` lists active surveys; `true` lists archived ones. */
                 archived?: boolean;
@@ -2702,6 +2983,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             503: components["responses"]["ReadOnly"];
         };

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,11 @@ import { openDatabase, scratchDatabase } from "../sql/scratch-databases.js";
 import { seedSqlStores } from "../sql/seed.js";
 import { withSeedInvitation } from "./seed-invitations.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
+import { createSqlCredentialStore } from "../sql/credential-store.js";
+import { createSqlProjectStore } from "../sql/project-store.js";
+import { usersById } from "../sql/account-store.js";
 import { createSqlProviders } from "./sql.js";
+import type { CredentialsUnderTest } from "./suite/credential-store-suite.js";
 import type { ProviderSet } from "./types.js";
 
 /** Where a suite run keeps file bytes, and how to remove them afterwards. */
@@ -57,6 +62,33 @@ export async function createSeededSqlProviders(
       await providers.close();
       await scratch.drop();
       await files.remove();
+    },
+  };
+}
+
+/** The SQL credential store on a new, migrated scratch database; `close` drops it. */
+export async function scratchCredentials(dialect: SqlDialectName): Promise<CredentialsUnderTest> {
+  const scratch = await scratchDatabase(dialect);
+  const database = openDatabase(scratch.target);
+  await migrate(database);
+  const projects = createSqlProjectStore(database, usersById);
+  return {
+    store: createSqlCredentialStore(database),
+    seedsLegacyKeys: false,
+    seedLegacyKey: () => Promise.reject(new Error("The SQL store has no legacy keys")),
+    async newProjectId() {
+      const id = randomUUID();
+      await projects.createProject({
+        id,
+        name: `Project ${id}`,
+        creatorId: randomUUID(),
+        createdAt: "2026-11-01T10:00:00.000Z",
+      });
+      return id;
+    },
+    async close() {
+      await database.close();
+      await scratch.drop();
     },
   };
 }

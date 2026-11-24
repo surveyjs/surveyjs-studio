@@ -37,6 +37,7 @@ import {
   surveyListOrder,
 } from "./ordering.js";
 import { createMemoryLocalAccounts } from "./memory-accounts.js";
+import { createMemoryCredentials } from "./memory-credentials.js";
 import { createMemoryInvitations } from "./memory-invitations.js";
 import { seedInstanceAdmin } from "./seed-instance-admin.js";
 import { createMemoryFileStore } from "./memory-files.js";
@@ -77,6 +78,8 @@ export interface MemorySeed {
   legacyViews?: Record<string, Partial<Record<ViewName, Record<string, unknown>>>>;
   /** The names of the questions hidden from public results, by survey id (Step 10). */
   privateResultQuestions?: Record<string, string[]>;
+  /** The legacy access key of a user, by user id. */
+  legacyAccessKeys?: Record<string, string>;
 }
 
 interface StoredHistoryEntry {
@@ -166,6 +169,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     ...(seed?.privateResultQuestions && { privateResultQuestions: seed.privateResultQuestions }),
   });
 
+  const credentials = createMemoryCredentials(seed?.legacyAccessKeys).store;
   const findSurvey = (id: string) => surveys.find((s) => s.id === lower(id));
 
   /** Stores a new survey; throws on a duplicate id. */
@@ -388,6 +392,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     files: createMemoryFileStore(),
     results: results.store,
     views: views.store,
+    credentials,
     users: local?.users ?? {
       kind: "external",
       getUser: (id) => {
@@ -476,7 +481,8 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
         memberships = memberships.filter((m) => m.projectId !== key);
         invitations?.dropProject(key);
         projects.delete(key);
-        return Promise.resolve(moved.sort());
+        // The project's API tokens go with it (ADR 0037); the SQL stores' foreign key does this.
+        return credentials.revokeApiTokensOfProject(key, now).then(() => moved.sort());
       },
       addMember: (projectId, userId, role) => {
         const key = lower(projectId);

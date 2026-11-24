@@ -11,6 +11,7 @@ import { buildApp, type BuildOptions } from "./app.js";
 import { signIn } from "./auth/testing.js";
 import { loadConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import { hashCredential, lastFour, newApiTokenValue } from "./credentials/format.js";
 import { newFileId } from "./domain/file-id.js";
 import { PROBLEM_CONTENT_TYPE, toProblem } from "./errors.js";
 import { createProviders, type ProviderSet } from "./providers/index.js";
@@ -82,7 +83,7 @@ describe("getConfig", () => {
         privacyUrl: null,
         poweredBy: true,
       },
-      features: { embed: true, apiDocs: true, apiTokens: true },
+      features: { embed: true, apiDocs: true, apiTokens: true, legacyKeyRevoke: false },
     });
   });
 
@@ -135,7 +136,7 @@ describe("getConfig", () => {
         poweredBy: false,
       },
       // Outside the surveyjs-site shell (D21).
-      features: { embed: false, apiDocs: false, apiTokens: false },
+      features: { embed: false, apiDocs: false, apiTokens: false, legacyKeyRevoke: false },
       // SHELL_LINKS replaces a built-in link and adds a new one; the others stay.
       links: {
         settings: "https://surveyjs.io/manage",
@@ -144,6 +145,43 @@ describe("getConfig", () => {
         status: "https://status.example.com/",
       },
     });
+  });
+});
+
+describe("bearer authentication", () => {
+  it("authenticates an API token without a cookie or CSRF token, and refuses an unknown one", async () => {
+    const server = await start();
+    const value = newApiTokenValue();
+    await providers!.credentials.createApiToken(
+      {
+        id: "7f1e8c52-3d4b-4a6e-9c1f-2b3a4c5d6e7f",
+        creatorId: ownerUser.id,
+        projectId: null,
+        name: "CI",
+        lastFour: lastFour(value),
+        createdAt: "2026-11-18T09:00:00.000Z",
+      },
+      hashCredential(value, "api-token"),
+    );
+    const authorization = `Bearer ${value}`;
+    const me = await server.inject({ url: "/api/v1/me", headers: { authorization } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ id: ownerUser.id });
+    expect(me.json()).not.toHaveProperty("scope");
+    expect(me.json()).not.toHaveProperty("credential");
+    const created = await server.inject({
+      method: "POST",
+      url: "/api/v1/surveys",
+      headers: { authorization },
+      payload: { name: "By token" },
+    });
+    expect(created.statusCode).toBe(201);
+    const unknown = await server.inject({
+      url: "/api/v1/surveys",
+      headers: { authorization: `Bearer ${newApiTokenValue()}` },
+    });
+    expect(unknown.statusCode).toBe(401);
+    expect(unknown.json()).toMatchObject({ code: "unauthenticated" });
   });
 });
 
@@ -352,6 +390,7 @@ function contractOperations(): ContractOperation[] {
     userId: MEMBER_ID,
     fileId: STORED_FILE.id,
     entryId: feedbackHistoryIds[0] ?? "",
+    tokenId: OWNER_TOKEN.id,
   };
   const methods = ["get", "put", "post", "delete", "patch", "options", "head", "trace"];
   const operations: ContractOperation[] = [];
@@ -381,6 +420,16 @@ const STORED_FILE = {
   createdAt: "2026-01-01T00:00:00.000Z",
 } as const;
 
+/** An API token of the owner the coverage test stores before `revokeApiToken`. */
+const OWNER_TOKEN = {
+  id: "aaaaaaaa-0000-4000-8000-0000000000a1",
+  creatorId: ownerUser.id,
+  projectId: null,
+  name: "Coverage",
+  lastFour: "abcd",
+  createdAt: "2026-01-01T00:00:00.000Z",
+} as const;
+
 /** A synthetic webhook secret (base64 of 24 bytes). */
 const COVERAGE_ENV = { ACCOUNT_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 1).toString("base64")}` };
 
@@ -402,15 +451,18 @@ describe("contract coverage", () => {
       if (op.operationId === "downloadFile") {
         await providers?.files.putFile(STORED_FILE, Buffer.from([0]));
       }
+      if (op.operationId === "revokeApiToken") {
+        await providers?.credentials.createApiToken(OWNER_TOKEN, "coverage-token-hash");
+      }
       const res = await server.inject({
         method: op.method as "GET",
         url: `/api/v1${op.url}`,
         headers,
       });
       expect(res.statusCode).not.toBe(404);
-      // The webhook is called without a signature.
+      // The webhook is called without a signature; the bearer-only operation with a session.
       const accepted =
-        op.operationId === "receiveAccountDeleted"
+        op.operationId === "receiveAccountDeleted" || op.operationId === "replaceCurrentCredential"
           ? [401]
           : [200, 201, 204, 302, 400, 409, 422, 501];
       expect(accepted).toContain(res.statusCode);

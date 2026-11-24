@@ -72,6 +72,7 @@ export const appVariables = [
   "SHELL_LINKS",
   "WEB_ROOT",
   "READ_ONLY",
+  "LEGACY_KEY_REVOKE",
   "REQUEST_TIMEOUT_SECONDS",
   "E2E_API_PROXY_TARGET",
 ];

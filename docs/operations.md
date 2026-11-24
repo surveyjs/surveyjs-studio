@@ -367,24 +367,25 @@ repository, a ticket or a chat.
 The app at `https://studio.surveyjs.io` on the surveyjs.io SQL database and Azure storage accounts, with
 surveyjs.io sign-in, while the old My Surveys section still runs.
 
-| Variable                                   | Value                                                                      |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                |
-| `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                        |
-| `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                               |
-| `STORAGE_PROVIDER`                         | Set: `azure-legacy` (the default is `memory`)                              |
-| `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                |
-| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                          |
-| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                          |
-| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, the default (`dev` is refused when `NODE_ENV=production`) |
-| `OIDC_ISSUER_URL`                          | Required: `https://auth.surveyjs.io`                                       |
-| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`     | Required: the client registered there; the secret is **secret**            |
-| `ACCOUNT_NOTICES`                          | Set: `surveyjs-licenses` (the default is `none`)                           |
-| `USER_DIRECTORY`                           | Leave unset: the default `surveyjs-sql` reads the site's `Users` table     |
-| `TRUST_PROXY`                              | Set: the reverse proxy's address ([above](#running-the-image))             |
-| `READ_ONLY`                                | `true` in rollout step 1, then unset or `false` (the default)              |
-| `SURVEYJS_LICENSE_KEY`                     | Set: the SurveyJS licence key; without it the licence banner shows         |
-| `NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT`     | Set by the image; leave them                                               |
+| Variable                                   | Value                                                                                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                          | Required: the https origin the browser uses, without a path                                                                   |
+| `SESSION_SECRET`                           | Required: at least 32 random characters; **secret**                                                                           |
+| `APP_EDITION`                              | Set: `hosted` (the default is `self-hosted`)                                                                                  |
+| `STORAGE_PROVIDER`                         | Set: `azure-legacy` (the default is `memory`)                                                                                 |
+| `LEGACY_SQL_CONNECTION_STRING`             | Required: the site SQL database; **secret**                                                                                   |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | Required: the surveys storage account; **secret**                                                                             |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | Required: the results storage account; **secret**                                                                             |
+| `IDENTITY_PROVIDER`                        | `surveyjs-oidc`, the default (`dev` is refused when `NODE_ENV=production`)                                                    |
+| `OIDC_ISSUER_URL`                          | Required: `https://auth.surveyjs.io`                                                                                          |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`     | Required: the client registered there; the secret is **secret**                                                               |
+| `ACCOUNT_NOTICES`                          | Set: `surveyjs-licenses` (the default is `none`)                                                                              |
+| `USER_DIRECTORY`                           | Leave unset: the default `surveyjs-sql` reads the site's `Users` table                                                        |
+| `TRUST_PROXY`                              | Set: the reverse proxy's address ([above](#running-the-image))                                                                |
+| `READ_ONLY`                                | `true` in rollout step 1, then unset or `false` (the default)                                                                 |
+| `LEGACY_KEY_REVOKE`                        | `false` (the default) until the old API checks keys through Studio; see [API tokens](api/api-tokens.md#the-legacy-access-key) |
+| `SURVEYJS_LICENSE_KEY`                     | Set: the SurveyJS licence key; without it the licence banner shows                                                            |
+| `NODE_ENV`, `HOST`, `PORT`, `WEB_ROOT`     | Set by the image; leave them                                                                                                  |
 
 The other variables keep their defaults: the limits, the rate limits, `REQUEST_TIMEOUT_SECONDS`, `LOG_LEVEL`,
 `OIDC_DISCOVERY` and `OIDC_SCOPES` (which fit `auth.surveyjs.io`), `API_DOCS` (off in production: the reference is
@@ -411,6 +412,7 @@ ACCOUNT_NOTICES=surveyjs-licenses
 SURVEYJS_LICENSE_KEY=<the SurveyJS licence key>
 TRUST_PROXY=<the proxy's address>
 READ_ONLY=true
+LEGACY_KEY_REVOKE=false
 ```
 
 Make a session secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`.

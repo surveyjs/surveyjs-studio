@@ -115,7 +115,8 @@ Full description: [Authentication, sessions and CSRF](authentication.md).
 - Requests that change data (`POST`, `PUT`, `PATCH`, `DELETE`) must also send `X-CSRF-Token`
   with the value of the readable `msid_csrf` cookie (double-submit). Otherwise: `403 csrf-token-invalid`.
 - Order of checks: authentication (`401`), CSRF (`403`), request validation, then the handler.
-- Bearer API tokens (`Authorization: Bearer <token>`) arrive in phase 2 (P1).
+- API clients send an API token or a legacy access key as `Authorization: Bearer <value>`; a bearer request needs no CSRF
+  token ([API tokens](api-tokens.md)).
 - `/public/*` operations need no authentication. They are rate limited per address
   ([Public endpoints](public-endpoints.md#rate-limits)).
 

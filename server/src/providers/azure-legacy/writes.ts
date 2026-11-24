@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import type { Edm, TableClient, TableEntity, TableServiceClient } from "@azure/data-tables";
+import type {
+  Edm,
+  TableClient,
+  TableEntity,
+  TableServiceClient,
+  TransactionAction,
+} from "@azure/data-tables";
 import type {
   AppendBlobClient,
   BlobRequestConditions,
@@ -31,6 +37,7 @@ import {
 } from "../../projects/rules.js";
 import {
   ResponseTooLargeError,
+  type ApiTokenRecord,
   type AddMemberOutcome,
   type AppendOutcome,
   type MemberErasure,
@@ -1658,4 +1665,311 @@ export async function writeMemberErasure(
     }
     return { value: decision, commit: true };
   });
+}
+
+// --- API tokens and revoked legacy keys (table of our own, never read by legacy code) ------------
+
+/** The app-owned table of the surveys account; created on the first write. */
+export const API_TOKENS_TABLE = "mysurveysapitokens";
+/**
+ * Every API-token row lives in this one partition, so each change to a token is one entity-group
+ * transaction: all of its rows change together or none does, and a token is always either fully at
+ * its old hash or fully at its new one. Row keys (ids lower-case):
+ * - `hash-{hash}`: the record, which a bearer value is looked up by;
+ * - `id-{id}`: the token's current hash. Every write that changes the hash or `revokedAt` writes
+ *   this row too, guarded by the entity tag read before anything else, so these writes are ordered:
+ *   one that read an older state fails as a whole and starts again;
+ * - `creator-{creatorId}-{id}` (every token the user created, with its project) and
+ *   `project-{projectId}-{id}`: the list indexes, holding the token's id and current hash.
+ */
+export const TOKENS_PARTITION = "apitokens";
+export const recordRow = (hash: string): string => `hash-${hash}`;
+export const idRow = (id: string): string => `id-${id.toLowerCase()}`;
+/** The row-key prefixes of the list indexes; the token id follows. */
+export const creatorIndex = (creatorId: string): string => `creator-${creatorId.toLowerCase()}-`;
+export const projectIndex = (projectId: string): string => `project-${projectId.toLowerCase()}-`;
+/** `legacyrevoked/{hash of the key}`: a revoked site key (`userId`, `at`). */
+export const REVOKED_KEY_PARTITION = "legacyrevoked";
+
+/**
+ * Attempts of a guarded write. An attempt fails only when another write to the same token got in
+ * after its reads, so with a few writers at once every one gets through within this many.
+ */
+const ETAG_RETRIES = 10;
+
+/** Runs `run`; when the table is missing, creates it and runs once more. */
+async function withTable<T>(table: TableClient, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (statusOf(error) !== 404) throw error;
+    await createTableIfMissing(table);
+    return run();
+  }
+}
+
+/** The stored record of a token, at `hash-{hash}`. */
+interface TokenRecordRow {
+  readonly id: string;
+  readonly creatorId: string;
+  /** "" for a personal token. */
+  readonly projectId: string;
+  readonly name: string;
+  readonly lastFour: string;
+  readonly createdAt: string;
+  /** "" until first used. */
+  readonly lastUsedAt: string;
+  /** "" while the token authenticates. */
+  readonly revokedAt: string;
+}
+
+/** The token row of this key, with its entity tag; null when it (or the table) is missing. */
+async function tokenRowOf<T extends object>(
+  table: TableClient,
+  rowKey: string,
+): Promise<(T & { etag: string }) | null> {
+  try {
+    return await table.getEntity<T>(TOKENS_PARTITION, rowKey);
+  } catch (error) {
+    if (statusOf(error) === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * The token's id row, then the record it names. Read in this order, a change that lands after the
+ * id row was read makes the guarded transaction fail, and one before it shows in the record.
+ * "unknown": no such token; "moved": replaced between the two reads.
+ */
+async function tokenOf(
+  table: TableClient,
+  id: string,
+): Promise<
+  | { readonly idTag: string; readonly hash: string; readonly record: TokenRecordRow }
+  | "unknown"
+  | "moved"
+> {
+  const entry = await tokenRowOf<{ hash: string }>(table, idRow(id));
+  if (entry === null) return "unknown";
+  const record = await tokenRowOf<TokenRecordRow>(table, recordRow(entry.hash));
+  if (record === null) return "moved";
+  return { idTag: entry.etag, hash: entry.hash, record };
+}
+
+/** Submits the transaction; false when a guard failed (412) or a row is gone (404). */
+async function committed(table: TableClient, actions: TransactionAction[]): Promise<boolean> {
+  try {
+    await table.submitTransaction(actions);
+    return true;
+  } catch (error) {
+    const status = statusOf(error);
+    if (status === 412 || status === 404) return false;
+    throw error;
+  }
+}
+
+/** The id row's write in a transaction, guarded by the entity tag read first. */
+const guardedIdRow = (id: string, hash: string, idTag: string): TransactionAction => [
+  "update",
+  { partitionKey: TOKENS_PARTITION, rowKey: idRow(id), hash },
+  "Replace",
+  { etag: idTag },
+];
+
+/** The index rows of a token, pointing at `hash`. */
+function indexRows(id: string, hash: string, creatorId: string, projectId: string): TableEntity[] {
+  const rows: TableEntity[] = [
+    { partitionKey: TOKENS_PARTITION, rowKey: creatorIndex(creatorId) + id, id, hash, projectId },
+  ];
+  if (projectId !== "") {
+    rows.push({ partitionKey: TOKENS_PARTITION, rowKey: projectIndex(projectId) + id, id, hash });
+  }
+  return rows;
+}
+
+/** Stores the token: the record, its id row and its index rows, in one transaction. */
+export async function writeApiTokenCreation(
+  table: TableClient,
+  token: Omit<ApiTokenRecord, "lastUsedAt" | "revokedAt">,
+  hash: string,
+): Promise<void> {
+  const id = token.id.toLowerCase();
+  const creatorId = token.creatorId.toLowerCase();
+  const projectId = token.projectId === null ? "" : token.projectId.toLowerCase();
+  const record: TokenRecordRow = {
+    id,
+    creatorId,
+    projectId,
+    name: token.name,
+    lastFour: token.lastFour,
+    createdAt: token.createdAt,
+    lastUsedAt: "",
+    revokedAt: "",
+  };
+  const actions: TransactionAction[] = [
+    ["create", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), ...record }],
+    ["create", { partitionKey: TOKENS_PARTITION, rowKey: idRow(id), hash }],
+    ...indexRows(id, hash, creatorId, projectId).map((row): TransactionAction => ["create", row]),
+  ];
+  try {
+    // A missing table fails the whole transaction (404): nothing was written.
+    await withTable(table, () => table.submitTransaction(actions));
+  } catch (error) {
+    throw new LegacyStoreError("api token create", error);
+  }
+}
+
+/**
+ * Revokes the token with this id: `revokedAt` on its record and a guarded write of its id row, in
+ * one transaction. True only when this call set `revokedAt`; false when the token is unknown or
+ * already revoked (the first revocation time stays). A replace that lands meanwhile makes the
+ * transaction fail; the next attempt revokes the token at its new hash.
+ */
+async function revokeById(table: TableClient, id: string, at: string): Promise<boolean> {
+  for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
+    const token = await tokenOf(table, id);
+    if (token === "unknown") return false;
+    if (token === "moved") continue;
+    if (token.record.revokedAt !== "") return false;
+    const done = await committed(table, [
+      [
+        "update",
+        { partitionKey: TOKENS_PARTITION, rowKey: recordRow(token.hash), revokedAt: at },
+        "Merge",
+      ],
+      // Unchanged content: the write orders this revocation before any later replace.
+      guardedIdRow(id, token.hash, token.idTag),
+    ]);
+    if (done) return true;
+  }
+  throw new Error("too many concurrent changes");
+}
+
+/** False when the token is unknown or already revoked; the first revocation time stays. */
+export async function writeApiTokenRevocation(
+  table: TableClient,
+  id: string,
+  at: string,
+): Promise<boolean> {
+  try {
+    return await revokeById(table, id, at);
+  } catch (error) {
+    throw new LegacyStoreError("api token revoke", error);
+  }
+}
+
+/** Revokes the tokens with these ids (a list index's); returns how many this call revoked. */
+export async function writeApiTokenRevocations(
+  table: TableClient,
+  ids: readonly string[],
+  at: string,
+): Promise<number> {
+  try {
+    let count = 0;
+    for (const id of ids) if (await revokeById(table, id, at)) count++;
+    return count;
+  } catch (error) {
+    throw new LegacyStoreError("api token revoke", error);
+  }
+}
+
+/**
+ * Moves an unrevoked token to a new hash and last four in one transaction: the old record goes,
+ * the new one (same id, name, scope, creator, creation and last use) comes, and the id row and
+ * index rows point at it. The id row's write is guarded, so a revoke or another replace that lands
+ * after this call's reads fails the transaction as a whole; the call then reads again. False when
+ * the token is unknown or revoked, then or by a concurrent revoke. Two concurrent replaces both
+ * succeed, one after the other; the later value wins. A `lastUsedAt` written between the reads and
+ * the transaction is lost (the record is copied as read).
+ */
+export async function writeApiTokenHashReplacement(
+  table: TableClient,
+  id: string,
+  hash: string,
+  lastFour: string,
+): Promise<boolean> {
+  const key = id.toLowerCase();
+  try {
+    for (let attempt = 0; attempt < ETAG_RETRIES; attempt++) {
+      const token = await tokenOf(table, key);
+      if (token === "unknown") return false;
+      if (token === "moved") continue;
+      const { record } = token;
+      if (record.revokedAt !== "") return false;
+      const moved: TokenRecordRow = {
+        id: key,
+        creatorId: record.creatorId,
+        projectId: record.projectId,
+        name: record.name,
+        lastFour,
+        createdAt: record.createdAt,
+        lastUsedAt: record.lastUsedAt,
+        revokedAt: "",
+      };
+      const actions: TransactionAction[] =
+        token.hash === hash
+          ? // The same hash again: only the last four change (a row appears once per transaction).
+            [
+              [
+                "update",
+                { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), lastFour },
+                "Merge",
+              ],
+            ]
+          : [
+              ["delete", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(token.hash) }],
+              ["create", { partitionKey: TOKENS_PARTITION, rowKey: recordRow(hash), ...moved }],
+              ...indexRows(key, hash, record.creatorId, record.projectId).map(
+                (row): TransactionAction => ["upsert", row, "Replace"],
+              ),
+            ];
+      if (await committed(table, [...actions, guardedIdRow(key, hash, token.idTag)])) return true;
+    }
+    throw new Error("too many concurrent changes");
+  } catch (error) {
+    throw new LegacyStoreError("api token hash replace", error);
+  }
+}
+
+/**
+ * Sets `lastUsedAt` on the token's current record; an unknown token is ignored, and so is a record
+ * a concurrent replace has just moved (the use is then not recorded).
+ */
+export async function writeApiTokenUse(table: TableClient, id: string, at: string): Promise<void> {
+  try {
+    const entry = await tokenRowOf<{ hash: string }>(table, idRow(id));
+    if (entry === null) return;
+    await table.updateEntity(
+      { partitionKey: TOKENS_PARTITION, rowKey: recordRow(entry.hash), lastUsedAt: at },
+      "Merge",
+    );
+  } catch (error) {
+    if (statusOf(error) === 404 || statusOf(error) === 412) return;
+    throw new LegacyStoreError("api token use", error);
+  }
+}
+
+/** Records that this key hash is revoked; an earlier revocation (and its time) stays. */
+export async function writeLegacyKeyRevocation(
+  table: TableClient,
+  hash: string,
+  userId: string,
+  at: string,
+): Promise<void> {
+  try {
+    await withTable(table, async () => {
+      try {
+        await table.createEntity({
+          partitionKey: REVOKED_KEY_PARTITION,
+          rowKey: hash,
+          userId: userId.toLowerCase(),
+          at,
+        });
+      } catch (error) {
+        if (statusOf(error) !== 409) throw error;
+      }
+    });
+  } catch (error) {
+    throw new LegacyStoreError("legacy key revoke", error);
+  }
 }

@@ -159,6 +159,19 @@ export interface ProjectInvitationsTable {
   created_at: Timestamp;
 }
 
+export interface ApiTokensTable {
+  id: string;
+  creator_id: string;
+  /** null: a personal token; set: scoped to the project, and deleted with it. */
+  project_id: string | null;
+  name: string;
+  token_hash: string;
+  last_four: string;
+  created_at: Timestamp;
+  last_used_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -175,4 +188,5 @@ export interface DatabaseSchema {
   password_links: PasswordLinksTable;
   user_identities: UserIdentitiesTable;
   project_invitations: ProjectInvitationsTable;
+  api_tokens: ApiTokensTable;
 }

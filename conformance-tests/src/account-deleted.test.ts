@@ -4,7 +4,8 @@
  * Data rules: this file erases only Erin Erasable, and creates her data first (she has none in the
  * fixtures). Every erasure case lives in this one file, so no other file erases her while it runs.
  * Adam Admin is added to Erin's project, is promoted when she is erased, and receives the project's
- * surveys when he deletes it at the end; he then deletes them. The refusal cases name fresh random
+ * surveys when he deletes it at the end; he then deletes them. Erin's API tokens are revoked by the
+ * erasure (or by her session at the end, when it never happened). The refusal cases name fresh random
  * ids, so a refusal that wrongly succeeded would erase nobody.
  */
 import { randomUUID } from "node:crypto";
@@ -21,6 +22,8 @@ const MERGE_PATCH = "application/merge-patch+json";
 type Headers = Record<string, string>;
 
 const event = (type: string, data: unknown): string => JSON.stringify({ type, data });
+
+const bearer = (value: string): Headers => ({ authorization: `Bearer ${value}` });
 
 /** Posts `body` as is (JSON media type) with the given headers. */
 function deliver(body: string, headers: Headers = {}): Promise<Response> {
@@ -170,6 +173,25 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     const aloneSurvey = await created<{ id: string }>(
       await createSurvey(erin, { projectId: alone.id }),
     );
+    // Erin's API tokens: a Personal one and one of the shared project, which outlives her.
+    const tokens: string[] = [];
+    for (const projectId of [null, shared.id]) {
+      const { token, value } = await created<{ token: { id: string }; value: string }>(
+        await call("POST", "/api-tokens", {
+          headers: erin,
+          body: { name: "Conformance erasure", projectId },
+        }),
+      );
+      onTestFinished(async () => {
+        const revoked = await call("DELETE", "/api-tokens/{tokenId}", {
+          path: `/api-tokens/${token.id}`,
+          headers: erin,
+        });
+        expect([204, 404]).toContain(revoked.status);
+      });
+      expect((await call("GET", "/surveys", { headers: bearer(value) })).status).toBe(200);
+      tokens.push(value);
+    }
 
     // An event of another type changes nothing.
     const other = await deliverSigned(event("account.created", { userId: erasable.id }));
@@ -191,6 +213,11 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     for (const archived of [false, true]) {
       const path = `/surveys?project=personal&archived=${archived}&limit=200`;
       expect(await itemsOf(erin, "/surveys", path)).toEqual([]);
+    }
+
+    // Her tokens stop, the shared project's one too.
+    for (const value of tokens) {
+      expect((await call("GET", "/surveys", { headers: bearer(value) })).status).toBe(401);
     }
 
     // Adam's view: the shared project is his, as admin, with its survey.

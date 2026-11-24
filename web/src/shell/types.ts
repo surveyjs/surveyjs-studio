@@ -55,6 +55,8 @@ export interface ShellProps {
   changePasswordLink?: ShellAppLink;
   /** In-app link to the Users page, for an instance admin. */
   usersLink?: ShellAppLink;
+  /** In-app link to the API tokens page (`/config.features.apiTokens`). */
+  apiTokensLink?: ShellAppLink;
   /** In-app link to My Surveys (the self-hosted shell's header). */
   homeLink?: ShellAppLink;
   /** `/config.branding`; the self-hosted shell shows it. */

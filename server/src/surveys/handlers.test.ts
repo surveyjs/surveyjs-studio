@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { createDevIdentityProvider } from "../auth/providers/dev.js";
 import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
+import { hashCredential, lastFour, newApiTokenValue } from "../credentials/format.js";
 import { newFileId } from "../domain/file-id.js";
 import type { StoredFileRecord, SurveyRecord, User } from "../domain/types.js";
 import { createMemoryProviders, type MemorySeed } from "../providers/memory.js";
@@ -588,4 +590,220 @@ describe("files of a cloned survey", () => {
     expect(copyId).not.toBe("");
     expect(await providers.files.usage(copyId, "asset")).toBe(0);
   });
+});
+
+/** Stores an API token of USER (Personal with `projectId` null); answers its bearer headers. */
+async function tokenHeaders(
+  providers: ProviderSet,
+  projectId: string | null,
+): Promise<Record<string, string>> {
+  const value = newApiTokenValue();
+  await providers.credentials.createApiToken(
+    {
+      id: randomUUID(),
+      creatorId: USER.id,
+      projectId,
+      name: "CI",
+      lastFour: lastFour(value),
+      createdAt: NOW,
+    },
+    hashCredential(value, "api-token"),
+  );
+  return { authorization: `Bearer ${value}` };
+}
+
+const otherProjectSurvey = seed.surveys[3];
+
+const ids = (res: { json: <T>() => T }): string[] =>
+  res.json<{ items: { id: string }[] }>().items.map((item) => item.id);
+
+describe("a Personal API token", () => {
+  async function startPersonal() {
+    const { server, providers } = await start();
+    return { server, headers: await tokenHeaders(providers, null) };
+  }
+
+  it("lists the personal surveys and answers 404 for any project", async () => {
+    const { server, headers } = await startPersonal();
+    const listed = await server.inject({ url: "/api/v1/surveys", headers });
+    expect(listed.statusCode).toBe(200);
+    expect(ids(listed)).toEqual([ownPersonal?.id]);
+    const project = await server.inject({ url: `/api/v1/surveys?project=${PROJECT_ID}`, headers });
+    expect(project.statusCode).toBe(404);
+    expect(project.json()).toMatchObject({ code: "not-found" });
+  });
+
+  it("answers 404 for a project survey of the user, as for an unknown one", async () => {
+    const { server, headers } = await startPersonal();
+    for (const url of [
+      `/api/v1/surveys/${ownProject?.id}`,
+      `/api/v1/surveys/${ownProject?.id}/definition`,
+      `/api/v1/surveys/${ownProject?.id}/results`,
+    ]) {
+      const res = await server.inject({ url, headers });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+    const own = await server.inject({ url: `/api/v1/surveys/${ownPersonal?.id}`, headers });
+    expect(own.statusCode).toBe(200);
+  });
+
+  it("creates personal surveys only: a projectId answers 404", async () => {
+    const { server, headers } = await startPersonal();
+    const into = await create(server, headers, { projectId: PROJECT_ID });
+    expect(into.statusCode).toBe(404);
+    expect(into.json()).toMatchObject({ code: "not-found" });
+    const own = await create(server, headers, { name: "By token" });
+    expect(own.statusCode).toBe(201);
+    expect(own.json()).toMatchObject({ projectId: null });
+  });
+
+  it("cannot move or clone a personal survey into a project", async () => {
+    const { server, headers } = await startPersonal();
+    const moved = await patch(server, headers, ownPersonal?.id, { projectId: PROJECT_ID });
+    expect(moved.statusCode).toBe(404);
+    const cloned = await server.inject({
+      method: "POST",
+      url: `/api/v1/surveys/${ownPersonal?.id}/clones`,
+      headers,
+      payload: { projectId: PROJECT_ID },
+    });
+    expect(cloned.statusCode).toBe(404);
+  });
+});
+
+describe("a project API token", () => {
+  /** USER is a plain member of PROJECT_ID; `removed`: no longer a member of any project. */
+  async function startProject(removed = false) {
+    const { server, providers } = await start((base) =>
+      removed
+        ? {
+            ...base,
+            projects: {
+              ...base.projects,
+              getUserProject: () => Promise.resolve(null),
+              listUserProjects: () => Promise.resolve([]),
+            },
+          }
+        : base,
+    );
+    return { server, headers: await tokenHeaders(providers, PROJECT_ID) };
+  }
+
+  it("lists its project's surveys without `project`, and 404 for another project or Personal", async () => {
+    const { server, headers } = await startProject();
+    const listed = await server.inject({ url: "/api/v1/surveys", headers });
+    expect(listed.statusCode).toBe(200);
+    expect(ids(listed)).toEqual([ownProject?.id]);
+    const named = await server.inject({ url: `/api/v1/surveys?project=${PROJECT_ID}`, headers });
+    expect(ids(named)).toEqual([ownProject?.id]);
+    for (const project of [OTHER_PROJECT_ID, "personal"]) {
+      const res = await server.inject({ url: `/api/v1/surveys?project=${project}`, headers });
+      expect(res.statusCode, project).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+  });
+
+  it("answers 404 for a personal survey and a survey of another project", async () => {
+    const { server, headers } = await startProject();
+    for (const id of [ownPersonal?.id, otherProjectSurvey?.id]) {
+      const res = await server.inject({ url: `/api/v1/surveys/${id}`, headers });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+  });
+
+  it("answers 404 on the content, results, views and files of a survey out of its scope", async () => {
+    const { server, headers } = await startProject();
+    const boundary = "token-scope-boundary";
+    const form = Buffer.from(
+      `--${boundary}
+Content-Disposition: form-data; name="file"; filename="a.png"
+` +
+        `Content-Type: image/png
+
+png
+--${boundary}--
+`,
+    );
+    for (const id of [ownPersonal?.id, otherProjectSurvey?.id]) {
+      const requests = [
+        { method: "GET", url: `/api/v1/surveys/${id}/definition` },
+        { method: "GET", url: `/api/v1/surveys/${id}/theme` },
+        { method: "GET", url: `/api/v1/surveys/${id}/history` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results/stats` },
+        { method: "GET", url: `/api/v1/surveys/${id}/results/export?format=json` },
+        { method: "GET", url: `/api/v1/surveys/${id}/views/summary` },
+        {
+          method: "POST",
+          url: `/api/v1/surveys/${id}/assets`,
+          headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+          payload: form,
+        },
+        // Cloning from a source out of scope, into the token's own project.
+        { method: "POST", url: `/api/v1/surveys/${id}/clones` },
+        { method: "POST", url: `/api/v1/surveys/${id}/clones`, payload: { projectId: PROJECT_ID } },
+      ] as const;
+      for (const request of requests) {
+        const res = await server.inject({
+          ...request,
+          headers: { ...headers, ...("headers" in request && request.headers) },
+        });
+        expect(res.statusCode, `${request.method} ${request.url}`).toBe(404);
+        expect(res.json()).toMatchObject({ code: "not-found" });
+      }
+    }
+  });
+
+  it("creates and clones into its project only", async () => {
+    const { server, headers } = await startProject();
+    const created = await create(server, headers, { name: "By token" });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ projectId: PROJECT_ID });
+    expect((await create(server, headers, { projectId: null })).statusCode).toBe(404);
+    expect((await create(server, headers, { projectId: OTHER_PROJECT_ID })).statusCode).toBe(404);
+    const clone = (payload?: object) =>
+      server.inject({
+        method: "POST",
+        url: `/api/v1/surveys/${ownProject?.id}/clones`,
+        headers,
+        ...(payload && { payload }),
+      });
+    for (const projectId of [null, OTHER_PROJECT_ID]) {
+      const res = await clone({ projectId });
+      expect(res.statusCode, String(projectId)).toBe(404);
+      expect(res.json()).toMatchObject({ code: "not-found" });
+    }
+    const copy = await clone();
+    expect(copy.statusCode).toBe(201);
+    expect(copy.json()).toMatchObject({ projectId: PROJECT_ID });
+  });
+
+  for (const removed of [false, true]) {
+    it(`acts as a project admin when its creator ${removed ? "has left the project" : "is a plain member"}`, async () => {
+      const { server, headers } = await startProject(removed);
+      const listed = await server.inject({ url: "/api/v1/surveys?archived=true", headers });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        items: [{ id: colleaguePoll?.id, permissions: { canModify: true } }],
+      });
+      const renamed = await patch(server, headers, colleaguePoll?.id, { name: "Renamed" });
+      expect(renamed.statusCode).toBe(200);
+      expect(renamed.json()).toMatchObject({
+        name: "Renamed",
+        permissions: { canModify: true },
+      });
+      const created = await create(server, headers);
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ projectId: PROJECT_ID });
+      const copy = await server.inject({
+        method: "POST",
+        url: `/api/v1/surveys/${colleaguePoll?.id}/clones`,
+        headers,
+      });
+      expect(copy.statusCode).toBe(201);
+      expect(copy.json()).toMatchObject({ projectId: PROJECT_ID });
+    });
+  }
 });

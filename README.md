@@ -321,7 +321,7 @@ Run from the repository root.
 - [Self-hosting](docs/self-hosting.md): running the free Docker image (mode 2b): settings, an https proxy, PostgreSQL, S3, backups, upgrades.
 - [Operations](docs/operations.md): deployment, monitoring, read-only mode, the configuration by deployment mode, accounts, the erase and reconcile commands, the webhook secret, the header policy, and the rollout and rollback runbook.
 - Accounts and security: [ADR 0018](docs/adr/0018-accounts-by-deployment-mode.md) (accounts by deployment mode) and [ADR 0019](docs/adr/0019-run-page-isolation-and-security-headers.md) (run page isolation and security headers).
-- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14 and the self-hosted Steps 1–11.
+- [Demo scripts](docs/demo/): how to check each step by hand, Steps 1–14, the self-hosted Steps 1–11 and the hosted demos.
 
 **For users and integrators**
 

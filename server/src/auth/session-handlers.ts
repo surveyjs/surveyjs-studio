@@ -295,6 +295,12 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
 
     getCurrentUser: async (request): Promise<CurrentUser> => {
       const user = requireUser(request);
+      // A bearer credential gets the profile only: the account's notices and flags are the
+      // person's to see in a session, and a project token outlives its creator's membership.
+      if (user.credential && user.credential.kind !== "session") {
+        const { id, displayName, email, avatarUrl } = user;
+        return { id, displayName, email, avatarUrl };
+      }
       // Notices are secondary: when their store fails, the user still gets the app (as on
       // surveyjs.io, where a failed licence check shows no dialog), and the failure is logged.
       let current: CurrentUser["notices"] = [];
@@ -304,8 +310,14 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         request.log.error({ err: error }, "account notices are unavailable");
       }
       const account = options.accounts ? await options.accounts.account(user.id) : null;
+      // The profile only: the request's scope and credential are not part of the user.
+      const { id, displayName, email, avatarUrl, instanceRole } = user;
       return {
-        ...user,
+        id,
+        displayName,
+        email,
+        avatarUrl,
+        ...(instanceRole && { instanceRole }),
         ...(account && {
           instanceRole: account.instanceRole,
           mustChangePassword: account.mustChangePassword,

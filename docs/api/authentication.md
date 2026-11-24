@@ -15,7 +15,8 @@ builds the session: [Architecture](../architecture.md#identity-and-session).
 - The result is a **session cookie** `msid`. It is encrypted and signed. The server keeps no session
   state.
 - A request that changes data also needs the **CSRF header** `X-CSRF-Token`.
-- API tokens (`Authorization: Bearer ...`) are P1. In Phase 1 they never authenticate a request.
+- API clients can also send an **API token** or a legacy access key as `Authorization: Bearer <value>`, with no
+  CSRF token. Which operations accept one, and the rules, are in [API tokens](api-tokens.md).
 - Operations marked `security: []` in the contract (`login`, `loginCallback`, `getConfig`,
   `passwordLogin`, `setPasswordWithLink` and `/public/*`) need no session. `logout` works with or without one.
 
@@ -195,7 +196,7 @@ HTTPS.
 
 ## Authenticated requests
 
-The contract's `security` says what an operation needs. In Phase 1:
+The contract's `security` says what an operation needs:
 
 | Contract `security`                   | The server requires                               | Examples                          |
 | ------------------------------------- | ------------------------------------------------- | --------------------------------- |
@@ -203,7 +204,8 @@ The contract's `security` says what an operation needs. In Phase 1:
 | `cookieAuth` (reads)                  | A valid `msid`                                    | `getCurrentUser`, `listSurveys`   |
 | `cookieAuth` and `csrfToken` (writes) | A valid `msid`, and the CSRF header               | `createSurvey`                    |
 | `cookieAuth` and `csrfToken`, or `{}` | Nothing; with a valid `msid`, the CSRF header too | `logout`                          |
-| `bearerAuth` alone                    | Not satisfiable (P1)                              |                                   |
+| `cookieAuth` or `bearerAuth`          | A valid `msid`, or a bearer credential (no CSRF)  | `listSurveys`, `updateSurvey`     |
+| `bearerAuth` alone                    | A bearer credential                               | `replaceCurrentCredential`        |
 
 Checks run in this order, before the body is read:
 
