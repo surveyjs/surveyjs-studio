@@ -176,7 +176,7 @@ description comes from its `org.opencontainers.image.*` labels in the [`Dockerfi
 | Package                                   | Dockerfile target            | Pushed by                                                                                                                                          | Tags                                                                               |
 | ----------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `ghcr.io/surveyjs/surveyjs-studio`        | `self-hosted` (mode 2b)      | `release.yml` on a `vX.Y.Z` tag: linux/amd64 and linux/arm64, with an SBOM and provenance, after the image checks, the scan and an arm64 smoke run | `vX.Y.Z`, `vX.Y` and (from `master`) `latest`; a pre-release gets only its own tag |
-| `ghcr.io/surveyjs/surveyjs-studio-hosted` | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` run: linux/amd64, the image the CI jobs tested                                             | The full commit id; `production`, moved by Actions › Deploy                        |
+| `ghcr.io/surveyjs/surveyjs-studio-hosted` | `runtime` (the hosted image) | CI (`ci.yml`, job `publish`) after every green `master` or `production` run: linux/amd64, the image the CI jobs tested                             | The full commit id; `production`, moved by Actions › Deploy                        |
 
 - **`surveyjs-studio`** is the self-hosted image, the one that will also be published on Docker Hub as
   `surveyjs/surveyjs-studio` ([Releasing the self-hosted image](docs/operations.md#releasing-the-self-hosted-image),
@@ -184,7 +184,7 @@ description comes from its `org.opencontainers.image.*` labels in the [`Dockerfi
   [Self-hosting](docs/self-hosting.md).
 - **`surveyjs-studio-hosted`** is what studio.surveyjs.io runs: its server deploys `:production` within a minute or
   two, and rolls back when the new container is unhealthy. Deploy with Actions › Deploy and the commit id of a green
-  `master` commit ([Deployment](docs/operations.md#deployment),
+  `production` commit, the branch for today's server until the cutover ([Deployment](docs/operations.md#deployment),
   [Updating studio.surveyjs.io](docs/operations/hetzner-server-setup.md#6-update-roll-back-status)).
 - Pulling either needs `docker login ghcr.io` with a GitHub token that has `read:packages` and access to the package.
 - Both images carry the repository's `LICENSE` and the dependency notice `/app/THIRD_PARTY_NOTICES.md`; the

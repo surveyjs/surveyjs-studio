@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, "step/**", "self-hosted/**", "hosted/**"]
+    branches: [master, production, "step/**", "self-hosted/**", "hosted/**"]
   pull_request:
-  # A manual run (Actions › CI › Run workflow); on master it publishes, as a push does.
+  # A manual run (Actions › CI › Run workflow); on master and production it publishes, as a push does.
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' && github.ref != 'refs/heads/production' }}
 
 # The jobs run side by side, each on its own runner (so no two suites share a port). The image is
 # built once, by `image`, and the jobs that test it load that artifact. `ci` passes only when every
@@ -488,11 +488,12 @@ jobs:
     with:
       image-tag: ${{ github.sha }}
 
-  # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>. It runs no
+  # Pushes the image the ci job tested to ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>, for master and for
+  # production (today's server until the cutover: fixes only, ADR 0042). It runs no
   # third-party code, so only this job gets write access to packages.
   publish:
     needs: ci
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
