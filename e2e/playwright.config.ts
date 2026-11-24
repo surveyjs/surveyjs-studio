@@ -23,7 +23,7 @@ stripAppVariables(process.env);
 // "... is already used" when something else holds one of the ports below. `pnpm e2e` checks them
 // first (scripts/ports.mjs) and names the process.
 
-// Two modes, because two server configurations cannot share port 3000:
+// Two modes, because two server configurations cannot share port 3091:
 // - memory (default): the dev identity provider; all specs on Chromium, Firefox and WebKit.
 // - azurite (E2E_MODE=azurite, `pnpm e2e:azurite`): the azure-legacy provider on the local replica
 //   and the mock OIDC server (`pnpm demo:azurite:up` first); the sign-in, survey list, survey actions,

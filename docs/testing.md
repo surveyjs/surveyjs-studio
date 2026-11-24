@@ -542,7 +542,7 @@ pnpm e2e
 `pnpm e2e` builds the web app, then Playwright starts the servers itself and opens the app in three
 browsers. The server runs with the dev identity provider and the legacy-fixtures seed, so specs sign
 in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, plus a second pair
-(3001 and 5174) whose server shows the expired-licence notice. Rules:
+(3092 and 5174) whose server shows the expired-licence notice. Rules:
 
 - The config strips the developer's app variables (`APP_*`, `PORT`, `VITE_*`, and the other
   server variables) from the environment before starting the servers and the previews. The list is
@@ -550,8 +550,8 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   what you have exported.
 - It never reuses a running server (`reuseExistingServer: false`, locally and in CI). Before the build,
   `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
-  `Port 3000 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
-  `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
+  `Port 3091 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
+  `pnpm demo`, for example). The ports are 3091, 3092, 5173 and 5174; Azurite mode 3091 and 5173; the image
   target 5173 and 5174 (Azurite and the SQLite modes: 5173). They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
   page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
@@ -722,7 +722,7 @@ author's HTML as given. It runs in three browsers in memory mode and on Chromium
 WebKit are left to CI.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
-actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3091 and 5173, so stop the
 memory-mode servers first; the runner names a port that is taken). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ### The user stories on the sandbox build

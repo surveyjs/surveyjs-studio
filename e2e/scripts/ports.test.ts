@@ -86,11 +86,11 @@ describe("checkPorts", () => {
 
 describe("the ports of each configuration", () => {
   it("follow the configuration being run", () => {
-    expect(functionalPorts({ image: false, azurite: false })).toEqual([3000, 3001, 5173, 5174]);
+    expect(functionalPorts({ image: false, azurite: false })).toEqual([3091, 3092, 5173, 5174]);
     expect(functionalPorts({ image: true, azurite: false })).toEqual([5173, 5174]);
-    expect(functionalPorts({ image: false, azurite: true })).toEqual([3000, 5173]);
+    expect(functionalPorts({ image: false, azurite: true })).toEqual([3091, 5173]);
     expect(functionalPorts({ image: true, azurite: true })).toEqual([5173]);
-    expect(functionalPorts({ image: false, azurite: false, sql: true })).toEqual([3000, 5173]);
+    expect(functionalPorts({ image: false, azurite: false, sql: true })).toEqual([3091, 5173]);
     expect(functionalPorts({ image: true, azurite: false, sql: true })).toEqual([5173]);
     expect(visualPorts).toEqual([3002, 5175]);
   });
