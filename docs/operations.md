@@ -494,8 +494,9 @@ Change the setting and [re-create the container](#running-the-image) to switch.
   project and member writes, the definition and theme saves, the uploads, Delete Results, the saved layouts, the
   respondent's submit and file upload, and the account-deleted webhook. A write operation added later is refused too
   until someone decides otherwise ([the API reference](api/README.md)).
-- **The commands** refuse their writing form too: `account:erase --yes`, `account:reconcile --apply` and
-  `smoke:legacy` exit 2 with `Refused: READ_ONLY=true …`. Their dry runs and the read-only inspectors work.
+- **The commands** refuse their writing form too: `account:erase --yes`, `account:reconcile --apply`,
+  `account:make-admin` and `smoke:legacy` exit 2 with `Refused: READ_ONLY=true …`. Their dry runs and the read-only
+  inspectors work.
 - **Use it** for rollout step 1 ([the runbook](#rollout-and-rollback-runbook)), and whenever the stores must not
   change, for example during maintenance on the site's database.
 - **In mode 1.2 the account-deleted webhook is refused too** (`503`). The site should retry it later
@@ -731,6 +732,10 @@ account creates nothing (a warning says so). See
 
 `READ_ONLY=true` creates no admin and logs no link.
 
+On the hosted edition (surveyjs.io sign-in) no admin is created: the account whose email is `ADMIN_EMAIL` becomes
+admin at its sign-in while the instance has never had an admin. After that, name an admin with
+[`pnpm account:make-admin`](#pnpm-accountmake-admin).
+
 **Sessions.** A password change ends all of the user's other sessions: at once on the same server, within a minute
 on another one. The failed sign-ins of an email are counted in the server's memory: from the fifth failure in a row
 the email waits 60 s, doubling to an hour (`429 account-locked`); a restart forgets the counts. The per-address limit
@@ -828,6 +833,32 @@ repository with restricted permissions. For example, a cron job that first only 
 
 Alert on a non-zero exit: it means a refusal (more candidates than `--max`, which is worth a look), or a store or
 directory failure.
+
+## Naming an instance admin
+
+### `pnpm account:make-admin`
+
+```sh
+pnpm account:make-admin --email <address> [--env-file <path>]
+```
+
+It makes an existing account of the `local` directory an **active instance admin**, and prints its user id only. Use
+it when the instance has no active admin. On the hosted edition, `ADMIN_EMAIL` is made admin at its sign-in only while
+the instance has **never had an admin**: when the last instance admin deletes their surveyjs.io account, the
+account-deleted webhook keeps that account as a **deleted placeholder** (no name or email, disabled, still an admin)
+and logs a warning, so a stranger who registers the freed address on surveyjs.io gets no admin rights
+([ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)). The new admin signs in first, so their account exists;
+then run this command with their email. The server also warns at start-up while only disabled admins exist.
+
+- It needs `USER_DIRECTORY=local` and a persistent store (`STORAGE_PROVIDER=postgres` or `sqlite`), with the server's
+  settings in the shell or an `--env-file`.
+- It refuses an email no account has, and a deleted account's placeholder (an `@invalid` address): exit 1.
+- A disabled account becomes active when it can sign in (a linked sign-in or a password); one that cannot becomes an
+  invited admin, and the output says so.
+- With `READ_ONLY=true` it refuses (`Refused: READ_ONLY=true. Nothing was changed.`, exit 2) before it opens the
+  stores.
+- Exit codes: `0` success, `1` no such account, a placeholder, or a store error, `2` a usage error, an unreadable env
+  file, no persistent store or `READ_ONLY=true`.
 
 ## The webhook secret
 

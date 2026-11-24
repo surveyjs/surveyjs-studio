@@ -1,4 +1,9 @@
-import { decideAccountChange, nextStatus } from "../admin/rules.js";
+import {
+  DELETED_ACCOUNT_NAME,
+  decideAccountChange,
+  deletedAccountEmail,
+  nextStatus,
+} from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
@@ -122,6 +127,8 @@ export function createMemoryLocalAccounts(
   const accounts: LocalAccountStore = {
     countAccounts: () => Promise.resolve(byId.size),
     countActiveAdmins: () => Promise.resolve(activeAdmins()),
+    countAdmins: () =>
+      Promise.resolve([...byId.values()].filter((a) => a.instanceRole === "admin").length),
     createAccount: (account: NewLocalAccount, options = {}) => {
       const id = account.id.toLowerCase();
       if (!GUID.test(id)) return Promise.reject(new Error("Account ids must be GUIDs"));
@@ -256,13 +263,10 @@ export function createMemoryLocalAccounts(
       byId.set(found.id, updated);
       return Promise.resolve(updated.sessionEpoch);
     },
-    deleteAccount: (id, options = {}) => {
+    deleteAccount: (id) => {
       const found = find(id);
       if (!found) return Promise.resolve("not-found" as const);
-      if (
-        !options.allowLastInstanceAdmin &&
-        decideAccountChange(found, null, activeAdmins()) === "last-instance-admin"
-      ) {
+      if (decideAccountChange(found, null, activeAdmins()) === "last-instance-admin") {
         return Promise.resolve("last-instance-admin" as const);
       }
       byId.delete(found.id);
@@ -271,6 +275,27 @@ export function createMemoryLocalAccounts(
         if (link.userId === found.id) identities.delete(identity);
       }
       return Promise.resolve("deleted" as const);
+    },
+    tombstoneAccount: (id) => {
+      const found = find(id);
+      if (!found) return Promise.resolve(null);
+      for (const [tokenHash, link] of links) if (link.userId === found.id) links.delete(tokenHash);
+      for (const [identity, link] of identities) {
+        if (link.userId === found.id) identities.delete(identity);
+      }
+      const updated: StoredAccount = {
+        ...found,
+        email: deletedAccountEmail(found.id),
+        displayName: DELETED_ACCOUNT_NAME,
+        status: "disabled",
+        passwordHash: null,
+        mustChangePassword: false,
+        siteBlocked: false,
+        licenceExpiresAt: null,
+        sessionEpoch: found.sessionEpoch + 1,
+      };
+      byId.set(found.id, updated);
+      return Promise.resolve(accountOf(updated));
     },
     resetPassword: (id, { tokenHash, expiresAt }) => {
       const found = find(id);

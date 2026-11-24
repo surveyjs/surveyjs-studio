@@ -48,15 +48,25 @@ edition (`APP_EDITION=hosted`); every other sign-in, and the self-hosted edition
   user in Studio does not close the surveyjs.io account; with `OPEN_SIGN_UP=on` that person gets a new, empty account
   at the next sign-in.
 - **`ADMIN_EMAIL` promotes, it does not create.** On hosted the first-admin bootstrap creates no account (it would get a
-  random id and collide with the migration's seed). Instead, while there is no instance admin, the account whose email
-  equals `ADMIN_EMAIL` becomes admin at its sign-in, whether it was seeded or is new.
+  random id and collide with the migration's seed). Instead, while the instance has never had an admin (no account
+  with the admin role, in any status), the account whose email equals `ADMIN_EMAIL` becomes admin at its sign-in,
+  whether it was seeded or is new. Once an admin exists, `ADMIN_EMAIL` promotes nobody: surveyjs.io does not require a
+  confirmed email to sign in, so whoever registers a freed address must not become admin. `pnpm account:make-admin`
+  names an admin after that (point 2).
 
 ### 2. The account-deleted webhook finds the account by its linked sign-in
 
 The webhook's `data.userId` is the surveyjs.io id. Studio looks it up as the subject of a `surveyjs` identity first,
 then as a user id, and erases that account; an account an admin created (with a random id) and the person later
-linked is found too. Erasure removes the account row and its identities as well as its data. An id Studio does not
-know is acknowledged (`204`) and changes nothing.
+linked is found too. Erasure removes the account row and its identities as well as its data; when the account's id is
+not the surveyjs.io id, the data held under the surveyjs.io id is erased too (the same person's). An id no account has
+is acknowledged (`204`): any data held under that id is erased, and nothing else changes.
+
+The last instance admin (no other active admin) is not deleted: its data is erased and the row becomes a placeholder,
+with no name, email, password or linked sign-in, disabled, and still an admin, and a warning is logged. The admin row
+keeps `ADMIN_EMAIL` from promoting anyone again (point 1); an operator names a new admin with
+`pnpm account:make-admin --email <address>`, which refuses a placeholder. The instance admin's own delete still
+refuses the last active admin.
 
 ### 3. Licences as a sign-in claim
 

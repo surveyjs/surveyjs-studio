@@ -98,8 +98,10 @@ lose its last admin passes to its next member; a project with no other member is
 On the hosted service, `data.userId` is found as the surveyjs.io sign-in linked to a My Surveys account first, then as a
 My Surveys account id, and that account is deleted with its linked sign-ins after its data is erased
 ([ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)). When the account has another id, the data under the
-surveyjs.io id is erased too. The last instance admin is deleted as well, with a warning in the log: with no active
-admin left, `ADMIN_EMAIL` becomes admin at its next sign-in.
+surveyjs.io id is erased too. The last instance admin is the exception: its data is erased, but the account is kept
+as a deleted placeholder (no name or email, no linked sign-ins, disabled, still an admin) and a warning is logged.
+`ADMIN_EMAIL` is not made admin again; an operator names a new admin with `pnpm account:make-admin`
+([Operations](../operations.md#pnpm-accountmake-admin)).
 
 `POST https://<app origin>/api/v1/webhooks/account-deleted`
 

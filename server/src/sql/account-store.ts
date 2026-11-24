@@ -1,5 +1,10 @@
 import type { Kysely, Selectable } from "kysely";
-import { decideAccountChange, nextStatus } from "../admin/rules.js";
+import {
+  DELETED_ACCOUNT_NAME,
+  decideAccountChange,
+  deletedAccountEmail,
+  nextStatus,
+} from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
@@ -139,6 +144,14 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .select((eb) => eb.fn.countAll<number | string | bigint>().as("n"))
         .where("instance_role", "=", "admin")
         .where("status", "=", "active")
+        .executeTakeFirstOrThrow();
+      return Number(row.n);
+    },
+    countAdmins: async () => {
+      const row = await db
+        .selectFrom("users")
+        .select((eb) => eb.fn.countAll<number | string | bigint>().as("n"))
+        .where("instance_role", "=", "admin")
         .executeTakeFirstOrThrow();
       return Number(row.n);
     },
@@ -366,22 +379,44 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         return Number(row.session_epoch);
       });
     },
-    deleteAccount: async (id, options = {}) => {
+    deleteAccount: async (id) => {
       const userId = key(id);
       if (userId === null) return "not-found";
       return db.transaction().execute(async (trx) => {
         const { row, activeAdmins } = await lockForAdminRule(trx, userId);
         if (!row) return "not-found" as const;
         const facts = { instanceRole: row.instance_role, status: row.status };
-        if (
-          !options.allowLastInstanceAdmin &&
-          decideAccountChange(facts, null, activeAdmins) === "last-instance-admin"
-        ) {
+        if (decideAccountChange(facts, null, activeAdmins) === "last-instance-admin") {
           return "last-instance-admin" as const;
         }
         // The links and the identities go with it (cascade).
         await trx.deleteFrom("users").where("id", "=", userId).execute();
         return "deleted" as const;
+      });
+    },
+    tombstoneAccount: async (id) => {
+      const userId = key(id);
+      if (userId === null) return null;
+      return db.transaction().execute(async (trx) => {
+        const row = await trx
+          .updateTable("users")
+          .set((eb) => ({
+            email: deletedAccountEmail(userId),
+            display_name: DELETED_ACCOUNT_NAME,
+            status: "disabled" as const,
+            password_hash: null,
+            must_change_password: false,
+            site_blocked: false,
+            licence_expires_at: null,
+            session_epoch: eb("session_epoch", "+", 1),
+          }))
+          .where("id", "=", userId)
+          .returningAll()
+          .executeTakeFirst();
+        if (!row) return null;
+        await trx.deleteFrom("user_identities").where("user_id", "=", userId).execute();
+        await trx.deleteFrom("password_links").where("user_id", "=", userId).execute();
+        return accountOf(row);
       });
     },
     resetPassword: async (id, { tokenHash, createdAt, expiresAt }) => {

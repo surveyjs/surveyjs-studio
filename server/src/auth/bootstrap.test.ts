@@ -146,6 +146,21 @@ describe("bootstrapFirstAdmin without passwords", () => {
     expect(lines).toEqual([]);
   });
 
+  it("hosted: with only a disabled admin, warns that account:make-admin names one", async () => {
+    const { accounts } = createMemoryLocalAccounts();
+    const placeholder = await accounts.createAccount(account({ instanceRole: "admin" }));
+    await accounts.tombstoneAccount(placeholder.user.id);
+    const { log, lines } = recordingLog();
+    const config = { ...hostedOnly(), edition: "hosted" as const };
+
+    await bootstrapFirstAdmin(config, accounts, log, () => NOW);
+
+    expect(await accounts.countAccounts()).toBe(1);
+    expect(lines).toEqual([
+      "there is no active instance admin: run pnpm account:make-admin to name one",
+    ]);
+  });
+
   it("logs no setup link without ADMIN_EMAIL under the dev sign-in", async () => {
     const { accounts } = createMemoryLocalAccounts();
     const { log, lines } = recordingLog();

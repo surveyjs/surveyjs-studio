@@ -474,25 +474,115 @@ export function describeLocalAccountSuite(
       }
     });
 
-    it("disables and deletes the last active admin when the caller allows it (the webhook)", async () => {
+    it("disables the last active admin when the caller allows it (the webhook), never deletes it", async () => {
       const own = await create();
       try {
-        const allow = { allowLastInstanceAdmin: true };
         const admin = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
         expect(
-          await own.accounts.updateAccount(admin.user.id, { status: "disabled" }, allow),
+          await own.accounts.updateAccount(
+            admin.user.id,
+            { status: "disabled" },
+            { allowLastInstanceAdmin: true },
+          ),
         ).toMatchObject({
           outcome: "updated",
           account: { status: "disabled", sessionEpoch: admin.sessionEpoch + 1 },
         });
         expect(await own.accounts.countActiveAdmins()).toBe(0);
-        expect(await own.accounts.deleteAccount(admin.user.id, allow)).toBe("deleted");
-
-        // An active last admin too; without the allowance it is still refused.
+        // Without the allowance the rule still holds.
         const other = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        expect(await own.accounts.updateAccount(other.user.id, { status: "disabled" })).toEqual({
+          outcome: "last-instance-admin",
+        });
         expect(await own.accounts.deleteAccount(other.user.id)).toBe("last-instance-admin");
-        expect(await own.accounts.deleteAccount(other.user.id, allow)).toBe("deleted");
-        expect(await own.accounts.countAccounts()).toBe(0);
+      } finally {
+        await own.close();
+      }
+    });
+
+    it("counts the admins in any status", async () => {
+      const own = await create();
+      try {
+        expect(await own.accounts.countAdmins()).toBe(0);
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin", status: "invited" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin", status: "disabled" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "user" }));
+        expect(await own.accounts.countAdmins()).toBe(3);
+      } finally {
+        await own.close();
+      }
+    });
+
+    it("replaces an account's personal data with a placeholder, keeping its role", async () => {
+      const own = await create();
+      try {
+        const id = randomUUID();
+        const admin = await own.accounts.createAccount(
+          newAccount({
+            id: id.toUpperCase(),
+            instanceRole: "admin",
+            mustChangePassword: true,
+            siteBlocked: true,
+            licenceExpiresAt: LATER,
+          }),
+        );
+        const subject = randomUUID();
+        await own.accounts.linkIdentity({
+          provider: "surveyjs",
+          subject,
+          userId: id,
+          email: admin.user.email,
+          emailVerified: true,
+          createdAt: AT,
+        });
+        const tokenHash = `tombstoned-${randomUUID()}`;
+        await own.accounts.createPasswordLink({
+          tokenHash,
+          userId: id,
+          purpose: "reset",
+          createdAt: AT,
+          expiresAt: LATER,
+        });
+
+        const placeholder = {
+          user: {
+            id,
+            email: `deleted-${id}@invalid`,
+            displayName: "Deleted account",
+            blocked: true,
+          },
+          instanceRole: "admin",
+          status: "disabled",
+          passwordHash: null,
+          mustChangePassword: false,
+          siteBlocked: false,
+          licenceExpiresAt: null,
+          sessionEpoch: admin.sessionEpoch + 1,
+          lastSignInAt: null,
+          createdAt: admin.createdAt,
+        };
+        expect(await own.accounts.tombstoneAccount(id.toUpperCase())).toEqual(placeholder);
+        expect(await own.accounts.account(id)).toEqual(placeholder);
+        expect(await own.accounts.accountByEmail(admin.user.email)).toBeNull();
+        expect(await own.accounts.listIdentities(id)).toEqual([]);
+        expect(await own.accounts.accountByIdentity("surveyjs", subject)).toBeNull();
+        expect(await own.accounts.usePasswordLink(tokenHash, AT, "$argon2id$x")).toBeNull();
+        expect(await own.accounts.countActiveAdmins()).toBe(0);
+        expect(await own.accounts.countAdmins()).toBe(1);
+
+        // Again: the same placeholder, one more epoch. Each id has its own email.
+        expect(await own.accounts.tombstoneAccount(id)).toMatchObject({
+          user: { email: `deleted-${id}@invalid` },
+          sessionEpoch: admin.sessionEpoch + 2,
+        });
+        const other = await own.accounts.createAccount(newAccount());
+        expect(await own.accounts.tombstoneAccount(other.user.id)).toMatchObject({
+          user: { email: `deleted-${other.user.id}@invalid` },
+          instanceRole: "user",
+        });
+        expect(await own.accounts.tombstoneAccount(randomUUID())).toBeNull();
+        expect(await own.accounts.tombstoneAccount("not-a-guid")).toBeNull();
       } finally {
         await own.close();
       }

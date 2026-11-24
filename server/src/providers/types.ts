@@ -471,8 +471,7 @@ export interface AccountChange {
 
 /**
  * `allowLastInstanceAdmin`: the change may take the last active admin away. Only the account-deleted
- * webhook passes it (the person is gone from surveyjs.io; ADMIN_EMAIL is made admin at its next
- * sign-in once no active admin is left).
+ * webhook passes it, to disable the last admin before it becomes a placeholder (`tombstoneAccount`).
  */
 export interface LastInstanceAdminOptions {
   readonly allowLastInstanceAdmin?: boolean;
@@ -541,6 +540,11 @@ export interface LocalAccountStore {
   /** Accounts with the instance role `admin` and the status `active`. */
   countActiveAdmins(): Promise<number>;
   /**
+   * Accounts with the instance role `admin`, in any status (a deleted admin's placeholder
+   * included): 0 only on an instance that never had an admin (ADR 0043).
+   */
+  countAdmins(): Promise<number>;
+  /**
    * Rejects (nothing stored) when the id or the email is in use. With `link`, stores the account's
    * set-password link in the same transaction: both are stored, or neither.
    */
@@ -587,14 +591,16 @@ export interface LocalAccountStore {
    * account has no such identity (nothing changes).
    */
   unlinkIdentity(userId: string, provider: ExternalMethod, subject: string): Promise<number | null>;
+  /** Deletes the account with its links and identities, under the same rule. */
+  deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
   /**
-   * Deletes the account with its links and identities, under the same rule (skipped with
-   * `allowLastInstanceAdmin`, as for `updateAccount`).
+   * Replaces the account's personal data with a placeholder, atomically (ADR 0043 point 2: the
+   * last instance admin deleted on surveyjs.io): email `deleted-<id>@invalid`, display name
+   * `Deleted account`, status `disabled`, no password, the site's block cleared, no licence date;
+   * removes its identities and set-password links and raises the session epoch. The role is kept.
+   * null for an unknown or non-GUID id.
    */
-  deleteAccount(
-    id: string,
-    options?: LastInstanceAdminOptions,
-  ): Promise<"deleted" | "not-found" | "last-instance-admin">;
+  tombstoneAccount(id: string): Promise<LocalAccount | null>;
   /**
    * An admin's reset, atomically: clears the password, unlinks every identity, raises the epoch,
    * marks the account's unused links used, and stores the new link (`invitation` for an invited

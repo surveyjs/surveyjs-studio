@@ -34,7 +34,10 @@ export interface ExternalSignInDeps {
    * the surveyjs.io id, and every sign-in refreshes the account from the site's claims.
    */
   readonly hosted?: boolean;
-  /** Hosted: ADMIN_EMAIL, made instance admin at its sign-in while there is no active admin. */
+  /**
+   * Hosted: ADMIN_EMAIL, made instance admin at its sign-in while the instance has never had an
+   * admin (no account with the admin role, in any status; ADR 0043).
+   */
   readonly adminEmail?: string | null;
   /** Hosted: where the warnings and notes go. They name the user id, never an email address. */
   readonly log?: {
@@ -159,7 +162,8 @@ export async function resolveExternalSignIn(
  * (2) The account of the verified email is linked only when it has no `surveyjs` identity yet (an
  * account an admin created); one with another surveyjs.io id is `identity-conflict`. (3) Else a
  * new account with the sub as its id, when the join policy lets the email join. After a sign-in,
- * ADMIN_EMAIL becomes instance admin while there is none (logged with the user id).
+ * ADMIN_EMAIL becomes instance admin while the instance has never had one (logged with the user id):
+ * a deleted admin's placeholder still counts, so a new owner of that address is not promoted.
  *
  * With `readOnly` nothing is written: the claims decide the block, a linked active account signs
  * in unchanged, and the steps that would write throw `503 read-only`.
@@ -199,11 +203,11 @@ async function resolveHostedSignIn(
     return result.account;
   };
 
-  /** ADMIN_EMAIL becomes the instance admin at its sign-in while there is no active admin. */
+  /** ADMIN_EMAIL becomes the instance admin at its sign-in while no account has the admin role. */
   const promote = async (account: LocalAccount): Promise<LocalAccount> => {
     const adminEmail = deps.adminEmail?.trim().toLowerCase();
     if (!adminEmail || account.user.email.toLowerCase() !== adminEmail) return account;
-    if (account.instanceRole === "admin" || (await accounts.countActiveAdmins()) !== 0) {
+    if (account.instanceRole === "admin" || (await accounts.countAdmins()) !== 0) {
       return account;
     }
     const update = await accounts.updateAccount(account.user.id, { instanceRole: "admin" });

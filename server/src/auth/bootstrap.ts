@@ -37,7 +37,9 @@ export async function hasPasswordAdmin(accounts: LocalAccountStore): Promise<boo
  * Without passwords: runs while there is no active instance admin at all. It creates the admin
  * from ADMIN_EMAIL, active and without a password; their first OAuth2 sign-in with that verified
  * email links to it (D3). It never writes a setup link, whose page needs passwords. In the hosted
- * edition it creates nothing: the sign-in with ADMIN_EMAIL makes that account admin (ADR 0043).
+ * edition it creates nothing: the sign-in with ADMIN_EMAIL makes that account admin while the
+ * instance has never had an admin (ADR 0043); with only disabled admins (a deleted admin's
+ * placeholder, say) it warns that `pnpm account:make-admin` names one.
  */
 export async function bootstrapFirstAdmin(
   config: AppConfig,
@@ -56,7 +58,10 @@ export async function bootstrapFirstAdmin(
   if (config.edition === "hosted" && !passwords) {
     // ADR 0043: an account made here would get a random id, not the surveyjs.io one, and collide
     // with the migration's seed. Hosted sign-in makes ADMIN_EMAIL admin instead.
-    if (admin !== null) {
+    // A disabled admin or a deleted admin's placeholder: ADMIN_EMAIL is not promoted any more.
+    if ((await accounts.countAdmins()) > 0) {
+      log.warn("there is no active instance admin: run pnpm account:make-admin to name one");
+    } else if (admin !== null) {
       log.info("ADMIN_EMAIL is made admin at its first sign-in while there is no admin");
     }
     return none;

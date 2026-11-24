@@ -45,16 +45,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * is the one whose `surveyjs` identity has that subject, else the one with that id. It is
  * disabled first (so it stops signing in should a later step fail), its data erased (and the
  * data under the surveyjs.io id, when the account's id is another), then the account deleted with
- * its identities. The last instance admin goes too: the person is gone from surveyjs.io, and with
- * no active admin left ADMIN_EMAIL is made admin at its next sign-in. An id no account has: its
- * data, if any, is erased. Any store failure answers 5xx, so the site retries.
+ * its identities. An admin with no other active admin is kept as a placeholder instead
+ * (`tombstoneAccount`: no personal data, disabled, still an admin), so ADMIN_EMAIL is never made
+ * admin again; `pnpm account:make-admin` names a new one. An id no account has: its data, if any,
+ * is erased. Any store failure answers 5xx, so the site retries.
  */
 export function createAccountHandlers(options: AccountHandlersOptions): Handlers {
   const { webhookSecret, eraseAccount, now = Date.now, sessionCheck = null } = options;
   const key = webhookSecret === null ? null : webhookKey(webhookSecret);
   const accounts = options.hosted ? (options.accounts ?? null) : null;
 
-  /** Erases the data of `userId` and, hosted, deletes its account. */
+  /** Erases the data of `userId` and, hosted, deletes its account (or keeps a placeholder). */
   const erase = async (userId: string, log: FastifyBaseLogger): Promise<void> => {
     const at = { now: new Date(now()).toISOString() };
     if (accounts === null) {
@@ -69,20 +70,36 @@ export function createAccountHandlers(options: AccountHandlersOptions): Handlers
       return;
     }
     const { id } = account.user;
-    const allow = { allowLastInstanceAdmin: true };
-    const wasActiveAdmin = account.instanceRole === "admin" && account.status === "active";
-    await accounts.updateAccount(id, { status: "disabled" }, allow);
+    // Decided before any write: with no other active admin, the row stays as a placeholder, so the
+    // instance keeps an admin row and ADMIN_EMAIL is never promoted again (ADR 0043 point 2).
+    const keepPlaceholder =
+      account.instanceRole === "admin" &&
+      (await accounts.countActiveAdmins()) - (account.status === "active" ? 1 : 0) <= 0;
+    // Disabled first, so it stops signing in should a later step fail; the identities stay until
+    // the end, so a retry finds the account again.
+    await accounts.updateAccount(
+      id,
+      { status: "disabled" },
+      { allowLastInstanceAdmin: keepPlaceholder },
+    );
     sessionCheck?.forget(id);
     await eraseAccount(id, at);
     // The same person's data under the surveyjs.io id (legacy rows), when the account's id is another.
     if (id !== userId.toLowerCase()) await eraseAccount(userId, at);
-    await accounts.deleteAccount(id, allow);
-    sessionCheck?.forget(id);
-    if (wasActiveAdmin && (await accounts.countActiveAdmins()) === 0) {
+    if (keepPlaceholder) {
+      await accounts.tombstoneAccount(id);
+      sessionCheck?.forget(id);
       log.warn(
         { userId: id },
-        "the deleted surveyjs.io account was the last instance admin: ADMIN_EMAIL is made admin at its next sign-in",
+        "the deleted surveyjs.io account was the last instance admin: kept as a deleted placeholder; run pnpm account:make-admin to name a new admin",
       );
+      return;
+    }
+    const outcome = await accounts.deleteAccount(id);
+    sessionCheck?.forget(id);
+    // Another admin was demoted or disabled meanwhile: a 5xx, and the site's retry keeps a placeholder.
+    if (outcome === "last-instance-admin") {
+      throw new Error("the account became the last instance admin while it was being deleted");
     }
   };
 

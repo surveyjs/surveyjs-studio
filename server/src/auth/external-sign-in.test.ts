@@ -733,7 +733,7 @@ describe("resolveExternalSignIn, hosted sign-in through surveyjs.io (ADR 0043)",
     });
   });
 
-  it("makes the ADMIN_EMAIL account admin at its sign-in while there is no active admin", async () => {
+  it("makes the ADMIN_EMAIL account admin at its sign-in while the instance never had an admin", async () => {
     const env = hosted({ adminEmail: "Ada@Example.com" });
     const result = await env.resolve(site());
     expect(result).toMatchObject({ ok: true, account: { instanceRole: "admin" } });
@@ -761,6 +761,31 @@ describe("resolveExternalSignIn, hosted sign-in through surveyjs.io (ADR 0043)",
       ok: true,
       account: { instanceRole: "user" },
     });
+    expect(env.infos).toEqual([]);
+  });
+
+  it("leaves the ADMIN_EMAIL account's role alone when only a disabled admin exists", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    await env.accounts.createAccount(newAccount({ instanceRole: "admin", status: "disabled" }));
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { instanceRole: "user" },
+    });
+    expect(env.infos).toEqual([]);
+  });
+
+  it("leaves it alone after the last admin became a deleted placeholder", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    const admin = await env.accounts.createAccount(
+      newAccount({ email: "ada@example.com", instanceRole: "admin" }),
+    );
+    await env.accounts.tombstoneAccount(admin.user.id);
+    // A new surveyjs.io account with the freed address signs in.
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { user: { email: "ada@example.com" }, instanceRole: "user" },
+    });
+    expect(await env.accounts.countActiveAdmins()).toBe(0);
     expect(env.infos).toEqual([]);
   });
 

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
 import { SESSION_COOKIE } from "../auth/cookies.js";
+import { resolveExternalSignIn } from "../auth/external-sign-in.js";
 import { createSession, encodeSession } from "../auth/session.js";
 import { signIn } from "../auth/testing.js";
 import { loadConfig } from "../config.js";
@@ -269,7 +270,7 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
       });
       return app;
     };
-    return { build, providers, accounts, lines };
+    return { build, providers, accounts, lines, config };
   }
 
   /** A local account for Erin, with a `surveyjs` identity whose subject is `subject` when given. */
@@ -392,29 +393,91 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     expect(await accounts.countAccounts()).toBe(1);
   });
 
-  it("deletes the last instance admin too, warning with the id only", async () => {
+  it("keeps the last instance admin as a deleted placeholder, warning with the id only", async () => {
     const { build, providers, accounts, lines } = await startLocal(HOSTED);
-    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    await seedErin(accounts, { subject: SITE_ID, instanceRole: "admin" });
     const surveys = await erinsData(providers);
+    const siteSurveys = await personalSurvey(providers, SITE_ID, 2);
     const server = await build();
 
-    const res = await deliver(server, { body: deleted(ERASABLE_ID) });
+    const res = await deliver(server, { body: deleted(SITE_ID) });
 
     expect(res.statusCode).toBe(204);
     expect(await surveys()).toEqual([]);
-    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    expect(await siteSurveys()).toEqual([]);
+    // No name, email or sign-in of the person is left; the row stays an admin, disabled.
+    expect(await accounts.account(ERASABLE_ID)).toMatchObject({
+      user: {
+        id: ERASABLE_ID,
+        email: `deleted-${ERASABLE_ID}@invalid`,
+        displayName: "Deleted account",
+      },
+      instanceRole: "admin",
+      status: "disabled",
+      passwordHash: null,
+      siteBlocked: false,
+      licenceExpiresAt: null,
+    });
+    expect(await accounts.accountByEmail(ERASABLE_EMAIL)).toBeNull();
     expect(await accounts.listIdentities(ERASABLE_ID)).toEqual([]);
-    expect(await accounts.accountByIdentity("surveyjs", ERASABLE_ID)).toBeNull();
-    // No active admin is left, so ADMIN_EMAIL is made admin at its next sign-in.
+    expect(await accounts.accountByIdentity("surveyjs", SITE_ID)).toBeNull();
     expect(await accounts.countActiveAdmins()).toBe(0);
+    expect(await accounts.countAdmins()).toBe(1);
     const warnings = logEntries(lines).filter((e) => e.level === 40);
     expect(warnings).toEqual([
       expect.objectContaining({
         userId: ERASABLE_ID,
-        msg: "the deleted surveyjs.io account was the last instance admin: ADMIN_EMAIL is made admin at its next sign-in",
+        msg: "the deleted surveyjs.io account was the last instance admin: kept as a deleted placeholder; run pnpm account:make-admin to name a new admin",
       }),
     ]);
     expect(lines.join("\n")).not.toContain(ERASABLE_EMAIL);
+  });
+
+  it("does not make ADMIN_EMAIL admin at its sign-in after the last admin was deleted", async () => {
+    const { build, providers, accounts, config } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    const server = await build();
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+
+    // Someone registers the address ADMIN_EMAIL names on surveyjs.io and signs in.
+    const result = await resolveExternalSignIn(
+      "surveyjs",
+      {
+        sub: "11111111-0000-4000-8000-000000000043",
+        email: "admin@example.com",
+        emailVerified: true,
+        name: "Not the admin",
+      },
+      {
+        accounts,
+        invitations: providers.invitations!,
+        policy: { signUpDomains: [], openSignUp: true },
+        now: () => new Date(NOW_MS).toISOString(),
+        hosted: true,
+        adminEmail: config.bootstrapAdmin?.email ?? null,
+      },
+    );
+
+    expect(config.bootstrapAdmin?.email).toBe("admin@example.com");
+    expect(result).toMatchObject({ ok: true, account: { instanceRole: "user" } });
+    expect(await accounts.countActiveAdmins()).toBe(0);
+  });
+
+  it("keeps the placeholder when the same message comes again", async () => {
+    const { build, accounts, lines } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    const server = await build();
+
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+
+    expect(await accounts.account(ERASABLE_ID)).toMatchObject({
+      user: { displayName: "Deleted account" },
+      instanceRole: "admin",
+      status: "disabled",
+    });
+    expect(await accounts.countAdmins()).toBe(1);
+    expect(logEntries(lines).filter((e) => e.level === 40)).toHaveLength(2);
   });
 
   it("deletes an admin who is not the last one without a warning", async () => {
@@ -477,6 +540,37 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     expect(res.statusCode).toBe(500);
     // Disabled before the erasure: it can no longer sign in, and a retry finishes the delete.
     expect(await accounts.account(ERASABLE_ID)).toMatchObject({ status: "disabled" });
+  });
+
+  it("answers 500 when the account became the last admin while it was being deleted", async () => {
+    const { build, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID });
+    vi.spyOn(accounts, "deleteAccount").mockResolvedValue("last-instance-admin");
+    const server = await build();
+
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(500);
+  });
+
+  it("decides on the last admin before any write: no count after the delete can fail it", async () => {
+    const { build, accounts } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    await accounts.createAccount({
+      id: UNKNOWN_ID,
+      email: "other-admin@example.com",
+      displayName: "Other Admin",
+      instanceRole: "admin",
+      status: "active",
+      passwordHash: null,
+      mustChangePassword: false,
+      createdAt: CREATED_AT,
+    });
+    const server = await build();
+    vi.spyOn(accounts, "countActiveAdmins")
+      .mockResolvedValueOnce(2)
+      .mockRejectedValue(new Error("the store is down"));
+
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
   });
 
   it("keeps today's behaviour without APP_EDITION=hosted: the data is erased, the account stays", async () => {
