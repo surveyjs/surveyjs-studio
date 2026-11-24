@@ -43,10 +43,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *
  * Hosted with local accounts (ADR 0043 point 2), `data.userId` is the surveyjs.io id: the account
  * is the one whose `surveyjs` identity has that subject, else the one with that id. It is
- * disabled first (so it stops signing in should a later step fail), its data erased, then the
- * account deleted with its identities. The last instance admin's data is erased but the store keeps
- * the account (it refuses to disable or delete it). An id no account has: its data, if any, is
- * erased. Any store failure answers 5xx, so the site retries.
+ * disabled first (so it stops signing in should a later step fail), its data erased (and the
+ * data under the surveyjs.io id, when the account's id is another), then the account deleted with
+ * its identities. The last instance admin goes too: the person is gone from surveyjs.io, and with
+ * no active admin left ADMIN_EMAIL is made admin at its next sign-in. An id no account has: its
+ * data, if any, is erased. Any store failure answers 5xx, so the site retries.
  */
 export function createAccountHandlers(options: AccountHandlersOptions): Handlers {
   const { webhookSecret, eraseAccount, now = Date.now, sessionCheck = null } = options;
@@ -68,16 +69,19 @@ export function createAccountHandlers(options: AccountHandlersOptions): Handlers
       return;
     }
     const { id } = account.user;
-    // `last-instance-admin` leaves the account as it is; the delete below is refused the same way.
-    await accounts.updateAccount(id, { status: "disabled" });
+    const allow = { allowLastInstanceAdmin: true };
+    const wasActiveAdmin = account.instanceRole === "admin" && account.status === "active";
+    await accounts.updateAccount(id, { status: "disabled" }, allow);
     sessionCheck?.forget(id);
     await eraseAccount(id, at);
-    const outcome = await accounts.deleteAccount(id);
+    // The same person's data under the surveyjs.io id (legacy rows), when the account's id is another.
+    if (id !== userId.toLowerCase()) await eraseAccount(userId, at);
+    await accounts.deleteAccount(id, allow);
     sessionCheck?.forget(id);
-    if (outcome === "last-instance-admin") {
+    if (wasActiveAdmin && (await accounts.countActiveAdmins()) === 0) {
       log.warn(
         { userId: id },
-        "the deleted surveyjs.io account was the last instance admin: data erased, account kept active",
+        "the deleted surveyjs.io account was the last instance admin: ADMIN_EMAIL is made admin at its next sign-in",
       );
     }
   };

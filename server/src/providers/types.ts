@@ -469,6 +469,15 @@ export interface AccountChange {
   readonly status?: "active" | "disabled";
 }
 
+/**
+ * `allowLastInstanceAdmin`: the change may take the last active admin away. Only the account-deleted
+ * webhook passes it (the person is gone from surveyjs.io; ADMIN_EMAIL is made admin at its next
+ * sign-in once no active admin is left).
+ */
+export interface LastInstanceAdminOptions {
+  readonly allowLastInstanceAdmin?: boolean;
+}
+
 export type AccountUpdate =
   | { readonly outcome: "updated"; readonly account: LocalAccount }
   | { readonly outcome: "not-found" }
@@ -548,9 +557,14 @@ export interface LocalAccountStore {
   /**
    * Changes the role and the status (`nextStatus`), atomically with the last-instance-admin rule
    * (`decideAccountChange`; two changes at once cannot both take the last admin away). Disabling
-   * an account that was not disabled raises its session epoch.
+   * an account that was not disabled raises its session epoch. `allowLastInstanceAdmin` skips the
+   * rule: only for the account-deleted webhook (ADR 0043), never for an instance admin's change.
    */
-  updateAccount(id: string, change: AccountChange): Promise<AccountUpdate>;
+  updateAccount(
+    id: string,
+    change: AccountChange,
+    options?: LastInstanceAdminOptions,
+  ): Promise<AccountUpdate>;
   /**
    * Stores what the site told at a sign-in: the display name, the block and the licence date, and
    * the email (also in the account's `surveyjs` identity). An email another account holds is
@@ -573,8 +587,14 @@ export interface LocalAccountStore {
    * account has no such identity (nothing changes).
    */
   unlinkIdentity(userId: string, provider: ExternalMethod, subject: string): Promise<number | null>;
-  /** Deletes the account with its links and identities, under the same rule. */
-  deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
+  /**
+   * Deletes the account with its links and identities, under the same rule (skipped with
+   * `allowLastInstanceAdmin`, as for `updateAccount`).
+   */
+  deleteAccount(
+    id: string,
+    options?: LastInstanceAdminOptions,
+  ): Promise<"deleted" | "not-found" | "last-instance-admin">;
   /**
    * An admin's reset, atomically: clears the password, unlinks every identity, raises the epoch,
    * marks the account's unused links used, and stores the new link (`invitation` for an invited

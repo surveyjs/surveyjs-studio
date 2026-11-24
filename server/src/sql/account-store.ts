@@ -199,7 +199,7 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
         .map(accountOf);
     },
-    updateAccount: async (id, change) => {
+    updateAccount: async (id, change, options = {}) => {
       const userId = key(id);
       if (userId === null) return { outcome: "not-found" };
       return db.transaction().execute(async (trx) => {
@@ -224,7 +224,10 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
           ),
         };
         const facts = { instanceRole: row.instance_role, status: row.status };
-        if (decideAccountChange(facts, after, activeAdmins) === "last-instance-admin") {
+        if (
+          !options.allowLastInstanceAdmin &&
+          decideAccountChange(facts, after, activeAdmins) === "last-instance-admin"
+        ) {
           return { outcome: "last-instance-admin" as const };
         }
         const disabling = after.status === "disabled" && row.status !== "disabled";
@@ -363,14 +366,17 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         return Number(row.session_epoch);
       });
     },
-    deleteAccount: async (id) => {
+    deleteAccount: async (id, options = {}) => {
       const userId = key(id);
       if (userId === null) return "not-found";
       return db.transaction().execute(async (trx) => {
         const { row, activeAdmins } = await lockForAdminRule(trx, userId);
         if (!row) return "not-found" as const;
         const facts = { instanceRole: row.instance_role, status: row.status };
-        if (decideAccountChange(facts, null, activeAdmins) === "last-instance-admin") {
+        if (
+          !options.allowLastInstanceAdmin &&
+          decideAccountChange(facts, null, activeAdmins) === "last-instance-admin"
+        ) {
           return "last-instance-admin" as const;
         }
         // The links and the identities go with it (cascade).

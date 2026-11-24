@@ -166,7 +166,7 @@ export function createMemoryLocalAccounts(
           .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
           .map(accountOf),
       ),
-    updateAccount: (id, change) => {
+    updateAccount: (id, change, options = {}) => {
       const found = find(id);
       if (!found) return Promise.resolve({ outcome: "not-found" as const });
       const after = {
@@ -178,7 +178,10 @@ export function createMemoryLocalAccounts(
             [...identities.values()].some((link) => link.userId === found.id),
         ),
       };
-      if (decideAccountChange(found, after, activeAdmins()) === "last-instance-admin") {
+      if (
+        !options.allowLastInstanceAdmin &&
+        decideAccountChange(found, after, activeAdmins()) === "last-instance-admin"
+      ) {
         return Promise.resolve({ outcome: "last-instance-admin" as const });
       }
       const disabling = after.status === "disabled" && found.status !== "disabled";
@@ -253,10 +256,13 @@ export function createMemoryLocalAccounts(
       byId.set(found.id, updated);
       return Promise.resolve(updated.sessionEpoch);
     },
-    deleteAccount: (id) => {
+    deleteAccount: (id, options = {}) => {
       const found = find(id);
       if (!found) return Promise.resolve("not-found" as const);
-      if (decideAccountChange(found, null, activeAdmins()) === "last-instance-admin") {
+      if (
+        !options.allowLastInstanceAdmin &&
+        decideAccountChange(found, null, activeAdmins()) === "last-instance-admin"
+      ) {
         return Promise.resolve("last-instance-admin" as const);
       }
       byId.delete(found.id);

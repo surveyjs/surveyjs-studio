@@ -474,6 +474,30 @@ export function describeLocalAccountSuite(
       }
     });
 
+    it("disables and deletes the last active admin when the caller allows it (the webhook)", async () => {
+      const own = await create();
+      try {
+        const allow = { allowLastInstanceAdmin: true };
+        const admin = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        expect(
+          await own.accounts.updateAccount(admin.user.id, { status: "disabled" }, allow),
+        ).toMatchObject({
+          outcome: "updated",
+          account: { status: "disabled", sessionEpoch: admin.sessionEpoch + 1 },
+        });
+        expect(await own.accounts.countActiveAdmins()).toBe(0);
+        expect(await own.accounts.deleteAccount(admin.user.id, allow)).toBe("deleted");
+
+        // An active last admin too; without the allowance it is still refused.
+        const other = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        expect(await own.accounts.deleteAccount(other.user.id)).toBe("last-instance-admin");
+        expect(await own.accounts.deleteAccount(other.user.id, allow)).toBe("deleted");
+        expect(await own.accounts.countAccounts()).toBe(0);
+      } finally {
+        await own.close();
+      }
+    });
+
     it("deletes an account with its links", async () => {
       const account = await store.accounts.createAccount(newAccount());
       const tokenHash = `gone-${randomUUID()}`;

@@ -300,23 +300,25 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     }
   }
 
-  /** A personal survey of Erin, stored directly; returns a function that lists Erin's surveys. */
-  async function erinsData(providers: ProviderSet) {
+  /** A personal survey of `userId`, stored directly; returns a function that lists its surveys. */
+  async function personalSurvey(providers: ProviderSet, userId: string, n: 1 | 2) {
     await providers.surveys.createSurvey({
-      id: "eeeeeeee-0000-4000-8000-0000000000f1",
-      name: "Erin's survey",
-      owner: { kind: "personal", userId: ERASABLE_ID },
-      creatorId: ERASABLE_ID,
-      postId: "eeeeeeee-0000-4000-8000-0000000000f2",
-      resultId: "eeeeeeee-0000-4000-8000-0000000000f3",
+      id: `eeeeeeee-0000-4000-8000-0000000000${n}1`,
+      name: "A personal survey",
+      owner: { kind: "personal", userId },
+      creatorId: userId,
+      postId: `eeeeeeee-0000-4000-8000-0000000000${n}2`,
+      resultId: `eeeeeeee-0000-4000-8000-0000000000${n}3`,
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
     });
-    const surveys = () =>
-      providers.surveys.listSurveyIds({ kind: "personal", userId: ERASABLE_ID });
+    const surveys = () => providers.surveys.listSurveyIds({ kind: "personal", userId });
     expect(await surveys()).toHaveLength(1);
     return surveys;
   }
+
+  /** A personal survey of Erin; returns a function that lists Erin's surveys. */
+  const erinsData = (providers: ProviderSet) => personalSurvey(providers, ERASABLE_ID, 1);
 
   const logEntries = (lines: readonly string[]) =>
     lines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -341,20 +343,23 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     const { build, providers, accounts, lines } = await startLocal(HOSTED);
     await seedErin(accounts, { subject: SITE_ID });
     const surveys = await erinsData(providers);
+    // Data under the surveyjs.io id itself (legacy rows) is the same person's.
+    const siteSurveys = await personalSurvey(providers, SITE_ID, 2);
     const server = await build();
 
     const res = await deliver(server, { body: deleted(SITE_ID.toUpperCase()) });
 
     expect(res.statusCode).toBe(204);
     expect(await surveys()).toEqual([]);
+    expect(await siteSurveys()).toEqual([]);
     expect(await accounts.account(ERASABLE_ID)).toBeNull();
     expect(await accounts.accountByIdentity("surveyjs", SITE_ID)).toBeNull();
     const erased = logEntries(lines).filter((e) => e.msg === "Erased the data of an account.");
-    expect(erased.map((e) => e.userId)).toEqual([ERASABLE_ID]);
+    expect(erased.map((e) => e.userId)).toEqual([ERASABLE_ID, SITE_ID]);
   });
 
   it("finds an account by its id when no identity names the surveyjs.io id", async () => {
-    const { build, providers, accounts } = await startLocal(HOSTED);
+    const { build, providers, accounts, lines } = await startLocal(HOSTED);
     await seedErin(accounts);
     const surveys = await erinsData(providers);
     const server = await build();
@@ -364,6 +369,9 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     expect(res.statusCode).toBe(204);
     expect(await surveys()).toEqual([]);
     expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    // One erasure: the account's id is the surveyjs.io id.
+    const erased = logEntries(lines).filter((e) => e.msg === "Erased the data of an account.");
+    expect(erased.map((e) => e.userId)).toEqual([ERASABLE_ID]);
   });
 
   it("acknowledges an id Studio does not know with 204, and changes nothing (Review Focus 3)", async () => {
@@ -384,7 +392,7 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
     expect(await accounts.countAccounts()).toBe(1);
   });
 
-  it("erases the last instance admin's data but keeps the account, warning with the id only", async () => {
+  it("deletes the last instance admin too, warning with the id only", async () => {
     const { build, providers, accounts, lines } = await startLocal(HOSTED);
     await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
     const surveys = await erinsData(providers);
@@ -394,20 +402,42 @@ describe("receiveAccountDeleted: hosted accounts (ADR 0043)", () => {
 
     expect(res.statusCode).toBe(204);
     expect(await surveys()).toEqual([]);
-    // The store refuses to disable the last active admin, as it refuses to delete it.
-    expect(await accounts.account(ERASABLE_ID)).toMatchObject({
-      user: { id: ERASABLE_ID },
-      instanceRole: "admin",
-      status: "active",
-    });
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    expect(await accounts.listIdentities(ERASABLE_ID)).toEqual([]);
+    expect(await accounts.accountByIdentity("surveyjs", ERASABLE_ID)).toBeNull();
+    // No active admin is left, so ADMIN_EMAIL is made admin at its next sign-in.
+    expect(await accounts.countActiveAdmins()).toBe(0);
     const warnings = logEntries(lines).filter((e) => e.level === 40);
     expect(warnings).toEqual([
       expect.objectContaining({
         userId: ERASABLE_ID,
-        msg: "the deleted surveyjs.io account was the last instance admin: data erased, account kept active",
+        msg: "the deleted surveyjs.io account was the last instance admin: ADMIN_EMAIL is made admin at its next sign-in",
       }),
     ]);
     expect(lines.join("\n")).not.toContain(ERASABLE_EMAIL);
+  });
+
+  it("deletes an admin who is not the last one without a warning", async () => {
+    const { build, providers, accounts, lines } = await startLocal(HOSTED);
+    await seedErin(accounts, { subject: ERASABLE_ID, instanceRole: "admin" });
+    await accounts.createAccount({
+      id: UNKNOWN_ID,
+      email: "other-admin@example.com",
+      displayName: "Other Admin",
+      instanceRole: "admin",
+      status: "active",
+      passwordHash: null,
+      mustChangePassword: false,
+      createdAt: CREATED_AT,
+    });
+    await erinsData(providers);
+    const server = await build();
+
+    expect((await deliver(server, { body: deleted(ERASABLE_ID) })).statusCode).toBe(204);
+
+    expect(await accounts.account(ERASABLE_ID)).toBeNull();
+    expect(await accounts.countActiveAdmins()).toBe(1);
+    expect(logEntries(lines).filter((e) => e.level === 40)).toEqual([]);
   });
 
   it("ends the deleted account's sessions at once on this server", async () => {
