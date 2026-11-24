@@ -959,7 +959,7 @@ Root scripts are listed in the [README](../README.md#scripts). Package scripts:
 The visual parity scripts are run from the root: `pnpm e2e:visual` (compare the app with the baselines; `--self` checks
 the harness), `pnpm e2e:visual:report` (open the report) and `pnpm visual:capture` (a person captures the baselines from
 surveyjs.io). The visual run uses its own ports, **3002** (server) and **5175** (web), so it can run beside the
-functional e2e suite (3000/5173 and 3001/5174); both runners stop with a message naming the process when one of
+functional e2e suite (3091/5173 and 3092/5174); both runners stop with a message naming the process when one of
 their ports is taken. See [Testing › Visual parity](testing.md#visual-parity).
 
 Run a package script with `pnpm --filter <package name> <script>`, for example

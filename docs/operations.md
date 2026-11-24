@@ -585,8 +585,9 @@ The same as 1.1, after the site has removed My Surveys (rollout step 4). The app
 
 How to make it and share it: [the webhook secret](#the-webhook-secret).
 
-Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API will not be built
-([ADR 0022](adr/0022-users-from-sign-in.md)); after the cutover users come from sign-in (hosted plan Step 2).
+Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API was never built, and the client for it
+was removed in hosted Step 2 ([ADR 0022](adr/0022-users-from-sign-in.md)); after the cutover users come from sign-in
+([hosted sign-in](#hosted-sign-in), [ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)).
 
 ### Mode 4: development
 
@@ -721,6 +722,44 @@ account creates nothing (a warning says so). See
 On the hosted edition (surveyjs.io sign-in) no admin is created: the account whose email is `ADMIN_EMAIL` becomes
 admin at its sign-in while the instance has never had an admin. After that, name an admin with
 [`pnpm account:make-admin`](#pnpm-accountmake-admin).
+
+### Hosted sign-in
+
+The server that replaces the old section after the cutover runs the hosted edition on the local directory
+([ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)):
+
+```text
+APP_EDITION=hosted
+USER_DIRECTORY=local
+AUTH_METHODS=surveyjs
+OPEN_SIGN_UP=on
+ACCOUNT_NOTICES=sign-in-licence         # or none
+ACCOUNT_WEBHOOK_SECRET=whsec_…          # secret; the site signs the account-deleted webhook with it
+```
+
+with the `STORAGE_PROVIDER` and `OIDC_*` settings of that server. Today's server keeps `USER_DIRECTORY=surveyjs-sql`.
+The rules below apply to a surveyjs.io sign-in on the hosted edition:
+
+- **The account id is the surveyjs.io id** (the `sub` claim, lower-cased). A `sub` that is not a GUID is refused.
+- **Every sign-in refreshes the account:** the email (only when the site says it is verified, and not when another
+  account holds it: the old email stays and a warning is logged), the name, the site's `blocked` flag and the licence
+  date.
+- **Blocked and disabled are separate.** A person the site blocks is refused with "Account blocked" (reason `blocked`
+  on the refused page), until the site unblocks them and they sign in again. An admin's **Disable** on the Users page is
+  its own switch; neither clears the other. A blocked first sign-in creates no account.
+- **An email held by another surveyjs.io id is refused** (reason `identity-conflict`; to an API client, `409`
+  `email-taken`, "Email in use"). It happens when someone deleted their surveyjs.io account and registered again: they
+  can sign in once the webhook has erased the old account. An account an admin created (no surveyjs.io identity yet) is
+  linked by its verified email as usual, and an account whose id is the sub but has lost its identity is linked again.
+- **`ACCOUNT_NOTICES=sign-in-licence`** shows the renewal notices from the `license_expires_at` claim stored at the
+  last sign-in. A renewal reaches Studio at the next sign-in, at most one session
+  (`SESSION_MAX_AGE_SECONDS`) later. It needs `USER_DIRECTORY=local`.
+- **`ADMIN_EMAIL` creates no account,** and makes the matching account admin at its sign-in only while the instance has
+  never had an admin.
+- **Deleted accounts arrive by the webhook** ([the secret](#the-webhook-secret)). `pnpm account:reconcile` refuses on
+  hosted: a person who has not signed in since the migration is unknown, not deleted.
+- **Deleting a user in Studio** does not close the surveyjs.io account: with `OPEN_SIGN_UP=on` that person gets a new,
+  empty account at the next sign-in.
 
 **Sessions.** A password change ends all of the user's other sessions: at once on the same server, within a minute
 on another one. The failed sign-ins of an email are counted in the server's memory: from the fifth failure in a row

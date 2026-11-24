@@ -1082,6 +1082,28 @@ the blocked `403` are as before.
 `listMembers` and for the last-admin rule's `userExists`; memory uses the seed's users. For the hosted track this means an own-store `ProjectStore` (1.3) must resolve users through the `UserDirectory`,
 and hosted Step 2 keeps read access to `Users` for the join until the cutover.
 
+### Users on the hosted edition (hosted Step 2)
+
+The hosted edition's new server keeps `USER_DIRECTORY=local` ([ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)),
+extended for surveyjs.io sign-in; there is no `profiles` directory and no user API. `resolveExternalSignIn`
+(`auth/external-sign-in.ts`) takes a `hosted` option for a `surveyjs` sign-in on `APP_EDITION=hosted`:
+
+- the account id is the `sub` claim (a GUID, lower-cased), so the webhook, API token creators and legacy access-key
+  owners name the same id as the site;
+- each sign-in calls `LocalAccountStore.refreshFromSignIn`: email (verified only; an email another account holds is kept
+  as it was, `email-taken`), name, `users.site_blocked` and `users.licence_expires_at` (migration `0010`). The site's
+  block is separate from `status = disabled` (an admin's); either refuses sign-in and fails the owner check of API
+  tokens and legacy keys;
+- an email held by an account of another surveyjs.io id is the refusal `identity-conflict` (`409 email-taken` for an API
+  client); an account whose id is the sub but has no `surveyjs` identity is linked again;
+- `ACCOUNT_NOTICES=sign-in-licence` computes the notices from the stored licence date with the rule of the `surveyjs-sql`
+  directory;
+- the bootstrap creates no account on hosted: `ADMIN_EMAIL` promotes the matching account at its sign-in only while the
+  instance has never had an admin;
+- `missingUsers` rejects and `account:reconcile` refuses: deleted accounts arrive by the webhook, which finds the account
+  by its `surveyjs` identity, then by id, erases the data (also under the surveyjs.io id) and deletes the account; the last
+  instance admin becomes a placeholder instead (`pnpm account:make-admin` names a new one).
+
 ### Accounts: erasure and the webhook (Step 12)
 
 `accounts/erasure.ts` holds **`eraseAccount(userId, { now })`**, one service for every trigger. It works in this

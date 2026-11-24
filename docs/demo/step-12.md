@@ -1,6 +1,9 @@
 # Demo: Step 12, accounts by deployment mode, data protection and hardening
 
-> The `surveyjs-api` user directory, its stub and its conformance run described below were removed in hosted Step 2 ([ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)).
+> **Historical.** The `surveyjs-api` user directory, its stub (`pnpm user-api:stub`) and its conformance run were
+> removed in hosted Step 2 ([ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)). The commands below that
+> use them no longer run; read those parts as a record of Step 12, not as steps to follow. The hosted sign-in that
+> replaced them is shown in [the hosted Step 2 demo](hosted-02.md).
 
 This page lets you check Step 12 without reading code. It takes about forty-five minutes (part 1 uses the Azurite
 replica, which pulls Docker images on the first run, see [Step 2](step-02.md); `pnpm demo:preview` builds the app
