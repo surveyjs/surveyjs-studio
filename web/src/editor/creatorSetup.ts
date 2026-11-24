@@ -14,11 +14,13 @@ import SurveyTheme from "survey-core/themes";
 import {
   registerCreatorTheme,
   registerSurveyTheme,
+  registerUIPreset,
   settings,
   type ICreatorPlugin,
   type ICreatorTheme,
   type ThemeTabPlugin,
 } from "survey-creator-core";
+import SurveyCreatorUIPreset from "survey-creator-core/ui-presets";
 import { SurveyCreator } from "survey-creator-react";
 import { underBase } from "../basePath";
 import obfuscatedDownloadIcon from "../shell/surveyjs-site/assets/icons/editor/obf-download.svg?raw";
@@ -55,6 +57,7 @@ function configureOnce(): void {
   configured = true;
 
   installMonaco();
+  registerUIPreset(SurveyCreatorUIPreset);
 
   // As on the site, the survey themes are registered both for the survey and as Creator themes.
   registerSurveyTheme(SurveyTheme);
