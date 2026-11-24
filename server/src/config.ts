@@ -200,6 +200,7 @@ export const ACCOUNT_NOTICES = [
   "license-expired",
   "license-expires-soon",
   "surveyjs-licenses",
+  "sign-in-licence",
 ] as const;
 export type AccountNoticesSetting = (typeof ACCOUNT_NOTICES)[number];
 
@@ -556,6 +557,9 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
     problems.push(
       "ACCOUNT_NOTICES: surveyjs-licenses requires USER_DIRECTORY=surveyjs-sql or surveyjs-api",
     );
+  }
+  if (env.ACCOUNT_NOTICES === "sign-in-licence" && effective !== "local") {
+    problems.push("ACCOUNT_NOTICES: sign-in-licence requires USER_DIRECTORY=local");
   }
   const secret = env.ACCOUNT_WEBHOOK_SECRET;
   if (secret !== undefined && !isWebhookSecret(secret)) {

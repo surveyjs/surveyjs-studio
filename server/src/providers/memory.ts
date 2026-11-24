@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { contentVersion } from "../domain/content-version.js";
 import { applySurveyChanges, newSurveyRecord } from "../domain/survey-changes.js";
 import { demoAccountNotices } from "../notices/account-notices.js";
+import { createSignInLicenceNotices } from "../notices/sign-in-licence.js";
 import {
   decideMemberErasure,
   decideRemoval,
@@ -131,7 +132,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
   if (accountNotices === "surveyjs-licenses") {
     throw new Error("ACCOUNT_NOTICES=surveyjs-licenses needs STORAGE_PROVIDER=azure-legacy");
   }
-  const notices = demoAccountNotices(accountNotices);
+  const demoNotices = demoAccountNotices(accountNotices);
   const surveys = (seed?.surveys ?? []).map(copySurvey);
   const users = (seed?.users ?? []).map(copyUser);
   const projects = new Map<string, MemorySeedProject>(
@@ -247,6 +248,10 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     options.userDirectory === "local"
       ? createMemoryLocalAccounts(seed?.users ?? [], seed ? [seedInstanceAdmin] : [])
       : null;
+  const notices =
+    local && accountNotices === "sign-in-licence"
+      ? createSignInLicenceNotices(local.accounts)
+      : demoNotices;
   const invitations = local
     ? createMemoryInvitations(
         {

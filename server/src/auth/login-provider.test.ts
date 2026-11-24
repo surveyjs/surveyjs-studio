@@ -61,6 +61,8 @@ interface Person {
   readonly verified?: boolean | "omitted";
   /** surveyjs.io's UserInfo `blocked`. */
   readonly blocked?: boolean;
+  /** The `license_expires_at` claim the surveyjs.io stub sends. */
+  readonly licenseExpiresAt?: string | null;
 }
 
 /**
@@ -85,6 +87,7 @@ async function authorizeAtStub(
   if (person.verified === "omitted") form.set("omit_email_verified", "on");
   else if (person.verified ?? true) form.set("email_verified", "on");
   if (person.blocked) form.set("blocked", "on");
+  if (person.licenseExpiresAt) form.set("license_expires_at", person.licenseExpiresAt);
   if (deny) form.set("deny", "1");
   const authorize = await fetch(`${stub?.url}${authorizePath}`, {
     method: "POST",
@@ -737,6 +740,27 @@ describe("hosted sign-in through surveyjs.io (ADR 0043)", () => {
     expect(decodeSession(config.sessionSecret, cookieValue(callback, "msid"))).toMatchObject({
       sub,
     });
+  });
+
+  it("lists the expired licence notice from the sign-in claim with ACCOUNT_NOTICES=sign-in-licence", async () => {
+    const { server, config } = await start({ ...hostedEnv, ACCOUNT_NOTICES: "sign-in-licence" });
+    const sub = randomUUID();
+    const person = {
+      sub,
+      email: "lia@example.com",
+      licenseExpiresAt: "2020-01-01T00:00:00.000Z",
+    };
+    const callback = await callbackOf(server, await authorizeAtStub(server, person, atSite));
+    const csrf = cookieValue(callback, "msid_csrf") ?? "";
+    const me = await server.inject({
+      url: "/api/v1/me",
+      headers: { cookie: `msid=${cookieValue(callback, "msid") ?? ""}; msid_csrf=${csrf}` },
+    });
+    expect(me.statusCode).toBe(200);
+    expect(me.json<{ notices: { code: string }[] }>().notices).toMatchObject([
+      { code: "license-expired" },
+    ]);
+    expect(config.accountNotices).toBe("sign-in-licence");
   });
 
   it("refuses a blocked person: the refused page for a browser, 403 for an API client", async () => {

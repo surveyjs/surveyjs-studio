@@ -867,6 +867,25 @@ describe("loadConfig", () => {
   });
 
   describe("account notices", () => {
+    it("accepts sign-in-licence only with USER_DIRECTORY=local", () => {
+      expect(messageOf(() => loadConfig({ ACCOUNT_NOTICES: "sign-in-licence" }))).toContain(
+        "ACCOUNT_NOTICES: sign-in-licence requires USER_DIRECTORY=local",
+      );
+      expect(
+        messageOf(() =>
+          loadConfig({ ACCOUNT_NOTICES: "sign-in-licence", USER_DIRECTORY: "memory" }),
+        ),
+      ).toContain("ACCOUNT_NOTICES: sign-in-licence requires USER_DIRECTORY=local");
+      expect(
+        load({
+          ...oidc,
+          ACCOUNT_NOTICES: "sign-in-licence",
+          USER_DIRECTORY: "local",
+          ADMIN_EMAIL: "admin@example.com",
+        }).accountNotices,
+      ).toBe("sign-in-licence");
+    });
+
     it.each(["none", "license-expired", "license-expires-soon"])("accepts %s", (value) => {
       expect(loadConfig({ ACCOUNT_NOTICES: value }).accountNotices).toBe(value);
     });
