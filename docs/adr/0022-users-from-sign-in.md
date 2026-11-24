@@ -5,7 +5,9 @@ Date: 2026-10-28
 ## Status
 
 Accepted. Supersedes the user API half of [ADR 0018](0018-accounts-by-deployment-mode.md) (R9). The account-deleted
-webhook of R9 stays.
+webhook of R9 stays. Changed by [ADR 0043](0043-hosted-users-on-the-local-directory.md) (2026-11-24): the hosted
+directory is `local`, extended, not a new `profiles` directory, and licences come as a sign-in claim, not from a site
+endpoint.
 
 ## Context
 
