@@ -61,20 +61,20 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 
 ## Progress
 
-| Step | Name                                                              | Status |
-| ---- | ----------------------------------------------------------------- | ------ |
-| 1    | Decisions and evidence: target stores, legacy traffic, mapping    | ☐      |
-| 2    | Users from sign-in: profiles, invitations and licence notices     | ☐      |
-| 3    | API tokens and CORS                                               | ☐      |
-| 4    | Partial responses                                                 | ☐      |
-| 5    | Compatibility layer: public endpoints and legacy files            | ☐      |
-| 6    | Compatibility layer: access-key endpoints and the migration guide | ☐      |
-| 7    | Taking over `api.surveyjs.io` traffic                             | ☐      |
-| 8    | Target provider readiness                                         | ☐      |
-| 9    | The migration tool                                                | ☐      |
-| 10   | Maintenance states and the cutover kit                            | ☐      |
-| 11   | Rehearsal and the cutover runbook                                 | ☐      |
-| 12   | Retiring the legacy code in this repository                       | ☐      |
+| Step | Name                                                           | Status |
+| ---- | -------------------------------------------------------------- | ------ |
+| 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☐      |
+| 2    | Users from sign-in: profiles, invitations and licence notices  | ☐      |
+| 3    | API tokens, legacy access keys and CORS                        | ☐      |
+| 4    | Partial responses                                              | ☐      |
+| 5    | The bridge: public actions and legacy files                    | ☐      |
+| 6    | The bridge: access-key actions and the migration guide         | ☐      |
+| 7    | Taking over `api.surveyjs.io` traffic                          | ☐      |
+| 8    | Target provider readiness                                      | ☐      |
+| 9    | The migration tool                                             | ☐      |
+| 10   | Maintenance states and the cutover kit                         | ☐      |
+| 11   | Rehearsal and the cutover runbook                              | ☐      |
+| 12   | Retiring the legacy code in this repository                    | ☐      |
 
 Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted foundation. The cutover itself is an operational event between Steps 11 and 12. It is run from the Step 11 runbook and is not a code step.
 
@@ -110,7 +110,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - the criteria: data location and data-processing agreement, point-in-time restore, cost including egress, closeness to the app, provider already in the repository;
   - the choice, and how backups and point-in-time restore work with it (managed, or WAL archiving to object storage when PostgreSQL is self-run).
 - **`pnpm inspect:legacy --stats`:** read-only counts and sizes per entity, from a configured store. It extends today's `inspect:legacy`, which lists one user's surveys (`--user`). Used on the replica in CI and on production by the SurveyJS team; its production output stays private.
-- **`docs/architecture/legacy-api-usage.md`:** the share of requests per endpoint and per client type (Form Library version, server-side caller), with the **scope decision** for the compatibility layer: kept, or `410`. Recorded in an ADR. Shares and orders of magnitude only; no counts, addresses or integrator names (rule 6).
+- **`docs/architecture/legacy-api-usage.md`:** the share of requests per endpoint and per client type (Form Library version, server-side caller), with the **scope decision** for the compatibility layer: kept, or `410`. Recorded in an ADR (0034, since superseded by [ADR 0035](docs/adr/0035-legacy-api-bridge.md): a bridge answers every action, and the usage data sets its build order). Shares and orders of magnitude only; no counts, addresses or integrator names (rule 6).
 - **`docs/architecture/hosted-migration-mapping.md`:**
   - every legacy entity and property, mapped to the logical schema;
   - the hosted-only tables;
@@ -186,14 +186,16 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ---
 
-## Step 3: API tokens and CORS
+## Step 3: API tokens, legacy access keys and CORS
 
-**Goal:** integrators can call the new API from their servers with a per-scope token, and from browsers through CORS. Tokens work before the cutover.
+**Goal:** integrators can call the new API from their servers with a per-scope token, and from browsers through CORS. A legacy access key works as a token, so the bridge ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)) can pass it through. Tokens work before the cutover.
+
+Studio's public API is what the bridge calls, so it must cover everything the old API can do before the cutover (ADR 0035, point 4). That coverage is built with the bridge, action by action, in Steps 5 and 6; this step builds the authentication it rests on.
 
 **References**
 
-- HS › API tokens and CORS; idea §6.2 B7; contract `bearerAuth` (`x-phase: P1`).
-- H12, H13, H14.
+- HS › API tokens and CORS; idea §6.2 B7; contract `bearerAuth` (`x-phase: P1`); ADR 0035.
+- H12, H13, H14; H15 (revoking a legacy key, moved here from Step 6).
 
 **Build**
 
@@ -213,6 +215,11 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - the permissions are those in the spec;
   - CSRF does not apply to bearer requests;
   - the last-used time is updated, at most once a minute.
+- **Legacy access keys as tokens:**
+  - a bearer value in the legacy key format is checked as the owner's Personal-and-projects key, with the rights the old API gave it;
+  - before the cutover the key is looked up in the site database through the Azure legacy provider; after it, against the hashes the migration copies into `legacy_access_keys` (Steps 8 and 9);
+  - a wrong or revoked key gets `401`; the bridge turns it into the old API's answer.
+- **The legacy key on the API tokens page:** shown as "Legacy access key, created …" with **Revoke**. The old API's `generateAccessKey`, answered by the bridge, replaces it; the page offers no way to make a new one.
 - **CORS:**
   - `/public/*` and bearer requests answer any origin without credentials;
   - cookie requests stay same-origin;
@@ -230,9 +237,10 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
     - a member who is not admin gets `403` when creating a project token;
     - bearer requests need no CSRF;
     - the CORS headers per request type;
-  - provider suite: the TokenStore.
+    - a legacy access key lists its owner's surveys; once revoked it gets `401`;
+  - provider suite: the TokenStore; the legacy key lookup on Azurite.
 - **Front-end unit:** the tokens page's visibility rules; the one-time secret display.
-- **Front-end e2e:** create a token, use it with `fetch` from a page on another origin, revoke it, and the next call fails.
+- **Front-end e2e:** create a token, use it with `fetch` from a page on another origin, revoke it, and the next call fails. The legacy key row appears and can be revoked.
 
 **Documentation:** API guide "API tokens" and "Calling the API from a browser", the API reference (generated), user guide "API tokens", `docs/demo/hosted-03.md`.
 
@@ -242,6 +250,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 2. Create a project token as the project admin. It lists only that project's surveys.
 3. Revoke it. The same `curl` gets `401`.
 4. From a page served on another port, `fetch` the public survey endpoint. CORS allows it.
+5. `curl -H "Authorization: Bearer <a seeded user's legacy access key>" /api/v1/surveys` lists that user's surveys.
 
 ---
 
@@ -291,145 +300,149 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ---
 
-## Step 5: Compatibility layer: public endpoints and legacy files
+## Step 5: The bridge: public actions and legacy files
 
-**Goal:** the legacy public endpoints and the legacy file URLs are answered by the app, with legacy-exact responses, on any provider.
+**Goal:** a separate service, the bridge ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)), answers the old API's public and unauthenticated actions exactly as `api.surveyjs.io` does, through Studio's public API only. Studio's public API gains what those actions need. The site's demos and jobs are forwarded to the old service.
 
-**Inputs needed:** golden responses recorded from the real `api.surveyjs.io` for a set of known test surveys on production, made by the SurveyJS team with a script from this step. The surveys belong to a test account and hold made-up answers; the recordings are reviewed in the private location (rule 6) before any is committed, and ids, emails and addresses that are not the test account's are replaced.
+**Inputs needed:** golden responses recorded from the real `api.surveyjs.io` for a set of known test surveys on production, made by the SurveyJS team with a script from this step. The surveys belong to a test account and hold made-up answers; the recordings are reviewed in the private location (rule 6) before any is committed, and ids, emails and addresses that are not the test account's are replaced. The reference for an answer with no recording is the old API's code (legacy documentation).
 
 **References**
 
-- HS › Compatibility layer; idea §2.8; `legacy-data-layout.md` §3.9, §7; the Step 1 usage ADR.
+- ADR 0035; HS › Compatibility layer (changed by ADR 0035); idea §2.8; `legacy-data-layout.md` §3.9, §7; [Legacy API usage](docs/architecture/legacy-api-usage.md) (the build order).
 - H5, H6, H7, H8, H30.
 
 **Build**
 
-- **`server/src/legacy-api/`:**
-  - mounted when `LEGACY_API=on`, on the paths `public/Survey`, `public/v1/Survey` and the unauthenticated `private/Surveys/files` and `getSurveyPublicResults/{id}`;
-  - outside `/api/v1` and outside the OpenAPI document;
-  - built on the provider interfaces only.
-- **Endpoints:**
-  - `getSurvey`, `getSurveyAndIsCompleted`, `post`, `post/page-number`, `upload` (the `dxsimage:`/`dxsfile:` answers), `getResult`, `isCompleted`, `image`, `file`;
-  - `files?name=`, `getSurveyPublicResults/{id}`.
-- **Kept and dropped quirks:** each legacy behaviour is either kept or deliberately dropped, and the ADR lists them (for example, `getSurvey` on an unpublished survey).
-- **Legacy files:**
+- **`bridge/`, a new workspace package and image** (a Dockerfile target of its own):
+  - TypeScript, a small HTTP server with no store and no store credentials;
+  - a client generated from `contract/openapi.yaml`, so a breaking contract change fails the bridge's build;
+  - settings: Studio's API base URL, the old service's own host name, the cache size.
+- **Routing, as the old API routes:** both prefixes (`public/Survey` and `public/v1/Survey`), paths without regard to letter case, with and without a trailing slash, and with and without an `{id}` segment where the old route has one.
+- **Public actions:** `getSurvey`, `getSurveyAndIsCompleted`, `post`, `upload` (the `dxsimage:`/`dxsfile:` answers), `getResult`, `isCompleted`, `image`, `file`. `getSurveyAndIsCompleted` and `image` work as their code intends (ADR 0035), although they fail today. The old API has no `post/page-number` route, so there is none.
+- **Unauthenticated private actions:** `files?name=`, `getSurveyPublicResults/{id}` and the other `private/Surveys` actions the old API answers without a key.
+- **Forwarding:** the site's demos and jobs (the list in ADR 0035, point 5) go unchanged to the old service, method, headers and body included.
+- **The `getSurvey` cache:** answers are kept with Studio's `ETag` and revalidated with `If-None-Match`, so an edit in Studio shows at once and the busy scheduled caller costs Studio little.
+- **Studio's public API, as these actions need it:** reading a survey's definition by ID with the old rules (the old `getSurvey` ignores the publish state; the API offers that read explicitly, documented as the legacy read), submitting by `postId` with a client ID, a respondent's completion state, one question's aggregate, respondent and editor files by their legacy names, public results. Each is a contract change with conformance tests on every provider.
+- **Legacy files in Studio:**
   - a `legacy_files` lookup (name → file ID), filled by the migration (Step 9);
   - before the cutover, the Azure legacy provider reads the `surveyfiles` and `files` shares directly. That needs `@azure/storage-file-share` and a stub in tests, because Azurite has no Files service.
-- **Shared rules:** rate limits on the public paths, the response size limits, IP capture only when the setting is on, and idempotency where the legacy client sends a repeat.
+- **Shared rules stay in Studio:** rate limits on the public paths, the response size limits, IP capture only when the setting is on, and idempotency where the legacy client sends a repeat. The bridge passes the client address in `X-Forwarded-For`, and Studio trusts it from the bridge only.
 - **`legacy-compat-tests`:**
   - a new package: HTTP only, with a base URL;
-  - golden files for every kept endpoint;
+  - golden files for every action of this step;
   - a recording script for the SurveyJS team.
 
 **Tests**
 
-- **Back-end unit:** each response mapper (casing, `{ Data, ResultCount }`, `isCompleted` values, `getResult` aggregation).
-- **Back-end e2e:** `legacy-compat-tests` on memory and Azure legacy, against golden files; Form Library v1.x (pinned in the test package) loading a survey with `surveyId` and posting with `surveyPostId` against the app.
+- **Back-end unit:** each answer mapper in the bridge (casing, `{ Data, ResultCount }`, `isCompleted` values, `getResult` aggregation, error texts); the route matching (prefixes, case, trailing slash); the cache's revalidation.
+- **Back-end e2e:**
+  - `legacy-compat-tests` against the bridge in front of Studio on memory and on Azure legacy, against golden files;
+  - Form Library v1.x (pinned in the test package) loading a survey with `surveyId` and posting with `surveyPostId` through the bridge;
+  - forwarding: a site path reaches a stub of the old service unchanged;
+  - conformance: the new contract operations on every provider.
 - **Front-end:** none; no UI.
 
-**Documentation:** `docs/api/legacy-compat.md` (what is served, kept and dropped quirks), the compatibility ADR, `docs/testing.md` (the fourth seam and recording golden files), `docs/demo/hosted-05.md`.
+**Documentation:** `docs/api/legacy-compat.md` (the bridge: what it answers, how, and its settings), `docs/testing.md` (recording golden files), `docs/operations.md` (running the bridge), `docs/demo/hosted-05.md`.
 
 **Demo checklist**
 
-1. With `LEGACY_API=on`, a small HTML page using Form Library v1.x and `surveyId` loads a seeded survey from the local app, and its result appears in the Table.
-2. `curl …/public/v1/Survey/getResult?resultId=…&name=q1` matches the golden file.
-3. A survey whose JSON holds a legacy `files?name=` image shows it, served by the app.
+1. With the bridge running in front of the local app, a small HTML page using Form Library v1.x and `surveyId` loads a seeded survey through the bridge, and its result appears in the Table.
+2. `curl …/public/v1/Survey/getResult?resultId=…&name=q1` on the bridge matches the golden file.
+3. A survey whose JSON holds a legacy `files?name=` image shows it, served through the bridge.
+4. A request to a site path (for example `private/Surveys/getTempFile`) reaches the stub of the old service.
 
 ---
 
-## Step 6: Compatibility layer: access-key endpoints and the migration guide
+## Step 6: The bridge: access-key actions and the migration guide
 
 **Goal:**
 
-- the access-key endpoints that are still in use keep working;
-- every other legacy path answers a clear `410`;
-- integrators have a migration guide;
-- users can revoke their legacy access key.
+- every access-key action of the old API answers exactly as before, through Studio's public API with the caller's key, used or not;
+- Studio's public API covers everything the old API can do;
+- integrators have a migration guide that maps each old action to the public API.
 
 **References**
 
-- HS › Compatibility layer (access keys, scope); the Step 1 usage ADR.
-- H9, H10, H11, H15.
+- ADR 0035; HS › Compatibility layer (changed by ADR 0035); [Legacy API usage](docs/architecture/legacy-api-usage.md) (the build order).
+- H9, H11.
 
 **Build**
 
-- **Access-key authentication:**
-  - before the cutover, the key is looked up in the site database through the Azure legacy provider;
-  - after it, the key is checked against `legacy_access_keys`, which store hashes.
-
-  A revoked key gets the legacy-shaped `401`.
-
-- **The kept private endpoints,** exactly as the Step 1 ADR lists them, with golden files.
-- **`410 Gone`** for every other legacy My Surveys path: a JSON body with a message and the guide URL.
-- **The legacy key on the API tokens page:**
-  - shown as "Legacy access key, created …" with **Revoke**;
-  - no new keys are issued;
-  - the hash and the revoked flag are stored (TokenStore or the hosted-only table).
-- **`docs/api/migrating-from-api-surveyjs-io.md`:** every legacy endpoint, its replacement in the new API, and examples.
+- **The access-key actions of `private/Surveys`,** in the order of their use (ADR 0034's evidence), then the unused ones:
+  - survey records: the active and archived lists, create, clone, rename, archive, restore, delete, move to a project, `getSurveyInfo`;
+  - content: `changeJson` (a history point, as the editor saves), `changeTheme`, `uploadFiles`, `getHistoryPoint`;
+  - publishing: `publish`, `unpublish`, `getIsPublished`, `publishVersion`, `changeVersionTitle`;
+  - responses: `getSurveyResults` (paging with `continuationToken`), `getSurveyDemoResults`, `exportSurveyResults`, `deleteResult`, `deleteAllResults`;
+  - settings and layouts: `setUseCookies`, `setGenerationJSONType`, `storeIPAddressInResult`, the result columns, table and summary states, permissions and public access;
+  - `generateAccessKey`, which replaces the caller's legacy key.
+- **The key:** the bridge forwards `accessKey` as the bearer token (Step 3). A wrong or revoked key gets the old API's answer. The cookie sign-in is not accepted (ADR 0035).
+- **Studio's public API, as these actions need it:** each capability as an ordinary operation of the contract. An old setting Studio has no concept for is stored as given, with the survey or the user, so the old answer comes back unchanged (ADR 0035, point 4).
+- **Golden files for every action:** recorded from production for the used ones; for the actions production traffic never calls, recorded on purpose by the SurveyJS team with the test account.
+- **`docs/api/migrating-from-api-surveyjs-io.md`:** every old action, its public API operation, and examples. The bridge's mapping is the source, so the guide and the code say the same.
 
 **Tests**
 
-- **Back-end unit:** key hashing; the `410` body.
+- **Back-end unit:** each answer mapper; the old error answers for a missing, wrong and revoked key.
 - **Back-end e2e:**
-  - `legacy-compat-tests`: each kept private endpoint against golden files, with a valid, wrong and revoked key; one `410` per retired group;
-  - conformance: revoking the legacy key.
-- **Front-end e2e:** the legacy key row appears and can be revoked.
+  - `legacy-compat-tests`: each action against golden files, with a valid, wrong and revoked key;
+  - conformance: the new contract operations on every provider.
+- **Front-end:** none beyond Step 3.
 
-**Documentation:** the migration guide, `docs/api/legacy-compat.md` (private endpoints), user guide "API tokens" (legacy keys), `docs/demo/hosted-06.md`.
+**Documentation:** the migration guide, `docs/api/legacy-compat.md` (private actions), `docs/demo/hosted-06.md`.
 
 **Demo checklist**
 
-1. A kept private endpoint answers with a seeded user's access key, and matches the golden file.
-2. A retired endpoint answers `410` with the guide link.
-3. Revoke the key on the API tokens page. The kept endpoint now answers `401`.
+1. `getActive` through the bridge with a seeded user's access key matches the golden file.
+2. `changeJson` through the bridge changes the survey; the editor shows the new definition and a history entry.
+3. Revoke the key on the API tokens page. The same call now gets the old API's answer for a wrong key.
 
 ---
 
 ## Step 7: Taking over `api.surveyjs.io` traffic
 
-**Goal:** the My Surveys paths of `api.surveyjs.io` are served by the app while the data is still on the legacy stores. The old service is out of the request path before any data moves.
+**Goal:** `api.surveyjs.io` points at the bridge while the data is still on the legacy stores: the bridge answers the My Surveys actions through Studio, which still runs on the Azure legacy provider, and forwards the site's paths to the old service. The old service is out of the My Surveys request path before any data moves, and the bridge does not change at the cutover.
 
 **Inputs needed:**
 
-- the SurveyJS team's reverse proxy on `api.surveyjs.io`, or control of its DNS. The host serves only My Surveys, so the app takes the whole host;
-- an access-log sample, kept private (rule 6);
-- the staging environment. The production app runs on the Hetzner server in mode 1.1 ([Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)); taking the host means `api.surveyjs.io` reaches that server too, which needs its Caddy site and certificate.
+- **the DNS switch, made by the SurveyJS team** ([ADR 0035](docs/adr/0035-legacy-api-bridge.md)). The host also serves the site's demos and jobs ([Legacy API usage › Results](docs/architecture/legacy-api-usage.md#results-2026-11-13)); the bridge forwards them to the old service by that service's own host name, so they keep working without a proxy by path;
+- an access-log sample, kept private (rule 6): the old service's HTTP logs, on since 2026-11-13;
+- **the load to take over:** most `getSurvey` traffic is one scheduled server-side job that re-reads a fixed set of
+  surveys every few minutes ([Legacy API usage › Client types](docs/architecture/legacy-api-usage.md#client-types-preview-2026-11-17)).
+  The bridge's cache and Studio serve that steady rate from the first minute of the switch; the SurveyJS team found its owner (2026-11-18) and contacts them before
+  the cutover;
+- the staging environment. The production app runs on the Hetzner server in mode 1.1 ([Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)); the bridge runs on the same server, with its own site and certificate for `api.surveyjs.io` (private infrastructure notes).
 
 **References**
 
-- HS › Routing `api.surveyjs.io`; plan.md Step 14 (the production image and staging).
+- ADR 0035; HS › Routing `api.surveyjs.io` (changed by ADR 0035); plan.md Step 14 (the production image and staging).
 - H18, H19.
 
 **Build**
 
 - **`pnpm legacy:replay`:**
   - reads an access-log sample;
-  - replays read requests against both the old service and the app, compares the JSON, and writes an HTML report of differences;
+  - replays read requests against both the old service and the bridge, compares the answers, and writes an HTML report of differences;
   - with `--writes`, replays write requests only against staging.
-- **Switching the host:**
-  - with a proxy: the rule set for the groups (public reads, public writes, private endpoints), with the rollback rule next to each;
-  - without one: the DNS switch of the whole host, with the time-to-live lowered days before so that switching back is fast.
+- **The bridge in production:** the playbooks or Compose file run the bridge image next to the app, at the same version; the server's web front serves `api.surveyjs.io` and gets its certificate. The certificate needs the DNS record, so the first one is requested at the switch (or by a DNS challenge before it).
+- **Switching the host:** the DNS record of `api.surveyjs.io` moves to the server, with the time-to-live lowered days before, so switching back is fast. Switching back restores the old record; the bridge holds no data, so nothing is lost.
 - **`docs/operations/legacy-api-takeover.md`:**
-  - the order of the groups;
-  - the replay gate for each: no unexplained differences;
-  - what to watch: error rate, latency, the `410` count;
+  - the replay gate: no unexplained differences;
+  - the switch, and what to watch: error rate and latency per action, the forwarded paths' errors, the cache hit rate;
   - rollback.
-- **Operating the layer:**
-  - structured logs and metrics per legacy endpoint;
-  - `410` responses counted per client, so remaining users can be contacted.
+- **Operating the bridge:** structured logs and metrics per old action, with the caller's key reduced to a hash, so remaining users of each action can be found and contacted before the bridge is retired.
 
 **Tests**
 
-- **Back-end unit:** the JSON comparison rules (ordering, the date formats the legacy service emits).
-- **Back-end e2e:** replay of a recorded fixture log against two local servers (the app and a golden-file stub) produces the expected report.
+- **Back-end unit:** the comparison rules (ordering, the date formats the legacy service emits).
+- **Back-end e2e:** replay of a recorded fixture log against two local servers (the bridge and a golden-file stub) produces the expected report.
 - **Staging:** the replay of the real sample, run manually. The report stays private; the PR states the result (no unexplained differences, or the list of explained ones in general terms).
 
-**Documentation:** the takeover runbook, `docs/operations.md` (legacy API monitoring), `docs/demo/hosted-07.md`.
+**Documentation:** the takeover runbook, `docs/operations.md` (bridge monitoring), `docs/demo/hosted-07.md`.
 
 **Demo checklist**
 
 1. The replay report for the staging sample shows no unexplained differences.
-2. On staging, switch the public-read group (or the whole staging host) to the app, check that a v1.x page still works, and switch back. Both moves take effect without downtime.
+2. On staging, point a staging host name at the bridge, check that a v1.x page still works and that a site path reaches the old service, and switch back. Both moves take effect without downtime.
 
 ---
 
@@ -455,8 +468,9 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
   These are empty and unused in the self-hosted image.
 
+- **History snapshots above a size limit in the byte store** ([ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md)): a migration of `survey_history` (`snapshot` nullable, `snapshot_key`, the check constraint), the `HISTORY_INLINE_MAX_BYTES` setting (no limit by default), the object-first save, the delete order and the weekly sweep. The hosted limit comes from the history's size distribution, which the stats command measures (bytes below a few thresholds). This one is not hosted-only: self-hosted installations can set the limit too.
 - **A scale check** on a synthetic data set the size of production (from the Step 1 estimate; the generator takes the size as a parameter, so the real figures stay private):
-  - list, page, export and statistics times on the largest surveys;
+  - list, page, export and statistics times on the largest surveys, including **one survey with millions of responses**: one production survey holds most of them ([ADR 0033](docs/adr/0033-hosted-target-stores.md#the-volumes-2026-11-18));
   - index fixes until they meet targets agreed in the step's ADR.
 - **Backup and restore** for the hosted stores, tested once with a restore into a scratch instance (H25):
   - point-in-time restore: managed, or WAL archiving to object storage when PostgreSQL runs on our own Hetzner servers (Step 1 ADR);
@@ -497,7 +511,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - **Commands:**
   - `pnpm migrate:hosted plan`: volumes and estimate;
   - `copy`: full, with checkpoints;
-  - `delta`: since the high-water marks;
+  - `delta`: since the high-water marks. It must not list every blob or file: listing the production history alone takes hours. It reads only what belongs to surveys changed after the pre-copy, and only the responses added since ([ADR 0033 › Window estimate](docs/adr/0033-hosted-target-stores.md#window-estimate));
   - `reconcile`: key-set comparison and deletions;
   - `verify`: counts, checksums, sample deep compares through both providers' interfaces.
 - **Safety:**
@@ -505,6 +519,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - a dry run into a scratch target is the default unless `--target` is given;
   - progress logs, and a machine-readable report; reports from production or a staging copy stay private (rule 6).
 - **Files:** editor images and respondent files go into the target file store, with `legacy_files` filled for the legacy names. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID.
+- **History snapshots** go inline or to the byte store by the ADR 0036 limit, the object before its row, so a resumed `copy` is safe.
 
 **Tests**
 
@@ -588,7 +603,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 **Inputs needed:**
 
 - a production-sized staging copy of the legacy stores;
-- the target environment;
+- the target environment at production size ([ADR 0033](docs/adr/0033-hosted-target-stores.md#the-volumes-2026-11-18); the size is in the private infrastructure notes). The rehearsal server is built at that size; the production server is resized before its first `copy` (one-way: the disk cannot shrink again);
 - the SurveyJS team for the rehearsal;
 - a date for the announcement, one to two weeks before the window.
 
@@ -602,9 +617,9 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 - **The rehearsal:** pre-copy, a simulated day of changes, the window, verification, a rollback, and a second, successful window. Measured timings go into the runbook.
 - **Fixes** found in the rehearsal, in this step's PR or follow-up PRs before the cutover.
 - **`docs/operations/hosted-cutover-runbook.md`:**
-  - announcements one to two weeks ahead, with templates for users and integrators. The integrator template says that access keys can no longer be viewed after the cutover;
+  - announcements one to two weeks ahead, with templates for users and integrators. The integrator template says that access keys can no longer be viewed after the cutover. Both say the data moves to another provider, and the privacy statement is updated in the same release ([ADR 0033](docs/adr/0033-hosted-target-stores.md));
   - roles and the go/no-go criteria;
-  - the window timeline;
+  - the window timeline, preceded by the production server's resize to production size and the pre-copy, with a full backup right after it;
   - rollback;
   - post-cutover checks;
   - the purge date of `deleted_responses`;
@@ -650,7 +665,7 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - `pnpm demo:azurite`.
 - **Keep:**
   - the migration tool's importer and NDJSON format, which are reusable for provider-to-provider moves;
-  - the compatibility layer and its suite, which run on SQL;
+  - the bridge and `legacy-compat-tests`, which call only Studio's public API, until the bridge's traffic has gone and it is retired on its own (ADR 0035);
   - `legacy-data-layout.md` and the mapping, marked historical.
 - **Update** the CI pipeline, the development modes (memory, SQLite, PostgreSQL, S3) and the provider lists in all documentation.
 - **ADRs** that describe legacy behaviour (0006, 0010 and others) are marked superseded, with a pointer to this step.
@@ -677,10 +692,10 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 | ----- | --------------------- |
 | 1     | H16, H17              |
 | 2     | H27                   |
-| 3     | H12, H13, H14         |
+| 3     | H12, H13, H14, H15    |
 | 4     | H6                    |
 | 5     | H5, H6, H7, H8, H30   |
-| 6     | H9, H10, H11, H15     |
+| 6     | H9, H11               |
 | 7     | H18, H19              |
 | 8     | H25                   |
 | 9     | H1, H2, H20, H21, H22 |
@@ -688,10 +703,12 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 | 11    | H24, H26, H28         |
 | 12    | H29                   |
 
+H10 (a clear `410` for a retired endpoint) no longer applies: under ADR 0035 nothing is retired.
+
 **Decisions:**
 
 - **D17:** Step 2 completes the switch to the user API.
-- **D18:** Steps 1, 5–11 (migration, compatibility layer, tokens before the cutover, IDs kept). Step 12 removes the legacy code, and the documents stay.
+- **D18:** Steps 1, 5–11 (migration, the bridge, tokens before the cutover, IDs kept). Step 12 removes the legacy code, and the documents stay.
 - **D19:** nothing here; the site's redirects are in place since plan.md Step 14.
 - **D10 (revised):** Step 1 chooses the stores.
 - **D22:** planned to run beside the self-hosted track, which finished first; see [What the self-hosted track already built](#what-the-self-hosted-track-already-built).
@@ -700,7 +717,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 - `bearerAuth` (Step 3), and `partial`, `lastPageIndex` and `SurveyResponse.partial` (Step 4) lose `x-phase: P1`;
 - the token operations are new (Step 3);
-- the compatibility layer stays outside the contract.
+- Steps 5 and 6 add the operations the bridge needs, so the contract covers everything the old API can do (ADR 0035);
+- the bridge's old routes stay outside the contract.
 
 ## Open points this plan depends on
 
@@ -710,7 +728,8 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
   - the user API (Step 2);
   - logs and statistics (Step 1);
   - golden responses (Step 5);
-  - the proxy or DNS change (Step 7);
+  - the DNS change of `api.surveyjs.io` (Step 7);
+  - **the largest survey** (before Step 9): one customer's survey holds about two thirds of all responses. The SurveyJS team talks to its owner before the cutover: the move to another provider, and whether all of its responses must move. (The site's demo results, checked 2026-11-18, are not an issue);
   - removing the access key from the manage account page (cutover);
   - the staging copy (Step 11);
   - removing the legacy code after the cutover.

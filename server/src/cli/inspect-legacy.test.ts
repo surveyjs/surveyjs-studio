@@ -223,3 +223,136 @@ describe("run (provider seam)", () => {
     expect(r.err.join("")).not.toContain("boom");
   });
 });
+
+describe("parseArgs --stats", () => {
+  it("accepts --stats with --json, --result-bytes and --env-file", () => {
+    expect(parseArgs(["--stats", "--json", "--result-bytes", "--env-file", "x.env"])).toEqual({
+      kind: "stats",
+      envFile: "x.env",
+      json: true,
+      resultBytes: true,
+    });
+  });
+  it("accepts --stats alone", () => {
+    expect(parseArgs(["--stats"])).toEqual({
+      kind: "stats",
+      envFile: null,
+      json: false,
+      resultBytes: false,
+    });
+  });
+  it("rejects --stats with --user", () => {
+    expect(parseArgs(["--stats", "--user", "a"])).toMatchObject({
+      kind: "usage-error",
+      message: expect.stringContaining("not both"),
+    });
+  });
+  it("rejects --json or --result-bytes without --stats", () => {
+    expect(parseArgs(["--user", "a", "--json"])).toMatchObject({ kind: "usage-error" });
+    expect(parseArgs(["--user", "a", "--result-bytes"])).toMatchObject({ kind: "usage-error" });
+  });
+  it("asks for --user or --stats when neither is given", () => {
+    expect(parseArgs([])).toMatchObject({
+      kind: "usage-error",
+      message: expect.stringContaining("--stats"),
+    });
+  });
+});
+
+describe("run --stats (measure seam)", () => {
+  const legacyEnv = {
+    LEGACY_SQL_CONNECTION_STRING: "Server=sql.invalid;Password=Secret-Sql-1",
+    LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: "AccountName=a;AccountKey=Secret-Key-1",
+    LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "AccountName=a;AccountKey=Secret-Key-1",
+  };
+  const measurements = {
+    sql: {
+      users: 3,
+      usersWithAccessKey: 1,
+      blockedUsers: 0,
+      surveys: 4,
+      projectSurveys: 1,
+      archivedSurveys: 0,
+      surveysWithTheme: 0,
+      themeBytes: 0,
+      projects: 1,
+      memberships: 2,
+    },
+    tables: [],
+    containers: [],
+    resultBytesMeasured: false,
+  };
+
+  function capture() {
+    const out: string[] = [];
+    const err: string[] = [];
+    return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } };
+  }
+  const noProviders = () => {
+    throw new Error("the provider set is not used by --stats");
+  };
+
+  it("prints the text summary of what the measurer read", async () => {
+    const { out, err, io } = capture();
+    const seen: unknown[] = [];
+    const code = await run(["--stats"], io, noProviders, {
+      env: legacyEnv,
+      measure: async (legacy, options) => {
+        seen.push(legacy, options.resultBytes);
+        return measurements;
+      },
+    });
+    expect(err.join("")).toBe("");
+    expect(code).toBe(0);
+    expect(out.join("")).toMatch(/^Surveys\s+4 \(personal 3, project 1, archived 0\)$/m);
+    expect(seen).toEqual([
+      {
+        sqlConnectionString: legacyEnv.LEGACY_SQL_CONNECTION_STRING,
+        surveysStorageConnectionString: legacyEnv.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING,
+        resultsStorageConnectionString: legacyEnv.LEGACY_RESULTS_STORAGE_CONNECTION_STRING,
+      },
+      false,
+    ]);
+  });
+
+  it("prints the summary as JSON with --json, and passes --result-bytes on", async () => {
+    const { out, io } = capture();
+    let resultBytes: boolean | null = null;
+    const code = await run(["--stats", "--json", "--result-bytes"], io, noProviders, {
+      env: legacyEnv,
+      measure: async (_legacy, options) => {
+        resultBytes = options.resultBytes;
+        return measurements;
+      },
+    });
+    expect(code).toBe(0);
+    expect(resultBytes).toBe(true);
+    expect(JSON.parse(out.join(""))).toMatchObject({ sql: { surveys: 4, personalSurveys: 3 } });
+  });
+
+  it("exits 2 and names the variable when a connection string is missing", async () => {
+    const { out, err, io } = capture();
+    const code = await run(["--stats"], io, noProviders, {
+      env: { ...legacyEnv, LEGACY_RESULTS_STORAGE_CONNECTION_STRING: " " },
+      measure: async () => measurements,
+    });
+    expect(code).toBe(2);
+    expect(out.join("")).toBe("");
+    expect(err.join("")).toContain("LEGACY_RESULTS_STORAGE_CONNECTION_STRING");
+    expect(err.join("")).toContain("--env-file docker/azurite.env");
+  });
+
+  it("exits 1 with a safe message, never a secret, when the measurer fails", async () => {
+    const { out, err, io } = capture();
+    const code = await run(["--stats"], io, noProviders, {
+      env: legacyEnv,
+      measure: async () => {
+        throw new Error(`login failed: ${legacyEnv.LEGACY_SQL_CONNECTION_STRING}`);
+      },
+    });
+    expect(code).toBe(1);
+    expect(out.join("")).toBe("");
+    expect(err.join("")).toMatch(/^Error: /);
+    expect(err.join("")).not.toContain("Secret");
+  });
+});
