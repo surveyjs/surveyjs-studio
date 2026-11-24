@@ -451,6 +451,10 @@ export interface LocalAccount {
   /** null: no password set (an invited account, or one made for another sign-in method). */
   readonly passwordHash: string | null;
   readonly mustChangePassword: boolean;
+  /** The site blocks the account (set at sign-in); `user.blocked` is true for it too. */
+  readonly siteBlocked: boolean;
+  /** ISO 8601 UTC; when the licence ends, as the site reported it. */
+  readonly licenceExpiresAt: string | null;
   /** Raised by every password change and reset and by disabling: older sessions end (ADR 0026). */
   readonly sessionEpoch: number;
   /** ISO 8601 UTC; null before the first sign-in. */
@@ -463,6 +467,14 @@ export interface LocalAccount {
 export interface AccountChange {
   readonly instanceRole?: InstanceRole;
   readonly status?: "active" | "disabled";
+}
+
+/**
+ * `allowLastInstanceAdmin`: the change may take the last active admin away. Only the account-deleted
+ * webhook passes it, to disable the last admin before it becomes a placeholder (`tombstoneAccount`).
+ */
+export interface LastInstanceAdminOptions {
+  readonly allowLastInstanceAdmin?: boolean;
 }
 
 export type AccountUpdate =
@@ -479,8 +491,26 @@ export interface NewLocalAccount {
   readonly status: AccountStatus;
   readonly passwordHash: string | null;
   readonly mustChangePassword: boolean;
+  /** Default false. */
+  readonly siteBlocked?: boolean;
+  /** ISO 8601 UTC; default null. */
+  readonly licenceExpiresAt?: string | null;
   readonly createdAt: string;
 }
+
+/** What the site tells at a sign-in about the account (refreshFromSignIn). */
+export interface SignInRefresh {
+  /** Lower-case. */
+  readonly email: string;
+  readonly displayName: string;
+  readonly siteBlocked: boolean;
+  readonly licenceExpiresAt: string | null;
+}
+
+export type SignInRefreshResult =
+  | { readonly outcome: "updated"; readonly account: LocalAccount }
+  | { readonly outcome: "email-taken"; readonly account: LocalAccount }
+  | { readonly outcome: "not-found" };
 
 export type PasswordLinkPurpose = "setup" | "invitation" | "reset";
 
@@ -510,6 +540,11 @@ export interface LocalAccountStore {
   /** Accounts with the instance role `admin` and the status `active`. */
   countActiveAdmins(): Promise<number>;
   /**
+   * Accounts with the instance role `admin`, in any status (a deleted admin's placeholder
+   * included): 0 only on an instance that never had an admin (ADR 0043).
+   */
+  countAdmins(): Promise<number>;
+  /**
    * Rejects (nothing stored) when the id or the email is in use. With `link`, stores the account's
    * set-password link in the same transaction: both are stored, or neither.
    */
@@ -526,9 +561,21 @@ export interface LocalAccountStore {
   /**
    * Changes the role and the status (`nextStatus`), atomically with the last-instance-admin rule
    * (`decideAccountChange`; two changes at once cannot both take the last admin away). Disabling
-   * an account that was not disabled raises its session epoch.
+   * an account that was not disabled raises its session epoch. `allowLastInstanceAdmin` skips the
+   * rule: only for the account-deleted webhook (ADR 0043), never for an instance admin's change.
    */
-  updateAccount(id: string, change: AccountChange): Promise<AccountUpdate>;
+  updateAccount(
+    id: string,
+    change: AccountChange,
+    options?: LastInstanceAdminOptions,
+  ): Promise<AccountUpdate>;
+  /**
+   * Stores what the site told at a sign-in: the display name, the block and the licence date, and
+   * the email (also in the account's `surveyjs` identity). An email another account holds is
+   * `email-taken`: the old email stays, the rest is written. Status, role and password are not
+   * changed.
+   */
+  refreshFromSignIn(id: string, change: SignInRefresh): Promise<SignInRefreshResult>;
   /** The account an external identity is linked to; null when none. */
   accountByIdentity(provider: ExternalMethod, subject: string): Promise<LocalAccount | null>;
   /** Links the identity to an account; `taken` when that (provider, subject) is linked already, to anyone. */
@@ -546,6 +593,14 @@ export interface LocalAccountStore {
   unlinkIdentity(userId: string, provider: ExternalMethod, subject: string): Promise<number | null>;
   /** Deletes the account with its links and identities, under the same rule. */
   deleteAccount(id: string): Promise<"deleted" | "not-found" | "last-instance-admin">;
+  /**
+   * Replaces the account's personal data with a placeholder, atomically (ADR 0043 point 2: the
+   * last instance admin deleted on surveyjs.io): email `deleted-<id>@invalid`, display name
+   * `Deleted account`, status `disabled`, no password, the site's block cleared, no licence date;
+   * removes its identities and set-password links and raises the session epoch. The role is kept.
+   * null for an unknown or non-GUID id.
+   */
+  tombstoneAccount(id: string): Promise<LocalAccount | null>;
   /**
    * An admin's reset, atomically: clears the password, unlinks every identity, raises the epoch,
    * marks the account's unused links used, and stores the new link (`invitation` for an invited
@@ -820,7 +875,7 @@ export interface ProviderSet {
 }
 
 export type ReadinessName =
-  "sql" | "surveys-storage" | "results-storage" | "user-api" | "memory" | "database" | "files";
+  "sql" | "surveys-storage" | "results-storage" | "memory" | "database" | "files";
 
 export interface ReadinessCheck {
   readonly name: ReadinessName;

@@ -23,16 +23,15 @@ surveyjs.io, and they run locally only. See [Visual parity](#visual-parity).
 
 ## Run everything
 
-| Command                          | Runs                                                                                                                                                            |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test`                      | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                                  |
-| `pnpm test:unit`                 | Vitest projects: `scripts`, `contract`, `server`, `web` (the server project includes the SQLite provider suite and migrator tests, on temporary files)          |
-| `pnpm test:conformance`          | The conformance suite against a server it starts itself                                                                                                         |
-| `pnpm test:compat`               | The [compatibility suite](#the-compatibility-suite): the bridge in front of Studio on the memory provider, against golden files                                 |
-| `pnpm test:conformance:user-api` | The conformance suite with the server on `USER_DIRECTORY=surveyjs-api`, against the user-API stub it starts (no Docker)                                         |
-| `pnpm e2e`                       | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
-| `pnpm e2e:azurite`               | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results, results-details, projects and xss specs in Azurite mode (needs Docker) |
-| `pnpm e2e:prod-like`             | The same specs against the production image with production's settings (`pnpm prod-like:up:e2e` first; needs Docker)                                            |
+| Command                 | Runs                                                                                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`             | `pnpm test:unit`, then `pnpm test:conformance`                                                                                                                  |
+| `pnpm test:unit`        | Vitest projects: `scripts`, `contract`, `server`, `web` (the server project includes the SQLite provider suite and migrator tests, on temporary files)          |
+| `pnpm test:conformance` | The conformance suite against a server it starts itself                                                                                                         |
+| `pnpm test:compat`      | The [compatibility suite](#the-compatibility-suite): the bridge in front of Studio on the memory provider, against golden files                                 |
+| `pnpm e2e`              | Playwright on Chromium, Firefox and WebKit                                                                                                                      |
+| `pnpm e2e:azurite`      | Playwright sign-in, survey list, survey actions, editor, history, uploads, run, results, results-details, projects and xss specs in Azurite mode (needs Docker) |
+| `pnpm e2e:prod-like`    | The same specs against the production image with production's settings (`pnpm prod-like:up:e2e` first; needs Docker)                                            |
 
 These need the Docker replica (see [Development](development.md#azurite-mode)); they are not part of
 `pnpm test`:
@@ -58,6 +57,7 @@ the SQLite ones, which need nothing:
 | `pnpm e2e:sqlite`                | Playwright survey list, survey list paging, editor, history, upload and run specs in SQLite mode (files on local disk), on Chromium                                                                                                                                                                                                                                                                                                                                                    |
 | `pnpm e2e:password`              | Playwright password spec in password mode (SQLite, `AUTH_METHODS=password`, a first admin from `ADMIN_EMAIL`): the forced change, sign out and in, the back-off message, and the instance admin's users; on Chromium                                                                                                                                                                                                                                                                   |
 | `pnpm e2e:oauth`                 | Playwright oauth spec (SQLite, `AUTH_METHODS=password,github,google`, the stub started by Playwright): an invited email is pending, then joins with GitHub; a stranger is refused; Google with the admin's verified email is the same account; on Chromium                                                                                                                                                                                                                             |
+| `pnpm e2e:hosted-oauth`          | Playwright hosted-sign-in spec (`APP_EDITION=hosted`, SQLite, `USER_DIRECTORY=local`, `AUTH_METHODS=surveyjs`, `OPEN_SIGN_UP=on`, `ACCOUNT_NOTICES=sign-in-licence`, the stub's `/surveyjs` as the issuer, started by Playwright): a new person gets an account; an expired `license_expires_at` shows the licence notice and a later date at the next sign-in removes it; a blocked person and an email held by another surveyjs.io id get the refused page; on Chromium              |
 | `pnpm e2e:self-hosted`           | Playwright self-hosted spec in self-hosted mode (SQLite, `APP_SHELL=self-hosted` with a brand, local accounts, the dev sign-in): the header's navigation, the branding on sign-in, My Surveys, the editor, results, the public results and the run page, no surveyjs.io styles, no Embed tabs, `/api/docs` 404; on Chromium                                                                                                                                                            |
 | `pnpm test:conformance:sandbox`  | The sandbox's mock handlers under `msw/node`, no server: 13 conformance files, from surveys to members; a test that cannot apply is skipped with its reason                                                                                                                                                                                                                                                                                                                            |
 | `pnpm e2e:sandbox`               | Playwright `@sandbox` spec (Chromium) on the sandbox build, served by `vite preview --mode sandbox` on port 5177: the editor and a reload, the member's view, run in a new tab with no request to another site, Reset demo data, a second browser context, and two tabs writing at once (`sandbox-tabs.spec.ts`, on Chromium and then WebKit; [ADR 0030](adr/0030-the-sandbox-mock-in-the-browser.md) D9, D11). Every test fails on a request to another site or outside the base path |
@@ -180,10 +180,6 @@ injected output, the provider interface or a pure function):
   logs with the webhook id only), `erasure.test.ts` and `reconcile.test.ts`.
 - `projects/rules.test.ts`: `decideMemberErasure` (`not-member`, `last-member`, `remove`, `promote` and the
   successor order).
-- `users/surveyjs-api/`: `mapping.test.ts` (the pure mapping of the API's answers), `client.test.ts` (the client
-  with an injected `fetch`: the requests it sends, 404 as "unknown", every other status, a time-out, a network
-  error or a malformed body as a failure, never "unknown"), `stub.test.ts` (the stub over HTTP) and
-  `directory.stub.test.ts` (the `users.*` sections of the provider suite run on the client against the stub).
 - `cli/`: `account-erase.test.ts`, `account-reconcile.test.ts` and `send-account-deleted.test.ts` (injected output,
   the exit codes, nothing written without `--yes` or `--apply`, no secret in any output), and
   `account-cli.integration.test.ts` (the two erase commands spawned, for the wiring).
@@ -464,13 +460,8 @@ invalid-signature`; a valid one for a body that is not an account event is `400`
   a TLS proxy cannot be judged otherwise).
 - `legacy-urls.test.ts`: `/published?id=…` and `/Service/EditSurvey/{id}` answer `404` with no `Location`. The body
   is a `not-found` Problem, or the web app's HTML page when the server serves the app (`WEB_ROOT`, the image).
-- `user-directory.test.ts`: runs only in the user-API mode and checks the licence notices that come from the API.
 - `read-only.test.ts`: runs only when the server reports `readOnly: true`; every operation that documents the
   `503 ReadOnly` response must answer `503 read-only`, and reads and sign-out must keep working.
-- **The user-API run**, `pnpm test:conformance:user-api`: the whole suite with the reference server on
-  `USER_DIRECTORY=surveyjs-api`, against the stub the run starts itself. Sign-in, members by email and the notices
-  go through the API. It is not run on the replica; `CONFORMANCE_USER_DIRECTORY` cannot be combined with
-  `CONFORMANCE_BASE_URL`.
 - **The read-only run**, `pnpm test:conformance:read-only`: only `read-only.test.ts`, with the reference server on
   memory and `READ_ONLY=true`. CI runs it after the in-memory run.
 
@@ -552,7 +543,7 @@ pnpm e2e
 `pnpm e2e` builds the web app, then Playwright starts the servers itself and opens the app in three
 browsers. The server runs with the dev identity provider and the legacy-fixtures seed, so specs sign
 in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, plus a second pair
-(3001 and 5174) whose server shows the expired-licence notice. Rules:
+(3092 and 5174) whose server shows the expired-licence notice. Rules:
 
 - The config strips the developer's app variables (`APP_*`, `PORT`, `VITE_*`, and the other
   server variables) from the environment before starting the servers and the previews. The list is
@@ -560,8 +551,8 @@ in through the "Sign in as…" page. Servers: 3000 and `vite preview` on 5173, p
   what you have exported.
 - It never reuses a running server (`reuseExistingServer: false`, locally and in CI). Before the build,
   `e2e/scripts/run.mjs` checks the ports of the configuration being run and stops with
-  `Port 3000 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
-  `pnpm demo`, for example). The ports are 3000, 3001, 5173 and 5174; Azurite mode 3000 and 5173; the image
+  `Port 3091 is in use by node (PID 12345). Stop it and run again.` when one is taken (a forgotten
+  `pnpm demo`, for example). The ports are 3091, 3092, 5173 and 5174; Azurite mode 3091 and 5173; the image
   target 5173 and 5174 (Azurite and the SQLite modes: 5173). They are defined once in `e2e/ports.mjs`.
 - Specs import `test` from `e2e/tests/support/test.ts`. It fails a test on any console error or
   page error, except the console errors of an observed signed-out `/api/v1/me` 401, the favicon CSP
@@ -732,7 +723,7 @@ author's HTML as given. It runs in three browsers in memory mode and on Chromium
 WebKit are left to CI.
 
 Azurite mode: after `pnpm demo:azurite:up`, `pnpm e2e:azurite` runs the sign-in, survey list, survey
-actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3000 and 5173, so stop the
+actions, editor, history, uploads, run, results, results-details, projects and xss specs on Chromium against the azure-legacy server and the mock OIDC server (it uses ports 3091 and 5173, so stop the
 memory-mode servers first; the runner names a port that is taken). It sets `E2E_MODE=azurite` and uses `playwright.azurite.config.ts`.
 
 ### The user stories on the sandbox build
@@ -1345,23 +1336,17 @@ A membership of a project whose row is gone needs the `organizationid` foreign k
 the suite's `afterAll` reloads the schema and the fixtures. Memory cannot hold such a row (its seed refuses one), so
 the memory case (`erasure.test.ts`) covers orphan memberships only.
 
-**The `UserDirectory` against the stub.** `directory.stub.test.ts` runs the same `users.*` sections
-(`describeUserDirectorySuite`) on the `surveyjs-api` client against the in-process stub, which serves the fixture
-users, so the two directories are held to one behaviour. The licence-notice suite runs on it too, and gets the same
-answers as on SQL because the stub builds its licences from the same fixture rows.
-
 Where it runs:
 
-| Test file                                           | Provider                                              | Run with                       |
-| --------------------------------------------------- | ----------------------------------------------------- | ------------------------------ |
-| `memory.provider.test.ts`                           | `memory`, seeded with fixtures                        | `pnpm test:unit`               |
-| `sql.provider.test.ts`                              | `sqlite` on a scratch file, migrated and seeded       | `pnpm test:unit`               |
-| `sql.provider.postgres.test.ts`                     | `postgres` on a scratch database, migrated and seeded | `pnpm test:providers:postgres` |
-| `sql.provider.s3.test.ts`                           | `sqlite` with its files in a scratch S3 bucket        | `pnpm test:providers:s3`       |
-| `azure-legacy.provider.azurite.test.ts`             | `azure-legacy` on the replica                         | `pnpm test:providers:azurite`  |
-| `azure-legacy.null-rows.azurite.test.ts`            | `azure-legacy`, rows with NULL columns                | `pnpm test:providers:azurite`  |
-| `azure-legacy.writes.azurite.test.ts`               | `azure-legacy`, the legacy format of every write      | `pnpm test:providers:azurite`  |
-| `directory.stub.test.ts` (in `users/surveyjs-api/`) | the `surveyjs-api` user directory against the stub    | `pnpm test:unit`               |
+| Test file                                | Provider                                              | Run with                       |
+| ---------------------------------------- | ----------------------------------------------------- | ------------------------------ |
+| `memory.provider.test.ts`                | `memory`, seeded with fixtures                        | `pnpm test:unit`               |
+| `sql.provider.test.ts`                   | `sqlite` on a scratch file, migrated and seeded       | `pnpm test:unit`               |
+| `sql.provider.postgres.test.ts`          | `postgres` on a scratch database, migrated and seeded | `pnpm test:providers:postgres` |
+| `sql.provider.s3.test.ts`                | `sqlite` with its files in a scratch S3 bucket        | `pnpm test:providers:s3`       |
+| `azure-legacy.provider.azurite.test.ts`  | `azure-legacy` on the replica                         | `pnpm test:providers:azurite`  |
+| `azure-legacy.null-rows.azurite.test.ts` | `azure-legacy`, rows with NULL columns                | `pnpm test:providers:azurite`  |
+| `azure-legacy.writes.azurite.test.ts`    | `azure-legacy`, the legacy format of every write      | `pnpm test:providers:azurite`  |
 
 `pnpm test:providers:azurite` is the Vitest project `providers-azurite`. It reads
 `docker/azurite.env`, loads the fixtures into the running replica first, and needs

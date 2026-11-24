@@ -20,6 +20,19 @@ const oauthOnly = (extra: Record<string, string> = {}) =>
     ...extra,
   });
 
+/** The hosted edition's sign-in: surveyjs.io alone, with the first admin's email. */
+const hostedOnly = () =>
+  loadConfig({
+    NODE_ENV: "test",
+    APP_EDITION: "hosted",
+    USER_DIRECTORY: "local",
+    AUTH_METHODS: "surveyjs",
+    OIDC_ISSUER_URL: "https://auth.example.com",
+    OIDC_CLIENT_ID: "s-client",
+    OIDC_CLIENT_SECRET: "stub-secret-surveyjs",
+    ADMIN_EMAIL: "Root@Example.com",
+  });
+
 /** A logger that keeps every message it is given. */
 function recordingLog(): { log: FastifyBaseLogger; lines: string[] } {
   const lines: string[] = [];
@@ -104,6 +117,47 @@ describe("bootstrapFirstAdmin without passwords", () => {
     expect(await accounts.countActiveAdmins()).toBe(0);
     expect(lines).toEqual([
       "ADMIN_EMAIL names an existing account, which was left as it is: no admin was created",
+    ]);
+  });
+
+  it("hosted: creates nothing, and says ADMIN_EMAIL is made admin at its first sign-in", async () => {
+    const { accounts } = createMemoryLocalAccounts();
+    const { log, lines } = recordingLog();
+    const config = { ...hostedOnly(), edition: "hosted" as const };
+
+    expect(await bootstrapFirstAdmin(config, accounts, log, () => NOW)).toEqual({
+      setupToken: null,
+    });
+    expect(await accounts.countAccounts()).toBe(0);
+    expect(lines).toEqual([
+      "ADMIN_EMAIL is made admin at its first sign-in while there is no admin",
+    ]);
+  });
+
+  it("hosted: says nothing while an active admin exists", async () => {
+    const { accounts } = createMemoryLocalAccounts();
+    await accounts.createAccount(account({ email: "boss@example.com", instanceRole: "admin" }));
+    const { log, lines } = recordingLog();
+    const config = { ...hostedOnly(), edition: "hosted" as const };
+
+    await bootstrapFirstAdmin(config, accounts, log, () => NOW);
+
+    expect(await accounts.countAccounts()).toBe(1);
+    expect(lines).toEqual([]);
+  });
+
+  it("hosted: with only a disabled admin, warns that account:make-admin names one", async () => {
+    const { accounts } = createMemoryLocalAccounts();
+    const placeholder = await accounts.createAccount(account({ instanceRole: "admin" }));
+    await accounts.tombstoneAccount(placeholder.user.id);
+    const { log, lines } = recordingLog();
+    const config = { ...hostedOnly(), edition: "hosted" as const };
+
+    await bootstrapFirstAdmin(config, accounts, log, () => NOW);
+
+    expect(await accounts.countAccounts()).toBe(1);
+    expect(lines).toEqual([
+      "there is no active instance admin: run pnpm account:make-admin to name one",
     ]);
   });
 

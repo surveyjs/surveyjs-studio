@@ -1,5 +1,10 @@
 import type { Kysely, Selectable } from "kysely";
-import { decideAccountChange, nextStatus } from "../admin/rules.js";
+import {
+  DELETED_ACCOUNT_NAME,
+  decideAccountChange,
+  deletedAccountEmail,
+  nextStatus,
+} from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
@@ -15,11 +20,13 @@ import { flagOf, isoOf } from "./values.js";
 
 type UserRow = Selectable<UsersTable>;
 
-const userOf = (row: Pick<UserRow, "id" | "email" | "display_name" | "status">): User => ({
+const userOf = (
+  row: Pick<UserRow, "id" | "email" | "display_name" | "status" | "site_blocked">,
+): User => ({
   id: row.id,
   email: row.email,
   displayName: row.display_name,
-  blocked: row.status === "disabled",
+  blocked: row.status === "disabled" || flagOf(row.site_blocked),
 });
 
 const accountOf = (row: UserRow): LocalAccount => ({
@@ -28,6 +35,8 @@ const accountOf = (row: UserRow): LocalAccount => ({
   status: row.status,
   passwordHash: row.password_hash,
   mustChangePassword: flagOf(row.must_change_password),
+  siteBlocked: flagOf(row.site_blocked),
+  licenceExpiresAt: row.licence_expires_at === null ? null : isoOf(row.licence_expires_at),
   sessionEpoch: Number(row.session_epoch),
   lastSignInAt: row.last_sign_in_at === null ? null : isoOf(row.last_sign_in_at),
   createdAt: isoOf(row.created_at),
@@ -48,7 +57,7 @@ export async function usersById(
   if (wanted.length === 0) return new Map();
   const rows = await db
     .selectFrom("users")
-    .select(["id", "email", "display_name", "status"])
+    .select(["id", "email", "display_name", "status", "site_blocked"])
     .where("id", "in", wanted)
     .execute();
   return new Map(rows.map((row) => [row.id, userOf(row)]));
@@ -138,6 +147,14 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .executeTakeFirstOrThrow();
       return Number(row.n);
     },
+    countAdmins: async () => {
+      const row = await db
+        .selectFrom("users")
+        .select((eb) => eb.fn.countAll<number | string | bigint>().as("n"))
+        .where("instance_role", "=", "admin")
+        .executeTakeFirstOrThrow();
+      return Number(row.n);
+    },
     createAccount: async (account, options = {}) => {
       const id = key(account.id);
       if (id === null) throw new Error("Account ids must be GUIDs");
@@ -154,6 +171,9 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
             status: account.status,
             password_hash: account.passwordHash,
             must_change_password: account.mustChangePassword,
+            site_blocked: account.siteBlocked ?? false,
+            licence_expires_at:
+              account.licenceExpiresAt == null ? null : isoOf(account.licenceExpiresAt),
             session_epoch: 0,
             created_at: isoOf(account.createdAt),
             last_sign_in_at: null,
@@ -192,7 +212,7 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
         .map(accountOf);
     },
-    updateAccount: async (id, change) => {
+    updateAccount: async (id, change, options = {}) => {
       const userId = key(id);
       if (userId === null) return { outcome: "not-found" };
       return db.transaction().execute(async (trx) => {
@@ -217,7 +237,10 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
           ),
         };
         const facts = { instanceRole: row.instance_role, status: row.status };
-        if (decideAccountChange(facts, after, activeAdmins) === "last-instance-admin") {
+        if (
+          !options.allowLastInstanceAdmin &&
+          decideAccountChange(facts, after, activeAdmins) === "last-instance-admin"
+        ) {
           return { outcome: "last-instance-admin" as const };
         }
         const disabling = after.status === "disabled" && row.status !== "disabled";
@@ -232,6 +255,57 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
           .returningAll()
           .executeTakeFirstOrThrow();
         return { outcome: "updated" as const, account: accountOf(updated) };
+      });
+    },
+    refreshFromSignIn: async (id, change) => {
+      const userId = key(id);
+      if (userId === null) return { outcome: "not-found" };
+      const email = change.email.toLowerCase();
+      return db.transaction().execute(async (trx) => {
+        const current = await trx
+          .selectFrom("users")
+          .select(["id", "email", "site_blocked"])
+          .where("id", "=", userId)
+          .executeTakeFirst();
+        if (!current) return { outcome: "not-found" as const };
+        // The site's block turning on ends the account's other sessions (the session check).
+        const blocking = change.siteBlocked && !flagOf(current.site_blocked);
+        // Checked first: a unique violation would abort a PostgreSQL transaction.
+        const holder =
+          email === current.email
+            ? undefined
+            : await trx
+                .selectFrom("users")
+                .select("id")
+                .where("email", "=", email)
+                .where("id", "<>", userId)
+                .executeTakeFirst();
+        const taken = holder !== undefined;
+        const updated = await trx
+          .updateTable("users")
+          .set((eb) => ({
+            display_name: change.displayName,
+            site_blocked: change.siteBlocked,
+            licence_expires_at:
+              change.licenceExpiresAt === null ? null : isoOf(change.licenceExpiresAt),
+            ...(taken ? {} : { email }),
+            session_epoch: blocking ? eb("session_epoch", "+", 1) : eb.ref("session_epoch"),
+          }))
+          .where("id", "=", userId)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        if (!taken && email !== current.email) {
+          await trx
+            .updateTable("user_identities")
+            .set({ email })
+            .where("user_id", "=", userId)
+            .where("provider", "=", "surveyjs")
+            .execute();
+        }
+        return {
+          outcome: taken ? ("email-taken" as const) : ("updated" as const),
+          account: accountOf(updated),
+        };
       });
     },
     accountByIdentity: async (provider, subject) => {
@@ -321,6 +395,31 @@ export function createSqlLocalAccounts(database: SqlDatabase): SqlLocalAccounts 
         // The links and the identities go with it (cascade).
         await trx.deleteFrom("users").where("id", "=", userId).execute();
         return "deleted" as const;
+      });
+    },
+    tombstoneAccount: async (id) => {
+      const userId = key(id);
+      if (userId === null) return null;
+      return db.transaction().execute(async (trx) => {
+        const row = await trx
+          .updateTable("users")
+          .set((eb) => ({
+            email: deletedAccountEmail(userId),
+            display_name: DELETED_ACCOUNT_NAME,
+            status: "disabled" as const,
+            password_hash: null,
+            must_change_password: false,
+            site_blocked: false,
+            licence_expires_at: null,
+            session_epoch: eb("session_epoch", "+", 1),
+          }))
+          .where("id", "=", userId)
+          .returningAll()
+          .executeTakeFirst();
+        if (!row) return null;
+        await trx.deleteFrom("user_identities").where("user_id", "=", userId).execute();
+        await trx.deleteFrom("password_links").where("user_id", "=", userId).execute();
+        return accountOf(row);
       });
     },
     resetPassword: async (id, { tokenHash, createdAt, expiresAt }) => {

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { createEraseAccount } from "../accounts/erasure.js";
-import { findErasureCandidates } from "../accounts/reconcile.js";
+import { assertReconcileAvailable, findErasureCandidates } from "../accounts/reconcile.js";
 import { formatErased } from "./account-erase.js";
 import {
   parseFlags,
@@ -68,45 +68,53 @@ export async function run(
     return 2;
   }
   const now = deps.now ?? Date.now;
-  return withProviders(args.envFile, io, deps, { writes: args.apply }, async (providers) => {
-    // A directory failure rejects here: nothing is erased.
-    const candidates = await findErasureCandidates(providers);
-    io.out(`Users the directory does not know: ${candidates.length}\n`);
-    for (const id of candidates) io.out(`  ${id}\n`);
-    if (candidates.length === 0) {
-      io.out("Nothing to erase.\n");
-      return 0;
-    }
-    if (!args.apply) {
-      io.out(
-        "These are owner ids the directory does not know, not necessarily people: the id of a " +
-          "deleted project can own surveys too.\n" +
-          "Dry run: nothing was erased. Run again with --apply to erase them.\n",
-      );
-      return 0;
-    }
-    if (candidates.length > args.max) {
-      io.err(
-        `Refused: ${candidates.length} users is more than --max ${args.max}. Nothing was erased.\n`,
-      );
-      return 1;
-    }
-    const eraseAccount = createEraseAccount(providers);
-    let erased = 0;
-    for (const id of candidates) {
-      try {
-        io.out(`${formatErased(await eraseAccount(id, { now: new Date(now()).toISOString() }))}\n`);
-      } catch (error) {
+  return withProviders(
+    args.envFile,
+    io,
+    deps,
+    { writes: args.apply, guard: assertReconcileAvailable },
+    async (providers) => {
+      // A directory failure rejects here: nothing is erased.
+      const candidates = await findErasureCandidates(providers);
+      io.out(`Users the directory does not know: ${candidates.length}\n`);
+      for (const id of candidates) io.out(`  ${id}\n`);
+      if (candidates.length === 0) {
+        io.out("Nothing to erase.\n");
+        return 0;
+      }
+      if (!args.apply) {
+        io.out(
+          "These are owner ids the directory does not know, not necessarily people: the id of a " +
+            "deleted project can own surveys too.\n" +
+            "Dry run: nothing was erased. Run again with --apply to erase them.\n",
+        );
+        return 0;
+      }
+      if (candidates.length > args.max) {
         io.err(
-          `Error: ${safeErrorText(error)} Erased ${erased} of ${candidates.length} users before the failure.\n`,
+          `Refused: ${candidates.length} users is more than --max ${args.max}. Nothing was erased.\n`,
         );
         return 1;
       }
-      erased += 1;
-    }
-    io.out(`Erased ${erased} of ${candidates.length} users.\n`);
-    return 0;
-  });
+      const eraseAccount = createEraseAccount(providers);
+      let erased = 0;
+      for (const id of candidates) {
+        try {
+          io.out(
+            `${formatErased(await eraseAccount(id, { now: new Date(now()).toISOString() }))}\n`,
+          );
+        } catch (error) {
+          io.err(
+            `Error: ${safeErrorText(error)} Erased ${erased} of ${candidates.length} users before the failure.\n`,
+          );
+          return 1;
+        }
+        erased += 1;
+      }
+      io.out(`Erased ${erased} of ${candidates.length} users.\n`);
+      return 0;
+    },
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

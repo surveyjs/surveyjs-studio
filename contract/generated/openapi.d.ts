@@ -49,6 +49,18 @@ export interface paths {
          *     a sign-in that would link an identity, create an account or activate an invited
          *     one is refused with the reason `read-only`.
          *
+         *     On the hosted edition (`APP_EDITION=hosted` with `USER_DIRECTORY=local`), a
+         *     `surveyjs` sign-in works on the surveyjs.io id: the account's id is the `sub`
+         *     claim (a `sub` that is not a GUID is refused with `failed`), and every sign-in
+         *     refreshes its email (when verified, and not held by another account), name,
+         *     the site's `blocked` flag and the licence date. Two more refusals: `blocked`
+         *     when the site blocks the account (a client that does not ask for HTML gets `403`
+         *     `forbidden`, "Account blocked"; the site's block is separate from an admin's
+         *     `disabled`), and `identity-conflict` when the email belongs to an account of
+         *     another surveyjs.io id (a client that does not ask for HTML gets `409` with the
+         *     problem code `email-taken`, "Email in use"). A blocked first sign-in creates no
+         *     account.
+         *
          *     A sign-in started by `login?provider=<method>` also goes to that page when it
          *     fails at the callback: `cancelled` when the provider sends `error=access_denied`
          *     (the person said no), `unavailable` when the provider cannot be reached or
@@ -397,6 +409,8 @@ export interface paths {
          *     their earlier links unusable, and returns a new one-time set-password link, valid
          *     for 7 days: the only time it is shown. For an `invited` user it is a new invitation
          *     link. An OAuth2 sign-in with the account's verified email links again afterwards.
+         *     On the hosted edition without password sign-in, it is refused with `403`: it would
+         *     only remove the user's linked sign-ins.
          */
         post: operations["createUserResetLink"];
         delete?: never;
@@ -450,7 +464,8 @@ export interface paths {
          *     account, and ends the user's sessions within a minute (one of them may come from
          *     that identity). If the provider still gives the account's email as verified, the
          *     next sign-in with it links it again: to keep someone out, disable the user.
-         *     `404` for an unknown user or an identity the user does not have.
+         *     `404` for an unknown user or an identity the user does not have. On the hosted
+         *     edition a surveyjs.io sign-in cannot be unlinked (`403`).
          */
         delete: operations["unlinkUserIdentity"];
         options?: never;

@@ -72,7 +72,31 @@ type RefusalReason =
   | "expired"
   | "failed"
   | "disabled"
-  | "email-unverified";
+  | "email-unverified"
+  | "blocked"
+  | "identity-conflict";
+
+/**
+ * The problems of hosted sign-in's refusals (ADR 0043), which an API client gets in place of the
+ * refused page. The other refusals of `resolveExternalSignIn` go to the page for every client.
+ */
+const HOSTED_REFUSALS = {
+  blocked: () =>
+    new AppError({
+      code: "forbidden",
+      status: 403,
+      title: "Account blocked",
+      detail: "This account is blocked.",
+    }),
+  "identity-conflict": () =>
+    new AppError({
+      code: "email-taken",
+      status: 409,
+      title: "Email in use",
+      detail:
+        "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.",
+    }),
+} as const;
 
 /** A sign-in the callback refuses: the problem an API client gets, and the browser's reason. */
 interface Refusal {
@@ -88,11 +112,14 @@ const acceptsHtml = (accept: string | undefined): boolean => /\btext\/html\b/i.t
 
 /**
  * The account in the user directory wins over the provider's claims; without one, the claims are used.
- * A blocked account, or an identity without an email address, gets no session.
+ * A blocked account, or an identity without an email address, gets no session. On the hosted
+ * edition the directory's block is the site's (no Studio admin disabled it): the reason is
+ * `blocked`; elsewhere it stays `disabled`.
  */
 async function sessionUser(
   users: UserDirectory,
   claims: IdentityClaims,
+  hosted: boolean,
 ): Promise<SessionUser | Refusal> {
   const user = await users.signInUser(claims);
   if (user?.blocked) {
@@ -102,7 +129,7 @@ async function sessionUser(
       title: "Account blocked",
       detail: "This account is blocked.",
     });
-    return { reason: "disabled", problem };
+    return { reason: hosted ? "blocked" : "disabled", problem };
   }
   const email = user?.email || claims.email;
   if (!email) {
@@ -233,6 +260,8 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
         let user: SessionUser;
         let epoch: number | undefined;
         if (accounts && invitations && method !== null) {
+          // Hosted sign-in (ADR 0043): the surveyjs.io id and the site's claims make the account.
+          const hosted = config.edition === "hosted" && method === "surveyjs";
           let result: Awaited<ReturnType<typeof resolveExternalSignIn>>;
           try {
             result = await resolveExternalSignIn(method, claims, {
@@ -241,13 +270,24 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
               policy: config.joinPolicy,
               now: nowIso,
               readOnly: config.readOnly,
+              ...(hosted && {
+                hosted,
+                adminEmail: config.bootstrapAdmin?.email ?? null,
+                log: request.log,
+              }),
             });
           } catch (cause) {
             const readOnly = cause instanceof AppError && cause.code === "read-only";
             if (readOnly && (browser || button)) return refuse("read-only");
             throw cause;
           }
-          if (!result.ok) return refuse(result.reason);
+          if (!result.ok) {
+            const { reason } = result;
+            if (reason === "blocked" || reason === "identity-conflict") {
+              return fail({ reason, problem: HOSTED_REFUSALS[reason]() });
+            }
+            return refuse(reason);
+          }
           const { account } = result;
           if (!config.readOnly) {
             await invitations.claimInvitations(account.user.id, account.user.email, {
@@ -264,7 +304,7 @@ export function createSessionHandlers(options: SessionHandlerOptions): Handlers 
           };
           epoch = account.sessionEpoch;
         } else {
-          const found = await sessionUser(users, claims);
+          const found = await sessionUser(users, claims, config.edition === "hosted");
           if ("problem" in found) return fail(found);
           user = found;
         }

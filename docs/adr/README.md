@@ -28,7 +28,7 @@ and add each one to this index.
 | [0019](0019-run-page-isolation-and-security-headers.md)    | Run page isolation and security headers                                         | Accepted           |
 | [0020](0020-visual-parity-baselines.md)                    | Visual parity baselines                                                         | Accepted           |
 | [0021](0021-production-image-and-web-serving.md)           | The production image and web serving                                            | Accepted           |
-| [0022](0022-users-from-sign-in.md)                         | Users from sign-in, not from a user API                                         | Accepted           |
+| [0022](0022-users-from-sign-in.md)                         | Users from sign-in, not a user API (directory, licences changed by 0043)        | Accepted           |
 | [0023](0023-sqlite-driver-node-sqlite.md)                  | The SQLite driver: Node's built-in `node:sqlite`                                | Accepted           |
 | [0024](0024-kysely-and-plain-sql-migrations.md)            | Kysely and plain-SQL migrations                                                 | Accepted           |
 | [0025](0025-file-storage-for-the-sql-providers.md)         | File storage for the SQL providers                                              | Accepted           |
@@ -49,3 +49,4 @@ and add each one to this index.
 | [0040](0040-bridge-access-key-actions.md)                  | The bridge's access-key actions and what Studio's public API adds for them      | Accepted           |
 | [0041](0041-taking-over-the-legacy-api-host.md)            | Taking over the old API's host and metrics (its 1, 2, 7 changed by 0042)        | Accepted           |
 | [0042](0042-one-switch-to-the-new-server.md)               | One switch to the new server, after a test migration                            | Accepted           |
+| [0043](0043-hosted-users-on-the-local-directory.md)        | Hosted users on the local directory, from surveyjs.io sign-in                   | Accepted           |

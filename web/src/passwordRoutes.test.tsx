@@ -217,6 +217,14 @@ describe("the refused sign-in page", () => {
       "This account is disabled. Ask the person who runs this instance.",
     ],
     [
+      "?reason=blocked&provider=surveyjs",
+      "This surveyjs.io account is blocked. Contact SurveyJS support if you think this is a mistake.",
+    ],
+    [
+      "?reason=identity-conflict&provider=surveyjs",
+      "This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed.",
+    ],
+    [
       "?reason=cancelled&provider=facebook",
       "You cancelled the sign-in at Facebook. Sign in again, or choose another way.",
     ],
@@ -251,17 +259,29 @@ describe("the refused sign-in page", () => {
     ["?reason=whatever", notInvited],
   ];
 
-  it("sends a blocked user of the hosted edition to SurveyJS support, not to an instance admin", async () => {
+  it("tells a user disabled in the hosted edition that Studio disabled them, not surveyjs.io", async () => {
     server.use(configHandler({ ...appConfig, edition: "hosted", authMethods: ["surveyjs"] }));
 
     renderApp("/sign-in/refused?reason=disabled&provider=surveyjs");
 
     expect(
       await screen.findByText(
-        "This surveyjs.io account is blocked. Contact SurveyJS support at support@surveyjs.io.",
+        "This account has been disabled in SurveyJS Studio. Contact the administrator.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/the person who runs this instance/)).toBeNull();
+    expect(screen.queryByText(/surveyjs\.io account/)).toBeNull();
+  });
+
+  it("keeps the site's block message for the hosted edition", async () => {
+    server.use(configHandler({ ...appConfig, edition: "hosted", authMethods: ["surveyjs"] }));
+
+    renderApp("/sign-in/refused?reason=blocked&provider=surveyjs");
+
+    expect(
+      await screen.findByText(
+        "This surveyjs.io account is blocked. Contact SurveyJS support if you think this is a mistake.",
+      ),
+    ).toBeTruthy();
   });
 
   it.each(expected)("explains %s", async (search, text) => {

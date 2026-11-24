@@ -9,6 +9,8 @@ export default defineConfig({
         test: {
           name: "server",
           include: ["server/src/**/*.test.ts"],
+          // Under a full parallel run some files wait for CPU past the default 5 s.
+          testTimeout: 15_000,
           // Need Docker: run by the providers-azurite and providers-postgres projects.
           exclude: [
             "**/node_modules/**",

@@ -47,7 +47,7 @@ export type ParsedArgs =
   | { kind: "help" }
   | { kind: "usage-error"; message: string };
 
-/** Hosts a plain-http `--legacy-api` may name (a local stub), as for `USER_API_URL`. */
+/** Hosts a plain-http `--legacy-api` may name (a local stand-in). */
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {

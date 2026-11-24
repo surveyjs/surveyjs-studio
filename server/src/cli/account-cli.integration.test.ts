@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { LEGACY_VARIABLES } from "../config.js";
 import { USAGE as ERASE_USAGE } from "./account-erase.js";
+import { USAGE as MAKE_ADMIN_USAGE } from "./account-make-admin.js";
 import { MEMORY_REFUSAL } from "./common.js";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -38,8 +39,6 @@ const appVariables = [
   "SESSION_SECRET_FILE",
   "ACCOUNT_NOTICES",
   "USER_DIRECTORY",
-  "USER_API_URL",
-  "USER_API_TOKEN",
   "ACCOUNT_WEBHOOK_SECRET",
   ...LEGACY_VARIABLES,
 ];
@@ -67,6 +66,19 @@ describe("account commands (spawned)", { timeout: 30_000 }, () => {
       STORAGE_PROVIDER: "memory",
       MEMORY_SEED: "legacy-fixtures",
     });
+    expect(code).toBe(2);
+    expect(out).toBe("");
+    expect(err).toBe(`${MEMORY_REFUSAL}\n`);
+  });
+
+  it("account:make-admin --help prints the usage", () => {
+    const { code, out } = command("account-make-admin.ts", ["--help"]);
+    expect(code).toBe(0);
+    expect(out).toBe(`${MAKE_ADMIN_USAGE}\n`);
+  });
+
+  it("account:make-admin refuses to run without a store", () => {
+    const { code, out, err } = command("account-make-admin.ts", ["--email", "a@example.com"]);
     expect(code).toBe(2);
     expect(out).toBe("");
     expect(err).toBe(`${MEMORY_REFUSAL}\n`);

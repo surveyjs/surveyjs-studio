@@ -80,7 +80,7 @@ export async function checkPorts(ports) {
   return busy;
 }
 
-/** `Port 3000 is in use by node (PID 123). Stop it and run again.` */
+/** `Port 3091 is in use by node (PID 123). Stop it and run again.` */
 export function busyMessage({ port, owner }) {
   return `Port ${port} is in use${owner === null ? "" : ` by ${owner}`}. Stop it and run again.`;
 }

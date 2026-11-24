@@ -1,4 +1,9 @@
-import { decideAccountChange, nextStatus } from "../admin/rules.js";
+import {
+  DELETED_ACCOUNT_NAME,
+  decideAccountChange,
+  deletedAccountEmail,
+  nextStatus,
+} from "../admin/rules.js";
 import { GUID } from "../domain/guid.js";
 import type { User } from "../domain/types.js";
 import type {
@@ -39,7 +44,7 @@ const userOf = (stored: StoredAccount): User => ({
   id: stored.id,
   email: stored.email,
   displayName: stored.displayName,
-  blocked: stored.status === "disabled",
+  blocked: stored.status === "disabled" || stored.siteBlocked,
 });
 
 const accountOf = (stored: StoredAccount): LocalAccount => ({
@@ -48,6 +53,8 @@ const accountOf = (stored: StoredAccount): LocalAccount => ({
   status: stored.status,
   passwordHash: stored.passwordHash,
   mustChangePassword: stored.mustChangePassword,
+  siteBlocked: stored.siteBlocked,
+  licenceExpiresAt: stored.licenceExpiresAt,
   sessionEpoch: stored.sessionEpoch,
   lastSignInAt: stored.lastSignInAt,
   createdAt: stored.createdAt,
@@ -84,6 +91,8 @@ export function createMemoryLocalAccounts(
       status: user.blocked ? "disabled" : "active",
       passwordHash: null,
       mustChangePassword: false,
+      siteBlocked: false,
+      licenceExpiresAt: null,
       sessionEpoch: 0,
       lastSignInAt: null,
       createdAt: SEED_CREATED_AT,
@@ -118,6 +127,8 @@ export function createMemoryLocalAccounts(
   const accounts: LocalAccountStore = {
     countAccounts: () => Promise.resolve(byId.size),
     countActiveAdmins: () => Promise.resolve(activeAdmins()),
+    countAdmins: () =>
+      Promise.resolve([...byId.values()].filter((a) => a.instanceRole === "admin").length),
     createAccount: (account: NewLocalAccount, options = {}) => {
       const id = account.id.toLowerCase();
       if (!GUID.test(id)) return Promise.reject(new Error("Account ids must be GUIDs"));
@@ -135,6 +146,8 @@ export function createMemoryLocalAccounts(
         status: account.status,
         passwordHash: account.passwordHash,
         mustChangePassword: account.mustChangePassword,
+        siteBlocked: account.siteBlocked ?? false,
+        licenceExpiresAt: account.licenceExpiresAt ?? null,
         sessionEpoch: 0,
         lastSignInAt: null,
         createdAt: account.createdAt,
@@ -160,7 +173,7 @@ export function createMemoryLocalAccounts(
           .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
           .map(accountOf),
       ),
-    updateAccount: (id, change) => {
+    updateAccount: (id, change, options = {}) => {
       const found = find(id);
       if (!found) return Promise.resolve({ outcome: "not-found" as const });
       const after = {
@@ -172,7 +185,10 @@ export function createMemoryLocalAccounts(
             [...identities.values()].some((link) => link.userId === found.id),
         ),
       };
-      if (decideAccountChange(found, after, activeAdmins()) === "last-instance-admin") {
+      if (
+        !options.allowLastInstanceAdmin &&
+        decideAccountChange(found, after, activeAdmins()) === "last-instance-admin"
+      ) {
         return Promise.resolve({ outcome: "last-instance-admin" as const });
       }
       const disabling = after.status === "disabled" && found.status !== "disabled";
@@ -183,6 +199,34 @@ export function createMemoryLocalAccounts(
       };
       byId.set(found.id, updated);
       return Promise.resolve({ outcome: "updated" as const, account: accountOf(updated) });
+    },
+    refreshFromSignIn: (id, change) => {
+      const found = find(id);
+      if (!found) return Promise.resolve({ outcome: "not-found" as const });
+      const email = change.email.toLowerCase();
+      const holder = findByEmail(email);
+      const taken = holder !== undefined && holder.id !== found.id;
+      const updated: StoredAccount = {
+        ...found,
+        displayName: change.displayName,
+        siteBlocked: change.siteBlocked,
+        licenceExpiresAt: change.licenceExpiresAt,
+        email: taken ? found.email : email,
+        // The site's block turning on ends the account's other sessions (the session check).
+        sessionEpoch: found.sessionEpoch + (change.siteBlocked && !found.siteBlocked ? 1 : 0),
+      };
+      byId.set(found.id, updated);
+      if (!taken && email !== found.email) {
+        for (const [identity, link] of identities) {
+          if (link.userId === found.id && link.provider === "surveyjs") {
+            identities.set(identity, { ...link, email });
+          }
+        }
+      }
+      return Promise.resolve({
+        outcome: taken ? ("email-taken" as const) : ("updated" as const),
+        account: accountOf(updated),
+      });
     },
     accountByIdentity: (provider, subject) => {
       const link = identities.get(identityKey(provider, subject));
@@ -233,6 +277,27 @@ export function createMemoryLocalAccounts(
         if (link.userId === found.id) identities.delete(identity);
       }
       return Promise.resolve("deleted" as const);
+    },
+    tombstoneAccount: (id) => {
+      const found = find(id);
+      if (!found) return Promise.resolve(null);
+      for (const [tokenHash, link] of links) if (link.userId === found.id) links.delete(tokenHash);
+      for (const [identity, link] of identities) {
+        if (link.userId === found.id) identities.delete(identity);
+      }
+      const updated: StoredAccount = {
+        ...found,
+        email: deletedAccountEmail(found.id),
+        displayName: DELETED_ACCOUNT_NAME,
+        status: "disabled",
+        passwordHash: null,
+        mustChangePassword: false,
+        siteBlocked: false,
+        licenceExpiresAt: null,
+        sessionEpoch: found.sessionEpoch + 1,
+      };
+      byId.set(found.id, updated);
+      return Promise.resolve(accountOf(updated));
     },
     resetPassword: (id, { tokenHash, expiresAt }) => {
       const found = find(id);

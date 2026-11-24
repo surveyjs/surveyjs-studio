@@ -20,7 +20,7 @@ failure. No other data is written. Field names and endpoints are in
 | `LEGACY_SQL_CONNECTION_STRING`             | The production database, with write access (the run creates and deletes rows)                           |
 | `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | The production surveys storage account, with write access                                               |
 | `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | The production results storage account, with write access                                               |
-| `USER_DIRECTORY` (and `USER_API_*`)        | As the app uses them: the account is looked up by email                                                 |
+| `USER_DIRECTORY`                           | As the app uses them: the account is looked up by email                                                 |
 | `SMOKE_ACCESS_KEY`                         | The test account's access key for `api.surveyjs.io`. Never printed; the run never reads it from `Users` |
 | `READ_ONLY`                                | Unset or `false`: with `true` the run refuses                                                           |
 

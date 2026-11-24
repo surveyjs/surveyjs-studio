@@ -102,6 +102,14 @@ The server follows this order for the person who signed in:
 A **disabled** account is refused at steps 1 and 2. An account an instance admin created and nobody has used yet
 (**Invited**) becomes **Active** when an identity links to it.
 
+## The hosted edition
+
+The hosted service signs people in with surveyjs.io alone. There the account's id is the surveyjs.io id, and every
+sign-in refreshes the email (when verified), the name, whether surveyjs.io blocked the account, and the licence date.
+Two refusals exist only there: `blocked` (surveyjs.io blocked the account) and `identity-conflict` (the email belongs to
+an account of another surveyjs.io id, for example after someone deleted their account and registered again). Operators:
+[Hosted sign-in](../operations.md#hosted-sign-in).
+
 ## Instances without passwords
 
 `AUTH_METHODS` may leave out `password`, for example `AUTH_METHODS=google`. The first admin then comes from
@@ -144,16 +152,18 @@ The server sends the browser to `/sign-in/refused?reason=…&provider=…`. The 
 links back to the **Sign in** page. The server logs the provider and the reason, never the email address. For
 `unavailable`, and for a `failed` that is the server's fault, it also logs the cause at `error` level.
 
-| Reason             | The page says                                                                                     | What to do                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `not-invited`      | This instance is open to invited people only.                                                     | Invite the email to a project, add its domain to `SIGN_UP_DOMAINS`, or create the user                                      |
-| `email-unverified` | Your account at the provider didn't share a verified email address.                               | The person verifies the email at the provider, or signs in another way                                                      |
-| `disabled`         | This account is disabled. (Hosted: the surveyjs.io account is blocked; contact SurveyJS support.) | An instance admin enables it on the **Users** page. Hosted: SurveyJS unblocks the surveyjs.io account                       |
-| `cancelled`        | You cancelled the sign-in at the provider.                                                        | The person pressed Cancel or Deny at the provider. They sign in again                                                       |
-| `unavailable`      | The provider could not be reached.                                                                | It did not answer within 10 seconds, refused the client secret, or said it has trouble (`server_error`). See the server log |
-| `read-only`        | First sign-ins are paused while the instance is read-only.                                        | `READ_ONLY=true` ([Operations](../operations.md#read-only-mode)). Wait until it is off                                      |
-| `expired`          | The sign-in took too long, or it started in another browser.                                      | The sign-in took over 10 minutes, or cookies are blocked. Start again                                                       |
-| `failed`           | The sign-in could not be completed.                                                               | The provider refused the code or sent another error, or the server failed. See the server log                               |
+| Reason              | The page says                                                                                                                                                               | What to do                                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not-invited`       | This instance is open to invited people only.                                                                                                                               | Invite the email to a project, add its domain to `SIGN_UP_DOMAINS`, or create the user                                                                   |
+| `email-unverified`  | Your account at the provider didn't share a verified email address.                                                                                                         | The person verifies the email at the provider, or signs in another way                                                                                   |
+| `disabled`          | This account is disabled. Ask the person who runs this instance. (Hosted: This account has been disabled in SurveyJS Studio. Contact the administrator.)                    | An instance admin enables it on the **Users** page. On the hosted edition too, `disabled` is an admin's disable in Studio; the site's block is `blocked` |
+| `blocked`           | This surveyjs.io account is blocked. Contact SurveyJS support if you think this is a mistake.                                                                               | Hosted only. SurveyJS unblocks the account, and the person signs in again                                                                                |
+| `identity-conflict` | This email is already used by another surveyjs.io account in SurveyJS Studio. If you recreated your surveyjs.io account, you can sign in once the old one has been removed. | Hosted only. The person signs in once the old account has been removed (the account-deleted webhook erases it)                                           |
+| `cancelled`         | You cancelled the sign-in at the provider.                                                                                                                                  | The person pressed Cancel or Deny at the provider. They sign in again                                                                                    |
+| `unavailable`       | The provider could not be reached.                                                                                                                                          | It did not answer within 10 seconds, refused the client secret, or said it has trouble (`server_error`). See the server log                              |
+| `read-only`         | First sign-ins are paused while the instance is read-only.                                                                                                                  | `READ_ONLY=true` ([Operations](../operations.md#read-only-mode)). Wait until it is off                                                                   |
+| `expired`           | The sign-in took too long, or it started in another browser.                                                                                                                | The sign-in took over 10 minutes, or cookies are blocked. Start again                                                                                    |
+| `failed`            | The sign-in could not be completed.                                                                                                                                         | The provider refused the code or sent another error, or the server failed. See the server log                                                            |
 
 Every failure at the callback ends on this page, with `AUTH_METHODS=surveyjs` alone too. Only a client that does not
 ask for HTML gets the server's error answer ([Authentication](../api/authentication.md#outcomes-of-the-two-sign-in-operations)).

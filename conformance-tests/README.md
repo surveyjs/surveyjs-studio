@@ -78,7 +78,6 @@ in the porting guide) and the legacy fixtures. `node --import tsx scripts/confor
 | `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite`, `postgres` or `sandbox`; the reference server only |
 | `CONFORMANCE_FILE_STORE`     | `local` (default) or `s3`; the `sqlite` and `postgres` reference servers only                    |
 | `CONFORMANCE_AUTH`           | `default`, `password` or `oauth`; the reference server only                                      |
-| `CONFORMANCE_USER_DIRECTORY` | `default` or `surveyjs-api`; the reference server only                                           |
 | `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                           |
 | `CONFORMANCE_IMAGE`          | An image tag to run as the reference server (Linux only)                                         |
 
@@ -139,22 +138,6 @@ pnpm demo:azurite:down          # stop and wipe the replica
 A missing `LEGACY_*` or `OIDC_*` variable stops the run with an error that names it. The replica keeps what
 the tests create, so the tests never assume the exact size of a scope they write to; `pnpm legacy:load`
 resets it.
-
-## Run against the user-API stub
-
-`CONFORMANCE_USER_DIRECTORY` picks the user directory of the reference server. `default` (unset) is the
-storage provider's own. `surveyjs-api` starts the stand-in for the surveyjs.io user API first
-(`server/src/users/surveyjs-api/stub-cli.ts`, on a free port, with a synthetic token) and runs the
-server with `USER_DIRECTORY=surveyjs-api`, `USER_API_URL` and `USER_API_TOKEN` pointing at it and
-`ACCOUNT_NOTICES=surveyjs-licenses`. Sign-in, members by email and the licence notices then go through
-the API. One extra file, `src/user-directory.test.ts`, runs only in this mode.
-
-```sh
-pnpm test:conformance:user-api   # reads user-api.env
-```
-
-The mode cannot be combined with `CONFORMANCE_BASE_URL` or `CONFORMANCE_AUTH`. The stub and the reference
-server are stopped afterwards.
 
 ## Run with password sign-in
 

@@ -19,7 +19,7 @@ export interface UserDirectoryHandle {
 
 /**
  * The `users.*` sections, for a directory that holds the golden fixture users. `kind` is the
- * directory's: `external` (memory, surveyjs-sql, surveyjs-api) or `local` (USER_DIRECTORY=local).
+ * directory's: `external` (memory, surveyjs-sql) or `local` (USER_DIRECTORY=local).
  */
 export function describeUserDirectorySections(
   users: () => UserDirectory,

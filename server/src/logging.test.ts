@@ -120,7 +120,6 @@ const CANARIES = {
   oidc: "canary-oidc-7f4",
   session: "canary-session-secret-7f5-0123456789",
   webhook: "whsec_canary7fcanary7fcanary7fcanary7f",
-  token: "canary-user-api-token-7f7",
 };
 
 describe("startupSummary", () => {
@@ -137,9 +136,6 @@ describe("startupSummary", () => {
     OIDC_CLIENT_SECRET: CANARIES.oidc,
     SESSION_SECRET: CANARIES.session,
     ACCOUNT_WEBHOOK_SECRET: CANARIES.webhook,
-    USER_DIRECTORY: "surveyjs-api",
-    USER_API_URL: "https://api.example.com",
-    USER_API_TOKEN: CANARIES.token,
     READ_ONLY: "true",
   });
 
@@ -148,7 +144,7 @@ describe("startupSummary", () => {
       edition: config.edition,
       shell: config.shell,
       storageProvider: "azure-legacy",
-      userDirectory: "surveyjs-api",
+      userDirectory: "surveyjs-sql",
       identityProvider: "surveyjs-oidc",
       accountNotices: config.accountNotices,
       readOnly: true,

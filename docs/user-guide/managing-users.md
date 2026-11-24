@@ -76,6 +76,9 @@ and that provider gives the account's email as verified, the sign-in links again
 You cannot reset your own password here: it would sign you out and lose the link. Change it with
 **Change password** in your account, or ask another instance admin.
 
+On the hosted service, where people sign in with surveyjs.io and there are no passwords, **Reset
+password** is refused: it would only remove the user's surveyjs.io sign-in.
+
 ## Linked sign-ins
 
 **Sign-ins** in a user's row opens a line under it with how they sign in: **Password** (or **No
@@ -85,6 +88,9 @@ provider gave and the day it was linked. Choose **Sign-ins** again to close it.
 **Unlink** removes one, after you confirm. That sign-in no longer reaches the account, and the user
 is signed out within a minute. If the provider still gives the account's email as verified, signing
 in with it links it again. To keep someone out, disable them.
+
+On the hosted service a SurveyJS sign-in cannot be unlinked: it is what ties the account to the
+person's surveyjs.io account. The page shows the refusal.
 
 ## Disable and enable a user
 

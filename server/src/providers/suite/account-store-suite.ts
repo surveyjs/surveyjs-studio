@@ -56,6 +56,8 @@ export function describeLocalAccountSuite(
         passwordHash: newAccount().passwordHash,
         mustChangePassword: false,
         sessionEpoch: 0,
+        siteBlocked: false,
+        licenceExpiresAt: null,
         lastSignInAt: null,
         createdAt: "2026-10-29T10:00:00.000Z",
       };
@@ -83,6 +85,132 @@ export function describeLocalAccountSuite(
       ]);
       expect(await store.users.signInUser({ sub: active.user.id })).toEqual(active.user);
       expect(await store.users.findUserByEmail("")).toBeNull();
+    });
+
+    describe("refreshFromSignIn", () => {
+      const LICENCE = "2027-01-31T00:00:00.000Z";
+
+      it("updates the email, the name, the block and the licence date", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        const email = `new.${randomUUID()}@example.com`;
+        const result = await store.accounts.refreshFromSignIn(account.user.id.toUpperCase(), {
+          email,
+          displayName: "Renamed",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result.outcome).toBe("updated");
+        const stored = await store.accounts.account(account.user.id);
+        expect(stored).toMatchObject({
+          user: { email, displayName: "Renamed", blocked: true },
+          status: "active",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+          passwordHash: account.passwordHash,
+          instanceRole: "user",
+        });
+        expect(result).toEqual({ outcome: "updated", account: stored });
+        expect(await store.users.getUser(account.user.id)).toMatchObject({ blocked: true });
+        const cleared = await store.accounts.refreshFromSignIn(account.user.id, {
+          email,
+          displayName: "Renamed",
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        });
+        expect(cleared).toMatchObject({
+          outcome: "updated",
+          account: { siteBlocked: false, licenceExpiresAt: null, user: { blocked: false } },
+        });
+      });
+
+      it("raises the session epoch only when the site's block turns on", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        const holder = await store.accounts.createAccount(newAccount());
+        const refresh = (siteBlocked: boolean, email = account.user.email) =>
+          store.accounts.refreshFromSignIn(account.user.id, {
+            email,
+            displayName: account.user.displayName,
+            siteBlocked,
+            licenceExpiresAt: null,
+          });
+        const epoch = async () => (await store.accounts.account(account.user.id))?.sessionEpoch;
+        expect(await refresh(false)).toMatchObject({ account: { sessionEpoch: 0 } });
+        // Turned on: the account's other sessions end at their next request.
+        expect(await refresh(true)).toMatchObject({ account: { sessionEpoch: 1 } });
+        expect(await epoch()).toBe(1);
+        // Still on, and turned off: no change.
+        expect(await refresh(true)).toMatchObject({ account: { sessionEpoch: 1 } });
+        expect(await refresh(false)).toMatchObject({ account: { sessionEpoch: 1 } });
+        // Turned on with an email another account holds: the block is stored, the epoch raised.
+        const taken = await refresh(true, holder.user.email);
+        expect(taken).toMatchObject({ outcome: "email-taken", account: { sessionEpoch: 2 } });
+        expect(await epoch()).toBe(2);
+      });
+
+      it("keeps the old email when another account has the new one, and updates the rest", async () => {
+        const holder = await store.accounts.createAccount(newAccount());
+        const account = await store.accounts.createAccount(newAccount());
+        const result = await store.accounts.refreshFromSignIn(account.user.id, {
+          email: holder.user.email,
+          displayName: "Other Name",
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result.outcome).toBe("email-taken");
+        const stored = await store.accounts.account(account.user.id);
+        expect(stored).toMatchObject({
+          user: { email: account.user.email, displayName: "Other Name" },
+          siteBlocked: true,
+          licenceExpiresAt: LICENCE,
+        });
+        expect(result).toEqual({ outcome: "email-taken", account: stored });
+        expect(await store.accounts.account(holder.user.id)).toEqual(holder);
+      });
+
+      it("follows an email change in the account's surveyjs identity", async () => {
+        const account = await store.accounts.createAccount(newAccount());
+        await store.accounts.linkIdentity({
+          provider: "surveyjs",
+          subject: `sub-${randomUUID()}`,
+          userId: account.user.id,
+          email: account.user.email,
+          emailVerified: true,
+          createdAt: AT,
+        });
+        const email = `moved.${randomUUID()}@example.com`;
+        await store.accounts.refreshFromSignIn(account.user.id, {
+          email,
+          displayName: account.user.displayName,
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        });
+        const links = await store.accounts.listIdentities(account.user.id);
+        expect(links.map((link) => link.email)).toEqual([email]);
+      });
+
+      it("answers not-found for an unknown or malformed id", async () => {
+        const change = {
+          email: `x.${randomUUID()}@example.com`,
+          displayName: "X",
+          siteBlocked: false,
+          licenceExpiresAt: null,
+        };
+        expect(await store.accounts.refreshFromSignIn(randomUUID(), change)).toEqual({
+          outcome: "not-found",
+        });
+        expect(await store.accounts.refreshFromSignIn("not-a-guid", change)).toEqual({
+          outcome: "not-found",
+        });
+      });
+
+      it("creates an account blocked by the site, with a licence date", async () => {
+        const account = await store.accounts.createAccount(
+          newAccount({ siteBlocked: true, licenceExpiresAt: LICENCE }),
+        );
+        expect(account).toMatchObject({ siteBlocked: true, licenceExpiresAt: LICENCE });
+        expect(account.user.blocked).toBe(true);
+        expect(account.status).toBe("active");
+      });
     });
 
     it("refuses a second account with an email or an id in use", async () => {
@@ -365,6 +493,120 @@ export function describeLocalAccountSuite(
           "updated",
         ]);
         expect(await own.accounts.countActiveAdmins()).toBe(1);
+      } finally {
+        await own.close();
+      }
+    });
+
+    it("disables the last active admin when the caller allows it (the webhook), never deletes it", async () => {
+      const own = await create();
+      try {
+        const admin = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        expect(
+          await own.accounts.updateAccount(
+            admin.user.id,
+            { status: "disabled" },
+            { allowLastInstanceAdmin: true },
+          ),
+        ).toMatchObject({
+          outcome: "updated",
+          account: { status: "disabled", sessionEpoch: admin.sessionEpoch + 1 },
+        });
+        expect(await own.accounts.countActiveAdmins()).toBe(0);
+        // Without the allowance the rule still holds.
+        const other = await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        expect(await own.accounts.updateAccount(other.user.id, { status: "disabled" })).toEqual({
+          outcome: "last-instance-admin",
+        });
+        expect(await own.accounts.deleteAccount(other.user.id)).toBe("last-instance-admin");
+      } finally {
+        await own.close();
+      }
+    });
+
+    it("counts the admins in any status", async () => {
+      const own = await create();
+      try {
+        expect(await own.accounts.countAdmins()).toBe(0);
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin", status: "invited" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "admin", status: "disabled" }));
+        await own.accounts.createAccount(newAccount({ instanceRole: "user" }));
+        expect(await own.accounts.countAdmins()).toBe(3);
+      } finally {
+        await own.close();
+      }
+    });
+
+    it("replaces an account's personal data with a placeholder, keeping its role", async () => {
+      const own = await create();
+      try {
+        const id = randomUUID();
+        const admin = await own.accounts.createAccount(
+          newAccount({
+            id: id.toUpperCase(),
+            instanceRole: "admin",
+            mustChangePassword: true,
+            siteBlocked: true,
+            licenceExpiresAt: LATER,
+          }),
+        );
+        const subject = randomUUID();
+        await own.accounts.linkIdentity({
+          provider: "surveyjs",
+          subject,
+          userId: id,
+          email: admin.user.email,
+          emailVerified: true,
+          createdAt: AT,
+        });
+        const tokenHash = `tombstoned-${randomUUID()}`;
+        await own.accounts.createPasswordLink({
+          tokenHash,
+          userId: id,
+          purpose: "reset",
+          createdAt: AT,
+          expiresAt: LATER,
+        });
+
+        const placeholder = {
+          user: {
+            id,
+            email: `deleted-${id}@invalid`,
+            displayName: "Deleted account",
+            blocked: true,
+          },
+          instanceRole: "admin",
+          status: "disabled",
+          passwordHash: null,
+          mustChangePassword: false,
+          siteBlocked: false,
+          licenceExpiresAt: null,
+          sessionEpoch: admin.sessionEpoch + 1,
+          lastSignInAt: null,
+          createdAt: admin.createdAt,
+        };
+        expect(await own.accounts.tombstoneAccount(id.toUpperCase())).toEqual(placeholder);
+        expect(await own.accounts.account(id)).toEqual(placeholder);
+        expect(await own.accounts.accountByEmail(admin.user.email)).toBeNull();
+        expect(await own.accounts.listIdentities(id)).toEqual([]);
+        expect(await own.accounts.accountByIdentity("surveyjs", subject)).toBeNull();
+        expect(await own.accounts.usePasswordLink(tokenHash, AT, "$argon2id$x")).toBeNull();
+        expect(await own.accounts.countActiveAdmins()).toBe(0);
+        expect(await own.accounts.countAdmins()).toBe(1);
+
+        // Again: the same placeholder, one more epoch. Each id has its own email.
+        expect(await own.accounts.tombstoneAccount(id)).toMatchObject({
+          user: { email: `deleted-${id}@invalid` },
+          sessionEpoch: admin.sessionEpoch + 2,
+        });
+        const other = await own.accounts.createAccount(newAccount());
+        expect(await own.accounts.tombstoneAccount(other.user.id)).toMatchObject({
+          user: { email: `deleted-${other.user.id}@invalid` },
+          instanceRole: "user",
+        });
+        expect(await own.accounts.tombstoneAccount(randomUUID())).toBeNull();
+        expect(await own.accounts.tombstoneAccount("not-a-guid")).toBeNull();
       } finally {
         await own.close();
       }

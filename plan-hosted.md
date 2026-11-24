@@ -47,7 +47,7 @@ Checked against `master` on 2026-11-12. Each step below says what it reuses.
 | `surveyjs-studio backup`, `restore`, `migrate`, `rebase-urls`                                                                                                  | [Self-hosting](docs/self-hosting.md)                                                            | Steps 8, 9     |
 | The hosted production server on Hetzner, with health-checked deploys and rollback by image tag                                                                 | [Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)                          | Steps 1, 7, 10 |
 
-**Not built,** although the self-hosted plan allowed for it: the `api_tokens` table (SH Step 2 left it to Step 3; [data-model.md › Planned](docs/architecture/data-model.md#planned)), the hosted-only tables, a `profiles` directory, CORS and bearer authentication.
+**Not built,** although the self-hosted plan allowed for it: the `api_tokens` table (SH Step 2 left it to Step 3; [data-model.md › Planned](docs/architecture/data-model.md#planned)), the hosted-only tables, CORS and bearer authentication.
 
 ## Cross-track dependencies
 
@@ -65,7 +65,7 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 | Step | Name                                                           | Status |
 | ---- | -------------------------------------------------------------- | ------ |
 | 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☐      |
-| 2    | Users from sign-in: profiles, invitations and licence notices  | ☐      |
+| 2    | Users from sign-in: the local directory and licence notices    | ☐      |
 | 3    | API tokens, legacy access keys and CORS                        | ☐      |
 | 4    | Partial responses                                              | ☐      |
 | 5    | The bridge: public actions and legacy files                    | ☐      |
@@ -137,57 +137,56 @@ Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted f
 
 ---
 
-## Step 2: Users from sign-in: profiles, invitations and licence notices
+## Step 2: Users from sign-in: the local directory and licence notices
+
+> **Changed 2026-11-24 by [ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md).** The hosted directory is the existing `local` one, extended, not a `profiles` directory. Licences come as a sign-in claim, not from a site endpoint, and the site sends the account-deleted webhook through an outbox. Built on branch `hosted/02-users-from-sign-in`.
 
 **Needed before the test migration** (Step 11, [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)): the new server reads no site user table.
 
-**Goal:** after the cutover the app needs nothing from the site's user tables. Users come from sign-in, members are added by email through profiles or invitations, licence notices come from a site endpoint, and deleted accounts arrive by the webhook ([ADR 0022](docs/adr/0022-users-from-sign-in.md)). Until the cutover the hosted configuration stays on `surveyjs-sql`.
+**Goal:** after the cutover the app needs nothing from the site's user tables. Users come from sign-in through `auth.surveyjs.io`, members are added by email through invitations, licence notices come from a claim at sign-in, and deleted accounts arrive by the webhook ([ADR 0022](docs/adr/0022-users-from-sign-in.md), [ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md)). Until the cutover today's server stays on `surveyjs-sql`.
 
-**Inputs needed:**
+**Inputs needed** (the site's changes, in its own repository, built next):
 
-- the `blocked` claim in `/OAuth/UserInfo` and the re-read on `/OAuth/Authorize`, in the site's sign-in server (built 2026-10-28), deployed to staging;
-- the licence endpoint on the surveyjs.io staging site, designed with the site team;
-- the account-deleted webhook on staging, built to `docs/integrations/surveyjs-user-api.md` (plan.md Step 12).
+- the `blocked` claim in `/OAuth/UserInfo` and the re-read on `/OAuth/Authorize` (built 2026-10-28), deployed;
+- a per-client `license_expires_at` claim for Studio's OAuth client: the earliest licence expiry, RFC 3339 UTC, or `null` ([the claims](docs/integrations/surveyjs-user-api.md#sign-in-claims)), deployed;
+- the outbox that sends the account-deleted webhook, written before the account is deleted and sent only once it is gone, delivering from the cutover to the new server, with Studio's webhook URL and the shared secret per environment ([the webhook](docs/integrations/surveyjs-user-api.md#the-account-deleted-webhook)).
 
 **References**
 
-- HS › Users; ADR 0022; ADR 0018 (the seam, the webhook, erasure).
+- HS › Users; ADR 0043 (the decision), ADR 0022, ADR 0018 (the seam, the webhook, erasure), ADR 0029 (linking by verified email).
 - H27.
 
-**Already built** (SH Steps 4 and 8): the `users`, `user_identities` and `project_invitations` tables; surveyjs.io sign-in through OIDC; `addMember` with an unknown email answering with a pending member, `removeInvitation`, and invitations turned into memberships at sign-in by any method; a `disabled` account refused at sign-in with its sessions ended ([ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md) D11).
+**Already built** (SH Steps 4 and 8): the `users`, `user_identities` and `project_invitations` tables; surveyjs.io sign-in through OIDC; `addMember` with an unknown email answering with a pending member, `removeInvitation`, and invitations turned into memberships at sign-in by any method; a `disabled` account refused at sign-in with its sessions ended ([ADR 0029](docs/adr/0029-linking-identities-by-verified-email.md) D11); the webhook's receiving end with erasure.
 
-**Build**
+**Built**
 
-- **The hosted directory: a decision first, recorded in an ADR.** Either:
-  - **reuse `local`** with `AUTH_METHODS=surveyjs`, the join policy open to every surveyjs.io identity, and no passwords or instance admin in the `surveyjs-site` shell; or
-  - **a thin `profiles` directory** on the same tables, if `local` brings behaviour the hosted edition must not have.
+- **The `local` directory on hosted** (`APP_EDITION=hosted`, `AUTH_METHODS=surveyjs`, `USER_DIRECTORY=local`): the account id is the surveyjs.io id (a `sub` that is not a GUID is refused); every sign-in refreshes email (verified only, and not when another account holds it), name, the site's `blocked` and the licence date; the site's block (`users.site_blocked`) is separate from an admin's disable; migration `0010` adds `site_blocked` and `licence_expires_at`.
+- **Two new refusals:** `blocked` ("Account blocked", `403` for an API client; a blocked first sign-in creates nothing) and `identity-conflict` (the email's account belongs to another surveyjs.io id; `409 email-taken`, "Email in use"). An account whose id is the sub but has lost its identity is linked again.
+- **`ADMIN_EMAIL` on hosted** creates no account; it makes the matching account admin at sign-in only on an instance that has never had an admin. `pnpm account:make-admin --email <address>` names an admin afterwards.
+- **`ACCOUNT_NOTICES=sign-in-licence`** (needs `local`): the notices from the stored licence date.
+- **The webhook on hosted** finds the account by its `surveyjs` identity, then by id; erases the data (also under the surveyjs.io id) and deletes the account; the last instance admin becomes a placeholder instead.
+- **`account:reconcile` refuses on hosted:** a person who has not signed in is unknown, not deleted.
+- **The user API client is removed:** the `surveyjs-api` directory, its stub and conformance run, `USER_API_URL`, `USER_API_TOKEN` and the `user-api` readiness check; the user API document now covers the sign-in claims and the webhook. `surveyjs-sql` stays for today's server until Step 12.
+- **Not changed:** invitations (the existing operations and members page), no new contract operations.
+- **Profiles in the migration** are Step 9's: a `users` row and a `surveyjs` identity for every person the copied data names ([ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md) point 6).
 
-  Either way, on the memory provider and the SQL providers:
-  - every sign-in refreshes the user: email, display name, `blocked` (stored as `status` `disabled`, [data-model.md](docs/architecture/data-model.md)), last sign-in;
-  - `getUser` and `findUserByEmail` read these users;
-  - `missingUsers` refuses, and `account:reconcile` says it is not available with this directory.
+**Tests (as built)**
 
-- **`blocked` from UserInfo.** The identity claims carry it; a blocked user gets the `403` "Account blocked", as with `surveyjs-sql`, and a user unblocked on the site works again at the next sign-in.
-- **Invitations in the hosted edition:** the existing operations, plus the pending list in the `surveyjs-site` shell's members page if it lacks it. No new contract operations unless the pending list needs one.
-- **Licence notices from the site.** In the hosted edition the web app's shell asks the site endpoint for the signed-in user. The server's `surveyjs-licenses` stays for `surveyjs-sql`.
-- **Profiles in the migration.** Step 9 exports a profile for every user the copied data names, from the site's `Users` table.
-- **Removing the user API client:** the `surveyjs-api` directory, its stub and conformance run, `USER_API_URL`, `USER_API_TOKEN` and the `user-api` readiness check. The API sections of the user API document go too.
+- **Back-end unit:** the sign-in refresh, `blocked` and unblocked, the two refusals, the bootstrap rule, the webhook lookup and the last-admin placeholder, `account:make-admin`, `account:reconcile` refusing; the account store suite on memory and SQL.
+- **End to end:** `pnpm e2e:hosted-oauth` against the OAuth stub: a new person, the licence notice and its removal at the next sign-in, a blocked person, and the email conflict. The e2e servers moved to ports 3091 and 3092.
+- **Not run here:** the site's own claim and outbox, tested in its repository, then together on the new server in the test migration (Step 11).
 
-**Tests**
+**Documentation:** `docs/operations.md` (hosted sign-in), `docs/architecture.md` (users on hosted), the API reference (authentication, the contract's `loginCallback`), `docs/customizing/sign-in.md`, `docs/integrations/surveyjs-user-api.md`, `docs/demo/hosted-02.md`.
 
-- **Back-end unit:** the user refresh at sign-in; `blocked` and unblocked. Invitation matching is covered since SH Step 8; add cases only for what the hosted directory changes.
-- **Back-end e2e:** the provider suite for the hosted directory on memory and SQL; the conformance suite's invitation operations run with it.
-- **Front-end e2e:** inviting an unknown email, the pending list and cancelling; the licence notice from a stubbed site endpoint.
+**Demo checklist** ([the demo](docs/demo/hosted-02.md))
 
-**Documentation:** `docs/operations.md` (the directory settings), `docs/architecture.md` (profiles and invitations), the API reference, the user guide on projects and members, `docs/demo/hosted-02.md`.
-
-**Demo checklist**
-
-1. Locally on the hosted directory, sign in through the surveyjs.io stub as a new user. The profile is written, and the account menu shows the name.
-2. As a project admin, add an email nobody has signed in with. It is listed as pending. Sign in with that email: the project is there, with the invited role.
-3. On staging, block a test account in the site admin and sign in to the app with it: "Account blocked".
-4. On staging, the licence notice of a user with an expired licence comes from the site endpoint.
-5. Delete a test account on the staging site. The webhook arrives, and the account's personal surveys are gone.
+1. Locally on the hosted directory, sign in through the surveyjs.io stub as a new user. The account is written with the surveyjs.io id, and the account menu shows the name.
+2. Sign in with a licence that expired: the notice shows; a later date at the next sign-in removes it.
+3. Sign in with the stub's blocked box ticked: "Account blocked".
+4. Sign in with a known email and another id: "email in use".
+5. Send the account-deleted webhook with `pnpm webhook:account-deleted`: the account's surveys are gone.
+6. Delete the last admin's account the same way: the account stays as a placeholder, and `pnpm account:make-admin` names a new admin.
+7. With the site's changes deployed (the test migration): the same on the new server's environment with the real claims and a real deletion.
 
 ---
 
@@ -765,7 +764,7 @@ H18 and H24 are met as [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)
 
 **Decisions:**
 
-- **D17:** Step 2 completes the switch to the user API.
+- **D17:** Step 2 completes the switch from the user API to sign-in claims and the webhook ([ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md)).
 - **D18:** Steps 1, 5–11 (migration, the bridge, tokens before the cutover, IDs kept). Step 12 removes the legacy code, and the documents stay.
 - **D19:** nothing here; the site's redirects are in place since plan.md Step 14.
 - **D10 (revised):** Step 1 chooses the stores.
@@ -783,7 +782,7 @@ H18 and H24 are met as [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)
 - The open questions of spec-hosted are answered (2026-10-19). Step 1 still needs the store choice; the app's Hetzner location is set by the production server.
 - **A private location for production data** (rule 6), agreed with the SurveyJS team before Step 1 receives its inputs.
 - **The surveyjs.io side:**
-  - the user API (Step 2);
+  - the sign-in claim for licences and the account-deleted webhook outbox (Step 2, built in the site's repository);
   - logs and statistics (Step 1);
   - golden responses (Step 5);
   - `demoapi.surveyjs.io` for the site's demos and housekeeping, live before the test migration (Step 11, [ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md));

@@ -9,6 +9,13 @@ export interface IdentityClaims {
   readonly emailVerified?: boolean;
   readonly name?: string;
   readonly picture?: string;
+  /** surveyjs.io only: UserInfo `blocked === true`. Absent otherwise. */
+  readonly blocked?: boolean;
+  /**
+   * surveyjs.io only: UserInfo `license_expires_at` as ISO 8601 UTC. `null`: the account has no
+   * expiry. Absent: not stated, or not an RFC 3339 date-time.
+   */
+  readonly licenseExpiresAt?: string | null;
 }
 
 /**

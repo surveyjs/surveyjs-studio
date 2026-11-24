@@ -378,3 +378,523 @@ describe("resolveExternalSignIn", () => {
     });
   });
 });
+
+describe("resolveExternalSignIn, hosted sign-in through surveyjs.io (ADR 0043)", () => {
+  const open: AppConfig["joinPolicy"] = { signUpDomains: [], openSignUp: true };
+  const LICENCE = "2027-03-01T00:00:00.000Z";
+
+  /** The claims of a surveyjs.io sign-in: the subject is a GUID, upper-case as a test of case. */
+  const site = (over: Partial<IdentityClaims> = {}): IdentityClaims =>
+    claims({ sub: randomUUID().toUpperCase(), ...over });
+
+  function hosted({
+    adminEmail = null,
+    policy = open,
+  }: { adminEmail?: string | null; policy?: AppConfig["joinPolicy"] } = {}) {
+    const { accounts, invitations } = setup(policy);
+    const warnings: { obj: object; msg: string }[] = [];
+    const infos: { obj: object; msg: string }[] = [];
+    const resolve = (who: IdentityClaims, readOnly = false) =>
+      resolveExternalSignIn("surveyjs", who, {
+        accounts,
+        invitations,
+        policy,
+        now: () => NOW,
+        readOnly,
+        hosted: true,
+        adminEmail,
+        log: {
+          warn: (obj, msg) => warnings.push({ obj, msg }),
+          info: (obj, msg) => infos.push({ obj, msg }),
+        },
+      });
+    /** Links `who`'s surveyjs.io identity to `userId`, as an earlier sign-in did. */
+    const linkSite = (who: IdentityClaims, userId: string) =>
+      accounts.linkIdentity({
+        provider: "surveyjs",
+        subject: who.sub.toLowerCase(),
+        userId,
+        email: who.email ?? null,
+        emailVerified: true,
+        createdAt: NOW,
+      });
+    return { accounts, invitations, resolve, warnings, infos, linkSite };
+  }
+
+  /** The account a returning surveyjs.io user signs in to: id = their sub, identity linked. */
+  async function returning(
+    env: ReturnType<typeof hosted>,
+    who: IdentityClaims,
+    over: Partial<NewLocalAccount> = {},
+  ) {
+    const account = await env.accounts.createAccount(
+      newAccount({
+        id: who.sub.toLowerCase(),
+        email: who.email,
+        displayName: "Old Name",
+        passwordHash: null,
+        ...over,
+      }),
+    );
+    await env.linkSite(who, account.user.id);
+    return account;
+  }
+
+  it("creates a new user's account with the sub as its id, and the site's values", async () => {
+    const env = hosted();
+    const who = site({ licenseExpiresAt: LICENCE });
+    const result = await env.resolve(who);
+    expect(result).toMatchObject({
+      ok: true,
+      created: true,
+      account: {
+        user: { id: who.sub.toLowerCase(), email: "ada@example.com", displayName: "Ada Lovelace" },
+        siteBlocked: false,
+        licenceExpiresAt: LICENCE,
+        instanceRole: "user",
+        status: "active",
+      },
+    });
+    expect((await env.accounts.accountByIdentity("surveyjs", who.sub.toLowerCase()))?.user.id).toBe(
+      who.sub.toLowerCase(),
+    );
+  });
+
+  it("stores no licence date when the claim is absent", async () => {
+    const env = hosted();
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { licenceExpiresAt: null },
+    });
+  });
+
+  it("refuses a sub that is not a GUID: failed, nothing written", async () => {
+    const env = hosted();
+    expect(await env.resolve(site({ sub: "u-42" }))).toEqual({ ok: false, reason: "failed" });
+    expect(await env.accounts.countAccounts()).toBe(0);
+  });
+
+  it("refuses a blocked first sign-in: blocked, no account and no identity (Review Focus 2)", async () => {
+    const env = hosted();
+    const who = site({ blocked: true });
+    expect(await env.resolve(who)).toEqual({ ok: false, reason: "blocked" });
+    expect(await env.accounts.countAccounts()).toBe(0);
+    expect(await env.accounts.accountByIdentity("surveyjs", who.sub.toLowerCase())).toBeNull();
+  });
+
+  it("refuses a blocked sign-in whose email names an unlinked account, linking nothing", async () => {
+    const env = hosted();
+    const admins = await env.accounts.createAccount(newAccount({ email: "ada@example.com" }));
+    const who = site({ blocked: true });
+    expect(await env.resolve(who)).toEqual({ ok: false, reason: "blocked" });
+    expect(await env.accounts.listIdentities(admins.user.id)).toEqual([]);
+  });
+
+  it("refreshes a returning user's email, name, block and licence date", async () => {
+    const env = hosted();
+    const who = site({ email: "ada@example.com" });
+    await returning(env, who);
+    const back = {
+      ...who,
+      email: "Ada.New@Example.com",
+      name: "Ada King",
+      licenseExpiresAt: LICENCE,
+    };
+    expect(await env.resolve(back)).toMatchObject({
+      ok: true,
+      created: false,
+      account: {
+        user: { id: who.sub.toLowerCase(), email: "ada.new@example.com", displayName: "Ada King" },
+        siteBlocked: false,
+        licenceExpiresAt: LICENCE,
+      },
+    });
+    expect(await env.accounts.account(who.sub.toLowerCase())).toMatchObject({
+      user: { email: "ada.new@example.com", displayName: "Ada King" },
+      licenceExpiresAt: LICENCE,
+    });
+    expect(env.warnings).toEqual([]);
+  });
+
+  it("keeps the email when the new one is not verified, refreshing the rest", async () => {
+    const env = hosted();
+    const who = site({ email: "ada@example.com" });
+    await returning(env, who);
+    const back = { ...who, email: "other@example.com", emailVerified: false, name: "Ada King" };
+    expect(await env.resolve(back)).toMatchObject({
+      ok: true,
+      account: { user: { email: "ada@example.com", displayName: "Ada King" } },
+    });
+  });
+
+  it("keeps the old email when another account holds the new one, logging no address (Review Focus 1)", async () => {
+    const env = hosted();
+    const who = site({ email: "ada@example.com" });
+    await returning(env, who);
+    const other = await env.accounts.createAccount(newAccount({ email: "taken@example.com" }));
+    const back = {
+      ...who,
+      email: "taken@example.com",
+      name: "Ada King",
+      licenseExpiresAt: LICENCE,
+    };
+    expect(await env.resolve(back)).toMatchObject({
+      ok: true,
+      account: {
+        user: { id: who.sub.toLowerCase(), email: "ada@example.com", displayName: "Ada King" },
+        licenceExpiresAt: LICENCE,
+      },
+    });
+    expect(await env.accounts.account(other.user.id)).toEqual(other);
+    expect(env.warnings).toEqual([
+      {
+        obj: { userId: who.sub.toLowerCase() },
+        msg: "sign-in kept the old email: the new one belongs to another account",
+      },
+    ]);
+    expect(JSON.stringify(env.warnings)).not.toMatch(/@/);
+  });
+
+  it("refuses a returning user the site blocked, still refreshing the account", async () => {
+    const env = hosted();
+    const who = site({ email: "ada@example.com" });
+    await returning(env, who);
+    const back = { ...who, blocked: true, name: "Ada King", licenseExpiresAt: LICENCE };
+    expect(await env.resolve(back)).toEqual({ ok: false, reason: "blocked" });
+    expect(await env.accounts.account(who.sub.toLowerCase())).toMatchObject({
+      siteBlocked: true,
+      licenceExpiresAt: LICENCE,
+      user: { displayName: "Ada King", blocked: true },
+      status: "active",
+    });
+  });
+
+  it("lets a user the site unblocked in again", async () => {
+    const env = hosted();
+    const who = site();
+    await returning(env, who, { siteBlocked: true });
+    expect(await env.resolve(who)).toMatchObject({ ok: true, account: { siteBlocked: false } });
+  });
+
+  it("keeps an admin's disable apart from the site's block: blocked=false does not lift it", async () => {
+    const env = hosted();
+    const who = site();
+    await returning(env, who, { status: "disabled" });
+    expect(await env.resolve({ ...who, blocked: false })).toEqual({
+      ok: false,
+      reason: "disabled",
+    });
+    expect(await env.accounts.account(who.sub.toLowerCase())).toMatchObject({
+      status: "disabled",
+      siteBlocked: false,
+    });
+  });
+
+  it("links an admin-created account (random id, no identity) by its verified email, and refreshes it", async () => {
+    const env = hosted();
+    const made = await env.accounts.createAccount(
+      newAccount({ email: "ada@example.com", displayName: "ada", passwordHash: null }),
+    );
+    const who = site({ licenseExpiresAt: LICENCE });
+    expect(await env.resolve(who)).toMatchObject({
+      ok: true,
+      created: false,
+      account: {
+        user: { id: made.user.id, displayName: "Ada Lovelace" },
+        licenceExpiresAt: LICENCE,
+      },
+    });
+    expect((await env.accounts.accountByIdentity("surveyjs", who.sub.toLowerCase()))?.user.id).toBe(
+      made.user.id,
+    );
+    expect(await env.accounts.countAccounts()).toBe(1);
+  });
+
+  it("refuses an email whose account belongs to another surveyjs.io id: identity-conflict, nothing written", async () => {
+    const env = hosted();
+    const before = site({ email: "ada@example.com" });
+    const old = await returning(env, before);
+    const recreated = site({
+      email: "ada@example.com",
+      name: "Ada Again",
+      licenseExpiresAt: LICENCE,
+    });
+    expect(await env.resolve(recreated)).toEqual({ ok: false, reason: "identity-conflict" });
+    expect(await env.accounts.account(old.user.id)).toEqual(old);
+    expect(await env.accounts.countAccounts()).toBe(1);
+    expect(
+      await env.accounts.accountByIdentity("surveyjs", recreated.sub.toLowerCase()),
+    ).toBeNull();
+    expect(env.warnings).toHaveLength(1);
+    expect(env.warnings[0]?.obj).toEqual({ userId: old.user.id });
+    expect(JSON.stringify(env.warnings)).not.toMatch(/@/);
+  });
+
+  it("signs in, not conflict, when its own identity was linked to the email's account meanwhile", async () => {
+    const env = hosted();
+    const who = site();
+    // An admin-created account (random id) the other sign-in links: found by email, not by id.
+    const account = await returning(env, who, { id: randomUUID() });
+    let first = true;
+    const racing: LocalAccountStore = {
+      ...env.accounts,
+      // The other sign-in of the same person links the identity just after this one looked.
+      accountByIdentity: (provider, subject) => {
+        if (first) {
+          first = false;
+          return Promise.resolve(null);
+        }
+        return env.accounts.accountByIdentity(provider, subject);
+      },
+    };
+    const result = await resolveExternalSignIn("surveyjs", who, {
+      accounts: racing,
+      invitations: env.invitations,
+      policy: open,
+      now: () => NOW,
+      hosted: true,
+    });
+    expect(result).toMatchObject({ ok: true, account: { user: { id: account.user.id } } });
+  });
+
+  describe("the account with the sub as its id, without the identity (an admin unlinked it)", () => {
+    /** The person's own account (id = sub), whose surveyjs identity is gone; another email. */
+    const unlinked = (env: ReturnType<typeof hosted>, who: IdentityClaims, over = {}) =>
+      env.accounts.createAccount(
+        newAccount({
+          id: who.sub.toLowerCase(),
+          email: "ada.old@example.com",
+          displayName: "Old Name",
+          passwordHash: null,
+          ...over,
+        }),
+      );
+
+    it("links the identity to it, refreshes it and signs in", async () => {
+      const env = hosted();
+      const who = site({ licenseExpiresAt: LICENCE });
+      await unlinked(env, who);
+      expect(await env.resolve(who)).toMatchObject({
+        ok: true,
+        created: false,
+        account: {
+          user: {
+            id: who.sub.toLowerCase(),
+            email: "ada@example.com",
+            displayName: "Ada Lovelace",
+          },
+          licenceExpiresAt: LICENCE,
+        },
+      });
+      expect(
+        (await env.accounts.accountByIdentity("surveyjs", who.sub.toLowerCase()))?.user.id,
+      ).toBe(who.sub.toLowerCase());
+      expect(await env.accounts.countAccounts()).toBe(1);
+    });
+
+    it("links and refreshes it, then refuses the site's block", async () => {
+      const env = hosted();
+      const who = site({ blocked: true });
+      await unlinked(env, who);
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "blocked" });
+      expect(await env.accounts.account(who.sub.toLowerCase())).toMatchObject({
+        siteBlocked: true,
+      });
+    });
+
+    it("refuses it when an admin disabled it", async () => {
+      const env = hosted();
+      const who = site();
+      await unlinked(env, who, { status: "disabled" });
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "disabled" });
+    });
+
+    it("refuses identity-conflict when it has another surveyjs identity, writing nothing", async () => {
+      const env = hosted();
+      const who = site();
+      const own = await unlinked(env, who);
+      await env.linkSite(site(), own.user.id);
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "identity-conflict" });
+      expect(await env.accounts.account(own.user.id)).toEqual(own);
+      expect(await env.accounts.accountByIdentity("surveyjs", who.sub.toLowerCase())).toBeNull();
+      expect(env.warnings.map((line) => line.obj)).toEqual([{ userId: own.user.id }]);
+    });
+
+    it("READ_ONLY=true: refuses read-only, writing nothing", async () => {
+      const env = hosted();
+      const who = site();
+      const own = await unlinked(env, who);
+      expect(await rejectionCode(env.resolve(who, true))).toEqual(READ_ONLY);
+      expect(await env.accounts.account(own.user.id)).toEqual(own);
+      expect(await env.resolve({ ...who, blocked: true }, true)).toEqual({
+        ok: false,
+        reason: "blocked",
+      });
+    });
+  });
+
+  it("makes the ADMIN_EMAIL account admin at its sign-in while the instance never had an admin", async () => {
+    const env = hosted({ adminEmail: "Ada@Example.com" });
+    const result = await env.resolve(site());
+    expect(result).toMatchObject({ ok: true, account: { instanceRole: "admin" } });
+    expect(await env.accounts.countActiveAdmins()).toBe(1);
+    if (!result.ok) throw new Error("not signed in");
+    expect(env.infos).toEqual([
+      {
+        obj: { userId: result.account.user.id },
+        msg: "made the ADMIN_EMAIL account an instance admin at sign-in",
+      },
+    ]);
+  });
+
+  it("makes a returning ADMIN_EMAIL account admin too", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    const who = site();
+    await returning(env, who);
+    expect(await env.resolve(who)).toMatchObject({ ok: true, account: { instanceRole: "admin" } });
+  });
+
+  it("leaves the ADMIN_EMAIL account's role alone when an active admin exists", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    await env.accounts.createAccount(newAccount({ instanceRole: "admin" }));
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { instanceRole: "user" },
+    });
+    expect(env.infos).toEqual([]);
+  });
+
+  it("leaves the ADMIN_EMAIL account's role alone when only a disabled admin exists", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    await env.accounts.createAccount(newAccount({ instanceRole: "admin", status: "disabled" }));
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { instanceRole: "user" },
+    });
+    expect(env.infos).toEqual([]);
+  });
+
+  it("leaves it alone after the last admin became a deleted placeholder", async () => {
+    const env = hosted({ adminEmail: "ada@example.com" });
+    const admin = await env.accounts.createAccount(
+      newAccount({ email: "ada@example.com", instanceRole: "admin" }),
+    );
+    await env.accounts.tombstoneAccount(admin.user.id);
+    // A new surveyjs.io account with the freed address signs in.
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { user: { email: "ada@example.com" }, instanceRole: "user" },
+    });
+    expect(await env.accounts.countActiveAdmins()).toBe(0);
+    expect(env.infos).toEqual([]);
+  });
+
+  describe("a deleted account's placeholder: refused (failed), nothing written", () => {
+    it("the own-account branch: the placeholder's id is the sub", async () => {
+      const env = hosted();
+      const who = site();
+      const admin = await env.accounts.createAccount(
+        newAccount({ id: who.sub.toLowerCase(), instanceRole: "admin", passwordHash: null }),
+      );
+      await env.accounts.tombstoneAccount(admin.user.id);
+      const placeholder = await env.accounts.account(admin.user.id);
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.resolve(who, true)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.accounts.account(admin.user.id)).toEqual(placeholder);
+      expect(await env.accounts.listIdentities(admin.user.id)).toEqual([]);
+      expect(env.warnings.map((line) => line.obj)).toEqual([
+        { userId: admin.user.id },
+        { userId: admin.user.id },
+      ]);
+    });
+
+    it("the email branch: the claim names the placeholder's email, even once enabled", async () => {
+      const env = hosted();
+      const admin = await env.accounts.createAccount(
+        newAccount({ instanceRole: "admin", passwordHash: null }),
+      );
+      await env.accounts.tombstoneAccount(admin.user.id);
+      // Enabled again by an admin: still nobody's account.
+      await env.accounts.updateAccount(admin.user.id, { status: "active" });
+      const placeholder = await env.accounts.account(admin.user.id);
+      const who = site({ email: placeholder?.user.email ?? "" });
+      expect(await env.resolve(who)).toEqual({ ok: false, reason: "failed" });
+      expect(await env.accounts.account(admin.user.id)).toEqual(placeholder);
+      expect(await env.accounts.listIdentities(admin.user.id)).toEqual([]);
+      expect(await env.accounts.countAccounts()).toBe(1);
+    });
+  });
+
+  it("makes no other email admin", async () => {
+    const env = hosted({ adminEmail: "root@example.com" });
+    expect(await env.resolve(site())).toMatchObject({
+      ok: true,
+      account: { instanceRole: "user" },
+    });
+    expect(await env.accounts.countActiveAdmins()).toBe(0);
+  });
+
+  it("still applies the join policy to a new account", async () => {
+    const env = hosted({ policy: closed });
+    expect(await env.resolve(site())).toEqual({ ok: false, reason: "not-invited" });
+    expect(await env.accounts.countAccounts()).toBe(0);
+  });
+
+  describe("READ_ONLY=true: nothing is written (Review Focus 4)", () => {
+    it("signs a linked, active, unblocked user in without refreshing anything", async () => {
+      const env = hosted({ adminEmail: "ada.new@example.com" });
+      const who = site({ email: "ada@example.com" });
+      const account = await returning(env, who, { siteBlocked: true });
+      const back = {
+        ...who,
+        email: "ada.new@example.com",
+        name: "Ada King",
+        licenseExpiresAt: LICENCE,
+      };
+      expect(await env.resolve(back, true)).toMatchObject({
+        ok: true,
+        account: { user: { id: account.user.id } },
+      });
+      expect(await env.accounts.account(account.user.id)).toEqual(account);
+    });
+
+    it("refuses a blocked claim for a linked user, writing nothing", async () => {
+      const env = hosted();
+      const who = site();
+      const account = await returning(env, who);
+      expect(await env.resolve({ ...who, blocked: true }, true)).toEqual({
+        ok: false,
+        reason: "blocked",
+      });
+      expect(await env.accounts.account(account.user.id)).toEqual(account);
+    });
+
+    it("refuses a blocked first sign-in as blocked, not read-only", async () => {
+      const env = hosted();
+      expect(await env.resolve(site({ blocked: true }), true)).toEqual({
+        ok: false,
+        reason: "blocked",
+      });
+      expect(await env.accounts.countAccounts()).toBe(0);
+    });
+
+    it("refuses to create or link: read-only", async () => {
+      const env = hosted();
+      expect(await rejectionCode(env.resolve(site(), true))).toEqual(READ_ONLY);
+      await env.accounts.createAccount(newAccount({ email: "ada@example.com" }));
+      expect(await rejectionCode(env.resolve(site(), true))).toEqual(READ_ONLY);
+      expect(await env.accounts.countAccounts()).toBe(1);
+    });
+  });
+
+  it("ignores the site's claims when not hosted", async () => {
+    const { resolve } = setup(open);
+    expect(
+      await resolve("surveyjs", site({ sub: "u-42", blocked: true, licenseExpiresAt: LICENCE })),
+    ).toMatchObject({
+      ok: true,
+      created: true,
+      account: { siteBlocked: false, licenceExpiresAt: null },
+    });
+  });
+});

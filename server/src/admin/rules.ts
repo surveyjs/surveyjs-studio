@@ -37,3 +37,13 @@ export function nextStatus(
   if (current === "active") return "active";
   return canSignIn ? "active" : "invited";
 }
+
+/** The display name of a deleted account's placeholder (`tombstoneAccount`, ADR 0043 point 2). */
+export const DELETED_ACCOUNT_NAME = "Deleted account";
+
+/** The email of a deleted account's placeholder: unique per id, in the reserved `.invalid` TLD. */
+export const deletedAccountEmail = (id: string): string => `deleted-${id.toLowerCase()}@invalid`;
+
+/** An email of a placeholder (`deletedAccountEmail`): no person can hold an `@invalid` address. */
+export const isDeletedAccountEmail = (email: string): boolean =>
+  email.trim().toLowerCase().endsWith("@invalid");

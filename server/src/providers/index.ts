@@ -1,12 +1,11 @@
 import type { Clock } from "../auth/session.js";
 import type { AccountNoticesSetting, AppConfig } from "../config.js";
-import { createSurveyjsApiDirectory } from "../users/surveyjs-api/client.js";
 import { createAzureLegacyProviders, type LegacyWarningLogger } from "./azure-legacy/index.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import { createMemoryProviders } from "./memory.js";
 import { withSeedInvitation } from "./seed-invitations.js";
 import { openSqlProviders } from "./sql.js";
-import type { ProviderSet, ReadinessCheck } from "./types.js";
+import type { ProviderSet } from "./types.js";
 
 export type { ProviderSet } from "./types.js";
 
@@ -66,33 +65,6 @@ export async function createProviders(
   config: AppConfig,
   options: ProviderOptions = {},
 ): Promise<ProviderSet> {
-  // The storage provider's own users and notices serve memory and surveyjs-sql (R7). With the
-  // user API, the storage provider gets no licence setting: the API answers licence state.
-  const external = config.userDirectory === "surveyjs-api";
-  const storage = await registry[config.storageProvider](
-    config,
-    options,
-    external ? "none" : config.accountNotices,
-  );
-  if (!external) return storage;
-  if (config.userApi === null) {
-    await storage.close();
-    throw new Error("USER_DIRECTORY=surveyjs-api needs USER_API_URL and USER_API_TOKEN");
-  }
-  const api = createSurveyjsApiDirectory({
-    baseUrl: config.userApi.url,
-    token: config.userApi.token,
-    accountNotices: config.accountNotices,
-    ...(options.now && { now: options.now }),
-  });
-  return {
-    ...storage,
-    users: api.users,
-    notices: api.notices,
-    readinessNames: [...storage.readinessNames, "user-api"],
-    async ready(): Promise<readonly ReadinessCheck[]> {
-      const [checks, probe] = await Promise.all([storage.ready(), api.probe()]);
-      return [...checks, { name: "user-api", ...probe }];
-    },
-  };
+  // The storage provider's own users and notices serve every user directory (R7).
+  return registry[config.storageProvider](config, options, config.accountNotices);
 }

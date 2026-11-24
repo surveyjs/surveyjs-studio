@@ -13,6 +13,7 @@ import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { createSqlViewStore } from "../sql/view-store.js";
 import { legacyFixtureSeed } from "./azure-legacy/fixtures.js";
 import type { LegacyWarningLogger } from "./azure-legacy/index.js";
+import { createSignInLicenceNotices } from "../notices/sign-in-licence.js";
 import { createMemoryProviders, type MemorySeed } from "./memory.js";
 import type { ProviderSet, ReadinessCheck } from "./types.js";
 
@@ -134,7 +135,10 @@ export function createSqlProviders(
     credentials: createSqlCredentialStore(database),
     accounts: local?.accounts ?? null,
     invitations: local ? createSqlInvitationStore(database) : null,
-    notices: fallback.notices,
+    notices:
+      local && options.accountNotices === "sign-in-licence"
+        ? createSignInLicenceNotices(local.accounts)
+        : fallback.notices,
     readinessNames: ["database", "files"],
     ready: async () => {
       const [db, files] = await Promise.all([probe(database), withinTime(options.bytes.probe())]);

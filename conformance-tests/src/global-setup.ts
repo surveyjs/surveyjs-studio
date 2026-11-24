@@ -20,8 +20,6 @@ declare module "vitest" {
     baseUrl: string;
     /** True when the suite started the reference server (memory or the image), not `CONFORMANCE_BASE_URL`. */
     ownsServer: boolean;
-    /** `surveyjs-api` when the reference server runs against the user-API stub, else `default`. */
-    userDirectory: "default" | "surveyjs-api";
     /**
      * The `whsec_` secret the server checks account-deleted webhooks with; null when unknown (an
      * external server without `CONFORMANCE_WEBHOOK_SECRET`): the webhook tests skip.
@@ -61,9 +59,6 @@ const IMAGE_READY_TIMEOUT_MS = 60_000;
 // a NODE_ENV=production server (production requires one).
 const IMAGE_CONTAINER = "surveyjs-studio-conformance";
 const IMAGE_SESSION_SECRET = "conformance-local-only-session-secret-not-a-real-value";
-
-// The user-API mode (CONFORMANCE_USER_DIRECTORY=surveyjs-api): a synthetic token for the local stub.
-const USER_API_TOKEN = "conformance-user-api-token";
 
 // The reference server's account-deleted webhook secret (see reference-settings.ts).
 const WEBHOOK_SECRET = REFERENCE_WEBHOOK_SECRET;
@@ -144,8 +139,6 @@ const appVariables = [
   "PUBLIC_SUMMARY_RATE_LIMIT",
   "ACCOUNT_NOTICES",
   "USER_DIRECTORY",
-  "USER_API_URL",
-  "USER_API_TOKEN",
   "ACCOUNT_WEBHOOK_SECRET",
   "SHELL_LINKS",
   "WEB_ROOT",
@@ -347,20 +340,6 @@ async function prepareSqlDatabase(
   return { env, drop };
 }
 
-/**
- * `CONFORMANCE_USER_DIRECTORY=surveyjs-api` points the reference server at the user-API stub (the
- * stub is started first; `stubUrl` is its address) and turns the licence notices on.
- */
-function userDirectoryEnv(stubUrl: string | null): Record<string, string> {
-  if (stubUrl === null) return {};
-  return {
-    USER_DIRECTORY: "surveyjs-api",
-    USER_API_URL: stubUrl,
-    USER_API_TOKEN,
-    ACCOUNT_NOTICES: "surveyjs-licenses",
-  };
-}
-
 /** `CONFORMANCE_AUTH`: `default`, `password` or `oauth`. */
 function authMode(): "default" | "password" | "oauth" {
   const mode = process.env.CONFORMANCE_AUTH?.trim() || "default";
@@ -428,11 +407,7 @@ function omit(settings: Record<string, string>, names: string[]): Record<string,
   return Object.fromEntries(Object.entries(settings).filter(([name]) => !names.includes(name)));
 }
 
-function serverEnv(
-  port: number,
-  stubUrl: string | null,
-  overrides: Record<string, string> = {},
-): NodeJS.ProcessEnv {
+function serverEnv(port: number, overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of appVariables) delete env[name];
   return {
@@ -441,7 +416,6 @@ function serverEnv(
     // The values the suite expects of its server: reference-settings.ts. The provider ones are below.
     ...omit(referenceEnv(port), PROVIDER_SETTINGS),
     ...providerEnv(),
-    ...userDirectoryEnv(stubUrl),
     ...authEnv(),
     ...readOnlyEnv(),
     ...overrides,
@@ -538,74 +512,7 @@ function killTree(child: ChildProcess): void {
   }
 }
 
-/** The mode of `CONFORMANCE_USER_DIRECTORY`: `default` or `surveyjs-api`. */
-function userDirectoryMode(): "default" | "surveyjs-api" {
-  const mode = process.env.CONFORMANCE_USER_DIRECTORY?.trim() || "default";
-  if (mode !== "default" && mode !== "surveyjs-api") {
-    throw new Error(`CONFORMANCE_USER_DIRECTORY must be default or surveyjs-api, got "${mode}"`);
-  }
-  return mode;
-}
-
-/** Waits until `url` answers 200, the child exits or the deadline passes; throws with the output. */
-async function waitFor200(
-  child: ChildProcess,
-  url: string,
-  what: string,
-  output: () => string,
-): Promise<void> {
-  const deadline = Date.now() + READY_TIMEOUT_MS;
-  for (;;) {
-    if (child.exitCode !== null) {
-      throw new Error(`${what} failed to start: exited with code ${child.exitCode}
-${output()}`);
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`${what} failed to start: ${url} not ready after ${READY_TIMEOUT_MS} ms
-${output()}`);
-    }
-    try {
-      if ((await fetch(url)).status === 200) return;
-    } catch {
-      // not listening yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-}
-
-/** Runs the user-API stub (server/src/users/surveyjs-api/stub-cli.ts) on a free port. */
-async function startUserApiStub(): Promise<{ url: string; stop: () => void }> {
-  const port = await freePort();
-  const url = `http://127.0.0.1:${port}`;
-  const child = spawn(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      "server/src/users/surveyjs-api/stub-cli.ts",
-      "--",
-      "--port",
-      String(port),
-      "--token",
-      USER_API_TOKEN,
-    ],
-    { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
-  );
-  let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  const stop = () => killTree(child);
-  try {
-    await waitFor200(child, `${url}/healthz`, "User API stub", () => output);
-  } catch (error) {
-    stop();
-    throw error;
-  }
-  return { url, stop };
-}
-
 async function startReferenceServer(
-  stubUrl: string | null,
   image: string | null,
   overrides: Record<string, string> = {},
 ): Promise<{ baseUrl: string; stop: () => void }> {
@@ -620,9 +527,9 @@ async function startReferenceServer(
           shell: true,
           detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
-          env: serverEnv(port, stubUrl, overrides),
+          env: serverEnv(port, overrides),
         })
-      : spawnImage(image, imageEnv(serverEnv(port, stubUrl, overrides)));
+      : spawnImage(image, imageEnv(serverEnv(port, overrides)));
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
@@ -672,15 +579,11 @@ async function editionOf(baseUrl: string): Promise<"hosted" | "self-hosted"> {
  */
 export async function setup(project: TestProject): Promise<(() => Promise<void>) | void> {
   const external = process.env.CONFORMANCE_BASE_URL?.trim();
-  const mode = userDirectoryMode();
   if (conformanceProvider() === "sandbox") {
-    provideSandbox(project, Boolean(external), mode);
+    provideSandbox(project, Boolean(external));
     return;
   }
   if (external) {
-    if (mode !== "default") {
-      throw new Error("CONFORMANCE_USER_DIRECTORY cannot be used with CONFORMANCE_BASE_URL");
-    }
     if (process.env.CONFORMANCE_IMAGE?.trim()) {
       throw new Error("CONFORMANCE_IMAGE cannot be used with CONFORMANCE_BASE_URL");
     }
@@ -690,7 +593,6 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     project.provide("baseUrl", external.replace(/\/+$/, ""));
     project.provide("edition", await editionOf(external.replace(/\/+$/, "")));
     project.provide("ownsServer", false);
-    project.provide("userDirectory", "default");
     project.provide("webhookSecret", process.env.CONFORMANCE_WEBHOOK_SECRET?.trim() || null);
     project.provide("passwordAdmin", null);
     project.provide("oauth", null);
@@ -705,9 +607,9 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     );
   }
   const auth = authMode();
-  if (auth !== "default" && (provider === "azure-legacy" || mode !== "default")) {
+  if (auth !== "default" && provider === "azure-legacy") {
     throw new Error(
-      `CONFORMANCE_AUTH=${auth} needs CONFORMANCE_PROVIDER=memory, sqlite or postgres and the default user directory`,
+      `CONFORMANCE_AUTH=${auth} needs CONFORMANCE_PROVIDER=memory, sqlite or postgres`,
     );
   }
   if (auth === "oauth" && image !== null) {
@@ -721,25 +623,21 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   const database = sqlDatabase;
   // The OAuth run's second server, OPEN_SIGN_UP=on, gets a database of its own.
   let openDatabase: { env: Record<string, string>; drop: () => Promise<void> } | null = null;
-  const stub = mode === "surveyjs-api" ? await startUserApiStub() : null;
   const servers: { baseUrl: string; stop: () => void }[] = [];
   const stopAll = async () => {
     for (const started of servers) started.stop();
-    stub?.stop();
     await oauthStub?.close();
     await database?.drop();
     await openDatabase?.drop();
   };
   try {
     if (auth === "oauth") oauthStub = await startOAuthStub();
-    servers.push(await startReferenceServer(stub?.url ?? null, image));
+    servers.push(await startReferenceServer(image));
     if (auth === "oauth") {
       if (provider === "sqlite" || provider === "postgres") {
         openDatabase = await prepareSqlDatabase(provider);
       }
-      servers.push(
-        await startReferenceServer(null, image, { ...openDatabase?.env, OPEN_SIGN_UP: "on" }),
-      );
+      servers.push(await startReferenceServer(image, { ...openDatabase?.env, OPEN_SIGN_UP: "on" }));
     }
   } catch (error) {
     await stopAll();
@@ -755,7 +653,6 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   }
   project.provide("baseUrl", server.baseUrl);
   project.provide("ownsServer", true);
-  project.provide("userDirectory", mode);
   project.provide("webhookSecret", WEBHOOK_SECRET);
   project.provide("passwordAdmin", auth === "default" ? null : PASSWORD_ADMIN);
   project.provide(
@@ -780,15 +677,10 @@ const SANDBOX_ORIGIN = "http://sandbox.test";
  * mock handlers with msw/node (src/sandbox-setup.ts, a `setupFiles` entry of vitest.config.ts).
  * Every option that configures a server is refused.
  */
-function provideSandbox(
-  project: TestProject,
-  external: boolean,
-  mode: "default" | "surveyjs-api",
-): void {
+function provideSandbox(project: TestProject, external: boolean): void {
   const options: [string, boolean][] = [
     ["CONFORMANCE_BASE_URL", external],
     ["CONFORMANCE_IMAGE", Boolean(process.env.CONFORMANCE_IMAGE?.trim())],
-    ["CONFORMANCE_USER_DIRECTORY", mode !== "default"],
     ["CONFORMANCE_AUTH", authMode() !== "default"],
     ["CONFORMANCE_READ_ONLY", readOnlyEnv().READ_ONLY !== undefined],
     ["CONFORMANCE_FILE_STORE", Boolean(process.env.CONFORMANCE_FILE_STORE?.trim())],
@@ -801,7 +693,6 @@ function provideSandbox(
   // The sandbox's /config (web/src/sandbox/handlers/session.ts); public.test.ts checks it.
   project.provide("edition", "self-hosted");
   project.provide("ownsServer", false);
-  project.provide("userDirectory", "default");
   project.provide("webhookSecret", null);
   project.provide("passwordAdmin", null);
   project.provide("oauth", null);

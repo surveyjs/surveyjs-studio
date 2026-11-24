@@ -63,6 +63,8 @@ const DEMO: Record<DemoNoticesSetting, readonly Readonly<Notice>[]> = {
   none: [],
   "license-expired": [LICENCE_EXPIRED],
   "license-expires-soon": [LICENCE_EXPIRES_SOON],
+  // Read from the local accounts by the providers that have them; no notice anywhere else.
+  "sign-in-licence": [],
 };
 
 /** The demo settings of `ACCOUNT_NOTICES`: every user gets the same notice (or none). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { signWebhook, verifyWebhook, type WebhookMessage } from "./webhook.js";
+import { signWebhook, verifyWebhook, webhookSignature, type WebhookMessage } from "./webhook.js";
 import { webhookKey } from "./webhook-secret.js";
 
 // The Standard Webhooks test vector (standardwebhooks.com).
@@ -83,5 +83,23 @@ describe("signWebhook", () => {
     expect(signWebhook(KEY, VECTOR.id!, TIMESTAMP, VECTOR.body)["webhook-signature"]).toBe(
       VECTOR.signature,
     );
+  });
+});
+
+describe("webhookSignature", () => {
+  // The account-deleted vector given to the surveyjs.io team (synthetic secret and id): it pins
+  // the exact format the site must produce.
+  const SECRET = "whsec_c3R1ZGlvLXN0ZXAyLXRlc3Qta2V5LTAxMjM0NTY3ODk=";
+  const BODY =
+    '{"type":"account.deleted","data":{"userId":"11111111-0000-4000-8000-000000000042"}}';
+  const SIGNATURE = "g8PHZrYFnISHwtkQ3U90WypS8bDWX0ypJmjcbOBnccs=";
+
+  it("signs the account-deleted vector", () => {
+    expect(webhookSignature(webhookKey(SECRET), "msg_0001", "1767225600", BODY)).toBe(SIGNATURE);
+    expect(signWebhook(webhookKey(SECRET), "msg_0001", 1767225600, BODY)).toEqual({
+      "webhook-id": "msg_0001",
+      "webhook-timestamp": "1767225600",
+      "webhook-signature": `v1,${SIGNATURE}`,
+    });
   });
 });

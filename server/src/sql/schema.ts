@@ -141,6 +141,10 @@ export interface UsersTable {
   password_hash: string | null;
   must_change_password: Flag;
   session_epoch: number;
+  /** The site blocks the account (0010); blocks like `disabled`. */
+  site_blocked: Flag;
+  /** When the licence ends, as the site reported it at sign-in (0010). */
+  licence_expires_at: Timestamp | null;
   created_at: Timestamp;
   last_sign_in_at: Timestamp | null;
 }

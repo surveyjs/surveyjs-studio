@@ -533,7 +533,7 @@ server then erases that user's data: personal surveys with their results and fil
 project (a project that would lose its last admin passes to its next member, and a project with no other member is
 deleted with its surveys). The same erasure runs from `pnpm account:erase` and `pnpm account:reconcile`
 ([Operations](../operations.md)). The contract is the reference; the surveyjs.io side is written up in
-[the user API and webhook document](../integrations/surveyjs-user-api.md#the-account-deleted-webhook).
+[the sign-in claims and webhook document](../integrations/surveyjs-user-api.md#the-account-deleted-webhook).
 
 - **No session and no CSRF header.** The call is signed, as [Standard Webhooks](https://www.standardwebhooks.com/)
   describes, with the secret the server has in `ACCOUNT_WEBHOOK_SECRET` (`whsec_` and base64). The headers are
