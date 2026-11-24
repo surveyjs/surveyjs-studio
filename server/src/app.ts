@@ -283,6 +283,8 @@ export async function buildApp(
           accounts: local.accounts,
           sessionCheck: local.sessionCheck,
           eraseAccount,
+          hosted: config.edition === "hosted",
+          passwordSignIn: config.authMethods.includes("password"),
           ...(options.now && { now: options.now }),
         })),
       ...createSessionHandlers({

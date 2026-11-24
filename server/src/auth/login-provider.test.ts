@@ -828,4 +828,41 @@ describe("hosted sign-in through surveyjs.io (ADR 0043)", () => {
     );
     expect(await providers.accounts?.account(sub)).toMatchObject({ instanceRole: "admin" });
   });
+
+  it("refuses the admin's unlink of a surveyjs.io sign-in and, without password sign-in, a reset", async () => {
+    const { server, providers } = await start(hostedEnv);
+    const sub = randomUUID();
+    const admin = await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub, email: "admin@example.com" }, atSite),
+    );
+    const csrf = cookieValue(admin, "msid_csrf") ?? "";
+    const headers = {
+      cookie: `msid=${cookieValue(admin, "msid") ?? ""}; msid_csrf=${csrf}`,
+      "x-csrf-token": csrf,
+    };
+    const other = randomUUID();
+    await callbackOf(
+      server,
+      await authorizeAtStub(server, { sub: other, email: "ann@example.com" }, atSite),
+    );
+    const unlink = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/admin/users/${other}/identities/surveyjs/${other}`,
+      headers,
+    });
+    expectProblem(unlink, 403);
+    expect(unlink.json()).toMatchObject({
+      detail: "A surveyjs.io sign-in cannot be unlinked on the hosted edition.",
+    });
+    const reset = await server.inject({
+      method: "POST",
+      url: `/api/v1/admin/users/${other}/reset-link`,
+      headers,
+    });
+    expectProblem(reset, 403);
+    expect(await providers.accounts?.accountByIdentity("surveyjs", other)).toMatchObject({
+      user: { id: other },
+    });
+  });
 });

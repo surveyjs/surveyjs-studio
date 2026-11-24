@@ -33,6 +33,13 @@ export interface AdminServiceOptions {
   readonly accounts: LocalAccountStore;
   readonly sessionCheck: SessionCheck;
   readonly eraseAccount: EraseAccount;
+  /**
+   * The hosted edition (ADR 0043): an account's surveyjs.io sign-in is its link to the site's id,
+   * so an admin cannot remove it (`unlinkIdentity`, and `resetLink` without password sign-in).
+   */
+  readonly hosted?: boolean;
+  /** AUTH_METHODS includes `password` (the default when not given). */
+  readonly passwordSignIn?: boolean;
   readonly now?: Clock;
 }
 
@@ -105,6 +112,28 @@ const ownReset = (): AppError =>
     detail: "You cannot reset your own password. Change it in your account, or ask another admin.",
   });
 
+/**
+ * Without its surveyjs.io identity, the account's email would link to whichever surveyjs.io id
+ * signs in next with that address (ADR 0043 point 1).
+ */
+const hostedUnlink = (): AppError =>
+  new AppError({
+    code: "forbidden",
+    status: 403,
+    title: "Forbidden",
+    detail: "A surveyjs.io sign-in cannot be unlinked on the hosted edition.",
+  });
+
+/** A reset removes every linked sign-in; with no password to set, it only locks the user out. */
+const hostedResetWithoutPassword = (): AppError =>
+  new AppError({
+    code: "forbidden",
+    status: 403,
+    title: "Forbidden",
+    detail:
+      "Password sign-in is not enabled on this instance: a reset would only remove the user's linked sign-ins.",
+  });
+
 const emailTaken = (): AppError =>
   new AppError({
     code: "email-taken",
@@ -115,7 +144,7 @@ const emailTaken = (): AppError =>
 
 /** The instance admin's user management (S12–S16, S18). Every operation is for instance admins. */
 export function createAdminService(options: AdminServiceOptions): AdminService {
-  const { accounts, sessionCheck, eraseAccount } = options;
+  const { accounts, sessionCheck, eraseAccount, hosted = false, passwordSignIn = true } = options;
   const now = options.now ?? Date.now;
   const nowIso = () => new Date(now()).toISOString();
 
@@ -224,6 +253,7 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
       requireInstanceAdmin(user);
       // It would end the admin's own session at once, and with it the page that shows the link.
       if (userId.toLowerCase() === user.id.toLowerCase()) throw ownReset();
+      if (hosted && !passwordSignIn) throw hostedResetWithoutPassword();
       const link = newLink();
       const epoch = await accounts.resetPassword(userId, link.stored);
       if (epoch === null) throw notFound();
@@ -239,6 +269,7 @@ export function createAdminService(options: AdminServiceOptions): AdminService {
 
     async unlinkIdentity(user, userId, provider, subject) {
       requireInstanceAdmin(user);
+      if (hosted && provider === "surveyjs") throw hostedUnlink();
       const epoch = await accounts.unlinkIdentity(userId, provider, subject);
       if (epoch === null) throw notFound();
       // The account's sessions end at once on this server (the epoch went up).

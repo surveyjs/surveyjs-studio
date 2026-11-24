@@ -633,6 +633,8 @@ paths:
         their earlier links unusable, and returns a new one-time set-password link, valid
         for 7 days: the only time it is shown. For an `invited` user it is a new invitation
         link. An OAuth2 sign-in with the account's verified email links again afterwards.
+        On the hosted edition without password sign-in, it is refused with `403`: it would
+        only remove the user's linked sign-ins.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -693,7 +695,8 @@ paths:
         account, and ends the user's sessions within a minute (one of them may come from
         that identity). If the provider still gives the account's email as verified, the
         next sign-in with it links it again: to keep someone out, disable the user.
-        `404` for an unknown user or an identity the user does not have.
+        `404` for an unknown user or an identity the user does not have. On the hosted
+        edition a surveyjs.io sign-in cannot be unlinked (`403`).
       security:
         - cookieAuth: []
           csrfToken: []

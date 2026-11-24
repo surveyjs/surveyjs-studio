@@ -10,7 +10,7 @@ import { createProviders } from "../providers/index.js";
 import { createMemoryLocalAccounts } from "../providers/memory-accounts.js";
 import { PROJECT_A_ID } from "../providers/suite/expected.js";
 import type { LocalAccountStore } from "../providers/types.js";
-import { createAdminService } from "./service.js";
+import { createAdminService, type AdminServiceOptions } from "./service.js";
 
 const ADMIN_EMAIL = "first-admin@example.com";
 const ADMIN_PASSWORD = "first admin password";
@@ -483,7 +483,11 @@ describe("the admin service's writes", () => {
   };
 
   /** A service over memory accounts with two active admins and one user, Una. */
-  async function serviceWith(eraseAccount: EraseAccount, wrap = (a: LocalAccountStore) => a) {
+  async function serviceWith(
+    eraseAccount: EraseAccount,
+    wrap = (a: LocalAccountStore) => a,
+    edition: Pick<AdminServiceOptions, "hosted" | "passwordSignIn"> = {},
+  ) {
     const { accounts } = createMemoryLocalAccounts();
     const make = (id: string, email: string, instanceRole: "admin" | "user") =>
       accounts.createAccount({
@@ -505,6 +509,7 @@ describe("the admin service's writes", () => {
       accounts: store,
       sessionCheck: createSessionCheck({ accounts: store }),
       eraseAccount,
+      ...edition,
     });
     return { accounts, service, una };
   }
@@ -566,5 +571,72 @@ describe("the admin service's writes", () => {
     expect(
       (await accounts.pendingPasswordLinks("2026-10-29T10:00:00.000Z")).get(created.user.id),
     ).toEqual({ purpose: "invitation", expiresAt: created.link.expiresAt });
+  });
+
+  describe("a surveyjs.io sign-in on the hosted edition (ADR 0043)", () => {
+    const erase = (userId: string) => Promise.resolve(summary(userId));
+    const SUBJECT = "11111111-0000-4000-8000-00000000a001";
+
+    /** Una with a linked surveyjs.io sign-in and a GitHub one. */
+    async function linked(edition: Pick<AdminServiceOptions, "hosted" | "passwordSignIn">) {
+      const env = await serviceWith(erase, undefined, edition);
+      for (const [provider, subject] of [
+        ["surveyjs", SUBJECT],
+        ["github", "una-at-github"],
+      ] as const) {
+        await env.accounts.linkIdentity({
+          provider,
+          subject,
+          userId: env.una.user.id,
+          email: env.una.user.email,
+          emailVerified: true,
+          createdAt: "2026-10-30T08:00:00.000Z",
+        });
+      }
+      return env;
+    }
+
+    it("refuses to unlink the surveyjs.io sign-in; other sign-ins unlink", async () => {
+      const { accounts, service, una } = await linked({ hosted: true });
+      await expect(
+        service.unlinkIdentity(instanceAdmin, una.user.id, "surveyjs", SUBJECT),
+      ).rejects.toMatchObject({
+        status: 403,
+        code: "forbidden",
+        detail: "A surveyjs.io sign-in cannot be unlinked on the hosted edition.",
+      });
+      expect((await accounts.accountByIdentity("surveyjs", SUBJECT))?.user.id).toBe(una.user.id);
+      expect((await accounts.account(una.user.id))?.sessionEpoch).toBe(0);
+      await service.unlinkIdentity(instanceAdmin, una.user.id, "github", "una-at-github");
+      expect(await accounts.accountByIdentity("github", "una-at-github")).toBeNull();
+    });
+
+    it("refuses a password reset when password sign-in is off, and changes nothing", async () => {
+      const { accounts, service, una } = await linked({ hosted: true, passwordSignIn: false });
+      await expect(service.resetLink(instanceAdmin, una.user.id)).rejects.toMatchObject({
+        status: 403,
+        code: "forbidden",
+        detail:
+          "Password sign-in is not enabled on this instance: a reset would only remove the user's linked sign-ins.",
+      });
+      expect(await accounts.listIdentities(una.user.id)).toHaveLength(2);
+      expect(await accounts.account(una.user.id)).toMatchObject({
+        passwordHash: "$argon2id$x",
+        sessionEpoch: 0,
+      });
+    });
+
+    it("resets a password on hosted when password sign-in is on", async () => {
+      const { service, una } = await linked({ hosted: true, passwordSignIn: true });
+      expect((await service.resetLink(instanceAdmin, una.user.id)).url).toContain("token=");
+    });
+
+    it("self-hosted: unlinks a surveyjs.io sign-in and resets without password sign-in, as before", async () => {
+      const { accounts, service, una } = await linked({ passwordSignIn: false });
+      await service.unlinkIdentity(instanceAdmin, una.user.id, "surveyjs", SUBJECT);
+      expect(await accounts.accountByIdentity("surveyjs", SUBJECT)).toBeNull();
+      expect((await service.resetLink(instanceAdmin, una.user.id)).url).toContain("token=");
+      expect(await accounts.listIdentities(una.user.id)).toEqual([]);
+    });
   });
 });

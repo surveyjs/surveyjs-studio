@@ -134,6 +134,10 @@ an `invited` user it is a new invitation.
   another email now does not.
 - Resetting **your own** password answers `403 forbidden`: it would end your session, and with it
   the page that shows the link. Change it with `changeOwnPassword`, or ask another instance admin.
+- On the hosted edition without password sign-in (`AUTH_METHODS` without `password`), a reset answers
+  `403 forbidden`: there is no password to set, and removing the surveyjs.io sign-in would let another
+  surveyjs.io id with the same email take the account over
+  ([ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)).
 
 ## Linked sign-ins
 
@@ -162,6 +166,8 @@ has a few at most.
   does not have.
 - Unlinking does not keep a person out. If the provider still gives the account's email as verified,
   the next sign-in with it links it again. To keep someone out, disable them.
+- On the hosted edition a surveyjs.io sign-in cannot be unlinked (`403 forbidden`): it ties the account
+  to its surveyjs.io id. Other sign-ins unlink as above.
 
 ```sh
 curl -b cookies.txt -X DELETE -H "X-CSRF-Token: $CSRF" \
@@ -184,12 +190,12 @@ and the member operations work on any project, and the project's `role` is `admi
 `GET /projects?scope=all` lists every project of the instance; for anyone else `scope=all` answers
 `403 forbidden`. Without `scope` the list stays the user's own projects.
 
-| Status | Code                  | When                                                                                    |
-| ------ | --------------------- | --------------------------------------------------------------------------------------- |
-| 403    | `forbidden`           | The caller is not an instance admin; `createUserResetLink` for the caller's own account |
-| 404    | `not-found`           | No such user; `unlinkUserIdentity`: the user has no such identity                       |
-| 409    | `email-taken`         | `createUser`: the email has an account                                                  |
-| 409    | `last-instance-admin` | The last active instance admin would be demoted, disabled or deleted                    |
-| 422    | `validation-failed`   | A field is missing or not allowed                                                       |
-| 501    | `not-implemented`     | The instance has no local accounts                                                      |
-| 503    | `read-only`           | The writes, under `READ_ONLY=true`                                                      |
+| Status | Code                  | When                                                                                                                                                                                                            |
+| ------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 403    | `forbidden`           | The caller is not an instance admin; `createUserResetLink` for the caller's own account, or on the hosted edition without password sign-in; `unlinkUserIdentity` of a surveyjs.io sign-in on the hosted edition |
+| 404    | `not-found`           | No such user; `unlinkUserIdentity`: the user has no such identity                                                                                                                                               |
+| 409    | `email-taken`         | `createUser`: the email has an account                                                                                                                                                                          |
+| 409    | `last-instance-admin` | The last active instance admin would be demoted, disabled or deleted                                                                                                                                            |
+| 422    | `validation-failed`   | A field is missing or not allowed                                                                                                                                                                               |
+| 501    | `not-implemented`     | The instance has no local accounts                                                                                                                                                                              |
+| 503    | `read-only`           | The writes, under `READ_ONLY=true`                                                                                                                                                                              |
