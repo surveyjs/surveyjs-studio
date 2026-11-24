@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The image tag, the full commit id of a master commit whose CI passed
+        description: The image tag, the full commit id of a master or production commit whose CI passed
         required: true
 
 permissions:

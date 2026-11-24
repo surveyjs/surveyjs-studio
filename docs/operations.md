@@ -98,9 +98,9 @@ really runs with. (`docker rm -f` would kill it at once, cutting requests in fli
 migrations: the stores keep the legacy formats, so any earlier image runs on the same data, and rolling back the app
 is re-creating the container with the previous tag.
 
-**Where the images come from.** Every push to `master` whose CI passes publishes the image CI tested as
+**Where the images come from.** Every push to `master` or `production` whose CI passes publishes the image CI tested as
 `ghcr.io/surveyjs/surveyjs-studio-hosted:<commit sha>` (the full 40-character commit id; [Development › CI](development.md#ci)).
-There is no `latest` tag: a deployment names the commit it runs. The package is private, and stays private when the repository goes public;
+`production` is today's studio.surveyjs.io until the cutover: fixes only, each merged into `master` too. There is no `latest` tag: a deployment names the commit it runs. The package is private, and stays private when the repository goes public;
 pulling it needs a GitHub token with `read:packages`. The name without `-hosted`, `surveyjs-studio` (on ghcr.io, and
 later Docker Hub), is the self-hosted image ([below](#releasing-the-self-hosted-image)).
 
