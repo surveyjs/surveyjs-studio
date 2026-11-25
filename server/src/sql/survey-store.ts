@@ -68,7 +68,7 @@ const recordOf = (row: RecordRow): SurveyRecord => ({
 });
 
 /** The columns of a record (ids lower-case, times as Date#toISOString writes them). */
-const columnsOf = (record: SurveyRecord) => ({
+export const columnsOf = (record: SurveyRecord) => ({
   name: record.name,
   owner_user_id: record.owner.kind === "personal" ? record.owner.userId.toLowerCase() : null,
   owner_project_id: record.owner.kind === "project" ? record.owner.projectId.toLowerCase() : null,

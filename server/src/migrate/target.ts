@@ -1,0 +1,535 @@
+/**
+ * Where the migration tool writes: Studio's own tables and byte store, as idempotent upserts
+ * (`insert … on conflict (primary key) do update`, on SQLite and PostgreSQL). A second run with the
+ * same records leaves identical rows, and one with changed records takes the new values, which is
+ * what `delta` relies on. The records are already normalised; an id that is not a GUID fails here
+ * rather than going into a row.
+ */
+import type { Kysely } from "kysely";
+import type { ByteStore } from "../bytes/types.js";
+import { GUID } from "../domain/guid.js";
+import type { SqlDatabase } from "../sql/database.js";
+import type { DatabaseSchema } from "../sql/schema.js";
+import { columnsOf, deleteSurveyRows, versionOf } from "../sql/survey-store.js";
+import { isoOf, jsonText } from "../sql/values.js";
+import type {
+  DeletedRec,
+  EventRec,
+  FileRec,
+  HistoryRec,
+  KeyRec,
+  LayoutRec,
+  MarkerRec,
+  MemberRec,
+  PersonRec,
+  ProjectRec,
+  ResponseRec,
+  SurveyRec,
+  ViewRec,
+} from "./records.js";
+import { createMigrationState, type MigrationState } from "./state.js";
+
+export interface MigrationTarget {
+  upsertSurvey(rec: SurveyRec): Promise<void>;
+  upsertHistory(recs: readonly HistoryRec[]): Promise<void>;
+  /** Deletes the survey's history entries beyond the newest `keep` (by `at`, then id); how many. */
+  pruneHistory(surveyId: string, keep: number): Promise<number>;
+  upsertResponses(recs: readonly ResponseRec[]): Promise<void>;
+  upsertMarkers(recs: readonly MarkerRec[]): Promise<void>;
+  upsertLayouts(recs: readonly LayoutRec[]): Promise<void>;
+  upsertViews(recs: readonly ViewRec[]): Promise<void>;
+  /** The project, its members replaced as a set. */
+  upsertProject(rec: ProjectRec, members: readonly MemberRec[]): Promise<void>;
+  /** `users` and `user_identities`. */
+  upsertPeople(recs: readonly PersonRec[]): Promise<void>;
+  /** The users' legacy access keys; a user's other keys are removed. */
+  upsertKeys(recs: readonly KeyRec[]): Promise<void>;
+  /** The bytes, then the `files` row (and the `legacy_files` name). */
+  upsertFile(rec: FileRec): Promise<void>;
+  upsertEvents(recs: readonly EventRec[]): Promise<void>;
+  upsertDeleted(recs: readonly DeletedRec[]): Promise<void>;
+  deleteSurvey(surveyId: string): Promise<boolean>;
+  deleteResponses(surveyId: string, ids: readonly string[]): Promise<number>;
+  deleteProject(id: string): Promise<boolean>;
+  deletePeople(ids: readonly string[]): Promise<number>;
+  readonly state: MigrationState;
+  /** Releases nothing the caller opened: the database and the byte store stay the caller's. */
+  close(): Promise<void>;
+}
+
+/** Rows per statement: under SQLite's and PostgreSQL's parameter limits. */
+const BATCH = 200;
+
+/** The id of a row: a GUID, or an error naming the field (never the value's neighbours). */
+function guid(value: string, what: string): string {
+  if (!GUID.test(value)) throw new Error(`${what} is not a GUID`);
+  return value.toLowerCase();
+}
+
+/** The records in batches of at most BATCH. */
+function* batches<T>(items: readonly T[]): Generator<T[]> {
+  for (let start = 0; start < items.length; start += BATCH) yield items.slice(start, start + BATCH);
+}
+
+/** The items with one per key, the last one winning (one statement may not name a row twice). */
+function distinct<T>(items: readonly T[], keyOf: (item: T) => string): T[] {
+  return [...new Map(items.map((item) => [keyOf(item), item])).values()];
+}
+
+/**
+ * JSON text as PostgreSQL's jsonb takes it (U+0000 and a lone surrogate become U+FFFD), on both
+ * dialects, so a copy reads the same on either.
+ */
+const json = (value: unknown): string => jsonText("postgres", value);
+
+export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): MigrationTarget {
+  const { db, dialect } = database;
+
+  const inTransaction = <T>(work: (trx: Kysely<DatabaseSchema>) => Promise<T>): Promise<T> =>
+    db.transaction().execute(work);
+
+  return {
+    state: createMigrationState(db, dialect),
+
+    async upsertSurvey({ record, definition, theme, privateQuestions }) {
+      const id = guid(record.id, "A survey id");
+      const columns = columnsOf(record);
+      const definitionText = json(definition);
+      const themeText = json(theme);
+      const values = {
+        ...columns,
+        definition: definitionText,
+        // The version of what is stored, as the app computes it from the text it reads back.
+        definition_version: versionOf(JSON.parse(definitionText) as Record<string, unknown>),
+        theme: themeText,
+        theme_version: versionOf(JSON.parse(themeText) as Record<string, unknown>),
+      };
+      await inTransaction(async (trx) => {
+        await trx
+          .insertInto("surveys")
+          .values({ id, ...values })
+          .onConflict((oc) => oc.column("id").doUpdateSet(values))
+          .execute();
+        if (privateQuestions.length === 0) {
+          await trx.deleteFrom("private_questions").where("survey_id", "=", id).execute();
+        } else {
+          const names = json(privateQuestions);
+          await trx
+            .insertInto("private_questions")
+            .values({ survey_id: id, names })
+            .onConflict((oc) => oc.column("survey_id").doUpdateSet({ names }))
+            .execute();
+        }
+      });
+    },
+
+    async upsertHistory(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          survey_id: guid(rec.surveyId, "A survey id"),
+          id: guid(rec.id, "A history entry id"),
+          at: isoOf(rec.at),
+          user_id: rec.userId === null ? null : guid(rec.userId, "A user id"),
+          snapshot: json(rec.snapshot),
+        })),
+        (row) => `${row.survey_id}/${row.id}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("survey_history")
+          .values(batch)
+          .onConflict((oc) =>
+            oc.columns(["survey_id", "id"]).doUpdateSet((eb) => ({
+              at: eb.ref("excluded.at"),
+              user_id: eb.ref("excluded.user_id"),
+              snapshot: eb.ref("excluded.snapshot"),
+            })),
+          )
+          .execute();
+      }
+    },
+
+    async pruneHistory(surveyId, keep) {
+      const survey = guid(surveyId, "A survey id");
+      // The newest entries in the order the app lists history: at descending, then id descending.
+      const result = await db
+        .deleteFrom("survey_history")
+        .where("survey_id", "=", survey)
+        .where(
+          "id",
+          "not in",
+          db
+            .selectFrom("survey_history")
+            .select("id")
+            .where("survey_id", "=", survey)
+            .orderBy("at", "desc")
+            .orderBy("id", "desc")
+            .limit(keep),
+        )
+        .executeTakeFirst();
+      return Number(result.numDeletedRows);
+    },
+
+    async upsertResponses(recs) {
+      const rows = distinct(
+        recs.map(({ surveyId, response }) => ({
+          survey_id: guid(surveyId, "A survey id"),
+          id: guid(response.id, "A response id"),
+          submitted_at: isoOf(response.submittedAt),
+          data: json(response.data),
+          client_id: response.clientId ?? null,
+          respondent_ip: response.respondentIp ?? null,
+          partial: response.partial,
+        })),
+        (row) => `${row.survey_id}/${row.id}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("survey_responses")
+          .values(batch)
+          .onConflict((oc) =>
+            oc.columns(["survey_id", "id"]).doUpdateSet((eb) => ({
+              submitted_at: eb.ref("excluded.submitted_at"),
+              data: eb.ref("excluded.data"),
+              client_id: eb.ref("excluded.client_id"),
+              respondent_ip: eb.ref("excluded.respondent_ip"),
+              partial: eb.ref("excluded.partial"),
+            })),
+          )
+          .execute();
+      }
+    },
+
+    async upsertMarkers(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          survey_id: guid(rec.surveyId, "A survey id"),
+          client_id: rec.clientId,
+          partial: rec.partial,
+        })),
+        (row) => `${row.survey_id}/${row.client_id}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("completion_markers")
+          .values(batch)
+          .onConflict((oc) =>
+            oc
+              .columns(["survey_id", "client_id"])
+              .doUpdateSet((eb) => ({ partial: eb.ref("excluded.partial") })),
+          )
+          .execute();
+      }
+    },
+
+    async upsertLayouts(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          survey_id: guid(rec.surveyId, "A survey id"),
+          kind: rec.kind,
+          text: rec.text,
+        })),
+        (row) => `${row.survey_id}/${row.kind}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("survey_layouts")
+          .values(batch)
+          .onConflict((oc) =>
+            oc
+              .columns(["survey_id", "kind"])
+              .doUpdateSet((eb) => ({ text: eb.ref("excluded.text") })),
+          )
+          .execute();
+      }
+    },
+
+    async upsertViews(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          survey_id: guid(rec.surveyId, "A survey id"),
+          user_id: guid(rec.userId, "A user id"),
+          view: rec.view,
+          state: rec.state === null ? null : json(rec.state),
+          updated_at: isoOf(rec.updatedAt),
+        })),
+        (row) => `${row.survey_id}/${row.user_id}/${row.view}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("saved_views")
+          .values(batch)
+          .onConflict((oc) =>
+            oc.columns(["survey_id", "user_id", "view"]).doUpdateSet((eb) => ({
+              state: eb.ref("excluded.state"),
+              updated_at: eb.ref("excluded.updated_at"),
+            })),
+          )
+          .execute();
+      }
+    },
+
+    async upsertProject(rec, members) {
+      const id = guid(rec.id, "A project id");
+      const values = {
+        name: rec.name,
+        creator_id: rec.creatorId === null ? null : guid(rec.creatorId, "A user id"),
+        created_at: isoOf(rec.createdAt),
+      };
+      const rows = distinct(
+        members.map((member) => ({
+          project_id: guid(member.projectId, "A project id"),
+          user_id: guid(member.userId, "A user id"),
+          role: member.role,
+          created_at: isoOf(member.createdAt),
+          updated_at: isoOf(member.updatedAt),
+        })),
+        (row) => row.user_id,
+      );
+      if (rows.some((row) => row.project_id !== id)) {
+        throw new Error("A member names another project");
+      }
+      await inTransaction(async (trx) => {
+        await trx
+          .insertInto("projects")
+          .values({ id, ...values })
+          .onConflict((oc) => oc.column("id").doUpdateSet(values))
+          .execute();
+        await trx.deleteFrom("project_members").where("project_id", "=", id).execute();
+        for (const batch of batches(rows)) {
+          await trx.insertInto("project_members").values(batch).execute();
+        }
+      });
+    },
+
+    async upsertPeople(recs) {
+      const people = distinct(
+        recs.map((rec) => ({
+          id: guid(rec.id, "A user id"),
+          email: rec.email.toLowerCase(),
+          displayName: rec.displayName,
+          siteBlocked: rec.siteBlocked,
+          createdAt: isoOf(rec.createdAt),
+        })),
+        (person) => person.id,
+      );
+      await inTransaction(async (trx) => {
+        for (const batch of batches(people)) {
+          await trx
+            .insertInto("users")
+            .values(
+              batch.map((person) => ({
+                id: person.id,
+                email: person.email,
+                display_name: person.displayName,
+                instance_role: "user" as const,
+                status: "active" as const,
+                password_hash: null,
+                must_change_password: false,
+                site_blocked: person.siteBlocked,
+                licence_expires_at: null,
+                session_epoch: 0,
+                created_at: person.createdAt,
+                last_sign_in_at: null,
+              })),
+            )
+            // What the old service owns: the email, the name and the block. Role, status,
+            // password, sessions and the creation time are Studio's once the row exists.
+            .onConflict((oc) =>
+              oc.column("id").doUpdateSet((eb) => ({
+                email: eb.ref("excluded.email"),
+                display_name: eb.ref("excluded.display_name"),
+                site_blocked: eb.ref("excluded.site_blocked"),
+              })),
+            )
+            .execute();
+          await trx
+            .insertInto("user_identities")
+            .values(
+              batch.map((person) => ({
+                provider: "surveyjs" as const,
+                subject: person.id,
+                user_id: person.id,
+                email: person.email,
+                email_verified: true,
+                created_at: person.createdAt,
+              })),
+            )
+            .onConflict((oc) =>
+              oc.columns(["provider", "subject"]).doUpdateSet((eb) => ({
+                user_id: eb.ref("excluded.user_id"),
+                email: eb.ref("excluded.email"),
+              })),
+            )
+            .execute();
+        }
+      });
+    },
+
+    async upsertKeys(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          key_hash: rec.keyHash,
+          user_id: guid(rec.userId, "A user id"),
+          last_four: rec.lastFour,
+          created_at: isoOf(rec.createdAt),
+          revoked_at: null,
+        })),
+        (row) => row.key_hash,
+      );
+      await inTransaction(async (trx) => {
+        for (const row of rows) {
+          // A user has one key: an earlier one of the same user goes (as the seed replaces it).
+          await trx
+            .deleteFrom("legacy_access_keys")
+            .where("user_id", "=", row.user_id)
+            .where("key_hash", "!=", row.key_hash)
+            .execute();
+        }
+        for (const batch of batches(rows)) {
+          await trx
+            .insertInto("legacy_access_keys")
+            .values(batch)
+            .onConflict((oc) =>
+              oc.column("key_hash").doUpdateSet((eb) => ({
+                user_id: eb.ref("excluded.user_id"),
+                last_four: eb.ref("excluded.last_four"),
+                created_at: eb.ref("excluded.created_at"),
+              })),
+            )
+            .execute();
+        }
+      });
+    },
+
+    async upsertFile({ kind, legacyName, record, content }) {
+      const id = record.id;
+      const surveyId = guid(record.surveyId, "A survey id");
+      // The bytes first: a row never names bytes that are not there (the key fixes them, so a
+      // second run replaces the same bytes).
+      await bytes.put(`${surveyId}/${id}`, content, record.contentType);
+      const values = {
+        survey_id: surveyId,
+        owner_user_id: null,
+        kind,
+        name: record.name,
+        content_type: record.contentType,
+        size: record.size,
+        created_at: isoOf(record.createdAt),
+      };
+      await inTransaction(async (trx) => {
+        await trx
+          .insertInto("files")
+          .values({ id, ...values })
+          .onConflict((oc) => oc.column("id").doUpdateSet(values))
+          .execute();
+        if (legacyName !== null) {
+          await trx
+            .insertInto("legacy_files")
+            .values({ kind, legacy_name: legacyName, file_id: id })
+            .onConflict((oc) => oc.columns(["kind", "legacy_name"]).doUpdateSet({ file_id: id }))
+            .execute();
+        }
+      });
+    },
+
+    async upsertEvents(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          id: guid(rec.id, "An event id"),
+          survey_id: guid(rec.surveyId, "A survey id"),
+          type: rec.type,
+          at: isoOf(rec.at),
+          payload: rec.payload,
+        })),
+        (row) => row.id,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("survey_events")
+          .values(batch)
+          .onConflict((oc) =>
+            oc.column("id").doUpdateSet((eb) => ({
+              survey_id: eb.ref("excluded.survey_id"),
+              type: eb.ref("excluded.type"),
+              at: eb.ref("excluded.at"),
+              payload: eb.ref("excluded.payload"),
+            })),
+          )
+          .execute();
+      }
+    },
+
+    async upsertDeleted(recs) {
+      const rows = distinct(
+        recs.map((rec) => ({
+          survey_id: guid(rec.surveyId, "A survey id"),
+          response_id: guid(rec.responseId, "A response id"),
+          deleted_at: isoOf(rec.deletedAt),
+          response: rec.response,
+        })),
+        (row) => `${row.survey_id}/${row.response_id}`,
+      );
+      for (const batch of batches(rows)) {
+        await db
+          .insertInto("deleted_responses")
+          .values(batch)
+          .onConflict((oc) =>
+            oc.columns(["survey_id", "response_id"]).doUpdateSet((eb) => ({
+              deleted_at: eb.ref("excluded.deleted_at"),
+              response: eb.ref("excluded.response"),
+            })),
+          )
+          .execute();
+      }
+    },
+
+    async deleteSurvey(surveyId) {
+      const id = guid(surveyId, "A survey id");
+      return inTransaction(async (trx) => {
+        // The tables without a foreign key that hold what the copy wrote for the survey.
+        await trx.deleteFrom("survey_events").where("survey_id", "=", id).execute();
+        await trx.deleteFrom("deleted_responses").where("survey_id", "=", id).execute();
+        return deleteSurveyRows(trx, id);
+      });
+    },
+
+    async deleteResponses(surveyId, ids) {
+      const survey = guid(surveyId, "A survey id");
+      const wanted = ids.map((id) => guid(id, "A response id"));
+      let deleted = 0;
+      for (const batch of batches(wanted)) {
+        const result = await db
+          .deleteFrom("survey_responses")
+          .where("survey_id", "=", survey)
+          .where("id", "in", batch)
+          .executeTakeFirst();
+        deleted += Number(result.numDeletedRows);
+      }
+      return deleted;
+    },
+
+    async deleteProject(id) {
+      // The members go with it (cascade).
+      const result = await db
+        .deleteFrom("projects")
+        .where("id", "=", guid(id, "A project id"))
+        .executeTakeFirst();
+      return result.numDeletedRows > 0n;
+    },
+
+    async deletePeople(ids) {
+      const wanted = ids.map((id) => guid(id, "A user id"));
+      let deleted = 0;
+      for (const batch of batches(wanted)) {
+        await db.deleteFrom("legacy_access_keys").where("user_id", "in", batch).execute();
+        // Their identities go with them (cascade).
+        const result = await db.deleteFrom("users").where("id", "in", batch).executeTakeFirst();
+        deleted += Number(result.numDeletedRows);
+      }
+      return deleted;
+    },
+
+    close: () => Promise.resolve(),
+  };
+}
