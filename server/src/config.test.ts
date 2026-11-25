@@ -53,6 +53,7 @@ describe("loadConfig", () => {
       database: null,
       files: null,
       bootstrapAdmin: null,
+      historyMaxEntries: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -1233,6 +1234,33 @@ describe("loadConfig", () => {
       expect(messageOf(() => loadConfig({ LEGACY_KEY_REVOKE: value }))).toContain(
         "LEGACY_KEY_REVOKE: must be true or false",
       );
+    });
+  });
+
+  describe("HISTORY_MAX_ENTRIES", () => {
+    it("is null when unset and the number when set", () => {
+      expect(loadConfig({}).historyMaxEntries).toBeNull();
+      expect(loadConfig({ HISTORY_MAX_ENTRIES: "20" }).historyMaxEntries).toBe(20);
+    });
+
+    it.each(["0", "-1", "1.5", "abc"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ HISTORY_MAX_ENTRIES: value }))).toContain(
+        "HISTORY_MAX_ENTRIES: must be a positive integer",
+      );
+    });
+
+    it("is not available with azure-legacy", () => {
+      expect(
+        messageOf(() =>
+          loadConfig({
+            STORAGE_PROVIDER: "azure-legacy",
+            HISTORY_MAX_ENTRIES: "20",
+            LEGACY_SQL_CONNECTION_STRING: "Server=x",
+            LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+            LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+          }),
+        ),
+      ).toContain("HISTORY_MAX_ENTRIES: not available with STORAGE_PROVIDER=azure-legacy");
     });
   });
 

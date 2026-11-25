@@ -252,3 +252,51 @@ describe("memory provider legacy access keys seed", () => {
     expect(await credentials.findLegacyKey("ABCDEF0123456789")).toEqual({ userId, revoked: false });
   });
 });
+
+describe("memory provider with historyMaxEntries", () => {
+  const surveyIn = async (providers: ReturnType<typeof createMemoryProviders>) => {
+    const owner = randomUUID();
+    return providers.surveys.createSurvey({
+      id: randomUUID(),
+      name: "History",
+      owner: { kind: "personal", userId: owner },
+      creatorId: owner,
+      postId: randomUUID(),
+      resultId: randomUUID(),
+      createdAt: "2026-10-01T10:00:00.000Z",
+      updatedAt: "2026-10-01T10:00:00.000Z",
+    });
+  };
+  const saveFive = async (providers: ReturnType<typeof createMemoryProviders>) => {
+    const survey = await surveyIn(providers);
+    for (let n = 1; n <= 5; n++) {
+      const current = await providers.surveys.getDefinition(survey.id);
+      await providers.surveys.saveDefinition(
+        survey.id,
+        { title: `v${n}` },
+        {
+          ifVersion: current!.version,
+          userId: randomUUID(),
+          savedAt: `2026-10-02T10:00:0${n}.000Z`,
+        },
+      );
+    }
+    return (await providers.surveys.listHistory({ surveyId: survey.id, limit: 100 })).items;
+  };
+
+  it("keeps the newest N entries", async () => {
+    const items = await saveFive(createMemoryProviders(undefined, { historyMaxEntries: 3 }));
+    expect(items.map((e) => e.at)).toEqual([
+      "2026-10-02T10:00:05.000Z",
+      "2026-10-02T10:00:04.000Z",
+      "2026-10-02T10:00:03.000Z",
+    ]);
+  });
+
+  it("keeps every entry without a limit", async () => {
+    expect(await saveFive(createMemoryProviders())).toHaveLength(5);
+    expect(
+      await saveFive(createMemoryProviders(undefined, { historyMaxEntries: null })),
+    ).toHaveLength(5);
+  });
+});

@@ -27,6 +27,7 @@ async function createMemory(
       : undefined,
     {
       accountNotices,
+      historyMaxEntries: config.historyMaxEntries,
       ...(config.userDirectory === "local" && { userDirectory: "local" as const }),
     },
   );

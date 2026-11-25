@@ -106,6 +106,8 @@ export interface MemoryOptions {
   readonly accountNotices?: AccountNoticesSetting;
   /** `local` (USER_DIRECTORY=local): the users are local accounts made from the seed's users. */
   readonly userDirectory?: "external" | "local";
+  /** `HISTORY_MAX_ENTRIES`: a survey keeps its newest N history entries; null or unset keeps all. */
+  readonly historyMaxEntries?: number | null;
 }
 
 /** Ids are GUIDs: stored lower-case, looked up case-insensitively. */
@@ -165,6 +167,14 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
     const entries = history.get(surveyId) ?? [];
     entries.push({ ...entry, snapshot: structuredClone(entry.snapshot) });
     history.set(surveyId, entries);
+  };
+
+  /** Keeps the survey's newest `historyMaxEntries` entries, by the history order. */
+  const pruneHistory = (surveyId: string): void => {
+    const limit = options.historyMaxEntries ?? null;
+    const entries = history.get(surveyId);
+    if (limit === null || entries === undefined) return;
+    history.set(surveyId, entries.sort(historyOrder).slice(0, limit));
   };
 
   const results = createMemoryResultStore({
@@ -340,6 +350,7 @@ export function createMemoryProviders(seed?: MemorySeed, options: MemoryOptions 
             userId: lower(userId),
             snapshot: definition,
           });
+          pruneHistory(lower(id));
         }
         return Promise.resolve(outcome);
       },
