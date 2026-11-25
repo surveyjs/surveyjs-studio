@@ -1,6 +1,6 @@
 # ADR 0043: Hosted users on the local directory, from surveyjs.io sign-in
 
-Status: Accepted (hosted Step 2, 2026-11-24). Changes [ADR 0022](0022-users-from-sign-in.md): the hosted directory is
+Status: Accepted (hosted Step 2, 2026-11-24); [changed 2026-11-25](#changed-2026-11-25-hosted-refuses-password-sign-in). Changes [ADR 0022](0022-users-from-sign-in.md): the hosted directory is
 the existing `local` one, extended, not a new `profiles` directory; licences come as a sign-in claim, not from a site
 endpoint. The rest of ADR 0022 stands (no user API, the account-deleted webhook, profiles seeded by the migration).
 
@@ -145,3 +145,9 @@ readiness check are removed, and with them the API sections of the user API docu
 The names of the new columns and of the `ACCOUNT_NOTICES` value; the retry schedule, the outbox's shape and its
 delivery switch on the site; the wording of the refused-link problem and the log lines; whether `getUser` exposes the
 licence date; the stub's new claim.
+
+## Changed 2026-11-25: hosted refuses password sign-in
+
+`APP_EDITION=hosted` with `password` in `AUTH_METHODS` is a start-up error (built in hosted Step 8). With passwords on,
+an instance admin's reset link removes a person's surveyjs.io sign-in, and the email branch of point 1 could then link
+another surveyjs.io id with that email. Until now only the private deployment's checks refused the combination.

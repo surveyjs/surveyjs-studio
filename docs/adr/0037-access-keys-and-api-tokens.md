@@ -1,6 +1,7 @@
 # ADR 0037: Access keys and API tokens
 
-Status: Accepted (hosted Step 3, 2026-11-18). Changes spec-hosted's rule "no new keys are issued"
+Status: Accepted (hosted Step 3, 2026-11-18); [changed 2026-11-25](#changed-2026-11-25-legacy-keys-on-the-sql-providers)
+(legacy keys on the SQL providers, hosted Step 8). Changes spec-hosted's rule "no new keys are issued"
 ([spec-hosted.md](../../spec-hosted.md) › Compatibility layer, Access keys) and fills in › API tokens and CORS.
 
 ## Context
@@ -107,3 +108,19 @@ The SurveyJS team's wishes (2026-11-18):
 - **Secret scanning** can find leaked tokens by the `sjs_` prefix (the repository's own scan and GitHub's).
 - **Self-hosted installations** get API tokens with the SQL providers; the page stays in the surveyjs-site shell for now,
   and they have no legacy keys.
+
+## Changed 2026-11-25: legacy keys on the SQL providers
+
+Built in hosted Step 8. Until now the SQL credential store answered every legacy key lookup with "no key"
+(`findLegacyKey`, `legacyKeyOf`, `revokeLegacyKey`), so on the new server integrations calling Studio or the bridge
+with an old key would fail.
+
+- **`legacy_access_keys`** (migration `0011`): key hash, owner user id, the key's last four characters, created at,
+  revoked at. The SQL credential store implements the three lookups with the Azure legacy provider's behaviour, proven
+  by the shared credential suite. The migration fills the table from the site's keys, hashed, with their last four, so
+  the API tokens page keeps showing them.
+- **A new key after the cutover** (point 5's "Studio replaces the hash"): on the SQL providers the credential store
+  replaces a user's legacy key (a new random key in the legacy format; its hash and last four stored; the old row
+  revoked), and the bridge's `generateAccessKey` calls Studio for it instead of forwarding to the old service. The Azure
+  legacy provider keeps answering `409 legacy-key-replace-unavailable` ([ADR 0040](0040-bridge-access-key-actions.md)),
+  as today's server needs.

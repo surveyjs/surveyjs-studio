@@ -4,7 +4,8 @@ Date: 2026-10-18
 
 ## Status
 
-Accepted. The product owner has not confirmed R4 (layouts per user), R12 (every question is charted) and the
+Accepted; [changed 2026-11-25](#changed-2026-11-25-results-on-the-server) (results on the server, hosted Step 8b).
+The product owner has not confirmed R4 (layouts per user), R12 (every question is charted) and the
 source of the `xlsx` package yet (see "To confirm").
 
 ## Context
@@ -225,3 +226,28 @@ written.
   that survey. The Table does not show `clientId`.
 - **Public results and layouts** (Step 10): see above.
 - **The scan of large tables on Azure** (R3, layout gap 8): measure on real volumes.
+
+## Changed 2026-11-25: results on the server
+
+The page reads every response into the browser (R11, R20): the Summary and the Table are built from them, and the Table
+pages, filters, sorts and exports there. That cannot hold the largest production survey (millions of responses). The
+product owner decided (2026-11-25): the Summary shows at most **25,000** responses; the Table pages, filters and sorts
+**on the server** and can show every response; the export returns **every** response. Summarising more than 25,000
+responses is a separate, later task. Built in hosted Step 8b. What users know stays (R11's libraries, R14's exports and
+defaults, the saved layouts); where the work happens changes:
+
+- **One new operation, `queryResults`:** a survey's responses with filters (field, type, value), sort orders (field,
+  direction), an offset and a limit, answering one page and the total count: the shape the Dashboard's Table asks for
+  in its server mode (`GetDataFn` of `survey-analytics`: `{ filter, sort, offset, limit }` → `{ data, totalCount }`). On
+  the SQL providers the filter and the sort run in the database on the stored answers (the JSON functions of PostgreSQL
+  and SQLite); on the memory and Azure legacy providers the same results are computed in memory. Who may call it is
+  `listResults`'s rule.
+- **The Table** uses the Dashboard's server mode for every survey: it reads one page at a time and sends paging,
+  filtering and sorting to the server (no threshold: one path serves every survey).
+- **The Summary** is built from the newest 25,000 responses; when a survey has more, the page says how many the Summary
+  covers.
+- **The export** keeps R14's three formats (CSV, Excel, PDF) and returns every response that matches the Table's
+  current filters, in its current order: the page fetches them through `queryResults` in pages and hands them to
+  today's downloader.
+- **R20 changes:** the page no longer reads every response on opening; the Table reads a page, the Summary at most
+  25,000.

@@ -1,6 +1,6 @@
 # ADR 0033: Hosted target stores
 
-Status: Accepted (hosted Step 1, 2026-11-18). Proposed on 2026-11-13 with the criteria and the method; accepted once
+Status: Accepted (hosted Step 1, 2026-11-18); [readiness added 2026-11-25](#readiness-hosted-step-8-2026-11-25). Proposed on 2026-11-13 with the criteria and the method; accepted once
 the inputs from the SurveyJS team were in (see [Inputs](#inputs)).
 
 ## Context
@@ -119,3 +119,39 @@ All in by 2026-11-18:
   documents them in [Operations](../operations.md).
 - After the cutover the app has database migrations, so the server's rollback by image tag needs the rule of hosted
   Step 10.
+
+## Readiness (hosted Step 8, 2026-11-25)
+
+What hosted Step 8 builds and checks on these stores. The history volume above is replaced by at most 20 entries per
+survey ([ADR 0036, changed 2026-11-25](0036-history-snapshots-above-a-size-limit.md)); the volumes and the window
+estimate are re-measured with the new stats.
+
+- **The archive tables** (migration `0011`): `survey_events` (survey id, type, time, payload) and `deleted_responses`
+  (survey id, response id, deleted at, the response as JSON). Only the migration writes them; Studio reads neither.
+  **`pnpm purge:deleted-responses --before <date>`** (a dry run unless `--apply`) empties the copies; the cutover runbook
+  runs it 30 days after the cutover. No background job. (Legacy keys: [ADR 0037, changed 2026-11-25](0037-access-keys-and-api-tokens.md).)
+- **Scale targets.** A generator builds a synthetic data set the size of production (its sizes are parameters, so the
+  real figures stay out of the repository), with one survey of millions of responses; a check measures through the HTTP
+  API, 95th percentile, a warm server:
+
+  | Operation                                                         | Target                                                         |
+  | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+  | The survey list (a user with many surveys)                        | under 0.5 s                                                    |
+  | A page of the Table of the largest survey, with a filter and sort | under 2 s                                                      |
+  | The Summary's data: the newest 25,000 responses                   | under 5 s                                                      |
+  | Export of every response of the largest survey                    | the first rows within 1 s; every row fetched within 10 minutes |
+  | A save of a survey with 20 history entries                        | under 0.5 s                                                    |
+
+  Index changes are made, as migrations, until the targets hold (the Table's server operation is hosted Step 8b,
+  [ADR 0015, changed 2026-11-25](0015-results-summary-table-and-views.md)).
+
+- **Restore once into a scratch instance** (H25) on the new server: a point-in-time restore from the backups in the
+  other location, and a file brought back from the bucket's old versions. The private deployment notes hold the
+  commands; this repository gets the result and an outline in `docs/operations.md`.
+- **The new server's profile** (`STORAGE_PROVIDER=postgres`, `FILE_STORE=s3`, `HISTORY_MAX_ENTRIES=20`, the hosted
+  sign-in of [ADR 0043](0043-hosted-users-on-the-local-directory.md)) is documented beside today's in
+  `deploy/hetzner/app.env.example` and `docker/prod-like.env`, and the `prod-like` CI job gains a run on PostgreSQL and
+  S3.
+- **When:** the generator, the check and the commands are built in Step 8; the run on the new server, the production
+  measurement and the restore happen once that server is built, and their figures are added here, rounded
+  (plan-hosted rule 6).
