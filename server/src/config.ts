@@ -514,6 +514,9 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
     if (method === "password" && directory !== "local") {
       problems.push("AUTH_METHODS: password requires USER_DIRECTORY=local");
     }
+    if (method === "password" && env.APP_EDITION === "hosted") {
+      problems.push("AUTH_METHODS: password is not available with APP_EDITION=hosted");
+    }
     if ((CLIENT_METHODS as readonly string[]).includes(method)) {
       if (directory !== "local") {
         problems.push(`AUTH_METHODS: ${method} requires USER_DIRECTORY=local`);

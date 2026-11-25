@@ -919,6 +919,46 @@ describe("loadConfig", () => {
       );
     });
 
+    describe("password sign-in and the hosted edition", () => {
+      const problem = "AUTH_METHODS: password is not available with APP_EDITION=hosted";
+      const hosted = {
+        APP_EDITION: "hosted",
+        USER_DIRECTORY: "local",
+        ADMIN_EMAIL: "a@example.com",
+      };
+
+      it.each(["password", "password,surveyjs"])(
+        "refuses hosted with AUTH_METHODS=%s",
+        (methods) => {
+          const message = messageOf(() =>
+            load({
+              ...oidc,
+              ...hosted,
+              AUTH_METHODS: methods,
+              ADMIN_PASSWORD: "first admin password",
+            }),
+          );
+          expect(message).toContain(`  - ${problem}`);
+        },
+      );
+
+      it("accepts hosted with surveyjs alone", () => {
+        expect(load({ ...oidc, ...hosted, AUTH_METHODS: "surveyjs" }).authMethods).toEqual([
+          "surveyjs",
+        ]);
+      });
+
+      it("accepts self-hosted with password", () => {
+        const config = load({
+          USER_DIRECTORY: "local",
+          AUTH_METHODS: "password",
+          ADMIN_EMAIL: "a@example.com",
+          ADMIN_PASSWORD: "first admin password",
+        });
+        expect(config.authMethods).toEqual(["password"]);
+      });
+    });
+
     it("accepts the explicit directories that fit", () => {
       expect(loadConfig({ USER_DIRECTORY: "memory" }).userDirectory).toBe("memory");
       expect(load({ ...oidc, ...legacy, USER_DIRECTORY: "surveyjs-sql" }).userDirectory).toBe(
