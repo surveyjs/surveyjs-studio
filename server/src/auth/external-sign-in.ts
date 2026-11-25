@@ -161,7 +161,8 @@ export async function resolveExternalSignIn(
  * gone (an admin unlinked it) is linked again and treated the same; with another surveyjs.io id it
  * is `identity-conflict`. Without either, a blocked claim is refused before anything is written.
  * (2) The account of the verified email is linked only when it has no `surveyjs` identity yet (an
- * account an admin created); one with another surveyjs.io id is `identity-conflict`. (3) Else a
+ * account an admin created); one with another surveyjs.io id is `identity-conflict`, also when that
+ * id links it while this sign-in does (this one takes its link back). (3) Else a
  * new account with the sub as its id, when the join policy lets the email join. After a sign-in,
  * ADMIN_EMAIL becomes instance admin while the instance has never had one (logged with the user id):
  * a deleted admin's placeholder still counts, so a new owner of that address is not promoted. A
@@ -281,6 +282,27 @@ async function resolveHostedSignIn(
   };
 
   /**
+   * After this sign-in linked `account`, which another person's: false when another surveyjs.io id
+   * linked it too meanwhile (two people's sign-ins with the same email at once). This sign-in then
+   * takes its own link back (warned, by user id only), and the other's does the same if it sees
+   * this one, so at most one id stays. The account whose id is this sub is this person's and keeps
+   * its link. Taking a link back ends the account's sessions, as any unlink does.
+   */
+  const kept = async (account: LocalAccount): Promise<boolean> => {
+    if (account.user.id.toLowerCase() === sub) return true;
+    const another = (await accounts.listIdentities(account.user.id)).some(
+      (identity) => identity.provider === "surveyjs" && identity.subject.toLowerCase() !== sub,
+    );
+    if (!another) return true;
+    await accounts.unlinkIdentity(account.user.id, "surveyjs", sub);
+    log?.warn(
+      { userId: account.user.id },
+      "sign-in refused: another surveyjs.io id linked the account at the same time",
+    );
+    return false;
+  };
+
+  /**
    * A deleted account's placeholder (ADR 0043 point 2) is nobody's account: a late sign-in of the
    * deleted id, or a claim naming its address, must not fill it again. Warned, by user id only.
    */
@@ -330,6 +352,7 @@ async function resolveHostedSignIn(
       if (existing.status === "disabled") return refused("disabled");
       if (readOnly) throw readOnlyError();
       if ((await link(existing.user.id, email)) === "taken") return (await known()) ?? LOST_RACE;
+      if (!(await kept(existing))) return refused("identity-conflict");
       return signInLinked(existing);
     }
 

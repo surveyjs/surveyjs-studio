@@ -657,6 +657,81 @@ describe("resolveExternalSignIn, hosted sign-in through surveyjs.io (ADR 0043)",
     expect(result).toMatchObject({ ok: true, account: { user: { id: account.user.id } } });
   });
 
+  describe("another surveyjs.io id links the same account meanwhile: one id stays", () => {
+    /** The store, where `other` is linked to `userId` just before this sign-in's own link. */
+    const racingLink = (
+      env: ReturnType<typeof hosted>,
+      other: IdentityClaims,
+      userId: string,
+    ): LocalAccountStore => {
+      let first = true;
+      return {
+        ...env.accounts,
+        linkIdentity: async (link) => {
+          if (first) {
+            first = false;
+            await env.linkSite(other, userId);
+          }
+          return env.accounts.linkIdentity(link);
+        },
+      };
+    };
+    const resolveWith = (
+      env: ReturnType<typeof hosted>,
+      accounts: LocalAccountStore,
+      who: IdentityClaims,
+    ) =>
+      resolveExternalSignIn("surveyjs", who, {
+        accounts,
+        invitations: env.invitations,
+        policy: open,
+        now: () => NOW,
+        hosted: true,
+        log: { warn: (obj, msg) => env.warnings.push({ obj, msg }), info: () => undefined },
+      });
+    const siteSubjects = async (env: ReturnType<typeof hosted>, userId: string) =>
+      (await env.accounts.listIdentities(userId))
+        .filter((identity) => identity.provider === "surveyjs")
+        .map((identity) => identity.subject);
+
+    it("an admin-created account: this sign-in takes its own link back and refuses identity-conflict", async () => {
+      const env = hosted();
+      const made = await env.accounts.createAccount(
+        newAccount({ email: "ada@example.com", passwordHash: null }),
+      );
+      const who = site();
+      const other = site();
+      const result = await resolveWith(env, racingLink(env, other, made.user.id), who);
+      expect(result).toEqual({ ok: false, reason: "identity-conflict" });
+      expect(await siteSubjects(env, made.user.id)).toEqual([other.sub.toLowerCase()]);
+      expect(env.warnings.map((line) => line.obj)).toEqual([{ userId: made.user.id }]);
+    });
+
+    it("the account whose id is this sub: it keeps its link and signs in", async () => {
+      const env = hosted();
+      const who = site();
+      const own = await env.accounts.createAccount(
+        newAccount({ id: who.sub.toLowerCase(), email: "ada@example.com", passwordHash: null }),
+      );
+      const other = site();
+      const result = await resolveWith(env, racingLink(env, other, own.user.id), who);
+      expect(result).toMatchObject({ ok: true, account: { user: { id: own.user.id } } });
+      expect(await siteSubjects(env, own.user.id)).toContain(who.sub.toLowerCase());
+    });
+
+    it("the account whose id is the other sub: this sign-in takes its own link back", async () => {
+      const env = hosted();
+      const other = site();
+      const theirs = await env.accounts.createAccount(
+        newAccount({ id: other.sub.toLowerCase(), email: "ada@example.com", passwordHash: null }),
+      );
+      const who = site();
+      const result = await resolveWith(env, racingLink(env, other, theirs.user.id), who);
+      expect(result).toEqual({ ok: false, reason: "identity-conflict" });
+      expect(await siteSubjects(env, theirs.user.id)).toEqual([other.sub.toLowerCase()]);
+    });
+  });
+
   describe("the account with the sub as its id, without the identity (an admin unlinked it)", () => {
     /** The person's own account (id = sub), whose surveyjs identity is gone; another email. */
     const unlinked = (env: ReturnType<typeof hosted>, who: IdentityClaims, over = {}) =>
