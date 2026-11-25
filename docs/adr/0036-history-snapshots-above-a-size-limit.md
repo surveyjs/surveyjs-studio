@@ -1,7 +1,8 @@
 # ADR 0036: History snapshots above a size limit go to the byte store
 
-Status: Accepted (hosted Step 1, 2026-11-18). Changes the `survey_history` table of the SQL providers
-([data model](../architecture/data-model.md)); built in hosted Step 8.
+Status: Accepted (hosted Step 1, 2026-11-18); **its decision is replaced** by
+[the history limit of 2026-11-25](#changed-2026-11-25-at-most-n-history-entries-per-survey): the byte store for
+snapshots is not built.
 
 ## Context
 
@@ -90,3 +91,26 @@ the snapshot goes to the byte store.**
   object, the limit at its edge, a failed save, a survey delete with objects, a restore) and measures the size
   distribution that sets the hosted limit.
 - **Self-hosting docs** describe the setting as an option for large installations; the default needs no action.
+
+## Changed 2026-11-25: at most N history entries per survey
+
+The SurveyJS team decided (2026-11-24) that a survey keeps its **20 newest history entries**, from the cutover on, and
+that the migration copies at most the 20 newest of each survey. Bounded per survey, the history no longer needs the
+byte store above; this replaces the Decision (points 1–4) and its sweep.
+
+- **A setting, `HISTORY_MAX_ENTRIES`:** a positive integer; **not set (the default) keeps every entry**, so self-hosted
+  installations are unchanged. The hosted server sets **20**.
+- **Pruned on save.** Every write that adds a history entry (a save of the definition, a restore of an older entry)
+  deletes, in the same transaction, the survey's entries beyond the newest N (by entry time, then id). Nothing prunes in
+  the background; an installation that sets the limit later is pruned survey by survey at its next save.
+- **SQL and memory providers.** The setting with `STORAGE_PROVIDER=azure-legacy` is a start-up error: today's server
+  runs the `production` branch and keeps the legacy history as it is until the cutover.
+- **The migration** (hosted Step 9) exports the 20 newest entries of each survey; a published snapshot is one of them
+  only when its time places it among the 20 newest (nothing has served it since the old run page).
+- **The measurement that sizes the database:** `pnpm inspect:legacy --stats` gains the bytes and count of the 20 newest
+  history entries of each survey, summed over all surveys. Run once on production; the figures stay private
+  (plan-hosted rule 6).
+- **Unchanged from above:** the snapshot stays a JSON column of `survey_history`; there is no
+  `HISTORY_INLINE_MAX_BYTES`, `snapshot_key` or sweep. Users see at most 20 entries from the cutover on; the migration
+  announcement says so (hosted Step 11). [ADR 0033](0033-hosted-target-stores.md)'s volumes and window estimate shrink
+  accordingly.

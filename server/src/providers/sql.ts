@@ -29,6 +29,8 @@ export interface SqlProviderOptions {
   readonly fallbackSeed?: MemorySeed;
   /** `ACCOUNT_NOTICES`; default `none`. */
   readonly accountNotices?: AccountNoticesSetting;
+  /** `HISTORY_MAX_ENTRIES`; default null (every entry is kept). */
+  readonly historyMaxEntries?: number | null;
 }
 
 /** READ_ONLY=true must not change the schema, and the code needs the schema it was built for. */
@@ -73,6 +75,7 @@ export async function openSqlProviders(
   }
   return createSqlProviders(database, {
     accountNotices,
+    historyMaxEntries: config.historyMaxEntries,
     bytes: openByteStore(config.files!),
     localAccounts: config.userDirectory === "local",
     ...(config.memorySeed === "legacy-fixtures" && { fallbackSeed: await legacyFixtureSeed() }),
@@ -126,7 +129,9 @@ export function createSqlProviders(
   const local = options.localAccounts ? createSqlLocalAccounts(database) : null;
   return {
     name: database.dialect,
-    surveys: createSqlSurveyStore(database),
+    surveys: createSqlSurveyStore(database, {
+      historyMaxEntries: options.historyMaxEntries ?? null,
+    }),
     users: local?.users ?? fallback.users,
     projects: createSqlProjectStore(database, local ? usersById : directoryLookup(fallback.users)),
     files: createSqlFileStore(database, options.bytes),

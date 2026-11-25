@@ -11,7 +11,8 @@ import { GUID } from "../domain/guid.js";
 
 /**
  * Account erasure (R11): everything the app holds for one user id. The user's API tokens are
- * revoked first, project tokens too (ADR 0037), so none acts while the data goes. Then the
+ * revoked first, project tokens too, and the legacy access key with them (ADR 0037), so none acts
+ * while the data goes. Then the
  * projects: the user leaves each one, an admin is promoted where none would remain, and a project
  * with no other member is deleted with its surveys. The personal surveys go next, so a survey a deleted project
  * left behind is deleted too. Results, views, history and themes go with each survey. Last, the
@@ -104,6 +105,7 @@ export function createEraseAccount(stores: ErasureStores, logger?: ErasureLogger
   return async (userId, { now }) => {
     const id = checkedUserId(userId);
     await stores.credentials.revokeApiTokensOfCreator(id, now);
+    await stores.credentials.revokeLegacyKey(id, now);
     let surveysDeleted = 0;
     let projectsLeft = 0;
     let projectsDeleted = 0;

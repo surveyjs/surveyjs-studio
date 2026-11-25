@@ -190,6 +190,33 @@ export interface ApiTokensTable {
   revoked_at: Timestamp | null;
 }
 
+/** A per-user access key of the old service (0011); the user's key is their newest row. */
+export interface LegacyAccessKeysTable {
+  /** SHA-256 of the lower-cased value. */
+  key_hash: string;
+  user_id: string;
+  last_four: string;
+  created_at: Timestamp;
+  revoked_at: Timestamp | null;
+}
+
+/** What happened to a survey (0011). `payload` is JSON text. */
+export interface SurveyEventsTable {
+  id: string;
+  survey_id: string;
+  type: string;
+  at: Timestamp;
+  payload: string | null;
+}
+
+/** A deleted response kept until a purge (0011). `response` is JSON text. */
+export interface DeletedResponsesTable {
+  survey_id: string;
+  response_id: string;
+  deleted_at: Timestamp;
+  response: string;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -208,4 +235,7 @@ export interface DatabaseSchema {
   user_identities: UserIdentitiesTable;
   project_invitations: ProjectInvitationsTable;
   api_tokens: ApiTokensTable;
+  legacy_access_keys: LegacyAccessKeysTable;
+  survey_events: SurveyEventsTable;
+  deleted_responses: DeletedResponsesTable;
 }

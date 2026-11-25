@@ -413,7 +413,7 @@ The server writes one JSON object per line (pino) to standard output; the contai
 `LOG_LEVEL` (default `info`) is the only setting.
 
 - **The start-up line** has `"msg":"starting"` and says what this process runs with: `edition`, `shell`,
-  `storageProvider`, `userDirectory`, `identityProvider`, `accountNotices`, `readOnly`, `webApp` (whether `WEB_ROOT`
+  `storageProvider`, `fileStore` (`local`, `s3` or `none`), `historyMaxEntries` (`null` keeps every entry), `userDirectory`, `identityProvider`, `accountNotices`, `readOnly`, `webApp` (whether `WEB_ROOT`
   is set), `publicBaseUrl` and `nodeEnv`. Check it after every start: in rollout step 1 it must say
   `"readOnly":true`.
 - **Request lines.** Fastify writes `incoming request` and `request completed` (with the status and the time) for
@@ -589,6 +589,68 @@ Modes 1.1 and 1.2 keep `USER_DIRECTORY=surveyjs-sql`. The surveyjs.io user API w
 was removed in hosted Step 2 ([ADR 0022](adr/0022-users-from-sign-in.md)); after the cutover users come from sign-in
 ([hosted sign-in](#hosted-sign-in), [ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)).
 
+### Mode 1.3: the new server (PostgreSQL and S3)
+
+After the cutover the hosted app runs on the new server with its data in PostgreSQL and its files in an S3-compatible
+bucket ([ADR 0033](adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25)). The settings are listed, with
+today's, in the deployment's example environment file; `docker/prod-like.sql.env` keeps
+the same values for the local check. The ones that matter here:
+
+| Variable                           | Value                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_EDITION`                      | `hosted`                                                                                                                                    |
+| `STORAGE_PROVIDER`, `DATABASE_URL` | `postgres` and the connection string; **secret**                                                                                            |
+| `FILE_STORE`, `S3_*`               | `s3` and the bucket's settings                                                                                                              |
+| `USER_DIRECTORY`, `AUTH_METHODS`   | `local` and `surveyjs` ([hosted sign-in](#hosted-sign-in)); `password` is refused with the hosted edition                                   |
+| `HISTORY_MAX_ENTRIES`              | `20`                                                                                                                                        |
+| `LEGACY_KEY_REVOKE`                | `false` at the switch, `true` a day after it (as in mode 1.2); a legacy key now lives in `legacy_access_keys`, and its owner can replace it |
+
+`pnpm prod-like-sql:up` runs the production image with this profile on PostgreSQL and S3 in Docker (and
+`pnpm prod-like-sql:down` removes it); the `prod-like-sql` CI job does the same. Check `/readyz` on port 8081.
+
+#### Purging the deleted-response copies
+
+The migration copies the old service's deleted-response archive into `deleted_responses`. Studio never reads it. Run the
+purge **30 days after the cutover**, when nobody can ask for a deleted response back:
+
+```sh
+surveyjs-studio purge-deleted-responses --before 2026-12-31            # a dry run: counts the rows, deletes nothing
+surveyjs-studio purge-deleted-responses --before 2026-12-31 --apply    # deletes the rows strictly before the date
+```
+
+In the production image run it with `docker compose exec app surveyjs-studio purge-deleted-responses …` (the image has no
+pnpm); in the repository it is `pnpm purge:deleted-responses …`.
+
+It works on the SQL providers only and reads the database settings of the server (`--env-file <file>` names a file).
+`READ_ONLY=true` refuses only `--apply`. There is no background job.
+
+#### Measuring scale
+
+Two commands check that a database of the production's size meets the targets of
+[ADR 0033](adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25):
+
+```sh
+pnpm scale:generate --surveys <n> --responses <n> --largest <n>   # builds a synthetic data set
+pnpm scale:check --base https://studio.example.test --token sjs_… --survey <largest survey id>
+```
+
+`scale:generate` writes straight into a migrated database named by `DATABASE_URL` or `SQLITE_PATH` and **refuses a
+database that already holds data**: run it on a scratch database. The sizes are parameters (take them from the private measurement of the real data); the data is the same for the
+same `--seed`, and none of it comes from production. `scale:check` times the survey list, the first page of the results,
+the export (first byte and total) and a save, over `--runs` requests (20 by default), and exits 1 when a target is
+missed. Both print counts and times only, never a name or an id. Keep the figures of a run on the real server out of the
+repository ([plan-hosted rule 6](../plan-hosted.md)); the ADR gets them rounded.
+
+#### Restoring once
+
+Before the cutover the restore is rehearsed once into a scratch instance, with a deleted survey as the check:
+
+1. **The database:** a point-in-time restore from the backups to a moment before the survey was deleted, into a
+   separate database, and Studio started on it.
+2. **A file:** a deleted file brought back from the bucket's old versions.
+
+The commands and the places are in the private deployment notes; this repository keeps the outline and the result.
+
 ### Mode 4: development
 
 The local configurations, for development, tests and demos. None of them touches real data except the two runs on
@@ -631,19 +693,20 @@ hosted data off Azure) is the hosted-migration track's ([plan](../plan-hosted.md
 Users come from a **user directory**. Which one is a setting, and some combinations cannot work: the server then
 refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deployment-mode.md)).
 
-| Variable                        | Values                                                                                    | Meaning                                                                                                                                                                                         |
-| ------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `local`                                                         | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts))            |
-| `ADMIN_EMAIL`                   | An email                                                                                  | `local` only: the first admin ([below](#local-accounts)). With `password` in `AUTH_METHODS` it comes with `ADMIN_PASSWORD`, or neither is set; without it, required                             |
-| `ADMIN_PASSWORD`                | A password; **secret**                                                                    | `local` with `password` in `AUTH_METHODS` only, with `ADMIN_EMAIL`: the first admin's password, changed at the first sign-in                                                                    |
-| `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`, `sign-in-licence` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql`. `sign-in-licence` shows the licence date the site sent at the last sign-in and needs `local` |
-| `GOOGLE_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | Google's OAuth2 client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `google`. Never logged                                                                  |
-| `GITHUB_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | GitHub's OAuth2 client (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `github`. Never logged                                                                  |
-| `FACEBOOK_CLIENT_ID`, `_SECRET` | Strings; the secret is **secret**                                                         | Facebook's OAuth2 client (`FACEBOOK_CLIENT_ID`, `FACEBOOK_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `facebook`. Never logged                                                          |
-| `SIGN_UP_DOMAINS`               | Comma-separated domains                                                                   | `local` only: an email on one of these domains may create an account by signing in. Default none                                                                                                |
-| `OPEN_SIGN_UP`                  | `on`, `off`                                                                               | `local` only: `on` lets anyone with a verified email create an account through an OAuth2 method. Default `off`                                                                                  |
-| `OAUTH_STUB_URL`                | An http(s) URL                                                                            | Development and tests: points Google, GitHub and Facebook at a stub. Refused in production                                                                                                      |
-| `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                                      | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                                 |
+| Variable                        | Values                                                                                    | Meaning                                                                                                                                                                                                                                              |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `USER_DIRECTORY`                | `memory`, `surveyjs-sql`, `local`                                                         | Where users come from. Default `memory` with `STORAGE_PROVIDER=memory`, `sqlite` or `postgres`, else `surveyjs-sql`. `local`: the instance's own accounts ([below](#local-accounts))                                                                 |
+| `ADMIN_EMAIL`                   | An email                                                                                  | `local` only: the first admin ([below](#local-accounts)). With `password` in `AUTH_METHODS` it comes with `ADMIN_PASSWORD`, or neither is set; without it, required                                                                                  |
+| `ADMIN_PASSWORD`                | A password; **secret**                                                                    | `local` with `password` in `AUTH_METHODS` only, with `ADMIN_EMAIL`: the first admin's password, changed at the first sign-in                                                                                                                         |
+| `ACCOUNT_NOTICES`               | `none`, `license-expired`, `license-expires-soon`, `surveyjs-licenses`, `sign-in-licence` | The notices of `getCurrentUser`. `surveyjs-licenses` reads real licences and needs `surveyjs-sql`. `sign-in-licence` shows the licence date the site sent at the last sign-in and needs `local`                                                      |
+| `GOOGLE_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | Google's OAuth2 client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `google`. Never logged                                                                                                                       |
+| `GITHUB_CLIENT_ID`, `_SECRET`   | Strings; the secret is **secret**                                                         | GitHub's OAuth2 client (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `github`. Never logged                                                                                                                       |
+| `FACEBOOK_CLIENT_ID`, `_SECRET` | Strings; the secret is **secret**                                                         | Facebook's OAuth2 client (`FACEBOOK_CLIENT_ID`, `FACEBOOK_CLIENT_SECRET`). Required when `AUTH_METHODS` lists `facebook`. Never logged                                                                                                               |
+| `SIGN_UP_DOMAINS`               | Comma-separated domains                                                                   | `local` only: an email on one of these domains may create an account by signing in. Default none                                                                                                                                                     |
+| `OPEN_SIGN_UP`                  | `on`, `off`                                                                               | `local` only: `on` lets anyone with a verified email create an account through an OAuth2 method. Default `off`                                                                                                                                       |
+| `HISTORY_MAX_ENTRIES`           | A positive integer                                                                        | Keep each survey's newest N history entries; a save deletes the older ones. Unset (the default): keep every entry. The new server sets `20` ([ADR 0036](adr/0036-history-snapshots-above-a-size-limit.md)). Not with `STORAGE_PROVIDER=azure-legacy` |
+| `OAUTH_STUB_URL`                | An http(s) URL                                                                            | Development and tests: points Google, GitHub and Facebook at a stub. Refused in production                                                                                                                                                           |
+| `ACCOUNT_WEBHOOK_SECRET`        | `whsec_` and base64 of at least 24 bytes; **secret**                                      | Signs the account-deleted webhook. Unset: the webhook answers `404` (`503 read-only` while `READ_ONLY=true`); [the secret](#the-webhook-secret)                                                                                                      |
 
 **The rules, all reported together at start-up:**
 
@@ -665,6 +728,10 @@ refuses to start and names the variable ([ADR 0018](adr/0018-accounts-by-deploym
 - With `NODE_ENV=production`, `sqlite` and `postgres` need `USER_DIRECTORY=local`.
 - `ACCOUNT_NOTICES=surveyjs-licenses` needs `USER_DIRECTORY=surveyjs-sql`.
 - `ACCOUNT_NOTICES=sign-in-licence` needs `USER_DIRECTORY=local`.
+- `HISTORY_MAX_ENTRIES` must be a positive integer, and it is refused with `STORAGE_PROVIDER=azure-legacy` (today's
+  server keeps the legacy history as it is).
+- `APP_EDITION=hosted` refuses `password` in `AUTH_METHODS`: with passwords on, an admin's reset link would remove a
+  person's surveyjs.io sign-in ([ADR 0043](adr/0043-hosted-users-on-the-local-directory.md)).
 
 **The usual settings in mode 1** (the hosted app for surveyjs.io users):
 

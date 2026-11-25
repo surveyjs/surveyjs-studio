@@ -88,7 +88,11 @@ export function createBearerResolver(options: BearerResolverOptions): BearerReso
       const key = await credentials.findLegacyKey(value);
       if (!key || key.revoked) throw signedOut();
       const user = await owners.owner(key.userId);
-      return { ...actingAs(user), scope: { kind: "all" }, credential: { kind: "legacy-key" } };
+      return {
+        ...actingAs(user),
+        scope: { kind: "all" },
+        credential: { kind: "legacy-key", hash: hashCredential(value, "legacy-key") },
+      };
     },
   };
 }

@@ -47,7 +47,7 @@ Checked against `master` on 2026-11-12. Each step below says what it reuses.
 | `surveyjs-studio backup`, `restore`, `migrate`, `rebase-urls`                                                                                                  | [Self-hosting](docs/self-hosting.md)                                                            | Steps 8, 9     |
 | The hosted production server on Hetzner, with health-checked deploys and rollback by image tag                                                                 | [Setting up a Hetzner server](docs/operations/hetzner-server-setup.md)                          | Steps 1, 7, 10 |
 
-**Not built,** although the self-hosted plan allowed for it: the `api_tokens` table (SH Step 2 left it to Step 3; [data-model.md › Planned](docs/architecture/data-model.md#planned)), the hosted-only tables, CORS and bearer authentication.
+**Not built,** although the self-hosted plan allowed for it: the `api_tokens` table (SH Step 2 left it to Step 3; [data-model.md › `api_tokens`](docs/architecture/data-model.md#api_tokens-0006)), the hosted-only tables, CORS and bearer authentication.
 
 ## Cross-track dependencies
 
@@ -64,14 +64,15 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 
 | Step | Name                                                           | Status |
 | ---- | -------------------------------------------------------------- | ------ |
-| 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☐      |
-| 2    | Users from sign-in: the local directory and licence notices    | ☐      |
-| 3    | API tokens, legacy access keys and CORS                        | ☐      |
-| 4    | Partial responses                                              | ☐      |
-| 5    | The bridge: public actions and legacy files                    | ☐      |
-| 6    | The bridge: access-key actions and the migration guide         | ☐      |
-| 7    | Taking over `api.surveyjs.io` traffic                          | ☐      |
+| 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☑      |
+| 2    | Users from sign-in: the local directory and licence notices    | ☑      |
+| 3    | API tokens, legacy access keys and CORS                        | ☑      |
+| 4    | Partial responses                                              | ☑      |
+| 5    | The bridge: public actions and legacy files                    | ☑      |
+| 6    | The bridge: access-key actions and the migration guide         | ☑      |
+| 7    | Taking over `api.surveyjs.io` traffic                          | ☑      |
 | 8    | Target provider readiness                                      | ☐      |
+| 8b   | Results on the server                                          | ☐      |
 | 9    | The migration tool                                             | ☐      |
 | 10   | The cutover kit                                                | ☐      |
 | 11   | The test migration and the cutover runbook                     | ☐      |
@@ -210,7 +211,7 @@ Studio's public API is what the bridge calls, so it must cover everything the ol
 - **TokenStore:**
   - memory;
   - Azure legacy, as a new app-owned table that legacy code never reads;
-  - SQL: the `api_tokens` table of [data-model.md › Planned](docs/architecture/data-model.md#planned), as the next migration for SQLite and PostgreSQL, moved to the built tables in that document.
+  - SQL: the `api_tokens` table of [data-model.md › `api_tokens`](docs/architecture/data-model.md#api_tokens-0006), as the next migration for SQLite and PostgreSQL, moved to the built tables in that document.
 
   Only a hash is stored.
 
@@ -484,9 +485,11 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 
 ## Step 8: Target provider readiness
 
-**Goal:** the chosen SQL provider and file store are ready to hold the hosted data at production size, including the hosted-only tables.
+**Goal:** the chosen SQL provider and file store are ready to hold the hosted data at production size, including the hosted-only tables, and the tools to prove it exist. What needs the new server waits for it.
 
-**Inputs needed:** the new server ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)), built by the private deployment playbooks: Studio on PostgreSQL and the provider's object storage, the bridge, Prometheus, test host names for Studio and the API, and the backups set up. It is checked empty in this step.
+> **Changed 2026-11-25 by [ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md), [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md), [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) and [ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md).** There is no byte store for history snapshots: a survey keeps at most N history entries (`HISTORY_MAX_ENTRIES`, 20 on the new server). Legacy access keys work on the SQL providers, and a key can be replaced there. The archive tables get a purge command. The hosted edition refuses password sign-in. The scale check has targets and a generator, and the work that needs the new server (the scale run, the production measurement, the restore) is listed apart below. The results on the server (the Table's server mode, the Summary's limit) are Step 8b.
+
+**Inputs needed:** the new server ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)), built by the private deployment playbooks: Studio on PostgreSQL and the provider's object storage, the bridge, Prometheus, test host names for Studio and the API, and the backups set up. It is checked empty in this step. Everything below that does not name the new server is built and tested locally.
 
 **References**
 
@@ -498,36 +501,80 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 - **If the choice is not PostgreSQL with S3-compatible storage:** the chosen provider, built against the existing provider and conformance suites. The step grows by that work.
   **Already built** (SH Steps 1–3): the PostgreSQL provider, its migrations `0001`–`0005`, the S3-compatible file store, and `surveyjs-studio backup`/`restore`, which cover SQLite and local files only. A PostgreSQL deployment is backed up with the database's own tools ([Self-hosting › Backups](docs/self-hosting.md#backups)).
 
-- **Hosted-only tables as SQL migrations** after Step 6's (`legacy_files` is built: migration `0008`, Step 5):
-  - `legacy_access_keys`;
-  - `survey_events`;
-  - `deleted_responses`, and a job that purges it 30 days after the cutover.
-
-  These are empty and unused in the self-hosted image.
-
-- **History snapshots above a size limit in the byte store** ([ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md)): a migration of `survey_history` (`snapshot` nullable, `snapshot_key`, the check constraint), the `HISTORY_INLINE_MAX_BYTES` setting (no limit by default), the object-first save, the delete order and the weekly sweep. The hosted limit comes from the history's size distribution, which the stats command measures (bytes below a few thresholds). This one is not hosted-only: self-hosted installations can set the limit too.
-- **A scale check** on a synthetic data set the size of production (from the Step 1 estimate; the generator takes the size as a parameter, so the real figures stay private):
-  - list, page, export and statistics times on the largest surveys, including **one survey with millions of responses**: one production survey holds most of them ([ADR 0033](docs/adr/0033-hosted-target-stores.md#the-volumes-2026-11-18));
-  - index fixes until they meet targets agreed in the step's ADR.
-- **Backup and restore** for the hosted stores, tested once with a restore into a scratch instance (H25):
-  - point-in-time restore: managed, or WAL archiving to object storage when PostgreSQL runs on our own Hetzner servers (Step 1 ADR);
-  - object-store versioning, or a scheduled copy where the store has no versioning.
-- **The hosted production profile on the new stores,** ready but not active: the settings in `deploy/hetzner/app.env.example`, `docker/prod-like.env` kept in step, and a `prod-like` CI variant on PostgreSQL and S3.
+- **The history limit** (ADR 0036, changed 2026-11-25): `HISTORY_MAX_ENTRIES`, a positive integer; unset keeps every entry, so self-hosted installations are unchanged. A save that adds an entry deletes, in its transaction, the entries beyond the newest N (by time, then id), on the SQL and memory providers; with `azure-legacy` the setting is a start-up error. There is no `HISTORY_INLINE_MAX_BYTES`, byte store or sweep.
+- **Hosted-only tables, one migration** (`0011-hosted-archives-and-keys`; `legacy_files` is Step 5's `0008`), empty in the self-hosted image:
+  - `legacy_access_keys` (hash, owner, last four, created and revoked times), which the SQL credential store reads with the Azure legacy provider's behaviour. A legacy key works as a bearer credential and on the bridge; `replaceCurrentCredential` with one revokes it and returns a new 32-digit key, so the bridge's `generateAccessKey` is answered by Studio (Azure legacy keeps the `409`). Revoking a key revokes all of the user's rows, and account erasure revokes it too. `pnpm seed` writes the fixtures' keys;
+  - `survey_events` and `deleted_responses`, filled by the migration (Step 9) and read by nothing in Studio;
+  - **`pnpm purge:deleted-responses --before <date> [--apply]`:** a dry run by default; the cutover runbook runs it 30 days after the cutover. No background job.
+- **The hosted edition refuses `password`** in `AUTH_METHODS` (ADR 0043, changed 2026-11-25).
+- **The scale tools:**
+  - `pnpm scale:generate`: a synthetic data set (users, surveys, history, responses, API tokens) in a migrated SQL database, sizes as parameters so the real figures stay out of the repository, one survey of millions of responses; it refuses a database that holds data;
+  - `pnpm scale:check`: the survey list, a page of the results, the export and a save through the HTTP API, 95th percentile, against the targets of [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25). It prints counts and times only.
+- **The new server's profile,** ready but not active: the settings in the deployment's example environment file, `docker/prod-like.sql.env` and `pnpm prod-like-sql:up` (the image on PostgreSQL and S3), and the `prod-like-sql` CI job.
+- **What waits for the new server,** with figures added (rounded, rule 6) to ADR 0033 when done:
+  - the scale run: `scale:generate` at production size, then `scale:check`, and index changes (migrations) until the targets hold; the Table's and the Summary's targets are met in Step 8b;
+  - the production measurement: `pnpm inspect:legacy --stats` with the 20 newest history entries of each survey, run once on production, to size the database;
+  - the backup and restore (H25), tested once into a scratch instance: a point-in-time restore of the database and a file from the bucket's old versions. The commands are in the private deployment notes; `docs/operations.md` has the outline.
 
 **Tests**
 
-- **Back-end e2e:** provider and conformance suites on the chosen provider, including tokens, partial responses and the hosted-only tables; the purge job.
-- **Scale:** the scale check, run manually with results in the ADR.
-- **Front-end e2e:** the Phase 1 user-story suites on the chosen provider.
+- **Back-end e2e:** the provider and conformance suites on PostgreSQL, including tokens, partial responses, legacy keys (find, replace, revoke, erase) and the history limit; `pnpm test:conformance:postgres:hosted` runs the hosted edition on PostgreSQL with the mock OIDC server (CI runs it); the purge command's dry run, `--apply` and `READ_ONLY`.
+- **Unit:** the generator and the check's arithmetic; the refusals (`HISTORY_MAX_ENTRIES`, hosted with `password`).
+- **Scale:** the check, run manually on the new server.
+- **Front-end e2e:** the Phase 1 user-story suites on PostgreSQL (`pnpm e2e:postgres`).
 
-**Documentation:** the scale ADR, `docs/architecture/data-model.md` (hosted-only tables), `docs/operations.md` (the hosted profile on the new stores, backups and restore), `docs/demo/hosted-08.md`.
+**Documentation:** ADR 0033's readiness section, `docs/architecture/data-model.md` (the three tables, the history limit), `docs/operations.md` (the new server's profile, the purge, the scale tools, the restore outline), `docs/self-hosting.md`, `docs/api/api-tokens.md`, `docs/demo/hosted-08.md`.
 
 **Demo checklist**
 
-1. `pnpm dev:<provider>` runs the full Phase 1 demo on the chosen provider.
+1. `HISTORY_MAX_ENTRIES=3 pnpm dev:postgres`: five saves leave three entries in History.
+2. A legacy key (a seeded row) signs in to `GET /api/v1/me`; `generateAccessKey` through the bridge returns a new key and the old one is refused.
+3. The purge's dry run counts, `--apply` deletes.
+4. `scale:generate` small, then `scale:check`.
+5. `pnpm prod-like-sql:up`: `/readyz` is ready on PostgreSQL and S3.
+6. `pnpm e2e:postgres` is green. (The demo page is [docs/demo/hosted-08.md](docs/demo/hosted-08.md).)
+
+**Demo, on the new server, empty (after it is built):**
+
+1. Studio and the bridge answer on their test host names, and Prometheus scrapes both.
 2. The scale report shows the largest survey's export and paging within the agreed times.
-3. A restore into a scratch instance brings back a deleted survey.
-4. On the new server, empty: Studio and the bridge answer on their test host names, and Prometheus scrapes both.
+3. A restore into a scratch instance brings back a deleted survey and a deleted file.
+
+---
+
+## Step 8b: Results on the server
+
+**Goal:** a survey with millions of responses opens, pages, filters and exports without the page reading every response, as [ADR 0015](docs/adr/0015-results-summary-table-and-views.md) (changed 2026-11-25) decided.
+
+> **Added 2026-11-25 by [ADR 0015](docs/adr/0015-results-summary-table-and-views.md).** The product owner decided that the Summary shows at most 25,000 responses, the Table pages, filters and sorts on the server, and the export returns every matching response. Summarising more is a later task. This step touches the shared API and the results page, so it is a step of its own and can be built while the new server is made ready.
+
+**References**
+
+- ADR 0015 › Changed 2026-11-25; R11, R14 and R20 of the Phase 1 spec; [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) (the scale targets).
+
+**Build**
+
+- **`queryResults`** in the contract: a survey's responses with filters (field, type, value), sort orders (field, direction), an offset and a limit; the answer is one page and the total count (the shape of the Dashboard's `GetDataFn`: `{ filter, sort, offset, limit }` → `{ data, totalCount }`). Who may call it is `listResults`'s rule. The generated client and `docs/api` follow.
+- **Providers:** on SQLite and PostgreSQL the filter and the sort run in the database on the stored answers (the JSON functions of each); the memory and Azure legacy providers compute the same results in memory. Indexes, as migrations, where the scale targets need them.
+- **The Table** uses the Dashboard's server mode for every survey, one page at a time, with paging, filters and sorts sent to the server (no threshold: one path serves every survey).
+- **The Summary** is built from the newest 25,000 responses, and says how many it covers when a survey has more.
+- **The export** keeps the three formats (CSV, Excel, PDF) and returns every response that matches the Table's filters, in its order, fetched through `queryResults` in pages.
+- **The two scale targets this step adds** to `scale:check` (the others are Step 8's): a page of the Table of the largest survey, with a filter and a sort, under 2 s; the Summary's data, the newest 25,000 responses, under 5 s ([ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25)).
+
+**Tests**
+
+- **Back-end:** `queryResults` on every provider through the shared suite: each filter type, sort order, paging and the total; permissions as `listResults`; the same results on memory, SQLite, PostgreSQL and Azure legacy.
+- **Front-end e2e:** the results user stories in the server mode: paging, filter, sort, the Summary's note over 25,000, and an export of a filtered Table.
+- **Scale:** `scale:check` with the two targets, on the new server.
+
+**Documentation:** ADR 0015's change, `docs/api`, the user guide's results page, `docs/demo/hosted-08b.md`.
+
+**Demo checklist**
+
+1. Generate a survey of a few hundred thousand responses (`scale:generate`) and open its results: the Table opens at once and pages.
+2. Filter and sort the Table: the page changes, the total follows.
+3. The Summary says it covers the newest 25,000 responses.
+4. Export with a filter set: the file holds every matching response, in the Table's order.
 
 ---
 
@@ -559,7 +606,8 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
   - a dry run into a scratch target is the default unless `--target` is given;
   - progress logs, and a machine-readable report; reports from production or a staging copy stay private (rule 6).
 - **Files:** editor images and respondent files go into the target file store, with `legacy_files` filled for the legacy names. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID.
-- **History snapshots** go inline or to the byte store by the ADR 0036 limit, the object before its row, so a resumed `copy` is safe.
+- **History:** the 20 newest entries of each survey, by time, then id ([ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md), changed 2026-11-25). A published snapshot is one of them only when its time places it among the 20 newest; nothing has served it since the old run page. The snapshots stay inline in `survey_history`.
+- **The hosted-only tables of Step 8** are filled here: `legacy_access_keys` with the site's keys hashed (lower-cased) and their last four characters, `survey_events` and `deleted_responses` from the legacy logs.
 - **Hidden public-results columns:** a survey's saved results layout that marks answer columns non-public or hidden is mapped into its `privateResultQuestions`, so `getSurveyPublicResults` through the bridge keeps leaving them out ([legacy-compat.md](docs/api/legacy-compat.md#which-responses-are-counted), Step 5).
 
 **Tests**

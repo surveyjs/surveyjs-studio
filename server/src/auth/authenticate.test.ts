@@ -241,7 +241,10 @@ describe("authenticationHook with bearer credentials", () => {
     expect(res.json()).toMatchObject({
       id: owner.id,
       scope: { kind: "all" },
-      credential: { kind: "legacy-key" },
+      credential: {
+        kind: "legacy-key",
+        hash: hashCredential("0123456789abcdef0123456789abcdef", "legacy-key"),
+      },
     });
   });
 

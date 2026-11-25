@@ -1,0 +1,69 @@
+# The new hosted server's profile: the production image (surveyjs-studio-hosted:local) with
+# docker/prod-like.sql.env on PostgreSQL, files in an S3-compatible server (RustFS) and the mock OIDC
+# server. Start with `pnpm prod-like-sql:up` (it builds the image), open http://localhost:8081; stop and wipe with
+# `pnpm prod-like-sql:down`. Its own project name and host ports (8081, 18081) leave the other
+# local stacks (Postgres, S3, Azurite mode, prod-like) alone.
+#
+# Networking: openid-client checks that the issuer's metadata names the configured issuer, so the
+# browser and the app must reach the mock at the same address. The app shares the mock's network
+# namespace (as in compose.prod-like.yaml): inside it, and on the host through the published port,
+# the mock is http://127.0.0.1:18081/surveyjs. PostgreSQL and S3 are reached by their service names.
+name: surveyjs-studio-prod-like-sql
+services:
+  # As in compose.azurite.yaml (written out here: extending that file would need its Azurite and SQL
+  # Server settings), but listening on the published port, so the issuer is the same inside and out.
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.3
+    environment:
+      JSON_CONFIG_PATH: /config/mock-oidc.json
+      SERVER_PORT: "18081"
+    volumes:
+      - ./mock-oidc.json:/config/mock-oidc.json:ro
+    ports:
+      - "127.0.0.1:18081:18081"
+      - "127.0.0.1:8081:3000" # the app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:18081/isalive"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  postgres:
+    extends:
+      file: compose.postgres.yaml
+      service: postgres
+    ports: !reset []
+
+  s3:
+    extends:
+      file: compose.s3.yaml
+      service: s3
+    ports: !reset []
+
+  # Creates the bucket (the app never does), with the image's own CLI, then exits.
+  bucket:
+    image: ${PROD_LIKE_IMAGE:-surveyjs-studio-hosted:local}
+    env_file: prod-like.sql.env
+    command: ["node", "--import", "tsx", "src/cli/s3-bucket.ts", "create", "surveyjs-studio-files"]
+    restart: "no"
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  app:
+    build: ..
+    # CI runs the image it built and tested (PROD_LIKE_IMAGE=surveyjs-studio-hosted:ci, with --no-build).
+    image: ${PROD_LIKE_IMAGE:-surveyjs-studio-hosted:local}
+    env_file: prod-like.sql.env
+    network_mode: "service:mock-oidc"
+    depends_on:
+      mock-oidc:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      bucket:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  s3-data:

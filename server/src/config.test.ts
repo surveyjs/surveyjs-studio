@@ -53,6 +53,7 @@ describe("loadConfig", () => {
       database: null,
       files: null,
       bootstrapAdmin: null,
+      historyMaxEntries: null,
       publicBaseUrl: "http://localhost:3000",
       limits: {
         maxAssetBytesPerSurvey: 52428800,
@@ -918,6 +919,46 @@ describe("loadConfig", () => {
       );
     });
 
+    describe("password sign-in and the hosted edition", () => {
+      const problem = "AUTH_METHODS: password is not available with APP_EDITION=hosted";
+      const hosted = {
+        APP_EDITION: "hosted",
+        USER_DIRECTORY: "local",
+        ADMIN_EMAIL: "a@example.com",
+      };
+
+      it.each(["password", "password,surveyjs"])(
+        "refuses hosted with AUTH_METHODS=%s",
+        (methods) => {
+          const message = messageOf(() =>
+            load({
+              ...oidc,
+              ...hosted,
+              AUTH_METHODS: methods,
+              ADMIN_PASSWORD: "first admin password",
+            }),
+          );
+          expect(message).toContain(`  - ${problem}`);
+        },
+      );
+
+      it("accepts hosted with surveyjs alone", () => {
+        expect(load({ ...oidc, ...hosted, AUTH_METHODS: "surveyjs" }).authMethods).toEqual([
+          "surveyjs",
+        ]);
+      });
+
+      it("accepts self-hosted with password", () => {
+        const config = load({
+          USER_DIRECTORY: "local",
+          AUTH_METHODS: "password",
+          ADMIN_EMAIL: "a@example.com",
+          ADMIN_PASSWORD: "first admin password",
+        });
+        expect(config.authMethods).toEqual(["password"]);
+      });
+    });
+
     it("accepts the explicit directories that fit", () => {
       expect(loadConfig({ USER_DIRECTORY: "memory" }).userDirectory).toBe("memory");
       expect(load({ ...oidc, ...legacy, USER_DIRECTORY: "surveyjs-sql" }).userDirectory).toBe(
@@ -1233,6 +1274,33 @@ describe("loadConfig", () => {
       expect(messageOf(() => loadConfig({ LEGACY_KEY_REVOKE: value }))).toContain(
         "LEGACY_KEY_REVOKE: must be true or false",
       );
+    });
+  });
+
+  describe("HISTORY_MAX_ENTRIES", () => {
+    it("is null when unset and the number when set", () => {
+      expect(loadConfig({}).historyMaxEntries).toBeNull();
+      expect(loadConfig({ HISTORY_MAX_ENTRIES: "20" }).historyMaxEntries).toBe(20);
+    });
+
+    it.each(["0", "-1", "1.5", "abc"])("refuses %s", (value) => {
+      expect(messageOf(() => loadConfig({ HISTORY_MAX_ENTRIES: value }))).toContain(
+        "HISTORY_MAX_ENTRIES: must be a positive integer",
+      );
+    });
+
+    it("is not available with azure-legacy", () => {
+      expect(
+        messageOf(() =>
+          loadConfig({
+            STORAGE_PROVIDER: "azure-legacy",
+            HISTORY_MAX_ENTRIES: "20",
+            LEGACY_SQL_CONNECTION_STRING: "Server=x",
+            LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+            LEGACY_RESULTS_STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true",
+          }),
+        ),
+      ).toContain("HISTORY_MAX_ENTRIES: not available with STORAGE_PROVIDER=azure-legacy");
     });
   });
 

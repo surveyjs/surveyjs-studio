@@ -49,7 +49,8 @@ the values passed by name (`-e NAME`). It waits up to 60 s for `/readyz`.
 - It cannot be combined with `CONFORMANCE_BASE_URL`, `CONFORMANCE_PROVIDER=sqlite` (the container cannot see the
   run's database file) or `CONFORMANCE_AUTH=oauth` (that run starts two servers).
 
-CI builds `surveyjs-studio-hosted:ci` and runs `test:conformance:azurite` and `test:conformance:postgres` on it. See
+CI builds `surveyjs-studio-hosted:ci` and runs `test:conformance:azurite`, `test:conformance:postgres` and
+`test:conformance:postgres:hosted` on it. See
 [Testing](../docs/testing.md#the-conformance-suite-on-the-production-image).
 
 ## Run against another server
@@ -78,6 +79,7 @@ in the porting guide) and the legacy fixtures. `node --import tsx scripts/confor
 | `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite`, `postgres` or `sandbox`; the reference server only |
 | `CONFORMANCE_FILE_STORE`     | `local` (default) or `s3`; the `sqlite` and `postgres` reference servers only                    |
 | `CONFORMANCE_AUTH`           | `default`, `password` or `oauth`; the reference server only                                      |
+| `CONFORMANCE_EDITION`        | `self-hosted` (default) or `hosted`; the `postgres` reference server only                        |
 | `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                           |
 | `CONFORMANCE_IMAGE`          | An image tag to run as the reference server (Linux only)                                         |
 
@@ -88,8 +90,9 @@ redirect to the identity provider, and completes it as a user of the legacy fixt
 
 - the dev provider's "Sign in as…" page (`/__dev/sign-in`, `IDENTITY_PROVIDER=dev`): it follows the
   link of the user;
-- the login form of the mock OIDC server (Azurite mode): it posts the user id as `username`, and the
-  mock (`docker/mock-oidc.json`) signs in that user with its email and name claims.
+- the login form of the mock OIDC server (Azurite mode and the hosted edition on PostgreSQL): it posts
+  the user id as `username`, and the mock (`docker/mock-oidc.json`) signs in that user with its email
+  and name claims (and `blocked` and `license_expires_at` where the fixtures have them).
 
 When `/auth/login` leads anywhere else, the tests that need a signed-in user are **skipped**, and the
 skip note names the redirect target. The tests that need no sign-in (`login`, the callback's `400`s,
@@ -138,6 +141,28 @@ pnpm demo:azurite:down          # stop and wipe the replica
 A missing `LEGACY_*` or `OIDC_*` variable stops the run with an error that names it. The replica keeps what
 the tests create, so the tests never assume the exact size of a scope they write to; `pnpm legacy:load`
 resets it.
+
+### The hosted edition on PostgreSQL
+
+`CONFORMANCE_EDITION=hosted` runs the `postgres` reference server as the new hosted server runs:
+`APP_EDITION=hosted`, `USER_DIRECTORY=local`, `AUTH_METHODS=surveyjs` (no dev sign-in) and
+`HISTORY_MAX_ENTRIES=20`, with `OPEN_SIGN_UP=on`, `LEGACY_KEY_REVOKE=true` (the database is the run's own)
+and an `ADMIN_EMAIL` that names the seed's instance admin (an admin exists, so it promotes nobody). It
+signs in through the mock OIDC server, of which only the `OIDC_*` settings are read from
+`docker/azurite.env`; the replica is not used. Its files go to a new bucket of the local S3 server
+(`CONFORMANCE_FILE_STORE=s3`), as the new hosted server keeps them in S3; the image could not read
+local files written on this machine. `pnpm seed` writes the fixture users as local accounts with
+their memberships and legacy access keys, and the mock signs each in with its fixture id as `sub`, the
+account id (ADR 0043). So the operations only the hosted edition routes, the legacy access keys and the
+erasure that deletes the account run here on PostgreSQL. Any other provider, local files, `CONFORMANCE_AUTH` or
+`CONFORMANCE_BASE_URL` with it stops the run with an error.
+
+```sh
+pnpm postgres:up                 # start the local PostgreSQL
+pnpm s3:up                       # start the local S3 server (RustFS)
+docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait mock-oidc
+pnpm test:conformance:postgres:hosted   # reads docker/postgres.env, docker/s3.env, docker/azurite.env and postgres-hosted.env
+```
 
 ## Run with password sign-in
 
@@ -193,8 +218,8 @@ for users the seed leaves out are skipped. The script runs a subset of 13 files.
 CSRF token, so the CSRF assertions run only when `sandbox` is false. Tests that check only CSRF,
 need a fixture the seed leaves out, or need server-only behaviour (rate limits, IP addresses, export
 formats, file types read from the bytes) skip themselves there with `ctx.skip`. Every variable that
-configures a server (`CONFORMANCE_BASE_URL`, `_IMAGE`, `_USER_DIRECTORY`, `_AUTH`, `_READ_ONLY`, `_FILE_STORE`)
-is refused.
+configures a server (`CONFORMANCE_BASE_URL`, `_IMAGE`, `_USER_DIRECTORY`, `_AUTH`, `_READ_ONLY`, `_FILE_STORE`,
+`_EDITION`) is refused.
 
 ```sh
 pnpm test:conformance:sandbox   # reads sandbox.env

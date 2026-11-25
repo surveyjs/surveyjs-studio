@@ -4,8 +4,11 @@ import sql from "mssql";
 import type { LegacyConfig } from "../config.js";
 import { LegacyStoreError } from "../providers/azure-legacy/errors.js";
 import { isLocalStorageString } from "./endpoint-guard.js";
+import { historyEntryFromBlob } from "../providers/azure-legacy/mapping.js";
 import {
   measureContainer,
+  HistoryFold,
+  type HistoryKept,
   type ContainerMeasurement,
   type SqlCounts,
   type StatsMeasurements,
@@ -151,20 +154,43 @@ async function measureTables(
   return measured;
 }
 
-async function measureContainers(target: Account): Promise<ContainerMeasurement[]> {
+const HISTORY_CONTAINER = "surveyjsonhistory";
+
+async function measureContainers(
+  target: Account,
+): Promise<{ containers: ContainerMeasurement[]; history: HistoryKept | null }> {
   const measured: ContainerMeasurement[] = [];
+  let history: HistoryKept | null = null;
   try {
     for await (const container of target.blobs.listContainers()) {
+      const isHistory = container.name === HISTORY_CONTAINER && target.name !== "results";
       const blobs: { name: string; bytes: number }[] = [];
-      for await (const blob of target.blobs.getContainerClient(container.name).listBlobsFlat()) {
-        blobs.push({ name: blob.name, bytes: blob.properties.contentLength ?? 0 });
+      const points = new HistoryFold();
+      for await (const blob of target.blobs
+        .getContainerClient(container.name)
+        .listBlobsFlat({ includeMetadata: isHistory })) {
+        const bytes = blob.properties.contentLength ?? 0;
+        blobs.push({ name: blob.name, bytes });
+        const slash = blob.name.indexOf("/");
+        if (isHistory && slash > 0) {
+          const surveyId = blob.name.slice(0, slash);
+          const entry = historyEntryFromBlob(
+            surveyId,
+            blob.name,
+            blob.metadata,
+            blob.properties.lastModified,
+          );
+          if (entry)
+            points.add({ surveyId: surveyId.toLowerCase(), at: entry.at, id: entry.id, bytes });
+        }
       }
       measured.push(measureContainer(target.name, container.name, blobs));
+      if (isHistory) history = points.result();
     }
   } catch (error) {
     throw new LegacyStoreError(`list blobs (${target.name})`, error);
   }
-  return measured;
+  return { containers: measured, history };
 }
 
 export async function measureLegacyStores(
@@ -177,11 +203,20 @@ export async function measureLegacyStores(
   progress("SQL: counted");
   const tables: TableMeasurement[] = [];
   const containers: ContainerMeasurement[] = [];
+  let historyKept: HistoryKept | null = null;
   for (const target of accounts) {
     tables.push(...(await measureTables(target, options, progress)));
     progress(`tables (${target.name}): done`);
-    containers.push(...(await measureContainers(target)));
+    const measured = await measureContainers(target);
+    containers.push(...measured.containers);
+    historyKept = measured.history ?? historyKept;
     progress(`containers (${target.name}): done`);
   }
-  return { sql: sqlCounts, tables, containers, resultBytesMeasured: options.resultBytes };
+  return {
+    sql: sqlCounts,
+    tables,
+    containers,
+    historyKept,
+    resultBytesMeasured: options.resultBytes,
+  };
 }

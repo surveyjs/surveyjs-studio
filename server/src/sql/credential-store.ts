@@ -1,6 +1,9 @@
+import { hashCredential } from "../credentials/format.js";
+import { sql, type Transaction } from "kysely";
 import { GUID } from "../domain/guid.js";
 import type { ApiTokenRecord, CredentialStore } from "../providers/types.js";
 import type { SqlDatabase } from "./database.js";
+import type { DatabaseSchema } from "./schema.js";
 import { isoOf } from "./values.js";
 
 /** A GUID as stored (lower-case); null for a value that is not a GUID, which no row can have. */
@@ -29,11 +32,21 @@ const recordOf = (row: TokenRow): ApiTokenRecord => ({
 });
 
 /**
- * The API tokens in the database's `api_tokens` table. The legacy access keys belong to the hosted
- * provider (hosted Step 8): here no user has one.
+ * The API tokens in the database's `api_tokens` table and the legacy access keys in
+ * `legacy_access_keys` (a user's key is their newest row; a replace names the key it replaces).
  */
 export function createSqlCredentialStore(database: SqlDatabase): CredentialStore {
   const { db } = database;
+
+  /**
+   * Serializes a revoke and a replace for one user. PostgreSQL runs transactions concurrently, so
+   * they take an advisory lock held to the end of the transaction; SQLite allows one writer at a
+   * time, so its write transactions already run one after the other and need no lock.
+   */
+  const lockUser = async (trx: Transaction<DatabaseSchema>, userId: string): Promise<void> => {
+    if (database.dialect === "postgres")
+      await sql`select pg_advisory_xact_lock(hashtext(${userId}))`.execute(trx);
+  };
 
   return {
     createApiToken: async (token, hash) => {
@@ -148,8 +161,85 @@ export function createSqlCredentialStore(database: SqlDatabase): CredentialStore
         .execute();
       return revoked.length;
     },
-    findLegacyKey: () => Promise.resolve(null),
-    legacyKeyOf: () => Promise.resolve(null),
-    revokeLegacyKey: () => Promise.resolve(false),
+    findLegacyKey: async (value) => {
+      const row = await db
+        .selectFrom("legacy_access_keys")
+        .select(["user_id", "revoked_at"])
+        .where("key_hash", "=", hashCredential(value, "legacy-key"))
+        .executeTakeFirst();
+      return row ? { userId: row.user_id, revoked: row.revoked_at !== null } : null;
+    },
+    legacyKeyOf: async (userId) => {
+      const id = key(userId);
+      if (id === null) return null;
+      const row = await db
+        .selectFrom("legacy_access_keys")
+        .selectAll()
+        .where("user_id", "=", id)
+        // An unrevoked row first, so a created_at tie never lists a revoked row as the key.
+        .orderBy(sql`revoked_at is null`, "desc")
+        .orderBy("created_at", "desc")
+        .orderBy("key_hash", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      return row ? { lastFour: row.last_four, revoked: row.revoked_at !== null } : null;
+    },
+    revokeLegacyKey: async (userId, at) => {
+      const id = key(userId);
+      if (id === null) return false;
+      return db.transaction().execute(async (trx) => {
+        await lockUser(trx, id);
+        // Every unrevoked row, so a replace that committed first leaves no working key behind.
+        await trx
+          .updateTable("legacy_access_keys")
+          .set({ revoked_at: isoOf(at) })
+          .where("user_id", "=", id)
+          .where("revoked_at", "is", null)
+          .execute();
+        // True when the user has a key at all, an already revoked one too.
+        const any = await trx
+          .selectFrom("legacy_access_keys")
+          .select("key_hash")
+          .where("user_id", "=", id)
+          .limit(1)
+          .executeTakeFirst();
+        return any !== undefined;
+      });
+    },
+    replaceLegacyKey: async (userId, expectedHash, hash, lastFour, at) => {
+      const id = key(userId);
+      if (id === null) return false;
+      return db.transaction().execute(async (trx) => {
+        await lockUser(trx, id);
+        // The update is the guard: the key that signed the request must still be unrevoked.
+        const revoked = await trx
+          .updateTable("legacy_access_keys")
+          .set({ revoked_at: isoOf(at) })
+          .where("key_hash", "=", expectedHash)
+          .where("user_id", "=", id)
+          .where("revoked_at", "is", null)
+          .returning("key_hash")
+          .executeTakeFirst();
+        if (!revoked) return false;
+        // The user's other unrevoked rows go too: the new key is the only one left working.
+        await trx
+          .updateTable("legacy_access_keys")
+          .set({ revoked_at: isoOf(at) })
+          .where("user_id", "=", id)
+          .where("revoked_at", "is", null)
+          .execute();
+        await trx
+          .insertInto("legacy_access_keys")
+          .values({
+            key_hash: hash,
+            user_id: id,
+            last_four: lastFour,
+            created_at: isoOf(at),
+            revoked_at: null,
+          })
+          .execute();
+        return true;
+      });
+    },
   };
 }

@@ -1,8 +1,7 @@
 # Data model (SQL providers)
 
-Status: self-hosted track Step 3 (2026-10-29). The tables of [Built](#built) exist; the tables of
-[Planned](#planned) are the model the later steps build, and each step may refine its own tables in the same PR
-that adds their migration.
+Status: self-hosted track Step 3 (2026-10-29), with the hosted-only tables of hosted Step 8 (2026-11-25). Every table
+below exists; a step that changes a table adds a migration and updates this page in the same PR.
 
 This is the logical schema of the SQL providers: SQLite and PostgreSQL, one implementation with two dialects
 ([ADR 0023](../adr/0023-sqlite-driver-node-sqlite.md), [ADR 0024](../adr/0024-kysely-and-plain-sql-migrations.md)).
@@ -82,6 +81,11 @@ One row per saved definition. Deleted with the survey (`on delete cascade`).
 | `snapshot`  | JSON       | The definition saved         |
 
 Index `survey_history_order` (`survey_id`, `at` desc, `id` desc) serves `listHistory` paging.
+
+With `HISTORY_MAX_ENTRIES=N` (unset by default: no limit), every write that adds an entry deletes, in the same
+transaction, the survey's entries beyond the newest N, in the `listHistory` order (`at` descending, then `id`
+descending). A save that fails on a version conflict prunes nothing, and nothing prunes in the background
+([ADR 0036](../adr/0036-history-snapshots-above-a-size-limit.md)).
 
 ### `survey_responses` (0002)
 
@@ -253,25 +257,35 @@ an unknown extension, and for HTML and script); an editor file of no survey keep
 name, so a second seed replaces them), with their bytes in the byte store, when `FILES_PATH` or `FILE_STORE` is set;
 otherwise it skips them and says so.
 
-## Planned
+### Hosted-only tables (0011)
 
-Each table names the step that builds it and the provider interface it serves. "SH" is the self-hosted plan,
-"HM" the hosted-migration plan.
+Migration `0011-hosted-archives-and-keys` adds three tables for the hosted edition. They exist in every database (one
+migration history) and stay empty and unused in the self-hosted image. None has a foreign key to `users`, as
+`api_tokens.creator_id`: users are external to the tables, and the archives outlive their surveys.
 
-### Survey events (HM Step 8)
+#### `legacy_access_keys`
 
-**`survey_events`**: `id` (GUID, primary key), `survey_id` (GUID, no foreign key: the log outlives the survey), `type`,
-`user_id` (null), `at`, `details` (JSON). Shaped as a general audit table; the hosted migration fills it from the legacy
-event log, and the audit log can use it later.
+The keys of the old API, hashed ([ADR 0037](../adr/0037-access-keys-and-api-tokens.md)): `key_hash` (primary key: the
+SHA-256 of the lower-cased value), `user_id` (GUID), `last_four` (the last four characters, so the API tokens page can
+tell keys apart), `created_at`, `revoked_at` (null). Index `legacy_access_keys_user` (`user_id`, `created_at`). A
+user's key is their newest row by (`created_at` desc, `key_hash` desc). Revoking a key revokes every unrevoked row of
+the user, and a revoked row stays, so a presented value answers as revoked, not unknown. A replace (`POST
+/me/credential` with a legacy key) revokes the key and adds a row with a new 32-digit hexadecimal key. On PostgreSQL
+the writes take a per-user advisory lock. The hosted migration fills the table; `pnpm seed` fills it with the
+fixtures' keys (demo data).
 
-### Hosted-only tables (HM Step 8)
+#### `survey_events`
 
-Empty and unused in the self-hosted image.
+`id` (primary key), `survey_id` (GUID, no foreign key: the log outlives the survey), `type`, `at`, `payload` (JSON,
+null). Index `survey_events_survey` (`survey_id`, `at`). Shaped as a general audit table; the hosted migration fills it
+from the legacy event log. Studio does not read it.
 
-| Table                | Columns                                                        | Purpose                                                                  |
-| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `legacy_access_keys` | `key_hash` (primary key), `user_id`, `revoked` (boolean)       | The `accessKey` API of the compatibility layer                           |
-| `deleted_responses`  | `survey_id`, `id`, `submitted_at`, `data` (JSON), `deleted_at` | The legacy `postdelete{postId}` copies, purged 30 days after the cutover |
+#### `deleted_responses`
+
+The copies the old service kept when a response was deleted: `survey_id`, `response_id`, `deleted_at`, `response`
+(JSON); primary key (`survey_id`, `response_id`); index `deleted_responses_deleted_at` (`deleted_at`). The hosted
+migration fills it and Studio does not read it. `pnpm purge:deleted-responses --before <date>` deletes the rows before
+a date (a dry run unless `--apply`; [Operations](../operations.md#purging-the-deleted-response-copies)).
 
 ## Mapping to the provider interfaces
 
@@ -284,7 +298,7 @@ Empty and unused in the self-hosted image.
 | `FileStore`                                 | `files`, `legacy_files` and the byte store               | Built           |
 | `UserDirectory`, `LocalAccountStore`        | `users`, `password_links`, `user_identities`             | Built (`local`) |
 | `InvitationStore`                           | `project_invitations`                                    | Built (`local`) |
-| `CredentialStore`                           | `api_tokens` (legacy access keys: hosted provider only)  | Built           |
+| `CredentialStore`                           | `api_tokens`, `legacy_access_keys`                       | Built           |
 
 With `USER_DIRECTORY=memory` (the default for `sqlite` and `postgres`) the SQL providers keep the **users** in memory
 (the memory provider's, seeded by `MEMORY_SEED`). The server says so at start-up and refuses `NODE_ENV=production`

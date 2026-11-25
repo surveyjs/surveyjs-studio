@@ -1,4 +1,5 @@
 import type { ByteStore } from "../bytes/types.js";
+import { hashCredential, lastFour } from "../credentials/format.js";
 import { legacyFileRecord } from "../domain/legacy-file.js";
 import type { LayoutKind } from "../domain/types.js";
 import type { MemorySeed } from "../providers/memory.js";
@@ -18,9 +19,9 @@ export interface SeedReport {
 
 /**
  * Loads the shared seed into the SQL stores (surveys with their definitions, themes, history,
- * responses, markers and layouts; projects with their members), in one transaction. A seed
- * survey or project that exists is replaced with what belongs to it; every other row stays, so
- * running it again resets the seed data and keeps what people made.
+ * responses, markers and layouts; projects with their members; the users' legacy access keys), in
+ * one transaction. A seed survey or project that exists is replaced with what belongs to it; every
+ * other row stays, so running it again resets the seed data and keeps what people made.
  *
  * With `bytes` (the file store) the seed's legacy files are loaded too: each is a `files` row of
  * `legacyFileRecord` (the all-zero survey) named in `legacy_files`, its bytes written before the
@@ -72,6 +73,27 @@ export async function seedSqlStores(
           session_epoch: 0,
           created_at: SEEDED_AT,
           last_sign_in_at: null,
+        })
+        .execute();
+    }
+    // The seed users' legacy access keys (hash and last four only), revoked where the seed says so.
+    // A seed user's earlier keys, and a row with the same key, are replaced.
+    const revokedKeys = new Set((seed.revokedLegacyKeys ?? []).map((id) => id.toLowerCase()));
+    for (const [userId, value] of Object.entries(seed.legacyAccessKeys ?? {})) {
+      const id = userId.toLowerCase();
+      const hash = hashCredential(value, "legacy-key");
+      await trx
+        .deleteFrom("legacy_access_keys")
+        .where((eb) => eb.or([eb("user_id", "=", id), eb("key_hash", "=", hash)]))
+        .execute();
+      await trx
+        .insertInto("legacy_access_keys")
+        .values({
+          key_hash: hash,
+          user_id: id,
+          last_four: lastFour(value.toLowerCase()),
+          created_at: SEEDED_AT,
+          revoked_at: revokedKeys.has(id) ? SEEDED_AT : null,
         })
         .execute();
     }

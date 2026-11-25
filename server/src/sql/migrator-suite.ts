@@ -122,7 +122,9 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       expect(await tablesOf(database)).toEqual([
         "api_tokens",
         "completion_markers",
+        "deleted_responses",
         "files",
+        "legacy_access_keys",
         "legacy_files",
         "password_links",
         "private_questions",
@@ -130,6 +132,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "project_members",
         "projects",
         "saved_views",
+        "survey_events",
         "survey_history",
         "survey_layouts",
         "survey_responses",
@@ -184,6 +187,33 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
       expect(rows[0]!.email).toBe("old@example.com");
       expect(Number(rows[0]!.site_blocked)).toBe(0);
       expect(rows[0]!.licence_expires_at).toBeNull();
+    });
+
+    it("adds the archive and legacy key tables and keeps the accounts (0011)", async () => {
+      const { database } = await fresh();
+      const { db } = database;
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 11),
+      );
+      const userId = "11111111-0000-4000-8000-a00000000001";
+      await sql`insert into users (id, email, display_name, instance_role, status,
+          must_change_password, session_epoch, created_at)
+        values (${userId}, 'old@example.com', 'Old', 'user', 'active', false, 0,
+          '2026-09-01T10:00:00.000Z')`.execute(db);
+      const applied = await migrate(database, shipped);
+      expect(applied.applied.map((m) => m.version)).toEqual(
+        shipped.filter((m) => m.version >= 11).map((m) => m.version),
+      );
+      const { rows } = await sql<{ email: string }>`select email from users`.execute(db);
+      expect(rows).toEqual([{ email: "old@example.com" }]);
+      await sql`insert into legacy_access_keys (key_hash, user_id, last_four, created_at)
+        values ('h', ${userId}, 'abcd', '2026-11-01T10:00:00.000Z')`.execute(db);
+      const keys = await sql<{
+        revoked_at: unknown;
+      }>`select revoked_at from legacy_access_keys`.execute(db);
+      expect(keys.rows[0]!.revoked_at).toBeNull();
     });
 
     it("keeps the files and their legacy names when files gains an owner (0009)", async () => {

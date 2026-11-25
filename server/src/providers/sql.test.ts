@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { openDatabase } from "../sql/database.js";
-import { DatabaseTooNewError, migrationStatus } from "../sql/migrator.js";
+import { DatabaseTooNewError, loadMigrations, migrationStatus } from "../sql/migrator.js";
 import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js";
 import { OWNER_ID, surveyFeedback } from "./suite/expected.js";
 import { createProviders } from "./index.js";
@@ -104,7 +104,9 @@ describe("createProviders with STORAGE_PROVIDER=sqlite", () => {
     const error = await createProviders(config).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PendingMigrationsError);
     expect((error as Error).message).toBe(
-      "READ_ONLY=true, but the database lacks migrations 0001-surveys, 0002-results-views-projects, 0003-files, 0004-local-accounts, 0005-identities-and-invitations, 0006-api-tokens, 0007-partial-responses, 0008-legacy-files, 0009-bridge-access-key, 0010-hosted-sign-in: run pnpm db:migrate (or start once without READ_ONLY) first.",
+      `READ_ONLY=true, but the database lacks migrations ${loadMigrations("sqlite")
+        .map((m) => `${String(m.version).padStart(4, "0")}-${m.name}`)
+        .join(", ")}: run pnpm db:migrate (or start once without READ_ONLY) first.`,
     );
     const database = openDatabase({ dialect: "sqlite", path });
     expect((await migrationStatus(database)).applied).toEqual([]);

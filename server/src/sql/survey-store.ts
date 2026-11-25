@@ -174,8 +174,12 @@ export async function deleteSurveyRows(
 }
 
 /** The survey store on SQLite or PostgreSQL (docs/architecture/data-model.md). */
-export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
+export function createSqlSurveyStore(
+  database: SqlDatabase,
+  options: { readonly historyMaxEntries?: number | null } = {},
+): SurveyStore {
   const { db } = database;
+  const historyMaxEntries = options.historyMaxEntries ?? null;
 
   const selectRecords = () => db.selectFrom("surveys").select(RECORD_COLUMNS);
 
@@ -342,6 +346,24 @@ export function createSqlSurveyStore(database: SqlDatabase): SurveyStore {
             snapshot: jsonText(database.dialect, definition),
           })
           .execute();
+        if (historyMaxEntries !== null) {
+          // The survey's entries beyond the newest N, in the order listHistory uses.
+          await trx
+            .deleteFrom("survey_history")
+            .where("survey_id", "=", survey)
+            .where(
+              "id",
+              "not in",
+              trx
+                .selectFrom("survey_history")
+                .select("id")
+                .where("survey_id", "=", survey)
+                .orderBy("at", "desc")
+                .orderBy("id", "desc")
+                .limit(historyMaxEntries),
+            )
+            .execute();
+        }
       }),
     saveTheme: (id, theme, { ifVersion, savedAt }) =>
       writeDocument(id, "theme", theme, { ifVersion, savedAt }),

@@ -42,7 +42,7 @@ and add each one to this index.
 | [0033](0033-hosted-target-stores.md)                       | Hosted target stores                                                            | Accepted           |
 | [0034](0034-legacy-api-scope.md)                           | The scope of the legacy API compatibility layer                                 | Superseded by 0035 |
 | [0035](0035-legacy-api-bridge.md)                          | A compatibility bridge in front of Studio's public API                          | Accepted           |
-| [0036](0036-history-snapshots-above-a-size-limit.md)       | History snapshots above a size limit go to the byte store                       | Accepted           |
+| [0036](0036-history-snapshots-above-a-size-limit.md)       | History snapshots (replaced 2026-11-25: at most 20 entries per survey)          | Accepted           |
 | [0037](0037-access-keys-and-api-tokens.md)                 | Access keys and API tokens                                                      | Accepted           |
 | [0038](0038-partial-responses.md)                          | Partial responses                                                               | Accepted           |
 | [0039](0039-bridge-public-actions.md)                      | The bridge's public actions and what Studio's public API adds for them          | Accepted           |

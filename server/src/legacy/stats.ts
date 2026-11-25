@@ -44,10 +44,63 @@ export interface ContainerMeasurement {
   readonly blobsPerFolder: readonly number[];
 }
 
+export const HISTORY_KEPT = 20;
+
+export interface HistoryBlob {
+  readonly surveyId: string;
+  readonly at: string;
+  readonly id: string;
+  readonly bytes: number;
+}
+
+export interface HistoryKept {
+  readonly entries: number;
+  readonly bytes: number;
+}
+
+const newer = (a: HistoryBlob, b: HistoryBlob) =>
+  a.at !== b.at ? (a.at > b.at ? -1 : 1) : a.id === b.id ? 0 : a.id > b.id ? -1 : 1;
+
+/** Folds history blobs one at a time, keeping at most `kept` per survey. */
+export class HistoryFold {
+  private readonly newest = new Map<string, HistoryBlob[]>();
+  constructor(private readonly kept: number = HISTORY_KEPT) {}
+
+  add(blob: HistoryBlob): void {
+    const list = this.newest.get(blob.surveyId) ?? [];
+    list.push(blob);
+    list.sort(newer);
+    if (list.length > this.kept) list.length = this.kept;
+    this.newest.set(blob.surveyId, list);
+  }
+
+  result(): HistoryKept {
+    let entries = 0;
+    let bytes = 0;
+    for (const list of this.newest.values()) {
+      entries += list.length;
+      for (const blob of list) bytes += blob.bytes;
+    }
+    return { entries, bytes };
+  }
+}
+
+/** Per survey, the `kept` newest by (at desc, id desc); keeps at most `kept` per survey while folding. */
+export function newestHistory(
+  blobs: Iterable<HistoryBlob>,
+  kept: number = HISTORY_KEPT,
+): HistoryKept {
+  const fold = new HistoryFold(kept);
+  for (const blob of blobs) fold.add(blob);
+  return fold.result();
+}
+
 export interface StatsMeasurements {
   readonly sql: SqlCounts;
   readonly tables: readonly TableMeasurement[];
   readonly containers: readonly ContainerMeasurement[];
+  /** The newest HISTORY_KEPT entries of each survey; null without a history container. */
+  readonly historyKept: HistoryKept | null;
   readonly resultBytesMeasured: boolean;
 }
 
@@ -135,6 +188,7 @@ export interface StatsSummary {
   readonly sql: SqlCounts & { readonly personalSurveys: number };
   readonly tables: Readonly<Record<TableKind, TableGroupSummary>>;
   readonly containers: readonly ContainerSummary[];
+  readonly historyKept: HistoryKept | null;
   readonly resultBytesMeasured: boolean;
 }
 
@@ -177,6 +231,7 @@ export function summariseStats(measurements: StatsMeasurements): StatsSummary {
       rootBlobs: c.rootBlobs,
       blobsPerFolder: distribution(c.blobsPerFolder),
     })),
+    historyKept: measurements.historyKept,
     resultBytesMeasured: measurements.resultBytesMeasured,
   };
 }
@@ -249,6 +304,11 @@ export function formatStats(summary: StatsSummary): string {
     "",
     "Blob containers",
     ...containerLines,
+    ...(summary.historyKept
+      ? [
+          `History, newest ${HISTORY_KEPT} per survey: ${summary.historyKept.entries} entries, ${summary.historyKept.bytes} bytes`,
+        ]
+      : []),
     "",
     "File shares (surveyfiles, files, tempfiles): not read; take their used capacity from the " +
       "Azure portal (storage account › File shares).",

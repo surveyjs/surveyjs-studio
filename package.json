@@ -24,6 +24,7 @@
     "test:conformance:azurite": "pnpm --filter @surveyjs-studio/conformance-tests test:azurite",
     "test:conformance:sqlite": "pnpm --filter @surveyjs-studio/conformance-tests test:sqlite",
     "test:conformance:postgres": "pnpm --filter @surveyjs-studio/conformance-tests test:postgres",
+    "test:conformance:postgres:hosted": "pnpm --filter @surveyjs-studio/conformance-tests test:postgres:hosted",
     "test:conformance:s3": "pnpm --filter @surveyjs-studio/conformance-tests test:s3",
     "test:conformance:password": "pnpm --filter @surveyjs-studio/conformance-tests test:password",
     "test:conformance:oauth": "pnpm --filter @surveyjs-studio/conformance-tests test:oauth",
@@ -65,6 +66,7 @@
     "smoke:legacy": "node --import tsx server/src/cli/smoke-legacy.ts --",
     "account:reconcile": "node --import tsx server/src/cli/account-reconcile.ts --",
     "account:make-admin": "node --import tsx server/src/cli/account-make-admin.ts --",
+    "purge:deleted-responses": "node --import tsx server/src/cli/purge-deleted-responses.ts --",
     "db:migrate": "node --import tsx server/src/cli/db.ts migrate --",
     "db:status": "node --import tsx server/src/cli/db.ts status --",
     "seed": "node --import tsx server/src/cli/db.ts seed --",
@@ -88,6 +90,8 @@
     "image:build": "docker build -t surveyjs-studio-hosted:local .",
     "image:build:self-hosted": "docker build --target self-hosted -t surveyjs-studio:self-hosted .",
     "image:prod-data": "node --import tsx scripts/image-prod-data/cli.ts --",
+    "scale:generate": "node --import tsx scripts/scale/generate.ts --",
+    "scale:check": "node --import tsx scripts/scale/check.ts --",
     "scan:secrets": "node --import tsx scripts/secrets-scan/cli.ts --",
     "image:checks": "node --import tsx scripts/image-checks/cli.ts --",
     "release:tags": "node --import tsx scripts/release-tags/cli.ts --",
@@ -96,7 +100,9 @@
     "sandbox:seed": "node --import tsx scripts/sandbox-seed/cli.ts",
     "prod-like:up": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --build --wait && pnpm legacy:load",
     "prod-like:up:e2e": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml -f docker/compose.prod-like.e2e.yaml up -d --build --wait && pnpm legacy:load",
-    "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v"
+    "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v",
+    "prod-like-sql:up": "docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml up -d --build --wait",
+    "prod-like-sql:down": "docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml down -v"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

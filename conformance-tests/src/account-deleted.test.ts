@@ -6,12 +6,14 @@
  * Adam Admin is added to Erin's project, is promoted when she is erased, and receives the project's
  * surveys when he deletes it at the end; he then deletes them. Erin's API tokens are revoked by the
  * erasure (or by her session at the end, when it never happened). In the hosted edition she also
- * uploads an editor file of no survey (`uploadLegacyFile`), which goes with her account. The refusal
- * cases name fresh random ids, so a refusal that wrongly succeeded would erase nobody.
+ * uploads an editor file of no survey (`uploadLegacyFile`), which goes with her account. The hosted
+ * edition with local accounts (`CONFORMANCE_EDITION=hosted`) deletes her account as well (ADR 0043
+ * point 2): her session ends, and she signs in again to a new, empty account (OPEN_SIGN_UP=on). The
+ * refusal cases name fresh random ids, so a refusal that wrongly succeeded would erase nobody.
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, inject, it, onTestFinished } from "vitest";
-import { as, call, cleanUp, codeOf, hosted, upload } from "./harness.js";
+import { as, call, cleanUp, codeOf, hosted, sessionHeaders, signedIn, upload } from "./harness.js";
 import { REFERENCE_SETTINGS } from "./reference-settings.js";
 import { fixtureUsers } from "./sign-in.js";
 import { randomWebhookKey, signWebhook, webhookKey } from "./webhook.js";
@@ -20,6 +22,8 @@ const { admin, erasable } = fixtureUsers;
 /** The reference setting `LIMIT_MAX_LEGACY_FILES_PER_USER`. */
 const LEGACY_FILE_LIMIT = Number(REFERENCE_SETTINGS.LIMIT_MAX_LEGACY_FILES_PER_USER);
 const secret = inject("webhookSecret");
+/** The erasure deletes the account itself, not only its data (ADR 0043 point 2). */
+const deletesAccount = hosted && inject("localAccounts");
 const PATH = "/webhooks/account-deleted";
 const MERGE_PATCH = "application/merge-patch+json";
 
@@ -131,7 +135,8 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
   });
 
   it("erases the account's data, passes its project on, and a repeat is harmless", async (ctx) => {
-    const erin = await as(ctx, erasable);
+    // Her session, and after an erasure that deletes her account, her new account's session.
+    let erin = await as(ctx, erasable);
     const adam = await as(ctx, admin);
 
     // Erin's data: two personal surveys (one archived), a project shared with Adam and one alone.
@@ -198,7 +203,8 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
           path: `/api-tokens/${token.id}`,
           headers: erin,
         });
-        expect([204, 404]).toContain(revoked.status);
+        // 401 when the erasure deleted her account and the repeat below her new one.
+        expect(deletesAccount ? [204, 401, 404] : [204, 404]).toContain(revoked.status);
       });
       expect((await call("GET", "/surveys", { headers: bearer(value) })).status).toBe(200);
       tokens.push(value);
@@ -237,6 +243,16 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     const headers = signWebhook(webhookKey(secret!), deletedEvent);
     const erased = await deliver(deletedEvent, headers);
     expect(erased.status).toBe(204);
+
+    if (deletesAccount) {
+      // Her account went with its data: the session ends, and she signs in to a new account.
+      const ended = await getSurvey(erin, s1.id);
+      expect(ended.status).toBe(401);
+      expect(await codeOf(ended)).toBe("unauthenticated");
+      const again = await signedIn(ctx, erasable.id);
+      expect(again.callback.status).toBe(302);
+      erin = sessionHeaders(again);
+    }
 
     // Erin's view: nothing left.
     for (const id of [s1.id, s2.id, aloneSurvey.id]) {
@@ -282,8 +298,10 @@ describe.skipIf(secret === null)("receiveAccountDeleted", () => {
     expect(members).toEqual([expect.objectContaining({ userId: admin.id, role: "admin" })]);
     expect((await getSurvey(adam, sharedSurveyId)).status).toBe(200);
 
-    // The same signed message again (a retry): nothing left to erase.
+    // The same signed message again (a retry): nothing left to erase (with `deletesAccount`, it
+    // deletes her new, empty account, which has the same surveyjs.io id).
     expect((await deliver(deletedEvent, headers)).status).toBe(204);
     if (againName !== null) expect((await legacyFile(againName)).status).toBe(404);
+    if (deletesAccount) expect((await getSurvey(erin, s1.id)).status).toBe(401);
   });
 });

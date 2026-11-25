@@ -411,8 +411,28 @@ describe("replaceCurrentCredential", () => {
     });
   });
 
-  it("answers 409 to a legacy key, which keeps working", async () => {
+  it("replaces a legacy key with a new 32-digit key; the old one then signs in nowhere", async () => {
     const { send } = await start();
+    const res = await send("POST", "/me/credential", bearer(ANN_KEY));
+    expect(res.statusCode).toBe(200);
+    const next = res.json<{ value: string }>().value;
+    expect(next).toMatch(/^[0-9a-f]{32}$/);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect((await send("GET", "/surveys", bearer(ANN_KEY))).statusCode).toBe(401);
+    expect((await send("GET", "/surveys", bearer(next))).statusCode).toBe(200);
+    // The old key cannot replace again.
+    expect((await send("POST", "/me/credential", bearer(ANN_KEY))).statusCode).toBe(401);
+  });
+
+  it("answers 409 to a legacy key where the store cannot replace it, and the key keeps working", async () => {
+    const wrap = (providers: ProviderSet): ProviderSet => {
+      const credentials: CredentialStore = {
+        ...providers.credentials,
+        replaceLegacyKey: undefined,
+      };
+      return { ...providers, credentials };
+    };
+    const { send } = await start({ wrap });
     const res = await send("POST", "/me/credential", bearer(ANN_KEY));
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: "legacy-key-replace-unavailable" });

@@ -280,6 +280,54 @@ jobs:
         if: always()
         run: pnpm prod-like:down
 
+  # The new hosted server's profile (docker/prod-like.sql.env, NODE_ENV=production): the image on
+  # PostgreSQL with files in S3, and the mock OIDC server. The start-up checks (the storage and the
+  # file store are reached, the settings fit the edition) run here as they do on the server; file
+  # behaviour on S3 is proven by the conformance suites.
+  prod-like-sql:
+    name: Prod-like (the new server's settings on PostgreSQL and S3)
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PROD_LIKE_IMAGE: surveyjs-studio-hosted:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/load-image
+
+      - name: Start the image with docker/prod-like.sql.env as it is
+        run: docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml up -d --wait --no-build
+
+      - name: Check that it started with the new server's settings
+        run: |
+          line="$(docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml logs --no-log-prefix app | grep '"msg":"starting"' | tail -n 1)"
+          echo "$line"
+          for want in '"edition":"hosted"' '"storageProvider":"postgres"' '"fileStore":"s3"'             '"historyMaxEntries":20' '"userDirectory":"local"' '"accountNotices":"sign-in-licence"'             '"readOnly":false' '"nodeEnv":"production"'; do
+            [[ "$line" == *"$want"* ]] || { echo "::error::the starting line lacks $want"; exit 1; }
+          done
+
+      - name: Check that it is ready and answers from PostgreSQL
+        run: |
+          curl -fsS http://localhost:8081/readyz
+          curl -fsS http://localhost:8081/api/v1/config | tee config.json
+          grep -q '"edition":"hosted"' config.json
+          # An unknown survey: a query reached PostgreSQL and found nothing.
+          status="$(curl -sS -o problem.json -w '%{http_code}' http://localhost:8081/api/v1/public/surveys/00000000-0000-4000-8000-000000000001/definition)"
+          cat problem.json; echo
+          [ "$status" = 404 ] || { echo "::error::expected 404, got $status"; exit 1; }
+          grep -q '"status":404' problem.json
+
+      - name: Save the stack's log
+        if: failure()
+        run: docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml logs
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml down -v
+
   postgres:
     name: PostgreSQL and S3 suites
     needs: image
@@ -297,6 +345,10 @@ jobs:
       - name: Start PostgreSQL
         run: pnpm postgres:up
 
+      # The hosted edition's conformance run signs in through it (only its OIDC_* settings are used).
+      - name: Start the mock OIDC server (mock-oauth2-server)
+        run: docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait mock-oidc
+
       - name: Provider and migrator suites (PostgreSQL)
         run: pnpm test:providers:postgres
 
@@ -312,6 +364,11 @@ jobs:
 
       - name: Conformance tests (PostgreSQL, on the image)
         run: pnpm test:conformance:postgres
+        env:
+          CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
+
+      - name: Conformance tests (the hosted edition on PostgreSQL, on the image)
+        run: pnpm test:conformance:postgres:hosted
         env:
           CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
 
@@ -334,6 +391,11 @@ jobs:
       - name: Stop PostgreSQL
         if: always()
         run: pnpm postgres:down
+
+      # The only service of compose.azurite.yaml this job started.
+      - name: Stop the mock OIDC server
+        if: always()
+        run: pnpm demo:azurite:down
 
       - name: Stop the local S3 server
         if: always()
@@ -522,6 +584,7 @@ jobs:
         image,
         azurite,
         prod-like,
+        prod-like-sql,
         postgres,
         e2e-image,
         e2e-modes,

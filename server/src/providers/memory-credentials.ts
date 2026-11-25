@@ -12,13 +12,12 @@ interface StoredToken {
 interface StoredLegacyKey {
   readonly hash: string;
   readonly lastFour: string;
-  /** The hash of the key that was revoked: a different key for the same user is not revoked. */
-  revokedHash: string | null;
+  revoked: boolean;
 }
 
 export interface MemoryCredentials {
   readonly store: CredentialStore;
-  /** Test and seed hook: gives the user this legacy key (replacing any earlier one). */
+  /** Test and seed hook: gives the user this legacy key as a new unrevoked row (earlier keys keep working, as in the SQL seed). */
   seedLegacyKey(userId: string, key: string): void;
 }
 
@@ -31,18 +30,22 @@ export function createMemoryCredentials(
   revokedUsers: readonly string[] = [],
 ): MemoryCredentials {
   const tokens: StoredToken[] = [];
-  const keys = new Map<string, StoredLegacyKey>();
+  /** Per user, oldest first: the last is the user's key; a replaced key stays, revoked. */
+  const keys = new Map<string, StoredLegacyKey[]>();
   const seedLegacyKey = (userId: string, key: string): void => {
-    keys.set(lower(userId), {
+    const rows = keys.get(lower(userId)) ?? [];
+    rows.push({
       hash: hashCredential(key, "legacy-key"),
       lastFour: lastFourOf(key.toLowerCase()),
-      revokedHash: null,
+      revoked: false,
     });
+    keys.set(lower(userId), rows);
   };
+  const newest = (userId: string): StoredLegacyKey | undefined => keys.get(lower(userId))?.at(-1);
   for (const [userId, key] of Object.entries(seedKeys)) seedLegacyKey(userId, key);
   for (const userId of revokedUsers) {
-    const key = keys.get(lower(userId));
-    if (key) key.revokedHash = key.hash;
+    const key = newest(userId);
+    if (key) key.revoked = true;
   }
 
   const byId = (id: string) => tokens.find((t) => t.record.id === lower(id));
@@ -126,22 +129,29 @@ export function createMemoryCredentials(
       Promise.resolve(revokeAll((r) => r.projectId === lower(projectId), at)),
     findLegacyKey: (value) => {
       const hash = hashCredential(value, "legacy-key");
-      for (const [userId, key] of keys) {
-        if (key.hash === hash)
-          return Promise.resolve({ userId, revoked: key.revokedHash === hash });
+      for (const [userId, rows] of keys) {
+        const row = rows.find((r) => r.hash === hash);
+        if (row) return Promise.resolve({ userId, revoked: row.revoked });
       }
       return Promise.resolve(null);
     },
     legacyKeyOf: (userId) => {
-      const key = keys.get(lower(userId));
-      return Promise.resolve(
-        key ? { lastFour: key.lastFour, revoked: key.revokedHash === key.hash } : null,
-      );
+      const key = newest(userId);
+      return Promise.resolve(key ? { lastFour: key.lastFour, revoked: key.revoked } : null);
     },
     revokeLegacyKey: (userId) => {
-      const key = keys.get(lower(userId));
-      if (!key) return Promise.resolve(false);
-      key.revokedHash = key.hash;
+      const rows = keys.get(lower(userId));
+      if (!rows?.length) return Promise.resolve(false);
+      for (const row of rows) row.revoked = true;
+      return Promise.resolve(true);
+    },
+    replaceLegacyKey: (userId, expectedHash, hash, lastFour) => {
+      const rows = keys.get(lower(userId));
+      const key = rows?.find((r) => r.hash === expectedHash);
+      if (!rows || !key || key.revoked) return Promise.resolve(false);
+      // Every other unrevoked row of the user goes too: the new key is the only one working.
+      for (const row of rows) row.revoked = true;
+      rows.push({ hash, lastFour, revoked: false });
       return Promise.resolve(true);
     },
   };

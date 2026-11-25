@@ -64,23 +64,24 @@ The image sets everything else: SQLite on `/data`, local files, password sign-in
 port 8080 and a session secret it creates once in `/data/session-secret`. Every variable, with its default, is in
 [Development › Environment variables](development.md#environment-variables-server).
 
-| Variable                           | What it does                                                                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `PUBLIC_BASE_URL`                  | The address people open, e.g. `https://surveys.example.com` (no path). Default `http://localhost:8080` |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD`    | The first administrator, created once while there is none ([Quick start](#quick-start))                |
-| `BRAND_NAME`, `BRAND_LOGO_URL`     | Your instance's name and logo (an https URL, or a path your proxy serves)                              |
-| `BRAND_ACCENT_COLOR`               | `#rgb` or `#rrggbb`                                                                                    |
-| `TERMS_URL`, `PRIVACY_URL`         | The Terms and Privacy links in the footer                                                              |
-| `BRANDING`                         | `on` (default) or `off`; `off` hides "Powered by SurveyJS" and needs your own licence key              |
-| `SURVEYJS_LICENSE_KEY`             | Your own SurveyJS licence key; without it the app uses the image's key (shown with the branding)       |
-| `TRUST_PROXY`                      | The address of your reverse proxy, as the container sees it ([below](#behind-a-reverse-proxy))         |
-| `STORAGE_PROVIDER`, `DATABASE_URL` | `postgres` and a `postgres://` URL to use PostgreSQL ([below](#postgresql))                            |
-| `FILE_STORE`, `S3_*`               | `s3` and the bucket's settings to keep uploaded files in S3 ([below](#s3))                             |
-| `LIMIT_MAX_FILE_BYTES`             | The largest file a respondent can upload; default 10 MB                                                |
-| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` | The total size of the images and files of one survey's editor uploads; default 50 MB                   |
-| `LIMIT_MAX_RESPONSE_BYTES`         | The largest response; default 1 MB                                                                     |
-| `LIMIT_MAX_DOCUMENT_BYTES`         | The largest survey definition or theme; default 30 MB                                                  |
-| `METRICS_PORT`                     | Serves Prometheus metrics on this port, `GET /metrics` only ([below](#metrics)); unset: none           |
+| Variable                           | What it does                                                                                                                                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                  | The address people open, e.g. `https://surveys.example.com` (no path). Default `http://localhost:8080`                                                                                                                        |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`    | The first administrator, created once while there is none ([Quick start](#quick-start))                                                                                                                                       |
+| `BRAND_NAME`, `BRAND_LOGO_URL`     | Your instance's name and logo (an https URL, or a path your proxy serves)                                                                                                                                                     |
+| `BRAND_ACCENT_COLOR`               | `#rgb` or `#rrggbb`                                                                                                                                                                                                           |
+| `TERMS_URL`, `PRIVACY_URL`         | The Terms and Privacy links in the footer                                                                                                                                                                                     |
+| `BRANDING`                         | `on` (default) or `off`; `off` hides "Powered by SurveyJS" and needs your own licence key                                                                                                                                     |
+| `SURVEYJS_LICENSE_KEY`             | Your own SurveyJS licence key; without it the app uses the image's key (shown with the branding)                                                                                                                              |
+| `TRUST_PROXY`                      | The address of your reverse proxy, as the container sees it ([below](#behind-a-reverse-proxy))                                                                                                                                |
+| `STORAGE_PROVIDER`, `DATABASE_URL` | `postgres` and a `postgres://` URL to use PostgreSQL ([below](#postgresql))                                                                                                                                                   |
+| `FILE_STORE`, `S3_*`               | `s3` and the bucket's settings to keep uploaded files in S3 ([below](#s3))                                                                                                                                                    |
+| `HISTORY_MAX_ENTRIES`              | For large installations: keep only each survey's newest N history entries (a positive integer). Default: every entry, so History grows with every save. Older entries are deleted at the next save and cannot be brought back |
+| `LIMIT_MAX_FILE_BYTES`             | The largest file a respondent can upload; default 10 MB                                                                                                                                                                       |
+| `LIMIT_MAX_ASSET_BYTES_PER_SURVEY` | The total size of the images and files of one survey's editor uploads; default 50 MB                                                                                                                                          |
+| `LIMIT_MAX_RESPONSE_BYTES`         | The largest response; default 1 MB                                                                                                                                                                                            |
+| `LIMIT_MAX_DOCUMENT_BYTES`         | The largest survey definition or theme; default 30 MB                                                                                                                                                                         |
+| `METRICS_PORT`                     | Serves Prometheus metrics on this port, `GET /metrics` only ([below](#metrics)); unset: none                                                                                                                                  |
 
 Branding in detail: [Branding and the licence key](customizing/branding.md).
 

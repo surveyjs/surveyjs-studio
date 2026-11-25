@@ -108,11 +108,15 @@ export function publicUrlWarning(config: AppConfig): string | null {
  * The one `starting` line: which providers and settings this process runs with. Fixed keys, each a
  * setting's name or mode, never a connection string, URL with credentials, secret or token.
  */
-export function startupSummary(config: AppConfig): Record<string, string | boolean> {
+export function startupSummary(
+  config: AppConfig,
+): Record<string, string | boolean | number | null> {
   return {
     edition: config.edition,
     shell: config.shell,
     storageProvider: config.storageProvider,
+    fileStore: config.files?.kind ?? "none",
+    historyMaxEntries: config.historyMaxEntries,
     userDirectory: config.userDirectory,
     identityProvider: config.identityProvider,
     accountNotices: config.accountNotices,

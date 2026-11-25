@@ -128,7 +128,8 @@ old API answered the `401`.
 - **`create`** makes an empty survey. **`clone`** names the copy "Copy of …", places it with the source, and answers with an
   empty body, as the old one did.
 - **`generateAccessKey`** with an API token replaces that token and answers the new value as a JSON string. With a legacy
-  key, Studio cannot replace it yet (the keys move into Studio in Steps 8 and 9), so the bridge forwards the request to
+  key, Studio revokes it and answers a new 32-digit hexadecimal key (a legacy key stays with the old service until the
+  cutover). Where Studio cannot replace the key (`409 legacy-key-replace-unavailable`), the bridge forwards the request to
   the old service, which owns the key.
 - **`uploadFiles` with the documentation's placeholder key** stores nothing and maps each file to the zero GUID, as the
   old one did.

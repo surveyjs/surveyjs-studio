@@ -8,12 +8,14 @@
  * so no usable token outlives a run. Project tokens live in a project the test creates as Adam
  * Admin (`Conformance tokens <random>`), with Mia Member as its only other member, and deleted at
  * the end; its surveys move to Adam's Personal scope, where his session deletes them. The legacy
- * cases use the fixture users' keys and skip where the server has none (the SQL providers). Only
- * Oscar Outsider's key is ever revoked, and only where `features.legacyKeyRevoke` is on: the
- * memory run, which starts afresh each time.
+ * cases use the fixture users' keys and skip where the server has none (the SQL providers). Two
+ * keys are ever used up: Mia Member's (replaced, where the server can replace) and Oscar
+ * Outsider's (revoked, only where `features.legacyKeyRevoke` is on). A server that keeps its data
+ * between runs (`legacyKeyReplace: "either"`) has them consumed by the first run, and the cases
+ * for them skip when the key is not the fixture's any more.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
+import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
 import { as, call, cleanUp, codeOf, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -22,9 +24,17 @@ const { owner, admin, member, outsider } = fixtureUsers;
 /** The fixture users' legacy access keys (server/fixtures/legacy). */
 const LEGACY_KEYS = {
   owner: "access-key-1",
+  /** Mia's: only the replace case uses it, since a replace revokes it. */
+  member: "access-key-3",
   outsider: "access-key-4",
   blocked: "access-key-5",
 } as const;
+
+/** What the server under test does with a legacy key replace (global-setup.ts decides it). */
+const legacyKeyReplace = inject("legacyKeyReplace");
+
+/** A new legacy key's value: 32 lower-case hex digits, as the old service issued. */
+const LEGACY_KEY_VALUE = /^[0-9a-f]{32}$/;
 
 const MERGE_PATCH = "application/merge-patch+json";
 const TOKEN_VALUE = /^sjs_[A-Za-z0-9_-]{43}$/;
@@ -355,12 +365,41 @@ describe.skipIf(sandbox)("legacy access keys", () => {
     expect(await codeOf(response)).toBe("unauthenticated");
   });
 
-  it("cannot replace a legacy key", async (ctx) => {
+  it("replaces a legacy key where the server can, else answers 409 and keeps it", async (ctx) => {
     await legacyKeyOrSkip(ctx);
-    const response = await replace(bearer(LEGACY_KEYS.owner));
-    expect(response.status).toBe(409);
-    expect(await codeOf(response)).toBe("legacy-key-replace-unavailable");
-    expect(await surveysStatus(bearer(LEGACY_KEYS.owner))).toBe(200);
+    if (legacyKeyReplace === "either") {
+      // An earlier run on this persistent server may have replaced Mia's key already.
+      const miasKey = (await listed(await as(ctx, member))).legacyKey;
+      if (miasKey === null || miasKey.lastFour !== LEGACY_KEYS.member.slice(-4)) {
+        ctx.skip("Mia's fixture key is already replaced on this server");
+      }
+    }
+    const old = bearer(LEGACY_KEYS.member);
+    const response = await replace(old);
+    // The reference runs pin the outcome; only an external server may give either.
+    const unavailable =
+      legacyKeyReplace === "either" ? response.status === 409 : legacyKeyReplace === "unavailable";
+    if (unavailable) {
+      // A server that cannot replace legacy keys (the Azure legacy provider).
+      expect(response.status).toBe(409);
+      expect(await codeOf(response)).toBe("legacy-key-replace-unavailable");
+      expect(await surveysStatus(old)).toBe(200);
+      return;
+    }
+    expect(response.status).toBe(200);
+    const { value } = (await response.json()) as { value: string };
+    expect(value).toMatch(LEGACY_KEY_VALUE);
+    // The old key is revoked and signs in nowhere, a second replace with it included.
+    expect(await surveysStatus(old)).toBe(401);
+    const again = await replace(old);
+    expect(again.status).toBe(401);
+    expect(await codeOf(again)).toBe("unauthenticated");
+    // The new one acts as its owner, and is the key the list shows.
+    expect(await surveysStatus(bearer(value))).toBe(200);
+    expect((await listed(await as(ctx, member))).legacyKey).toEqual({
+      lastFour: value.slice(-4),
+      revocable: (await features()).legacyKeyRevoke,
+    });
   });
 
   it("revokes the key only where the instance turned revocation on", async (ctx) => {
@@ -375,6 +414,9 @@ describe.skipIf(sandbox)("legacy access keys", () => {
     }
     const oscar = await as(ctx, outsider);
     const key = bearer(LEGACY_KEYS.outsider);
+    if ((await listed(oscar)).legacyKey === null) {
+      ctx.skip("Oscar's fixture key is already revoked on this server");
+    }
     expect(await surveysStatus(key)).toBe(200);
     expect((await listed(oscar)).legacyKey).toEqual({
       lastFour: LEGACY_KEYS.outsider.slice(-4),

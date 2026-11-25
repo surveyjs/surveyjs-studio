@@ -144,6 +144,8 @@ describe("startupSummary", () => {
       edition: config.edition,
       shell: config.shell,
       storageProvider: "azure-legacy",
+      fileStore: config.files?.kind ?? "none",
+      historyMaxEntries: null,
       userDirectory: "surveyjs-sql",
       identityProvider: "surveyjs-oidc",
       accountNotices: config.accountNotices,
@@ -153,6 +155,7 @@ describe("startupSummary", () => {
       nodeEnv: "production",
     });
     expect(startupSummary({ ...config, webRoot: "/srv/web" }).webApp).toBe(true);
+    expect(startupSummary({ ...config, historyMaxEntries: 20 }).historyMaxEntries).toBe(20);
   });
 
   it("carries no secret", () => {

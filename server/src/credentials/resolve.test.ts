@@ -133,7 +133,7 @@ describe("createBearerResolver", () => {
       email: "owner@example.com",
       avatarUrl: null,
       scope: { kind: "all" },
-      credential: { kind: "legacy-key" },
+      credential: { kind: "legacy-key", hash: hashCredential(key, "legacy-key") },
     });
   });
 

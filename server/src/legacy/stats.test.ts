@@ -4,6 +4,9 @@ import {
   distribution,
   formatStats,
   measureContainer,
+  newestHistory,
+  HISTORY_KEPT,
+  type HistoryBlob,
   summariseStats,
   type StatsMeasurements,
 } from "./stats.js";
@@ -117,6 +120,7 @@ const measurements: StatsMeasurements = {
       { name: "lost", bytes: 50 },
     ]),
   ],
+  historyKept: { entries: 23, bytes: 4600 },
   resultBytesMeasured: false,
 };
 
@@ -199,5 +203,46 @@ describe("formatStats", () => {
 
   it("says that the file shares are not read", () => {
     expect(text).toContain("File shares (surveyfiles, files, tempfiles): not read");
+  });
+});
+
+describe("newestHistory", () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString();
+  const blob = (surveyId: string, n: number, bytes: number, id = `p${n}`): HistoryBlob => ({
+    surveyId,
+    at: at(n),
+    id,
+    bytes,
+  });
+
+  it("counts a survey with fewer entries whole and the newest HISTORY_KEPT of a longer one", () => {
+    const a = [1, 2, 3].map((n) => blob("A", n, 10 + n));
+    const b = Array.from({ length: HISTORY_KEPT + 10 }, (_, n) => blob("B", n, 100 + n));
+    const newestB = b.slice(-HISTORY_KEPT);
+    const result = newestHistory([...a, ...b].reverse());
+    expect(result.entries).toBe(a.length + HISTORY_KEPT);
+    expect(result.bytes).toBe([...a, ...newestB].reduce((sum, entry) => sum + entry.bytes, 0));
+  });
+
+  it("orders entries of the same time by id", () => {
+    const entries = [
+      { surveyId: "B", at: at(5), id: "a", bytes: 1 },
+      { surveyId: "B", at: at(5), id: "c", bytes: 4 },
+      { surveyId: "B", at: at(5), id: "b", bytes: 2 },
+    ];
+    expect(newestHistory(entries, 2)).toEqual({ entries: 2, bytes: 6 });
+  });
+});
+
+describe("formatStats history line", () => {
+  it("prints the newest-per-survey line and no survey id", () => {
+    const text = formatStats(summariseStats(measurements));
+    expect(text).toContain(`History, newest ${HISTORY_KEPT} per survey: 23 entries, 4600 bytes`);
+    expect(text).not.toMatch(/[0-9a-f]{32}/);
+  });
+
+  it("prints no history line without a history container", () => {
+    const text = formatStats(summariseStats({ ...measurements, historyKept: null }));
+    expect(text).not.toContain("History, newest");
   });
 });

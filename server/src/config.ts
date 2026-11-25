@@ -143,6 +143,8 @@ export interface AppConfig {
   readonly files: FilesConfig | null;
   /** Set only with USER_DIRECTORY=local and both ADMIN_* settings. Secret: the password. */
   readonly bootstrapAdmin: BootstrapAdmin | null;
+  /** `HISTORY_MAX_ENTRIES`: a survey keeps its newest N history entries; null keeps every entry. */
+  readonly historyMaxEntries: number | null;
   readonly publicBaseUrl: string;
   readonly limits: {
     readonly maxAssetBytesPerSurvey: number;
@@ -228,6 +230,11 @@ export const LEGACY_VARIABLES = [
 
 // Decimal digits only: rejects "1e3", "0x10", "-1", "1.5" which Number() would accept.
 const decimalInt = z.string().regex(/^[0-9]+$/, "must be a decimal integer");
+const historyMaxEntries = z
+  .string()
+  .regex(/^[0-9]+$/, "must be a positive integer")
+  .transform(Number)
+  .pipe(z.number().int().positive("must be a positive integer"));
 const positiveInt = decimalInt.transform(Number).pipe(z.number().int().positive());
 
 const TRUST_PROXY_MESSAGE = "must be a comma-separated list of IP addresses or CIDR ranges";
@@ -356,6 +363,7 @@ const envSchema = z.object({
   LIMIT_MAX_RESPONSE_BYTES: positiveInt.default(1048576),
   LIMIT_MAX_DOCUMENT_BYTES: positiveInt.default(30000000),
   LIMIT_MAX_LEGACY_FILES_PER_USER: positiveInt.default(1000),
+  HISTORY_MAX_ENTRIES: historyMaxEntries.optional(),
   API_DOCS: z.enum(["true", "false"]).optional(),
   IDENTITY_PROVIDER: z.enum(["surveyjs-oidc", "dev"]).default("surveyjs-oidc"),
   // Plain strings (checked in loadConfig): a schema check here could echo the secret.
@@ -505,6 +513,9 @@ function accountProblems(env: Record<string, string | undefined>): string[] {
   for (const method of csvItems(env.AUTH_METHODS)) {
     if (method === "password" && directory !== "local") {
       problems.push("AUTH_METHODS: password requires USER_DIRECTORY=local");
+    }
+    if (method === "password" && env.APP_EDITION === "hosted") {
+      problems.push("AUTH_METHODS: password is not available with APP_EDITION=hosted");
     }
     if ((CLIENT_METHODS as readonly string[]).includes(method)) {
       if (directory !== "local") {
@@ -811,6 +822,9 @@ export function loadConfig(
       }
     }
   }
+  if (env.STORAGE_PROVIDER === "azure-legacy" && env.HISTORY_MAX_ENTRIES !== undefined) {
+    problems.push("HISTORY_MAX_ENTRIES: not available with STORAGE_PROVIDER=azure-legacy");
+  }
   if (parsed.success && parsed.data.METRICS_PORT === parsed.data.PORT) {
     problems.push("METRICS_PORT: must differ from PORT");
   }
@@ -870,6 +884,7 @@ export function loadConfig(
         : null,
     database: databaseOf(e),
     files: filesOf(e),
+    historyMaxEntries: e.HISTORY_MAX_ENTRIES ?? null,
     publicBaseUrl: e.PUBLIC_BASE_URL ?? "http://localhost:3000",
     limits: Object.freeze({
       maxAssetBytesPerSurvey: e.LIMIT_MAX_ASSET_BYTES_PER_SURVEY,
