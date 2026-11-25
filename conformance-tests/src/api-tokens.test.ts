@@ -22,9 +22,14 @@ const { owner, admin, member, outsider } = fixtureUsers;
 /** The fixture users' legacy access keys (server/fixtures/legacy). */
 const LEGACY_KEYS = {
   owner: "access-key-1",
+  /** Mia's: only the replace case uses it, since a replace revokes it. */
+  member: "access-key-3",
   outsider: "access-key-4",
   blocked: "access-key-5",
 } as const;
+
+/** A new legacy key's value: 32 lower-case hex digits, as the old service issued. */
+const LEGACY_KEY_VALUE = /^[0-9a-f]{32}$/;
 
 const MERGE_PATCH = "application/merge-patch+json";
 const TOKEN_VALUE = /^sjs_[A-Za-z0-9_-]{43}$/;
@@ -355,12 +360,30 @@ describe.skipIf(sandbox)("legacy access keys", () => {
     expect(await codeOf(response)).toBe("unauthenticated");
   });
 
-  it("cannot replace a legacy key", async (ctx) => {
+  it("replaces a legacy key where the server can, else answers 409 and keeps it", async (ctx) => {
     await legacyKeyOrSkip(ctx);
-    const response = await replace(bearer(LEGACY_KEYS.owner));
-    expect(response.status).toBe(409);
-    expect(await codeOf(response)).toBe("legacy-key-replace-unavailable");
-    expect(await surveysStatus(bearer(LEGACY_KEYS.owner))).toBe(200);
+    const old = bearer(LEGACY_KEYS.member);
+    const response = await replace(old);
+    if (response.status === 409) {
+      // A server that cannot replace legacy keys (the Azure legacy provider).
+      expect(await codeOf(response)).toBe("legacy-key-replace-unavailable");
+      expect(await surveysStatus(old)).toBe(200);
+      return;
+    }
+    expect(response.status).toBe(200);
+    const { value } = (await response.json()) as { value: string };
+    expect(value).toMatch(LEGACY_KEY_VALUE);
+    // The old key is revoked and signs in nowhere, a second replace with it included.
+    expect(await surveysStatus(old)).toBe(401);
+    const again = await replace(old);
+    expect(again.status).toBe(401);
+    expect(await codeOf(again)).toBe("unauthenticated");
+    // The new one acts as its owner, and is the key the list shows.
+    expect(await surveysStatus(bearer(value))).toBe(200);
+    expect((await listed(await as(ctx, member))).legacyKey).toEqual({
+      lastFour: value.slice(-4),
+      revocable: (await features()).legacyKeyRevoke,
+    });
   });
 
   it("revokes the key only where the instance turned revocation on", async (ctx) => {

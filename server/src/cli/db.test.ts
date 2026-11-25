@@ -7,6 +7,8 @@ import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js
 import { createSqlSurveyStore } from "../sql/survey-store.js";
 import { createLocalByteStore } from "../bytes/local.js";
 import { createSqlFileStore } from "../sql/file-store.js";
+import { createSqlCredentialStore } from "../sql/credential-store.js";
+import { legacyFixtureSeed } from "../providers/azure-legacy/fixtures.js";
 import {
   LEGACY_ASSET_NAME,
   LEGACY_RESPONSE_NAME,
@@ -173,6 +175,32 @@ describe("db CLI", () => {
       }
       const rows = await database.db.selectFrom("legacy_files").selectAll().execute();
       expect(rows).toHaveLength(2);
+      await database.close();
+    }
+  });
+
+  it("seeds the users' legacy access keys, revoked where the seed says, and seeds them again unchanged", async () => {
+    const { legacyAccessKeys = {}, revokedLegacyKeys = [] } = await legacyFixtureSeed();
+    const keys = Object.entries(legacyAccessKeys);
+    expect(keys.length).toBeGreaterThan(0);
+    const env = sqliteEnv();
+    for (let round = 0; round < 2; round++) {
+      expect(await run(["seed"], capture().io, { env })).toBe(0);
+      const database = openDatabase({ dialect: "sqlite", path: env.SQLITE_PATH });
+      const credentials = createSqlCredentialStore(database);
+      for (const [userId, key] of keys) {
+        const revoked = revokedLegacyKeys.includes(userId);
+        expect(await credentials.findLegacyKey(key.toUpperCase()), userId).toEqual({
+          userId: userId.toLowerCase(),
+          revoked,
+        });
+        expect(await credentials.legacyKeyOf(userId), userId).toEqual({
+          lastFour: key.slice(-4).toLowerCase(),
+          revoked,
+        });
+      }
+      const rows = await database.db.selectFrom("legacy_access_keys").selectAll().execute();
+      expect(rows).toHaveLength(keys.length);
       await database.close();
     }
   });
