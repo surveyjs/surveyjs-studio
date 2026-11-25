@@ -32,31 +32,37 @@ are far too slow.
 
 ### 2. Commands
 
-`plan`, `copy`, `delta`, `reconcile`, `verify` and `wipe`. Without `--target`, `copy` and `plan` work on a scratch
-target (a temporary SQLite database and folder, printed). `verify`, `delta`, `reconcile` and `wipe` refuse to run
+`plan`, `copy`, `delta`, `reconcile`, `verify` and `wipe`. `plan` opens no target; without `--target`, `copy` works on a
+scratch target (a temporary SQLite database and folder, printed). `verify`, `delta`, `reconcile` and `wipe` refuse to run
 without `--target`: they act on what a copy already put there. `wipe` also needs `--confirm` with the target's name.
 
-- **`copy`** takes the high-water marks first, then copies survey by survey, checkpointing each.
+- **`copy`** takes the high-water marks first, then copies survey by survey (a few at once), checkpointing each, and
+  names each survey's history authors from the history it copies. It records its sample (or none) and, at the end of a
+  whole pass, that it finished: `delta` and `reconcile` refuse a target whose copy has not finished, and `verify`,
+  `delta` and `reconcile` refuse a `--sample` or `--include` other than the copy's.
 - **`delta`** finds changes without listing the large stores: the SQL tables by their change time; a changed survey's
   history by its own prefix; responses, completion markers and deletion copies by change time, survey by survey, in
   parallel; the small containers listed and filtered by last-modified time. Then the marks move forward. Marks are
   taken a safety margin back, so a write in flight is read again, and never later than the database's own clock (a row
   stamped in the future is reported, not allowed to hide later changes).
 - **`reconcile`** removes from the target what the source no longer has, and maps again the surveys whose project or
-  settings a deletion changed. A full count of every survey's responses is never part of the window.
+  settings a deletion changed. It compares response counts first and the ids only where they differ, streamed through
+  the target. A full count of every survey's responses is never part of the window.
 - **`verify`** is the go or no-go (point 6). **`wipe`** keeps the schema.
 - **`--sample <share>` and `--include <file>`** select whole accounts (point 7).
 
 The tool runs inside the hosted image on the new server (`surveyjs-studio migrate-hosted <command>`), so the bytes
 cross the network once, into the new server's object storage. `pnpm migrate:hosted` runs the same code from a checkout
-for development and tests.
+for development and tests. Every report and progress line gives each phase's duration, so the window's runs are timed
+by the daily ones.
 
 ### 3. Files: only those the copied data links
 
 The exporter scans the copied definitions, themes, history entries and responses for file references and copies just
 those files. Each gets a deterministic id from its kind, old name and size, the all-zero survey (so outside every quota,
 as today's service serves them), and a row in `legacy_files` that maps the old name to it. `delta` copies files linked
-after the pre-copy. Files nobody links stay behind; `verify` counts them as a note. Studio's own file container keeps
+after the pre-copy. Files nobody links stay behind in the old shares; a file the target holds that no copied record
+links any more is kept, and `verify` counts those as a note. Studio's own file container keeps
 its ids and surveys. A file whose bytes match no allowed type is stored as `application/octet-stream`.
 
 ### 4. Privacy: hidden if either old rule hid it
@@ -66,6 +72,10 @@ through the bridge:
 
 - the questions its permissions setting marked not public;
 - the answer columns its saved column layout marked hidden or not public.
+
+While a copy or `delta` writes a survey's responses, the stored list only grows: before a batch brings an answer name
+the list was not computed with, the rule is applied to it, so no answer is public, even for a moment, that the finished
+copy hides.
 
 The old public results read the layout this way, and the tool keeps the rule. When the layout lists at least one
 column, every answer it does not list takes the layout's "new columns" visibility. The response time and response id
@@ -86,8 +96,9 @@ reported; the owner can turn them on again. The layout itself is kept, with the 
   `users` row and one linked sign-in for the surveyjs.io id. The id and email are lower-case; a blank name becomes the
   email; the role is `user`, the status `active`, and the site's block flag goes to `site_blocked`; no password, no
   licence date; `created_at` is the start of the run. There are no instance admin rows (`ADMIN_EMAIL` promotes at
-  sign-in). A person with no email, or with an email that differs from another's only in letter case, gets no profile
-  and is listed for the SurveyJS team; the data keeps their ids. Duplicates must be resolved on the site first.
+  sign-in). A person with no email, or with an email that differs from another site user's only in letter case (any
+  user's, named or not, so the decision does not depend on who else a run names), gets no profile and is listed for the
+  SurveyJS team; the data keeps their ids. Duplicates must be resolved on the site first.
   `reconcile` removes only profiles the migration made and nobody has used since.
 - **Legacy access keys** are copied hashed (`hashCredential(key, "legacy-key")`) with their last four characters and
   `created_at` of the run. A blocked person's key is refused by `site_blocked`, not revoked.
@@ -99,13 +110,24 @@ reported; the owner can turn them on again. The layout itself is kept, with the 
 the marks is listed as **pending**, never as a difference; the next `delta` copies it. Any difference makes the run red
 (exit 1). There are two modes:
 
-- **Full** (`--full`), the day before the window, after a daily `delta`: every survey's record, definition, theme,
-  history, layouts, private questions and response count; every table by count; checksums; and a random sample of
-  surveys (every survey of a sample run) read in depth through both providers, response by response. A survey above
-  `--deep-max-responses` gets counts and checksums only, and is noted.
-- **Incremental,** in the window, after the final `delta`: what changed since the last full verify (changed surveys in
-  full, new responses by count, deletions) and the small tables in full. A full recount of every response cannot fit the
-  hour: the old store cannot count rows without reading them, and one survey holds about two thirds of them.
+- **Full** (`--full`), the day before the window, after a daily `delta` and `reconcile`: every survey's record,
+  definition, theme, history, layouts, private questions and response counts (complete and all rows); every table by
+  count; checksums; and a random sample of surveys (every survey of a sample run) read in depth through both providers,
+  response by response. A survey above `--deep-max-responses` gets counts and checksums only, and is noted.
+- **Incremental,** in the window, after the final `delta` and `reconcile`: what changed since the last full verify
+  (changed surveys in full, new responses by count, deletions) and the small tables in full; the history of an
+  unchanged survey is not listed again. A full recount of every response cannot fit the hour: the old store cannot
+  count rows without reading them, and one survey holds about two thirds of them.
+
+People are compared as `reconcile` keeps them: an account the migration did not create (an administrator, an account
+made at sign-in) is noted, not a difference; so is a named person the copy could not write because the target holds
+their email or sign-in. Of a profile somebody has used, only what the migration owns is compared (id, email, name,
+block flag, the surveyjs.io sign-in). A stored private-question list that keeps a name only since-deleted responses
+used is accepted and noted (it hides more, never less).
+
+Two changes only the full verify sees: a delete-all of a survey's responses whose best-effort audit event is missing
+(`reconcile` and the incremental verify find deletions by their copies and that event), and a key changed on the site
+without a change time (`delta` reads by change time; `copy` writes every key again).
 
 Both modes flag what the copy does not take (point 9).
 
@@ -146,9 +168,11 @@ Actions log.
 ### 11. Inputs from the SurveyJS team, before the real runs
 
 - **The old servers' time zone.** Until it is known, local times are read as UTC.
-- **Whether the old app writes its SQL change-time columns in UTC.** If it writes local time behind UTC, `delta` could
-  miss its changes. The marks are capped at the database's own clock and a future time is reported, but a writer behind
-  UTC is not covered.
+- **Whether the old app writes its SQL change-time columns in UTC.** A writer behind UTC is covered: the marks are each
+  table's latest change time, so they follow its clock. A writer ahead of UTC stamps rows in the database's future; the
+  marks are capped at the database's own clock and the future time is reported, so those rows keep reading as changed
+  after the marks (read again by every `delta`, pending in `verify`) for as long as the writer is ahead, after the
+  freeze too.
 - **The real column list of the old SQL tables** (run `pnpm inspect:legacy-schema`, read only, again).
 - **Read-only credentials:** a read-only SQL login; the storage accounts and file shares with read and list only.
 
@@ -165,11 +189,9 @@ Actions log.
 ## Consequences
 
 - The window's work is `delta`, `reconcile` and an incremental `verify`; the bulk is copied days before and shrinks
-  with each daily `delta`.
+  with each daily `delta`. The daily runs' phase durations are the window's estimate: the old store answers a filter by
+  change time with a full scan on its side, so those reads cost the same however little changed.
 - A `verify` that passes means no known difference as of the marks. Pending items are the next `delta`'s work, and the
   run order in Operations makes the last `delta` come after the freeze.
-- People who sign in before the cutover through another provider, or accounts the target holds that the migration did not
-  create (the test migration), show as differences in `verify`'s people check. That is expected; read the report with it
-  in mind.
 - Migration `0012` adds `migration_state`; nothing else in the schema changes.
 - Open: the four inputs of point 11.

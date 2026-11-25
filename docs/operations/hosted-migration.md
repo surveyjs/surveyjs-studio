@@ -14,6 +14,21 @@ them.
 
 Both run the same code. `--help` prints the usage.
 
+On the server the command runs in a one-off container of the hosted image, next to the running app. The two env files
+(`--source`, `--target`) and the folders for `--report` and `--dump` live in one private folder on the host, mounted
+into the container; the paths given to the flags are the paths inside it. With the deployment's Compose file, for
+example:
+
+```sh
+docker compose run --rm -v /srv/migration:/migration <the app service> \
+  surveyjs-studio migrate-hosted copy --source /migration/source.env --target /migration/target.env \
+  --report /migration/reports/copy.json
+```
+
+The image runs as the user `node` (uid 1000): the mounted folder must be writable by it. The target file names the same
+database and bucket as the app's own settings; a progress line goes to the error output at the end of every phase, so
+run long commands under `nohup` or in a terminal multiplexer, and keep their output with the report.
+
 ## The settings
 
 **The source** (the old stores) comes from three variables, read from the environment or from the file given to
@@ -39,9 +54,11 @@ the production settings cannot reach production by mistake.
 | `FILE_STORE`                    | `local` or `s3`                                        |
 | `FILES_PATH` or the `S3_*`      | The files folder, or the bucket settings               |
 
-Without `--target`, `copy` and `plan` use a scratch target: a SQLite database and a files folder in a new temporary
-folder, which the tool prints and leaves in place. `verify`, `delta`, `reconcile` and `wipe` need `--target`: they act on
-what a copy already put there, and a scratch target is empty.
+`plan` opens no target. Without `--target`, `copy` uses a scratch target: a SQLite database and a files folder in a new
+temporary folder, which the tool prints and leaves in place. `verify`, `delta`, `reconcile` and `wipe` need `--target`:
+they act on what a copy already put there, and a scratch target is empty. `delta` and `reconcile` also refuse a target
+whose `copy` has not finished (a stopped copy is run again until it ends with `copy: done`): what it never reached, no
+`delta` would read.
 
 ## Commands
 
@@ -67,8 +84,9 @@ what a copy already put there, and a scratch target is empty.
 | `--deep-max-responses <n>` | `verify`: surveys with more responses get counts and checksums only (default 50000)                                      |
 | `--confirm <name>`         | `wipe`: the target's name, the PostgreSQL database name or the SQLite file's name                                        |
 
-Exit codes: 0 done or green, 1 failed or differences found, 2 a usage error (a missing flag, a refused `wipe`). The
-progress goes to the error output; the summary and the counts of the report go to the standard output.
+Exit codes: 0 done or green, 1 failed or differences found, 2 a usage error or a refusal (a missing flag, a refused
+`wipe`, a sample other than the copy's, a copy that has not finished). A refused command changes nothing. The progress
+goes to the error output; the summary and the counts of the report go to the standard output.
 
 ### The sample
 
@@ -76,22 +94,52 @@ An account is in the sample when a hash of its id falls below the share, or when
 run picks the same set. The sample holds whole accounts: the account's personal surveys; every project it belongs to,
 with that project's surveys and members; and profiles of everyone the included data names. It is not transitive: a
 member's own personal surveys are not pulled in. Use the same `--sample` and `--include` on every command of a test
-migration. `plan --sample` also writes the survey ids and key hashes of the sample, which the replay's filter needs.
+migration: `copy` records them in the target, and `verify`, `delta` and `reconcile` refuse others (exit 2), so a
+`reconcile --sample` cannot empty a full target and a `delta` without `--sample` cannot grow a sample into a full copy.
+`plan --sample` also writes the survey ids and key hashes of the sample, which the replay's filter needs.
 
 ## The run order
 
 1. **Before everything:** the SurveyJS team's inputs (below); `plan` on the real source for the volumes; a test
    migration (`copy --sample`, `verify --sample`, then `wipe`).
 2. **Pre-copy,** days before the window, the old service live: `copy` on the real target. It takes about a day.
-3. **Daily:** `delta`, and `reconcile`, until the window. Each is smaller than the one before, and each measures the
-   time of the window's own `delta`.
-4. **The day before the window,** after that day's `delta`: `verify --full`. Read the report; fix or explain every
-   difference.
+3. **Daily:** `delta`, then `reconcile`, until the window. Each is smaller than the one before, and each measures the
+   time of the window's own runs ([Timing the window](#timing-the-window)).
+4. **The day before the window,** after that day's `delta` and `reconcile`: `verify --full`. Read the report; fix or
+   explain every difference.
 5. **In the window,** once the old service is stopped and today's Studio is read-only: the final `delta` (its marks are
    taken after the freeze), `reconcile`, then an incremental `verify`. All three pass: go. Any difference: no-go, and the
    old side starts again ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
 
 Do not run two commands against one target at the same time.
+
+## Timing the window
+
+The window holds the final `delta`, `reconcile` and an incremental `verify`, and must fit the hour of
+[ADR 0033](../adr/0033-hosted-target-stores.md). Their time is measured, not estimated: every report has `durations`,
+each phase's milliseconds, and each phase ends with a progress line that gives the same figure. Time the daily runs
+from the first `delta` on; the last few, made when little changes, are the closest to the window's.
+
+What each phase reads, and why some cost the same whatever changed:
+
+| Command     | Phase                | What it reads                                                                                                               |
+| ----------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `delta`     | `changes`            | The SQL rows changed since the marks; the layout and permission containers listed (small)                                   |
+|             | `people`             | Every user, project and member row (small tables); the history of the changed surveys only                                  |
+|             | `surveys`            | Each survey's responses, markers and deletion copies changed since the marks, 16 surveys at once                            |
+|             | `events`             | The event log changed since the marks                                                                                       |
+|             | `views`, `files`     | The view and file containers listed (small), the changed blobs read                                                         |
+| `reconcile` | the first four       | `surveys`, `projects`, `remap`, `people_views_files`: the SQL rows; the layout, permission, view and file containers listed |
+|             | `responses`          | The deletion copies since the last `reconcile`; the changed surveys' responses counted (ids only on a mismatch)             |
+| `verify`    | `stores`             | The token table and the file container (each a listing); the results account's table list, once                             |
+|             | `people`, `projects` | The user, project and member rows; the target's rows of each                                                                |
+|             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full             |
+| `copy`      | `surveys`            | Every survey in full, 8 at once; `events`, `views` and `files` after it                                                     |
+
+The event log and each survey's response, marker and deletion-copy tables are read by change time, and the old store
+answers such a filter with a full scan on its side: the time those scans take grows with the size of the tables, not
+with the number of changes. That is why the window's runs cost about as much as the last daily ones, and why the daily
+figures are the estimate.
 
 ## The report
 
@@ -107,6 +155,7 @@ request or an Actions log** (plan-hosted rule 6). The fields:
 | `checks`      | `verify` only: for each check, how many items were compared, how many differences, how many pending, `pass`    |
 | `differences` | `verify` only: each difference, with its check, ids and counts                                                 |
 | `pending`     | `verify` only: each record that changed in the source after the marks                                          |
+| `durations`   | Each phase's time in milliseconds ([Timing the window](#timing-the-window))                                    |
 
 `plan` adds the volumes and the estimate under `plan`.
 
@@ -119,22 +168,25 @@ is corrected and a `delta` or `copy --full` runs again.
 
 ### Notes worth reading
 
-| Note                                                              | Meaning                                                                                                                          |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `person_without_email`, `person_email_conflict`                   | A person has no profile: no email, or an email equal to another's after lower-casing. Resolve on the site first                  |
-| `survey_moved_to_creator`, `survey_moved_from_memberless_project` | The survey's project is gone or has no members; it is now the creator's personal survey                                          |
-| `survey_kept_in_missing_project`                                  | No creator can take the survey: it is copied naming the missing project, visible to nobody                                       |
-| `public_results_off_unreadable_setting`                           | The hidden-questions setting or the column layout could not be read; public results are off for that survey                      |
-| `nul_replaced`                                                    | A `\u0000` in a JSON string became U+FFFD                                                                                        |
-| `definition_unreadable`, `theme_unreadable`, `view_unreadable`    | Stored text that is not a JSON object; the survey reads as an empty one, as today                                                |
-| `future_change_time`                                              | A SQL table holds a change time later than the database's own clock; the mark was capped at the clock. Ask the SurveyJS team why |
-| `change_time_missing`                                             | A row has no change time, so `delta` reads it every time                                                                         |
-| `delta_new_survey`                                                | A survey that was created after the copy and was copied by `delta`                                                               |
-| `legacy_files_unlinked`                                           | `verify`: files in the old shares that no copied record links. They stay behind, by decision                                     |
-| `deep_skipped_size`                                               | `verify`: a survey above `--deep-max-responses` was compared by counts and checksums, not response by response                   |
-| `reconcile_*`                                                     | `reconcile` removed rows, replaced a project's members, or maps a survey again (`reconcile_remapped_survey`)                     |
-| `reconcile_count_skipped_size`                                    | `reconcile` did not count the responses of a very large survey inside the window                                                 |
-| `person_kept_unseeded`                                            | `reconcile` kept an account the migration did not create (somebody signed in)                                                    |
+| Note                                                              | Meaning                                                                                                                           |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `person_without_email`, `person_email_conflict`                   | A person has no profile: no email, or an email equal to another's after lower-casing. Resolve on the site first                   |
+| `survey_moved_to_creator`, `survey_moved_from_memberless_project` | The survey's project is gone or has no members; it is now the creator's personal survey                                           |
+| `survey_kept_in_missing_project`                                  | No creator can take the survey: it is copied naming the missing project, visible to nobody                                        |
+| `public_results_off_unreadable_setting`                           | The hidden-questions setting or the column layout could not be read; public results are off for that survey                       |
+| `nul_replaced`                                                    | A `\u0000` in a JSON string became U+FFFD                                                                                         |
+| `definition_unreadable`, `theme_unreadable`, `view_unreadable`    | Stored text that is not a JSON object; the survey reads as an empty one, as today                                                 |
+| `future_change_time`                                              | A SQL table holds a change time later than the database's own clock; the mark was capped at the clock. Ask the SurveyJS team why  |
+| `change_time_missing`                                             | A row has no change time, so `delta` reads it every time                                                                          |
+| `delta_new_survey`                                                | A survey that was created after the copy and was copied by `delta`                                                                |
+| `legacy_files_unlinked`                                           | `verify`: files the target holds that no copied record links any more (an image dropped, a response deleted). Kept, by decision   |
+| `deep_skipped_size`                                               | `verify`: a survey above `--deep-max-responses` was compared by counts and checksums, not response by response                    |
+| `reconcile_*`                                                     | `reconcile` removed rows, replaced a project's members, or maps a survey again (`reconcile_remapped_survey`)                      |
+| `reconcile_count_skipped_size`                                    | `reconcile` did not count the responses of a very large survey inside the window                                                  |
+| `person_kept_unseeded`                                            | `reconcile` kept, and `verify` found, an account the migration did not create (an administrator, an account made at sign-in)      |
+| `person_held_elsewhere`                                           | `verify`: a named person the copy could not write, because another account holds the email or the surveyjs.io sign-in             |
+| `person_used`                                                     | `verify`: a profile somebody has used since the copy; only what the migration owns (id, email, name, block flag, sign-in) is read |
+| `private_questions_superset`                                      | `verify`: the stored private questions keep a name that only responses deleted since used. Safe: nothing is more public           |
 
 ## Reading a `verify`
 
@@ -146,14 +198,19 @@ is corrected and a `delta` or `copy --full` runs again.
 - **Pending** is not a difference. A record that changed in the source after the marks is listed under `pending` and
   left out of the comparison on both sides. The next `delta` copies it. Many pending items before the window are normal
   (the old service is live); in the window, after the freeze, there should be none.
-- **A person differs** when someone signs in to the target before the cutover through another provider, or when the
-  target holds accounts the migration did not create (a test migration, an administrator). Read the people check with
-  that in mind: it is the one difference that can be expected.
+- **People:** an account the migration did not create (an administrator, an account made at sign-in) is noted, not a
+  difference; so is a person the copy could not write because the target holds their email or sign-in. Of a profile
+  somebody has used since the copy, only what the migration owns is compared. A profile the migration created that the
+  source no longer names is a difference until `reconcile` removes it.
 - **Not copied, by decision:** `verify` flags any key revocation made in Studio, API tokens, and uploaded files that
   belong to no survey, as differences. Production has none. If one appears, someone used the target, or the source has
   a kind of data this tool does not know: stop and find out.
 - **A full `verify` is exact on the rows that existed before the marks.** The incremental one does not recount every
   response (the old store cannot count rows without reading them); it compares what changed since the last full verify.
+- **What only the full `verify` sees.** When the old app deletes every response of a survey and its audit event is
+  missing (the app writes it last, on a best-effort basis), neither `reconcile` nor the incremental `verify` notices;
+  the full `verify` counts the rows and does. A key changed on the site without a change time is not read by `delta`;
+  `verify` compares every key and reports it, and `copy` (or `copy --full`) writes it again.
 
 ## Private data
 
@@ -184,9 +241,11 @@ Before the real runs:
 
 1. **The old servers' time zone.** Local times (a survey's created time, project and member times) are read as UTC until
    it is known.
-2. **Whether the old app writes its SQL change-time columns in UTC.** If it writes local time behind UTC, `delta` could
-   miss its changes. The marks are capped at the database's own clock and a future time is reported
-   (`future_change_time`), but a writer behind UTC is not covered.
+2. **Whether the old app writes its SQL change-time columns in UTC.** A writer behind UTC is covered: the marks are the
+   latest change time each table holds, so its rows count from its own clock. A writer ahead of UTC stamps rows in the
+   database's future; the marks are capped at the database's own clock (`future_change_time` is reported), so those rows
+   keep reading as changed after the marks: `delta` reads them again and `verify` lists them as pending for as many
+   hours as the writer is ahead, after the freeze too. The window's `verify` then has pending items it cannot clear.
 3. **The real column list of the old SQL tables.** Run `pnpm inspect:legacy-schema` against the real database, read
    only, and compare it with what the mapping expects.
 4. **Read-only credentials:** a read-only SQL login; storage and file shares with read and list only.
