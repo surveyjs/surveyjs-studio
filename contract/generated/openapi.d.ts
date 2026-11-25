@@ -1618,6 +1618,7 @@ export interface components {
          *       "instanceRole": "user",
          *       "status": "active",
          *       "hasPassword": false,
+         *       "siteBlocked": false,
          *       "pendingLink": {
          *         "purpose": "reset",
          *         "expiresAt": "2026-11-06T09:00:00.000Z"
@@ -1639,6 +1640,8 @@ export interface components {
             status: "invited" | "active" | "disabled";
             /** @description Whether the user has a password. `false` after a reset until they use the new link. */
             hasPassword: boolean;
+            /** @description Hosted edition: surveyjs.io blocks the account, as its last sign-in said. It cannot sign in, whatever `status` says, and only the site lifts it. Always `false` elsewhere. */
+            siteBlocked: boolean;
             /** @description The user's set-password link that is not used and not expired: `invitation` for an invited user, `reset` after a reset, `setup` for the first admin. `null` when there is none (also when it expired). */
             pendingLink: components["schemas"]["PendingLink"] | null;
             createdAt: components["schemas"]["Timestamp"];

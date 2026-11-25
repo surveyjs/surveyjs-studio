@@ -38,6 +38,7 @@ The list is ordered by email and paged like every list ([Paging](paging.md)).
   "instanceRole": "user",
   "status": "active",
   "hasPassword": false,
+  "siteBlocked": false,
   "pendingLink": { "purpose": "reset", "expiresAt": "2026-11-06T09:00:00.000Z" },
   "createdAt": "2026-10-29T10:00:00.000Z",
   "lastSignInAt": "2026-10-30T08:15:00.000Z"
@@ -47,6 +48,9 @@ The list is ordered by email and paged like every list ([Paging](paging.md)).
 - `status` is `invited` (no password yet), `active` or `disabled`.
 - `hasPassword` says whether the user has a password. It is `false` after a reset, until the user
   uses the new link, and for a user who signs in only with Google, GitHub, Facebook or surveyjs.io.
+- `siteBlocked` is `true` on the hosted edition when surveyjs.io blocks the account, as its last
+  sign-in said. The user cannot sign in whatever `status` is, and only the site lifts the block. It
+  is always `false` elsewhere.
 - `pendingLink` is the user's set-password link that is not used and not expired: its `purpose`
   (`invitation`, `reset`, or `setup` for the first admin) and `expiresAt`. It is `null` when there
   is none, also when the link expired. The link itself is never shown again. Above: Alex's password

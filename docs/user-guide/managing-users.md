@@ -34,6 +34,10 @@ The status is one of these:
 | **Reset pending**         | You reset their password, and they have not used the new link yet              |
 | **Disabled**              | They cannot sign in                                                            |
 
+On the hosted edition, a status may end with **blocked on surveyjs.io**: the site blocks the account,
+as their last sign-in said. They cannot sign in, whatever the status, and **Enable** does not lift it:
+only surveyjs.io does.
+
 Each action asks you to confirm first. When the server refuses one, the reason appears above the
 table. While an action runs, the buttons of that row are off, so a second click sends nothing.
 

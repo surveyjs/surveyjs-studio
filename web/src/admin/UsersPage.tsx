@@ -22,9 +22,15 @@ import styles from "./UsersPage.module.css";
 
 /**
  * The status as the table shows it: the account's status, and for an active user whose password
- * was reset, that the new link waits to be used (the account has no password until then).
+ * was reset, that the new link waits to be used (the account has no password until then). The
+ * site's block (hosted sign-in) is added to it: only surveyjs.io lifts it, so Enable does not.
  */
 function statusText(user: AdminUser): string {
+  const status = accountStatusText(user);
+  return user.siteBlocked ? `${status}, blocked on surveyjs.io` : status;
+}
+
+function accountStatusText(user: AdminUser): string {
   if (user.status === "disabled") return "Disabled";
   if (user.status === "invited") return user.pendingLink ? "Invited" : "Invited, link expired";
   if (user.pendingLink?.purpose === "reset" && !user.hasPassword) return "Reset pending";

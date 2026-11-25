@@ -2715,6 +2715,7 @@ components:
           instanceRole,
           status,
           hasPassword,
+          siteBlocked,
           pendingLink,
           createdAt,
           lastSignInAt,
@@ -2733,6 +2734,11 @@ components:
         hasPassword:
           type: boolean
           description: Whether the user has a password. `false` after a reset until they use the new link.
+        siteBlocked:
+          type: boolean
+          description: >-
+            Hosted edition: surveyjs.io blocks the account, as its last sign-in said. It cannot
+            sign in, whatever `status` says, and only the site lifts it. Always `false` elsewhere.
         pendingLink:
           description: >-
             The user's set-password link that is not used and not expired: `invitation` for an
@@ -2754,6 +2760,7 @@ components:
           instanceRole: user
           status: active
           hasPassword: false
+          siteBlocked: false
           pendingLink: { purpose: reset, expiresAt: '2026-11-06T09:00:00.000Z' }
           createdAt: '2026-10-29T10:00:00.000Z'
           lastSignInAt: '2026-10-30T08:15:00.000Z'
