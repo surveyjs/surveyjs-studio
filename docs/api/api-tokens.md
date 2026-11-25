@@ -146,7 +146,7 @@ credential that signs the request, so an integration can rotate its own value:
 
 - with an **API token**: the old value stops working, and the answer is a new `sjs_` value with the same name and
   scope, shown once: `200 { "value": "sjs_…" }`;
-- with a **legacy access key**: on the SQL providers (the new server) the request's key is revoked and the answer is a
+- with a **legacy access key**: on the SQL and memory providers (not the Azure legacy provider; the new server is SQL) the request's key is revoked and the answer is a
   new key in the legacy format, 32 hexadecimal digits, shown once: `200 { "value": "<key>" }`. Where the store cannot
   replace the key (today's server's provider), `409 legacy-key-replace-unavailable`.
 

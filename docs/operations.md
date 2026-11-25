@@ -596,17 +596,17 @@ bucket ([ADR 0033](adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026
 today's, in the deployment's example environment file; `docker/prod-like.sql.env` keeps
 the same values for the local check. The ones that matter here:
 
-| Variable                           | Value                                                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `APP_EDITION`                      | `hosted`                                                                                                  |
-| `STORAGE_PROVIDER`, `DATABASE_URL` | `postgres` and the connection string; **secret**                                                          |
-| `FILE_STORE`, `S3_*`               | `s3` and the bucket's settings                                                                            |
-| `USER_DIRECTORY`, `AUTH_METHODS`   | `local` and `surveyjs` ([hosted sign-in](#hosted-sign-in)); `password` is refused with the hosted edition |
-| `HISTORY_MAX_ENTRIES`              | `20`                                                                                                      |
-| `LEGACY_KEY_REVOKE`                | As in mode 1.2; a legacy key now lives in `legacy_access_keys`, and its owner can replace it              |
+| Variable                           | Value                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_EDITION`                      | `hosted`                                                                                                                                    |
+| `STORAGE_PROVIDER`, `DATABASE_URL` | `postgres` and the connection string; **secret**                                                                                            |
+| `FILE_STORE`, `S3_*`               | `s3` and the bucket's settings                                                                                                              |
+| `USER_DIRECTORY`, `AUTH_METHODS`   | `local` and `surveyjs` ([hosted sign-in](#hosted-sign-in)); `password` is refused with the hosted edition                                   |
+| `HISTORY_MAX_ENTRIES`              | `20`                                                                                                                                        |
+| `LEGACY_KEY_REVOKE`                | `false` at the switch, `true` a day after it (as in mode 1.2); a legacy key now lives in `legacy_access_keys`, and its owner can replace it |
 
 `pnpm prod-like-sql:up` runs the production image with this profile on PostgreSQL and S3 in Docker (and
-`pnpm prod-like-sql:down` removes it); the `prod-like-sql` CI job does the same. Check `/readyz` on the port it prints.
+`pnpm prod-like-sql:down` removes it); the `prod-like-sql` CI job does the same. Check `/readyz` on port 8081.
 
 #### Purging the deleted-response copies
 
@@ -614,9 +614,12 @@ The migration copies the old service's deleted-response archive into `deleted_re
 purge **30 days after the cutover**, when nobody can ask for a deleted response back:
 
 ```sh
-pnpm purge:deleted-responses --before 2026-12-31            # a dry run: counts the rows, deletes nothing
-pnpm purge:deleted-responses --before 2026-12-31 --apply    # deletes the rows strictly before the date
+surveyjs-studio purge-deleted-responses --before 2026-12-31            # a dry run: counts the rows, deletes nothing
+surveyjs-studio purge-deleted-responses --before 2026-12-31 --apply    # deletes the rows strictly before the date
 ```
+
+In the production image run it with `docker compose exec app surveyjs-studio purge-deleted-responses …` (the image has no
+pnpm); in the repository it is `pnpm purge:deleted-responses …`.
 
 It works on the SQL providers only and reads the database settings of the server (`--env-file <file>` names a file).
 `READ_ONLY=true` refuses only `--apply`. There is no background job.
@@ -627,12 +630,12 @@ Two commands check that a database of the production's size meets the targets of
 [ADR 0033](adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25):
 
 ```sh
-pnpm scale:generate --surveys 1000 --responses 100000 --largest 2000000   # builds a synthetic data set
+pnpm scale:generate --surveys <n> --responses <n> --largest <n>   # builds a synthetic data set
 pnpm scale:check --base https://studio.example.test --token sjs_… --survey <largest survey id>
 ```
 
 `scale:generate` writes straight into a migrated database named by `DATABASE_URL` or `SQLITE_PATH` and **refuses a
-database that already holds data**: run it on a scratch database. The sizes are parameters; the data is the same for the
+database that already holds data**: run it on a scratch database. The sizes are parameters (take them from the private measurement of the real data); the data is the same for the
 same `--seed`, and none of it comes from production. `scale:check` times the survey list, the first page of the results,
 the export (first byte and total) and a save, over `--runs` requests (20 by default), and exits 1 when a target is
 missed. Both print counts and times only, never a name or an id. Keep the figures of a run on the real server out of the

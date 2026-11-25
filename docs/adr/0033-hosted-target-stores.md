@@ -150,8 +150,8 @@ estimate are re-measured with the new stats.
   commands; this repository gets the result and an outline in `docs/operations.md`.
 - **The new server's profile** (`STORAGE_PROVIDER=postgres`, `FILE_STORE=s3`, `HISTORY_MAX_ENTRIES=20`, the hosted
   sign-in of [ADR 0043](0043-hosted-users-on-the-local-directory.md)) is documented beside today's in
-  `deploy/hetzner/app.env.example` and `docker/prod-like.env`, and the `prod-like` CI job gains a run on PostgreSQL and
-  S3.
+  the deployment's example environment file, `docker/prod-like.sql.env` and `pnpm prod-like-sql:up`, and a
+  `prod-like-sql` CI job (PostgreSQL and S3).
 - **When:** the generator, the check and the commands are built in Step 8; the run on the new server, the production
   measurement and the restore happen once that server is built, and their figures are added here, rounded
   (plan-hosted rule 6).

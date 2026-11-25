@@ -59,8 +59,9 @@ psql_demo() { docker compose --env-file docker/postgres.env -f docker/compose.po
 
 ## 2. A legacy key signs in, and a new one replaces it (checklist 2)
 
-The seed already wrote the fixtures' keys. Make one more, the way the migration will, with one row: a key is 32
-hexadecimal digits, and the table stores its SHA-256 hash and the last four characters.
+The seed already wrote the fixtures' keys, Olivia's `access-key-1` among them. Add a second key for her, the way the
+migration will: a key is 32 hexadecimal digits, and the table stores its SHA-256 hash and the last four characters.
+She then has two working keys.
 
 1. Keep the app running (shell 1), and start the bridge in front of it (shell 2):
 
@@ -105,8 +106,9 @@ hexadecimal digits, and the table stores its SHA-256 hash and the last four char
    ```
 
    - **Check:** `401`, then `200`, then `The accessKey '<the old key>' is incorrect.` (the old API's answer for a key it
-     does not accept), then the rows: every older key revoked, the newest not. Replacing a key revokes all of the user's
-     earlier rows, so only the new one works.
+     does not accept), then Olivia's three rows (the seed's `access-key-1`, with last four `ey-1`, then `cdef`, then the new
+     key's): the first two revoked and the newest not. Replacing a key revokes all of the user's other unrevoked rows,
+     the one that was not presented (`access-key-1`) included, so only the new one works.
 
 ## 3. The purge (checklist 3)
 

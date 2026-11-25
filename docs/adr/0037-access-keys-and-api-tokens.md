@@ -119,8 +119,8 @@ with an old key would fail.
   revoked at. The SQL credential store implements the three lookups with the Azure legacy provider's behaviour, proven
   by the shared credential suite. The migration fills the table from the site's keys, hashed, with their last four, so
   the API tokens page keeps showing them.
-- **A new key after the cutover** (point 5's "Studio replaces the hash"): on the SQL providers the credential store
-  replaces a user's legacy key (a new random key in the legacy format; its hash and last four stored; the old row
-  revoked), and the bridge's `generateAccessKey` calls Studio for it instead of forwarding to the old service. The Azure
+- **A new key after the cutover** (point 5's "Studio replaces the hash"): on the SQL and memory providers (not the Azure
+  legacy provider) the credential store replaces a user's legacy key (a new random key in the legacy format; its hash
+  and last four stored; the user's unrevoked rows, the presented one included, revoked), and the bridge's `generateAccessKey` calls Studio for it instead of forwarding to the old service. The Azure
   legacy provider keeps answering `409 legacy-key-replace-unavailable` ([ADR 0040](0040-bridge-access-key-actions.md)),
   as today's server needs.

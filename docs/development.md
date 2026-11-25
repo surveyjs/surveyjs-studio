@@ -1032,6 +1032,10 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
   `azure-legacy`, production) and `/readyz`, restarts the app with `docker/compose.prod-like.e2e.yaml`, and runs
   `e2e:prod-like` (the Azurite mode's specs, Chromium). The other jobs run the image in test or development mode, so
   only this one sees the start-up checks refuse a production configuration.
+- **`prod-like-sql`** (after `image`): the image with the new server's profile (`docker/prod-like.sql.env`,
+  `docker/compose.prod-like.sql.yaml`, `pnpm prod-like-sql:up`) on PostgreSQL, S3 and the mock OIDC server. It checks
+  the start-up line (hosted, `postgres`, `s3`, 20 history entries, local user directory, production), `/readyz`, the
+  config and an unknown survey's 404 from PostgreSQL.
 - **`postgres`** (after `image`): `pnpm postgres:up`, `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`,
   `test:conformance:s3`, `test:conformance:postgres` and (with the mock OIDC server started)
   `test:conformance:postgres:hosted` on the image, and `e2e:postgres` (the tsx server; Chromium, every functional spec
