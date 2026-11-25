@@ -54,6 +54,13 @@ declare module "vitest" {
      * `CONFORMANCE_EDITION=hosted`) and the sandbox. False otherwise, and with `CONFORMANCE_BASE_URL`.
      */
     localAccounts: boolean;
+    /**
+     * What `replaceCurrentCredential` does with a legacy access key: `replaces` (memory, SQLite and
+     * PostgreSQL, which have `replaceLegacyKey`), `unavailable` (`409
+     * legacy-key-replace-unavailable`: the Azure legacy provider), or `either` with
+     * `CONFORMANCE_BASE_URL` (a deployment the suite cannot know) and the sandbox (no case runs).
+     */
+    legacyKeyReplace: "replaces" | "unavailable" | "either";
   }
 }
 
@@ -660,6 +667,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     project.provide("oauth", null);
     project.provide("sandbox", false);
     project.provide("localAccounts", false);
+    project.provide("legacyKeyReplace", "either");
     return;
   }
   const image = imageTag();
@@ -741,6 +749,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   );
   project.provide("sandbox", false);
   project.provide("localAccounts", auth !== "default" || edition === "hosted");
+  project.provide("legacyKeyReplace", provider === "azure-legacy" ? "unavailable" : "replaces");
   return stopAll;
 }
 
@@ -775,4 +784,6 @@ function provideSandbox(project: TestProject, external: boolean): void {
   project.provide("sandbox", true);
   // A local directory, with the seed's invitation (self-hosted Step 9, D6).
   project.provide("localAccounts", true);
+  // api-tokens.test.ts skips on the sandbox.
+  project.provide("legacyKeyReplace", "either");
 }

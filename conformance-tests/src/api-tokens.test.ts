@@ -13,7 +13,7 @@
  * memory run, which starts afresh each time.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, type TestContext } from "vitest";
+import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
 import { as, call, cleanUp, codeOf, sandbox } from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
@@ -27,6 +27,9 @@ const LEGACY_KEYS = {
   outsider: "access-key-4",
   blocked: "access-key-5",
 } as const;
+
+/** What the server under test does with a legacy key replace (global-setup.ts decides it). */
+const legacyKeyReplace = inject("legacyKeyReplace");
 
 /** A new legacy key's value: 32 lower-case hex digits, as the old service issued. */
 const LEGACY_KEY_VALUE = /^[0-9a-f]{32}$/;
@@ -364,8 +367,12 @@ describe.skipIf(sandbox)("legacy access keys", () => {
     await legacyKeyOrSkip(ctx);
     const old = bearer(LEGACY_KEYS.member);
     const response = await replace(old);
-    if (response.status === 409) {
+    // The reference runs pin the outcome; only an external server may give either.
+    const unavailable =
+      legacyKeyReplace === "either" ? response.status === 409 : legacyKeyReplace === "unavailable";
+    if (unavailable) {
       // A server that cannot replace legacy keys (the Azure legacy provider).
+      expect(response.status).toBe(409);
       expect(await codeOf(response)).toBe("legacy-key-replace-unavailable");
       expect(await surveysStatus(old)).toBe(200);
       return;
