@@ -2,7 +2,7 @@
 
 Status: Accepted (hosted Step 9, 2026-11-25). Settles how the data of today's service reaches the new server, inside
 the order set by [ADR 0042](0042-one-switch-to-the-new-server.md). Changes [ADR 0037](0037-access-keys-and-api-tokens.md)
-point 4 (revocations) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
+point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile` removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
 the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md).
 
 ## Context
