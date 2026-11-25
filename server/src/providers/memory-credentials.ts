@@ -140,13 +140,13 @@ export function createMemoryCredentials(
       return Promise.resolve(key ? { lastFour: key.lastFour, revoked: key.revoked } : null);
     },
     revokeLegacyKey: (userId) => {
-      const key = newest(userId);
-      if (!key) return Promise.resolve(false);
-      key.revoked = true;
+      const rows = keys.get(lower(userId));
+      if (!rows?.length) return Promise.resolve(false);
+      for (const row of rows) row.revoked = true;
       return Promise.resolve(true);
     },
-    replaceLegacyKey: (userId, hash, lastFour) => {
-      const key = newest(userId);
+    replaceLegacyKey: (userId, expectedHash, hash, lastFour) => {
+      const key = keys.get(lower(userId))?.find((r) => r.hash === expectedHash);
       if (!key || key.revoked) return Promise.resolve(false);
       key.revoked = true;
       keys.get(lower(userId))!.push({ hash, lastFour, revoked: false });

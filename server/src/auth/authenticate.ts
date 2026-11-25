@@ -20,7 +20,8 @@ export type CredentialScope =
 export type RequestCredential =
   | { readonly kind: "session" }
   | { readonly kind: "api-token"; readonly id: string }
-  | { readonly kind: "legacy-key" };
+  /** `hash` is the stored hash of the key that signed the request (`hashCredential(value, "legacy-key")`). */
+  | { readonly kind: "legacy-key"; readonly hash: string };
 
 /** The signed-in user, as handlers see it. */
 export interface RequestUser {

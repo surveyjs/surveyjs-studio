@@ -245,6 +245,8 @@ export function describeCredentialStoreSuite(
         expect(await store.findLegacyKey(key)).toEqual({ userId, revoked: false });
       });
 
+      const hashOf = (value: string): string => hashCredential(value, "legacy-key");
+
       replaceIt("replaces the key: the old one is revoked, the new one is the user's", async () => {
         const userId = randomUUID();
         const oldKey = newKey();
@@ -252,7 +254,7 @@ export function describeCredentialStoreSuite(
         await under.seedLegacyKey(userId, oldKey);
         const replace = store.replaceLegacyKey!;
         expect(
-          await replace(userId, hashCredential(next, "legacy-key"), next.slice(-4), LATER),
+          await replace(userId, hashOf(oldKey.toUpperCase()), hashOf(next), next.slice(-4), LATER),
         ).toBe(true);
         expect(await store.findLegacyKey(oldKey)).toEqual({ userId, revoked: true });
         expect(await store.findLegacyKey(next.toUpperCase())).toEqual({ userId, revoked: false });
@@ -260,13 +262,16 @@ export function describeCredentialStoreSuite(
           lastFour: next.slice(-4),
           revoked: false,
         });
+        // The replaced key cannot rotate its successor away.
+        const stale = newKey();
+        expect(await replace(userId, hashOf(oldKey), hashOf(stale), "abcd", LATER)).toBe(false);
+        expect(await store.findLegacyKey(stale)).toBeNull();
+        expect(await store.legacyKeyOf(userId)).toMatchObject({ lastFour: next.slice(-4) });
         // The new key can be revoked, and then cannot be replaced.
         expect(await store.revokeLegacyKey(userId, LATER)).toBe(true);
         expect(await store.findLegacyKey(next)).toEqual({ userId, revoked: true });
         const again = newKey();
-        expect(await replace(userId, hashCredential(again, "legacy-key"), "abcd", LATER)).toBe(
-          false,
-        );
+        expect(await replace(userId, hashOf(next), hashOf(again), "abcd", LATER)).toBe(false);
         expect(await store.findLegacyKey(again)).toBeNull();
       });
 
@@ -276,27 +281,50 @@ export function describeCredentialStoreSuite(
         await under.seedLegacyKey(userId, key);
         await store.revokeLegacyKey(userId, AT);
         const next = newKey();
-        const hash = hashCredential(next, "legacy-key");
-        expect(await store.replaceLegacyKey!(userId, hash, next.slice(-4), LATER)).toBe(false);
+        expect(
+          await store.replaceLegacyKey!(userId, hashOf(key), hashOf(next), next.slice(-4), LATER),
+        ).toBe(false);
         expect(await store.findLegacyKey(next)).toBeNull();
-        expect(await store.replaceLegacyKey!(randomUUID(), hash, next.slice(-4), LATER)).toBe(
-          false,
-        );
+        expect(
+          await store.replaceLegacyKey!(
+            randomUUID(),
+            hashOf(key),
+            hashOf(next),
+            next.slice(-4),
+            LATER,
+          ),
+        ).toBe(false);
       });
 
-      replaceIt("leaves exactly one unrevoked key after two concurrent replaces", async () => {
+      replaceIt("lets exactly one of two concurrent replaces of the same key win", async () => {
         const userId = randomUUID();
-        await under.seedLegacyKey(userId, newKey());
+        const key = newKey();
+        await under.seedLegacyKey(userId, key);
         const [a, b] = [newKey(), newKey()];
         const results = await Promise.all(
           [a, b].map((k) =>
-            store.replaceLegacyKey!(userId, hashCredential(k, "legacy-key"), k.slice(-4), LATER),
+            store.replaceLegacyKey!(userId, hashOf(key), hashOf(k), k.slice(-4), LATER),
           ),
         );
-        // At least one wins; when both do, they ran one after the other and the later replaced the earlier.
-        expect(results.some(Boolean)).toBe(true);
+        expect(results.filter(Boolean)).toHaveLength(1);
         const found = await Promise.all([a, b].map((k) => store.findLegacyKey(k)));
         expect(found.filter((m) => m !== null && !m.revoked)).toHaveLength(1);
+      });
+
+      replaceIt("leaves no working key when a revoke races a replace", async () => {
+        const userId = randomUUID();
+        const key = newKey();
+        await under.seedLegacyKey(userId, key);
+        const next = newKey();
+        await Promise.all([
+          store.revokeLegacyKey(userId, LATER),
+          store.replaceLegacyKey!(userId, hashOf(key), hashOf(next), next.slice(-4), LATER),
+        ]);
+        expect(await store.legacyKeyOf(userId)).toMatchObject({ revoked: true });
+        for (const k of [key, next]) {
+          const found = await store.findLegacyKey(k);
+          expect(found === null || found.revoked).toBe(true);
+        }
       });
     });
   });

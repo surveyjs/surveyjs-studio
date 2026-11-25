@@ -1,4 +1,5 @@
--- Hosted archives and legacy access keys (ADR 0037, ADR 0043). Statements end with a semicolon at
+-- Hosted archives and legacy access keys (ADR 0037 for the keys, ADR 0033 for the survey events
+-- and deleted responses). Statements end with a semicolon at
 -- the end of a line. GUIDs are lower-case text; timestamps are ISO 8601 text.
 
 -- The per-user access keys of the old service. Only the SHA-256 hash of the lower-cased value is

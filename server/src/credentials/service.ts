@@ -200,6 +200,7 @@ export function createCredentialsService(options: CredentialsServiceOptions): Cr
         if (
           !(await credentials.replaceLegacyKey(
             user.id,
+            credential.hash,
             hashCredential(value, "legacy-key"),
             lastFour(value),
             isoNow(),
