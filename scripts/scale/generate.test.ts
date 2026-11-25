@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase, type SqlDatabase } from "../../server/src/sql/database.js";
 import { migrate } from "../../server/src/sql/migrator.js";
 import { scratchSqlite, type ScratchDatabase } from "../../server/src/sql/scratch-databases.js";
-import { generate } from "./generate.js";
+import { generate, run, SURVEY_BATCH } from "./generate.js";
 import { parseSizes, type ScaleSizes } from "./sizes.js";
 
 const sizes: ScaleSizes = {
@@ -113,5 +113,70 @@ describe("parseSizes", () => {
     expect(parseSizes(["--users", "x"])).toHaveProperty("error");
     expect(parseSizes(["--users", "0"])).toHaveProperty("error");
     expect(parseSizes(["--nope"])).toHaveProperty("error");
+  });
+});
+
+describe("batches", () => {
+  it("writes the sizes across the survey and response batch boundaries", async () => {
+    const database = await fresh();
+    const big: ScaleSizes = {
+      users: 4,
+      surveys: SURVEY_BATCH + 7,
+      responses: 100,
+      largest: 2500,
+      historyPerSurvey: 2,
+      seed: 3,
+    };
+    await generate(database, big);
+    expect(await count(database, "surveys")).toBe(big.surveys);
+    expect(await count(database, "survey_history")).toBe(big.surveys * big.historyPerSurvey);
+    expect(await count(database, "survey_responses")).toBe(big.responses + big.largest);
+  });
+});
+
+describe("run", () => {
+  const args = ["--users", "2", "--surveys", "3", "--responses", "5", "--largest", "5"];
+
+  it("needs the database named", async () => {
+    const result = await run(args, {});
+    expect(result.code).toBe(2);
+    expect(result.err).toMatch(/^Error: /);
+  });
+
+  it("refuses a database that holds a survey, writing nothing", async () => {
+    const database = await fresh();
+    await generate(database, { ...sizes, users: 1, surveys: 1, responses: 0, largest: 0 });
+    const path = opened.at(-1)!.scratch.target;
+    if (path.dialect !== "sqlite") throw new Error("sqlite expected");
+    await database.db.deleteFrom("users").execute();
+    const before = await count(database, "surveys");
+    const result = await run(args, { SQLITE_PATH: path.path });
+    expect(result.code).toBe(2);
+    expect(result.err).toMatch(/^Error: .*surveys/);
+    expect(await count(database, "surveys")).toBe(before);
+    expect(await count(database, "users")).toBe(0);
+  });
+
+  it("refuses a database that holds a user, writing nothing", async () => {
+    const database = await fresh();
+    await generate(database, { ...sizes, users: 1, surveys: 1, responses: 0, largest: 0 });
+    await database.db.deleteFrom("surveys").execute();
+    const path = opened.at(-1)!.scratch.target;
+    if (path.dialect !== "sqlite") throw new Error("sqlite expected");
+    const result = await run(args, { SQLITE_PATH: path.path });
+    expect(result.code).toBe(2);
+    expect(result.err).toMatch(/^Error: .*users/);
+    expect(await count(database, "surveys")).toBe(0);
+    expect(await count(database, "users")).toBe(1);
+  });
+
+  it("fills an empty database and prints its token line", async () => {
+    const scratch = scratchSqlite();
+    opened.push({ database: openDatabase(scratch.target), scratch });
+    if (scratch.target.dialect !== "sqlite") throw new Error("sqlite expected");
+    const lines: string[] = [];
+    const result = await run(args, { SQLITE_PATH: scratch.target.path }, (l) => lines.push(l));
+    expect(result.code).toBe(0);
+    expect(lines.at(-1)).toMatch(/^--survey \S+ --token sjs_/);
   });
 });

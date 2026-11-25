@@ -36,6 +36,8 @@ function guid(random: () => number): string {
 const BASE_TIME = Date.parse("2025-01-01T00:00:00.000Z");
 /** Rows per insert statement: under the drivers' parameter limits at the widest table. */
 const BATCH = 1000;
+/** Surveys generated and inserted together (with their history). */
+export const SURVEY_BATCH = 200;
 
 const CHOICES = ["alpha", "beta", "gamma", "delta"];
 
@@ -98,48 +100,54 @@ export async function generate(
   progress(`users: ${sizes.users}`);
 
   const surveyIds = Array.from({ length: sizes.surveys }, () => guid(random));
-  const surveyRows = surveyIds.map((id, i) => {
-    const definition = definitionOf(`Survey ${i + 1}`, sizes.historyPerSurvey);
-    const owner = userIds[i % userIds.length]!;
-    return {
-      id,
-      name: `Survey ${i + 1}`,
-      owner_user_id: owner,
-      owner_project_id: null,
-      creator_id: owner,
-      post_id: guid(random),
-      result_id: guid(random),
-      published: true,
-      archived: false,
-      public_results: false,
-      store_respondent_ip: false,
-      use_cookies: false,
-      legacy_publish_id: null,
-      created_at: at(i * 1000),
-      updated_at: at(i * 1000 + sizes.historyPerSurvey),
-      definition: jsonText(dialect, definition),
-      definition_version: versionOf(definition),
-      theme: null,
-      theme_version: versionOf(undefined),
-    };
-  });
-  await insertBatched(surveyRows, (rows) => db.insertInto("surveys").values(rows).execute());
-  progress(`surveys: ${sizes.surveys}`);
-
+  // Surveys and their history go in per batch of surveys, so memory does not grow with --surveys.
   let historyRows = 0;
-  const history = surveyIds.flatMap((surveyId, i) =>
-    Array.from({ length: sizes.historyPerSurvey }, (_, revision) => ({
-      survey_id: surveyId,
-      id: guid(random),
-      at: at(i * 1000 + revision + 1),
-      user_id: userIds[i % userIds.length]!,
-      snapshot: jsonText(dialect, definitionOf(`Survey ${i + 1}`, revision + 1)),
-    })),
-  );
-  await insertBatched(history, async (rows) => {
-    await db.insertInto("survey_history").values(rows).execute();
-    historyRows += rows.length;
-  });
+  for (let first = 0; first < surveyIds.length; first += SURVEY_BATCH) {
+    const indexes = Array.from(
+      { length: Math.min(SURVEY_BATCH, surveyIds.length - first) },
+      (_, k) => first + k,
+    );
+    const surveyRows = indexes.map((i) => {
+      const definition = definitionOf(`Survey ${i + 1}`, sizes.historyPerSurvey);
+      const owner = userIds[i % userIds.length]!;
+      return {
+        id: surveyIds[i]!,
+        name: `Survey ${i + 1}`,
+        owner_user_id: owner,
+        owner_project_id: null,
+        creator_id: owner,
+        post_id: guid(random),
+        result_id: guid(random),
+        published: true,
+        archived: false,
+        public_results: false,
+        store_respondent_ip: false,
+        use_cookies: false,
+        legacy_publish_id: null,
+        created_at: at(i * 1000),
+        updated_at: at(i * 1000 + sizes.historyPerSurvey),
+        definition: jsonText(dialect, definition),
+        definition_version: versionOf(definition),
+        theme: null,
+        theme_version: versionOf(undefined),
+      };
+    });
+    await insertBatched(surveyRows, (rows) => db.insertInto("surveys").values(rows).execute());
+    const history = indexes.flatMap((i) =>
+      Array.from({ length: sizes.historyPerSurvey }, (_, revision) => ({
+        survey_id: surveyIds[i]!,
+        id: guid(random),
+        at: at(i * 1000 + revision + 1),
+        user_id: userIds[i % userIds.length]!,
+        snapshot: jsonText(dialect, definitionOf(`Survey ${i + 1}`, revision + 1)),
+      })),
+    );
+    await insertBatched(history, async (rows) => {
+      await db.insertInto("survey_history").values(rows).execute();
+      historyRows += rows.length;
+    });
+  }
+  progress(`surveys: ${sizes.surveys}`);
   progress(`history entries: ${historyRows}`);
 
   // The first survey takes `largest`; the rest share `responses` evenly (the first ones the remainder).
@@ -183,28 +191,44 @@ export async function generate(
   return { largestSurveyId: surveyIds[0]!, ownerId: userIds[0]! };
 }
 
-/** The target the server reads: DATABASE_URL (PostgreSQL), else SQLITE_PATH. */
-function targetFromEnv() {
-  const url = process.env.DATABASE_URL;
-  return url
-    ? ({ dialect: "postgres", url } as const)
-    : ({ dialect: "sqlite", path: process.env.SQLITE_PATH ?? "/data/surveyjs-studio.db" } as const);
+/** Why the database cannot take synthetic data, or null when it holds no app data. */
+export async function refusal(database: SqlDatabase): Promise<string | null> {
+  for (const table of ["users", "surveys", "api_tokens"] as const) {
+    const row = await database.db
+      .selectFrom(table)
+      .select((eb) => eb.fn.countAll().as("n"))
+      .executeTakeFirstOrThrow();
+    if (Number(row.n) > 0) return `the database already holds data (${table}); use an empty one`;
+  }
+  return null;
 }
 
-async function main(): Promise<number> {
-  const parsed = parseSizes(process.argv.slice(2).filter((arg) => arg !== "--"));
-  if ("error" in parsed) {
-    console.error(parsed.error);
-    console.error(GENERATE_USAGE);
-    return 2;
+/** The target the environment names, which must be explicit: DATABASE_URL, else SQLITE_PATH. */
+function targetFromEnv(env: Record<string, string | undefined>) {
+  if (env.DATABASE_URL) return { dialect: "postgres", url: env.DATABASE_URL } as const;
+  if (env.SQLITE_PATH) return { dialect: "sqlite", path: env.SQLITE_PATH } as const;
+  return null;
+}
+
+/** The command: 0 done, 2 for a usage problem or a database that is not empty. */
+export async function run(
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+  log: (line: string) => void = () => undefined,
+): Promise<{ code: number; err: string }> {
+  const parsed = parseSizes(args.filter((arg) => arg !== "--"));
+  if ("error" in parsed) return { code: 2, err: `${parsed.error}\n${GENERATE_USAGE}\n` };
+  const target = targetFromEnv(env);
+  if (target === null) {
+    return { code: 2, err: "Error: name the database with DATABASE_URL or SQLITE_PATH\n" };
   }
-  const database = openDatabase(targetFromEnv());
+  const database = openDatabase(target);
   try {
     await migrate(database);
+    const problem = await refusal(database);
+    if (problem !== null) return { code: 2, err: `Error: ${problem}\n` };
     const started = Date.now();
-    const { largestSurveyId, ownerId } = await generate(database, parsed.sizes, (line) =>
-      console.log(line),
-    );
+    const { largestSurveyId, ownerId } = await generate(database, parsed.sizes, log);
     // The owner's API token, so that scale:check can sign in. The data is synthetic.
     const token = newApiTokenValue();
     await database.db
@@ -221,14 +245,16 @@ async function main(): Promise<number> {
         revoked_at: null,
       })
       .execute();
-    console.log(`generated in ${((Date.now() - started) / 1000).toFixed(1)} s`);
-    console.log(`--survey ${largestSurveyId} --token ${token}`);
-    return 0;
+    log(`generated in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    log(`--survey ${largestSurveyId} --token ${token}`);
+    return { code: 0, err: "" };
   } finally {
     await database.close();
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main();
+  const result = await run(process.argv.slice(2), process.env, (line) => console.log(line));
+  process.stderr.write(result.err);
+  process.exitCode = result.code;
 }
