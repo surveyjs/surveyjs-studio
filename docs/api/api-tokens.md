@@ -146,7 +146,9 @@ credential that signs the request, so an integration can rotate its own value:
 
 - with an **API token**: the old value stops working, and the answer is a new `sjs_` value with the same name and
   scope, shown once: `200 { "value": "sjs_…" }`;
-- with a **legacy access key**: `409 legacy-key-replace-unavailable`. A legacy key cannot be replaced here.
+- with a **legacy access key**: on the SQL providers (the new server) the request's key is revoked and the answer is a
+  new key in the legacy format, 32 hexadecimal digits, shown once: `200 { "value": "<key>" }`. Where the store cannot
+  replace the key (today's server's provider), `409 legacy-key-replace-unavailable`.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" "$API/me/credential"
@@ -162,7 +164,7 @@ Use the new value from the next request on.
 | 403    | `forbidden`                      | A member who is not an admin asked for a project's tokens or tried to make one                 |
 | 404    | `not-found`                      | Outside the token's scope, or a project the caller does not belong to                          |
 | 409    | `legacy-key-revoke-unavailable`  | `LEGACY_KEY_REVOKE` is off                                                                     |
-| 409    | `legacy-key-replace-unavailable` | `replaceCurrentCredential` with a legacy key                                                   |
+| 409    | `legacy-key-replace-unavailable` | `replaceCurrentCredential` with a legacy key, where the store cannot replace it                |
 
 ## Calling the API from a browser
 
