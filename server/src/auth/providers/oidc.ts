@@ -13,14 +13,15 @@ function utcInstant(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const match = RFC_3339.exec(value);
   if (match === null) return undefined;
-  const [month, day, hour, minute, second, offsetHour, offsetMinute] = match
-    .slice(2)
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] = match
+    .slice(1)
     .map((part) => Number(part ?? 0));
   if (
     month! < 1 ||
     month! > 12 ||
     day! < 1 ||
-    day! > 31 ||
+    // Day 0 of the next month is the last day of this one: 2027-02-30 is refused, not rolled over.
+    day! > new Date(Date.UTC(year!, month!, 0)).getUTCDate() ||
     hour! > 23 ||
     minute! > 59 ||
     second! > 60 ||

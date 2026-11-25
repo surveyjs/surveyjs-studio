@@ -348,20 +348,26 @@ describe("surveyjs-oidc provider against an auth.surveyjs.io-like server (OAuth 
     it.each([
       ["2027-03-01T10:00:00+02:00", "2027-03-01T08:00:00.000Z"],
       ["2027-03-01T08:00:00Z", "2027-03-01T08:00:00.000Z"],
+      ["2028-02-29T00:00:00Z", "2028-02-29T00:00:00.000Z"],
       [null, null],
     ])("license_expires_at %j gives %j", async (value, expected) => {
       const claims = await claimsFor({ license_expires_at: value });
       expect(claims.licenseExpiresAt).toBe(expected);
     });
 
-    it.each(["soon", "2027", "March 1", "2027-03-01", 12345, ""])(
-      "license_expires_at %j is left out",
-      async (value) => {
-        expect(await claimsFor({ license_expires_at: value })).not.toHaveProperty(
-          "licenseExpiresAt",
-        );
-      },
-    );
+    it.each([
+      "soon",
+      "2027",
+      "March 1",
+      "2027-03-01",
+      12345,
+      "",
+      "2027-02-30T00:00:00Z",
+      "2027-02-29T00:00:00Z",
+      "2027-04-31T00:00:00Z",
+    ])("license_expires_at %j is left out", async (value) => {
+      expect(await claimsFor({ license_expires_at: value })).not.toHaveProperty("licenseExpiresAt");
+    });
 
     it("leaves both out when UserInfo has neither", async () => {
       const claims = await claimsFor({});
