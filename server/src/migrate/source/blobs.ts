@@ -10,6 +10,8 @@ import { historyOrder } from "../../providers/ordering.js";
 /** The legacy blob containers of the surveys account, read only. */
 export interface BlobSource {
   definitionText(surveyId: string): Promise<string | null>;
+  /** The survey's history entries from the listing alone (no snapshot read), newest first. */
+  historyEntries(surveyId: string): Promise<HistoryEntryRecord[]>;
   historyNewest(
     surveyId: string,
     keep: number,
@@ -29,6 +31,8 @@ export interface BlobSource {
     properties: BlobProperties;
     metadata: Record<string, string>;
   }>;
+  /** The bytes of a blob `appFiles` listed; null when it is gone. */
+  appFile(blobName: string): Promise<Buffer | null>;
 }
 
 const PERMISSIONS_CONTAINER = "surveyresultpermissions";
@@ -46,15 +50,37 @@ export function openBlobSource(connectionString: string): BlobSource {
   }
   const container = (name: string): ContainerClient => service.getContainerClient(name);
 
-  /** The text of a blob; null when the blob or its container is missing. */
-  async function textOf(operation: string, from: string, name: string): Promise<string | null> {
+  /** The bytes of a blob; null when the blob or its container is missing. */
+  async function bytesOf(operation: string, from: string, name: string): Promise<Buffer | null> {
     try {
-      const bytes = await container(from).getBlobClient(name).downloadToBuffer();
-      return bytes.toString("utf8");
+      return await container(from).getBlobClient(name).downloadToBuffer();
     } catch (error) {
       if (statusOf(error) === 404) return null;
       throw new LegacyStoreError(operation, error);
     }
+  }
+
+  /** The text of a blob; null when the blob or its container is missing. */
+  async function textOf(operation: string, from: string, name: string): Promise<string | null> {
+    return (await bytesOf(operation, from, name))?.toString("utf8") ?? null;
+  }
+
+  /** The survey's history entries with their blob names, newest first. */
+  async function historyOf(
+    surveyId: string,
+  ): Promise<{ entry: HistoryEntryRecord; name: string }[]> {
+    const id = surveyId.toLowerCase();
+    const entries: { entry: HistoryEntryRecord; name: string }[] = [];
+    for await (const blob of blobsOf("history list", "surveyjsonhistory", `${id}/`)) {
+      const entry = historyEntryFromBlob(
+        id,
+        blob.name,
+        blob.metadata,
+        blob.properties.lastModified,
+      );
+      if (entry) entries.push({ entry, name: blob.name });
+    }
+    return entries.sort((a, b) => historyOrder(a.entry, b.entry));
   }
 
   /** Every blob of a container with the given options; a missing container is empty. */
@@ -80,19 +106,10 @@ export function openBlobSource(connectionString: string): BlobSource {
       return text === "" ? await textOf("definition read", "surveytext", id) : text;
     },
 
+    historyEntries: async (surveyId) => (await historyOf(surveyId)).map(({ entry }) => entry),
+
     async historyNewest(surveyId, keep) {
-      const id = surveyId.toLowerCase();
-      const entries: { entry: HistoryEntryRecord; name: string }[] = [];
-      for await (const blob of blobsOf("history list", "surveyjsonhistory", `${id}/`)) {
-        const entry = historyEntryFromBlob(
-          id,
-          blob.name,
-          blob.metadata,
-          blob.properties.lastModified,
-        );
-        if (entry) entries.push({ entry, name: blob.name });
-      }
-      entries.sort((a, b) => historyOrder(a.entry, b.entry));
+      const entries = await historyOf(surveyId);
       const newest: { entry: HistoryEntryRecord; text: string }[] = [];
       for (const { entry, name } of entries.slice(0, Math.max(0, keep))) {
         const text = await textOf("history read", "surveyjsonhistory", name);
@@ -142,5 +159,7 @@ export function openBlobSource(connectionString: string): BlobSource {
         yield { blobName: blob.name, properties: blob.properties, metadata: blob.metadata ?? {} };
       }
     },
+
+    appFile: (blobName) => bytesOf("file read", FILES_CONTAINER, blobName),
   };
 }

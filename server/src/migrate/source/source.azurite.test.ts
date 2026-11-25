@@ -131,6 +131,9 @@ describe("the legacy source readers (local replica)", () => {
     const ats = all.map((p) => Date.parse(p.entry.at));
     expect([...ats].sort((a, b) => b - a)).toEqual(ats);
     expect((await source.historyNewest(surveyId, 1)).length).toBe(1);
+    const listed = await source.historyEntries(surveyId.toUpperCase());
+    expect(listed.map((e) => e.id)).toEqual(all.map((p) => p.entry.id));
+    expect(await source.historyEntries(MISSING)).toEqual([]);
     expect(await source.historyNewest(MISSING, 20)).toEqual([]);
   });
 
@@ -160,6 +163,8 @@ describe("the legacy source readers (local replica)", () => {
     expect(files).toHaveLength(1);
     expect(files[0]!.metadata).toMatchObject({ kind: "asset", name: "x.png" });
     expect(files[0]!.properties.contentLength).toBe(5);
+    expect((await source.appFile("abc/def"))?.toString("utf8")).toBe("bytes");
+    expect(await source.appFile("abc/none")).toBeNull();
   });
 
   it("lists changed blobs by last-modified", async () => {
