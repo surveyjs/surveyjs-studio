@@ -40,6 +40,7 @@ export function openShareSource(
       return reader ? reader.read(share, name) : null;
     },
     async *shareFiles(share) {
+      if (shares === null) return;
       if (shares?.list) {
         yield* shares.list(share);
         return;

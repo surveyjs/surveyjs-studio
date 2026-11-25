@@ -55,10 +55,13 @@ describe("privateNamesOfLayout", () => {
     ]);
   });
 
-  it("never lists the IP, client id or id columns", () => {
+  it("lists a hidden question named like a response column (id, clientid, IPAddress)", () => {
     const layout = { columns: [col("IPAddress", 2), col("ClientId", 2), col("id", 1), col("a")] };
     expect(names(layout, ["id", "clientid", ...answers])).toEqual(
-      ["HappendAt", "InstanceId"].concat(),
+      ["ClientId", "HappendAt", "IPAddress", "InstanceId", "id"].sort(),
+    );
+    expect(names({ columns: [col("a")], newcolumnsvisibility: 2 }, ["id", "clientid"])).toEqual(
+      ["HappendAt", "InstanceId", "clientid", "id"].sort(),
     );
   });
 

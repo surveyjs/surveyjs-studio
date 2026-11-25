@@ -64,9 +64,6 @@ export function storedColumnEntries(
 /** The columns the old results hid from public reads; HappendAt and InstanceId are named here. */
 const TIME_AND_ID = ["HappendAt", "InstanceId"] as const;
 
-/** Columns the bridge never shows in public results, whatever the layout says. */
-const NEVER_PRIVATE = ["IPAddress", "ClientId", "clientid", "id"];
-
 /**
  * The names of the answers (and `HappendAt` and `InstanceId`) a layout keeps out of public results,
  * as the old calculation merged it, among `answerNames` (every answer name the survey can hold):
@@ -77,7 +74,9 @@ const NEVER_PRIVATE = ["IPAddress", "ClientId", "clientid", "id"];
  * - a layout listing no columns hides nothing.
  * Returns `null` when the layout cannot be read (the old calculation failed): not an object, a
  * column of a type the old reader failed on, or a visibility that is no number. A listed column's
- * name that is none of the answers still counts (a response may hold it later).
+ * name that is none of the answers still counts (a response may hold it later). Every name the
+ * layout hides is listed, `id` or `IPAddress` too: a question may carry such a name, and listing
+ * a column the public results never show anyway does no harm.
  */
 export function privateNamesOfLayout(
   layout: unknown,
@@ -107,6 +106,5 @@ export function privateNamesOfLayout(
     if (!listed.has(name) && newColumns !== VISIBLE) names.add(name);
   }
   for (const name of TIME_AND_ID) if (!listed.has(name)) names.add(name);
-  for (const name of NEVER_PRIVATE) names.delete(name);
   return [...names];
 }

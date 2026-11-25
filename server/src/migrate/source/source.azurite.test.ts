@@ -9,6 +9,7 @@ import {
 import { createStubShareReader } from "../../providers/azure-legacy/legacy-shares-stub.js";
 import { LAYOUT_CONTAINERS_BY_KIND } from "../../providers/azure-legacy/mapping.js";
 import { openLegacySource, type LegacySource } from "./index.js";
+import { openSqlSource } from "./sql.js";
 
 async function collect<T>(items: AsyncIterable<T>): Promise<T[]> {
   const found: T[] = [];
@@ -83,6 +84,20 @@ describe("the legacy source readers (local replica)", () => {
     expect(lower(members.map((m) => m.id))).toEqual(
       lower(fixtures.organizationUsers.map((m) => m.id)),
     );
+  });
+
+  it("reads surveys in pages by id, every row once, the window applied", async () => {
+    const paged = openSqlSource(config.sqlConnectionString, { surveyPageSize: 2 });
+    try {
+      const rows = await collect(paged.surveys());
+      expect(lower(rows.map((s) => s.id))).toEqual(lower(fixtures.surveys.map((s) => s.id)));
+      expect(new Set(rows.map((s) => s.id)).size).toBe(rows.length);
+      expect(rows.some((s) => typeof s.theme === "string")).toBe(true);
+      expect(await collect(paged.surveys(FUTURE))).toEqual([]);
+      expect((await collect(paged.surveys(EPOCH))).length).toBe(fixtures.surveys.length);
+    } finally {
+      await paged.close();
+    }
   });
 
   it("filters by time: nothing for the future, everything from the epoch", async () => {
