@@ -510,7 +510,7 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 - **The scale tools:**
   - `pnpm scale:generate`: a synthetic data set (users, surveys, history, responses, API tokens) in a migrated SQL database, sizes as parameters so the real figures stay out of the repository, one survey of millions of responses; it refuses a database that holds data;
   - `pnpm scale:check`: the survey list, a page of the results, the export and a save through the HTTP API, 95th percentile, against the targets of [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25). It prints counts and times only.
-- **The new server's profile,** ready but not active: the settings in `deploy/hetzner/app.env.example`, `docker/prod-like.sql.env` and `pnpm prod-like-sql:up` (the image on PostgreSQL and S3), and the `prod-like-sql` CI job.
+- **The new server's profile,** ready but not active: the settings in the deployment's example environment file, `docker/prod-like.sql.env` and `pnpm prod-like-sql:up` (the image on PostgreSQL and S3), and the `prod-like-sql` CI job.
 - **What waits for the new server,** with figures added (rounded, rule 6) to ADR 0033 when done:
   - the scale run: `scale:generate` at production size, then `scale:check`, and index changes (migrations) until the targets hold; the Table's and the Summary's targets are met in Step 8b;
   - the production measurement: `pnpm inspect:legacy --stats` with the 20 newest history entries of each survey, run once on production, to size the database;

@@ -593,7 +593,7 @@ was removed in hosted Step 2 ([ADR 0022](adr/0022-users-from-sign-in.md)); after
 
 After the cutover the hosted app runs on the new server with its data in PostgreSQL and its files in an S3-compatible
 bucket ([ADR 0033](adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25)). The settings are listed, with
-today's, in [`deploy/hetzner/app.env.example`](../deploy/hetzner/app.env.example); `docker/prod-like.sql.env` keeps
+today's, in the deployment's example environment file; `docker/prod-like.sql.env` keeps
 the same values for the local check. The ones that matter here:
 
 | Variable                           | Value                                                                                                     |
