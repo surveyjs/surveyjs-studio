@@ -7,8 +7,9 @@ import type { Report } from "./report.js";
 /**
  * The profiles to pre-create (ADR 0043 point 6) for the people the copied data names (`named`,
  * lower-case ids), and their legacy access keys. No email, an `@invalid` email, or an email equal
- * to another named person's after lower-casing: no rows, listed in the report by id (the data keeps
- * the id). Never an admin; nobody gets a password.
+ * to another legacy user's after lower-casing (any user's, named or not, so the decision never
+ * depends on who else a run names, or in what order): no rows, listed in the report by id (the
+ * data keeps the id). Never an admin; nobody gets a password.
  */
 export function mapPeople(
   rows: readonly (LegacyUserRow & { accesskey: string | null })[],
@@ -33,7 +34,10 @@ export function mapPeople(
   }
 
   const byEmail = new Map<string, number>();
-  for (const { email } of candidates) byEmail.set(email, (byEmail.get(email) ?? 0) + 1);
+  for (const row of rows) {
+    const email = (row.email ?? "").trim().toLowerCase();
+    if (email !== "") byEmail.set(email, (byEmail.get(email) ?? 0) + 1);
+  }
 
   const people: PersonRec[] = [];
   const keys: KeyRec[] = [];

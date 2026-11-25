@@ -71,6 +71,17 @@ describe("mapPeople", () => {
     expect(report.counts()).toEqual({ person_email_conflict: 2 });
   });
 
+  it("excludes a named person whose email equals an unnamed user's after lower-casing", () => {
+    const rows = [row(1, "A@x.io"), row(2, "a@X.io"), row(3, "c@x.io")];
+    const report = createReport();
+    const named = new Set([id(1).toLowerCase(), id(3).toLowerCase()]);
+    const { people } = mapPeople(rows, named, run, report);
+    expect(people.map((p) => p.id)).toEqual([id(3).toLowerCase()]);
+    expect(report.toJSON()).toMatchObject({
+      notes: [{ kind: "person_email_conflict", ids: { userId: id(1).toLowerCase() } }],
+    });
+  });
+
   it("skips and reports an id that is not a GUID", () => {
     const rows = [{ ...row(1, "a@x.io"), id: "not-a-guid" }];
     const report = createReport();
