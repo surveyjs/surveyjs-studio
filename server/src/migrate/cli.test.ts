@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "kysely";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../sql/database.js";
 import { migrate } from "../sql/migrator.js";
@@ -209,6 +210,29 @@ describe("migrate:hosted run", () => {
     folders.push(dir!);
     expect(existsSync(join(dir!, "target.db"))).toBe(true);
     expect(result.out + result.err).not.toContain("secret-");
+  });
+
+  it("verify, delta and reconcile refuse without --target (exit 2)", async () => {
+    for (const command of ["verify", "delta", "reconcile"]) {
+      const result = capture();
+      expect(await run([command], result.io, { env: LEGACY_ENV })).toBe(2);
+      expect(result.err).toContain(`${command} needs --target`);
+      expect(result.out).not.toContain("scratch");
+    }
+  });
+
+  it("wipe refuses a target lacking one of its tables, before any byte is deleted", async () => {
+    const t = await targetFolder();
+    const database = openDatabase({ dialect: "sqlite", path: t.path });
+    await sql`drop table password_links`.execute(database.db);
+    await database.close();
+    const result = capture();
+    expect(
+      await run(["wipe", "--target", t.envFile, "--confirm", "hosted.db"], result.io, { env: {} }),
+    ).toBe(2);
+    expect(result.err).toContain("password_links");
+    expect(await count(t.path, "files")).toBe(1);
+    expect(existsSync(join(t.filesPath, SURVEY, FILE))).toBe(true);
   });
 
   it("wipe refuses without --target and touches nothing", async () => {

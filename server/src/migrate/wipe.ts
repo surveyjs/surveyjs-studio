@@ -36,6 +36,14 @@ const TABLES = [
   "migration_state",
 ] as const;
 
+/** wipe cannot run safely on this schema; nothing was deleted. */
+export class WipeRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WipeRefused";
+  }
+}
+
 export interface WipeResult {
   /** Tables emptied. */
   tables: number;
@@ -90,10 +98,17 @@ export async function wipeTarget(
   options: { localRoot: string | null },
 ): Promise<WipeResult> {
   const known = new Set<string>([...TABLES, "schema_migrations"]);
-  const unknown = (await tableNames(database)).filter((name) => !known.has(name));
+  const present = new Set(await tableNames(database));
+  const unknown = [...present].filter((name) => !known.has(name));
   if (unknown.length > 0) {
-    throw new Error(
+    throw new WipeRefused(
       `wipe does not know the table ${unknown.sort().join(", ")}; nothing was deleted`,
+    );
+  }
+  const missing = TABLES.filter((name) => !present.has(name));
+  if (missing.length > 0) {
+    throw new WipeRefused(
+      `the target lacks the table ${missing.join(", ")} (an older schema?); nothing was deleted`,
     );
   }
 

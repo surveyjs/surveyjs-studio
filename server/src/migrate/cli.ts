@@ -31,7 +31,7 @@ import { openLegacySource, type LegacySource } from "./source/index.js";
 import type { ListingShareReader } from "./source/shares.js";
 import { openMigrationTarget } from "./target.js";
 import { runVerify } from "./verify.js";
-import { wipeTarget } from "./wipe.js";
+import { WipeRefused, wipeTarget } from "./wipe.js";
 
 export const USAGE = `Usage: surveyjs-studio migrate-hosted <command> [options]
 
@@ -55,8 +55,9 @@ Options:
                         when not given (variables already set win over the file)
   --target <env file>   The target: STORAGE_PROVIDER (sqlite or postgres), SQLITE_PATH or
                         DATABASE_URL, FILE_STORE, FILES_PATH or S3_*; the environment is not
-                        used. Without it: a scratch SQLite database and files folder in a new
-                        temporary folder, which is printed and left in place
+                        used. Needed by verify, delta, reconcile and wipe. copy without it uses a
+                        scratch SQLite database and files folder in a new temporary
+                        folder, which is printed and left in place
   --sample <share>      Only a share (0 to 1) of the accounts, chosen by a hash of the account id,
                         with their projects (plan, copy, verify, delta, reconcile)
   --include <file>      Accounts always in the sample: a file of account ids (one per line)
@@ -275,6 +276,14 @@ export async function run(
       );
     }
   }
+  if (
+    args.target === null &&
+    (command === "verify" || command === "delta" || command === "reconcile")
+  ) {
+    return usage(
+      `${command} needs --target: it works on what a copy already put there, and a scratch target is empty.`,
+    );
+  }
   let include: string[] = [];
   if (args.include !== null) {
     try {
@@ -443,6 +452,7 @@ export async function run(
     }
     return ok ? 0 : 1;
   } catch (error) {
+    if (error instanceof WipeRefused) return usage(`Refused: ${error.message}`);
     if (error instanceof ConfigError) return usage(`Error: ${error.message}`);
     io.err(`Error: ${safeErrorText(error)}\n`);
     return 1;
