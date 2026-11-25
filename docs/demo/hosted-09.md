@@ -34,6 +34,22 @@ FILES_PATH=$DEMO/files
 EOF
 ```
 
+The replica's fixtures hold one row that production does not: a key revocation Studio wrote into its own token table.
+The copy does not take Studio's own rows, by decision, and `verify` reports any it finds as a difference (ADR 0044
+point 9), so take it out first; `pnpm legacy:load` (or the clean-up at the end) puts it back:
+
+```sh
+pnpm --filter @surveyjs-studio/server exec node --env-file=../docker/azurite.env --import tsx --input-type=module -e '
+const { localTableClient } = await import("./src/legacy/local-clients.ts");
+const { API_TOKENS_TABLE } = await import("./src/providers/azure-legacy/writes.ts");
+const variable = "LEGACY_SURVEYS_STORAGE_CONNECTION_STRING";
+const tokens = localTableClient(process.env[variable], API_TOKENS_TABLE, variable);
+for await (const row of tokens.listEntities()) await tokens.deleteEntity(row.partitionKey, row.rowKey);'
+```
+
+A replica the automated tests have used may also hold editor files of no survey (`verify` reports
+`not_copied_user_files`); `pnpm demo:azurite:down` then `pnpm demo:azurite:up` gives a fresh one.
+
 `--source docker/azurite.env` names the replica in every command below. Reports hold ids and counts only, but keep real
 ones private; here they go into `$DEMO`.
 
@@ -55,9 +71,11 @@ ones private; here they go into `$DEMO`.
    pnpm migrate:hosted verify --full --source docker/azurite.env --target "$DEMO/target.env" --report "$DEMO/verify.json"; echo "exit $?"
    ```
 
-   - **Check:** `copy: done`, then `verify --full: OK, 0 differences` and `exit 0`. The replica's data, with its edge
-     cases (surveys in projects that no longer exist, partial responses), is copied; the report counts show what was
-     noted or skipped.
+   - **Check:** a progress line per phase with its time (`surveys: 9 copied, … (surveys: <n> ms)`), `copy: done`, then
+     `verify --full: OK, 0 differences` and `exit 0`. The replica's data, with its edge cases (surveys in projects that
+     no longer exist, partial responses), is copied; the report counts show what was noted or skipped. Rows the
+     replica's loader wrote in the last five minutes are listed under `pending`, not as differences: the marks are
+     taken five minutes back.
 
 3. Open the report:
 
@@ -102,7 +120,8 @@ AUTH="Authorization: Bearer $KEY"
 curl -s -H "$AUTH" "$API/surveys" | jq -r '.items[] | "\(.id)  \(.name)"' | head
 ```
 
-Pick two surveys from the list: `KEEP` (it gets a change and a response) and `GONE` (it is deleted).
+Pick two surveys from the list: `KEEP` (it gets a change and a response) and `GONE` (it is archived, then deleted: only
+an archived survey can be deleted).
 
 ```sh
 KEEP=<a survey id>
@@ -116,11 +135,12 @@ OLIVIA=$(curl -s -H "$AUTH" "$API/me" | jq -r .id)
    curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" -d '{"name":"Renamed for the delta demo"}' \
      "$API/surveys/$KEEP" | jq '{id, name}'
    curl -s -X POST -H "Content-Type: application/json" -d '{"data":{"demo":"delta"}}' "$API/public/surveys/$KEEP/responses"
+   curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" -d '{"archived":true}' "$API/surveys/$GONE" | jq .archived
    curl -s -o /dev/null -w "%{http_code}\n" -X DELETE -H "$AUTH" "$API/surveys/$GONE"
    ```
 
    - **Check:** the new name, `{"id":"…"}` for the response (if it answers an error, pick another survey for `KEEP`),
-     and `204`.
+     `true`, and `204`.
 
 2. Verify before copying the changes (an incremental verify, which is what the window ends with):
 
@@ -141,7 +161,8 @@ OLIVIA=$(curl -s -H "$AUTH" "$API/me" | jq -r .id)
    ```
 
    - **Check:** `delta: done`, `reconcile: done` (the counts say it removed the deleted survey's rows), then
-     `verify --full: OK, 0 differences` and `exit 0`.
+     `verify --full: OK, 0 differences` and `exit 0`. Your changes of the last five minutes may be listed as `pending`
+     (the new marks are taken five minutes back); `delta` copied them all the same.
 
 4. See the changes in the app on the target. Start Studio on the migrated copy (shell 3); the migrated people sign in
    with their old access keys here:
@@ -220,6 +241,14 @@ Stop shells 1 and 3 with Ctrl+C.
      `exit 0`. The same share and include file always pick the same accounts. The sample holds whole accounts: every
      survey in it has its owner or its project, with the project's members.
 
+   The target now holds a sample: a command without the copy's `--sample` and `--include` refuses, and changes nothing.
+
+   ```sh
+   pnpm migrate:hosted reconcile --source docker/azurite.env --target "$DEMO/target.env"; echo "exit $?"
+   ```
+
+   - **Check:** `Refused: the target holds a sample (--sample 0.5 with 1 included accounts): …` and `exit 2`.
+
 2. Empty the target:
 
    ```sh
@@ -241,4 +270,5 @@ When the new server is built and the SurveyJS team's inputs are in ([Operations]
 
 ## Clean up
 
-Stop the shells with Ctrl+C, then `pnpm demo:azurite:down` (deletes the replica's data) and `rm -r ~/hosted-09-demo`.
+Stop the shells with Ctrl+C, then `pnpm demo:azurite:down` (deletes the replica's data) and `rm -r ~/hosted-09-demo`. To
+keep the replica instead, `pnpm legacy:load` puts its fixtures back (the token row and the surveys you changed).
