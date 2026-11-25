@@ -69,6 +69,10 @@ export function mapProject(
       updatedAt: new Date(Math.max(...times)).toISOString(),
     });
   }
+  if (result.length === 0) {
+    report.skip("project", { projectId }, "no member has a known role");
+    return null;
+  }
   return {
     project: {
       id: legacy.id,

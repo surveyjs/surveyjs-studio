@@ -31,11 +31,17 @@ const row = (extra: Partial<Row> = {}): Row => ({
 });
 const ctx = (
   report: Report,
-  extra: Partial<{ projects: string[]; memberless: string[]; people: string[] }> = {},
+  extra: Partial<{
+    projects: string[];
+    memberless: string[];
+    people: string[];
+    legacyUsers: string[];
+  }> = {},
 ) => ({
   projects: new Set(extra.projects ?? []),
   projectsWithoutMembers: new Set(extra.memberless ?? []),
   people: new Set(extra.people ?? [low(OWNER), low(CREATOR)]),
+  legacyUsers: new Set(extra.legacyUsers ?? [low(OWNER), low(CREATOR)]),
   report,
 });
 
@@ -44,43 +50,92 @@ describe("mapSurvey, privacy", () => {
     { name: "p", isPublic: false },
     { name: "q", isPublic: true },
   ]);
-  const layout = JSON.stringify({
-    columns: [
-      { name: "c", visibility: 2 },
-      { name: "d", visibility: 0 },
+  const definition = JSON.stringify({
+    pages: [
+      {
+        elements: [
+          { type: "text", name: "p" },
+          { type: "text", name: "c" },
+          { type: "text", name: "d" },
+          { type: "text", name: "e", valueName: "ev", showCommentArea: true },
+        ],
+      },
     ],
   });
+  const layout = (columns: object[], extra: object = {}) => JSON.stringify({ columns, ...extra });
+  const shown = [
+    { name: "HappendAt" },
+    { name: "InstanceId" },
+    { name: "p" },
+    { name: "c" },
+    { name: "d" },
+    { name: "ev" },
+    { name: "ev-Comment" },
+  ];
+  const privates = (p: string | null, c: string | null, def = definition) =>
+    mapSurvey(row(), def, p, c, ctx(createReport()))?.privateQuestions.slice().sort();
 
   it("takes the permissions' non-public names only", () => {
-    const rec = mapSurvey(row(), "{}", perms, null, ctx(createReport()));
+    const rec = mapSurvey(row(), definition, perms, null, ctx(createReport()));
     expect(rec?.privateQuestions).toEqual(["p"]);
     expect(rec?.record.settings.publicResults).toBe(true);
   });
 
-  it("takes the column layout's hidden columns only", () => {
-    const rec = mapSurvey(row(), "{}", null, layout, ctx(createReport()));
-    expect(rec?.privateQuestions).toEqual(["c"]);
+  it("takes the layout's hidden and non-public listed columns only", () => {
+    const text = layout(shown.map((c) => (c.name === "c" ? { ...c, visibility: 2 } : c)));
+    expect(privates(null, text)).toEqual(["c"]);
+    const hidden = layout(shown.map((c) => (c.name === "d" ? { ...c, visibility: 1 } : c)));
+    expect(privates(null, hidden)).toEqual(["d"]);
   });
 
   it("takes the union of both, each once", () => {
-    const both = JSON.stringify({
-      columns: [
-        { name: "p", visibility: 1 },
-        { name: "c", visibility: 2 },
-      ],
-    });
-    const rec = mapSurvey(row(), "{}", perms, both, ctx(createReport()));
-    expect([...rec!.privateQuestions].sort()).toEqual(["c", "p"]);
+    const text = layout(
+      shown.map((c) => (c.name === "p" || c.name === "c" ? { ...c, visibility: 1 } : c)),
+    );
+    expect(privates(perms, text)).toEqual(["c", "p"]);
   });
 
-  it("has none when neither marks any", () => {
-    const rec = mapSurvey(row(), "{}", null, null, ctx(createReport()));
-    expect(rec?.privateQuestions).toEqual([]);
+  it("has none when neither marks any, or the layout lists no columns", () => {
+    expect(privates(null, null)).toEqual([]);
+    expect(privates(null, "")).toEqual([]);
+    expect(privates(null, "  ")).toEqual([]);
+    expect(privates(null, layout([], { newcolumnsvisibility: 2 }))).toEqual([]);
+    expect(privates(null, layout(shown))).toEqual([]);
+  });
+
+  it("gives answers the layout does not list its new-columns visibility, comment and value names included", () => {
+    const text = layout([{ name: "c" }, { name: "HappendAt" }, { name: "InstanceId" }], {
+      newcolumnsvisibility: 2,
+    });
+    expect(privates(null, text)).toEqual(["d", "ev", "ev-Comment", "p"]);
+    const open = layout([{ name: "c" }, { name: "HappendAt" }, { name: "InstanceId" }], {
+      newcolumnsvisibility: 0,
+    });
+    expect(privates(null, open)).toEqual([]);
+  });
+
+  it("hides HappendAt and InstanceId when the layout hides or omits them", () => {
+    expect(privates(null, layout([{ name: "c" }, { name: "HappendAt", visibility: 2 }]))).toEqual([
+      "HappendAt",
+      "InstanceId",
+    ]);
+  });
+
+  it("counts the extra answer names (response keys) the copy passes", () => {
+    const text = layout([{ name: "c" }, { name: "HappendAt" }, { name: "InstanceId" }], {
+      newcolumnsvisibility: 1,
+    });
+    const rec = mapSurvey(row(), "{}", null, text, {
+      ...ctx(createReport()),
+      extraAnswerNames: ["k1"],
+    });
+    expect(rec?.privateQuestions).toEqual(["k1"]);
   });
 
   it.each([
     ["permissions", "nope", null],
     ["column layout", null, "nope"],
+    ["new-columns visibility", null, JSON.stringify({ newcolumnsvisibility: true })],
   ])("turns public results off and reports when the %s is unreadable", (_name, p, c) => {
     const report = createReport();
     const rec = mapSurvey(row(), "{}", p, c, ctx(report));
@@ -102,6 +157,13 @@ describe("mapSurvey, ownership", () => {
     expect(inProject?.record.owner).toEqual({ kind: "project", projectId: low(PROJECT) });
     const personal = mapSurvey(row(), "{}", null, null, ctx(createReport()));
     expect(personal?.record.owner).toEqual({ kind: "personal", userId: low(OWNER) });
+  });
+
+  it("keeps a survey of a person with no profile personal, with that owner", () => {
+    const report = createReport();
+    const rec = mapSurvey(row(), "{}", null, null, ctx(report, { people: [] }));
+    expect(rec?.record.owner).toEqual({ kind: "personal", userId: low(OWNER) });
+    expect(report.counts()).toEqual({});
   });
 
   it.each([

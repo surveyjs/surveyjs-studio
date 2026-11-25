@@ -82,6 +82,12 @@ describe("mapProject", () => {
     expect(report.counts()).toEqual({ member_role_unknown: 1 });
   });
 
+  it("skips a project whose members all have unknown roles, as member-less", () => {
+    const report = createReport();
+    expect(mapProject(org, [member(M1, U1, "boss"), member(M2, U2, null)], report)).toBeNull();
+    expect(report.counts()).toEqual({ member_role_unknown: 2, "skipped:project": 1 });
+  });
+
   it("skips a project whose id is not a GUID, and rows whose user is not", () => {
     const report = createReport();
     expect(mapProject({ ...org, id: "x" }, [member(P, U1, "user")], report)).toBeNull();

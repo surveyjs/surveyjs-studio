@@ -1,4 +1,3 @@
-import { hiddenAnswerColumns } from "../../domain/layout-columns.js";
 import type { SurveyRecord } from "../../domain/types.js";
 import {
   definitionFromLegacy,
@@ -10,6 +9,7 @@ import {
 } from "../../providers/azure-legacy/mapping.js";
 import type { LegacySurveyRow } from "../../providers/azure-legacy/rows.js";
 import type { SurveyRec } from "../records.js";
+import { answerNamesOf, layoutPrivateNames } from "./layout.js";
 import type { Report } from "./report.js";
 import { withoutBom, withoutNul } from "./text.js";
 
@@ -31,6 +31,10 @@ export function mapSurvey(
     projects: ReadonlySet<string>;
     projectsWithoutMembers: ReadonlySet<string>;
     people: ReadonlySet<string>;
+    /** Every legacy user id: an owner in it is a person, with a profile or not. */
+    legacyUsers: ReadonlySet<string>;
+    /** Answer names beyond the definition's (the keys of the survey's responses). */
+    extraAnswerNames?: Iterable<string>;
     report: Report;
   },
 ): SurveyRec | null {
@@ -58,7 +62,7 @@ export function mapSurvey(
   let owner = record.owner;
   let creatorId = record.creatorId;
   if (creatorId !== null && !isGuid(creatorId)) creatorId = null;
-  if (!ctx.projects.has(ownerId) && !ctx.people.has(ownerId)) {
+  if (!ctx.projects.has(ownerId) && !ctx.legacyUsers.has(ownerId)) {
     const memberless = ctx.projectsWithoutMembers.has(ownerId);
     if (creatorId !== null && ctx.people.has(creatorId)) {
       owner = { kind: "personal", userId: creatorId };
@@ -72,6 +76,15 @@ export function mapSurvey(
     }
   }
 
+  let definition: Record<string, unknown> = {};
+  if (definitionText !== null) {
+    try {
+      definition = definitionFromLegacy(surveyId, withoutBom(definitionText));
+    } catch (error) {
+      if (!(error instanceof UnmappableLegacyRowError)) throw error;
+      report.note("definition_unreadable", ids);
+    }
+  }
   // Public results: the union of both hiding rules; an unreadable one turns them off.
   const privateQuestions = new Set<string>();
   let publicResults = record.settings.publicResults;
@@ -82,23 +95,15 @@ export function mapSurvey(
       report.note("public_results_off_unreadable_setting", { ...ids, setting: "permissions" });
     } else for (const name of names) privateQuestions.add(name);
   }
-  if (columnsText !== null) {
-    const names = hiddenAnswerColumns(columnsText);
-    if (names === null) {
-      publicResults = false;
-      report.note("public_results_off_unreadable_setting", { ...ids, setting: "columns" });
-    } else for (const name of names) privateQuestions.add(name);
-  }
+  const layoutNames = layoutPrivateNames(columnsText, [
+    ...answerNamesOf(definition),
+    ...(ctx.extraAnswerNames ?? []),
+  ]);
+  if (layoutNames === null) {
+    publicResults = false;
+    report.note("public_results_off_unreadable_setting", { ...ids, setting: "columns" });
+  } else for (const name of layoutNames) privateQuestions.add(name);
 
-  let definition: Record<string, unknown> = {};
-  if (definitionText !== null) {
-    try {
-      definition = definitionFromLegacy(surveyId, withoutBom(definitionText));
-    } catch (error) {
-      if (!(error instanceof UnmappableLegacyRowError)) throw error;
-      report.note("definition_unreadable", ids);
-    }
-  }
   const theme = themeFromLegacy(surveyId, row.theme === null ? null : withoutBom(row.theme), {
     warn: () => report.note("theme_unreadable", ids),
   });
