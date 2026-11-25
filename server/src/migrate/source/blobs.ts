@@ -6,6 +6,7 @@ import {
   LAYOUT_CONTAINERS_BY_KIND,
 } from "../../providers/azure-legacy/mapping.js";
 import { historyOrder } from "../../providers/ordering.js";
+import { dateHeader } from "./tables.js";
 
 /** The legacy blob containers of the surveys account, read only. */
 export interface BlobSource {
@@ -25,6 +26,9 @@ export interface BlobSource {
     text: string;
     lastModified: Date;
   }>;
+  /** One saved view blob (`{surveyId}/{userId}/{view}`) with its time; null when it is gone. */
+  viewBlob(blobName: string): Promise<{ text: string; lastModified: Date } | null>;
+  /** The names of the container's blobs changed after `since` (a listing; small containers). */
   changedBlobs(container: "layouts" | "permissions" | "views", since: Date): AsyncIterable<string>;
   appFiles(): AsyncIterable<{
     blobName: string;
@@ -33,6 +37,8 @@ export interface BlobSource {
   }>;
   /** The bytes of a blob `appFiles` listed; null when it is gone. */
   appFile(blobName: string): Promise<Buffer | null>;
+  /** The surveys account's clock (its blobs' change times are stamped by it); null: none. */
+  blobsClock(): Promise<Date | null>;
 }
 
 const PERMISSIONS_CONTAINER = "surveyresultpermissions";
@@ -136,6 +142,18 @@ export function openBlobSource(connectionString: string): BlobSource {
       }
     },
 
+    async viewBlob(blobName) {
+      try {
+        const blob = container(VIEWS_CONTAINER).getBlobClient(blobName);
+        const { lastModified } = await blob.getProperties();
+        const text = (await blob.downloadToBuffer()).toString("utf8");
+        return lastModified ? { text, lastModified } : null;
+      } catch (error) {
+        if (statusOf(error) === 404) return null;
+        throw new LegacyStoreError("view read", error);
+      }
+    },
+
     async *changedBlobs(from, since) {
       const containers =
         from === "layouts"
@@ -161,5 +179,17 @@ export function openBlobSource(connectionString: string): BlobSource {
     },
 
     appFile: (blobName) => bytesOf("file read", FILES_CONTAINER, blobName),
+
+    async blobsClock() {
+      // Any answer carries the service's time, a refusal or a missing container's included.
+      try {
+        return (await container("surveyjson").getProperties()).date ?? null;
+      } catch (error) {
+        return dateHeader(
+          (error as { response?: { headers?: { get(name: string): string | undefined } } }).response
+            ?.headers,
+        );
+      }
+    },
   };
 }

@@ -8,7 +8,8 @@ import type {
 } from "../../providers/azure-legacy/rows.js";
 
 /**
- * The legacy SQL tables, read only (SELECT with the optional `[timestamp]` window). Ids come back
+ * The legacy SQL tables, read only (SELECT with the optional `[timestamp]` window; a row with no
+ * `[timestamp]` is in every window, so a `since` read never misses it). Ids come back
  * as the driver gives them (upper-case GUIDs); the mapping lower-cases later. Surveys come in
  * pages by id (each row holds its theme, so the table is never in memory at once); the other
  * tables are small and read whole, by time.
@@ -16,10 +17,17 @@ import type {
 export interface SqlSource {
   users(since?: Date): AsyncIterable<LegacyUserRow & { accesskey: string | null; timestamp: Date }>;
   surveys(since?: Date): AsyncIterable<LegacySurveyRow & { theme: string | null }>;
-  organizations(since?: Date): AsyncIterable<LegacyOrganizationRow>;
-  organizationUsers(since?: Date): AsyncIterable<LegacyOrganizationUserRow>;
+  organizations(since?: Date): AsyncIterable<LegacyOrganizationRow & { timestamp: Date | null }>;
+  organizationUsers(
+    since?: Date,
+  ): AsyncIterable<LegacyOrganizationUserRow & { timestamp: Date | null }>;
+  /** Each table's latest `[timestamp]`; null for a table with none (high-water marks). */
+  latestChanges(): Promise<Record<SqlTable, Date | null>>;
   close(): Promise<void>;
 }
+
+/** The SQL tables the tool reads, by their high-water mark names. */
+export type SqlTable = "users" | "surveys" | "organizations" | "organizationUsers";
 
 const EPOCH = new Date(0);
 
@@ -30,6 +38,13 @@ const SURVEY_COLUMNS =
 const ORGANIZATIONS = "SELECT id, name, happendat, [timestamp] FROM Organizations";
 const ORGANIZATION_USERS =
   "SELECT id, organizationid, userid, role, happendat, [timestamp] FROM OrganizationUsers";
+const LATEST =
+  "SELECT (SELECT MAX([timestamp]) FROM Users) AS users, " +
+  "(SELECT MAX([timestamp]) FROM Surveys) AS surveys, " +
+  "(SELECT MAX([timestamp]) FROM Organizations) AS organizations, " +
+  "(SELECT MAX([timestamp]) FROM OrganizationUsers) AS organizationUsers";
+/** The `since` window; a row with no change time is in every one. */
+const SINCE = "([timestamp] > @since OR [timestamp] IS NULL)";
 
 /** Surveys per page. */
 const SURVEY_PAGE = 200;
@@ -60,7 +75,7 @@ export function openSqlSource(
     try {
       const request = (await connected()).request();
       if (since) request.input("since", sql.DateTime, since);
-      const text = since ? `${select} WHERE [timestamp] > @since` : select;
+      const text = since ? `${select} WHERE ${SINCE}` : select;
       rows = (await request.query<T>(`${text} ORDER BY [timestamp], id`)).recordset;
     } catch (error) {
       throw new LegacyStoreError(operation, error);
@@ -81,7 +96,7 @@ export function openSqlSource(
         const where: string[] = [];
         if (since) {
           request.input("since", sql.DateTime, since);
-          where.push("[timestamp] > @since");
+          where.push(SINCE);
         }
         if (after !== null) {
           request.input("after", sql.UniqueIdentifier, after);
@@ -112,12 +127,16 @@ export function openSqlSource(
     },
     surveys: surveyPages,
     async *organizations(since) {
-      for await (const row of rowsOf<LegacyOrganizationRow>("project read", ORGANIZATIONS, since)) {
-        yield { id: row.id, name: row.name, happendat: row.happendat };
+      for await (const row of rowsOf<LegacyOrganizationRow & { timestamp: Date | null }>(
+        "project read",
+        ORGANIZATIONS,
+        since,
+      )) {
+        yield { id: row.id, name: row.name, happendat: row.happendat, timestamp: row.timestamp };
       }
     },
     async *organizationUsers(since) {
-      for await (const row of rowsOf<LegacyOrganizationUserRow>(
+      for await (const row of rowsOf<LegacyOrganizationUserRow & { timestamp: Date | null }>(
         "member read",
         ORGANIZATION_USERS,
         since,
@@ -128,7 +147,22 @@ export function openSqlSource(
           userid: row.userid,
           role: row.role,
           happendat: row.happendat,
+          timestamp: row.timestamp,
         };
+      }
+    },
+    async latestChanges() {
+      try {
+        const request = (await connected()).request();
+        const row = (await request.query<Record<SqlTable, Date | null>>(LATEST)).recordset[0];
+        return {
+          users: row?.users ?? null,
+          surveys: row?.surveys ?? null,
+          organizations: row?.organizations ?? null,
+          organizationUsers: row?.organizationUsers ?? null,
+        };
+      } catch (error) {
+        throw new LegacyStoreError("latest change read", error);
       }
     },
     async close() {

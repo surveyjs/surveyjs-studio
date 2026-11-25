@@ -16,6 +16,7 @@ import { migrate } from "../sql/migrator.js";
 import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js";
 import { runCopy, type CopyOptions } from "./copy.js";
 import { createReport, type Report } from "./map/report.js";
+import type { HighWaterMarks } from "./marks.js";
 import { openLegacySource, type LegacySource } from "./source/index.js";
 import { openMigrationTarget, type MigrationTarget } from "./target.js";
 
@@ -75,3 +76,11 @@ export async function copyFromReplica(
 /** The target opened as the hosted app opens it: the users come from the database. */
 export const targetProviders = (into: Target): ProviderSet =>
   createSqlProviders(into.database, { bytes: into.bytes.store, localAccounts: true });
+
+/** Marks with every part at one time (tests that move the marks past a change). */
+export const marksAt = (at: string): HighWaterMarks => ({
+  takenAt: at,
+  sql: { users: at, surveys: at, organizations: at, organizationUsers: at },
+  tables: at,
+  blobs: at,
+});

@@ -175,7 +175,7 @@ export async function runVerify(
     readsHistory: () => true,
   });
   const userChanged = new Map(
-    named.users.map((row) => [row.id.toLowerCase(), after("sql", row.timestamp)]),
+    named.users.map((row) => [row.id.toLowerCase(), after("users", row.timestamp)]),
   );
   const people = new Map(named.people.map((person) => [person.id, person]));
   const keys = new Map(named.keys.map((key) => [key.userId, key]));
@@ -203,7 +203,8 @@ export async function runVerify(
     projectIds.add(project.id);
     const ids = { projectId: project.id };
     const changed =
-      after("sql", project.createdAt) || members.some((member) => after("sql", member.updatedAt));
+      after("organizations", project.createdAt) ||
+      members.some((member) => after("organizationUsers", member.updatedAt));
     const [read, stored, storedMembers] = await Promise.all([
       sourceProviders.projects.getProject(project.id),
       targetProviders.projects.getProject(project.id),
@@ -303,7 +304,7 @@ export async function runVerify(
     if (!wanted(surveyId)) continue;
     seen.add(surveyId);
     const ids = { surveyId };
-    const rowChanged = after("sql", row.timestamp);
+    const rowChanged = after("surveys", row.timestamp);
     const stored = await targetProviders.surveys.getSurvey(surveyId);
     // Whether the copy skips the survey does not depend on its documents.
     const base = mapSurvey(row, null, null, null, { ...ctx, report: quiet() });
@@ -323,7 +324,7 @@ export async function runVerify(
     // changed, its settings and private questions also when new responses came in.
     const documentsChanged =
       since !== null &&
-      (changedAfterMarks(since, "sql", row.timestamp) || changedSince!.has(surveyId));
+      (changedAfterMarks(since, "surveys", row.timestamp) || changedSince!.has(surveyId));
     const documents = options.full || deep.has(surveyId) || documentsChanged;
     const settings = documents || (fresh !== null && fresh.rows > 0);
     const texts: Texts = settings
@@ -717,7 +718,7 @@ export async function runVerify(
       differ("deep_surveys", ids, { inSource: 0 });
       return;
     }
-    const changed = after("sql", read.updatedAt);
+    const changed = after("surveys", read.updatedAt);
     judge("deep_surveys", ids, sameJson(stored, expectedRecord(read, rec.record)), changed);
 
     // The legacy files the records link: the same bytes, or missing on both sides; each once,

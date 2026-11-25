@@ -18,6 +18,7 @@ import { jsonText } from "../sql/values.js";
 import { createReport } from "./map/report.js";
 import {
   copyFromReplica,
+  marksAt,
   newTarget,
   openReplicaSource,
   targetProviders,
@@ -171,8 +172,9 @@ beforeAll(async () => {
   // Blob times are whole seconds: written a second before the marks, they count as before them.
   await new Promise((resolve) => setTimeout(resolve, 1100));
   copied = await newTarget();
-  // The real clock: the marks are now, so a row written to the replica later is after them.
-  await copyFromReplica(copied, fixtures);
+  // The real clock and no margin: the marks are now, so a row written to the replica later is
+  // after them.
+  await copyFromReplica(copied, fixtures, { marginMs: 0 });
   migrated = targetProviders(copied);
 });
 
@@ -364,7 +366,7 @@ describe("verify against a copy of the local replica", () => {
       });
       // Marks taken after the change (blob times are whole seconds) and nothing copied: red.
       const later = new Date(Math.floor(Date.now() / 1000) * 1000 + 2000).toISOString();
-      await copied.target.state.set("marks", { ...marks, takenAt: later }, later);
+      await copied.target.state.set("marks", marksAt(later), later);
       const { ok, json } = await verify({ full: false });
       expect(ok).toBe(false);
       expect(findings(json.differences, "layouts")).toEqual([
@@ -405,7 +407,7 @@ describe("verify against a copy of the local replica", () => {
       }
       // Marks taken after it and the row not copied: the window's verify counts it missing.
       const later = new Date(Date.now() + 1000).toISOString();
-      await copied.target.state.set("marks", { ...marks, takenAt: later }, later);
+      await copied.target.state.set("marks", marksAt(later), later);
       const { ok, json } = await verify({ full: false });
       expect(ok).toBe(false);
       expect(findings(json.differences, "new_responses")).toEqual([
@@ -574,7 +576,7 @@ describe("verify against a copy of the local replica", () => {
     try {
       // Marks taken after the deletion, which no delta applied.
       const later = new Date(Date.now() + 1000).toISOString();
-      await copied.target.state.set("marks", { ...marks, takenAt: later }, later);
+      await copied.target.state.set("marks", marksAt(later), later);
       const { ok, json } = await verify({ full: false });
       expect(ok).toBe(false);
       expect(findings(json.differences, "deletions")).toEqual([

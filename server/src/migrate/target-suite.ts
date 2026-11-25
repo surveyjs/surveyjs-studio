@@ -524,6 +524,69 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       ]);
     });
 
+    it("lists the keys of a table's rows, Studio's own files only, and the response ids", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      expect(await target.countRows("survey_responses", S1)).toBe(data.responses.length);
+      expect(await target.keysOf("survey_responses", S1)).toEqual(
+        data.responses.map((r) => r.response.id).sort(),
+      );
+      expect(await target.keysOf("survey_responses", S2)).toEqual([]);
+      expect(await target.keysOf("completion_markers", S1)).toEqual(
+        data.markers.map((m) => m.clientId).sort(),
+      );
+      expect(await target.keysOf("saved_views")).toEqual(
+        data.views.map((v) => `${v.surveyId}/${v.userId}/${v.view}`).sort(),
+      );
+      // Studio's own files; the old service's of the zero survey are not among them.
+      expect(await target.keysOf("files")).toEqual([OWN_ID]);
+      expect(await target.keysOf("files", S2)).toEqual([]);
+    });
+
+    it("lists the history authors and every project member", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const authors = new Set(data.history.flatMap((h) => (h.userId === null ? [] : [h.userId])));
+      expect(await target.historyAuthors()).toEqual([...authors].sort());
+      expect(await target.projectMembers()).toEqual(
+        data.members
+          .map(({ projectId, userId, role }) => ({ projectId, userId, role }))
+          .sort((a, b) => a.userId.localeCompare(b.userId)),
+      );
+    });
+
+    it("removes saved views, Studio's own files with their bytes, and markers by key", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const [first, second] = data.views;
+      expect(
+        await target.deleteViews([
+          `${first!.surveyId}/${first!.userId}/${first!.view}`,
+          `${S2}/${ALICE}/table`,
+        ]),
+      ).toBe(1);
+      expect(await target.keysOf("saved_views")).toEqual([
+        `${second!.surveyId}/${second!.userId}/${second!.view}`,
+      ]);
+
+      const legacy = data.files.find((file) => file.legacyName !== null)!;
+      // A legacy file (the zero survey) is never removed this way.
+      expect(await target.deleteFiles([OWN_ID, legacy.record.id])).toBe(1);
+      expect(await target.keysOf("files")).toEqual([]);
+      expect(await bytes.store.get(`${S1}/${OWN_ID}`)).toBeNull();
+      expect(await target.existingKeys("legacy_files", ["asset/picture.png"])).toEqual([
+        "asset/picture.png",
+      ]);
+      const kept = await bytes.store.get(`${legacy.record.surveyId}/${legacy.record.id}`);
+      expect(kept && (await readAll(kept))).toEqual(legacy.content);
+
+      expect(await target.deleteMarkers(S1, ["Client-X", "none"])).toBe(1);
+      expect(await target.keysOf("completion_markers", S1)).toEqual(["client-0"]);
+    });
+
     it("reads responses' partial flags and a person's identities", async () => {
       await wipe();
       const data = fixtures();
@@ -634,11 +697,16 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
         "saved_views",
         "survey_layouts",
         "private_questions",
-        "survey_events",
         "deleted_responses",
       ] as const) {
         expect(await database.db.selectFrom(table).selectAll().execute()).toEqual([]);
       }
+      // Studio's own files of the survey go, with their bytes; the legacy files stay.
+      expect(await target.keysOf("files")).toEqual([]);
+      expect(await bytes.store.get(`${S1}/${OWN_ID}`)).toBeNull();
+      expect(await target.countRows("legacy_files")).toBe(1);
+      // The event log stays, as the old service keeps a deleted survey's events.
+      expect(await target.countRows("survey_events")).toBe(data.events.length);
       expect(await providers.surveys.getSurvey(S2)).not.toBeNull();
     });
 

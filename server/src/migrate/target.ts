@@ -46,6 +46,15 @@ export interface MigrationTarget {
    * deleted copy's response id, a file's id, `{kind}/{legacyName}` of a legacy file.
    */
   existingKeys(table: CountedTable, keys: readonly string[], surveyId?: string): Promise<string[]>;
+  /**
+   * `reconcile`: the keys (as `existingKeys` names them) of the table's rows, ascending, the
+   * survey's only when one is given; `files` as `countRows` scopes them (Studio's own).
+   */
+  keysOf(table: CountedTable, surveyId?: string): Promise<string[]>;
+  /** `reconcile`: every person the stored history names, ascending. */
+  historyAuthors(): Promise<string[]>;
+  /** `reconcile`: every member row of every project, by project then user. */
+  projectMembers(): Promise<{ projectId: string; userId: string; role: string }[]>;
   /** `verify`: the partial flag of each of the survey's responses among `ids` that it holds. */
   responseStates(surveyId: string, ids: readonly string[]): Promise<Map<string, boolean>>;
   /** `verify`: the person's sign-in identities. */
@@ -69,10 +78,20 @@ export interface MigrationTarget {
   upsertFile(rec: FileRec): Promise<void>;
   upsertEvents(recs: readonly EventRec[]): Promise<void>;
   upsertDeleted(recs: readonly DeletedRec[]): Promise<void>;
+  /**
+   * The survey and what hangs on it: its rows, deleted-response copies and Studio's own files
+   * (bytes first). Its events stay: the old service keeps a deleted survey's events too.
+   */
   deleteSurvey(surveyId: string): Promise<boolean>;
   deleteResponses(surveyId: string, ids: readonly string[]): Promise<number>;
   deleteProject(id: string): Promise<boolean>;
   deletePeople(ids: readonly string[]): Promise<number>;
+  /** Saved views by key (`{surveyId}/{userId}/{view}`); how many went. */
+  deleteViews(keys: readonly string[]): Promise<number>;
+  /** Studio's own files by id, bytes first; never a legacy file (the zero survey). How many. */
+  deleteFiles(ids: readonly string[]): Promise<number>;
+  /** The survey's completion markers of these client ids; how many went. */
+  deleteMarkers(surveyId: string, clientIds: readonly string[]): Promise<number>;
   readonly state: MigrationState;
   /** Releases nothing the caller opened: the database and the byte store stay the caller's. */
   close(): Promise<void>;
@@ -80,6 +99,7 @@ export interface MigrationTarget {
 
 /** The tables `verify` counts rows of (`MigrationTarget.countRows`, `existingKeys`). */
 export type CountedTable =
+  | "survey_responses"
   | "completion_markers"
   | "saved_views"
   | "survey_events"
@@ -89,6 +109,7 @@ export type CountedTable =
 
 /** The key of a counted table's row, as SQL (constant text: never a value). */
 const ROW_KEY: Record<CountedTable, string> = {
+  survey_responses: "id",
   completion_markers: "client_id",
   saved_views: "survey_id || '/' || user_id || '/' || view",
   survey_events: "id",
@@ -179,17 +200,42 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
     },
 
     async countRows(table, surveyId) {
-      const scope =
-        table === "files"
-          ? surveyId === undefined
-            ? sql`survey_id is not null and survey_id <> ${ZERO_SURVEY}`
-            : sql`survey_id = ${guid(surveyId, "A survey id")}`
-          : surveyId === undefined || table === "legacy_files"
-            ? sql`1 = 1`
-            : sql`survey_id = ${guid(surveyId, "A survey id")}`;
+      const scope = countScope(table, surveyId);
       const { rows } = await sql<{ n: number | string }>`
         select count(*) as n from ${sql.table(table)} where ${scope}`.execute(db);
       return Number(rows[0]?.n ?? 0);
+    },
+
+    async keysOf(table, surveyId) {
+      const key = sql.raw(ROW_KEY[table]);
+      const scope = countScope(table, surveyId);
+      const { rows } = await sql<{ k: string }>`
+        select ${key} as k from ${sql.table(table)} where ${scope}`.execute(db);
+      return rows.map((row) => String(row.k)).sort();
+    },
+
+    async historyAuthors() {
+      const rows = await db
+        .selectFrom("survey_history")
+        .select("user_id")
+        .distinct()
+        .where("user_id", "is not", null)
+        .execute();
+      return rows.map((row) => String(row.user_id)).sort();
+    },
+
+    async projectMembers() {
+      const rows = await db
+        .selectFrom("project_members")
+        .select(["project_id", "user_id", "role"])
+        .orderBy("project_id")
+        .orderBy("user_id")
+        .execute();
+      return rows.map((row) => ({
+        projectId: row.project_id,
+        userId: row.user_id,
+        role: row.role,
+      }));
     },
 
     async existingKeys(table, keys, surveyId) {
@@ -670,9 +716,12 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
 
     async deleteSurvey(surveyId) {
       const id = guid(surveyId, "A survey id");
+      // Studio's own files first, bytes before rows: a stop in between leaves rows a retry finds.
+      const files = await db.selectFrom("files").select("id").where("survey_id", "=", id).execute();
+      await bytes.delete(files.map((file) => `${id}/${file.id}`));
       return inTransaction(async (trx) => {
         // The tables without a foreign key that hold what the copy wrote for the survey.
-        await trx.deleteFrom("survey_events").where("survey_id", "=", id).execute();
+        await trx.deleteFrom("files").where("survey_id", "=", id).execute();
         await trx.deleteFrom("deleted_responses").where("survey_id", "=", id).execute();
         return deleteSurveyRows(trx, id);
       });
@@ -714,6 +763,71 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
       return deleted;
     },
 
+    async deleteViews(keys) {
+      let deleted = 0;
+      await inTransaction(async (trx) => {
+        for (const key of new Set(keys)) {
+          const [surveyId = "", userId = "", view = ""] = key.split("/");
+          if (view !== "summary" && view !== "table") continue;
+          const result = await trx
+            .deleteFrom("saved_views")
+            .where("survey_id", "=", guid(surveyId, "A survey id"))
+            .where("user_id", "=", guid(userId, "A user id"))
+            .where("view", "=", view)
+            .executeTakeFirst();
+          deleted += Number(result.numDeletedRows);
+        }
+      });
+      return deleted;
+    },
+
+    async deleteFiles(ids) {
+      let deleted = 0;
+      for (const batch of batches([...new Set(ids.map((id) => id.toLowerCase()))])) {
+        const rows = await db
+          .selectFrom("files")
+          .select(["id", "survey_id"])
+          .where("id", "in", batch)
+          .where("survey_id", "is not", null)
+          .where("survey_id", "<>", ZERO_SURVEY)
+          .execute();
+        if (rows.length === 0) continue;
+        // The bytes first: when they cannot be deleted the rows stay, so a retry finds them.
+        await bytes.delete(rows.map((row) => `${String(row.survey_id)}/${row.id}`));
+        const own = rows.map((row) => row.id);
+        const result = await db.deleteFrom("files").where("id", "in", own).executeTakeFirst();
+        deleted += Number(result.numDeletedRows);
+      }
+      return deleted;
+    },
+
+    async deleteMarkers(surveyId, clientIds) {
+      const survey = guid(surveyId, "A survey id");
+      let deleted = 0;
+      for (const batch of batches([...new Set(clientIds)])) {
+        const result = await db
+          .deleteFrom("completion_markers")
+          .where("survey_id", "=", survey)
+          .where("client_id", "in", batch)
+          .executeTakeFirst();
+        deleted += Number(result.numDeletedRows);
+      }
+      return deleted;
+    },
+
     close: () => Promise.resolve(),
   };
+}
+
+/**
+ * The rows `countRows` and `keysOf` read: the survey's when given; `files` without a survey are
+ * Studio's own (not the old service's of the zero survey); `legacy_files` have no survey.
+ */
+function countScope(table: CountedTable, surveyId: string | undefined) {
+  if (table === "files" && surveyId === undefined) {
+    return sql`survey_id is not null and survey_id <> ${ZERO_SURVEY}`;
+  }
+  return surveyId === undefined || table === "legacy_files"
+    ? sql`1 = 1`
+    : sql`survey_id = ${guid(surveyId, "A survey id")}`;
 }

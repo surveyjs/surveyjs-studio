@@ -1,7 +1,8 @@
 /**
  * `copy`: everything (or a sample) from the legacy stores into the target, survey by survey, each
  * survey checkpointed once complete, so a run that stops resumes where it stopped. This module
- * orders the work; the mappers (map/) decide what each record is, the target writes it.
+ * orders the work; the mappers (map/) decide what each record is, the target writes it. The
+ * per-survey work (`createSurveyCopier`) is also what `delta` copies a changed survey with.
  */
 import { randomUUID } from "node:crypto";
 import { isUploadLegacyName, legacyFileRecord } from "../domain/legacy-file.js";
@@ -44,6 +45,8 @@ export interface CopyOptions {
   now?: () => Date;
   /** A line now and then for a long run. */
   progress?: (line: string) => void;
+  /** Tests only: the high-water marks' safety margin (default `MARKS_MARGIN_MS`). */
+  marginMs?: number;
 }
 
 /** State key `run`: the first copy's start, the creation time of the people and keys it copies. */
@@ -53,13 +56,80 @@ interface RunState {
   command: "copy";
 }
 
-const BATCH = 500;
+/**
+ * State key `survey:{id}`: the survey is copied whole. `answerNames` are the keys its responses
+ * use (answer names the definition may not have), which `delta` keeps up to date, so the privacy
+ * rule never needs every response read again.
+ */
+export interface SurveyCheckpoint {
+  copiedAt: string;
+  answerNames?: string[];
+}
+export const CHECKPOINT = "survey:";
+
+export const BATCH = 500;
 const PROGRESS_EVERY = 100;
 const LAYOUT_KINDS: readonly LayoutKind[] = ["table", "summary", "columns"];
-const CHECKPOINT = "survey:";
+
+type SurveyRow = Parameters<typeof mapSurvey>[0];
+/** What the mapping of a survey depends on beyond its row and documents. */
+export type SurveyContext = Omit<Parameters<typeof mapSurvey>[4], "extraAnswerNames">;
+type Link = { kind: FileKind; name: string };
+
+/** The texts a survey's mapping reads (null: no such blob). */
+export interface SurveyTexts {
+  definition: string | null;
+  permissions: string | null;
+  columns: string | null;
+}
+
+/** What `documents` wrote of a survey, for the rest of its copy. */
+export interface WrittenDocuments {
+  surveyId: string;
+  /** The survey mapped without its responses' keys. */
+  rec: SurveyRec;
+  texts: SurveyTexts;
+  /** The private questions stored until the responses are read. */
+  interim: string[];
+  /** The legacy files the definition, theme and copied history link. */
+  links: Link[];
+}
+
+export interface SurveyCopier {
+  /** The whole survey: documents, every row, the final private questions, files, checkpoint. */
+  copySurvey(row: SurveyRow): Promise<boolean>;
+  /**
+   * The survey row with its definition, theme and publish id (the private questions as the
+   * union with what is stored, never weaker mid-way), the newest history entries (the rest
+   * pruned) and the layouts. Null when the row maps to no survey (reported).
+   */
+  documents(
+    row: SurveyRow,
+    options?: { keepCheckpoint?: boolean },
+  ): Promise<WrittenDocuments | null>;
+  /** The survey's responses, markers and deletion copies, all or those changed after `since`. */
+  rows(
+    surveyId: string,
+    postId: string,
+    since?: Date,
+  ): Promise<{ answerNames: Set<string>; links: Link[] }>;
+  texts(surveyId: string): Promise<SurveyTexts>;
+  /** The private questions with every answer name, stored when they differ from `stored`. */
+  finish(
+    row: SurveyRow,
+    texts: SurveyTexts,
+    answerNames: Iterable<string>,
+    stored: readonly string[],
+  ): Promise<void>;
+  /** The legacy files the records link, each once per run (and, `skipStored`, once at all). */
+  linkedFiles(surveyId: string, links: Link[], options?: { skipStored?: boolean }): Promise<void>;
+  checkpoint(surveyId: string, answerNames: Iterable<string>): Promise<void>;
+  /** One of Studio's own files (`my-surveys-files`): the bytes, then the row. */
+  appFile(blobName: string, record: SurveyFileRecord): Promise<void>;
+}
 
 /** A batch of records, written by `write` whenever it holds `size`, and at `flush`. */
-function batcher<T>(size: number, write: (items: T[]) => Promise<void>) {
+export function batcher<T>(size: number, write: (items: T[]) => Promise<void>) {
   let items: T[] = [];
   const flush = async () => {
     if (items.length === 0) return;
@@ -76,6 +146,242 @@ function batcher<T>(size: number, write: (items: T[]) => Promise<void>) {
   };
 }
 
+/** Writes the records to the dump, when there is one. */
+export function dumper(dump: DumpWriter | undefined) {
+  return async <K extends DumpKind>(kind: K, records: readonly DumpRecords[K][]) => {
+    if (dump) for (const record of records) await dump.write(kind, record);
+  };
+}
+
+/** A legacy event row as the target's event; null (reported) when an id is not a GUID. */
+export function eventRec(
+  event: { id: string; surveyId: string; type: string; at: Date; rest: Record<string, unknown> },
+  report: Report,
+): EventRec | null {
+  const surveyId = event.surveyId.toLowerCase();
+  if (!isGuid(event.id) || !isGuid(event.surveyId)) {
+    report.skip("event", { eventId: event.id.toLowerCase(), surveyId }, "an id is not a GUID");
+    return null;
+  }
+  return {
+    id: event.id.toLowerCase(),
+    surveyId,
+    type: event.type,
+    at: event.at.toISOString(),
+    payload: Object.keys(event.rest).length > 0 ? JSON.stringify(event.rest) : null,
+  };
+}
+
+export function createSurveyCopier(
+  source: LegacySource,
+  target: MigrationTarget,
+  options: {
+    ctx: SurveyContext;
+    dump?: DumpWriter;
+    batchSize: number;
+    now: () => Date;
+    failAfter?: number;
+  },
+): SurveyCopier {
+  const { ctx, batchSize: size } = options;
+  const { report } = ctx;
+  const at = () => options.now().toISOString();
+  const write = dumper(options.dump);
+  const { state } = target;
+  /** The legacy files handled in this run (`{kind}/{name}`). */
+  const linked = new Set<string>();
+  let responseBatches = 0;
+
+  const texts = async (surveyId: string): Promise<SurveyTexts> => {
+    const [definition, permissions, columns] = await Promise.all([
+      source.definitionText(surveyId),
+      source.permissionsText(surveyId),
+      source.layoutText(surveyId, "columns"),
+    ]);
+    return { definition, permissions, columns };
+  };
+
+  async function documents(
+    row: SurveyRow,
+    { keepCheckpoint = false }: { keepCheckpoint?: boolean } = {},
+  ): Promise<WrittenDocuments | null> {
+    const surveyId = row.id.toLowerCase();
+    const read = await texts(surveyId);
+    const rec = mapSurvey(row, read.definition, read.permissions, read.columns, ctx);
+    if (rec === null) return null;
+    // Rewriting a survey: its checkpoint goes first, so a run stopped inside it copies it again.
+    if (!keepCheckpoint) await state.delete(`${CHECKPOINT}${surveyId}`);
+    // Until the responses are read, the list also keeps what is stored (a re-copy never makes
+    // a survey's answers more public mid-way); after them, the full list replaces it.
+    const stored = await target.privateQuestionsOf(surveyId);
+    const interim = [...new Set([...rec.privateQuestions, ...stored])];
+    await target.upsertSurvey({ ...rec, privateQuestions: interim });
+    const links = [...fileLinks(rec.definition), ...fileLinks(rec.theme)];
+
+    const history = mapHistory(
+      surveyId,
+      await source.historyNewest(surveyId, HISTORY_KEEP),
+      report,
+    );
+    await target.upsertHistory(history);
+    await target.pruneHistory(surveyId, HISTORY_KEEP);
+    await write("history", history);
+    for (const entry of history) links.push(...fileLinks(entry.snapshot));
+
+    const layouts: LayoutRec[] = [];
+    for (const kind of LAYOUT_KINDS) {
+      const text = kind === "columns" ? read.columns : await source.layoutText(surveyId, kind);
+      if (text !== null) layouts.push({ surveyId, kind, text });
+    }
+    await target.upsertLayouts(layouts);
+    await write("layout", layouts);
+    return { surveyId, rec, texts: read, interim, links };
+  }
+
+  async function rows(surveyId: string, postId: string, since?: Date) {
+    // Responses in batches; their keys are answer names the privacy rule must cover too.
+    const answerNames = new Set<string>();
+    const links: Link[] = [];
+    const responses = batcher<ResponseRec>(size, async (batch) => {
+      await target.upsertResponses(batch);
+      await write("response", batch);
+      responseBatches += 1;
+      if (options.failAfter !== undefined && responseBatches >= options.failAfter) {
+        throw new Error(`Stopped after ${responseBatches} batches of responses (failAfter)`);
+      }
+    });
+    for await (const entity of source.responses(postId, since)) {
+      const response = mapResponse(surveyId, entity, report);
+      if (response === null) continue;
+      for (const name of Object.keys(response.response.data)) answerNames.add(name);
+      links.push(...fileLinks(response.response.data));
+      await responses.add(response);
+    }
+    await responses.flush();
+
+    const markers = batcher<MarkerRec>(size, async (batch) => {
+      await target.upsertMarkers(batch);
+      await write("marker", batch);
+    });
+    for await (const marker of source.markers(surveyId, since)) {
+      await markers.add({ surveyId, clientId: marker.clientId, partial: marker.partial });
+    }
+    await markers.flush();
+
+    const deleted = batcher<DeletedRec>(size, async (batch) => {
+      await target.upsertDeleted(batch);
+      await write("deleted", batch);
+    });
+    for await (const copy of source.deletedCopies(postId, since)) {
+      const mappedCopy = mapDeleted(surveyId, copy, report);
+      if (mappedCopy !== null) await deleted.add(mappedCopy);
+    }
+    await deleted.flush();
+    return { answerNames, links };
+  }
+
+  async function finish(
+    row: SurveyRow,
+    read: SurveyTexts,
+    answerNames: Iterable<string>,
+    stored: readonly string[],
+  ) {
+    // The private questions again with the response keys (notes were made the first time).
+    const final = mapSurvey(row, read.definition, read.permissions, read.columns, {
+      ...ctx,
+      extraAnswerNames: answerNames,
+      report: createReport(),
+    });
+    if (final === null) return;
+    // Exactly the computed list, in its order, so a resumed survey stores what a whole run does.
+    if (!sameList(final.privateQuestions, stored)) await target.upsertSurvey(final);
+    await write("survey", [final]);
+  }
+
+  async function linkedFiles(
+    surveyId: string,
+    links: Link[],
+    { skipStored = false }: { skipStored?: boolean } = {},
+  ) {
+    let fresh: Link[] = [];
+    for (const link of links) {
+      const key = `${link.kind}/${link.name}`;
+      if (linked.has(key)) continue;
+      linked.add(key);
+      fresh.push(link);
+    }
+    if (skipStored && fresh.length > 0) {
+      const stored = new Set(
+        await target.existingKeys(
+          "legacy_files",
+          fresh.map(({ kind, name }) => `${kind}/${name}`),
+        ),
+      );
+      fresh = fresh.filter(({ kind, name }) => !stored.has(`${kind}/${name}`));
+    }
+    // Bytes first, then the row.
+    for (const { kind, name } of fresh) {
+      const content = await source.shareFile(kind === "asset" ? "surveyfiles" : "files", name);
+      if (content === null) {
+        report.note(
+          kind === "asset" && isUploadLegacyName(name)
+            ? "linked_user_file_not_copied"
+            : "linked_file_missing",
+          { surveyId, kind, file: name },
+        );
+        continue;
+      }
+      const file = {
+        kind,
+        legacyName: name,
+        record: legacyFileRecord(kind, name, content.length),
+        content,
+      };
+      await target.upsertFile(file);
+      await write("file", [file]);
+    }
+  }
+
+  async function checkpoint(surveyId: string, answerNames: Iterable<string>) {
+    const value: SurveyCheckpoint = {
+      copiedAt: at(),
+      answerNames: [...new Set(answerNames)].sort(),
+    };
+    await state.set(`${CHECKPOINT}${surveyId}`, value, at());
+  }
+
+  return {
+    async copySurvey(row) {
+      const written = await documents(row);
+      if (written === null) return false;
+      const { surveyId } = written;
+      const copied = await rows(surveyId, written.rec.record.postId);
+      await finish(row, written.texts, copied.answerNames, written.interim);
+      await linkedFiles(surveyId, [...written.links, ...copied.links]);
+      await checkpoint(surveyId, copied.answerNames);
+      return true;
+    },
+    documents,
+    rows,
+    texts,
+    finish,
+    linkedFiles,
+    checkpoint,
+    async appFile(blobName, record) {
+      const content = await source.appFile(blobName);
+      if (content === null) return;
+      const file = {
+        kind: record.kind,
+        legacyName: null,
+        record: { ...record, size: content.length } as SurveyFileRecord,
+        content,
+      };
+      await target.upsertFile(file);
+      await write("file", [file]);
+    },
+  };
+}
+
 export async function runCopy(
   source: LegacySource,
   target: MigrationTarget,
@@ -87,9 +393,7 @@ export async function runCopy(
   const size = options.batchSize ?? BATCH;
   const progress = options.progress ?? (() => undefined);
   const { state } = target;
-  const write = async <K extends DumpKind>(kind: K, records: readonly DumpRecords[K][]) => {
-    if (dump) for (const record of records) await dump.write(kind, record);
-  };
+  const write = dumper(dump);
 
   // The run keeps its start across resumed runs; the marks are the first run's, so a later
   // `delta` reads everything that changed since any part of the copy was read.
@@ -98,7 +402,7 @@ export async function runCopy(
     stored?.command === "copy" ? stored : { id: randomUUID(), startedAt: at(), command: "copy" };
   if (stored !== run) await state.set("run", run, at());
   if ((await state.get("marks")) === null)
-    await state.set("marks", await takeMarks(source, now), at());
+    await state.set("marks", await takeMarks(source, now, options.marginMs), at());
   if (sample) {
     await state.set(
       "sample",
@@ -144,134 +448,14 @@ export async function runCopy(
   progress(`projects: ${projects.length}`);
 
   // ---- Survey by survey ----
-  const ctx = {
-    projects: projectIds,
-    projectsWithoutMembers,
-    people: peopleIds,
-    legacyUsers,
-    report,
-  };
+  const copier = createSurveyCopier(source, target, {
+    ctx: { projects: projectIds, projectsWithoutMembers, people: peopleIds, legacyUsers, report },
+    ...(dump && { dump }),
+    batchSize: size,
+    now,
+    ...(options.failAfter !== undefined && { failAfter: options.failAfter }),
+  });
   const copied = new Set<string>();
-  const linked = new Set<string>();
-  let responseBatches = 0;
-
-  /** The legacy files the records link, each once per run: bytes first, then the row. */
-  async function copyLinkedFiles(surveyId: string, links: { kind: FileKind; name: string }[]) {
-    for (const { kind, name } of links) {
-      const key = `${kind}/${name}`;
-      if (linked.has(key)) continue;
-      linked.add(key);
-      const content = await source.shareFile(kind === "asset" ? "surveyfiles" : "files", name);
-      if (content === null) {
-        report.note(
-          kind === "asset" && isUploadLegacyName(name)
-            ? "linked_user_file_not_copied"
-            : "linked_file_missing",
-          { surveyId, kind, file: name },
-        );
-        continue;
-      }
-      const file = {
-        kind,
-        legacyName: name,
-        record: legacyFileRecord(kind, name, content.length),
-        content,
-      };
-      await target.upsertFile(file);
-      await write("file", [file]);
-    }
-  }
-
-  async function copySurvey(row: Parameters<typeof mapSurvey>[0]): Promise<boolean> {
-    const surveyId = row.id.toLowerCase();
-    const [definitionText, permissionsText, columnsText] = await Promise.all([
-      source.definitionText(surveyId),
-      source.permissionsText(surveyId),
-      source.layoutText(surveyId, "columns"),
-    ]);
-    const rec: SurveyRec | null = mapSurvey(row, definitionText, permissionsText, columnsText, ctx);
-    if (rec === null) return false;
-    // Rewriting a survey: its checkpoint goes first, so a run stopped inside it copies it again.
-    if (checkpoints.has(surveyId)) await state.delete(`${CHECKPOINT}${surveyId}`);
-    // Until the responses are read, the list also keeps what is stored (a re-copy never makes
-    // a survey's answers more public mid-way); after them, the full list replaces it.
-    const stored = await target.privateQuestionsOf(surveyId);
-    const interim = [...new Set([...rec.privateQuestions, ...stored])];
-    await target.upsertSurvey({ ...rec, privateQuestions: interim });
-    const links = [...fileLinks(rec.definition), ...fileLinks(rec.theme)];
-
-    const history = mapHistory(
-      surveyId,
-      await source.historyNewest(surveyId, HISTORY_KEEP),
-      report,
-    );
-    await target.upsertHistory(history);
-    await target.pruneHistory(surveyId, HISTORY_KEEP);
-    await write("history", history);
-    for (const entry of history) links.push(...fileLinks(entry.snapshot));
-
-    const layouts: LayoutRec[] = [];
-    for (const kind of LAYOUT_KINDS) {
-      const text = kind === "columns" ? columnsText : await source.layoutText(surveyId, kind);
-      if (text !== null) layouts.push({ surveyId, kind, text });
-    }
-    await target.upsertLayouts(layouts);
-    await write("layout", layouts);
-
-    // Responses in batches; their keys are answer names the privacy rule must cover too.
-    const answerNames = new Set<string>();
-    const responses = batcher<ResponseRec>(size, async (batch) => {
-      await target.upsertResponses(batch);
-      await write("response", batch);
-      responseBatches += 1;
-      if (options.failAfter !== undefined && responseBatches >= options.failAfter) {
-        throw new Error(`Stopped after ${responseBatches} batches of responses (failAfter)`);
-      }
-    });
-    for await (const entity of source.responses(rec.record.postId)) {
-      const response = mapResponse(surveyId, entity, report);
-      if (response === null) continue;
-      for (const name of Object.keys(response.response.data)) answerNames.add(name);
-      links.push(...fileLinks(response.response.data));
-      await responses.add(response);
-    }
-    await responses.flush();
-
-    const markers = batcher<MarkerRec>(size, async (batch) => {
-      await target.upsertMarkers(batch);
-      await write("marker", batch);
-    });
-    for await (const marker of source.markers(surveyId)) {
-      await markers.add({ surveyId, clientId: marker.clientId, partial: marker.partial });
-    }
-    await markers.flush();
-
-    const deleted = batcher<DeletedRec>(size, async (batch) => {
-      await target.upsertDeleted(batch);
-      await write("deleted", batch);
-    });
-    for await (const copy of source.deletedCopies(rec.record.postId)) {
-      const mappedCopy = mapDeleted(surveyId, copy, report);
-      if (mappedCopy !== null) await deleted.add(mappedCopy);
-    }
-    await deleted.flush();
-
-    // The private questions again with the response keys (notes were made the first time).
-    const final =
-      mapSurvey(row, definitionText, permissionsText, columnsText, {
-        ...ctx,
-        extraAnswerNames: answerNames,
-        report: createReport(),
-      }) ?? rec;
-    // Exactly the computed list, in its order, so a resumed survey stores what a whole run does.
-    if (!sameList(final.privateQuestions, interim)) await target.upsertSurvey(final);
-    await write("survey", [final]);
-
-    await copyLinkedFiles(surveyId, links);
-    await state.set(`${CHECKPOINT}${surveyId}`, { copiedAt: at() }, at());
-    return true;
-  }
-
   let done = 0;
   for await (const row of source.surveys()) {
     const surveyId = row.id.toLowerCase();
@@ -280,7 +464,7 @@ export async function runCopy(
       copied.add(surveyId);
       continue;
     }
-    if (await copySurvey(row)) copied.add(surveyId);
+    if (await copier.copySurvey(row)) copied.add(surveyId);
     done += 1;
     if (done % PROGRESS_EVERY === 0) progress(`surveys: ${done}`);
   }
@@ -292,19 +476,9 @@ export async function runCopy(
     await write("event", batch);
   });
   for await (const event of source.events()) {
-    const surveyId = event.surveyId.toLowerCase();
-    if (sample && !copied.has(surveyId)) continue;
-    if (!isGuid(event.id) || !isGuid(event.surveyId)) {
-      report.skip("event", { eventId: event.id.toLowerCase(), surveyId }, "an id is not a GUID");
-      continue;
-    }
-    await events.add({
-      id: event.id.toLowerCase(),
-      surveyId,
-      type: event.type,
-      at: event.at.toISOString(),
-      payload: Object.keys(event.rest).length > 0 ? JSON.stringify(event.rest) : null,
-    });
+    if (sample && !copied.has(event.surveyId.toLowerCase())) continue;
+    const rec = eventRec(event, report);
+    if (rec !== null) await events.add(rec);
   }
   await events.flush();
 
@@ -341,19 +515,10 @@ export async function runCopy(
       }
       continue;
     }
-    const content = await source.appFile(blob.blobName);
-    if (content === null) continue;
-    const file = {
-      kind: record.kind,
-      legacyName: null,
-      record: { ...record, size: content.length } as SurveyFileRecord,
-      content,
-    };
-    await target.upsertFile(file);
-    await write("file", [file]);
+    await copier.appFile(blob.blobName, record as SurveyFileRecord);
   }
   progress("done");
 }
 
-const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+export const sameList = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((name, i) => name === b[i]);

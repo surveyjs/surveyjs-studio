@@ -28,13 +28,25 @@ export interface TableSource {
    * and key revocations Studio wrote). The copy does not take them; `verify` flags any.
    */
   ownTokenRows(): AsyncIterable<{ partition: string }>;
+  /** The results account's clock (its responses' change times are stamped by it); null: none. */
+  tablesClock(): Promise<Date | null>;
 }
 
 const PAGE_SIZE = 500;
+/** A table no survey has (the zero post id): asked only for the service's `Date` header. */
+const CLOCK_TABLE = "post00000000000000000000000000000000";
 const EPOCH = new Date(0);
 const dashless = (id: string) => id.replaceAll("-", "").toLowerCase();
 
 type Entity = TableEntityResult<Record<string, unknown>>;
+type Headers = { get(name: string): string | undefined } | undefined;
+
+/** The time of a response's `Date` header; null without one. */
+export function dateHeader(headers: Headers): Date | null {
+  const text = headers?.get("date");
+  const date = text === undefined ? null : new Date(text);
+  return date !== null && Number.isFinite(date.getTime()) ? date : null;
+}
 
 const dateOf = (value: unknown): Date | undefined => {
   const date =
@@ -155,6 +167,22 @@ export function openTableSource(config: {
           timestamp,
         };
       }
+    },
+    async tablesClock() {
+      // Any answer carries the service's time, a refusal or a missing table's included.
+      let clock: Date | null = null;
+      try {
+        await results(CLOCK_TABLE)
+          .listEntities({
+            queryOptions: { select: ["RowKey"] },
+            onResponse: (response) => void (clock = dateHeader(response.headers)),
+          })
+          .byPage({ maxPageSize: 1 })
+          .next();
+      } catch (error) {
+        clock ??= dateHeader((error as { response?: { headers?: Headers } }).response?.headers);
+      }
+      return clock;
     },
     async *ownTokenRows() {
       const table = tableClient(config.surveysStorageConnectionString, API_TOKENS_TABLE);

@@ -381,7 +381,7 @@ describe("copy from the local replica", () => {
   it("skips the surveys with a checkpoint unless --full", async () => {
     const keys = await copied.target.state.keys("survey:");
     expect(keys.length).toBe(fixtures.surveys.length);
-    expect(await copied.target.state.get("marks")).toEqual({ takenAt: NOW.toISOString() });
+    expect(await copied.target.state.get("marks")).toMatchObject({ takenAt: NOW.toISOString() });
     let reads = 0;
     const source = openSource();
     try {
