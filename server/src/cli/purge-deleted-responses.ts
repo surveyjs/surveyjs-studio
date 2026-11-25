@@ -11,11 +11,12 @@ import {
   type StoreCommandDeps,
 } from "./common.js";
 
-export const USAGE = `Usage: pnpm purge:deleted-responses --before <date> [--apply] [--env-file <path>]
+export const USAGE = `Usage: surveyjs-studio purge-deleted-responses --before <date> [--apply] [--env-file <path>]
 
 Purges the archived copies of deleted responses (the deleted_responses table) that were deleted
 strictly before the given instant. A dry run by default: it counts the copies and deletes nothing.
-Prints counts and the date only. STORAGE_PROVIDER must be sqlite or postgres.
+Prints counts and the date only. STORAGE_PROVIDER must be sqlite or postgres. In the repository the
+command is pnpm purge:deleted-responses.
 
 Options:
   --before <date>     Delete copies archived before this instant, an ISO 8601 date or date and

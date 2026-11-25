@@ -55,6 +55,7 @@ describe("surveyjs-studio command", () => {
       "seed",
       "s3-bucket",
       "rebase-urls",
+      "purge-deleted-responses",
     ]) {
       expect(result.out).toContain(`  ${command}`);
     }
@@ -72,6 +73,12 @@ describe("surveyjs-studio command", () => {
       2,
     );
     expect(result.err).toContain("--from and --to are both needed");
+  });
+
+  it("passes purge-deleted-responses on", async () => {
+    const result = capture();
+    expect(await run(["purge-deleted-responses"], result.io, { env: {} })).toBe(2);
+    expect(result.err).toContain("--before");
   });
 
   it("passes backup on", async () => {
