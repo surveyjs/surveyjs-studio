@@ -12,7 +12,7 @@ import {
 } from "../providers/azure-legacy/large-survey.js";
 import { createStubShareReader } from "../providers/azure-legacy/legacy-shares-stub.js";
 import { API_TOKENS_TABLE } from "../providers/azure-legacy/writes.js";
-import { OWNER_ID } from "../providers/suite/expected.js";
+import { LEGACY_ASSET_NAME, OWNER_ID } from "../providers/suite/expected.js";
 import type { ProviderSet } from "../providers/types.js";
 import { jsonText } from "../sql/values.js";
 import { createReport } from "./map/report.js";
@@ -624,6 +624,45 @@ describe("verify against a copy of the local replica", () => {
       expect(findings(json.differences, "not_copied_user_files")).toHaveLength(1);
     } finally {
       await files.deleteBlob(name).catch(() => undefined);
+    }
+  });
+});
+
+describe("verify after the source dropped its only link to a legacy file", () => {
+  it("is green and notes the target's unlinked file by count", async () => {
+    const withoutDefinition = fixtures.surveys
+      .find(
+        (s) =>
+          !fixtures.blobs.some(
+            (b) => b.container === "surveyjson" && b.name.toLowerCase() === s.id.toLowerCase(),
+          ),
+      )!
+      .id.toLowerCase();
+    const link = `https://surveyjs.io/private/Surveys/files?name=${LEGACY_ASSET_NAME}`;
+    const definition = {
+      pages: [{ elements: [{ type: "html", name: "logo", html: `<img src="${link}">` }] }],
+    };
+    const into = await newTarget();
+    const definitions = blobs.getContainerClient("surveyjson");
+    try {
+      await definitions
+        .getBlockBlobClient(withoutDefinition)
+        .uploadData(Buffer.from(JSON.stringify(definition)));
+      await copyFromReplica(into, fixtures);
+      expect(
+        await into.target.existingKeys("legacy_files", [`asset/${LEGACY_ASSET_NAME}`]),
+      ).toEqual([`asset/${LEGACY_ASSET_NAME}`]);
+      // The image dropped from the definition, and the change copied: the file stays behind.
+      await definitions.deleteBlob(withoutDefinition);
+      await copyFromReplica(into, fixtures, { full: true });
+      const { ok, json, text } = await verify({ into, deepSample: 0 });
+      expect(json.differences).toEqual([]);
+      expect(ok).toBe(true);
+      expect(json.notes).toContainEqual({ kind: "legacy_files_unlinked", ids: { files: "1" } });
+      expect(text).not.toContain(LEGACY_ASSET_NAME);
+    } finally {
+      await definitions.deleteBlob(withoutDefinition).catch(() => undefined);
+      await into.close();
     }
   });
 });

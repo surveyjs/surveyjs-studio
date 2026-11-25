@@ -514,8 +514,9 @@ export async function runVerify(
 
   /**
    * The legacy files: every one a copied record links (before the marks) is in the target, or
-   * missing from the old shares too; the target holds no others, except those linked by rows
-   * after the marks.
+   * missing from the old shares too. Files the target holds that nothing links any more (a
+   * response deleted, an image dropped from a definition) are no difference: the copy keeps them
+   * and the old shares keep the bytes; they are noted, by count.
    */
   async function countLegacyFiles() {
     const wantedKeys = [...linked];
@@ -529,14 +530,11 @@ export async function runVerify(
       const content = await source.shareFile(kind === "asset" ? "surveyfiles" : "files", name);
       if (content !== null) missing += 1;
     }
+    judge("legacy_file_count", {}, missing === 0, false, { linked: wantedKeys.length, missing });
     const lateOnly = [...lateLinked].filter((key) => !linked.has(key));
     const lateHeld = (await target.existingKeys("legacy_files", lateOnly)).length;
-    const extra = (await target.countRows("legacy_files")) - present.size - lateHeld;
-    judge("legacy_file_count", {}, missing === 0 && extra === 0, false, {
-      linked: wantedKeys.length,
-      missing,
-      extra,
-    });
+    const unlinked = (await target.countRows("legacy_files")) - present.size - lateHeld;
+    if (unlinked > 0) report.note("legacy_files_unlinked", { files: String(unlinked) });
   }
 
   // ---- The checks of one survey ----
