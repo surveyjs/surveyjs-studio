@@ -52,9 +52,17 @@ export function stubShareRoot(files: readonly { name: string; content: Buffer }[
 
 /**
  * Tests only: the legacy share reader over the given files (Azurite has no file service), each
- * share holding the files listed for it.
+ * share holding the files listed for it; `list` names a share's files.
  */
-export function createStubShareReader(files: readonly StubShareFile[]): LegacyShareReader {
+export function createStubShareReader(
+  files: readonly StubShareFile[],
+): LegacyShareReader & { list(share: LegacyShare): AsyncIterable<string> } {
   const of = (share: LegacyShare) => stubShareRoot(files.filter((file) => file.share === share));
-  return shareReaderOf({ surveyfiles: of("surveyfiles"), files: of("files") });
+  const reader = shareReaderOf({ surveyfiles: of("surveyfiles"), files: of("files") });
+  return {
+    read: (share, name) => reader.read(share, name),
+    async *list(share) {
+      for (const file of files) if (file.share === share) yield file.name;
+    },
+  };
 }
