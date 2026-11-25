@@ -23,11 +23,13 @@ import {
   createSurveyCopier,
   dumper,
   eventRec,
+  inParallel,
   type SurveyCheckpoint,
+  type SurveyTexts,
   type WrittenDocuments,
 } from "./copy.js";
 import type { DumpWriter } from "./dump.js";
-import { createReport, type Report } from "./map/report.js";
+import { createReport, phaseTimer, type Report } from "./map/report.js";
 import { mapSurvey } from "./map/surveys.js";
 import { mapView } from "./map/views.js";
 import { isCompleteMarks, markOf, takeMarks, type HighWaterMarks } from "./marks.js";
@@ -35,6 +37,7 @@ import { collectNamed } from "./named.js";
 import type { EventRec, ViewRec } from "./records.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
+import { requireCompleteCopy, requireSameSample } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface DeltaOptions {
@@ -47,6 +50,7 @@ export interface DeltaOptions {
   /** Rows per write; default 500. */
   batchSize?: number;
   now?: () => Date;
+  /** A line at the end of each phase, with its duration. */
   progress?: (line: string) => void;
   /** Tests only: the new marks' safety margin (default `MARKS_MARGIN_MS`). */
   marginMs?: number;
@@ -77,29 +81,6 @@ export async function storedMarks(target: MigrationTarget): Promise<HighWaterMar
   return marks;
 }
 
-/** Runs `work` for every item, at most `limit` at once; the first failure stops it and throws. */
-export async function inParallel<T>(
-  items: AsyncIterable<T> | Iterable<T>,
-  limit: number,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  const running = new Set<Promise<void>>();
-  let failed = false;
-  let failure: unknown;
-  for await (const item of items) {
-    if (failed) break;
-    const task: Promise<void> = work(item)
-      .catch((error: unknown) => {
-        if (!failed) [failed, failure] = [true, error];
-      })
-      .finally(() => running.delete(task));
-    running.add(task);
-    if (running.size >= Math.max(1, limit)) await Promise.race(running);
-  }
-  await Promise.all(running);
-  if (failed) throw failure;
-}
-
 export async function runDelta(
   source: LegacySource,
   target: MigrationTarget,
@@ -110,10 +91,13 @@ export async function runDelta(
   const at = () => now().toISOString();
   const size = options.batchSize ?? BATCH;
   const progress = options.progress ?? (() => undefined);
+  const phase = phaseTimer(report, progress);
   const write = dumper(dump);
   const { state } = target;
   const wanted = (surveyId: string) => !sample || sample.surveys.has(surveyId);
 
+  await requireCompleteCopy(state);
+  await requireSameSample(state, sample);
   const marks = await storedMarks(target);
   // Taken before anything is read: whatever changes while this run reads is read again next time.
   const next = await takeMarks(source, now, {
@@ -153,6 +137,7 @@ export async function runDelta(
       changedSurveys.add(name.toLowerCase());
     }
   }
+  phase("changes", `changed: ${changedSurveys.size} surveys, ${changedProjects.size} projects`);
 
   // ---- People and projects: the changed ones, and those the target does not hold yet ----
   // Only the history of a changed survey, or of one the target lacks, can name new authors.
@@ -185,7 +170,7 @@ export async function runDelta(
     await write("member", members);
     projectsWritten += 1;
   }
-  progress(`people: ${written.size}, projects: ${projectsWritten}`);
+  phase("people", `people: ${written.size}, projects: ${projectsWritten}`);
 
   // ---- Survey by survey, in parallel ----
   const ctx = {
@@ -236,10 +221,19 @@ export async function runDelta(
     if (base === null) return;
     migrated.add(surveyId);
 
+    // The survey's texts, read at most once (the documents read them already).
+    let texts: SurveyTexts | null = documents?.texts ?? null;
+    const textsOf = async () => (texts ??= await copier.texts(surveyId));
     const rows = await copier.rows(
       surveyId,
       base.record.postId,
       known === null ? undefined : tablesSince,
+      {
+        row,
+        texts: textsOf,
+        known: known ?? [],
+        stored: async () => documents?.interim ?? (await target.privateQuestionsOf(surveyId)),
+      },
     );
     const grew = known === null || [...rows.answerNames].some((name) => !known.has(name));
     const answerNames = new Set([...(known ?? []), ...rows.answerNames]);
@@ -247,9 +241,9 @@ export async function runDelta(
       // The privacy rule with every answer name: new documents, or a response with a new key.
       await copier.finish(
         row,
-        documents?.texts ?? (await copier.texts(surveyId)),
+        await textsOf(),
         answerNames,
-        documents?.interim ?? (await target.privateQuestionsOf(surveyId)),
+        rows.privateQuestions ?? documents?.interim ?? (await target.privateQuestionsOf(surveyId)),
       );
       await copier.checkpoint(surveyId, answerNames);
     }
@@ -268,7 +262,8 @@ export async function runDelta(
     options.concurrency ?? CONCURRENCY,
     deltaSurvey,
   );
-  progress(
+  phase(
+    "surveys",
     `surveys: ${counts.added} new, ${counts.documents} changed, ${counts.rows} read for rows`,
   );
 
@@ -283,6 +278,7 @@ export async function runDelta(
     if (rec !== null) await events.add(rec);
   }
   await events.flush();
+  phase("events");
 
   const views = batcher<ViewRec>(size, async (batch) => {
     await target.upsertViews(batch);
@@ -296,6 +292,7 @@ export async function runDelta(
     if (rec !== null) await views.add(rec);
   }
   await views.flush();
+  phase("views");
 
   for await (const blob of source.appFiles()) {
     if (blob.properties.lastModified.getTime() <= blobsSince.getTime()) continue;
@@ -304,6 +301,7 @@ export async function runDelta(
     if (record === null || record.surveyId === null || !migrated.has(record.surveyId)) continue;
     await copier.appFile(blob.blobName, record as SurveyFileRecord);
   }
+  phase("files", "own files");
 
   // ---- The marks move forward; `reconcile` keeps the copy's until it runs ----
   if ((await state.get(RECONCILE)) === null) {

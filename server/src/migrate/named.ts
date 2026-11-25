@@ -24,6 +24,11 @@ export interface Named {
   projects: { project: ProjectRec; members: MemberRec[] }[];
   /** The projects skipped for having no member with a known role (GUID ids only). */
   projectsWithoutMembers: Set<string>;
+  /**
+   * The change times (`[timestamp]`) of each project's row and of its member rows, by project id:
+   * what `verify` judges a project changed after the marks by.
+   */
+  projectTimes: Map<string, { project: Date | null; members: (Date | null)[] }>;
   /** The lower-case ids of everyone the copied data names. */
   named: Set<string>;
   /** The profiles and keys to pre-create, before the target's own refusals. */
@@ -44,7 +49,8 @@ export async function collectNamed(
     report: Report;
     /** `created_at` of the profiles and keys: the run's start. */
     runStart: string;
-    readsHistory: (surveyId: string) => boolean;
+    /** Whether to name the authors of the survey's history (a listing of its history prefix). */
+    readsHistory: (surveyId: string, row: { timestamp: Date | null }) => boolean;
   },
 ): Promise<Named> {
   const { sample, report } = options;
@@ -63,7 +69,7 @@ export async function collectNamed(
     });
     legacyUsers.add(row.id.toLowerCase());
   }
-  const membersOf = new Map<string, LegacyOrganizationUserRow[]>();
+  const membersOf = new Map<string, (LegacyOrganizationUserRow & { timestamp: Date | null })[]>();
   for await (const row of source.organizationUsers()) {
     const projectId = row.organizationid.toLowerCase();
     const rows = membersOf.get(projectId);
@@ -72,10 +78,16 @@ export async function collectNamed(
   }
   const projects: { project: ProjectRec; members: MemberRec[] }[] = [];
   const projectsWithoutMembers = new Set<string>();
+  const projectTimes: Named["projectTimes"] = new Map();
   for await (const org of source.organizations()) {
     const projectId = org.id.toLowerCase();
     if (sample && !sample.projects.has(projectId)) continue;
-    const mapped = mapProject(org, membersOf.get(projectId) ?? [], report);
+    const memberRows = membersOf.get(projectId) ?? [];
+    projectTimes.set(projectId, {
+      project: org.timestamp,
+      members: memberRows.map((row) => row.timestamp),
+    });
+    const mapped = mapProject(org, memberRows, report);
     if (mapped) projects.push(mapped);
     else if (isGuid(org.id)) projectsWithoutMembers.add(projectId);
   }
@@ -93,7 +105,7 @@ export async function collectNamed(
     const owner = row.userid?.toLowerCase() ?? "";
     if (legacyUsers.has(owner)) named.add(owner);
     if (row.creatorid !== null) named.add(row.creatorid.toLowerCase());
-    if (options.readsHistory(surveyId) && isGuid(row.id)) {
+    if (options.readsHistory(surveyId, row) && isGuid(row.id)) {
       const entries = await source.historyEntries(surveyId);
       for (const entry of entries.slice(0, HISTORY_KEEP)) {
         if (entry.userId !== null) named.add(entry.userId.toLowerCase());
@@ -110,5 +122,14 @@ export async function collectNamed(
   }
 
   const { people, keys } = mapPeople(users, named, options.runStart, report);
-  return { users, legacyUsers, projects, projectsWithoutMembers, named, people, keys };
+  return {
+    users,
+    legacyUsers,
+    projects,
+    projectsWithoutMembers,
+    projectTimes,
+    named,
+    people,
+    keys,
+  };
 }

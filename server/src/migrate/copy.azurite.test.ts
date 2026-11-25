@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BlobServiceClient } from "@azure/storage-blob";
+import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hashCredential } from "../credentials/format.js";
 import { newFileId } from "../domain/file-id.js";
@@ -21,9 +22,11 @@ import { describeProviderSuite } from "../providers/suite/provider-suite.js";
 import type { SqlDatabase } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { runCopy, type CopyOptions } from "./copy.js";
+import { runDelta } from "./delta.js";
 import { openDumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
 import { runPlan } from "./plan.js";
+import { runReconcile } from "./reconcile.js";
 import {
   copyFromReplica,
   newTarget,
@@ -34,6 +37,8 @@ import {
 } from "./replica-setup.js";
 import { selectSample } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
+import { Refused } from "./state.js";
+import type { MigrationTarget } from "./target.js";
 
 // Runs in the `providers-azurite` Vitest project: the replica holds the golden fixtures (its
 // global setup loads them). Azurite has no file service: the legacy shares are the stub over the
@@ -193,6 +198,67 @@ describe("copy from the local replica", () => {
     expect(report.counts()["skipped:survey"]).toBeUndefined();
   });
 
+  it("reads each survey's history once, names its authors from that read, and times each phase", async () => {
+    // A history entry whose author nothing else names (the fixtures' entries name nobody, and
+    // every fixture user holds a key): a user row and the entry, both removed afterwards.
+    const author = "11111111-0000-4000-8000-a0000000a001";
+    const pool = await new sql.ConnectionPool(config.sqlConnectionString).connect();
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, author)
+      .query("INSERT INTO Users (id, email, displayname) VALUES (@id, 'author@example.com', NULL)");
+    const point = "99999999-0000-4000-8000-a0000000a001";
+    const history = blobs.getContainerClient("surveyjsonhistory");
+    await history
+      .getBlockBlobClient(`${FEEDBACK}/${point}`)
+      .uploadData(Buffer.from('{"pages":[]}'), {
+        metadata: { userid: author, savedat: new Date().toISOString() },
+      });
+    const listed: string[] = [];
+    const read: string[] = [];
+    const into = await newTarget();
+    const source = openSource();
+    try {
+      const counting: LegacySource = {
+        ...source,
+        historyEntries: (surveyId) => {
+          listed.push(surveyId);
+          return source.historyEntries(surveyId);
+        },
+        historyNewest: (surveyId, keep) => {
+          read.push(surveyId.toLowerCase());
+          return source.historyNewest(surveyId, keep);
+        },
+      };
+      const timed = createReport();
+      await runCopy(counting, into.target, { now, report: timed });
+      expect(listed).toEqual([]);
+      expect(read.length).toBe(new Set(read).size);
+      expect(await into.target.historyAuthors()).toContain(author);
+      expect(await into.target.idsOf("users")).toContain(author);
+      expect(timed.toJSON()).toMatchObject({
+        durations: {
+          marks: expect.any(Number),
+          people: expect.any(Number),
+          projects: expect.any(Number),
+          surveys: expect.any(Number),
+          events: expect.any(Number),
+          views: expect.any(Number),
+          files: expect.any(Number),
+        },
+      });
+    } finally {
+      await source.close();
+      await into.close();
+      await history.deleteBlob(`${FEEDBACK}/${point}`).catch(() => undefined);
+      await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, author)
+        .query("DELETE FROM Users WHERE id = @id");
+      await pool.close();
+    }
+  });
+
   it("copies a user's own view and the app's own file", async () => {
     const view = await copied.database.db
       .selectFrom("saved_views")
@@ -271,6 +337,38 @@ describe("copy from the local replica", () => {
       });
     });
 
+    it("private_questions: a response-only name is private before the batch that carries it is written", async () => {
+      await withResponseOnlyName(async () => {
+        const into = await newTarget();
+        try {
+          // What the app would serve while the copy writes: read as each batch goes in.
+          const seen: string[][] = [];
+          const watching: MigrationTarget = {
+            ...into.target,
+            upsertResponses: async (recs) => {
+              if (recs.some((rec) => "only_in_responses" in rec.response.data)) {
+                seen.push([...(await providersOf(into).views.getPrivateQuestions(CAMPAIGN))]);
+              }
+              await into.target.upsertResponses(recs);
+            },
+          };
+          const source = openSource();
+          try {
+            await runCopy(source, watching, { now, report: createReport(), batchSize: 1 });
+          } finally {
+            await source.close();
+          }
+          expect(seen).toHaveLength(1);
+          expect(seen[0]).toContain("only_in_responses");
+          expect([...(await into.target.privateQuestionsOf(CAMPAIGN))].sort()).toEqual(
+            CAMPAIGN_PRIVATE,
+          );
+        } finally {
+          await into.close();
+        }
+      });
+    });
+
     it("private_questions: a --full run killed mid-survey never weakens the stored list, and the next copy finishes the survey", async () => {
       await withResponseOnlyName(async () => {
         const into = await newTarget();
@@ -286,7 +384,13 @@ describe("copy from the local replica", () => {
                 return source.responses(postId, since);
               },
             };
-            await runCopy(recording, into.target, { now, report: createReport(), batchSize: 1 });
+            // One survey at a time: the order of the reads is the order of the batches.
+            await runCopy(recording, into.target, {
+              now,
+              report: createReport(),
+              batchSize: 1,
+              concurrency: 1,
+            });
           } finally {
             await source.close();
           }
@@ -314,7 +418,12 @@ describe("copy from the local replica", () => {
             batchesBefore += rows.length;
           }
           await expect(
-            copyInto(into, { full: true, batchSize: 1, failAfter: batchesBefore + 1 }),
+            copyInto(into, {
+              full: true,
+              batchSize: 1,
+              concurrency: 1,
+              failAfter: batchesBefore + 1,
+            }),
           ).rejects.toThrow(/failAfter/);
 
           // Mid-survey: the stored list is at least the previous run's, and no checkpoint.
@@ -403,6 +512,19 @@ describe("copy from the local replica", () => {
     const resumed = await newTarget();
     try {
       await expect(copyInto(resumed, { failAfter: 1, batchSize: 2 })).rejects.toThrow(/failAfter/);
+      // A copy that never finished: delta and reconcile refuse (what it did not reach, they
+      // would never read).
+      const source = openSource();
+      try {
+        await expect(runDelta(source, resumed.target, { report: createReport() })).rejects.toThrow(
+          Refused,
+        );
+        await expect(
+          runReconcile(source, resumed.target, { report: createReport(), full: false }),
+        ).rejects.toThrow(/no copy has finished/);
+      } finally {
+        await source.close();
+      }
       const partly = await count(resumed.database, "survey_responses");
       expect(partly).toBeGreaterThan(0);
       expect(partly).toBeLessThan(await count(copied.database, "survey_responses"));
@@ -411,6 +533,7 @@ describe("copy from the local replica", () => {
       );
       await copyInto(resumed, { batchSize: 2 });
       expect(await dumpOf(resumed)).toBe(await dumpOf(copied));
+      expect(await resumed.target.state.get("copy:complete")).not.toBeNull();
     } finally {
       await resumed.close();
     }

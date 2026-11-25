@@ -379,6 +379,13 @@ describe("delta and reconcile from the high-water marks", () => {
         { kind: "reconcile_removed_survey", ids: { surveyId: OLD_POLL } },
       ]),
     });
+    // Each phase's duration, for timing the window's runs.
+    expect(report.toJSON()).toMatchObject({
+      durations: { changes: expect.any(Number), surveys: expect.any(Number) },
+    });
+    expect(reconciled.toJSON()).toMatchObject({
+      durations: { surveys: expect.any(Number), responses: expect.any(Number) },
+    });
   }, 180_000);
 
   it("removes the responses and markers of a survey whose responses were all deleted", async () => {

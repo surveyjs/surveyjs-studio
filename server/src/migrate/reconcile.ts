@@ -9,9 +9,10 @@
  *   `copy`'s per-survey functions (such deletions leave no change time for `delta`).
  * - Users' saved views and Studio's own files: the small containers' names, compared.
  * - Responses: the deletion copies since the last reconcile (`deleteResponses`); the surveys whose
- *   responses were all deleted (the old app's event) compared id by id, markers too; and the
- *   surveys changed since the last reconcile (every survey with `--full`) a count compare and,
- *   where counts differ, an id compare. Inside the window a survey above `maxCountResponses` is
+ *   responses were all deleted (the old app's event), markers too, and the surveys changed since
+ *   the last reconcile (every survey with `--full`): the counts compared first and, where they
+ *   differ (always after a delete-all), the ids, streamed through a temporary table of the
+ *   target (never every id in memory). Inside the window a survey above `maxCountResponses` is
  *   not counted (the old store cannot count rows without reading them all); noted.
  * Responses the source has and the target misses are `delta`'s to copy; they are noted only.
  */
@@ -21,19 +22,21 @@ import {
   BATCH,
   CHECKPOINT,
   createSurveyCopier,
+  inParallel,
   PERMISSIONS,
   type SurveyCheckpoint,
 } from "./copy.js";
-import { CONCURRENCY, DELETE_ALL_EVENT, inParallel, RECONCILE, storedMarks } from "./delta.js";
+import { CONCURRENCY, DELETE_ALL_EVENT, RECONCILE, storedMarks } from "./delta.js";
 import type { ReconcileState } from "./delta.js";
 import { mapPeople } from "./map/people.js";
-import { createReport, type Report } from "./map/report.js";
+import { createReport, phaseTimer, type Report } from "./map/report.js";
 import { mapResponse } from "./map/results.js";
 import { mapSurvey } from "./map/surveys.js";
 import { markOf, takeMarks } from "./marks.js";
 import { collectNamed } from "./named.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
+import { requireCompleteCopy, requireSameSample } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface ReconcileOptions {
@@ -46,6 +49,7 @@ export interface ReconcileOptions {
   /** Without `--full`, surveys holding more responses are not counted; default 50,000. */
   maxCountResponses?: number;
   now?: () => Date;
+  /** A line at the end of each phase, with its duration. */
   progress?: (line: string) => void;
   /** Tests only: the new marks' safety margin (default `MARKS_MARGIN_MS`). */
   marginMs?: number;
@@ -65,12 +69,15 @@ export async function runReconcile(
   const now = options.now ?? (() => new Date());
   const at = () => now().toISOString();
   const progress = options.progress ?? (() => undefined);
+  const phase = phaseTimer(report, progress);
   const { state } = target;
   const quiet = createReport();
   const wanted = (surveyId: string) => !sample || sample.surveys.has(surveyId);
   const removed = (entity: string, ids: Record<string, string>) =>
     report.note(`reconcile_removed_${entity}`, ids);
 
+  await requireCompleteCopy(state);
+  await requireSameSample(state, sample);
   const marks = await storedMarks(target);
   const since = (await state.get<ReconcileState>(RECONCILE))?.since ?? marks;
   const next = await takeMarks(source, now, {
@@ -148,6 +155,8 @@ export async function runReconcile(
     }
   }
 
+  phase("surveys", `surveys: ${migrated.length} kept`);
+
   // ---- Projects and their members ----
   const storedMembers = new Map<string, string[]>();
   for (const { projectId, userId, role } of await target.projectMembers()) {
@@ -169,6 +178,8 @@ export async function runReconcile(
     report.note("reconcile_members_replaced", { projectId: project.id });
   }
 
+  phase("projects");
+
   // ---- Surveys mapped again: owner, layouts or permissions changed by a deletion ----
   const copier = createSurveyCopier(source, target, { ctx, batchSize: BATCH, now });
   for (const row of remap) {
@@ -185,6 +196,8 @@ export async function runReconcile(
     await copier.linkedFiles(surveyId, written.links, { skipStored: true });
     report.note("reconcile_remapped_survey", { surveyId });
   }
+
+  phase("remap", `surveys mapped again: ${remap.length}`);
 
   // ---- People the source data (or the target's copied history) no longer names ----
   // Only accounts the migration pre-created and nobody used; an admin, an account created at
@@ -223,7 +236,8 @@ export async function runReconcile(
   const staleFiles = (await target.keysOf("files")).filter((id) => !files.has(id));
   if (staleFiles.length > 0) await target.deleteFiles(staleFiles);
   for (const fileId of staleFiles) removed("file", { fileId });
-  progress(
+  phase(
+    "people_views_files",
     `removed: ${report.counts().reconcile_removed_survey ?? 0} surveys, ${gone.length} people, ` +
       `${staleViews.length} views, ${staleFiles.length} files`,
   );
@@ -256,22 +270,29 @@ export async function runReconcile(
       report.note("reconcile_count_skipped_size", { surveyId });
       return;
     }
-    const ids = new Set<string>();
-    for await (const row of source.responses(postId)) {
-      const mapped = mapResponse(surveyId, row, quiet);
-      if (mapped !== null) ids.add(mapped.response.id);
+    // The source's ids, as the copy maps them, streamed (twice at most, never kept).
+    const sourceIds = async function* () {
+      for await (const row of source.responses(postId)) {
+        const mapped = mapResponse(surveyId, row, quiet);
+        if (mapped !== null) yield mapped.response.id;
+      }
+    };
+    // The counts first; the ids only when they differ (or every response was deleted, where the
+    // same count could hide other rows).
+    let count = 0;
+    if (!allDeleted) {
+      for await (const id of sourceIds()) if (id !== "") count += 1;
     }
-    if (ids.size !== held || allDeleted) {
-      const stored = await target.keysOf("survey_responses", surveyId);
-      const extra = stored.filter((id) => !ids.has(id));
-      if (extra.length > 0) {
-        const removedExtra = await target.deleteResponses(surveyId, extra);
+    if (allDeleted || count !== held) {
+      const { removed: removedExtra, missing } = await target.removeResponsesNotIn(
+        surveyId,
+        sourceIds(),
+      );
+      if (removedExtra > 0) {
         responsesRemoved += removedExtra;
         report.note("reconcile_removed_responses", { surveyId });
       }
-      if (stored.length - extra.length < ids.size) {
-        report.note("reconcile_missing_responses", { surveyId });
-      }
+      if (missing > 0) report.note("reconcile_missing_responses", { surveyId });
     }
     if (allDeleted) {
       const clients = new Set<string>();
@@ -282,7 +303,7 @@ export async function runReconcile(
       if (stale.length > 0) await target.deleteMarkers(surveyId, stale);
     }
   });
-  progress(`responses removed: ${responsesRemoved}`);
+  phase("responses", `responses removed: ${responsesRemoved}`);
 
   await state.set(RECONCILE, { since: next, at: at() } satisfies ReconcileState, at());
   progress("done");
