@@ -83,10 +83,17 @@ function jsonOf(kind: DumpKind, record: unknown): unknown {
   return { ...file, content: file.content.toString("base64") };
 }
 
-/** A dump appended to `records.ndjson` in `dir` (made when missing), so a resumed run adds to it. */
+/**
+ * A dump appended to `records.ndjson` in `dir` (made when missing), so a resumed run adds to it.
+ * The file is made readable by its owner only (mode 0600): it holds private data.
+ */
 export function openDumpWriter(dir: string): DumpWriter {
   mkdirSync(dir, { recursive: true });
-  const out = createWriteStream(join(dir, "records.ndjson"), { flags: "a", encoding: "utf8" });
+  const out = createWriteStream(join(dir, "records.ndjson"), {
+    flags: "a",
+    encoding: "utf8",
+    mode: 0o600,
+  });
   let failed: unknown = null;
   out.on("error", (error) => {
     failed = error;

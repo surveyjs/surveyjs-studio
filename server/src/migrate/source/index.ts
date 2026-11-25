@@ -22,6 +22,6 @@ export function openLegacySource(
   const blobs = openBlobSource(legacy.surveysStorageConnectionString);
   const shares = openShareSource(legacy, options.shares);
   // Spread, not wrapped calls: the readers hold no `this`, and a wrapper calling
-  // `deletedCopies` would trip the read-only lint rule (a method named delete�).
+  // `deletedCopies` would trip the read-only lint rule (a method named delete…).
   return { ...sql, ...tables, ...blobs, ...shares, close: () => sql.close() };
 }
