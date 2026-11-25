@@ -11,7 +11,7 @@ import { GUID } from "../domain/guid.js";
 import type { SqlDatabase } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { columnsOf, deleteSurveyRows, versionOf } from "../sql/survey-store.js";
-import { isoOf, jsonText } from "../sql/values.js";
+import { isoOf, jsonOf, jsonText } from "../sql/values.js";
 import type {
   DeletedRec,
   EventRec,
@@ -31,6 +31,8 @@ import { createMigrationState, type MigrationState } from "./state.js";
 
 export interface MigrationTarget {
   upsertSurvey(rec: SurveyRec): Promise<void>;
+  /** The survey's stored private questions; [] for none (or no such survey). */
+  privateQuestionsOf(surveyId: string): Promise<string[]>;
   upsertHistory(recs: readonly HistoryRec[]): Promise<void>;
   /** Deletes the survey's history entries beyond the newest `keep` (by `at`, then id); how many. */
   pruneHistory(surveyId: string, keep: number): Promise<number>;
@@ -121,6 +123,15 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
             .execute();
         }
       });
+    },
+
+    async privateQuestionsOf(surveyId) {
+      const row = await db
+        .selectFrom("private_questions")
+        .select("names")
+        .where("survey_id", "=", guid(surveyId, "A survey id"))
+        .executeTakeFirst();
+      return row ? jsonOf<string[]>(row.names) : [];
     },
 
     async upsertHistory(recs) {

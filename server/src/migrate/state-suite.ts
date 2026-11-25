@@ -64,6 +64,16 @@ export function describeMigrationStateSuite(dialect: SqlDialectName): void {
       expect(await state.keys("a%")).toEqual(["a%"]);
     });
 
+    it("deletes one key, and nothing for a key that is not there", async () => {
+      const at = "2026-11-25T10:00:00.000Z";
+      await state.set("survey:a", { copiedAt: at }, at);
+      await state.set("survey:b", { copiedAt: at }, at);
+      await state.delete("survey:a");
+      await state.delete("survey:none");
+      expect(await state.keys("survey:")).toEqual(["survey:b"]);
+      expect(await state.get("survey:a")).toBeNull();
+    });
+
     it("clears everything", async () => {
       const at = "2026-11-25T10:00:00.000Z";
       await state.set("run", {}, at);

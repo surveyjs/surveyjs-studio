@@ -247,9 +247,15 @@ export async function runCopy(
       source.permissionsText(surveyId),
       source.layoutText(surveyId, "columns"),
     ]);
-    let rec: SurveyRec | null = mapSurvey(row, definitionText, permissionsText, columnsText, ctx);
+    const rec: SurveyRec | null = mapSurvey(row, definitionText, permissionsText, columnsText, ctx);
     if (rec === null) return false;
-    await target.upsertSurvey(rec);
+    // Rewriting a survey: its checkpoint goes first, so a run stopped inside it copies it again.
+    if (checkpoints.has(surveyId)) await state.delete(`${CHECKPOINT}${surveyId}`);
+    // Until the responses are read, the list also keeps what is stored (a re-copy never makes
+    // a survey's answers more public mid-way); after them, the full list replaces it.
+    const stored = await target.privateQuestionsOf(surveyId);
+    const interim = [...new Set([...rec.privateQuestions, ...stored])];
+    await target.upsertSurvey({ ...rec, privateQuestions: interim });
     const links = [...fileLinks(rec.definition), ...fileLinks(rec.theme)];
 
     const history = mapHistory(
@@ -309,16 +315,15 @@ export async function runCopy(
     await deleted.flush();
 
     // The private questions again with the response keys (notes were made the first time).
-    const final = mapSurvey(row, definitionText, permissionsText, columnsText, {
-      ...ctx,
-      extraAnswerNames: answerNames,
-      report: createReport(),
-    });
-    if (final !== null && !sameNames(final.privateQuestions, rec.privateQuestions)) {
-      await target.upsertSurvey(final);
-      rec = final;
-    }
-    await write("survey", [rec]);
+    const final =
+      mapSurvey(row, definitionText, permissionsText, columnsText, {
+        ...ctx,
+        extraAnswerNames: answerNames,
+        report: createReport(),
+      }) ?? rec;
+    // Exactly the computed list, in its order, so a resumed survey stores what a whole run does.
+    if (!sameList(final.privateQuestions, interim)) await target.upsertSurvey(final);
+    await write("survey", [final]);
 
     await copyLinkedFiles(surveyId, links);
     await state.set(`${CHECKPOINT}${surveyId}`, { copiedAt: at() }, at());
@@ -408,5 +413,5 @@ export async function runCopy(
   progress("done");
 }
 
-const sameNames = (a: readonly string[], b: readonly string[]): boolean =>
-  a.length === b.length && new Set([...a, ...b]).size === a.length;
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((name, i) => name === b[i]);

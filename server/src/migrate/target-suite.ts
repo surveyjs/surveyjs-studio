@@ -472,6 +472,15 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect((await providers.projects.getProject(PROJECT))?.name).toBe("Team 2");
     });
 
+    it("reads back a survey's stored private questions, [] for none", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      expect(await target.privateQuestionsOf(S1.toUpperCase())).toEqual(["q1"]);
+      expect(await target.privateQuestionsOf(S2)).toEqual([]);
+      expect(await target.privateQuestionsOf(guid(999))).toEqual([]);
+    });
+
     it("prunes the history to the newest by (at, id)", async () => {
       await wipe();
       const data = fixtures();

@@ -13,6 +13,8 @@ export interface MigrationState {
   set(key: string, value: unknown, at: string): Promise<void>;
   /** The keys that start with the prefix, in order. */
   keys(prefix: string): Promise<string[]>;
+  /** Removes the key; nothing when it is not there. */
+  delete(key: string): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -46,6 +48,9 @@ export function createMigrationState(
         .orderBy("key")
         .execute();
       return rows.map((row) => row.key);
+    },
+    async delete(key) {
+      await db.deleteFrom("migration_state").where("key", "=", key).execute();
     },
     async clear() {
       await db.deleteFrom("migration_state").execute();

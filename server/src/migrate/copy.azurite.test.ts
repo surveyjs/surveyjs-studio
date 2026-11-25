@@ -270,7 +270,11 @@ describe("copy from the local replica", () => {
       expect(await providers.views.getPrivateQuestions(CAMPAIGN)).toEqual([]);
     });
 
-    it("private_questions: an answer name found only in responses takes the layout's new-columns visibility", async () => {
+    /**
+     * Runs `work` while the campaign survey has a response with a key its definition lacks and a
+     * column layout that hides new columns (both removed afterwards).
+     */
+    async function withResponseOnlyName(work: () => Promise<void>): Promise<void> {
       const table = localTableClient(
         config.resultsStorageConnectionString,
         "post33333333000040008000a00000000004",
@@ -289,21 +293,85 @@ describe("copy from the local replica", () => {
         newcolumnsvisibility: 2,
       };
       await put("surveyresultcolumns", CAMPAIGN, JSON.stringify(layout));
-      const into = await newTarget();
       try {
-        await copyInto(into);
-        const names = await providersOf(into).views.getPrivateQuestions(CAMPAIGN);
-        expect([...names].sort()).toEqual([
-          "HappendAt",
-          "InstanceId",
-          "only_in_responses",
-          "receipt",
-        ]);
+        await work();
       } finally {
         await table.deleteEntity("*", rowId).catch(() => undefined);
         await remove("surveyresultcolumns", CAMPAIGN);
-        await into.close();
       }
+    }
+    const CAMPAIGN_PRIVATE = ["HappendAt", "InstanceId", "only_in_responses", "receipt"];
+
+    it("private_questions: an answer name found only in responses takes the layout's new-columns visibility", async () => {
+      await withResponseOnlyName(async () => {
+        const into = await newTarget();
+        try {
+          await copyInto(into);
+          const names = await providersOf(into).views.getPrivateQuestions(CAMPAIGN);
+          expect([...names].sort()).toEqual(CAMPAIGN_PRIVATE);
+        } finally {
+          await into.close();
+        }
+      });
+    });
+
+    it("private_questions: a --full run killed mid-survey never weakens the stored list, and the next copy finishes the survey", async () => {
+      await withResponseOnlyName(async () => {
+        const into = await newTarget();
+        try {
+          // An uninterrupted copy, one response per batch, noting the order of the response reads.
+          const order: string[] = [];
+          const source = openSource();
+          try {
+            const recording: LegacySource = {
+              ...source,
+              responses: (postId, since) => {
+                order.push(postId.toLowerCase());
+                return source.responses(postId, since);
+              },
+            };
+            await runCopy(recording, into.target, { now, report: createReport(), batchSize: 1 });
+          } finally {
+            await source.close();
+          }
+          const whole = await dumpOf(into);
+          expect([...(await into.target.privateQuestionsOf(CAMPAIGN))].sort()).toEqual(
+            CAMPAIGN_PRIVATE,
+          );
+
+          // Stop a --full run after the campaign survey's first response batch.
+          const surveyOfPost = new Map(
+            fixtures.surveys.map((s) => [s.postid!.toLowerCase(), s.id.toLowerCase()]),
+          );
+          const campaignPost = fixtures.surveys
+            .find((s) => s.id.toLowerCase() === CAMPAIGN)!
+            .postid!.toLowerCase();
+          const before = order.slice(0, order.indexOf(campaignPost));
+          expect(before.length).toBeLessThan(order.length);
+          let batchesBefore = 0;
+          for (const postId of before) {
+            const rows = await into.database.db
+              .selectFrom("survey_responses")
+              .select("id")
+              .where("survey_id", "=", surveyOfPost.get(postId)!)
+              .execute();
+            batchesBefore += rows.length;
+          }
+          await expect(
+            copyInto(into, { full: true, batchSize: 1, failAfter: batchesBefore + 1 }),
+          ).rejects.toThrow(/failAfter/);
+
+          // Mid-survey: the stored list is at least the previous run's, and no checkpoint.
+          const stored = await into.target.privateQuestionsOf(CAMPAIGN);
+          for (const name of CAMPAIGN_PRIVATE) expect(stored).toContain(name);
+          expect(await into.target.state.get(`survey:${CAMPAIGN}`)).toBeNull();
+
+          await copyInto(into, { batchSize: 1 });
+          expect(await dumpOf(into)).toBe(whole);
+        } finally {
+          await into.close();
+        }
+      });
     });
 
     it("files: a legacy file is copied only once a copied record links it", async () => {
