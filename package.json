@@ -66,6 +66,7 @@
     "smoke:legacy": "node --import tsx server/src/cli/smoke-legacy.ts --",
     "account:reconcile": "node --import tsx server/src/cli/account-reconcile.ts --",
     "account:make-admin": "node --import tsx server/src/cli/account-make-admin.ts --",
+    "migrate:hosted": "node --import tsx server/src/migrate/cli.ts --",
     "purge:deleted-responses": "node --import tsx server/src/cli/purge-deleted-responses.ts --",
     "db:migrate": "node --import tsx server/src/cli/db.ts migrate --",
     "db:status": "node --import tsx server/src/cli/db.ts status --",

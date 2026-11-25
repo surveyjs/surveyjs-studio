@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { runBackup, runRestore } from "./backup.js";
 import type { CliEnv, CliIo } from "./common.js";
+import { run as runMigrateHosted } from "../migrate/cli.js";
 import { run as runDb } from "./db.js";
 import { run as runPurge } from "./purge-deleted-responses.js";
 import { run as runRebaseUrls } from "./rebase-urls.js";
@@ -24,6 +25,9 @@ Commands:
   purge-deleted-responses --before <date> [--apply]
                                   Delete the archived copies of deleted responses (a dry run
                                   without --apply; SQL providers only)
+  migrate-hosted <command> [options]
+                                  Copy the legacy data into this database (plan, copy, verify,
+                                  delta, reconcile, wipe); see migrate-hosted --help
 
 Run surveyjs-studio <command> --help for a command's options.
 
@@ -58,6 +62,8 @@ export async function run(
       return runRebaseUrls(rest, io, deps);
     case "purge-deleted-responses":
       return runPurge(rest, io, deps);
+    case "migrate-hosted":
+      return runMigrateHosted(rest, io, deps);
     case "s3-bucket":
       return runS3Bucket(rest, io, { ...(deps.env ?? process.env) });
     case undefined:

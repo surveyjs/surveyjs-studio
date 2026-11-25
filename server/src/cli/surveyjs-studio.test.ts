@@ -56,9 +56,18 @@ describe("surveyjs-studio command", () => {
       "s3-bucket",
       "rebase-urls",
       "purge-deleted-responses",
+      "migrate-hosted",
     ]) {
       expect(result.out).toContain(`  ${command}`);
     }
+  });
+
+  it("passes migrate-hosted on: its --help prints its own usage", async () => {
+    const result = capture();
+    expect(await run(["migrate-hosted", "--help"], result.io, { env: {} })).toBe(0);
+    expect(result.out).toContain("Usage: surveyjs-studio migrate-hosted <command>");
+    const unknown = capture();
+    expect(await run(["migrate-hosted", "frobnicate"], unknown.io, { env: {} })).toBe(2);
   });
 
   it("passes s3-bucket on with the rest of its arguments", async () => {
