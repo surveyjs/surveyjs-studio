@@ -8,9 +8,11 @@
  * so no usable token outlives a run. Project tokens live in a project the test creates as Adam
  * Admin (`Conformance tokens <random>`), with Mia Member as its only other member, and deleted at
  * the end; its surveys move to Adam's Personal scope, where his session deletes them. The legacy
- * cases use the fixture users' keys and skip where the server has none (the SQL providers). Only
- * Oscar Outsider's key is ever revoked, and only where `features.legacyKeyRevoke` is on: the
- * memory run, which starts afresh each time.
+ * cases use the fixture users' keys and skip where the server has none (the SQL providers). Two
+ * keys are ever used up: Mia Member's (replaced, where the server can replace) and Oscar
+ * Outsider's (revoked, only where `features.legacyKeyRevoke` is on). A server that keeps its data
+ * between runs (`legacyKeyReplace: "either"`) has them consumed by the first run, and the cases
+ * for them skip when the key is not the fixture's any more.
  */
 import { randomUUID } from "node:crypto";
 import { describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
@@ -365,6 +367,13 @@ describe.skipIf(sandbox)("legacy access keys", () => {
 
   it("replaces a legacy key where the server can, else answers 409 and keeps it", async (ctx) => {
     await legacyKeyOrSkip(ctx);
+    if (legacyKeyReplace === "either") {
+      // An earlier run on this persistent server may have replaced Mia's key already.
+      const miasKey = (await listed(await as(ctx, member))).legacyKey;
+      if (miasKey === null || miasKey.lastFour !== LEGACY_KEYS.member.slice(-4)) {
+        ctx.skip("Mia's fixture key is already replaced on this server");
+      }
+    }
     const old = bearer(LEGACY_KEYS.member);
     const response = await replace(old);
     // The reference runs pin the outcome; only an external server may give either.
@@ -405,6 +414,9 @@ describe.skipIf(sandbox)("legacy access keys", () => {
     }
     const oscar = await as(ctx, outsider);
     const key = bearer(LEGACY_KEYS.outsider);
+    if ((await listed(oscar)).legacyKey === null) {
+      ctx.skip("Oscar's fixture key is already revoked on this server");
+    }
     expect(await surveysStatus(key)).toBe(200);
     expect((await listed(oscar)).legacyKey).toEqual({
       lastFour: LEGACY_KEYS.outsider.slice(-4),
