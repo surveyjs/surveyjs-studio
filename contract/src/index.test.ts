@@ -56,4 +56,11 @@ describe("contract package", () => {
     }
     expect(missing).toEqual([]);
   });
+
+  // Hosted sign-in refusals (ADR 0043) a client that does not ask for HTML gets as problems.
+  it("documents loginCallback's hosted refusals: 403 blocked and 409 identity-conflict", () => {
+    const doc = parse(readFileSync(openapiPath, "utf8")) as OpenApiDocument;
+    const callback = operations(doc).find((op) => op.operationId === "loginCallback");
+    expect(Object.keys(callback?.responses ?? {})).toEqual(expect.arrayContaining(["403", "409"]));
+  });
 });

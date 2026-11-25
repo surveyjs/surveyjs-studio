@@ -190,6 +190,13 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: >-
+            Hosted edition: the email belongs to an account of another surveyjs.io id
+            (`email-taken`, "Email in use"). No session is created.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503':
           description: >-

@@ -2580,6 +2580,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description Hosted edition: the email belongs to an account of another surveyjs.io id (`email-taken`, "Email in use"). No session is created. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description `READ_ONLY=true` and a sign-in started without `provider` would write (`read-only`): link an identity, create an account or activate an invited one. No session is created. */
             503: {
