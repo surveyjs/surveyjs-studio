@@ -214,6 +214,9 @@ importers:
 
   bridge:
     dependencies:
+      '@surveyjs-studio/column-layout':
+        specifier: workspace:*
+        version: link:../column-layout
       '@surveyjs-studio/metrics':
         specifier: workspace:*
         version: link:../metrics
@@ -236,6 +239,12 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
+
+  column-layout:
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.0
+        version: 24.19.0
 
   conformance-tests:
     dependencies:
@@ -362,6 +371,9 @@ importers:
       '@fastify/static':
         specifier: 10.1.6
         version: 10.1.6
+      '@surveyjs-studio/column-layout':
+        specifier: workspace:*
+        version: link:../column-layout
       '@surveyjs-studio/contract':
         specifier: workspace:*
         version: link:../contract

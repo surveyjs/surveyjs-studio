@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@surveyjs-studio/column-layout": "workspace:*",
     "@surveyjs-studio/metrics": "workspace:*",
     "fastify": "5.12.6",
     "openapi-fetch": "0.17.0",

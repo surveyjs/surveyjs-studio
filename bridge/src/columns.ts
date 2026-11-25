@@ -6,6 +6,12 @@
 // (its columns first, in its order). The survey's private questions take the place of the old
 // permissions list. What the old calculation failed on throws `ColumnsRefused` (an empty `400`).
 // The platform's text of each value (`True`, en-US dates) is the old server's.
+import {
+  enumValue as visibilityNumber,
+  PUBLIC_INVISIBLE,
+  storedColumnEntries,
+  VISIBLE,
+} from "@surveyjs-studio/column-layout";
 import type { components } from "@surveyjs-studio/contract/types";
 import { EMPTY_GUID } from "./binding.js";
 import { dotnetDouble, JsonNumber, oldJson, parseOldDate } from "./dotnet-format.js";
@@ -14,9 +20,6 @@ import { parseLenientJson } from "./json-body.js";
 
 type SurveyResponse = components["schemas"]["SurveyResponse"];
 
-/** `Visibility`: shown; hidden; hidden from public reads only. */
-const VISIBLE = 0;
-const PUBLIC_INVISIBLE = 2;
 /** `Location`: a column of the table, or a row under it (files and images). */
 const ROW = 1;
 /** `DataType`: text, a file link, an image. */
@@ -103,16 +106,9 @@ function clrText(value: unknown): string | null {
  * text as the default), a whole number as it is; anything else failed.
  */
 function enumValue(value: unknown, what: string): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === "string") {
-    const match = /^[\t-\r ]*([+-]?[0-9]+)[\t-\r ]*$/.exec(value);
-    const number = match === null ? Number.NaN : Number(match[1]);
-    return Number.isNaN(number) || Math.abs(number) > 2_147_483_647 ? 0 : number;
-  }
-  if (typeof value === "number" && Number.isInteger(value) && Math.abs(value) <= 2_147_483_647) {
-    return value;
-  }
-  throw new ColumnsRefused(`a stored ${what} that is no number`);
+  const number = visibilityNumber(value);
+  if (number === undefined) throw new ColumnsRefused(`a stored ${what} that is no number`);
+  return number;
 }
 
 /** A column's values by name, as the old column held them, and its data type (not stored). */
@@ -300,21 +296,14 @@ function valuesOf(entry: Record<string, unknown>): Map<string, unknown> {
 
 /** The layout's `columns` as the old reader took them: a list of objects (or nulls), or none. */
 function storedColumns(value: unknown): Column[] {
-  if (Array.isArray(value)) {
-    return value.map((entry) => {
-      if (entry === null) return new Column(new Map());
-      if (!isObject(entry)) throw new ColumnsRefused("a stored column that is no object");
-      return new Column(valuesOf(entry));
-    });
-  }
-  // A text or an object was walked as a list (and failed unless empty); anything else is none.
-  if (typeof value === "string" && value !== "" && parseOldDate(value) === null) {
-    throw new ColumnsRefused("stored columns that are a text");
-  }
-  if (isObject(value) && Object.keys(value).length > 0) {
-    throw new ColumnsRefused("stored columns that are an object");
-  }
-  return [];
+  const entries = storedColumnEntries(value, {
+    isObject,
+    isDateText: (text) => parseOldDate(text) !== null,
+  });
+  if (entries === "entry-no-object") throw new ColumnsRefused("a stored column that is no object");
+  if (entries === "text") throw new ColumnsRefused("stored columns that are a text");
+  if (entries === "object") throw new ColumnsRefused("stored columns that are an object");
+  return entries.map((entry) => new Column(entry === null ? new Map() : valuesOf(entry)));
 }
 
 /** The computed columns merged with a layout's: its columns first, in its order, then the rest. */

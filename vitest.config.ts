@@ -43,6 +43,7 @@ export default defineConfig({
       },
       { test: { name: "bridge", include: ["bridge/src/**/*.test.ts"] } },
       { test: { name: "metrics", include: ["metrics/src/**/*.test.ts"] } },
+      { test: { name: "column-layout", include: ["column-layout/src/**/*.test.ts"] } },
       { test: { name: "legacy-replay", include: ["legacy-replay/src/**/*.test.ts"] } },
       "web",
       {

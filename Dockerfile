@@ -13,6 +13,7 @@ COPY conformance-tests/package.json conformance-tests/
 COPY e2e/package.json e2e/
 COPY bridge/package.json bridge/
 COPY metrics/package.json metrics/
+COPY column-layout/package.json column-layout/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
