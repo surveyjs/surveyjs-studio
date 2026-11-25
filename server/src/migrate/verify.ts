@@ -6,9 +6,12 @@
  *
  * - **Full** (`--full`, the day before the window): every survey's record, definition, theme,
  *   history, layouts, private questions and response count (the source's rows streamed, the
- *   target's `results.stats`); the projects, members, people and keys; and `deepSample` random
- *   surveys (every survey of a `--sample` run) read in depth through both providers: the record,
- *   definition, theme, history, every response, layouts and the legacy files they link.
+ *   target's `results.stats`, exact on the rows that existed before the marks); per survey the
+ *   completion markers and deleted-response copies, and per table the events, users' views,
+ *   Studio's own survey files and the linked legacy files, counted; the projects, members, people,
+ *   identities and keys; and `deepSample` random surveys (every survey of a `--sample` run) read
+ *   in depth through both providers: the record, definition, theme, history, every response (up to
+ *   `deepMaxResponses`), layouts and the legacy files they link.
  * - **Incremental** (in the window, after the final `delta`): what changed since the last full
  *   verify: the changed surveys in full (their responses by the new rows), every survey's new
  *   responses and deletions, and the small tables (surveys, projects, members, people, keys) in
@@ -19,18 +22,20 @@
  */
 import { legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, LayoutKind, SurveyRecord, SurveyResponse } from "../domain/types.js";
-import { UPLOADS_PREFIX } from "../providers/azure-legacy/mapping.js";
+import { fileRecordFromBlob, isGuid, UPLOADS_PREFIX } from "../providers/azure-legacy/mapping.js";
 import type { ProviderSet } from "../providers/types.js";
 import {
   bytesChecksum,
   checksum,
   expectedHistory,
+  expectedIdentities,
   expectedKey,
   expectedProject,
   expectedRecord,
   expectedResponse,
   expectedUser,
   historyKey,
+  mappedMemberKeys,
   memberKeys,
   sameJson,
   sameNames,
@@ -38,13 +43,14 @@ import {
 } from "./compare.js";
 import { fileLinks } from "./map/files.js";
 import { createReport, type Report } from "./map/report.js";
-import { HISTORY_KEEP, mapHistory, mapResponse } from "./map/results.js";
+import { HISTORY_KEEP, mapDeleted, mapHistory, mapResponse } from "./map/results.js";
+import { mapView } from "./map/views.js";
 import { mapSurvey } from "./map/surveys.js";
 import { changedAfterMarks, markOf, type HighWaterMarks, type SourceStore } from "./marks.js";
 import { collectNamed } from "./named.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
-import type { MigrationTarget } from "./target.js";
+import type { CountedTable, MigrationTarget } from "./target.js";
 
 export interface VerifyOptions {
   /** `--full`; otherwise incremental, since the last full verify. */
@@ -53,18 +59,28 @@ export interface VerifyOptions {
   sample?: SampleSet;
   /** How many random surveys a full verify compares in depth. */
   deepSample: number;
+  /**
+   * A survey compared in depth with more responses than this gets its counts and checksums but no
+   * response-by-response walk (noted `deep_skipped_size`); default 50,000.
+   */
+  deepMaxResponses?: number;
   report: Report;
 }
 
-/** State key of the last green full verify: when, and the marks it compared as of. */
+/**
+ * State key of the last green full verify: when, the marks it compared as of, and whether it
+ * covered a sample only.
+ */
 const FULL_VERIFY = "verify:full";
 interface FullVerifyState {
   at: string;
   marks: HighWaterMarks;
+  sample: boolean;
 }
 
 const LAYOUT_KINDS: readonly LayoutKind[] = ["table", "summary", "columns"];
 const PAGE = 1000;
+const DEEP_MAX_RESPONSES = 50_000;
 
 interface Texts {
   definition: string | null;
@@ -126,6 +142,11 @@ export async function runVerify(
       differ("full_verify", {});
       return { ok };
     }
+    if (last.sample && !sample) {
+      // Everything but the sample was never compared in full.
+      differ("full_verify", { reason: "last full verify was a sample" });
+      return { ok };
+    }
     since = last.marks;
   }
   const wanted = (surveyId: string) => !sample || sample.surveys.has(surveyId);
@@ -157,25 +178,19 @@ export async function runVerify(
     named.users.map((row) => [row.id.toLowerCase(), after("sql", row.timestamp)]),
   );
   const people = new Map(named.people.map((person) => [person.id, person]));
-  const keyHolders = new Set(named.keys.map((key) => key.userId));
+  const keys = new Map(named.keys.map((key) => [key.userId, key]));
   for (const person of named.people) {
     const ids = { userId: person.id };
     const changed = userChanged.get(person.id) ?? false;
-    const [read, stored] = await Promise.all([
+    const [read, stored, identities, storedKey] = await Promise.all([
       sourceProviders.users.getUser(person.id),
       targetProviders.users.getUser(person.id),
-    ]);
-    judge("people", ids, read !== null && sameJson(stored, expectedUser(read, person)), changed);
-    const [sourceKey, storedKey] = await Promise.all([
-      sourceProviders.credentials.legacyKeyOf(person.id),
+      target.identitiesOf(person.id),
       targetProviders.credentials.legacyKeyOf(person.id),
     ]);
-    judge(
-      "keys",
-      ids,
-      sameJson(storedKey, expectedKey(sourceKey, keyHolders.has(person.id))),
-      changed,
-    );
+    judge("people", ids, read !== null && sameJson(stored, expectedUser(read, person)), changed);
+    judge("identities", ids, sameJson(identities, expectedIdentities(person)), changed);
+    judge("keys", ids, sameJson(storedKey, expectedKey(keys.get(person.id))), changed);
   }
   for (const id of await target.idsOf("users")) {
     if (!people.has(id)) differ("people", { userId: id }, { inSource: 0 });
@@ -189,10 +204,9 @@ export async function runVerify(
     const ids = { projectId: project.id };
     const changed =
       after("sql", project.createdAt) || members.some((member) => after("sql", member.updatedAt));
-    const [read, stored, readMembers, storedMembers] = await Promise.all([
+    const [read, stored, storedMembers] = await Promise.all([
       sourceProviders.projects.getProject(project.id),
       targetProviders.projects.getProject(project.id),
-      sourceProviders.projects.listMembers(project.id),
       targetProviders.projects.listMembers(project.id),
     ]);
     judge(
@@ -204,7 +218,7 @@ export async function runVerify(
     judge(
       "members",
       ids,
-      sameJson(memberKeys(storedMembers), memberKeys(readMembers, profiles)),
+      sameJson(memberKeys(storedMembers), mappedMemberKeys(members, profiles)),
       changed,
       { source: members.length, target: storedMembers.length },
     );
@@ -244,6 +258,14 @@ export async function runVerify(
         ]);
 
   const targetSurveys = await target.idsOf("surveys");
+  /** The surveys the target holds as it should (their views, events and files are counted). */
+  const copied = new Set<string>();
+  /** Full: the legacy files the copied records link (`{kind}/{name}`), and those of later rows. */
+  const linked = new Set<string>();
+  const lateLinked = new Set<string>();
+  const link = (into: Set<string>, json: unknown) => {
+    for (const { kind, name } of fileLinks(json)) into.add(`${kind}/${name}`);
+  };
   const deep = new Set(
     sample
       ? targetSurveys
@@ -290,6 +312,7 @@ export async function runVerify(
       judge("surveys", ids, base === null && stored === null, rowChanged);
       continue;
     }
+    copied.add(surveyId);
 
     // Incremental: the responses and deletions since the last full verify, by count.
     const fresh =
@@ -334,10 +357,12 @@ export async function runVerify(
     const storedNames = await targetProviders.views.getPrivateQuestions(surveyId);
     let answerNames: Iterable<string>;
     let pendingNames: boolean;
+    let size: number | null = null;
     if (fresh === null) {
       const counted = await countResponses(surveyId, rec.record.postId, stored);
       answerNames = counted.answerNames;
       pendingNames = counted.pendingNames;
+      size = counted.rows;
     } else {
       // Every name the target lists is taken as an answer name, with the new rows' keys: a
       // response-only name then follows the layout's rule as the copy applied it.
@@ -360,17 +385,159 @@ export async function runVerify(
       },
     );
 
-    if (deep.has(surveyId)) await compareInDepth(surveyId, rec, stored);
+    if (options.full) {
+      await countSurveyRows(
+        "markers",
+        surveyId,
+        "completion_markers",
+        mapAsync(source.markers(surveyId), (marker) => ({
+          key: marker.clientId,
+          late: after("tables", marker.timestamp),
+        })),
+      );
+      await countSurveyRows(
+        "deleted_responses",
+        surveyId,
+        "deleted_responses",
+        mapAsync(source.deletedCopies(rec.record.postId), (copy) =>
+          mapDeleted(surveyId, copy, quiet()) === null
+            ? null
+            : { key: copy.responseId.toLowerCase(), late: after("tables", copy.deletedAt) },
+        ),
+      );
+    }
+    if (deep.has(surveyId)) {
+      size ??= (await targetProviders.results.stats(stored)).count;
+      await compareInDepth(surveyId, rec, stored, size);
+    }
   }
   for (const id of targetSurveys) {
     if (!seen.has(id)) differ("surveys", { surveyId: id }, { inSource: 0 });
   }
 
+  // ---- Whole tables, counted as of the marks (full) ----
+  if (options.full) {
+    await countTableRows(
+      "events",
+      "survey_events",
+      mapAsync(source.events(), (event) => {
+        if (sample && !copied.has(event.surveyId.toLowerCase())) return null;
+        if (!isGuid(event.id) || !isGuid(event.surveyId)) return null;
+        return { key: event.id.toLowerCase(), late: after("tables", event.timestamp) };
+      }),
+    );
+    await countTableRows(
+      "views",
+      "saved_views",
+      mapAsync(source.views(), (view) => {
+        if (!copied.has(view.surveyId.toLowerCase())) return null;
+        const blobName = `${view.surveyId}/${view.userId}/${view.view}`;
+        const rec = mapView(blobName, view.text, view.lastModified, quiet());
+        if (rec === null) return null;
+        return {
+          key: `${rec.surveyId}/${rec.userId}/${rec.view}`,
+          late: after("blobs", view.lastModified),
+        };
+      }),
+    );
+    await countTableRows(
+      "own_files",
+      "files",
+      mapAsync(source.appFiles(), (blob) => {
+        const record = fileRecordFromBlob(blob.blobName, blob.properties, blob.metadata);
+        if (record === null || record.surveyId === null || !copied.has(record.surveyId)) {
+          return null;
+        }
+        return { key: record.id, late: after("blobs", blob.properties.lastModified) };
+      }),
+    );
+    await countLegacyFiles();
+  }
+
   if (options.full && ok) {
     const at = new Date().toISOString();
-    await state.set(FULL_VERIFY, { at, marks } satisfies FullVerifyState, at);
+    await state.set(
+      FULL_VERIFY,
+      { at, marks, sample: sample !== undefined } satisfies FullVerifyState,
+      at,
+    );
   }
   return { ok };
+
+  // ---- Counts ----
+
+  /**
+   * The source's rows of a table as of the marks (`late`: changed after them, pending) against
+   * the target's: those it holds of the late keys are left out of its count, so the rows that
+   * existed before the marks compare exactly.
+   */
+  async function countRowsOf(
+    rows: AsyncIterable<{ key: string; late: boolean } | null>,
+    table: CountedTable,
+    surveyId?: string,
+  ) {
+    let before = 0;
+    const late: string[] = [];
+    for await (const row of rows) {
+      if (row === null) continue;
+      if (row.late) late.push(row.key);
+      else before += 1;
+    }
+    const [total, lateHeld] = await Promise.all([
+      target.countRows(table, surveyId),
+      target.existingKeys(table, late, surveyId),
+    ]);
+    return { source: before, target: total - lateHeld.length, late: late.length };
+  }
+
+  async function countSurveyRows(
+    check: string,
+    surveyId: string,
+    table: CountedTable,
+    rows: AsyncIterable<{ key: string; late: boolean } | null>,
+  ) {
+    const { late, ...counts } = await countRowsOf(rows, table, surveyId);
+    // Rows changed after the marks are left out on both sides; listed, never with their keys.
+    if (late > 0) pending(check, { surveyId });
+    judge(check, { surveyId }, counts.source === counts.target, false, counts);
+  }
+
+  async function countTableRows(
+    check: string,
+    table: CountedTable,
+    rows: AsyncIterable<{ key: string; late: boolean } | null>,
+  ) {
+    const { late, ...counts } = await countRowsOf(rows, table);
+    if (late > 0) pending(check, {});
+    judge(check, {}, counts.source === counts.target, false, counts);
+  }
+
+  /**
+   * The legacy files: every one a copied record links (before the marks) is in the target, or
+   * missing from the old shares too; the target holds no others, except those linked by rows
+   * after the marks.
+   */
+  async function countLegacyFiles() {
+    const wantedKeys = [...linked];
+    const present = new Set(await target.existingKeys("legacy_files", wantedKeys));
+    let missing = 0;
+    for (const key of wantedKeys) {
+      if (present.has(key)) continue;
+      const slash = key.indexOf("/");
+      const kind = key.slice(0, slash) as FileKind;
+      const name = key.slice(slash + 1);
+      const content = await source.shareFile(kind === "asset" ? "surveyfiles" : "files", name);
+      if (content !== null) missing += 1;
+    }
+    const lateOnly = [...lateLinked].filter((key) => !linked.has(key));
+    const lateHeld = (await target.existingKeys("legacy_files", lateOnly)).length;
+    const extra = (await target.countRows("legacy_files")) - present.size - lateHeld;
+    judge("legacy_file_count", {}, missing === 0 && extra === 0, false, {
+      linked: wantedKeys.length,
+      missing,
+      extra,
+    });
+  }
 
   // ---- The checks of one survey ----
 
@@ -399,6 +566,15 @@ export async function runVerify(
       await source.historyNewest(surveyId, HISTORY_KEEP),
       quiet(),
     );
+    if (options.full) {
+      // A document changed after the marks may link files the copy has not taken yet.
+      const into = rowChanged ? lateLinked : linked;
+      link(into, rec.definition);
+      link(into, rec.theme);
+      for (const entry of history) {
+        link(after("blobs", entry.at) ? lateLinked : into, entry.snapshot);
+      }
+    }
     const storedHistory = await storedHistoryOf(surveyId);
     judge(
       "history",
@@ -433,28 +609,30 @@ export async function runVerify(
   }
 
   /**
-   * Full: the source's rows streamed (never all in memory) and counted as of the marks against
-   * the target's `stats` (complete rows). Rows after the marks are pending; the target may hold
-   * them already (the copy read later than the marks), and may still hold rows deleted after them.
+   * Full: the source's rows streamed (never all in memory) and the complete ones counted as of
+   * the marks, exactly against the target's `stats`. Rows changed after the marks, and responses
+   * deleted after them, are pending: they are left out on both sides (the target's count loses
+   * those of them it holds as complete, by its own rows' partial flags), so every row that existed
+   * before the marks and still exists is counted on both.
    */
   async function countResponses(surveyId: string, postId: string, stored: SurveyRecord) {
     const answerNames = new Set<string>();
+    let rows = 0;
     let complete = 0;
     let first: string | null = null;
     let last: string | null = null;
-    const late: { id: string; partial: boolean; names: string[] }[] = [];
+    const late: { id: string; names: string[] }[] = [];
     for await (const row of source.responses(postId)) {
       const mapped = mapResponse(surveyId, row, quiet());
       if (mapped === null) continue;
       const { response } = mapped;
+      rows += 1;
       if (after("tables", row.timestamp)) {
-        late.push({
-          id: response.id,
-          partial: response.partial,
-          names: Object.keys(response.data),
-        });
+        late.push({ id: response.id, names: Object.keys(response.data) });
+        link(lateLinked, response.data);
         continue;
       }
+      link(linked, response.data);
       for (const name of Object.keys(response.data)) answerNames.add(name);
       if (response.partial) continue;
       complete += 1;
@@ -462,24 +640,23 @@ export async function runVerify(
       if (last === null || response.submittedAt > last) last = response.submittedAt;
     }
     const { deleted } = await afterMarksOf(surveyId, postId);
-    let expected = complete;
-    for (const { id, partial } of [...late, ...deleted]) {
-      pending("responses", { surveyId, responseId: id });
-      if (!partial && (await targetProviders.results.hasResponse(stored, id))) expected += 1;
-    }
+    const leftOut = [...late, ...deleted].map(({ id }) => id);
+    for (const id of leftOut) pending("responses", { surveyId, responseId: id });
+    const states = await target.responseStates(surveyId, leftOut);
+    const heldComplete = [...states.values()].filter((partial) => !partial).length;
     const stats = await targetProviders.results.stats(stored);
-    const adjusted = late.length > 0 || deleted.length > 0;
+    const before = stats.count - heldComplete;
     judge(
       "response_counts",
       { surveyId },
-      stats.count === expected &&
-        (adjusted || (stats.firstSubmittedAt === first && stats.lastSubmittedAt === last)),
-      // A row rewritten after the marks (a partial run completed) moves the count too.
-      adjusted,
-      { source: complete, target: stats.count },
+      before === complete &&
+        // The first and last times hold only when no later row is among the target's.
+        (heldComplete > 0 || (stats.firstSubmittedAt === first && stats.lastSubmittedAt === last)),
+      false,
+      { source: complete, target: before },
     );
     const pendingNames = late.some(({ names }) => names.some((name) => !answerNames.has(name)));
-    return { answerNames, pendingNames };
+    return { answerNames, pendingNames, rows };
   }
 
   /**
@@ -527,12 +704,14 @@ export async function runVerify(
   /**
    * In depth, through both providers (checks `deep_…`, `responses`, `legacy_files`): the record,
    * definition, theme, history page and snapshots, every response, the layouts and the legacy
-   * files the survey's records link.
+   * files the survey's records link. A survey of more than `deepMaxResponses` responses (`size`)
+   * is not walked response by response (noted); its counts are compared all the same.
    */
   async function compareInDepth(
     surveyId: string,
     rec: NonNullable<ReturnType<typeof mapSurvey>>,
     stored: SurveyRecord,
+    size: number,
   ) {
     const ids = { surveyId };
     const read = await sourceProviders.surveys.getSurvey(surveyId);
@@ -543,7 +722,29 @@ export async function runVerify(
     const changed = after("sql", read.updatedAt);
     judge("deep_surveys", ids, sameJson(stored, expectedRecord(read, rec.record)), changed);
 
-    const links: { kind: FileKind; name: string }[] = [];
+    // The legacy files the records link: the same bytes, or missing on both sides; each once,
+    // compared as they come (a page of responses at a time), never all collected first.
+    const done = new Set<string>();
+    let links: { kind: FileKind; name: string }[] = [];
+    const compareLinks = async () => {
+      const batch = links;
+      links = [];
+      for (const { kind, name } of batch) {
+        const key = `${kind}/${name}`;
+        if (done.has(key)) continue;
+        done.add(key);
+        const [mineFile, theirFile] = await Promise.all([
+          fileBytes(sourceProviders, kind, name),
+          fileBytes(targetProviders, kind, name),
+        ]);
+        judge(
+          "legacy_files",
+          { surveyId, fileId: legacyFileRecord(kind, name, 0).id },
+          mineFile === theirFile,
+          false,
+        );
+      }
+    };
     const pairs = [
       ["deep_definitions", "getDefinition"],
       ["deep_themes", "getTheme"],
@@ -588,7 +789,14 @@ export async function runVerify(
       );
     }
 
+    await compareLinks();
+
     // Every response, both walks in submission order, merged.
+    const cap = options.deepMaxResponses ?? DEEP_MAX_RESPONSES;
+    if (size > cap) {
+      report.note("deep_skipped_size", { surveyId });
+      return;
+    }
     const late = await afterMarksOf(surveyId, read.postId);
     const lateIds = new Set(late.rows.map((row) => row.id));
     const lateClients = new Set(late.rows.flatMap((row) => (row.clientId ? [row.clientId] : [])));
@@ -610,6 +818,7 @@ export async function runVerify(
         compared += 1;
         const expected = expectedResponse(a.value);
         links.push(...fileLinks(expected.data));
+        if (compared % PAGE === 0) await compareLinks();
         if (!sameJson(b.value, expected)) {
           if (a.value.clientId !== undefined && lateClients.has(a.value.clientId)) {
             pending("responses", { surveyId, responseId: a.value.id });
@@ -629,25 +838,16 @@ export async function runVerify(
       ...counts,
       compared,
     });
-
-    // The legacy files those records link: the same bytes, or missing on both sides.
-    const done = new Set<string>();
-    for (const { kind, name } of links) {
-      const key = `${kind}/${name}`;
-      if (done.has(key)) continue;
-      done.add(key);
-      const [mineFile, theirFile] = await Promise.all([
-        fileBytes(sourceProviders, kind, name),
-        fileBytes(targetProviders, kind, name),
-      ]);
-      judge(
-        "legacy_files",
-        { surveyId, fileId: legacyFileRecord(kind, name, 0).id },
-        mineFile === theirFile,
-        false,
-      );
-    }
+    await compareLinks();
   }
+}
+
+/** The items mapped as they come; a null result is passed on for the caller to skip. */
+async function* mapAsync<T, R>(
+  items: AsyncIterable<T>,
+  map: (item: T) => R | null,
+): AsyncGenerator<R | null> {
+  for await (const item of items) yield map(item);
 }
 
 /** Every response of the survey through the provider, page by page, in submission order. */

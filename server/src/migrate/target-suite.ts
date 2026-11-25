@@ -491,6 +491,58 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect(await target.idsOf("users")).toEqual(sorted(data.people.map((p) => p.id)));
     });
 
+    it("counts rows and finds keys of the tables verify counts", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      expect(await target.countRows("completion_markers", S1)).toBe(data.markers.length);
+      expect(await target.countRows("completion_markers", S2)).toBe(0);
+      expect(await target.countRows("saved_views")).toBe(data.views.length);
+      expect(await target.countRows("survey_events")).toBe(data.events.length);
+      expect(await target.countRows("deleted_responses", S1)).toBe(data.deleted.length);
+      // Studio's own files only, not the old service's of the zero survey.
+      expect(await target.countRows("files")).toBe(1);
+      expect(await target.countRows("legacy_files")).toBe(1);
+      expect(
+        (
+          await target.existingKeys("completion_markers", ["Client-X", "client-x", "none"], S1)
+        ).sort(),
+      ).toEqual(["Client-X"]);
+      expect(
+        await target.existingKeys("saved_views", [
+          `${S1}/${ALICE}/summary`,
+          `${S1}/${ALICE}/table`,
+        ]),
+      ).toEqual([`${S1}/${ALICE}/summary`]);
+      expect(await target.existingKeys("legacy_files", ["asset/picture.png", "asset/x"])).toEqual([
+        "asset/picture.png",
+      ]);
+      expect(await target.existingKeys("files", [OWN_ID])).toEqual([OWN_ID]);
+      expect(await target.existingKeys("survey_events", [guid(900)], S2)).toEqual([]);
+      expect(await target.existingKeys("deleted_responses", [guid(990), guid(991)], S1)).toEqual([
+        guid(990),
+      ]);
+    });
+
+    it("reads responses' partial flags and a person's identities", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const states = await target.responseStates(S1, [
+        guid(700),
+        guid(701).toUpperCase(),
+        guid(799),
+      ]);
+      expect([...states].sort()).toEqual([
+        [guid(700), false],
+        [guid(701), true],
+      ]);
+      expect(await target.identitiesOf(ALICE.toUpperCase())).toEqual([
+        { provider: "surveyjs", subject: ALICE, email: "alice@example.com", emailVerified: true },
+      ]);
+      expect(await target.identitiesOf(guid(3))).toEqual([]);
+    });
+
     it("prunes the history to the newest by (at, id)", async () => {
       await wipe();
       const data = fixtures();

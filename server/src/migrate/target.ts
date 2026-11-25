@@ -5,13 +5,13 @@
  * what `delta` relies on. The records are already normalised; an id that is not a GUID fails here
  * rather than going into a row.
  */
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { GUID } from "../domain/guid.js";
 import type { SqlDatabase } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { columnsOf, deleteSurveyRows, versionOf } from "../sql/survey-store.js";
-import { isoOf, jsonOf, jsonText } from "../sql/values.js";
+import { flagOf, isoOf, jsonOf, jsonText } from "../sql/values.js";
 import type {
   DeletedRec,
   EventRec,
@@ -35,6 +35,23 @@ export interface MigrationTarget {
   privateQuestionsOf(surveyId: string): Promise<string[]>;
   /** Every id of the table, ascending (`verify` looks for rows the source no longer has). */
   idsOf(table: "surveys" | "projects" | "users"): Promise<string[]>;
+  /**
+   * `verify`: how many rows the table holds, the survey's only when one is given. `files`: the
+   * files of a survey (Studio's own), not the old service's files of the zero survey.
+   */
+  countRows(table: CountedTable, surveyId?: string): Promise<number>;
+  /**
+   * `verify`: those of `keys` the table holds (the survey's only, when given), each once. The key
+   * of a row: a marker's client id, `{surveyId}/{userId}/{view}` of a saved view, an event's id, a
+   * deleted copy's response id, a file's id, `{kind}/{legacyName}` of a legacy file.
+   */
+  existingKeys(table: CountedTable, keys: readonly string[], surveyId?: string): Promise<string[]>;
+  /** `verify`: the partial flag of each of the survey's responses among `ids` that it holds. */
+  responseStates(surveyId: string, ids: readonly string[]): Promise<Map<string, boolean>>;
+  /** `verify`: the person's sign-in identities. */
+  identitiesOf(
+    userId: string,
+  ): Promise<{ provider: string; subject: string; email: string | null; emailVerified: boolean }[]>;
   upsertHistory(recs: readonly HistoryRec[]): Promise<void>;
   /** Deletes the survey's history entries beyond the newest `keep` (by `at`, then id); how many. */
   pruneHistory(surveyId: string, keep: number): Promise<number>;
@@ -60,6 +77,26 @@ export interface MigrationTarget {
   /** Releases nothing the caller opened: the database and the byte store stay the caller's. */
   close(): Promise<void>;
 }
+
+/** The tables `verify` counts rows of (`MigrationTarget.countRows`, `existingKeys`). */
+export type CountedTable =
+  | "completion_markers"
+  | "saved_views"
+  | "survey_events"
+  | "deleted_responses"
+  | "files"
+  | "legacy_files";
+
+/** The key of a counted table's row, as SQL (constant text: never a value). */
+const ROW_KEY: Record<CountedTable, string> = {
+  completion_markers: "client_id",
+  saved_views: "survey_id || '/' || user_id || '/' || view",
+  survey_events: "id",
+  deleted_responses: "response_id",
+  files: "id",
+  legacy_files: "kind || '/' || legacy_name",
+};
+const ZERO_SURVEY = "00000000-0000-0000-0000-000000000000";
 
 /** Rows per statement: under SQLite's and PostgreSQL's parameter limits. */
 const BATCH = 200;
@@ -139,6 +176,67 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
     async idsOf(table) {
       const rows = await db.selectFrom(table).select("id").orderBy("id").execute();
       return rows.map((row) => row.id);
+    },
+
+    async countRows(table, surveyId) {
+      const scope =
+        table === "files"
+          ? surveyId === undefined
+            ? sql`survey_id is not null and survey_id <> ${ZERO_SURVEY}`
+            : sql`survey_id = ${guid(surveyId, "A survey id")}`
+          : surveyId === undefined || table === "legacy_files"
+            ? sql`1 = 1`
+            : sql`survey_id = ${guid(surveyId, "A survey id")}`;
+      const { rows } = await sql<{ n: number | string }>`
+        select count(*) as n from ${sql.table(table)} where ${scope}`.execute(db);
+      return Number(rows[0]?.n ?? 0);
+    },
+
+    async existingKeys(table, keys, surveyId) {
+      const key = sql.raw(ROW_KEY[table]);
+      const scope =
+        surveyId === undefined || table === "legacy_files"
+          ? sql`1 = 1`
+          : sql`survey_id = ${guid(surveyId, "A survey id")}`;
+      const found = new Set<string>();
+      for (const batch of batches([...new Set(keys)])) {
+        const { rows } = await sql<{ k: string }>`
+          select ${key} as k from ${sql.table(table)}
+          where ${scope} and ${key} in (${sql.join(batch)})`.execute(db);
+        for (const row of rows) found.add(row.k);
+      }
+      return [...found];
+    },
+
+    async responseStates(surveyId, ids) {
+      const id = guid(surveyId, "A survey id");
+      const states = new Map<string, boolean>();
+      for (const batch of batches([...new Set(ids.map((one) => one.toLowerCase()))])) {
+        const rows = await db
+          .selectFrom("survey_responses")
+          .select(["id", "partial"])
+          .where("survey_id", "=", id)
+          .where("id", "in", batch)
+          .execute();
+        for (const row of rows) states.set(row.id, flagOf(row.partial));
+      }
+      return states;
+    },
+
+    async identitiesOf(userId) {
+      const rows = await db
+        .selectFrom("user_identities")
+        .select(["provider", "subject", "email", "email_verified"])
+        .where("user_id", "=", guid(userId, "A user id"))
+        .orderBy("provider")
+        .orderBy("subject")
+        .execute();
+      return rows.map((row) => ({
+        provider: row.provider,
+        subject: row.subject,
+        email: row.email,
+        emailVerified: flagOf(row.email_verified),
+      }));
     },
 
     async upsertHistory(recs) {

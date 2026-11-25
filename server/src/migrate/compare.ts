@@ -15,7 +15,7 @@ import type {
 import { createReport } from "./map/report.js";
 import { mapHistory } from "./map/results.js";
 import { withoutNul } from "./map/text.js";
-import type { HistoryRec, MemberRec, PersonRec } from "./records.js";
+import type { HistoryRec, KeyRec, MemberRec, PersonRec } from "./records.js";
 
 /** JSON with every object's keys sorted, at any depth (array order kept). */
 export function canonicalJson(value: unknown): string {
@@ -94,15 +94,21 @@ export const expectedUser = (read: User, person: PersonRec): User => ({
 });
 
 /**
- * The legacy key the target should read: the source's key with its last four of the lower-case
- * key and never revoked (`revoked_at` null, design Decisions); none when the person's key is not
- * copied.
+ * The sign-in identity the target should hold for a pre-created person, as the people decision
+ * writes it with the profile: `surveyjs`, the id as subject, the profile's email, verified.
+ */
+export const expectedIdentities = (person: PersonRec) => [
+  { provider: "surveyjs", subject: person.id, email: person.email, emailVerified: true },
+];
+
+/**
+ * The legacy key the target should read: the mapper's key (`mapPeople`: the last four of the
+ * lower-case key), stored unrevoked (`revoked_at` null); none when no key is copied.
  */
 export const expectedKey = (
-  read: { lastFour: string; revoked: boolean } | null,
-  copied: boolean,
+  key: KeyRec | undefined,
 ): { lastFour: string; revoked: boolean } | null =>
-  read && copied ? { lastFour: read.lastFour.toLowerCase(), revoked: false } : null;
+  key ? { lastFour: key.lastFour, revoked: false } : null;
 
 /** The project the target should read: one membership per (project, user), as the mapper merges. */
 export const expectedProject = (
@@ -113,15 +119,21 @@ export const expectedProject = (
   memberCount: members.length,
 });
 
-/** Members as both sides compare them: (user, role), by user id; only people with a profile. */
-export const memberKeys = (
-  members: readonly ProjectMember[],
-  people?: ReadonlySet<string>,
+/** The target's members as compared: `{userId}:{role}`, sorted. */
+export const memberKeys = (members: readonly ProjectMember[]): string[] =>
+  members.map((member) => `${member.user.id.toLowerCase()}:${member.role}`).sort();
+
+/**
+ * The members the target should list: the mapper's merged members (`mapProject`: one per user,
+ * an admin row winning), only those with a profile (the target lists no others).
+ */
+export const mappedMemberKeys = (
+  members: readonly MemberRec[],
+  profiles: ReadonlySet<string>,
 ): string[] =>
   members
-    .map((member) => ({ userId: member.user.id.toLowerCase(), role: member.role }))
-    .filter(({ userId }) => !people || people.has(userId))
-    .map(({ userId, role }) => `${userId}:${role}`)
+    .filter((member) => profiles.has(member.userId))
+    .map((member) => `${member.userId}:${member.role}`)
     .sort();
 
 /** Two name lists as sets. */

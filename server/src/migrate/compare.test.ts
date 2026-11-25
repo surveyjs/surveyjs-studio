@@ -11,13 +11,10 @@ describe("compare", () => {
     expect(checksum([1, 2])).not.toBe(checksum([2, 1]));
   });
 
-  it("expects a copied key's last four of the lower-case key, never revoked", () => {
-    expect(expectedKey({ lastFour: "AbCd", revoked: true }, true)).toEqual({
-      lastFour: "abcd",
-      revoked: false,
-    });
-    expect(expectedKey({ lastFour: "abcd", revoked: false }, false)).toBeNull();
-    expect(expectedKey(null, true)).toBeNull();
+  it("expects the mapper's key, unrevoked, and none without one", () => {
+    const key = { userId: "u", keyHash: "h", lastFour: "abcd", createdAt: "t" };
+    expect(expectedKey(key)).toEqual({ lastFour: "abcd", revoked: false });
+    expect(expectedKey(undefined)).toBeNull();
   });
 
   it("compares name lists as sets", () => {

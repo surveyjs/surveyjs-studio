@@ -1,11 +1,13 @@
 import { BlobServiceClient } from "@azure/storage-blob";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { newFileId } from "../domain/file-id.js";
 import { localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig } from "../legacy/replica-env.js";
 import { createAzureLegacyProviders } from "../providers/azure-legacy/index.js";
 import { readLegacyFixtures, type LegacyFixtures } from "../providers/azure-legacy/fixtures.js";
 import {
   largeSurveyAnswers,
+  LARGE_SURVEY_ID,
   LARGE_SURVEY_RESPONSES,
 } from "../providers/azure-legacy/large-survey.js";
 import { createStubShareReader } from "../providers/azure-legacy/legacy-shares-stub.js";
@@ -39,6 +41,7 @@ interface Finding {
   ids: Record<string, string>;
 }
 interface VerifyJson {
+  notes: { kind: string; ids: Record<string, string> }[];
   checks: Record<string, { compared: number; differences: number; pending: number }>;
   differences: Finding[];
   pending: Finding[];
@@ -65,8 +68,29 @@ let userFiles: {
   type?: string;
 }[] = [];
 
+const VIEW_USER = "11111111-0000-4000-8000-a0000000f00d";
+const OWN_FILE = newFileId(FEEDBACK);
+const written: [string, string][] = [];
+async function putBlob(
+  container: string,
+  name: string,
+  content: string,
+  metadata?: Record<string, string>,
+) {
+  const client = blobs.getContainerClient(container);
+  await client.createIfNotExists();
+  await client.getBlockBlobClient(name).uploadData(Buffer.from(content), { metadata });
+  written.push([container, name]);
+}
+
 async function verify(
-  options: { full?: boolean; deepSample?: number; sample?: SampleSet; into?: Target } = {},
+  options: {
+    full?: boolean;
+    deepSample?: number;
+    deepMaxResponses?: number;
+    sample?: SampleSet;
+    into?: Target;
+  } = {},
 ): Promise<{ ok: boolean; json: VerifyJson; text: string }> {
   const report = createReport();
   const source = openReplicaSource(fixtures);
@@ -78,12 +102,15 @@ async function verify(
       deepSample: options.deepSample ?? fixtures.surveys.length,
       report,
       ...(options.sample && { sample: options.sample }),
+      ...(options.deepMaxResponses !== undefined && {
+        deepMaxResponses: options.deepMaxResponses,
+      }),
     });
     const text = JSON.stringify(report.toJSON());
     return { ok, json: JSON.parse(text) as VerifyJson, text };
   } finally {
     await source.close();
-    if (providers !== migrated) await providers.close();
+    // Not closed: closing the SQL providers closes the database, which the test target owns.
   }
 }
 
@@ -130,9 +157,19 @@ beforeAll(async () => {
     });
   }
   for (const { name } of userFiles) await files.deleteBlob(name);
+  // A user's own view and an editor file of a survey in Studio's own containers, so their counts
+  // compare something (removed afterwards).
+  await putBlob("my-surveys-views", `${FEEDBACK}/${VIEW_USER}/summary`, '{"panels":[]}');
+  await putBlob("my-surveys-files", `${FEEDBACK}/${OWN_FILE}`, "own bytes", {
+    kind: "asset",
+    name: "logo.png",
+    createdat: "2026-11-01T10:00:00.000Z",
+  });
   legacy = createAzureLegacyProviders(config, {
     legacyShares: createStubShareReader(fixtures.files),
   });
+  // Blob times are whole seconds: written a second before the marks, they count as before them.
+  await new Promise((resolve) => setTimeout(resolve, 1100));
   copied = await newTarget();
   // The real clock: the marks are now, so a row written to the replica later is after them.
   await copyFromReplica(copied, fixtures);
@@ -151,6 +188,12 @@ afterAll(async () => {
     });
   }
   userFiles = [];
+  for (const [container, name] of written) {
+    await blobs
+      .getContainerClient(container)
+      .deleteBlob(name)
+      .catch(() => undefined);
+  }
   await migrated?.close();
   await legacy?.close();
   await copied?.close();
@@ -180,6 +223,13 @@ describe("verify against a copy of the local replica", () => {
       "deep_layouts",
       "responses",
       "legacy_files",
+      "identities",
+      "markers",
+      "views",
+      "events",
+      "deleted_responses",
+      "own_files",
+      "legacy_file_count",
     ]) {
       expect(json.checks[check]?.compared, check).toBeGreaterThan(0);
     }
@@ -367,6 +417,187 @@ describe("verify against a copy of the local replica", () => {
     }
   });
 
+  it("counts the responses before the marks exactly, also when a survey has rows after them", async () => {
+    const table = localTableClient(
+      config.resultsStorageConnectionString,
+      CAMPAIGN_TABLE,
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    );
+    const lateId = "66666666-0000-4000-8000-a0000000cab1";
+    await table.createEntity({
+      partitionKey: "*",
+      rowKey: lateId,
+      id: lateId,
+      happendat: new Date(),
+      result: JSON.stringify({ satisfaction: 3 }),
+    });
+    const db = copied.database.db;
+    const gone = await db
+      .selectFrom("survey_responses")
+      .selectAll()
+      .where("survey_id", "=", CAMPAIGN)
+      .where("partial", "=", 0)
+      .orderBy("id")
+      .executeTakeFirstOrThrow();
+    await db.deleteFrom("survey_responses").where("id", "=", gone.id).execute();
+    try {
+      const { ok, json } = await verify({ deepSample: 0 });
+      expect(ok).toBe(false);
+      expect(findings(json.differences, "response_counts")).toEqual([
+        expect.objectContaining({ ids: { surveyId: CAMPAIGN } }),
+      ]);
+      expect(json.pending).toContainEqual({
+        check: "responses",
+        ids: { surveyId: CAMPAIGN, responseId: lateId },
+      });
+    } finally {
+      await table.deleteEntity("*", lateId).catch(() => undefined);
+      await db
+        .insertInto("survey_responses")
+        .values(gone as never)
+        .execute();
+    }
+  });
+
+  // One row taken out of the target per counted entity: each check turns red alone.
+  type Db = Target["database"]["db"];
+  const removals: [check: string, table: string, rows: (db: Db) => Promise<unknown[]>][] = [
+    [
+      "identities",
+      "user_identities",
+      (db) =>
+        db
+          .selectFrom("user_identities")
+          .selectAll()
+          .where("user_id", "=", OWNER_ID.toLowerCase())
+          .execute(),
+    ],
+    [
+      "markers",
+      "completion_markers",
+      (db) =>
+        db
+          .selectFrom("completion_markers")
+          .selectAll()
+          .where("survey_id", "=", FEEDBACK)
+          .orderBy("client_id")
+          .limit(1)
+          .execute(),
+    ],
+    [
+      "views",
+      "saved_views",
+      (db) => db.selectFrom("saved_views").selectAll().where("user_id", "=", VIEW_USER).execute(),
+    ],
+    [
+      "events",
+      "survey_events",
+      (db) => db.selectFrom("survey_events").selectAll().orderBy("id").limit(1).execute(),
+    ],
+    [
+      "deleted_responses",
+      "deleted_responses",
+      (db) =>
+        db
+          .selectFrom("deleted_responses")
+          .selectAll()
+          .where("survey_id", "=", FEEDBACK)
+          .limit(1)
+          .execute(),
+    ],
+    [
+      "own_files",
+      "files",
+      (db) => db.selectFrom("files").selectAll().where("id", "=", OWN_FILE).execute(),
+    ],
+    [
+      "legacy_file_count",
+      "legacy_files",
+      (db) => db.selectFrom("legacy_files").selectAll().limit(1).execute(),
+    ],
+  ];
+  const KEY_COLUMNS = new Set([
+    "id",
+    "survey_id",
+    "user_id",
+    "client_id",
+    "response_id",
+    "view",
+    "provider",
+    "subject",
+    "kind",
+    "legacy_name",
+  ]);
+  for (const [check, table, rowsOf] of removals) {
+    it(`is red when one row of ${table} is gone from the target (${check})`, async () => {
+      const db = copied.database.db;
+      const [row] = (await rowsOf(db)) as Record<string, unknown>[];
+      expect(row).toBeDefined();
+      let remove = db.deleteFrom(table as "files");
+      for (const [key, value] of Object.entries(row!)) {
+        if (KEY_COLUMNS.has(key)) remove = remove.where(key as "id", "=", value as string);
+      }
+      await remove.execute();
+      try {
+        const { ok, json } = await verify({ deepSample: 0 });
+        expect(ok).toBe(false);
+        expect(json.differences.map((d) => d.check)).toEqual([check]);
+      } finally {
+        await db
+          .insertInto(table as "files")
+          .values(row as never)
+          .execute();
+      }
+    });
+  }
+
+  it("is red incrementally for a response deleted in the source since the full verify but kept in the target", async () => {
+    const name = "postdelete33333333000040008000a00000000004";
+    const existed = fixtures.tables.some((t) => t.account === "results" && t.name === name);
+    const table = localTableClient(
+      config.resultsStorageConnectionString,
+      name,
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    );
+    await table.createTable();
+    const responseId = fixtures.resultsByTable[CAMPAIGN_TABLE]![0]!.id;
+    const copyId = "77777777-0000-4000-8000-a0000000dead";
+    await table.createEntity({
+      partitionKey: "*",
+      rowKey: copyId,
+      id: copyId,
+      instanceid: responseId,
+      happendat: new Date(),
+      result: JSON.stringify({ satisfaction: 1 }),
+    });
+    const marks = await copied.target.state.get<{ takenAt: string }>("marks");
+    try {
+      // Marks taken after the deletion, which no delta applied.
+      const later = new Date(Date.now() + 1000).toISOString();
+      await copied.target.state.set("marks", { ...marks, takenAt: later }, later);
+      const { ok, json } = await verify({ full: false });
+      expect(ok).toBe(false);
+      expect(findings(json.differences, "deletions")).toEqual([
+        { check: "deletions", ids: { surveyId: CAMPAIGN }, counts: { source: 1, kept: 1 } },
+      ]);
+    } finally {
+      await table.deleteEntity("*", copyId).catch(() => undefined);
+      if (!existed) await table.deleteTable().catch(() => undefined);
+      await copied.target.state.set("marks", marks, new Date().toISOString());
+    }
+  });
+
+  it("walks no survey above the size cap response by response, and notes it", async () => {
+    const { ok, json } = await verify({ deepMaxResponses: LARGE_SURVEY_RESPONSES - 1 });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+    expect(json.notes).toContainEqual({
+      kind: "deep_skipped_size",
+      ids: { surveyId: LARGE_SURVEY_ID },
+    });
+    expect(json.checks.responses!.compared).toBe(fixtures.surveys.length - 1);
+  });
+
   it("is red when the provider's own token table holds rows, which the copy does not take", async () => {
     expect(tokenRows.length).toBeGreaterThan(0);
     for (const row of tokenRows) {
@@ -409,6 +640,13 @@ describe("verify of a sample copy", () => {
       expect(ok).toBe(true);
       expect(json.checks.surveys!.compared).toBe(sample.surveys.size);
       expect(json.checks.responses!.compared).toBe(sample.surveys.size);
+      // That full verify covered the sample only: the window's check of everything refuses.
+      const whole = await verify({ into, full: false });
+      expect(whole.ok).toBe(false);
+      expect(findings(whole.json.differences, "full_verify")).toEqual([
+        { check: "full_verify", ids: { reason: "last full verify was a sample" } },
+      ]);
+      expect((await verify({ into, sample, full: false })).ok).toBe(true);
     } finally {
       await source.close();
       await into.close();
