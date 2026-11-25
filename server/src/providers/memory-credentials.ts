@@ -17,7 +17,7 @@ interface StoredLegacyKey {
 
 export interface MemoryCredentials {
   readonly store: CredentialStore;
-  /** Test and seed hook: gives the user this legacy key (replacing any earlier one). */
+  /** Test and seed hook: gives the user this legacy key as a new unrevoked row (earlier keys keep working, as in the SQL seed). */
   seedLegacyKey(userId: string, key: string): void;
 }
 
@@ -33,13 +33,13 @@ export function createMemoryCredentials(
   /** Per user, oldest first: the last is the user's key; a replaced key stays, revoked. */
   const keys = new Map<string, StoredLegacyKey[]>();
   const seedLegacyKey = (userId: string, key: string): void => {
-    keys.set(lower(userId), [
-      {
-        hash: hashCredential(key, "legacy-key"),
-        lastFour: lastFourOf(key.toLowerCase()),
-        revoked: false,
-      },
-    ]);
+    const rows = keys.get(lower(userId)) ?? [];
+    rows.push({
+      hash: hashCredential(key, "legacy-key"),
+      lastFour: lastFourOf(key.toLowerCase()),
+      revoked: false,
+    });
+    keys.set(lower(userId), rows);
   };
   const newest = (userId: string): StoredLegacyKey | undefined => keys.get(lower(userId))?.at(-1);
   for (const [userId, key] of Object.entries(seedKeys)) seedLegacyKey(userId, key);
@@ -146,10 +146,12 @@ export function createMemoryCredentials(
       return Promise.resolve(true);
     },
     replaceLegacyKey: (userId, expectedHash, hash, lastFour) => {
-      const key = keys.get(lower(userId))?.find((r) => r.hash === expectedHash);
-      if (!key || key.revoked) return Promise.resolve(false);
-      key.revoked = true;
-      keys.get(lower(userId))!.push({ hash, lastFour, revoked: false });
+      const rows = keys.get(lower(userId));
+      const key = rows?.find((r) => r.hash === expectedHash);
+      if (!rows || !key || key.revoked) return Promise.resolve(false);
+      // Every other unrevoked row of the user goes too: the new key is the only one working.
+      for (const row of rows) row.revoked = true;
+      rows.push({ hash, lastFour, revoked: false });
       return Promise.resolve(true);
     },
   };

@@ -7,6 +7,7 @@ export interface CredentialsUnderTest {
   readonly store: CredentialStore;
   /** False when the store has no legacy keys to seed. */
   readonly seedsLegacyKeys: boolean;
+  /** Adds the key as a new unrevoked row of the user: earlier keys keep working (SQL and memory alike). */
   seedLegacyKey(userId: string, key: string): Promise<void>;
   /** A project id a token may belong to: the SQL stores need a project row (foreign key). */
   newProjectId(): Promise<string>;
@@ -273,6 +274,31 @@ export function describeCredentialStoreSuite(
         const again = newKey();
         expect(await replace(userId, hashOf(next), hashOf(again), "abcd", LATER)).toBe(false);
         expect(await store.findLegacyKey(again)).toBeNull();
+      });
+
+      replaceIt("revokes the user's other unrevoked keys too, whichever key replaces", async () => {
+        for (const presented of [0, 1]) {
+          const userId = randomUUID();
+          const keys = [newKey(), newKey()];
+          for (const k of keys) await under.seedLegacyKey(userId, k);
+          const next = newKey();
+          expect(
+            await store.replaceLegacyKey!(
+              userId,
+              hashOf(keys[presented]!),
+              hashOf(next),
+              next.slice(-4),
+              LATER,
+            ),
+          ).toBe(true);
+          for (const k of keys)
+            expect(await store.findLegacyKey(k)).toEqual({ userId, revoked: true });
+          expect(await store.findLegacyKey(next)).toEqual({ userId, revoked: false });
+          expect(await store.legacyKeyOf(userId)).toEqual({
+            lastFour: next.slice(-4),
+            revoked: false,
+          });
+        }
       });
 
       replaceIt("does not replace a revoked key, nor for a user without one", async () => {

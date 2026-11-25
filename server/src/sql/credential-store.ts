@@ -176,6 +176,8 @@ export function createSqlCredentialStore(database: SqlDatabase): CredentialStore
         .selectFrom("legacy_access_keys")
         .selectAll()
         .where("user_id", "=", id)
+        // An unrevoked row first, so a created_at tie never lists a revoked row as the key.
+        .orderBy(sql`revoked_at is null`, "desc")
         .orderBy("created_at", "desc")
         .orderBy("key_hash", "desc")
         .limit(1)
@@ -219,6 +221,13 @@ export function createSqlCredentialStore(database: SqlDatabase): CredentialStore
           .returning("key_hash")
           .executeTakeFirst();
         if (!revoked) return false;
+        // The user's other unrevoked rows go too: the new key is the only one left working.
+        await trx
+          .updateTable("legacy_access_keys")
+          .set({ revoked_at: isoOf(at) })
+          .where("user_id", "=", id)
+          .where("revoked_at", "is", null)
+          .execute();
         await trx
           .insertInto("legacy_access_keys")
           .values({
