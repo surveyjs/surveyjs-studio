@@ -413,7 +413,7 @@ The server writes one JSON object per line (pino) to standard output; the contai
 `LOG_LEVEL` (default `info`) is the only setting.
 
 - **The start-up line** has `"msg":"starting"` and says what this process runs with: `edition`, `shell`,
-  `storageProvider`, `userDirectory`, `identityProvider`, `accountNotices`, `readOnly`, `webApp` (whether `WEB_ROOT`
+  `storageProvider`, `fileStore` (`local`, `s3` or `none`), `historyMaxEntries` (`null` keeps every entry), `userDirectory`, `identityProvider`, `accountNotices`, `readOnly`, `webApp` (whether `WEB_ROOT`
   is set), `publicBaseUrl` and `nodeEnv`. Check it after every start: in rollout step 1 it must say
   `"readOnly":true`.
 - **Request lines.** Fastify writes `incoming request` and `request completed` (with the status and the time) for

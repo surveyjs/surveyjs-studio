@@ -100,7 +100,9 @@
     "sandbox:seed": "node --import tsx scripts/sandbox-seed/cli.ts",
     "prod-like:up": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml up -d --build --wait && pnpm legacy:load",
     "prod-like:up:e2e": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml -f docker/compose.prod-like.e2e.yaml up -d --build --wait && pnpm legacy:load",
-    "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v"
+    "prod-like:down": "docker compose --env-file docker/azurite.env -f docker/compose.prod-like.yaml down -v",
+    "prod-like-sql:up": "docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml up -d --build --wait",
+    "prod-like-sql:down": "docker compose --env-file docker/prod-like.sql.env -f docker/compose.prod-like.sql.yaml down -v"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
