@@ -1028,8 +1028,9 @@ a port. The jobs that need it share one setup (`.github/actions/setup`: pnpm, th
   `e2e:prod-like` (the Azurite mode's specs, Chromium). The other jobs run the image in test or development mode, so
   only this one sees the start-up checks refuse a production configuration.
 - **`postgres`** (after `image`): `pnpm postgres:up`, `test:providers:postgres`, `pnpm s3:up`, `test:providers:s3`,
-  `test:conformance:s3`, `test:conformance:postgres` on the image, and `e2e:postgres` (the tsx server; Chromium, every
-  functional spec but the licence notices; files in S3).
+  `test:conformance:s3`, `test:conformance:postgres` and (with the mock OIDC server started)
+  `test:conformance:postgres:hosted` on the image, and `e2e:postgres` (the tsx server; Chromium, every functional spec
+  but the licence notices; files in S3).
 - **`e2e-image`** (after `image`), one runner per browser (Chromium, Firefox, WebKit): `e2e --project=<browser>` on
   the image (memory provider, dev sign-in).
 - **`e2e-modes`:** on Chromium with the tsx server, `e2e:sqlite` (its SQLite file on the host; files on local disk),

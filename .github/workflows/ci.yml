@@ -297,6 +297,10 @@ jobs:
       - name: Start PostgreSQL
         run: pnpm postgres:up
 
+      # The hosted edition's conformance run signs in through it (only its OIDC_* settings are used).
+      - name: Start the mock OIDC server (mock-oauth2-server)
+        run: docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait mock-oidc
+
       - name: Provider and migrator suites (PostgreSQL)
         run: pnpm test:providers:postgres
 
@@ -312,6 +316,11 @@ jobs:
 
       - name: Conformance tests (PostgreSQL, on the image)
         run: pnpm test:conformance:postgres
+        env:
+          CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
+
+      - name: Conformance tests (the hosted edition on PostgreSQL, on the image)
+        run: pnpm test:conformance:postgres:hosted
         env:
           CONFORMANCE_IMAGE: surveyjs-studio-hosted:ci
 
@@ -334,6 +343,11 @@ jobs:
       - name: Stop PostgreSQL
         if: always()
         run: pnpm postgres:down
+
+      # The only service of compose.azurite.yaml this job started.
+      - name: Stop the mock OIDC server
+        if: always()
+        run: pnpm demo:azurite:down
 
       - name: Stop the local S3 server
         if: always()

@@ -48,6 +48,12 @@ declare module "vitest" {
      * check instead.
      */
     edition: "hosted" | "self-hosted";
+    /**
+     * True when the users are local accounts, where an unknown email becomes an invitation: the
+     * reference server with USER_DIRECTORY=local (`CONFORMANCE_AUTH=password|oauth`,
+     * `CONFORMANCE_EDITION=hosted`) and the sandbox. False otherwise, and with `CONFORMANCE_BASE_URL`.
+     */
+    localAccounts: boolean;
   }
 }
 
@@ -179,6 +185,7 @@ function pick(settings: Readonly<Record<string, string>>, names: string[]): Reco
  * `CONFORMANCE_PROVIDER=azure-legacy` runs the reference server on the legacy stores and signs in
  * through the mock OIDC server: the three `LEGACY_*` connection strings and the `OIDC_*` settings are
  * forwarded from this process (`pnpm test:conformance:azurite` reads them from docker/azurite.env).
+ * `CONFORMANCE_EDITION=hosted` runs the postgres one as the hosted edition (`hostedEnv`).
  * Default: memory, with every app variable stripped.
  */
 function providerEnv(): Record<string, string> {
@@ -192,6 +199,7 @@ function providerEnv(): Record<string, string> {
   }
   if (provider === "sqlite" || provider === "postgres") {
     if (sqlDatabase === null) throw new Error("the SQL database is prepared in setup()");
+    if (conformanceEdition() === "hosted") return { ...sqlDatabase.env, ...hostedEnv() };
     // Users and projects come from the memory fallback's seed until self-hosted Step 4.
     return {
       ...pick(REFERENCE_SETTINGS, ["IDENTITY_PROVIDER", "MEMORY_SEED"]),
@@ -199,16 +207,55 @@ function providerEnv(): Record<string, string> {
     };
   }
   // The hosted edition's configuration (mode 1): the run that checks the bridge's operations.
-  const env: Record<string, string> = { STORAGE_PROVIDER: "azure-legacy", APP_EDITION: "hosted" };
+  return {
+    STORAGE_PROVIDER: "azure-legacy",
+    APP_EDITION: "hosted",
+    ...forwarded("CONFORMANCE_PROVIDER=azure-legacy", [...legacyVariables, ...oidcVariables]),
+    ...optionalOidcEnv(),
+  };
+}
+
+/**
+ * The hosted edition on PostgreSQL, as the new hosted server runs (`CONFORMANCE_EDITION=hosted`):
+ * the users are the database's local accounts, signed in with surveyjs.io only, through the mock
+ * OIDC server (no dev sign-in; only its `OIDC_*` settings are taken from docker/azurite.env). The
+ * fixture users are accounts already (`pnpm seed` writes them with their memberships), and the
+ * mock signs each in with its fixture id as `sub`, the account id (ADR 0043). The database is the
+ * run's own, so this run revokes a legacy access key too, as the memory run does.
+ */
+function hostedEnv(): Record<string, string> {
+  return {
+    APP_EDITION: "hosted",
+    USER_DIRECTORY: "local",
+    AUTH_METHODS: "surveyjs",
+    // Required without password sign-in. The seed's instance admin (Ivy Instance) has this email;
+    // since an admin exists, it promotes nobody (ADR 0043 point 1).
+    ADMIN_EMAIL: "instance-admin@example.com",
+    // Anyone with a surveyjs.io account may join; an erased account signs in to a new, empty one.
+    OPEN_SIGN_UP: "on",
+    HISTORY_MAX_ENTRIES: "20",
+    LEGACY_KEY_REVOKE: "true",
+    ...forwarded("CONFORMANCE_EDITION=hosted", oidcVariables),
+    ...optionalOidcEnv(),
+  };
+}
+
+/** The named variables of this process; missing ones stop the run with an error naming them. */
+function forwarded(run: string, names: readonly string[]): Record<string, string> {
+  const env: Record<string, string> = {};
   const missing: string[] = [];
-  for (const name of [...legacyVariables, ...oidcVariables]) {
+  for (const name of names) {
     const value = process.env[name];
     if (value?.trim()) env[name] = value;
     else missing.push(name);
   }
-  if (missing.length > 0) {
-    throw new Error(`CONFORMANCE_PROVIDER=azure-legacy needs ${missing.join(", ")}`);
-  }
+  if (missing.length > 0) throw new Error(`${run} needs ${missing.join(", ")}`);
+  return env;
+}
+
+/** The optional settings of the mock OIDC server, forwarded when set. */
+function optionalOidcEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
   for (const name of optionalOidcVariables) {
     const value = process.env[name];
     if (value?.trim()) env[name] = value;
@@ -227,6 +274,15 @@ function conformanceProvider(): ConformanceProvider {
     throw new Error(`CONFORMANCE_PROVIDER must be ${PROVIDERS.join(", ")}, got "${provider}"`);
   }
   return known;
+}
+
+/** `CONFORMANCE_EDITION`: `self-hosted` (default) or `hosted` (with `CONFORMANCE_PROVIDER=postgres`). */
+function conformanceEdition(): "self-hosted" | "hosted" {
+  const edition = process.env.CONFORMANCE_EDITION?.trim() || "self-hosted";
+  if (edition !== "self-hosted" && edition !== "hosted") {
+    throw new Error(`CONFORMANCE_EDITION must be self-hosted or hosted, got "${edition}"`);
+  }
+  return edition;
 }
 
 /** The run's own database for `CONFORMANCE_PROVIDER=sqlite|postgres`; set in setup(). */
@@ -591,6 +647,11 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     if (authMode() !== "default") {
       throw new Error("CONFORMANCE_AUTH cannot be used with CONFORMANCE_BASE_URL");
     }
+    if (conformanceEdition() !== "self-hosted") {
+      throw new Error(
+        "CONFORMANCE_EDITION cannot be used with CONFORMANCE_BASE_URL: the server's /config names its edition",
+      );
+    }
     project.provide("baseUrl", external.replace(/\/+$/, ""));
     project.provide("edition", await editionOf(external.replace(/\/+$/, "")));
     project.provide("ownsServer", false);
@@ -598,6 +659,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
     project.provide("passwordAdmin", null);
     project.provide("oauth", null);
     project.provide("sandbox", false);
+    project.provide("localAccounts", false);
     return;
   }
   const image = imageTag();
@@ -611,6 +673,17 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
   if (auth !== "default" && provider === "azure-legacy") {
     throw new Error(
       `CONFORMANCE_AUTH=${auth} needs CONFORMANCE_PROVIDER=memory, sqlite or postgres`,
+    );
+  }
+  const edition = conformanceEdition();
+  if (edition === "hosted" && provider !== "postgres") {
+    throw new Error(
+      `CONFORMANCE_EDITION=hosted needs CONFORMANCE_PROVIDER=postgres, got ${provider}`,
+    );
+  }
+  if (edition === "hosted" && auth !== "default") {
+    throw new Error(
+      `CONFORMANCE_AUTH=${auth} cannot be used with CONFORMANCE_EDITION=hosted: it signs in with surveyjs.io only`,
     );
   }
   if (auth === "oauth" && image !== null) {
@@ -667,6 +740,7 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
       : null,
   );
   project.provide("sandbox", false);
+  project.provide("localAccounts", auth !== "default" || edition === "hosted");
   return stopAll;
 }
 
@@ -685,6 +759,7 @@ function provideSandbox(project: TestProject, external: boolean): void {
     ["CONFORMANCE_AUTH", authMode() !== "default"],
     ["CONFORMANCE_READ_ONLY", readOnlyEnv().READ_ONLY !== undefined],
     ["CONFORMANCE_FILE_STORE", Boolean(process.env.CONFORMANCE_FILE_STORE?.trim())],
+    ["CONFORMANCE_EDITION", Boolean(process.env.CONFORMANCE_EDITION?.trim())],
   ];
   const refused = options.filter(([, set]) => set).map(([name]) => name);
   if (refused.length > 0) {
@@ -698,4 +773,6 @@ function provideSandbox(project: TestProject, external: boolean): void {
   project.provide("passwordAdmin", null);
   project.provide("oauth", null);
   project.provide("sandbox", true);
+  // A local directory, with the seed's invitation (self-hosted Step 9, D6).
+  project.provide("localAccounts", true);
 }

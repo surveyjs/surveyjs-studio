@@ -56,10 +56,11 @@ const memberOf = (
 });
 
 /**
- * Local accounts (CONFORMANCE_AUTH=password): unknown emails become invitations (Step 8, D4). The
- * sandbox is a local directory too (self-hosted Step 9, D6), with the seed's invitation.
+ * Local accounts (CONFORMANCE_AUTH=password, CONFORMANCE_EDITION=hosted): unknown emails become
+ * invitations (Step 8, D4). The sandbox is a local directory too (self-hosted Step 9, D6), with the
+ * seed's invitation.
  */
-const localAccounts = inject("passwordAdmin") !== null || sandbox;
+const localAccounts = inject("localAccounts");
 
 const pendingOf = (email: string, role = "user"): Member => ({
   userId: null,

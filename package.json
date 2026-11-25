@@ -24,6 +24,7 @@
     "test:conformance:azurite": "pnpm --filter @surveyjs-studio/conformance-tests test:azurite",
     "test:conformance:sqlite": "pnpm --filter @surveyjs-studio/conformance-tests test:sqlite",
     "test:conformance:postgres": "pnpm --filter @surveyjs-studio/conformance-tests test:postgres",
+    "test:conformance:postgres:hosted": "pnpm --filter @surveyjs-studio/conformance-tests test:postgres:hosted",
     "test:conformance:s3": "pnpm --filter @surveyjs-studio/conformance-tests test:s3",
     "test:conformance:password": "pnpm --filter @surveyjs-studio/conformance-tests test:password",
     "test:conformance:oauth": "pnpm --filter @surveyjs-studio/conformance-tests test:oauth",
