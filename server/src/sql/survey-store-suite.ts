@@ -102,15 +102,29 @@ export function describeSqlSurveyStoreSuite(dialect: SqlDialectName): void {
       });
 
       it("keeps the newest N by time, then id, when saves share a time", async () => {
+        const survey = await newSurvey(store);
+        for (let n = 1; n <= 5; n++) await save(store, survey.id, `v${n}`, atOf(2));
+        const known = (await historyOf(store, survey.id)).map((e) => e.id);
+        expect(known).toHaveLength(5);
+        // The sixth save's own id is unknown, and it may be the one dropped.
+        const limited = createSqlSurveyStore(database, { historyMaxEntries: 3 });
+        await save(limited, survey.id, "v6", atOf(2));
+        const kept = (await historyOf(limited, survey.id)).map((e) => e.id);
+        expect(kept).toHaveLength(3);
+        const lowestKept = kept.reduce((low, id) => (id < low ? id : low));
+        for (const id of known.filter((k) => !kept.includes(k))) expect(id < lowestKept).toBe(true);
+        expect(kept).toEqual([...kept].sort().reverse());
+      });
+
+      it("keeps everything below N, exactly N, and prunes one at N+1", async () => {
         const limited = createSqlSurveyStore(database, { historyMaxEntries: 3 });
         const survey = await newSurvey(limited);
-        await save(limited, survey.id, "v1", atOf(1));
-        for (let n = 2; n <= 5; n++) await save(limited, survey.id, `v${n}`, atOf(2));
-        const kept = await historyOf(limited, survey.id);
-        expect(kept).toHaveLength(3);
-        expect(kept.map((e) => e.at)).toEqual([atOf(2), atOf(2), atOf(2)]);
-        const ids = kept.map((e) => e.id);
-        expect(ids).toEqual([...ids].sort().reverse());
+        const lengths: number[] = [];
+        for (let n = 1; n <= 4; n++) {
+          await save(limited, survey.id, `v${n}`, atOf(n));
+          lengths.push((await historyOf(limited, survey.id)).length);
+        }
+        expect(lengths).toEqual([1, 2, 3, 3]);
       });
 
       it("prunes nothing when the save is a version conflict", async () => {
