@@ -41,7 +41,7 @@ export interface MigrationTarget {
   /** The project, its members replaced as a set. */
   upsertProject(rec: ProjectRec, members: readonly MemberRec[]): Promise<void>;
   /** `users` and `user_identities`. */
-  upsertPeople(recs: readonly PersonRec[]): Promise<void>;
+  upsertPeople(recs: readonly PersonRec[]): Promise<{ skipped: { id: string; reason: string }[] }>;
   /** The users' legacy access keys; a user's other keys are removed. */
   upsertKeys(recs: readonly KeyRec[]): Promise<void>;
   /** The bytes, then the `files` row (and the `legacy_files` name). */
@@ -303,7 +303,7 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
     },
 
     async upsertPeople(recs) {
-      const people = distinct(
+      const incoming = distinct(
         recs.map((rec) => ({
           id: guid(rec.id, "A user id"),
           email: rec.email.toLowerCase(),
@@ -313,7 +313,74 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         })),
         (person) => person.id,
       );
+      const skipped: { id: string; reason: string }[] = [];
       await inTransaction(async (trx) => {
+        // An identity linked to another account stays where it is: that person is not written.
+        const linkedElsewhere = new Set<string>();
+        for (const batch of batches(incoming.map((person) => person.id))) {
+          const rows = await trx
+            .selectFrom("user_identities")
+            .select(["subject", "user_id"])
+            .where("provider", "=", "surveyjs")
+            .where("subject", "in", batch)
+            .execute();
+          for (const row of rows) if (row.user_id !== row.subject) linkedElsewhere.add(row.subject);
+        }
+        let people = incoming.filter((person) => {
+          if (!linkedElsewhere.has(person.id)) return true;
+          skipped.push({ id: person.id, reason: "identity-linked-elsewhere" });
+          return false;
+        });
+        // One email, one person: the first of two in the call keeps it.
+        const claimed = new Set<string>();
+        people = people.filter((person) => {
+          if (!claimed.has(person.email)) {
+            claimed.add(person.email);
+            return true;
+          }
+          skipped.push({ id: person.id, reason: "email-taken" });
+          return false;
+        });
+        // The current holders of the incoming emails.
+        const holders = new Map<string, string>();
+        for (const batch of batches(people.map((person) => person.email))) {
+          const rows = await trx
+            .selectFrom("users")
+            .select(["id", "email"])
+            .where("email", "in", batch)
+            .execute();
+          for (const row of rows) holders.set(row.email, row.id);
+        }
+        // A holder outside the call keeps its email, and the incoming person is not written;
+        // dropping one person can leave another's holder outside the call, so repeat until stable.
+        for (let changed = true; changed;) {
+          changed = false;
+          const inCall = new Set(people.map((person) => person.id));
+          people = people.filter((person) => {
+            const holder = holders.get(person.email);
+            if (holder === undefined || inCall.has(holder)) return true;
+            skipped.push({ id: person.id, reason: "email-taken" });
+            changed = true;
+            return false;
+          });
+        }
+        const parked = [
+          ...new Set(
+            people.flatMap((person) => {
+              const holder = holders.get(person.email);
+              return holder !== undefined && holder !== person.id ? [holder] : [];
+            }),
+          ),
+        ];
+        // Phase one: a holder in the call gives its email up for a temporary one, so the final
+        // values can be written in any order. Phase two below sets every final value.
+        for (const id of parked) {
+          await trx
+            .updateTable("users")
+            .set({ email: `parked-${id}@parked.example` })
+            .where("id", "=", id)
+            .execute();
+        }
         for (const batch of batches(people)) {
           await trx
             .insertInto("users")
@@ -355,15 +422,16 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
                 created_at: person.createdAt,
               })),
             )
+            // Only the email follows; the account the identity belongs to is not moved.
             .onConflict((oc) =>
-              oc.columns(["provider", "subject"]).doUpdateSet((eb) => ({
-                user_id: eb.ref("excluded.user_id"),
-                email: eb.ref("excluded.email"),
-              })),
+              oc
+                .columns(["provider", "subject"])
+                .doUpdateSet((eb) => ({ email: eb.ref("excluded.email") })),
             )
             .execute();
         }
       });
+      return { skipped };
     },
 
     async upsertKeys(recs) {

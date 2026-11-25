@@ -402,6 +402,66 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect((await providers.users.getUser(ALICE))?.displayName).toBe("Alice B");
     });
 
+    it("lets two people swap emails in one call", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const [alice, bob] = data.people;
+      const result = await target.upsertPeople([
+        { ...alice!, email: bob!.email },
+        { ...bob!, email: alice!.email },
+      ]);
+      expect(result.skipped).toEqual([]);
+      expect((await providers.users.getUser(ALICE))?.email).toBe("bob@example.com");
+      expect((await providers.users.getUser(BOB))?.email).toBe("alice@example.com");
+      const rows = await database.db.selectFrom("users").select("email").execute();
+      expect(rows.some((row) => row.email.includes("parked"))).toBe(false);
+    });
+
+    it("skips a person whose email belongs to someone outside the call", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const carol = { ...data.people[0]!, id: guid(3), email: "carol@example.com" };
+      await target.upsertPeople([carol]);
+      const result = await target.upsertPeople([
+        { ...data.people[0]!, email: carol.email },
+        { ...data.people[1]!, displayName: "Bob 2" },
+      ]);
+      expect(result.skipped).toEqual([{ id: ALICE, reason: "email-taken" }]);
+      expect((await providers.users.getUser(ALICE))?.email).toBe("alice@example.com");
+      expect((await providers.users.getUser(BOB))?.displayName).toBe("Bob 2");
+    });
+
+    it("does not write a person whose identity is linked to another account", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const stranger = guid(5);
+      await database.db
+        .insertInto("user_identities")
+        .values({
+          provider: "surveyjs",
+          subject: stranger,
+          user_id: BOB,
+          email: "other@example.com",
+          email_verified: true,
+          created_at: at(0),
+        })
+        .execute();
+      const result = await target.upsertPeople([
+        { ...data.people[0]!, id: stranger, email: "stranger@example.com" },
+      ]);
+      expect(result.skipped).toEqual([{ id: stranger, reason: "identity-linked-elsewhere" }]);
+      expect(await providers.users.getUser(stranger)).toBeNull();
+      const link = await database.db
+        .selectFrom("user_identities")
+        .select(["user_id", "email"])
+        .where("subject", "=", stranger)
+        .executeTakeFirstOrThrow();
+      expect(link).toEqual({ user_id: BOB, email: "other@example.com" });
+    });
+
     it("replaces the member set of a project", async () => {
       await wipe();
       const data = fixtures();
