@@ -287,6 +287,12 @@ The copies the old service kept when a response was deleted: `survey_id`, `respo
 migration fills it and Studio does not read it. `pnpm purge:deleted-responses --before <date>` deletes the rows before
 a date (a dry run unless `--apply`; [Operations](../operations.md#purging-the-deleted-response-copies)).
 
+#### `migration_state`
+
+The hosted migration tool's own state: `key` (primary key), `value` (JSON), `updated_at`. One row per remembered item
+(the current run, the high-water marks, the surveys already copied). Hosted only: the table is empty and unused in any
+other deployment, and Studio does not read it.
+
 ## Mapping to the provider interfaces
 
 | Interface (`server/src/providers/types.ts`) | Tables                                                   | State           |

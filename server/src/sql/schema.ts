@@ -217,6 +217,13 @@ export interface DeletedResponsesTable {
   response: string;
 }
 
+/** One value of the hosted migration tool's state (0012); empty unless the tool runs. */
+export interface MigrationStateTable {
+  key: string;
+  value: Json;
+  updated_at: Timestamp;
+}
+
 export interface DatabaseSchema {
   schema_migrations: SchemaMigrationsTable;
   surveys: SurveysTable;
@@ -238,4 +245,5 @@ export interface DatabaseSchema {
   legacy_access_keys: LegacyAccessKeysTable;
   survey_events: SurveyEventsTable;
   deleted_responses: DeletedResponsesTable;
+  migration_state: MigrationStateTable;
 }
