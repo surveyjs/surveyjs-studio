@@ -1,4 +1,6 @@
+import type { Report } from "./map/report.js";
 import type { LegacySource } from "./source/index.js";
+import type { SqlTable } from "./source/sql.js";
 
 /**
  * Where `delta` starts reading: per part of the source, the time from which a change counts as
@@ -22,15 +24,18 @@ export const MARKS_MARGIN_MS = 5 * 60_000;
 const EPOCH = new Date(0).toISOString();
 
 /**
- * The marks of the source now: each SQL table's latest change time, and the storage services'
- * clocks (the tool's own when a service gives none or is ahead of it), all minus the margin. An
- * empty table starts at the epoch. `marginMs` other than the default is for tests.
+ * The marks of the source now: each SQL table's latest change time, but never later than the SQL
+ * server's own clock (a row stamped in the future would otherwise hold the mark ahead and hide
+ * every real change; noted), and the storage services' clocks (the tool's own when a service
+ * gives none or is ahead of it), all minus the margin. An empty table starts at the epoch.
+ * `marginMs` other than the default is for tests.
  */
 export async function takeMarks(
   source: LegacySource,
   now: () => Date,
-  marginMs: number = MARKS_MARGIN_MS,
+  options: { marginMs?: number; report?: Report } = {},
 ): Promise<HighWaterMarks> {
+  const marginMs = options.marginMs ?? MARKS_MARGIN_MS;
   const takenAt = now();
   const [latest, tablesClock, blobsClock] = await Promise.all([
     source.latestChanges(),
@@ -38,16 +43,22 @@ export async function takeMarks(
     source.blobsClock(),
   ]);
   const back = (at: Date) => new Date(at.getTime() - marginMs).toISOString();
-  const sqlMark = (at: Date | null) => (at === null ? EPOCH : back(at));
+  const sqlMark = (table: SqlTable) => {
+    const at = latest[table];
+    if (at === null) return EPOCH;
+    if (at.getTime() <= latest.now.getTime()) return back(at);
+    options.report?.note("future_change_time", { table });
+    return back(latest.now);
+  };
   const clockMark = (service: Date | null) =>
     back(service !== null && service.getTime() < takenAt.getTime() ? service : takenAt);
   return {
     takenAt: takenAt.toISOString(),
     sql: {
-      users: sqlMark(latest.users),
-      surveys: sqlMark(latest.surveys),
-      organizations: sqlMark(latest.organizations),
-      organizationUsers: sqlMark(latest.organizationUsers),
+      users: sqlMark("users"),
+      surveys: sqlMark("surveys"),
+      organizations: sqlMark("organizations"),
+      organizationUsers: sqlMark("organizationUsers"),
     },
     tables: clockMark(tablesClock),
     blobs: clockMark(blobsClock),

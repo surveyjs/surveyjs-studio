@@ -15,6 +15,7 @@ import type { DatabaseSchema } from "../sql/schema.js";
 import { runDelta } from "./delta.js";
 import { createReport, type Report } from "./map/report.js";
 import { isCompleteMarks, MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
+import type { PersonRec } from "./records.js";
 import { runReconcile } from "./reconcile.js";
 import {
   copyFromReplica,
@@ -37,6 +38,7 @@ const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
 const OLD_POLL = "22222222-0000-4000-8000-a00000000003";
 const CAMPAIGN = "22222222-0000-4000-8000-a00000000004";
 const RETRO = "22222222-0000-4000-8000-a00000000006";
+const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
 const API_SURVEY = "22222222-0000-4000-8000-a00000000008";
 const FEEDBACK_TABLE = "post33333333000040008000a00000000001";
 const FEEDBACK_DELETED = "postdelete33333333000040008000a00000000001";
@@ -412,6 +414,105 @@ describe("delta and reconcile from the high-water marks", () => {
     const { ok, json } = await verifyAll();
     expect(json.differences).toEqual([]);
     expect(ok).toBe(true);
+  }, 180_000);
+
+  it("moves the surveys of a project left without members to their creator", async () => {
+    // Deleted member rows leave no change time: only reconcile can see it.
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, ENGINEERING)
+      .query("DELETE FROM OrganizationUsers WHERE organizationid = @id");
+    expect((await migrated.surveys.getSurvey(RETRO))?.owner).toEqual({
+      kind: "project",
+      projectId: ENGINEERING,
+    });
+    const report = createReport();
+    await run((source) => runDelta(source, copied.target, { report: createReport(), marginMs: 0 }));
+    await run((source) =>
+      runReconcile(source, copied.target, { report, full: false, marginMs: 0 }),
+    );
+    const creator = fixtures.surveys.find((s) => s.id.toLowerCase() === RETRO)!.creatorid!;
+    expect((await migrated.surveys.getSurvey(RETRO))?.owner).toEqual({
+      kind: "personal",
+      userId: creator.toLowerCase(),
+    });
+    expect(await migrated.projects.getProject(ENGINEERING)).toBeNull();
+    expect(report.toJSON()).toMatchObject({
+      notes: expect.arrayContaining([
+        { kind: "reconcile_removed_project", ids: { projectId: ENGINEERING } },
+        { kind: "reconcile_remapped_survey", ids: { surveyId: RETRO } },
+      ]),
+    });
+    const { ok, json } = await verifyAll();
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+  }, 180_000);
+
+  it("drops a layout, and the private questions of a permissions blob, deleted in the source", async () => {
+    const step = async () => {
+      await run((source) =>
+        runDelta(source, copied.target, { report: createReport(), marginMs: 0 }),
+      );
+      await run((source) =>
+        runReconcile(source, copied.target, { report: createReport(), full: false, marginMs: 0 }),
+      );
+    };
+    // The campaign survey has no column layout: its private questions come from permissions only.
+    await putBlob("surveyresultpermissions", CAMPAIGN, '[{"name":"receipt","isPublic":false}]');
+    await step();
+    expect(await copied.target.privateQuestionsOf(CAMPAIGN)).toEqual(["receipt"]);
+
+    expect(await migrated.views.getLayout(FEEDBACK, "summary")).not.toBeNull();
+    await blobs.getContainerClient("surveyresultsummarystate").deleteBlob(FEEDBACK);
+    await blobs.getContainerClient("surveyresultpermissions").deleteBlob(CAMPAIGN);
+    await step();
+    expect(await migrated.views.getLayout(FEEDBACK, "summary")).toBeNull();
+    expect(await migrated.views.getLayout(FEEDBACK, "table")).not.toBeNull();
+    expect(await copied.target.privateQuestionsOf(CAMPAIGN)).toEqual([]);
+    const { ok, json } = await verifyAll();
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+  }, 180_000);
+
+  it("removes only pre-created accounts nobody used; an admin and a sign-in account stay", async () => {
+    const db = copied.database.db;
+    const person = (id: string): PersonRec => ({
+      id,
+      email: `${id}@example.com`,
+      displayName: id,
+      siteBlocked: false,
+      createdAt: new Date().toISOString(),
+    });
+    const seeded = "11111111-0000-4000-8000-a0000000d101";
+    const admin = "11111111-0000-4000-8000-a0000000d102";
+    const created = "11111111-0000-4000-8000-a0000000d103";
+    await copied.target.upsertPeople([person(seeded), person(admin), person(created)]);
+    await db.updateTable("users").set({ instance_role: "admin" }).where("id", "=", admin).execute();
+    // An account made at sign-in: its identity is another provider's.
+    await db
+      .updateTable("user_identities")
+      .set({ provider: "google", subject: "google-subject" })
+      .where("user_id", "=", created)
+      .execute();
+    try {
+      const report = createReport();
+      await run((source) =>
+        runReconcile(source, copied.target, { report, full: false, marginMs: 0 }),
+      );
+      const users = await copied.target.idsOf("users");
+      expect(users).not.toContain(seeded);
+      expect(users).toContain(admin);
+      expect(users).toContain(created);
+      expect(report.toJSON()).toMatchObject({
+        notes: expect.arrayContaining([
+          { kind: "reconcile_removed_person", ids: { userId: seeded } },
+          { kind: "person_kept_unseeded", ids: { userId: admin } },
+          { kind: "person_kept_unseeded", ids: { userId: created } },
+        ]),
+      });
+    } finally {
+      await copied.target.deletePeople([seeded, admin, created]);
+    }
   }, 180_000);
 
   it("changes nothing when run again with nothing new", async () => {

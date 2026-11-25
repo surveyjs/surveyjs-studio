@@ -557,6 +557,81 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       );
     });
 
+    it("lists every survey's owner and layouts, and removes layouts by kind", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      expect(await target.surveyOwners()).toEqual(
+        new Map(data.surveys.map((s) => [s.record.id, s.record.owner])),
+      );
+      expect(await target.keysOf("survey_layouts")).toEqual(
+        data.layouts.map((l) => `${l.surveyId}/${l.kind}`).sort(),
+      );
+      expect(await target.deleteLayouts(S1, ["table", "summary"])).toBe(1);
+      expect(await target.keysOf("survey_layouts", S1)).toEqual([`${S1}/columns`]);
+    });
+
+    it("lists as seeded only the accounts it pre-created that nobody has used", async () => {
+      await wipe();
+      const data = fixtures();
+      const extra = (n: number): PersonRec => ({
+        id: guid(n),
+        email: `person${n}@example.com`,
+        displayName: `Person ${n}`,
+        siteBlocked: false,
+        createdAt: at(0),
+      });
+      const [admin, signedIn, withPassword, linked] = [extra(20), extra(21), extra(22), extra(23)];
+      await target.upsertPeople([...data.people, admin!, signedIn!, withPassword!, linked!]);
+      const db = database.db;
+      await db
+        .updateTable("users")
+        .set({ instance_role: "admin" })
+        .where("id", "=", admin!.id)
+        .execute();
+      await db
+        .updateTable("users")
+        .set({ last_sign_in_at: at(9) })
+        .where("id", "=", signedIn!.id)
+        .execute();
+      await db
+        .updateTable("users")
+        .set({ password_hash: "hash" })
+        .where("id", "=", withPassword!.id)
+        .execute();
+      await db
+        .insertInto("user_identities")
+        .values({
+          provider: "google",
+          subject: "google-subject",
+          user_id: linked!.id,
+          email: linked!.email,
+          email_verified: true,
+          created_at: at(9),
+        })
+        .execute();
+      // An account the app created at sign-in: no identity whose subject is its own id.
+      const created = guid(24);
+      await db
+        .insertInto("users")
+        .values({
+          id: created,
+          email: "created@example.com",
+          display_name: "Created",
+          instance_role: "user",
+          status: "active",
+          password_hash: null,
+          must_change_password: false,
+          site_blocked: false,
+          licence_expires_at: null,
+          session_epoch: 0,
+          created_at: at(9),
+          last_sign_in_at: null,
+        })
+        .execute();
+      expect(await target.seededPeople()).toEqual(data.people.map((p) => p.id).sort());
+    });
+
     it("removes saved views, Studio's own files with their bytes, and markers by key", async () => {
       await wipe();
       const data = fixtures();

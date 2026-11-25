@@ -21,13 +21,17 @@ export interface SqlSource {
   organizationUsers(
     since?: Date,
   ): AsyncIterable<LegacyOrganizationUserRow & { timestamp: Date | null }>;
-  /** Each table's latest `[timestamp]`; null for a table with none (high-water marks). */
-  latestChanges(): Promise<Record<SqlTable, Date | null>>;
+  /**
+   * Each table's latest `[timestamp]` (null for a table with none) and the SQL server's UTC clock,
+   * read in one statement (high-water marks).
+   */
+  latestChanges(): Promise<LatestChanges>;
   close(): Promise<void>;
 }
 
 /** The SQL tables the tool reads, by their high-water mark names. */
 export type SqlTable = "users" | "surveys" | "organizations" | "organizationUsers";
+export type LatestChanges = Record<SqlTable, Date | null> & { now: Date };
 
 const EPOCH = new Date(0);
 
@@ -42,7 +46,8 @@ const LATEST =
   "SELECT (SELECT MAX([timestamp]) FROM Users) AS users, " +
   "(SELECT MAX([timestamp]) FROM Surveys) AS surveys, " +
   "(SELECT MAX([timestamp]) FROM Organizations) AS organizations, " +
-  "(SELECT MAX([timestamp]) FROM OrganizationUsers) AS organizationUsers";
+  "(SELECT MAX([timestamp]) FROM OrganizationUsers) AS organizationUsers, " +
+  "SYSUTCDATETIME() AS now";
 /** The `since` window; a row with no change time is in every one. */
 const SINCE = "([timestamp] > @since OR [timestamp] IS NULL)";
 
@@ -154,12 +159,14 @@ export function openSqlSource(
     async latestChanges() {
       try {
         const request = (await connected()).request();
-        const row = (await request.query<Record<SqlTable, Date | null>>(LATEST)).recordset[0];
+        const row = (await request.query<LatestChanges>(LATEST)).recordset[0];
+        if (!row) throw new Error("no row");
         return {
-          users: row?.users ?? null,
-          surveys: row?.surveys ?? null,
-          organizations: row?.organizations ?? null,
-          organizationUsers: row?.organizationUsers ?? null,
+          now: row.now,
+          users: row.users ?? null,
+          surveys: row.surveys ?? null,
+          organizations: row.organizations ?? null,
+          organizationUsers: row.organizationUsers ?? null,
         };
       } catch (error) {
         throw new LegacyStoreError("latest change read", error);

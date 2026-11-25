@@ -9,6 +9,7 @@ import { sql, type Kysely } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { GUID } from "../domain/guid.js";
 import type { SqlDatabase } from "../sql/database.js";
+import type { LayoutKind, SurveyOwner } from "../domain/types.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { columnsOf, deleteSurveyRows, versionOf } from "../sql/survey-store.js";
 import { flagOf, isoOf, jsonOf, jsonText } from "../sql/values.js";
@@ -53,6 +54,14 @@ export interface MigrationTarget {
   keysOf(table: CountedTable, surveyId?: string): Promise<string[]>;
   /** `reconcile`: every person the stored history names, ascending. */
   historyAuthors(): Promise<string[]>;
+  /** `reconcile`: every survey's stored owner, by survey id. */
+  surveyOwners(): Promise<Map<string, SurveyOwner>>;
+  /**
+   * `reconcile`: the accounts the migration pre-created that nobody has used, ascending: role
+   * `user`, no password, never signed in, and no identity but the `surveyjs` one whose subject
+   * is the account's own id. No other account is ever removed by the tool.
+   */
+  seededPeople(): Promise<string[]>;
   /** `reconcile`: every member row of every project, by project then user. */
   projectMembers(): Promise<{ projectId: string; userId: string; role: string }[]>;
   /** `verify`: the partial flag of each of the survey's responses among `ids` that it holds. */
@@ -67,6 +76,8 @@ export interface MigrationTarget {
   upsertResponses(recs: readonly ResponseRec[]): Promise<void>;
   upsertMarkers(recs: readonly MarkerRec[]): Promise<void>;
   upsertLayouts(recs: readonly LayoutRec[]): Promise<void>;
+  /** The survey's layouts of these kinds (the source has none of them any more); how many. */
+  deleteLayouts(surveyId: string, kinds: readonly LayoutKind[]): Promise<number>;
   upsertViews(recs: readonly ViewRec[]): Promise<void>;
   /** The project, its members replaced as a set. */
   upsertProject(rec: ProjectRec, members: readonly MemberRec[]): Promise<void>;
@@ -100,6 +111,7 @@ export interface MigrationTarget {
 /** The tables `verify` counts rows of (`MigrationTarget.countRows`, `existingKeys`). */
 export type CountedTable =
   | "survey_responses"
+  | "survey_layouts"
   | "completion_markers"
   | "saved_views"
   | "survey_events"
@@ -110,6 +122,7 @@ export type CountedTable =
 /** The key of a counted table's row, as SQL (constant text: never a value). */
 const ROW_KEY: Record<CountedTable, string> = {
   survey_responses: "id",
+  survey_layouts: "survey_id || '/' || kind",
   completion_markers: "client_id",
   saved_views: "survey_id || '/' || user_id || '/' || view",
   survey_events: "id",
@@ -222,6 +235,32 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         .where("user_id", "is not", null)
         .execute();
       return rows.map((row) => String(row.user_id)).sort();
+    },
+
+    async surveyOwners() {
+      const rows = await db
+        .selectFrom("surveys")
+        .select(["id", "owner_user_id", "owner_project_id"])
+        .execute();
+      return new Map(
+        rows.map((row): [string, SurveyOwner] => [
+          row.id,
+          row.owner_user_id !== null
+            ? { kind: "personal", userId: row.owner_user_id }
+            : { kind: "project", projectId: String(row.owner_project_id) },
+        ]),
+      );
+    },
+
+    async seededPeople() {
+      const own = sql`i.provider = 'surveyjs' and i.subject = cast(u.id as text)`;
+      const { rows } = await sql<{ id: string }>`
+        select u.id as id from users u
+        where u.instance_role = 'user' and u.password_hash is null and u.last_sign_in_at is null
+          and exists (select 1 from user_identities i where i.user_id = u.id and ${own})
+          and not exists (
+            select 1 from user_identities i where i.user_id = u.id and not (${own}))`.execute(db);
+      return rows.map((row) => String(row.id)).sort();
     },
 
     async projectMembers() {
@@ -404,6 +443,16 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
           )
           .execute();
       }
+    },
+
+    async deleteLayouts(surveyId, kinds) {
+      if (kinds.length === 0) return 0;
+      const result = await db
+        .deleteFrom("survey_layouts")
+        .where("survey_id", "=", guid(surveyId, "A survey id"))
+        .where("kind", "in", [...kinds])
+        .executeTakeFirst();
+      return Number(result.numDeletedRows);
     },
 
     async upsertViews(recs) {

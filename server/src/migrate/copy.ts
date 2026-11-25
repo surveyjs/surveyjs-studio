@@ -66,6 +66,8 @@ export interface SurveyCheckpoint {
   answerNames?: string[];
 }
 export const CHECKPOINT = "survey:";
+/** State key `permissions:{id}`: the survey's copied documents included a permissions blob. */
+export const PERMISSIONS = "permissions:";
 
 export const BATCH = 500;
 const PROGRESS_EVERY = 100;
@@ -234,7 +236,16 @@ export function createSurveyCopier(
       if (text !== null) layouts.push({ surveyId, kind, text });
     }
     await target.upsertLayouts(layouts);
+    // A layout the source no longer has goes from the target too.
+    const present = new Set(layouts.map(({ kind }) => kind));
+    await target.deleteLayouts(
+      surveyId,
+      LAYOUT_KINDS.filter((kind) => !present.has(kind)),
+    );
     await write("layout", layouts);
+    // Whether the private questions came from a permissions blob: `reconcile` notices it gone.
+    if (read.permissions === null) await state.delete(`${PERMISSIONS}${surveyId}`);
+    else await state.set(`${PERMISSIONS}${surveyId}`, true, at());
     return { surveyId, rec, texts: read, interim, links };
   }
 
@@ -402,7 +413,14 @@ export async function runCopy(
     stored?.command === "copy" ? stored : { id: randomUUID(), startedAt: at(), command: "copy" };
   if (stored !== run) await state.set("run", run, at());
   if ((await state.get("marks")) === null)
-    await state.set("marks", await takeMarks(source, now, options.marginMs), at());
+    await state.set(
+      "marks",
+      await takeMarks(source, now, {
+        report,
+        ...(options.marginMs !== undefined && { marginMs: options.marginMs }),
+      }),
+      at(),
+    );
   if (sample) {
     await state.set(
       "sample",

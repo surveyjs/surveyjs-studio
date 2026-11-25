@@ -28,6 +28,8 @@ export interface BlobSource {
   }>;
   /** One saved view blob (`{surveyId}/{userId}/{view}`) with its time; null when it is gone. */
   viewBlob(blobName: string): Promise<{ text: string; lastModified: Date } | null>;
+  /** The names of a layout kind's blobs (survey ids as stored; a listing of a small container). */
+  layoutNames(kind: LayoutKind): AsyncIterable<string>;
   /** The names of the container's blobs changed after `since` (a listing; small containers). */
   changedBlobs(container: "layouts" | "permissions" | "views", since: Date): AsyncIterable<string>;
   appFiles(): AsyncIterable<{
@@ -151,6 +153,12 @@ export function openBlobSource(connectionString: string): BlobSource {
       } catch (error) {
         if (statusOf(error) === 404) return null;
         throw new LegacyStoreError("view read", error);
+      }
+    },
+
+    async *layoutNames(kind) {
+      for await (const blob of blobsOf("layout list", LAYOUT_CONTAINERS_BY_KIND[kind])) {
+        yield blob.name;
       }
     },
 

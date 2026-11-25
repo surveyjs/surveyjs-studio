@@ -7,6 +7,7 @@ import {
   takeMarks,
   type HighWaterMarks,
 } from "./marks.js";
+import { createReport } from "./map/report.js";
 import type { LegacySource } from "./source/index.js";
 
 const NOW = new Date("2026-11-25T12:00:00.500Z");
@@ -15,6 +16,8 @@ const minus = (at: string, ms: number) => new Date(Date.parse(at) - ms).toISOStr
 
 interface Clocks {
   latest: Record<"users" | "surveys" | "organizations" | "organizationUsers", Date | null>;
+  /** The SQL server's clock; default NOW. */
+  sqlNow?: Date;
   tables: Date | null;
   blobs: Date | null;
 }
@@ -22,7 +25,7 @@ interface Clocks {
 /** A source that answers only what `takeMarks` asks. */
 function sourceWith(clocks: Clocks): LegacySource {
   return {
-    latestChanges: () => Promise.resolve(clocks.latest),
+    latestChanges: () => Promise.resolve({ ...clocks.latest, now: clocks.sqlNow ?? NOW }),
     tablesClock: () => Promise.resolve(clocks.tables),
     blobsClock: () => Promise.resolve(clocks.blobs),
   } as unknown as LegacySource;
@@ -71,8 +74,27 @@ describe("takeMarks", () => {
     expect(marks.blobs).toBe(minus(NOW.toISOString(), MARKS_MARGIN_MS));
   });
 
+  it("caps a SQL table's mark at the SQL server's clock, noting a change time in the future", async () => {
+    const sqlNow = new Date("2026-11-25T11:59:00.000Z");
+    const future = new Date("2027-01-01T00:00:00.000Z");
+    const report = createReport();
+    const marks = await takeMarks(
+      sourceWith({ latest: { ...LATEST, surveys: future }, sqlNow, tables: NOW, blobs: NOW }),
+      now,
+      { report },
+    );
+    expect(marks.sql.surveys).toBe(minus(sqlNow.toISOString(), MARKS_MARGIN_MS));
+    // The other tables keep their own latest change time.
+    expect(marks.sql.users).toBe(minus(LATEST.users!.toISOString(), MARKS_MARGIN_MS));
+    expect(report.toJSON()).toMatchObject({
+      notes: [{ kind: "future_change_time", ids: { table: "surveys" } }],
+    });
+  });
+
   it("takes another margin when one is given (tests)", async () => {
-    const marks = await takeMarks(sourceWith({ latest: LATEST, tables: NOW, blobs: NOW }), now, 0);
+    const marks = await takeMarks(sourceWith({ latest: LATEST, tables: NOW, blobs: NOW }), now, {
+      marginMs: 0,
+    });
     expect(marks.tables).toBe(NOW.toISOString());
     expect(marks.sql.surveys).toBe(LATEST.surveys!.toISOString());
   });

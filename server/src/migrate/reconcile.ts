@@ -2,7 +2,11 @@
  * `reconcile`: removes from the target what the source no longer has (design, Commands).
  * - Surveys, projects, members and people: the full key sets, compared (the SQL tables are
  *   small). A survey removed takes its rows and Studio's own files with it; legacy files are
- *   never removed (other records may link them, and the old shares keep the bytes).
+ *   never removed (other records may link them, and the old shares keep the bytes). Only people
+ *   the migration pre-created and nobody used are removed; any other account is kept, noted.
+ * - A survey whose owner the current source maps differently (its project gone or left without
+ *   members), or whose layout or permissions blob is gone, is mapped and written again through
+ *   `copy`'s per-survey functions (such deletions leave no change time for `delta`).
  * - Users' saved views and Studio's own files: the small containers' names, compared.
  * - Responses: the deletion copies since the last reconcile (`deleteResponses`); the surveys whose
  *   responses were all deleted (the old app's event) compared id by id, markers too; and the
@@ -12,6 +16,14 @@
  * Responses the source has and the target misses are `delta`'s to copy; they are noted only.
  */
 import { fileRecordFromBlob, isGuid } from "../providers/azure-legacy/mapping.js";
+import type { LayoutKind, SurveyOwner } from "../domain/types.js";
+import {
+  BATCH,
+  CHECKPOINT,
+  createSurveyCopier,
+  PERMISSIONS,
+  type SurveyCheckpoint,
+} from "./copy.js";
 import { CONCURRENCY, DELETE_ALL_EVENT, inParallel, RECONCILE, storedMarks } from "./delta.js";
 import type { ReconcileState } from "./delta.js";
 import { mapPeople } from "./map/people.js";
@@ -40,6 +52,9 @@ export interface ReconcileOptions {
 }
 
 export const MAX_COUNT_RESPONSES = 50_000;
+const LAYOUT_KINDS: readonly LayoutKind[] = ["table", "summary", "columns"];
+const ownerKey = (owner: SurveyOwner) =>
+  owner.kind === "personal" ? `user:${owner.userId}` : `project:${owner.projectId}`;
 
 export async function runReconcile(
   source: LegacySource,
@@ -58,7 +73,10 @@ export async function runReconcile(
 
   const marks = await storedMarks(target);
   const since = (await state.get<ReconcileState>(RECONCILE))?.since ?? marks;
-  const next = await takeMarks(source, now, options.marginMs);
+  const next = await takeMarks(source, now, {
+    report,
+    ...(options.marginMs !== undefined && { marginMs: options.marginMs }),
+  });
   const run = await state.get<{ startedAt: string }>("run");
   const runStart = run?.startedAt ?? marks.takenAt;
 
@@ -79,8 +97,26 @@ export async function runReconcile(
   };
 
   // ---- Surveys ----
+  // What the target holds that a deletion in the source could leave stale: owners, the layout
+  // kinds, and the surveys whose private questions came from a permissions blob.
+  const storedOwners = await target.surveyOwners();
+  const layoutsHeld = new Set(await target.keysOf("survey_layouts"));
+  const layoutsInSource = new Set<string>();
+  for (const kind of LAYOUT_KINDS) {
+    for await (const name of source.layoutNames(kind)) {
+      layoutsInSource.add(`${name.toLowerCase()}/${kind}`);
+    }
+  }
+  const permissionsHeld = new Set(
+    (await state.keys(PERMISSIONS)).map((key) => key.slice(PERMISSIONS.length)),
+  );
+  const permissionsInSource = new Set<string>();
+  for await (const name of source.changedBlobs("permissions", new Date(0))) {
+    permissionsInSource.add(name.toLowerCase());
+  }
   const expected = new Map<string, string>(); // survey id → post id
   const changed = new Set<string>();
+  const remap: Parameters<typeof mapSurvey>[0][] = [];
   const surveysSince = markOf(since, "surveys");
   for await (const row of source.surveys()) {
     const surveyId = row.id.toLowerCase();
@@ -91,6 +127,16 @@ export async function runReconcile(
     expected.set(surveyId, base.record.postId);
     if (row.timestamp === null || row.timestamp.getTime() > surveysSince.getTime()) {
       changed.add(surveyId);
+    }
+    const stored = storedOwners.get(surveyId);
+    if (stored === undefined) continue;
+    const layoutGone = LAYOUT_KINDS.some(
+      (kind) =>
+        layoutsHeld.has(`${surveyId}/${kind}`) && !layoutsInSource.has(`${surveyId}/${kind}`),
+    );
+    const permissionsGone = permissionsHeld.has(surveyId) && !permissionsInSource.has(surveyId);
+    if (ownerKey(stored) !== ownerKey(base.record.owner) || layoutGone || permissionsGone) {
+      remap.push(row);
     }
   }
   const migrated: string[] = [];
@@ -123,12 +169,36 @@ export async function runReconcile(
     report.note("reconcile_members_replaced", { projectId: project.id });
   }
 
-  // ---- People: those the source data (or the target's copied history) no longer names ----
+  // ---- Surveys mapped again: owner, layouts or permissions changed by a deletion ----
+  const copier = createSurveyCopier(source, target, { ctx, batchSize: BATCH, now });
+  for (const row of remap) {
+    const surveyId = row.id.toLowerCase();
+    const written = await copier.documents(row, { keepCheckpoint: true });
+    if (written === null) continue;
+    const checkpoint = await state.get<SurveyCheckpoint>(`${CHECKPOINT}${surveyId}`);
+    if (checkpoint?.answerNames) {
+      await copier.finish(row, written.texts, checkpoint.answerNames, written.interim);
+    } else {
+      // Without the responses' keys the interim list (a superset, never weaker) stays.
+      report.note("reconcile_private_questions_kept", { surveyId });
+    }
+    await copier.linkedFiles(surveyId, written.links, { skipStored: true });
+    report.note("reconcile_remapped_survey", { surveyId });
+  }
+
+  // ---- People the source data (or the target's copied history) no longer names ----
+  // Only accounts the migration pre-created and nobody used; an admin, an account created at
+  // sign-in or one somebody has used is never removed by the tool.
   const names = new Set([...named.named, ...(await target.historyAuthors())]);
   const keep = new Set(mapPeople(named.users, names, runStart, quiet).people.map((p) => p.id));
-  const gone = [...targetUsers].filter((id) => !keep.has(id));
+  const seeded = new Set(await target.seededPeople());
+  const unnamed = [...targetUsers].filter((id) => !keep.has(id));
+  const gone = unnamed.filter((id) => seeded.has(id));
   if (gone.length > 0) await target.deletePeople(gone);
   for (const userId of gone) removed("person", { userId });
+  for (const userId of unnamed) {
+    if (!seeded.has(userId)) report.note("person_kept_unseeded", { userId });
+  }
 
   // ---- Users' saved views and Studio's own files (small containers, listed by name) ----
   const views = new Set<string>();
@@ -174,7 +244,10 @@ export async function runReconcile(
     for await (const copy of source.deletedCopies(postId, tablesSince)) {
       if (isGuid(copy.responseId)) copies.push(copy.responseId.toLowerCase());
     }
-    if (copies.length > 0) responsesRemoved += await target.deleteResponses(surveyId, copies);
+    if (copies.length > 0) {
+      const removedCopies = await target.deleteResponses(surveyId, copies);
+      responsesRemoved += removedCopies;
+    }
 
     const allDeleted = deletedAll.has(surveyId);
     if (!options.full && !allDeleted && !changed.has(surveyId)) return;
@@ -192,7 +265,8 @@ export async function runReconcile(
       const stored = await target.keysOf("survey_responses", surveyId);
       const extra = stored.filter((id) => !ids.has(id));
       if (extra.length > 0) {
-        responsesRemoved += await target.deleteResponses(surveyId, extra);
+        const removedExtra = await target.deleteResponses(surveyId, extra);
+        responsesRemoved += removedExtra;
         report.note("reconcile_removed_responses", { surveyId });
       }
       if (stored.length - extra.length < ids.size) {

@@ -116,7 +116,10 @@ export async function runDelta(
 
   const marks = await storedMarks(target);
   // Taken before anything is read: whatever changes while this run reads is read again next time.
-  const next = await takeMarks(source, now, options.marginMs);
+  const next = await takeMarks(source, now, {
+    report,
+    ...(options.marginMs !== undefined && { marginMs: options.marginMs }),
+  });
   const run = await state.get<{ startedAt: string }>("run");
   const tablesSince = markOf(marks, "tables");
   const blobsSince = markOf(marks, "blobs");
