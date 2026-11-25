@@ -2,6 +2,7 @@ import { odata, TableClient, type TableEntityResult } from "@azure/data-tables";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { LegacyStoreError, statusOf } from "../../providers/azure-legacy/errors.js";
 import type { LegacyResultEntity } from "../../providers/azure-legacy/rows.js";
+import { API_TOKENS_TABLE } from "../../providers/azure-legacy/writes.js";
 
 /** The legacy Azure Tables, read only: pages of entities, never a table in memory. */
 export interface TableSource {
@@ -22,6 +23,11 @@ export interface TableSource {
     rest: Record<string, unknown>;
     timestamp: Date;
   }>;
+  /**
+   * The partition of each row of the app's own token table in the surveys account (API tokens
+   * and key revocations Studio wrote). The copy does not take them; `verify` flags any.
+   */
+  ownTokenRows(): AsyncIterable<{ partition: string }>;
 }
 
 const PAGE_SIZE = 500;
@@ -148,6 +154,12 @@ export function openTableSource(config: {
           ),
           timestamp,
         };
+      }
+    },
+    async *ownTokenRows() {
+      const table = tableClient(config.surveysStorageConnectionString, API_TOKENS_TABLE);
+      for await (const row of entitiesOf("token row read", table)) {
+        yield { partition: row.partitionKey ?? "" };
       }
     },
   };

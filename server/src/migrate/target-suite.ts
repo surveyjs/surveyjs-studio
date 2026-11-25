@@ -481,6 +481,16 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect(await target.privateQuestionsOf(guid(999))).toEqual([]);
     });
 
+    it("lists the ids of the surveys, projects and users, ascending", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const sorted = (ids: string[]) => [...ids].sort();
+      expect(await target.idsOf("surveys")).toEqual(sorted(data.surveys.map((s) => s.record.id)));
+      expect(await target.idsOf("projects")).toEqual([data.project.id]);
+      expect(await target.idsOf("users")).toEqual(sorted(data.people.map((p) => p.id)));
+    });
+
     it("prunes the history to the newest by (at, id)", async () => {
       await wipe();
       const data = fixtures();

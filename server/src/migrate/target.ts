@@ -33,6 +33,8 @@ export interface MigrationTarget {
   upsertSurvey(rec: SurveyRec): Promise<void>;
   /** The survey's stored private questions; [] for none (or no such survey). */
   privateQuestionsOf(surveyId: string): Promise<string[]>;
+  /** Every id of the table, ascending (`verify` looks for rows the source no longer has). */
+  idsOf(table: "surveys" | "projects" | "users"): Promise<string[]>;
   upsertHistory(recs: readonly HistoryRec[]): Promise<void>;
   /** Deletes the survey's history entries beyond the newest `keep` (by `at`, then id); how many. */
   pruneHistory(surveyId: string, keep: number): Promise<number>;
@@ -132,6 +134,11 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         .where("survey_id", "=", guid(surveyId, "A survey id"))
         .executeTakeFirst();
       return row ? jsonOf<string[]>(row.names) : [];
+    },
+
+    async idsOf(table) {
+      const rows = await db.selectFrom(table).select("id").orderBy("id").execute();
+      return rows.map((row) => row.id);
     },
 
     async upsertHistory(recs) {

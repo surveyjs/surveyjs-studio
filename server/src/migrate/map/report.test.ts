@@ -17,4 +17,25 @@ describe("createReport", () => {
       notes: [{ kind: "person_without_email", ids: { userId: "c" } }],
     });
   });
+
+  it("keeps verify's checks, differences and pending items, by ids and counts", () => {
+    const report = createReport();
+    report.checked("surveys", 2);
+    report.difference("surveys", { surveyId: "a" }, { inSource: 0 });
+    report.pending("responses", { surveyId: "b", responseId: "c" });
+    report.checked("people", 1);
+    expect(report.counts()).toEqual({ "difference:surveys": 1, "pending:responses": 1 });
+    expect(report.toJSON()).toEqual({
+      counts: { "difference:surveys": 1, "pending:responses": 1 },
+      skipped: [],
+      notes: [],
+      checks: {
+        surveys: { compared: 2, differences: 1, pending: 0, pass: false },
+        responses: { compared: 0, differences: 0, pending: 1, pass: true },
+        people: { compared: 1, differences: 0, pending: 0, pass: true },
+      },
+      differences: [{ check: "surveys", ids: { surveyId: "a" }, counts: { inSource: 0 } }],
+      pending: [{ check: "responses", ids: { surveyId: "b", responseId: "c" } }],
+    });
+  });
 });

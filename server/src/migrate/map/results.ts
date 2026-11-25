@@ -10,7 +10,8 @@ import type { DeletedRec, HistoryRec, ResponseRec } from "../records.js";
 import type { Report } from "./report.js";
 import { objectOf, withoutBom, withoutNul } from "./text.js";
 
-const HISTORY_KEEP = 20;
+/** History entries kept per survey: the newest by (at desc, id desc). */
+export const HISTORY_KEEP = 20;
 
 /** The response of a row, BOM and NUL handled; null (reported under `entity`) when unmappable. */
 function readResponse(

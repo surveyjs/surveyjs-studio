@@ -1,7 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Readable } from "node:stream";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hashCredential } from "../credentials/format.js";
@@ -11,9 +10,6 @@ import { replicaConfig } from "../legacy/replica-env.js";
 import { measureLegacyStores } from "../legacy/stats-source.js";
 import { readLegacyFixtures, type LegacyFixtures } from "../providers/azure-legacy/fixtures.js";
 import { LARGE_SURVEY_RESPONSES } from "../providers/azure-legacy/large-survey.js";
-import { createStubShareReader } from "../providers/azure-legacy/legacy-shares-stub.js";
-import { localSuiteBytes, type SuiteBytes } from "../providers/sql-suite-setup.js";
-import { createSqlProviders } from "../providers/sql.js";
 import {
   ERASABLE_ID,
   LEGACY_ASSET_NAME,
@@ -22,17 +18,22 @@ import {
   OWNER_ID,
 } from "../providers/suite/expected.js";
 import { describeProviderSuite } from "../providers/suite/provider-suite.js";
-import { openDatabase, type SqlDatabase } from "../sql/database.js";
-import { migrate } from "../sql/migrator.js";
+import type { SqlDatabase } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
-import { scratchSqlite, type ScratchDatabase } from "../sql/scratch-databases.js";
 import { runCopy, type CopyOptions } from "./copy.js";
 import { openDumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
 import { runPlan } from "./plan.js";
+import {
+  copyFromReplica,
+  newTarget,
+  openReplicaSource,
+  readAll,
+  targetProviders,
+  type Target,
+} from "./replica-setup.js";
 import { selectSample } from "./sample.js";
-import { openLegacySource, type LegacySource } from "./source/index.js";
-import { openMigrationTarget, type MigrationTarget } from "./target.js";
+import type { LegacySource } from "./source/index.js";
 
 // Runs in the `providers-azurite` Vitest project: the replica holds the golden fixtures (its
 // global setup loads them). Azurite has no file service: the legacy shares are the stub over the
@@ -61,38 +62,6 @@ const TABLES = [
   "deleted_responses",
 ] as const satisfies readonly (keyof DatabaseSchema)[];
 
-interface Target {
-  database: SqlDatabase;
-  bytes: SuiteBytes;
-  target: MigrationTarget;
-  close(): Promise<void>;
-}
-
-async function newTarget(): Promise<Target> {
-  const scratch: ScratchDatabase = scratchSqlite();
-  const database = openDatabase(scratch.target);
-  await migrate(database);
-  const bytes = await localSuiteBytes();
-  const target = openMigrationTarget(database, bytes.store);
-  return {
-    database,
-    bytes,
-    target,
-    async close() {
-      await target.close();
-      await database.close();
-      await scratch.drop();
-      await bytes.remove();
-    },
-  };
-}
-
-async function readAll(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Buffer));
-  return Buffer.concat(chunks);
-}
-
 /** Every row of every copied table (sorted) and every file's bytes, as one text. */
 async function dumpOf({ database, bytes }: Target): Promise<string> {
   const out: Record<string, string[]> = {};
@@ -115,30 +84,18 @@ const lower = (values: Iterable<string>) => [...values].map((v) => v.toLowerCase
 
 let fixtures: LegacyFixtures;
 const config = replicaConfig();
-const openSource = (): LegacySource =>
-  openLegacySource(config, { shares: createStubShareReader(fixtures.files) });
+const openSource = (): LegacySource => openReplicaSource(fixtures);
 
-/** A copy from the replica into `into`. */
-async function copyInto(into: Target, options: Partial<CopyOptions> = {}): Promise<Report> {
-  const report = options.report ?? createReport();
-  const source = openSource();
-  try {
-    await runCopy(source, into.target, { now, ...options, report });
-  } finally {
-    await source.close();
-  }
-  return report;
-}
+/** A copy from the replica into `into`, at the fixed time. */
+const copyInto = (into: Target, options: Partial<CopyOptions> = {}): Promise<Report> =>
+  copyFromReplica(into, fixtures, { now, ...options });
 
 /** A fresh copy of the replica, opened as the hosted app opens it (the local user directory). */
 async function migratedProviders() {
   fixtures ??= await readLegacyFixtures();
   const into = await newTarget();
   await copyInto(into);
-  const providers = createSqlProviders(into.database, {
-    bytes: into.bytes.store,
-    localAccounts: true,
-  });
+  const providers = targetProviders(into);
   return {
     ...providers,
     async close() {
@@ -253,8 +210,7 @@ describe("copy from the local replica", () => {
 
   describe("copy decisions", () => {
     const CAMPAIGN = "22222222-0000-4000-8000-a00000000004";
-    const providersOf = (into: Target) =>
-      createSqlProviders(into.database, { bytes: into.bytes.store, localAccounts: true });
+    const providersOf = targetProviders;
     const remove = (container: string, name: string) =>
       blobs
         .getContainerClient(container)

@@ -6,24 +6,20 @@
 import { randomUUID } from "node:crypto";
 import { isUploadLegacyName, legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, LayoutKind, SurveyFileRecord } from "../domain/types.js";
-import type { LegacyOrganizationUserRow, LegacyUserRow } from "../providers/azure-legacy/rows.js";
 import { fileRecordFromBlob, isGuid } from "../providers/azure-legacy/mapping.js";
 import type { DumpKind, DumpRecords, DumpWriter } from "./dump.js";
 import { fileLinks } from "./map/files.js";
-import { mapPeople } from "./map/people.js";
-import { mapProject } from "./map/projects.js";
 import { createReport, type Report } from "./map/report.js";
-import { mapDeleted, mapHistory, mapResponse } from "./map/results.js";
+import { HISTORY_KEEP, mapDeleted, mapHistory, mapResponse } from "./map/results.js";
 import { mapSurvey } from "./map/surveys.js";
 import { mapView } from "./map/views.js";
 import { takeMarks } from "./marks.js";
+import { collectNamed } from "./named.js";
 import type {
   DeletedRec,
   EventRec,
   LayoutRec,
   MarkerRec,
-  MemberRec,
-  ProjectRec,
   ResponseRec,
   SurveyRec,
   ViewRec,
@@ -57,7 +53,6 @@ interface RunState {
   command: "copy";
 }
 
-const HISTORY_KEEP = 20;
 const BATCH = 500;
 const PROGRESS_EVERY = 100;
 const LAYOUT_KINDS: readonly LayoutKind[] = ["table", "summary", "columns"];
@@ -122,67 +117,14 @@ export async function runCopy(
   const wanted = (surveyId: string) => !sample || sample.surveys.has(surveyId);
 
   // ---- The people the copied data names, and the projects ----
-  const users: (LegacyUserRow & { accesskey: string | null })[] = [];
-  const legacyUsers = new Set<string>();
-  for await (const row of source.users()) {
-    users.push({
-      id: row.id,
-      email: row.email,
-      displayname: row.displayname,
-      blocked: row.blocked,
-      accesskey: row.accesskey,
-    });
-    legacyUsers.add(row.id.toLowerCase());
-  }
-  const membersOf = new Map<string, LegacyOrganizationUserRow[]>();
-  for await (const row of source.organizationUsers()) {
-    const projectId = row.organizationid.toLowerCase();
-    const rows = membersOf.get(projectId);
-    if (rows) rows.push(row);
-    else membersOf.set(projectId, [row]);
-  }
-  const projects: { project: ProjectRec; members: MemberRec[] }[] = [];
-  const projectsWithoutMembers = new Set<string>();
-  for await (const org of source.organizations()) {
-    const projectId = org.id.toLowerCase();
-    if (sample && !sample.projects.has(projectId)) continue;
-    const mapped = mapProject(org, membersOf.get(projectId) ?? [], report);
-    if (mapped) projects.push(mapped);
-    else if (isGuid(org.id)) projectsWithoutMembers.add(projectId);
-  }
+  // A checkpointed survey's history authors were named by the run that copied it.
+  const { legacyUsers, projects, projectsWithoutMembers, ...mapped } = await collectNamed(source, {
+    ...(sample && { sample }),
+    report,
+    runStart: run.startedAt,
+    readsHistory: toCopy,
+  });
   const projectIds = new Set(projects.map(({ project }) => project.id));
-
-  const named = new Set<string>();
-  const surveysSeen = new Set<string>();
-  for (const { project, members } of projects) {
-    if (project.creatorId !== null) named.add(project.creatorId);
-    for (const member of members) named.add(member.userId);
-  }
-  for await (const row of source.surveys()) {
-    const surveyId = row.id.toLowerCase();
-    if (!wanted(surveyId)) continue;
-    surveysSeen.add(surveyId);
-    const owner = row.userid?.toLowerCase() ?? "";
-    if (legacyUsers.has(owner)) named.add(owner);
-    if (row.creatorid !== null) named.add(row.creatorid.toLowerCase());
-    // The authors of the history the run copies (a checkpointed survey's were named before).
-    if (toCopy(surveyId) && isGuid(row.id)) {
-      const entries = await source.historyEntries(surveyId);
-      for (const entry of entries.slice(0, HISTORY_KEEP)) {
-        if (entry.userId !== null) named.add(entry.userId.toLowerCase());
-      }
-    }
-  }
-  for await (const view of source.views()) {
-    if (surveysSeen.has(view.surveyId.toLowerCase())) named.add(view.userId.toLowerCase());
-  }
-  for (const row of users) {
-    const id = row.id.toLowerCase();
-    const key = row.accesskey?.trim() ?? "";
-    if (key !== "" && (!sample || sample.accounts.has(id))) named.add(id);
-  }
-
-  const mapped = mapPeople(users, named, run.startedAt, report);
   const { skipped } = await target.upsertPeople(mapped.people);
   const skippedIds = new Set(skipped.map(({ id }) => id));
   for (const { id, reason } of skipped) report.skip("person", { userId: id }, reason);
