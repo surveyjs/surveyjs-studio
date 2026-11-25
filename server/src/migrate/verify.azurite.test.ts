@@ -12,10 +12,12 @@ import {
 } from "../providers/azure-legacy/large-survey.js";
 import { createStubShareReader } from "../providers/azure-legacy/legacy-shares-stub.js";
 import { API_TOKENS_TABLE } from "../providers/azure-legacy/writes.js";
-import { LEGACY_ASSET_NAME, OWNER_ID } from "../providers/suite/expected.js";
+import { LEGACY_ASSET_NAME, OUTSIDER_ID, OWNER_ID } from "../providers/suite/expected.js";
 import type { ProviderSet } from "../providers/types.js";
 import { jsonText } from "../sql/values.js";
+import { runDelta } from "./delta.js";
 import { createReport } from "./map/report.js";
+import { runReconcile } from "./reconcile.js";
 import {
   copyFromReplica,
   marksAt,
@@ -25,6 +27,8 @@ import {
   type Target,
 } from "./replica-setup.js";
 import { selectSample, type SampleSet } from "./sample.js";
+import type { LegacySource } from "./source/index.js";
+import { Refused } from "./state.js";
 import { runVerify } from "./verify.js";
 
 // Runs in the `providers-azurite` Vitest project, against the golden fixtures in the replica. The
@@ -43,6 +47,7 @@ interface Finding {
 }
 interface VerifyJson {
   notes: { kind: string; ids: Record<string, string> }[];
+  durations: Record<string, number>;
   checks: Record<string, { compared: number; differences: number; pending: number }>;
   differences: Finding[];
   pending: Finding[];
@@ -91,10 +96,13 @@ async function verify(
     deepMaxResponses?: number;
     sample?: SampleSet;
     into?: Target;
+    /** Wraps the source (a test counting its reads). */
+    wrap?: (source: LegacySource) => LegacySource;
   } = {},
 ): Promise<{ ok: boolean; json: VerifyJson; text: string }> {
   const report = createReport();
-  const source = openReplicaSource(fixtures);
+  const opened = openReplicaSource(fixtures);
+  const source = options.wrap ? options.wrap(opened) : opened;
   const into = options.into ?? copied;
   const providers = into === copied ? migrated : targetProviders(into);
   try {
@@ -110,7 +118,7 @@ async function verify(
     const text = JSON.stringify(report.toJSON());
     return { ok, json: JSON.parse(text) as VerifyJson, text };
   } finally {
-    await source.close();
+    await opened.close();
     // Not closed: closing the SQL providers closes the database, which the test target owns.
   }
 }
@@ -237,6 +245,107 @@ describe("verify against a copy of the local replica", () => {
     }
     expect(json.checks.surveys!.compared).toBe(fixtures.surveys.length);
     expect(json.checks.responses!.compared).toBe(fixtures.surveys.length);
+    // Each phase's duration, for timing the window.
+    for (const phase of ["stores", "people", "projects", "surveys", "tables"]) {
+      expect(json.durations[phase], phase).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("lists no unchanged survey's history incrementally, and queries only the tables that exist", async () => {
+    const history: string[] = [];
+    const queried: string[] = [];
+    let tableLists = 0;
+    let tables = new Set<string>();
+    const counting = (source: LegacySource): LegacySource => ({
+      ...source,
+      historyEntries: (surveyId) => {
+        history.push(surveyId);
+        return source.historyEntries(surveyId);
+      },
+      historyNewest: (surveyId, keep) => {
+        history.push(surveyId);
+        return source.historyNewest(surveyId, keep);
+      },
+      resultTables: async () => {
+        tableLists += 1;
+        tables = await source.resultTables();
+        return tables;
+      },
+      responses: (postId, since) => {
+        queried.push(`post${postId.replaceAll("-", "").toLowerCase()}`);
+        return source.responses(postId, since);
+      },
+      deletedCopies: (postId, since) => {
+        queried.push(`postdelete${postId.replaceAll("-", "").toLowerCase()}`);
+        return source.deletedCopies(postId, since);
+      },
+    });
+    const { ok, json } = await verify({ full: false, wrap: counting });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+    expect(history).toEqual([]);
+    expect(tableLists).toBe(1);
+    expect(queried.length).toBeGreaterThan(0);
+    for (const table of queried) expect(tables.has(table), table).toBe(true);
+  });
+
+  it("is red when a partial response is gone from the target (every row is counted, not only the complete ones)", async () => {
+    const db = copied.database.db;
+    const gone = await db
+      .selectFrom("survey_responses")
+      .selectAll()
+      .where("partial", "=", 1)
+      .orderBy("id")
+      .executeTakeFirstOrThrow();
+    await db.deleteFrom("survey_responses").where("id", "=", gone.id).execute();
+    try {
+      const { ok, json } = await verify({ deepSample: 0 });
+      expect(ok).toBe(false);
+      expect(findings(json.differences, "response_counts")).toEqual([
+        expect.objectContaining({ ids: { surveyId: gone.survey_id } }),
+      ]);
+    } finally {
+      await db
+        .insertInto("survey_responses")
+        .values(gone as never)
+        .execute();
+    }
+  });
+
+  it("accepts stored private questions that keep a name only deleted responses used, never fewer", async () => {
+    const before = await copied.target.privateQuestionsOf(FEEDBACK);
+    const key = `survey:${FEEDBACK}`;
+    const checkpoint = await copied.target.state.get<{ copiedAt: string; answerNames: string[] }>(
+      key,
+    );
+    expect(checkpoint).not.toBeNull();
+    const at = new Date().toISOString();
+    try {
+      // A name a deleted response carried: still in the checkpoint and the stored list.
+      await copied.target.state.set(
+        key,
+        { ...checkpoint!, answerNames: [...checkpoint!.answerNames, "gone_answer"] },
+        at,
+      );
+      await copied.target.setPrivateQuestions(FEEDBACK, [...before, "gone_answer"]);
+      const kept = await verify({ deepSample: 0 });
+      expect(kept.json.differences).toEqual([]);
+      expect(kept.ok).toBe(true);
+      expect(kept.json.notes).toContainEqual({
+        kind: "private_questions_superset",
+        ids: { surveyId: FEEDBACK },
+      });
+      // A name no response carried is a difference; so is a computed name the list lacks.
+      await copied.target.setPrivateQuestions(FEEDBACK, [...before, "never_an_answer"]);
+      const unknown = await verify({ deepSample: 0 });
+      expect(findings(unknown.json.differences, "private_questions")).toHaveLength(1);
+      await copied.target.setPrivateQuestions(FEEDBACK, [...before.slice(1), "gone_answer"]);
+      const fewer = await verify({ deepSample: 0 });
+      expect(findings(fewer.json.differences, "private_questions")).toHaveLength(1);
+    } finally {
+      await copied.target.state.set(key, checkpoint, at);
+      await copied.target.setPrivateQuestions(FEEDBACK, before);
+    }
   });
 
   it("is green incrementally after a full verify, and refuses without one", async () => {
@@ -600,6 +709,191 @@ describe("verify against a copy of the local replica", () => {
     expect(json.checks.responses!.compared).toBe(fixtures.surveys.length - 1);
   });
 
+  describe("people the target holds otherwise than the copy seeded them", () => {
+    type Db = Target["database"]["db"];
+    /** A copied person other than the owner (other tests change the owner's rows). */
+    async function somePerson(db: Db): Promise<string> {
+      const rows = await db.selectFrom("users").select("id").orderBy("id").execute();
+      return rows.map((row) => row.id).find((id) => id !== OWNER_ID.toLowerCase())!;
+    }
+    /** The person's rows, put back as they were by the returned function. */
+    async function keep(db: Db, userId: string): Promise<() => Promise<void>> {
+      const user = await db.selectFrom("users").selectAll().where("id", "=", userId).execute();
+      const identities = await db
+        .selectFrom("user_identities")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .execute();
+      const keys = await db
+        .selectFrom("legacy_access_keys")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .execute();
+      return async () => {
+        await db.deleteFrom("legacy_access_keys").where("user_id", "=", userId).execute();
+        await db.deleteFrom("users").where("id", "=", userId).execute();
+        if (user.length > 0) {
+          await db
+            .insertInto("users")
+            .values(user as never)
+            .execute();
+        }
+        if (identities.length > 0) {
+          await db
+            .insertInto("user_identities")
+            .values(identities as never)
+            .execute();
+        }
+        if (keys.length > 0) {
+          await db
+            .insertInto("legacy_access_keys")
+            .values(keys as never)
+            .execute();
+        }
+      };
+    }
+    /** An account the migration did not seed: an administrator. */
+    const account = (id: string, email: string) => ({
+      id,
+      email,
+      display_name: "Someone",
+      instance_role: "admin" as const,
+      status: "active" as const,
+      password_hash: null,
+      must_change_password: false,
+      site_blocked: false,
+      licence_expires_at: null,
+      session_epoch: 0,
+      created_at: new Date().toISOString(),
+      last_sign_in_at: null,
+    });
+
+    it("notes an account the migration did not seed (an administrator, a sign-in account); a seeded one left over is red", async () => {
+      const db = copied.database.db;
+      const admin = "11111111-0000-4000-8000-a0000000e001";
+      const signIn = "11111111-0000-4000-8000-a0000000e002";
+      const seeded = "11111111-0000-4000-8000-a0000000e003";
+      await db.insertInto("users").values(account(admin, "unseeded-admin@example.com")).execute();
+      await copied.target.upsertPeople(
+        [signIn, seeded].map((id) => ({
+          id,
+          email: `${id}@example.com`,
+          displayName: id,
+          siteBlocked: false,
+          createdAt: new Date().toISOString(),
+        })),
+      );
+      // An account made at sign-in: another provider's identity.
+      await db
+        .updateTable("user_identities")
+        .set({ provider: "google", subject: "google-subject" })
+        .where("user_id", "=", signIn)
+        .execute();
+      try {
+        const { ok, json } = await verify({ deepSample: 0 });
+        expect(ok).toBe(false);
+        expect(findings(json.differences, "people")).toEqual([
+          { check: "people", ids: { userId: seeded }, counts: { inSource: 0 } },
+        ]);
+        expect(json.notes).toContainEqual({ kind: "person_kept_unseeded", ids: { userId: admin } });
+        expect(json.notes).toContainEqual({
+          kind: "person_kept_unseeded",
+          ids: { userId: signIn },
+        });
+      } finally {
+        await copied.target.deletePeople([admin, signIn, seeded]);
+      }
+    });
+
+    it("notes a named person the copy could not write: the email or the identity is held elsewhere", async () => {
+      const db = copied.database.db;
+      const userId = await somePerson(db);
+      const restore = await keep(db, userId);
+      const { email } = await db
+        .selectFrom("users")
+        .select("email")
+        .where("id", "=", userId)
+        .executeTakeFirstOrThrow();
+      const holder = "11111111-0000-4000-8000-a0000000e004";
+      try {
+        // Another account holds the person's email (the copy skipped them: email-taken).
+        await copied.target.deletePeople([userId]);
+        await db.insertInto("users").values(account(holder, email)).execute();
+        const taken = await verify({ deepSample: 0 });
+        expect(taken.json.differences).toEqual([]);
+        expect(taken.ok).toBe(true);
+        expect(taken.json.notes).toContainEqual({ kind: "person_held_elsewhere", ids: { userId } });
+        // The person's surveyjs identity is linked to that account (identity-linked-elsewhere).
+        await db
+          .updateTable("users")
+          .set({ email: "holder@example.com" })
+          .where("id", "=", holder)
+          .execute();
+        await db
+          .insertInto("user_identities")
+          .values({
+            provider: "surveyjs",
+            subject: userId,
+            user_id: holder,
+            email,
+            email_verified: true,
+            created_at: new Date().toISOString(),
+          })
+          .execute();
+        const linked = await verify({ deepSample: 0 });
+        expect(linked.json.differences).toEqual([]);
+        expect(linked.ok).toBe(true);
+        expect(linked.json.notes).toContainEqual({
+          kind: "person_held_elsewhere",
+          ids: { userId },
+        });
+      } finally {
+        await copied.target.deletePeople([holder]);
+        await restore();
+      }
+    });
+
+    it("compares only what the migration owns of a person who signed in and linked another sign-in", async () => {
+      const db = copied.database.db;
+      const userId = await somePerson(db);
+      const restore = await keep(db, userId);
+      try {
+        await db
+          .updateTable("users")
+          .set({ last_sign_in_at: new Date().toISOString(), session_epoch: 3 })
+          .where("id", "=", userId)
+          .execute();
+        await db
+          .insertInto("user_identities")
+          .values({
+            provider: "google",
+            subject: "google-of-a-migrated-person",
+            user_id: userId,
+            email: "other@example.com",
+            email_verified: true,
+            created_at: new Date().toISOString(),
+          })
+          .execute();
+        const used = await verify({ deepSample: 0 });
+        expect(used.json.differences).toEqual([]);
+        expect(used.ok).toBe(true);
+        expect(used.json.notes).toContainEqual({ kind: "person_used", ids: { userId } });
+        // The display name is the migration's: changed in the target, it is a difference.
+        await db
+          .updateTable("users")
+          .set({ display_name: "Changed in the target" })
+          .where("id", "=", userId)
+          .execute();
+        const renamed = await verify({ deepSample: 0 });
+        expect(findings(renamed.json.differences, "people")).toEqual([
+          expect.objectContaining({ ids: { userId } }),
+        ]);
+      } finally {
+        await restore();
+      }
+    });
+  });
+
   it("is red when the provider's own token table holds rows, which the copy does not take", async () => {
     expect(tokenRows.length).toBeGreaterThan(0);
     for (const row of tokenRows) {
@@ -681,13 +975,25 @@ describe("verify of a sample copy", () => {
       expect(ok).toBe(true);
       expect(json.checks.surveys!.compared).toBe(sample.surveys.size);
       expect(json.checks.responses!.compared).toBe(sample.surveys.size);
-      // That full verify covered the sample only: the window's check of everything refuses.
-      const whole = await verify({ into, full: false });
-      expect(whole.ok).toBe(false);
-      expect(findings(whole.json.differences, "full_verify")).toEqual([
-        { check: "full_verify", ids: { reason: "last full verify was a sample" } },
-      ]);
+      // The target holds a sample: a verify of everything, or of another sample, refuses.
+      await expect(verify({ into, full: false })).rejects.toThrow(Refused);
+      const other = await selectSample(source, 0, [OUTSIDER_ID]);
+      await expect(verify({ into, sample: other, full: false })).rejects.toThrow(/another sample/);
       expect((await verify({ into, sample, full: false })).ok).toBe(true);
+      // So do delta and reconcile, before they change anything; and on a full copy, a sample.
+      const before = await into.target.idsOf("surveys");
+      await expect(runDelta(source, into.target, { report: createReport() })).rejects.toThrow(
+        /holds a sample/,
+      );
+      await expect(
+        runReconcile(source, into.target, { report: createReport(), full: false, sample: other }),
+      ).rejects.toThrow(Refused);
+      expect(await into.target.idsOf("surveys")).toEqual(before);
+      const whole = await copied.target.idsOf("surveys");
+      await expect(
+        runReconcile(source, copied.target, { report: createReport(), full: false, sample }),
+      ).rejects.toThrow(/holds a full copy/);
+      expect(await copied.target.idsOf("surveys")).toEqual(whole);
     } finally {
       await source.close();
       await into.close();
