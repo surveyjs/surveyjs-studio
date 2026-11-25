@@ -137,13 +137,13 @@ estimate are re-measured with the new stats.
   | Operation                                                         | Target                                                         |
   | ----------------------------------------------------------------- | -------------------------------------------------------------- |
   | The survey list (a user with many surveys)                        | under 0.5 s                                                    |
-  | A page of the Table of the largest survey, with a filter and sort | under 2 s                                                      |
-  | The Summary's data: the newest 25,000 responses                   | under 5 s                                                      |
+  | A page of the Table of the largest survey, with a filter and sort | under 2 s (after the migration, with results on the server)    |
+  | The Summary's data: the newest 25,000 responses                   | under 5 s (after the migration, with results on the server)    |
   | Export of every response of the largest survey                    | the first rows within 1 s; every row fetched within 10 minutes |
   | A save of a survey with 20 history entries                        | under 0.5 s                                                    |
 
-  Index changes are made, as migrations, until the targets hold (the Table's server operation is hosted Step 8b,
-  [ADR 0015, changed 2026-11-25](0015-results-summary-table-and-views.md)).
+  Index changes are made, as migrations, until the targets hold (the Table's and the Summary's targets apply once results
+  on the server is built, after the migration: [ADR 0015, changed 2026-11-25](0015-results-summary-table-and-views.md)).
 
 - **Restore once into a scratch instance** (H25) on the new server: a point-in-time restore from the backups in the
   other location, and a file brought back from the bucket's old versions. The private deployment notes hold the

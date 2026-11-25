@@ -4,7 +4,7 @@ Date: 2026-10-18
 
 ## Status
 
-Accepted; [changed 2026-11-25](#changed-2026-11-25-results-on-the-server) (results on the server, hosted Step 8b).
+Accepted; [changed 2026-11-25](#changed-2026-11-25-results-on-the-server) (results on the server, deferred until after the migration).
 The product owner has not confirmed R4 (layouts per user), R12 (every question is charted) and the
 source of the `xlsx` package yet (see "To confirm").
 
@@ -233,7 +233,7 @@ The page reads every response into the browser (R11, R20): the Summary and the T
 pages, filters, sorts and exports there. That cannot hold the largest production survey (millions of responses). The
 product owner decided (2026-11-25): the Summary shows at most **25,000** responses; the Table pages, filters and sorts
 **on the server** and can show every response; the export returns **every** response. Summarising more than 25,000
-responses is a separate, later task. Built in hosted Step 8b. What users know stays (R11's libraries, R14's exports and
+responses is a separate, later task. Deferred by the product owner on 2026-11-25: it is built after the migration ([plan-hosted.md › After the migration](../../plan-hosted.md#after-the-migration)); until then the page reads every response, as R20 says, and the Summary and the Table stay as they are. What users know stays (R11's libraries, R14's exports and
 defaults, the saved layouts); where the work happens changes:
 
 - **One new operation, `queryResults`:** a survey's responses with filters (field, type, value), sort orders (field,

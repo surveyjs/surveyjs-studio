@@ -72,13 +72,12 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 | 6    | The bridge: access-key actions and the migration guide         | ☑      |
 | 7    | Taking over `api.surveyjs.io` traffic                          | ☑      |
 | 8    | Target provider readiness                                      | ☐      |
-| 8b   | Results on the server                                          | ☐      |
 | 9    | The migration tool                                             | ☐      |
 | 10   | The cutover kit                                                | ☐      |
 | 11   | The test migration and the cutover runbook                     | ☐      |
 | 12   | Retiring the legacy code in this repository                    | ☐      |
 
-Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted foundation. The cutover itself is an operational event between Steps 11 and 12. It is run from the Step 11 runbook and is not a code step.
+Results on the server (once Step 8b) waits until after the migration ([After the migration](#after-the-migration)). Steps 2, 3 and 4 do not depend on each other. Step 8 waits for the self-hosted foundation. The cutover itself is an operational event between Steps 11 and 12. It is run from the Step 11 runbook and is not a code step.
 
 **The path to the cutover** ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)): the new server is built and checked empty (Step 8); about 10 % of the data, as whole accounts, is migrated to it and tested through its test host names, functionally and under load, then wiped (Step 11); everything is pre-copied while the old side runs, with a daily `delta`; in the window the old service stops, today's Studio is read-only, and the final `delta` is verified; then `studio.surveyjs.io` and `api.surveyjs.io` switch to the new server together. Step 2 and the site's own host for its demos and housekeeping (`demoapi.surveyjs.io`) come before the test migration.
 
@@ -487,7 +486,7 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 
 **Goal:** the chosen SQL provider and file store are ready to hold the hosted data at production size, including the hosted-only tables, and the tools to prove it exist. What needs the new server waits for it.
 
-> **Changed 2026-11-25 by [ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md), [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md), [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) and [ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md).** There is no byte store for history snapshots: a survey keeps at most N history entries (`HISTORY_MAX_ENTRIES`, 20 on the new server). Legacy access keys work on the SQL providers, and a key can be replaced there. The archive tables get a purge command. The hosted edition refuses password sign-in. The scale check has targets and a generator, and the work that needs the new server (the scale run, the production measurement, the restore) is listed apart below. The results on the server (the Table's server mode, the Summary's limit) are Step 8b.
+> **Changed 2026-11-25 by [ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md), [ADR 0037](docs/adr/0037-access-keys-and-api-tokens.md), [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) and [ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md).** There is no byte store for history snapshots: a survey keeps at most N history entries (`HISTORY_MAX_ENTRIES`, 20 on the new server). Legacy access keys work on the SQL providers, and a key can be replaced there. The archive tables get a purge command. The hosted edition refuses password sign-in. The scale check has targets and a generator, and the work that needs the new server (the scale run, the production measurement, the restore) is listed apart below. The results on the server (the Table's server mode, the Summary's limit) wait until after the migration ([After the migration](#after-the-migration)).
 
 **Inputs needed:** the new server ([ADR 0042](docs/adr/0042-one-switch-to-the-new-server.md)), built by the private deployment playbooks: Studio on PostgreSQL and the provider's object storage, the bridge, Prometheus, test host names for Studio and the API, and the backups set up. It is checked empty in this step. Everything below that does not name the new server is built and tested locally.
 
@@ -512,7 +511,7 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
   - `pnpm scale:check`: the survey list, a page of the results, the export and a save through the HTTP API, 95th percentile, against the targets of [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25). It prints counts and times only.
 - **The new server's profile,** ready but not active: the settings in the deployment's example environment file, `docker/prod-like.sql.env` and `pnpm prod-like-sql:up` (the image on PostgreSQL and S3), and the `prod-like-sql` CI job.
 - **What waits for the new server,** with figures added (rounded, rule 6) to ADR 0033 when done:
-  - the scale run: `scale:generate` at production size, then `scale:check`, and index changes (migrations) until the targets hold; the Table's and the Summary's targets are met in Step 8b;
+  - the scale run: `scale:generate` at production size, then `scale:check`, and index changes (migrations) until the targets hold; the targets for a filtered and sorted Table page and for the Summary's newest 25,000 responses wait for results on the server, after the migration ([After the migration](#after-the-migration));
   - the production measurement: `pnpm inspect:legacy --stats` with the 20 newest history entries of each survey, run once on production, to size the database;
   - the backup and restore (H25), tested once into a scratch instance: a point-in-time restore of the database and a file from the bucket's old versions. The commands are in the private deployment notes; `docs/operations.md` has the outline.
 
@@ -539,42 +538,6 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 1. Studio and the bridge answer on their test host names, and Prometheus scrapes both.
 2. The scale report shows the largest survey's export and paging within the agreed times.
 3. A restore into a scratch instance brings back a deleted survey and a deleted file.
-
----
-
-## Step 8b: Results on the server
-
-**Goal:** a survey with millions of responses opens, pages, filters and exports without the page reading every response, as [ADR 0015](docs/adr/0015-results-summary-table-and-views.md) (changed 2026-11-25) decided.
-
-> **Added 2026-11-25 by [ADR 0015](docs/adr/0015-results-summary-table-and-views.md).** The product owner decided that the Summary shows at most 25,000 responses, the Table pages, filters and sorts on the server, and the export returns every matching response. Summarising more is a later task. This step touches the shared API and the results page, so it is a step of its own and can be built while the new server is made ready.
-
-**References**
-
-- ADR 0015 › Changed 2026-11-25; R11, R14 and R20 of the Phase 1 spec; [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) (the scale targets).
-
-**Build**
-
-- **`queryResults`** in the contract: a survey's responses with filters (field, type, value), sort orders (field, direction), an offset and a limit; the answer is one page and the total count (the shape of the Dashboard's `GetDataFn`: `{ filter, sort, offset, limit }` → `{ data, totalCount }`). Who may call it is `listResults`'s rule. The generated client and `docs/api` follow.
-- **Providers:** on SQLite and PostgreSQL the filter and the sort run in the database on the stored answers (the JSON functions of each); the memory and Azure legacy providers compute the same results in memory. Indexes, as migrations, where the scale targets need them.
-- **The Table** uses the Dashboard's server mode for every survey, one page at a time, with paging, filters and sorts sent to the server (no threshold: one path serves every survey).
-- **The Summary** is built from the newest 25,000 responses, and says how many it covers when a survey has more.
-- **The export** keeps the three formats (CSV, Excel, PDF) and returns every response that matches the Table's filters, in its order, fetched through `queryResults` in pages.
-- **The two scale targets this step adds** to `scale:check` (the others are Step 8's): a page of the Table of the largest survey, with a filter and a sort, under 2 s; the Summary's data, the newest 25,000 responses, under 5 s ([ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25)).
-
-**Tests**
-
-- **Back-end:** `queryResults` on every provider through the shared suite: each filter type, sort order, paging and the total; permissions as `listResults`; the same results on memory, SQLite, PostgreSQL and Azure legacy.
-- **Front-end e2e:** the results user stories in the server mode: paging, filter, sort, the Summary's note over 25,000, and an export of a filtered Table.
-- **Scale:** `scale:check` with the two targets, on the new server.
-
-**Documentation:** ADR 0015's change, `docs/api`, the user guide's results page, `docs/demo/hosted-08b.md`.
-
-**Demo checklist**
-
-1. Generate a survey of a few hundred thousand responses (`scale:generate`) and open its results: the Table opens at once and pages.
-2. Filter and sort the Table: the page changes, the total follows.
-3. The Summary says it covers the newest 25,000 responses.
-4. Export with a filter set: the file holds every matching response, in the Table's order.
 
 ---
 
@@ -784,6 +747,48 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
 
 1. A fresh clone runs `pnpm install && pnpm test && pnpm e2e` without Docker images for Azure or SQL Server.
 2. `grep -ri azure server/src` finds only the historical documents.
+
+---
+
+## After the migration
+
+Improvements the product owner moved after the cutover. They are not part of the path to it.
+
+### Results on the server
+
+**Goal:** a survey with millions of responses opens, pages, filters and exports without the page reading every response, as [ADR 0015](docs/adr/0015-results-summary-table-and-views.md) (changed 2026-11-25) decided.
+
+> **Deferred 2026-11-25 by the product owner:** the Summary and the Table as built, which already run on `studio.surveyjs.io`, are enough until the migration; this and every other analytics improvement comes after it. Kept here as written (once Step 8b).
+>
+> **Added 2026-11-25 by [ADR 0015](docs/adr/0015-results-summary-table-and-views.md).** The product owner decided that the Summary shows at most 25,000 responses, the Table pages, filters and sorts on the server, and the export returns every matching response. Summarising more is a later task. This touches the shared API and the results page, so it is a step of its own.
+
+**References**
+
+- ADR 0015 › Changed 2026-11-25; R11, R14 and R20 of the Phase 1 spec; [ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25) (the scale targets).
+
+**Build**
+
+- **`queryResults`** in the contract: a survey's responses with filters (field, type, value), sort orders (field, direction), an offset and a limit; the answer is one page and the total count (the shape of the Dashboard's `GetDataFn`: `{ filter, sort, offset, limit }` → `{ data, totalCount }`). Who may call it is `listResults`'s rule. The generated client and `docs/api` follow.
+- **Providers:** on SQLite and PostgreSQL the filter and the sort run in the database on the stored answers (the JSON functions of each); the memory and Azure legacy providers compute the same results in memory. Indexes, as migrations, where the scale targets need them.
+- **The Table** uses the Dashboard's server mode for every survey, one page at a time, with paging, filters and sorts sent to the server (no threshold: one path serves every survey).
+- **The Summary** is built from the newest 25,000 responses, and says how many it covers when a survey has more.
+- **The export** keeps the three formats (CSV, Excel, PDF) and returns every response that matches the Table's filters, in its order, fetched through `queryResults` in pages.
+- **The two scale targets this step adds** to `scale:check` (the others are Step 8's): a page of the Table of the largest survey, with a filter and a sort, under 2 s; the Summary's data, the newest 25,000 responses, under 5 s ([ADR 0033](docs/adr/0033-hosted-target-stores.md#readiness-hosted-step-8-2026-11-25)).
+
+**Tests**
+
+- **Back-end:** `queryResults` on every provider through the shared suite: each filter type, sort order, paging and the total; permissions as `listResults`; the same results on memory, SQLite, PostgreSQL and Azure legacy.
+- **Front-end e2e:** the results user stories in the server mode: paging, filter, sort, the Summary's note over 25,000, and an export of a filtered Table.
+- **Scale:** `scale:check` with the two targets, on the new server.
+
+**Documentation:** ADR 0015's change, `docs/api`, the user guide's results page, a demo script of its own.
+
+**Demo checklist**
+
+1. Generate a survey of a few hundred thousand responses (`scale:generate`) and open its results: the Table opens at once and pages.
+2. Filter and sort the Table: the page changes, the total follows.
+3. The Summary says it covers the newest 25,000 responses.
+4. Export with a filter set: the file holds every matching response, in the Table's order.
 
 ---
 
