@@ -689,6 +689,13 @@ export async function setup(project: TestProject): Promise<(() => Promise<void>)
       `CONFORMANCE_EDITION=hosted needs CONFORMANCE_PROVIDER=postgres, got ${provider}`,
     );
   }
+  // The new hosted server keeps its files in S3. With local files the image could not read the bytes
+  // the seed writes on this machine, and the legacy files the hosted edition serves would be missing.
+  if (edition === "hosted" && (process.env.CONFORMANCE_FILE_STORE?.trim() || "local") !== "s3") {
+    throw new Error(
+      "CONFORMANCE_EDITION=hosted needs CONFORMANCE_FILE_STORE=s3 (docker/s3.env and pnpm s3:up), as the new hosted server keeps its files in S3",
+    );
+  }
   if (edition === "hosted" && auth !== "default") {
     throw new Error(
       `CONFORMANCE_AUTH=${auth} cannot be used with CONFORMANCE_EDITION=hosted: it signs in with surveyjs.io only`,

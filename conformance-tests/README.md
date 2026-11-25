@@ -149,16 +149,19 @@ resets it.
 `HISTORY_MAX_ENTRIES=20`, with `OPEN_SIGN_UP=on`, `LEGACY_KEY_REVOKE=true` (the database is the run's own)
 and an `ADMIN_EMAIL` that names the seed's instance admin (an admin exists, so it promotes nobody). It
 signs in through the mock OIDC server, of which only the `OIDC_*` settings are read from
-`docker/azurite.env`; the replica is not used. `pnpm seed` writes the fixture users as local accounts with
+`docker/azurite.env`; the replica is not used. Its files go to a new bucket of the local S3 server
+(`CONFORMANCE_FILE_STORE=s3`), as the new hosted server keeps them in S3; the image could not read
+local files written on this machine. `pnpm seed` writes the fixture users as local accounts with
 their memberships and legacy access keys, and the mock signs each in with its fixture id as `sub`, the
 account id (ADR 0043). So the operations only the hosted edition routes, the legacy access keys and the
-erasure that deletes the account run here on PostgreSQL. Any other provider, `CONFORMANCE_AUTH` or
+erasure that deletes the account run here on PostgreSQL. Any other provider, local files, `CONFORMANCE_AUTH` or
 `CONFORMANCE_BASE_URL` with it stops the run with an error.
 
 ```sh
 pnpm postgres:up                 # start the local PostgreSQL
+pnpm s3:up                       # start the local S3 server (RustFS)
 docker compose --env-file docker/azurite.env -f docker/compose.azurite.yaml up -d --wait mock-oidc
-pnpm test:conformance:postgres:hosted   # reads docker/postgres.env, docker/azurite.env and postgres-hosted.env
+pnpm test:conformance:postgres:hosted   # reads docker/postgres.env, docker/s3.env, docker/azurite.env and postgres-hosted.env
 ```
 
 ## Run with password sign-in
